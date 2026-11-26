@@ -152,19 +152,26 @@ void grantsAndRestore() {
 }
 
 void exhaustedStringChainCharges() {
-	for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
+	for (int capacity : {8, 256}) for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
 		Program program(op, false);
 		Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = cpu.createTable(0, 8);
+			auto root = cpu.createTable(0, capacity);
 			auto key = cpu.stringPool().intern("field");
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(root.address())); r.set(1, valueString(key));
 			const auto home = root.beginStringProbe(key).node;
 			for (int n = 0, placed = 0; placed < 8; ++n) {
 				const auto candidate = cpu.stringPool().intern("chain" + std::to_string(n));
-				if (root.beginStringProbe(candidate).node == home) root.setStringKey(candidate, valueInteger(++placed));
+				if (root.beginStringProbe(candidate).node != home) continue;
+				const int slot = root.setStringKey(candidate, valueInteger(++placed));
+				if (placed == 4) {
+					// A payload match partway down the chain must inspect its tag
+					// and resume at this node, with the original traversal bound.
+					m->memory.writeRamRecordWord(root.hashAddress() + 4u * slot, key);
+					m->memory.writeRamRecordByte(root.hashAddress() + 8u * capacity + slot, static_cast<u8>(ValueTag::Integer));
+				}
 			}
 		}
 		const int total = 2 + BASE_CYCLES[static_cast<u8>(op)] + 7;
@@ -182,12 +189,22 @@ void exhaustedStringChainCharges() {
 		}
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			cycle(cpu, asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap()));
+			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			cycle(cpu, root);
+			// Close the actual tail link onto home. Only the visit bound,
+			// not a negative link, can terminate this raw RAM chain.
+			const auto key = cpu.stringPool().intern("field");
+			auto probe = root.beginStringProbe(key);
+			const int home = probe.node;
+			root.advanceStringProbe(key, probe, 7);
+			const auto links = root.hashAddress() + capacity * 10u;
+			if (capacity <= TableRecord::BYTE_LINK_CAPACITY) m->memory.writeRamRecordByte(links + probe.node, static_cast<u8>(home));
+			else m->memory.writeRamRecordWord(links + 4u * probe.node, home);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
-			&& 3 - generated.cpu.instructionBudgetRemaining == total + 31 * (7 + TABLE_INDEX_VISIT_CYCLES),
+			&& 3 - generated.cpu.instructionBudgetRemaining == 2 + BASE_CYCLES[static_cast<u8>(op)] + 32 * (capacity - 1) + 31 * TABLE_INDEX_VISIT_CYCLES,
 			"fault replay pays all 32 searches and 31 inherited visits exactly once");
 	}
 }

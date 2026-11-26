@@ -258,7 +258,8 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		const auto field = cpu.stringPool().intern("field");
 		int slots[2];
 		for (int i = 0; i < 2; ++i) {
-			auto table = cpu.createTable(0, i == 1 && workload == Workload::FieldHitAlternatingSlot ? 128 : 64);
+			const int capacity = std::max(64, fieldNodes) * (i == 1 && workload == Workload::FieldHitAlternatingSlot ? 2 : 1);
+			auto table = cpu.createTable(0, capacity);
 			registers.set(i, valueTable(table.address()));
 			cpu.activeThread()->currentFrame->setTop(i + 1);
 			const auto home = table.beginStringProbe(field).node;
@@ -267,6 +268,12 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			for (int n = 0, added = 0; added < fieldNodes;) {
 				if (added == 1) {
 					slots[i] = table.setStringKey(field, valueInteger(i + 1));
+				} else if (fieldNodes > 64) {
+					// Arbitrary Integer and String keys share the hash. Construct
+					// deep mixed-key chains without interning a large scratch pool.
+					const auto key = valueInteger(n++);
+					if ((hashCanonicalTableKey(key) & (capacity - 1u)) != static_cast<u32>(home)) continue;
+					table.set(key, valueBool(false));
 				} else {
 					const auto key = cpu.stringPool().intern("field_" + std::to_string(n++));
 					if (table.beginStringProbe(key).node != home) continue;
@@ -425,6 +432,7 @@ int main(int argc, char** argv) {
 			measure(Workload::FieldHitStableSlot, "field-hit-stable-64", grant, round, fullyBacked, 64);
 			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-16", grant, round, fullyBacked, 16);
 			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-64", grant, round, fullyBacked, 64);
+			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-256", grant, round, fullyBacked, 256);
 			continue;
 		}
 		if (fieldMisses) {

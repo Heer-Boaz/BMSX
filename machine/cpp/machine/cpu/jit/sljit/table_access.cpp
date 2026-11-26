@@ -44,8 +44,7 @@ constexpr sljit_sw nilTag = static_cast<u8>(ValueTag::Nil);
 sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss = false) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
-	// Keep both backing planes live across the chain. Only the receiver
-	// and the signed-cursor traversal budget need spill slots.
+	// Preserve the header and initial traversal bound across the home probe.
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R3, 0);
 	if (stringKey) {
@@ -68,18 +67,17 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
-	auto* node = sljit_emit_label(c);
 	// Most colliding field names are also Strings. Reject the wrong identity
 	// before touching the tag plane; equal payload bits alone are not a match.
 	auto compareWord = [&] {
 		return sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2,
 			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
 	};
-	auto* otherKey = stringKey ? compareWord() : nullptr;
+	auto* otherKey = compareWord();
+	auto* checkTag = sljit_emit_label(c);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
-	if (!stringKey) otherKey = compareWord();
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
@@ -90,23 +88,37 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss
 	auto* different = sljit_emit_label(c);
 	sljit_set_label(otherTag, different);
 	sljit_set_label(otherKey, different);
-	sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining,
-		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_IMM, 1);
-	auto* last = sljit_emit_jump(c, SLJIT_EQUAL);
+	// Beyond a rejected home, keep the signed link plane and the remaining
+	// node count in registers. Only a matching payload needs the tag plane.
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* wide = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TableRecord::BYTE_LINK_CAPACITY);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R0, 0);
-	sljit_emit_op1(c, SLJIT_MOV_S8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
-	auto* linked = sljit_emit_jump(c, SLJIT_JUMP);
-	sljit_set_label(wide, sljit_emit_label(c));
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
-	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R3, 0, SLJIT_R0, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 2);
-	sljit_set_label(linked, sljit_emit_label(c));
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), node);
-	sljit_set_label(last, sljit_emit_label(c));
+	sljit_jump* exhausted[2];
+	sljit_jump* end[2];
+	sljit_jump* matched = nullptr;
+	for (int word = 0; word <= 1; ++word) {
+		if (word) sljit_set_label(wide, sljit_emit_label(c));
+		sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R0, 0);
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
+		auto* rejected = sljit_emit_label(c);
+		sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+		exhausted[word] = sljit_emit_jump(c, SLJIT_EQUAL);
+		sljit_emit_op1(c, word ? SLJIT_MOV32 : SLJIT_MOV_S8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), word ? 2 : 0);
+		end[word] = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+		sljit_set_label(compareWord(), rejected);
+		if (!word) matched = sljit_emit_jump(c, SLJIT_JUMP);
+	}
+	sljit_set_label(matched, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
+	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), checkTag);
+	auto* missed = sljit_emit_label(c);
+	for (auto* jump : exhausted) sljit_set_label(jump, missed);
+	for (auto* jump : end) sljit_set_label(jump, missed);
+	if (meterMiss) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 
 	if (meterMiss) {
