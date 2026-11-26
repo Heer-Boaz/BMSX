@@ -79,13 +79,17 @@ import {
 	BLUA32_FUNCTION_VARARG,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
+	BLUA32_IMAGE_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
+	BLUA32_IMAGE_FLAGS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
+	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
+	BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
@@ -167,7 +171,14 @@ import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_
 import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../spec/bmsx/heap_service';
+import {
+	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
+	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION, HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET,
+	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
+	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceOperation,
+} from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
@@ -288,6 +299,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
+	private readonly execFloorArgs = [0, 0];
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private lengthKey!: StringId;
@@ -969,6 +981,41 @@ export class CPU implements MappedPageInvalidator {
 		if (constantCount > MAIN_RAM_SIZE / 5 || globalNameCount + systemGlobalNameCount > MAIN_RAM_SIZE / 4) {
 			throw new Error('BLua32 image bank extents exceed main RAM.');
 		}
+		const romFunctions = readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView);
+		let heapServiceSetFloor = 0;
+		if ((readLE32(bytes, byteOffset + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) !== 0) {
+			if (executionBoot.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || romFunctions.mappedCode
+				|| readLE32(bytes, byteOffset + BLUA32_IMAGE_BYTE_COUNT_OFFSET) < HEAP_SERVICE_IMAGE_HEADER_SIZE)
+				throw new Error('Heap service requires an extended linked System ROM image.');
+			this.executionAddressSpace.bindReadOnlyView(SYSTEM_EXECUTION_DOMAIN_ID, executionBoot.imageAddress,
+				HEAP_SERVICE_IMAGE_HEADER_SIZE, this.executionTableView);
+			const extended = this.executionTableView;
+			const address = readLE32(extended.bytes, extended.byteOffset + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
+			const rodata = readLE32(bytes, byteOffset + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET);
+			const rodataEnd = rodata + readLE32(bytes, byteOffset + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET);
+			if ((address & 3) !== 0 || address < rodata || address + HEAP_SERVICE_DESCRIPTOR_SIZE > rodataEnd
+				|| address + HEAP_SERVICE_DESCRIPTOR_SIZE > SYSTEM_ROM_SIZE)
+				throw new Error('Heap service descriptor is outside immutable system RODATA.');
+			this.executionAddressSpace.bindReadOnlyView(SYSTEM_EXECUTION_DOMAIN_ID, address,
+				HEAP_SERVICE_DESCRIPTOR_SIZE, this.executionTableView);
+			const descriptor = this.executionTableView.bytes, offset = this.executionTableView.byteOffset;
+			const values = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
+			const frames = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
+			if (readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET) !== HEAP_SERVICE_DESCRIPTOR_VERSION
+				|| values === 0 || values > HEAP_SERVICE_VALUE_COUNT || frames === 0 || frames > HEAP_SERVICE_FRAME_COUNT)
+				throw new Error('Unsupported heap service descriptor.');
+			const functions = offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
+			const versions = romFunctions.versions;
+			for (let index = 0; index < HeapServiceOperation.Count; ++index) {
+				const record = readLE32(descriptor, functions + 4 * index);
+				const lane = romFunctionVersionLane(romFunctions, record);
+				if (lane < 0 || versions[lane + RomFunctionLane.UpvalueCount] !== 0
+					|| Math.max(1, versions[lane + RomFunctionLane.NumParams], versions[lane + RomFunctionLane.MaxStack]) > values
+					|| (versions[lane + RomFunctionLane.Flags] & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) !== BLUA32_FUNCTION_STATIC)
+					throw new Error('Heap service descriptor does not name a fixed System ROM activation.');
+			}
+			heapServiceSetFloor = readLE32(descriptor, functions + 4 * HeapServiceOperation.SetFloor);
+		}
 		return {
 			constantTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
 			constantCount,
@@ -978,7 +1025,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobalNameCount,
 			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
-			romFunctions: readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView),
+			romFunctions, heapServiceSetFloor,
 		};
 	}
 
@@ -1028,6 +1075,7 @@ export class CPU implements MappedPageInvalidator {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
+			heapServiceSetFloor: header.heapServiceSetFloor,
 			constantBase,
 			constTags,
 			constWords,
@@ -1686,14 +1734,66 @@ export class CPU implements MappedPageInvalidator {
 		const targetDomainId = this.executionAddressSpace.domainIdOnBus(functionAddress, MAPPED_BUS_MASTER_CPU);
 		const targetBoot = targetDomainId === null ? null : this.executionAddressSpace.resolveDomain(targetDomainId);
 		const staticEnd = targetDomainId === null ? this.activeExecutionImage.staticEnd : targetBoot?.staticEnd;
-		if (staticEnd !== undefined && !this.setProgramHeapFloor(staticEnd)) {
-			this.hardHalt();
-			return;
+		if (staticEnd !== undefined) {
+			if (this.systemImage.heapServiceSetFloor !== 0) {
+				const management = this.heapAllocator.managementOffset();
+				const floor = this.heapAllocator.floorOffset(staticEnd);
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET, functionAddress);
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET, floor);
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, this.currentInstructionPc);
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET, targetDomainId === null
+					? MAPPED_BUS_MASTER_CPU : CPU.executionBusSignalsForDomain(targetDomainId));
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.First);
+				this.startExecFloorService(floor);
+				this.requestYield();
+				return;
+			}
+			if (!this.setProgramHeapFloor(staticEnd)) {
+				this.hardHalt();
+				return;
+			}
 		}
+		this.commitExecutionTransfer(functionAddress);
+	}
+
+	private startExecFloorService(floor: number): void {
+		this.execFloorArgs[0] = this.heapAllocator.allocatorStateOffset();
+		this.execFloorArgs[1] = floor;
+		this.beginHeapService(this.systemImage.heapServiceSetFloor, this.execFloorArgs);
+	}
+
+	private finishExecFloorService(): void {
+		const management = this.heapAllocator.managementOffset();
+		const stage = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET);
+		if (stage === HeapServiceExecStage.Idle) return;
+		this.currentInstructionPc = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
+		this.lastPc = this.activeThread.currentFrame!.pc - INSTRUCTION_BYTES;
+		this.lastExecutionDomainId = this.activeExecutionDomainId;
+		const floor = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET);
+		if (this.heapServiceResult() !== 0) {
+			this.heapAllocator.publishFloor(floor);
+			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Idle);
+			this.commitExecutionTransfer(
+				this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
+				this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET),
+			);
+		} else if (stage === HeapServiceExecStage.First) {
+			// A refused floor has not changed the arena. Keep the original
+			// collector retry at this safe boundary until it too is ported.
+			this.luaHeap.collectRuntime();
+			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Retry);
+			this.startExecFloorService(floor);
+		} else {
+			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Idle);
+			this.hardHalt();
+		}
+	}
+
+	private commitExecutionTransfer(functionAddress: number, busSignals = MAPPED_BUS_MASTER_CPU): void {
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			functionAddress,
-			MAPPED_BUS_MASTER_CPU,
+			busSignals,
 		)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
@@ -2035,8 +2135,20 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
-			this.runUntilDepthInstrumented(0, instructionBudget, true);
-			return RunResult.Yielded;
+			this.runKind = kind;
+			try {
+				this.runUntilDepthInstrumented(0, instructionBudget, true);
+				if (!this.heapServiceActive()) {
+					try {
+						this.finishExecFloorService();
+					} catch (error) {
+						this.handleRunLoopError(error);
+					}
+				}
+				return this.hardHalted ? RunResult.Halted : RunResult.Yielded;
+			} finally {
+				this.runKind = CpuRunKind.Idle;
+			}
 		}
 		if (this.pendingAllocation !== null) {
 			this.instructionBudgetRemaining = instructionBudget;

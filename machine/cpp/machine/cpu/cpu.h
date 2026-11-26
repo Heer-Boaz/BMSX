@@ -464,6 +464,8 @@ private:
 		MappedBusSignals busSignals
 	);
 	void executeFunctionAddress(u32 functionAddress);
+	void commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSignals);
+	void finishExecutionFloor();
 	bool setProgramHeapFloor(u32 staticEnd);
 	void executeControlWrite(CallFrame& frame, int source, int field);
 	bool retargetsHaltedFrame(const Thread& thread, int depth) const {

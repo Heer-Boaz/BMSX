@@ -344,6 +344,36 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
 	}
 	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
+	if ((readLE32(header + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) != 0u) {
+		if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || image->romFunctions.mappedCode
+			|| readLE32(header + BLUA32_IMAGE_BYTE_COUNT_OFFSET) < HEAP_SERVICE_IMAGE_HEADER_SIZE)
+			throw BMSX_RUNTIME_ERROR("Heap service requires an extended linked System ROM image.");
+		Span<const u8> bytes;
+		m_executionAddressSpace.bindReadOnlyView(executionDomainId,
+			executionBoot.imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, sizeof(u32), bytes);
+		const u32 address = readLE32(bytes.data());
+		const u32 offset = address - readLE32(header + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET);
+		const u32 size = readLE32(header + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET);
+		if ((address & 3u) != 0u || offset > size || HEAP_SERVICE_DESCRIPTOR_SIZE > size - offset
+			|| address >= SYSTEM_ROM_SIZE || HEAP_SERVICE_DESCRIPTOR_SIZE > SYSTEM_ROM_SIZE - address)
+			throw BMSX_RUNTIME_ERROR("Heap service descriptor is outside System ROM RODATA.");
+		m_executionAddressSpace.bindReadOnlyView(executionDomainId, address, HEAP_SERVICE_DESCRIPTOR_SIZE, bytes);
+		const u8* descriptor = bytes.data();
+		const u32 values = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
+		const u32 frames = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
+		if (readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET) != HEAP_SERVICE_DESCRIPTOR_VERSION
+			|| values == 0u || values > HEAP_SERVICE_VALUE_COUNT || frames == 0u || frames > HEAP_SERVICE_FRAME_COUNT)
+			throw BMSX_RUNTIME_ERROR("Heap service descriptor does not fit the private CPU stack.");
+		const u8* functions = descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
+		for (u32 index = 0; index < static_cast<u32>(HeapServiceOperation::Count); ++index) {
+			const u32 entry = readLE32(functions + index * sizeof(u32));
+			const auto* version = image->romFunctions.find(entry);
+			if (!version || version->upvalueCount != 0u || version->entry.registerCapacity() > values
+				|| (version->entry.flags & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) != BLUA32_FUNCTION_STATIC)
+				throw BMSX_RUNTIME_ERROR("Heap service descriptor does not name a fixed System ROM activation.");
+		}
+		image->heapServiceSetFloor = readLE32(functions + static_cast<u32>(HeapServiceOperation::SetFloor) * sizeof(u32));
+	}
 	if (update == ExecutionImageUpdate::Replace) {
 		admitImageReplacement(*image);
 		if (executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
@@ -857,14 +887,59 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	} else if (const auto targetBoot = m_executionAddressSpace.resolveDomain(*targetDomainId)) {
 		staticEnd = targetBoot->staticEnd;
 	}
-	if (staticEnd && !setProgramHeapFloor(*staticEnd)) {
-		hardHalt();
-		return;
+	if (staticEnd) {
+		if (const u32 service = m_systemImage->heapServiceSetFloor) {
+			const u32 management = m_heapAllocator.managementOffset();
+			const u32 floor = m_heapAllocator.floorOffset(*staticEnd);
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET, functionAddress);
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET, floor);
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, m_currentInstructionPc);
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET,
+				targetDomainId ? executionBusSignalsForDomain(*targetDomainId) : MAPPED_BUS_MASTER_CPU);
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, static_cast<u32>(HeapServiceExecStage::First));
+			const std::array arguments{m_heapAllocator.stateOffset(), floor};
+			beginHeapService(service, arguments);
+			requestYield();
+			return;
+		}
+		if (!setProgramHeapFloor(*staticEnd)) {
+			hardHalt();
+			return;
+		}
 	}
+	commitExecutionTransfer(functionAddress, MAPPED_BUS_MASTER_CPU);
+}
+
+void CPU::finishExecutionFloor() {
+	const u32 management = m_heapAllocator.managementOffset();
+	const u32 stageAddress = management + HEAP_SERVICE_EXEC_STAGE_OFFSET;
+	const auto stage = static_cast<HeapServiceExecStage>(m_memory.readRamRecordWord(stageAddress));
+	if (stage == HeapServiceExecStage::Idle) return;
+	m_currentInstructionPc = m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
+	lastPc = m_activeThread->currentFrame->readControl(FrameField::Pc) - INSTRUCTION_BYTES;
+	m_lastExecutionDomainId = m_activeExecutionDomainId;
+	const u32 floor = m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET);
+	if (heapServiceResult() != 0u) {
+		m_heapAllocator.publishFloor(floor);
+		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Idle));
+		commitExecutionTransfer(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
+			static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET)));
+	} else if (stage == HeapServiceExecStage::First) {
+		m_luaHeap.collectRuntime();
+		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Retry));
+		const std::array arguments{m_heapAllocator.stateOffset(), floor};
+		beginHeapService(m_systemImage->heapServiceSetFloor, arguments);
+	} else {
+		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Idle));
+		hardHalt();
+	}
+}
+
+void CPU::commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSignals) {
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
 		functionAddress,
-		MAPPED_BUS_MASTER_CPU
+		busSignals
 	)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
@@ -2431,8 +2506,23 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
 	if (heapServiceActive()) {
+		m_runKind = kind;
+		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
-		return RunResult::Yielded;
+		if (!heapServiceActive()) {
+			try {
+				finishExecutionFloor();
+			} catch (const LuaOutOfMemorySignal&) {
+				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
+				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
+			} catch (const LuaThrownValueError& error) {
+				if (!handleThreadError(error.value)) enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
+			} catch (const LuaExecutionError& error) {
+				const auto value = m_luaFaultErrorValues[error.reason];
+				if (!handleThreadError(value)) enterLuaFaultException(error.reason, value);
+			}
+		}
+		return (m_runSignals & RunHardHalted) != 0u ? RunResult::Halted : RunResult::Yielded;
 	}
 	if (allocationParked()) {
 		instructionBudgetRemaining = instructionBudget;

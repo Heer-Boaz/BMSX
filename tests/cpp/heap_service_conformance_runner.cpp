@@ -9,6 +9,7 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
+#include "spec/bmsx/heap_service.h"
 #include "spec/bmsx/model.h"
 
 namespace {
@@ -30,12 +31,17 @@ std::vector<u8> loadFile(const char* path) {
 
 int main(int argc, char** argv) {
 	try {
-		if (argc != 4) throw std::runtime_error("Expected system ROM, trace and cross-core checkpoint");
+		if (argc < 4 || argc > 6) throw std::runtime_error("Expected system ROM, trace, cross-core checkpoint, and optional cartridge ROMs");
 		const auto rom = loadFile(argv[1]);
+		const auto cart = argc >= 5 ? loadFile(argv[4]) : std::vector<u8>{};
+		const auto secondCart = argc == 6 ? loadFile(argv[5]) : std::vector<u8>{};
+		CartridgeSocketMediaPair cartridges{};
+		if (argc >= 5) cartridges[0] = CartridgeCardMedia{std::span<const u8>(cart), {}, false};
+		if (argc == 6) cartridges[1] = CartridgeCardMedia{std::span<const u8>(secondCart), {}, false};
 		std::ifstream trace(argv[2]);
 		if (!trace) throw std::runtime_error("Cannot open trace");
 		ProbeInput input;
-		Runtime runtime({rom, {}, PSX_MACHINE_SPEC}, input);
+		Runtime runtime({rom, cartridges, PSX_MACHINE_SPEC}, input);
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
 		auto& memory = runtime.machine.memory;
@@ -63,6 +69,28 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.heapServiceResult() << '\n';
 					break;
 				}
+				case 'E': {
+					int cycles;
+					trace >> cycles;
+					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_SERVICE_EXEC_STAGE_OFFSET);
+					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
+						<< cpu.heapServiceActive() << ' ' << stage << ' ' << memory.ramBusEnd()
+						<< ' ' << static_cast<int>(cpu.activeCartridgeSlot()) << '\n';
+					break;
+				}
+				case 'A': {
+					u32 bytes;
+					trace >> bytes;
+					std::cout << cpu.heapAllocator().allocate(bytes, true) << '\n';
+					break;
+				}
+				case 'C': {
+					const auto values = runtime.readCompletionValues();
+					std::cout << (values.size() == 0 ? 0 : asInteger(values.get(0))) << '\n';
+					break;
+				}
+				case 'F': std::cout << cpu.captureRuntimeState().hardHalted << '\n'; break;
 				case 'T': {
 					runtime.frameLoop.beginFrameState(runtime, 1000000, 0);
 					const auto before = scheduler.nowCycles();
@@ -77,6 +105,12 @@ int main(int argc, char** argv) {
 					u32 address, word;
 					trace >> address >> word;
 					memory.writeRamRecordWord(address, word);
+					break;
+				}
+				case 'O': {
+					u32 address, word;
+					trace >> address >> word;
+					memory.writeMappedWord(address, word);
 					break;
 				}
 				case 'H': {

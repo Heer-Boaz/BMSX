@@ -20,6 +20,9 @@ public:
 	explicit HeapAllocator(Memory& memory);
 
 	u32 managementOffset() const { return m_management; }
+	u32 stateOffset() const { return m_arena.state; }
+	u32 floorOffset(u32 address) const;
+	void publishFloor(u32 offset);
 	void reset(u32 floorAddress);
 	bool setFloor(u32 floorAddress);
 	u32 floorAddress() const;
@@ -36,8 +39,6 @@ public:
 	void shrinkBacking(u32 address, u32 retainedBytes);
 
 private:
-	u32 floorOffset(u32 address) const;
-
 	Memory& m_memory;
 	u32 m_management;
 	bmsx_dlmalloc_arena m_arena;

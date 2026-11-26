@@ -31,14 +31,18 @@ void HeapAllocator::reset(u32 floorAddress) {
 	m_memory.invalidateRamWrite(m_management, RUNTIME_MANAGEMENT_SIZE);
 	const u32 floor = floorOffset(floorAddress);
 	bmsx_dlmalloc_reset(m_arena, floor, m_management);
-	m_memory.setRamBusEnd(RAM_BASE + floor);
+	publishFloor(floor);
 }
 
 bool HeapAllocator::setFloor(u32 floorAddress) {
 	const u32 floor = floorOffset(floorAddress);
 	if (!bmsx_dlmalloc_set_floor(m_arena, floor)) return false;
-	m_memory.setRamBusEnd(RAM_BASE + floor);
+	publishFloor(floor);
 	return true;
+}
+
+void HeapAllocator::publishFloor(u32 offset) {
+	m_memory.setRamBusEnd(RAM_BASE + offset);
 }
 
 u32 HeapAllocator::floorAddress() const { return m_memory.ramBusEnd(); }

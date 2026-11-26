@@ -7,6 +7,7 @@ export const HEAP_STRING_METADATA_OFFSET = 0x300;
 export const HEAP_COLLECTION_TARGET_OFFSET = 0x340;
 export const HEAP_GC_CONTROL_OFFSET = 0x344;
 export const HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0;
+const ALLOCATOR_STATE_OFFSET = 0x400;
 
 const PAGE_MASK = HEAP_PAGE_SIZE - 1;
 
@@ -16,12 +17,13 @@ export class HeapAllocator {
 
 	public constructor(private readonly memory: Memory) {
 		this.management = (memory.ramByteCount() & ~PAGE_MASK) - RUNTIME_MANAGEMENT_SIZE;
-		this.arena = memory.bindDlmalloc(this.management + 0x400);
+		this.arena = memory.bindDlmalloc(this.allocatorStateOffset());
 		this.reset(DYNAMIC_RAM_BASE);
 	}
 
 	public managementOffset(): number { return this.management; }
-	private floorOffset(address: number): number {
+	public allocatorStateOffset(): number { return this.management + ALLOCATOR_STATE_OFFSET; }
+	public floorOffset(address: number): number {
 		const offset = Math.min(Math.max(address, DYNAMIC_RAM_BASE) - RAM_BASE, this.management);
 		return (offset + PAGE_MASK) & ~PAGE_MASK;
 	}
@@ -31,15 +33,18 @@ export class HeapAllocator {
 		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);
 		const floor = this.floorOffset(floorAddress);
 		this.arena.reset(floor, this.management);
-		this.memory.setRamBusEnd(RAM_BASE + floor);
+		this.publishFloor(floor);
 	}
 
 	public setFloor(floorAddress: number): boolean {
 		const floor = this.floorOffset(floorAddress);
 		if (this.arena.setFloor(floor) === 0) return false;
-		this.memory.setRamBusEnd(RAM_BASE + floor);
+		this.publishFloor(floor);
 		return true;
 	}
+
+	/** The allocator has accepted this offset; now publish the system bus decode. */
+	public publishFloor(offset: number): void { this.memory.setRamBusEnd(RAM_BASE + offset); }
 
 	public floorAddress(): number { return this.memory.ramBusEnd(); }
 	public capacityBytes(): number { return RAM_BASE + this.management - this.floorAddress(); }

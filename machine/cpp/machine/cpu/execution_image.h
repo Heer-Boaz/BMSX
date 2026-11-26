@@ -173,6 +173,7 @@ struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
+	u32 heapServiceSetFloor = 0;
 	u32 constantBase = 0;
 	ConstValueSpan constPool;
 	// Derived from the immutable pool, including during restore. Only a

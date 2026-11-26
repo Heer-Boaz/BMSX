@@ -2078,6 +2078,16 @@ Writing `EXEC` supplies a **function-record address**, not an instruction-entry 
 
 Before reading the record, `EXEC` sets the language-heap floor from the target image's static storage ([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). A record address in system ROM selects the system image, and one in the cartridge window selects the image in the selected socket; a record elsewhere keeps the active image's floor. Lowering the floor always succeeds. If raising it would cover heap storage still in use, `EXEC` first completes a full collection. If storage below the new floor is still in use, execution hard-halts before any instruction of the target runs, so none of its DATA or BSS has been written. A floor change applies to the system bus at once. Lowering the floor removes the newly covered range from the bus; raising it makes the released range available, with its current contents. This applies to instruction fetch and data transfer alike.
 
+When the [system image supplies a heap-service descriptor](program-images.md#sec-memory-blua32-executable-image),
+the floor operation runs in the resident firmware and consumes ordinary
+processor cycles. Both the old program and entry into the target wait while
+the service is running. Device time advances and interrupt requests remain
+pending; an interrupt handler does not enter during the transfer. The
+cartridge socket is selected when `EXEC` begins. The old bus limit holds
+until the new floor is admitted. If the first attempt refuses the new
+floor, the processor completes a full collection and calls the service
+once more before admitting or refusing the transfer.
+
 A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write and hard-halt state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
 
 ### HALT {#sec-cpu-halt}
