@@ -82,6 +82,7 @@
 		"test:bios-float-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/bios_float/run.ts",
 		"test:pow-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/pow/run.ts",
 		"test:heap-allocator-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/run.ts",
+		"test:bios-dlmalloc-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/blua.ts",
 		"test:symbols-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
 		"test:host-shortcuts-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",
 		"test:keyboard-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/keyboard/run.ts",
