@@ -132,6 +132,9 @@ end
 
 return {
 	internal = {
+		white_offset = 0x01, -- T:86 H:91
+		object_count_offset = 0x70, -- T:45 H:47
+		sweep_link_offset = 0x74, -- T:46 H:48
 		decode_gc_phase = decode_gc_phase,
 		phase = phase,
 		active = active,

@@ -4,7 +4,7 @@ module<const>
 -- T = lua_heap.ts; C = lua_heap.cpp. Inputs and the result use RAM offsets.
 -- T/C's HeapAllocator adds RAM_BASE to issued addresses, so the two
 -- descriptors keep absolute pointers and preserve a zero for no backing.
-local arena<const> = require('kernel/dlmalloc') -- T:94 C:112
+local arena<const> = require('kernel/dlmalloc') -- T:94,271 C:112,278
 local ram_base<const> = 0x08000000 -- T:95,97,102 C:113,115,120 A:58 B:56 M:6 N:12; allocator address translation
 local gc_object_prefix<const> = 8 -- T:93 C:111 O:5-6,9 P:8-9,13; GC object alignment
 
@@ -37,4 +37,20 @@ local reserve_record<const> = function(state, bytes, object, backing_bytes, back
 	return address -- T:112 C:130
 end
 
-return { bmsx_dlmalloc_reserve_record = reserve_record }
+local release_record<const> = function(state, offset, bytes, occupied_offset) -- T:270 C:277
+	arena.bmsx_dlmalloc_free(state, offset) -- T:271 C:278 A:61 B:59
+	local occupied<const>: *u32 = ram_base + occupied_offset -- T:272 C:279
+	*occupied = *occupied - bytes -- T:273 C:280
+end
+
+local release_object<const> = function(state, offset, bytes, occupied_offset) -- T:276 C:283
+	local kind<const>: *u8 = ram_base + offset -- T:277 C:284
+	*kind = 0 -- T:277 C:284
+	release_record(state, offset - gc_object_prefix, bytes, occupied_offset) -- T:278 C:285
+end
+
+return {
+	bmsx_dlmalloc_reserve_record = reserve_record,
+	bmsx_dlmalloc_release_record = release_record,
+	bmsx_dlmalloc_release_object = release_object,
+}

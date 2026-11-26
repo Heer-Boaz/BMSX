@@ -88,6 +88,7 @@
 		"test:bios-newt-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/newt.ts",
 		"test:bios-newt-native-gate": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/native_newt.ts",
 		"test:bios-full-gc-strings": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_strings.ts",
+		"test:bios-gc-objects": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_objects.ts",
 		"test:symbols-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
 		"test:host-shortcuts-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",
 		"test:keyboard-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/keyboard/run.ts",

@@ -6,8 +6,8 @@ import { test } from 'node:test';
 const basis = '0e7097869e82c2129fd4f5babfd4cecadba76d5d';
 const port = 'machine/bios/kernel/dlmalloc_record.lua';
 const pins = [
-	['T', 'machine/ts/machine/cpu/lua_heap.ts', [[92, 113], [265, 268]]],
-	['C', 'machine/cpp/machine/cpu/lua_heap.cpp', [[110, 131], [272, 275]]],
+	['T', 'machine/ts/machine/cpu/lua_heap.ts', [[92, 113], [265, 279]]],
+	['C', 'machine/cpp/machine/cpu/lua_heap.cpp', [[110, 131], [272, 286]]],
 	['A', 'machine/ts/machine/cpu/heap_allocator.ts', [[56, 59], [61, 61]]],
 	['B', 'machine/cpp/machine/cpu/heap_allocator.cpp', [[54, 57], [59, 59]]],
 	['O', 'machine/ts/machine/cpu/gc_object.ts', [[5, 6], [9, 9]]],
@@ -16,7 +16,7 @@ const pins = [
 	['N', 'machine/cpp/spec/bmsx/memory_map.h', [[12, 12]]],
 ] as const;
 
-test('the BIOS compound allocation traces every fixed native reservation, write and failure path', () => {
+test('the BIOS record allocator traces reservation, release, accounting and failure paths', () => {
 	const coverage = new Map<string, Map<number, string>>();
 	for (const [key, path, ranges] of pins) {
 		const lines = execFileSync('git', ['show', basis + ':' + path], { encoding: 'utf8' }).split('\n');
@@ -29,8 +29,11 @@ test('the BIOS compound allocation traces every fixed native reservation, write 
 		}
 		coverage.set(key, operations);
 	}
-	for (const [index, line] of readFileSync(port, 'utf8').split('\n').entries()) {
-		if (/^\s*(?:$|--|module<const>$|end$|return \{ bmsx_dlmalloc_reserve_record = reserve_record \}$)/.test(line)) continue;
+	const lines = readFileSync(port, 'utf8').split('\n');
+	const exports = lines.indexOf('return {');
+	assert.ok(exports > 0);
+	for (const [index, line] of lines.slice(0, exports).entries()) {
+		if (/^\s*(?:$|--|module<const>$|end$)/.test(line)) continue;
 		const mark = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
 		assert.ok(mark, `${port}:${index + 1}: missing origin for ${line.trim()}`);
 		for (const entry of mark[1].trim().split(/\s+/)) {
