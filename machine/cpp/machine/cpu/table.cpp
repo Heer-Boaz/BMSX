@@ -206,7 +206,7 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 bytes = storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash);
 	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
-		if (GcHeap::pacedPhase(m_heap->phase())) m_heap->assistBeforeReservation(bytes);
+		if (GcHeap::pacedPhase(m_heap->phase())) m_heap->assistBeforeReservation(bytes, valueTable(m_address), key, value);
 	}
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;

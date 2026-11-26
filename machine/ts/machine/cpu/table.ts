@@ -667,7 +667,7 @@ export class TableRecords {
 				: budget.prepareAllocation(requested - previous, owner, key, value));
 			if (admitted) {
 				const bytes = TableRecords.storageBytes(plan.array > array ? plan.array : 0, plan.keepHash ? 0 : plan.hash);
-				if (policy !== HashStore.Resume && gcPacedPhase(this.heap.phase())) this.heap.assistBeforeReservation(bytes);
+				if (policy !== HashStore.Resume && gcPacedPhase(this.heap.phase())) this.heap.assistBeforeReservation(bytes, owner, key, value);
 				const slot = this.resize(record, key, value, previous, requested);
 				if (slot !== HASH_STORE_DECLINED) return slot;
 			}

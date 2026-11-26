@@ -926,7 +926,7 @@ bool GcHeap::reservationAssistDue(size_t requested) const {
 		|| occupiedAfterRequest >= arena.capacityBytes();
 }
 
-void GcHeap::assistBeforeReservation(size_t requested) {
+void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1, Value root2, u32 growingThread) {
 	// Only a published mutator reservation in a paced phase reaches here.
 	const size_t occupiedAfterRequest = arena.occupiedBytes() + requested;
 	const size_t capacity = arena.capacityBytes();
@@ -941,7 +941,7 @@ void GcHeap::assistBeforeReservation(size_t requested) {
 		const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY);
 		allowance = std::min<u64>(GC_STEP_WORDS, work / runway - paid);
 	}
-	step(valueNil(), valueNil(), valueNil(), 0u, false, allowance);
+	step(root0, root1, root2, growingThread, false, allowance);
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {

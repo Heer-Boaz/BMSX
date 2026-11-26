@@ -98,7 +98,7 @@ public:
 		size_t limit = GC_STEP_WORDS);
 	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
-	void assistBeforeReservation(size_t requested);
+	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark();
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());

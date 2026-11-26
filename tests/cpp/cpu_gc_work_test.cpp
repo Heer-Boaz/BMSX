@@ -230,11 +230,15 @@ void physicalReservationsPayMarkWork() {
 	do require(arena.allocate(ballastBytes, true) != 0u, "reserve storage outside the language budget");
 	while (arena.unoccupiedBytes() > runwayRequests * (5u * slots + 64u));
 	heap.setCollectionTarget(static_cast<u32>(heap.capacity()));
+	const u32 roots[] = {cpu.createTable().address(), cpu.createTable().address(), cpu.createTable().address()};
 	const u8 white = gc.white();
 	const size_t started = gc.step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
 	require(gc.phase() == GcPhase::Mark && started != 0u
 		&& machine.memory.readRamRecordWord(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID) == started,
 		"a cycle starts marking and its first quantum pays the new pace");
+	const auto block = heap.reserveBacking(2048, 0, valueTable(roots[0]), valueTable(roots[1]), valueTable(roots[2]));
+	for (const u32 root : roots) require(gc.isAlive(root), "physical reservation traces each temporary root");
+	arena.free(block);
 	const u32 runway = arena.unoccupiedBytes();
 	cpu.instructionBudgetRemaining = 29;
 	for (u32 requests = 0; !gc.finalMarkPending(); ++requests) {

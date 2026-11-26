@@ -848,7 +848,7 @@ export class GcHeap {
 		this.memory.writeRamRecordWord(this.controlOffset + GC_PACE_PAY_AT, Math.min(MAIN_RAM_SIZE, Math.max(0, next)));
 	}
 
-	public assistBeforeReservation(requested: number): void {
+	public assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
 		const occupiedAfterRequest = this.arena.occupiedBytes() + requested;
 		const capacity = this.arena.capacityBytes();
 		if (occupiedAfterRequest < this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAY_AT)
@@ -861,7 +861,7 @@ export class GcHeap {
 			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY);
 			allowance = Math.min(GC_STEP_WORDS, Math.trunc(work / runway) - paid);
 		}
-		this.step(valueNil(), valueNil(), valueNil(), 0, false, allowance);
+		this.step(root0, root1, root2, growingThread, false, allowance);
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,

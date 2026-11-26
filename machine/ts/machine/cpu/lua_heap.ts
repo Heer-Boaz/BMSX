@@ -72,11 +72,11 @@ export class LuaHeap {
 		return recovery;
 	}
 
-	private assistBeforeReservation(requested: number): void {
+	private assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
 		// BIOS String keys precede the collector view, but not the RAM
 		// phase latch owned by the language arena.
 		if (gcPacedPhase(decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)))) {
-			this.cpu.gc.assistBeforeReservation(requested);
+			this.cpu.gc.assistBeforeReservation(requested, root0, root1, root2, growingThread);
 		}
 	}
 
@@ -111,11 +111,11 @@ export class LuaHeap {
 			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareAllocation(charged, root0, root1, root2)
 				: this.usedBytes() + charged <= this.capacity();
 			if (!admitted) return 0;
-			if (mode === LuaAllocationMode.Scheduled) this.assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes);
+			if (mode === LuaAllocationMode.Scheduled) this.assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes, root0, root1, root2);
 			return this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 		}
 		let recovery = this.admit(charged, root0, root1, root2);
-		this.assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes);
+		this.assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes, root0, root1, root2);
 		for (;;) {
 			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
 			if (address !== 0) return address;
@@ -126,7 +126,7 @@ export class LuaHeap {
 	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
 	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): number {
 		let recovery = logicalBytes !== 0 ? this.admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery.CurrentOrFresh;
-		this.assistBeforeReservation(bytes);
+		this.assistBeforeReservation(bytes, root0, root1, root2, growingThread);
 		for (;;) {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
@@ -140,7 +140,7 @@ export class LuaHeap {
 		const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
 		const root = entry === 0 ? valueNil() : valueClosure(entry);
 		let recovery = this.admit(charged, root);
-		this.assistBeforeReservation(charged + GC_OBJECT_PREFIX);
+		this.assistBeforeReservation(charged + GC_OBJECT_PREFIX, root);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
 			const base = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false);
@@ -167,7 +167,7 @@ export class LuaHeap {
 	public reserveThreadControls(address: number, field: ThreadField.FrameBlock | ThreadField.ProtectedBlock, capacity: number, previous: number, root: Value): number {
 		const stride = field === ThreadField.FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
 		let recovery = this.admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);
-		this.assistBeforeReservation(capacity * stride);
+		this.assistBeforeReservation(capacity * stride, root, valueNil(), valueNil(), address);
 		for (;;) {
 			const block = this.cpu.gc.threads.growControls(address, field, capacity);
 			if (block !== 0) return block;
@@ -190,7 +190,7 @@ export class LuaHeap {
 		let recovery = requested > previous
 			? this.admit(requested - previous, root, valueNil(), valueNil(), address)
 			: LuaAllocationRecovery.CurrentOrFresh;
-		this.assistBeforeReservation(requested);
+		this.assistBeforeReservation(requested, root, valueNil(), valueNil(), address);
 		const arena = this.cpu.heapAllocator;
 		for (;;) {
 			const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);

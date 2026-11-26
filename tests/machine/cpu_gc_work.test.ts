@@ -228,12 +228,16 @@ test('physical reservations pace marking while the logical budget is below its t
 	do assert.notEqual(arena.allocate(ballastBytes, true), 0);
 	while (arena.unoccupiedBytes() > runwayRequests * (5 * slots + 64));
 	heap.setCollectionTarget(heap.capacity());
+	const roots = [cpu.createTable(), cpu.createTable(), cpu.createTable()];
 	const white = gc.white();
 	const started = gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	assert.equal(gc.phase(), GcPhase.Mark);
 	assert.ok(started > 0);
 	assert.equal(memory.readRamRecordWord(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID), started,
 		'the first marking quantum pays the new pace');
+	const block = heap.reserveBacking(2048, 0, valueTable(roots[0]), valueTable(roots[1]), valueTable(roots[2]));
+	for (const root of roots) assert.ok(gc.isAlive(root), 'physical reservation traces each temporary root');
+	arena.free(block);
 	const runway = arena.unoccupiedBytes();
 	cpu.instructionBudgetRemaining = 29;
 	for (let requests = 0; !gc.finalMarkPending(); ++requests) {
