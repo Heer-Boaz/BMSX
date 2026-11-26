@@ -50,6 +50,7 @@ local release_object<const> = function(state, offset, bytes, occupied_offset) --
 end
 
 return {
+	internal = { object_prefix = gc_object_prefix },
 	bmsx_dlmalloc_reserve_record = reserve_record,
 	bmsx_dlmalloc_release_record = release_record,
 	bmsx_dlmalloc_release_object = release_object,

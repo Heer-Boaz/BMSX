@@ -178,7 +178,7 @@ local begin_allocation_recovery<const> = function(state, next) -- G:1111-1117 K:
 end
 
 return {
-	internal = { admitted_total = admitted_total, control_delta = control_delta },
+	internal = { admitted_total = admitted_total, control_delta = control_delta, work_word_cycles = work_word_cycles },
 	heap_capacity = heap_capacity, allocation_debt = allocation_debt, logical_fits = logical_fits,
 	logical_assist_pressure = logical_assist_pressure, logical_assist_allowance = logical_assist_allowance,
 	limit_assist_allowance = limit_assist_allowance, spend_assist_allowance = spend_assist_allowance,

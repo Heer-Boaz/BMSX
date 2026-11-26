@@ -87,6 +87,7 @@
 		"test:bios-exec-heap-floor": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/exec_floor.ts",
 		"test:bios-newt-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/newt.ts",
 		"test:bios-closure-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closure_service.ts",
+		"test:bios-gc-fused-record": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_fused_record.ts",
 		"test:bios-table-growth-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_growth_service.ts",
 		"test:bios-table-resize-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_resize_service.ts",
 		"test:bios-newt-native-gate": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/native_newt.ts",

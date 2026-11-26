@@ -15,6 +15,7 @@ const pins = [
 	['N', 'machine/ts/machine/cpu/cpu.ts'], ['P', 'machine/cpp/machine/cpu/cpu_table.cpp'],
 	['U', 'machine/ts/machine/cpu/gc_heap.ts'], ['V', 'machine/cpp/machine/cpu/gc_heap.cpp'], ['W', 'machine/cpp/machine/cpu/gc_heap.h'],
 	['J', 'machine/ts/machine/cpu/value.ts'], ['K', 'machine/cpp/machine/cpu/value.h'], ['M', 'machine/ts/spec/bmsx/memory_map.ts'],
+	['A', 'machine/ts/machine/common/numeric.ts'], ['B', 'machine/cpp/machine/common/numeric.h'],
 ] as const;
 
 test('the firmware Table header and both reservation backing offsets match their record owner', () => {

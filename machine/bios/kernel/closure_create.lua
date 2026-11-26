@@ -19,12 +19,13 @@ struct rom_closure
 	prototype: addr -- L:39,73 R:24 H:58
 end
 
+local canonical_bytes<const> = 12 -- T:227-228 C:242-243 L:40-43 H:59-60,64-66; fixed export of sizeof(rom_closure)
+
 local create_closure<const> = function(state, control, occupied, function_address, execution_domain) -- T:226 C:241 N:1276-1279 P:161-165,585
-	local bytes<const> = sizeof(rom_closure) -- T:227-228 C:242-243 L:40-43 H:59-60,64-66; zero captures and no tail
-	local base<const> = arena.bmsx_dlmalloc_allocate(state, bytes + object_prefix, 1) -- T:233 C:248 A:56-58 B:54-56
+	local base<const> = arena.bmsx_dlmalloc_allocate(state, canonical_bytes + object_prefix, 1) -- T:233 C:248 A:56-58 B:54-56
 	if base == 0 then return 0 end -- T:232,234,255 C:247-248,269; retire refusal to the caller before retrying
 	local charge<const>: *u32 = ram_base + occupied -- T:249,272-274 C:263,283-285
-	*charge = *charge + bytes -- T:235,241-244,249,274 C:249,255-259,263,285; the empty cell loop, including its unused white sample, reduces to this charge
+	*charge = *charge + canonical_bytes -- T:235,241-244,249,274 C:249,255-259,263,285; the empty cell loop, including its unused white sample, reduces to this charge
 	local offset<const> = base + object_prefix -- T:250 C:264
 	local address<const> = ram_base + offset -- A:58 B:56 N:1277-1279 P:163-165
 	local record<const>: *rom_closure = address -- L:61,72 R:18 N:1278 P:164
@@ -37,4 +38,4 @@ local create_closure<const> = function(state, control, occupied, function_addres
 	return offset -- N:1281 P:166,587; the CPU publishes the canonical index and destination
 end
 
-return { create_closure = create_closure }
+return { create_closure = create_closure, canonical_bytes = canonical_bytes }

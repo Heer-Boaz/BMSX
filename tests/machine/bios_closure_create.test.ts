@@ -199,7 +199,7 @@ test('canonical ROM Closure firmware binds the mirrored record layout and source
 	}
 	const lines = source.split('\n');
 	assert.ok(lines.includes(`-- Source basis: ${basis}.`));
-	const exports = lines.indexOf('return { create_closure = create_closure }');
+	const exports = lines.findIndex(line => line.startsWith('return { create_closure = create_closure,'));
 	assert.ok(exports > 0);
 	for (const [index, line] of lines.slice(0, exports).entries()) {
 		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$)/.test(line)) continue;
