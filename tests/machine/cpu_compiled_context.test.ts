@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { integerConstant, numberConstantFromHost } from '../../toolchain/ts/lua/number';
-import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, ValueTag, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
@@ -18,7 +19,8 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileLuaSource, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -415,6 +417,52 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	assert.equal(writes[0], 1, 'an ordinary closed-cell write does not publish unrelated local definitions');
 	assert.equal(writes[2], 1, 'a pending numeric source is forwarded to the upvalue without an intermediate writeback');
 	assert.equal(r.get(3), valueInteger(2));
+});
+
+test('compiled SETUP forwards a new edge from a black closed cell in the second mark pass', () => {
+	const image = linkTestSystemBlua32(compileLuaSource(`
+local captured
+function set_captured(value)
+	captured = value
+	return 1
+end
+`));
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+		const { cpu, memory } = createTestSystemCpu(image, backend), { gc } = cpu;
+		runGuestToHalt(cpu, 1000);
+		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
+		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
+			runCompletionClosure(cpu, setter, [valueNil()], 1000);
+
+		const cell = ClosureRecord.captureAddress(memory, setter, 0), child = cpu.createTable();
+		for (let i = 0; i < 256 && gc.phase() !== GcPhase.MarkAgain; ++i)
+			gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.MarkAgain);
+		assert.equal(Upvalue.isOpen(memory, cell), false);
+		assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_COLOR_MASK, 3);
+		assert.equal(gc.isAlive(child), false);
+		const changed = memory.readRamRecordWord(gc.changedHeadOffset());
+
+		cpu.beginCompletionCall(setter, [valueTable(child)]);
+		let generatedExit: CompiledBlockExit | undefined;
+		if (backend === CpuExecutionBackend.JavaScript) {
+			const frame = cpu.rootThread.frameAtDepth(0), pc = frame.pc;
+			const page = frame.executionImage.compiledCodeLookup!.find(pc, 0)!;
+			const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+			const { region } = block, execute = region.execute;
+			Object.defineProperty(region, 'execute', { value: (...args: Parameters<typeof execute>) => {
+				const exit = execute(...args);
+				generatedExit = region.exits[exit].exit;
+				return exit;
+			} });
+		}
+		runGuestToHalt(cpu, 1000);
+		if (backend === CpuExecutionBackend.JavaScript)
+			assert.equal(generatedExit, CompiledBlockExit.Return, 'the generated store did not take a side exit');
+		assert.equal(Upvalue.load(memory, cell), valueTable(child));
+		assert.equal(gc.isAlive(child), true, 'the new edge is traced before final remark');
+		assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'the cell is not queued for a rescan');
+	}
 });
 
 test('an empty compiled open VARARG changes top without touching or growing the destination range', () => {

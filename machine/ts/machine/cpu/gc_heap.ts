@@ -213,6 +213,9 @@ export class GcHeap {
 	}
 	public writeClosedValue(address: number, tag: ValueTag, word: number): void {
 		if (!valueTagHasGcEdge(tag) || this.markColor(address) !== 3) return;
+		this.writeBlackClosedValue(address, tag, word);
+	}
+	public writeBlackClosedValue(address: number, tag: ValueTag, word: number): void {
 		if (this.phase() === GcPhase.MarkAgain) {
 			this.markValue(valueFromTag(tag, word));
 			this.creditBarrierMarks();
