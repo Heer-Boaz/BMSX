@@ -1859,6 +1859,7 @@ RunResult CPU::runLoop(
 			}
 			if (admission == GrantAdmission::Admitted && tableRebuild.record) {
 				advanceTableStore(*thread.currentFrame);
+				if (allocationParked()) return RunResult::ParkedAllocation;
 				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
 			}
 			switch (admission) {

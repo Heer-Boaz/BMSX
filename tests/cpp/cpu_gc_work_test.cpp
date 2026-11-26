@@ -414,6 +414,34 @@ void explicitCollectionAndNoReplay() {
 	}
 }
 
+void refusedCensusRetriesAtIssuePc() {
+	Machine m(image(OpCode::SETT, true));
+	auto& cpu = m.cpu;
+	cpu.luaHeap().setCollectionTarget(cpu.luaHeap().capacity());
+	auto table = cpu.createTable(1024, 0);
+	for (int i = 1; i <= 1024; ++i) table.setInteger(i, valueInteger(i));
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(table.address())); frame.registers.set(1, valueInteger(1025)); frame.setTop(2);
+	cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	require(cpu.collecting(), "start in an existing collector epoch");
+	while (cpu.heapAllocator().allocate(4088u, true)) {}
+	const auto grant = [&](int n) { return cpu.runUntilDepth(0, n, 0u, CpuRunKind::Scheduled); };
+	require(grant(1) == RunResult::Yielded && grant(240) == RunResult::ParkedAllocation, "scan precedes physical refusal");
+	for (const auto phase : {TableCensus::RetryCurrent, TableCensus::RetryFresh}) {
+		for (int pulses = 0; !cpu.allocationReady(); ++pulses) {
+			require(pulses < 128, "recovery must finish an epoch"); cpu.advanceAllocationRecovery();
+		}
+		cpu.resumeAllocation();
+		require(!cpu.allocationParked() && cpu.tableRebuild.census == phase && cpu.tableRebuild.density.cursor == 0,
+			"retry waits for an execution grant before scanning again");
+		const auto result = grant(240);
+		require(result == (phase == TableCensus::RetryCurrent ? RunResult::ParkedAllocation : RunResult::Yielded),
+			"only failure after the fresh scan faults");
+	}
+	require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY && cpu.readEpcWord() == m.rom.textAddress
+		&& !cpu.tableRebuild.record && isNil(table.getInteger(1025)), "WIDE store faults at issue without publishing");
+}
+
 void scheduledLogicalRefusalParks() {
 	Machine m(image(OpCode::SETT));
 	auto& cpu = m.cpu;
@@ -426,7 +454,10 @@ void scheduledLogicalRefusalParks() {
 	frame.registers.set(0, valueTable(owner.address())); frame.registers.set(1, valueInteger(slots + 1)); frame.setTop(2);
 	const auto garbage = cpu.createTable((budget.capacity() - budget.usedBytes() - 32768) / 5, 0).address();
 	require(!cpu.collecting() && budget.usedBytes() + 5 * slots > budget.capacity(), "the proposed growth exceeds logical headroom");
-	require(cpu.runUntilDepth(0, 1, 0u, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
+	constexpr int scanCycles = (slots - 64) / 4;
+	require(cpu.runUntilDepth(0, 1, 0u, CpuRunKind::Scheduled) == RunResult::Yielded && !cpu.allocationParked()
+		&& cpu.tableRebuild.density.cursor == 64, "an unfinished census is not a refused allocation");
+	require(cpu.runUntilDepth(0, scanCycles, 0u, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
 		"SETT parks before collecting on a logical refusal");
 	require(!cpu.collecting() && cpu.gcHeap().tableRecordAddress(garbage) != 0u && isNil(owner.getInteger(slots + 1)),
 		"issue neither collects nor publishes the store");
@@ -436,8 +467,8 @@ void scheduledLogicalRefusalParks() {
 	cpu.resumeAllocation();
 	require(!cpu.allocationParked() && cpu.gcHeap().tableRecordAddress(garbage) == 0u
 		&& cpu.tableRebuild.record == owner.address() && isNil(owner.getInteger(slots + 1)),
-		"recovery reserves the destination but does not execute the transfer");
-	cpu.runUntilDepth(0, 2 * slots * 5 / 16, 0u, CpuRunKind::Scheduled);
+		"recovery retries the placement before reserving the destination");
+	cpu.runUntilDepth(0, scanCycles + 2 * slots * 5 / 16, 0u, CpuRunKind::Scheduled);
 	require(cpu.instructionBudgetRemaining == 0 && owner.getInteger(slots + 1) == valueInteger(slots + 1) && isNil(frame.registers.get(7)),
 		"the reclaimed space admits the original store without executing its successor");
 }
@@ -1907,7 +1938,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		scheduledLogicalRefusalParks(); impossibleNewTableDoesNotPark(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
+		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); impossibleNewTableDoesNotPark(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

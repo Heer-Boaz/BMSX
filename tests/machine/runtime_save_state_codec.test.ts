@@ -1,4 +1,6 @@
 import { AllocationRecovery, PendingAllocationKind, type PendingAllocation } from '../../machine/ts/machine/cpu/cpu';
+import { TableCensus, TableRebuild } from '../../machine/ts/machine/cpu/table';
+import { LuaAllocationRecovery } from '../../machine/ts/machine/cpu/lua_heap';
 import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import assert from 'node:assert/strict';
@@ -554,7 +556,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			memoryWriteBlockedAddress: 0,
 			rebuild: { record: 0x8100, source: 0x8200, count: 256, storage: 0x9200, capacity: 512,
 				arrayStorage: 0x9100, arraySlots: 256, arrayCleared: 1280, cleared: 7168, homes: 256, cursor: 7, free: 498, collisions: 19, key: valueInteger(-9), value: valueTable(0x8500),
-				result: 1, destination: 2, wanted: 3, instructionPc: 0x5020 },
+				census: 0, recovery: 0, scanned: 0, live: 0, slots: 0, kept: 0, result: 1, destination: 2, wanted: 3, instructionPc: 0x5020 },
 			stringComparison: { left: 0x80000100, right: 0x1000, offset: 129, remaining: 199, order: -1, skipLess: true, skipTie: false },
 			concat: { registersLeft: 0, nextRegister: 0, length: 600, source: 0, offset: 3, instructionPc: 0x1014, destination: 31, hash: 0xfaced00d,
 				values: [valueInteger(-7)], lengths: [600], bytes: new Uint8Array([0, 0xff, 0x80]) },
@@ -585,6 +587,15 @@ for (const domain of [-1, 0, 1] as const) test(`runtime save-state codec preserv
 	const restored = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.equal(restored.cpuState.programExecutionDomainId, domain);
 	assert.equal(restored.cpuState.executionCartridgeSlot, state.cpuState.executionCartridgeSlot);
+});
+
+test('runtime save-state codec preserves a census partway through a density band', () => {
+	const state = createRuntimeSaveState();
+	const j = state.cpuState.rebuild = { ...new TableRebuild(), record: 0x8100, instructionPc: 0x5020,
+		key: valueInteger(8193), value: valueInteger(7), census: TableCensus.General,
+		recovery: LuaAllocationRecovery.Fresh, scanned: 4100, live: 3100, slots: 4096, kept: 3096 };
+	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.deepEqual(decoded.cpuState.rebuild, j);
 });
 
 test('runtime save-state codec preserves RAM, device, scheduler and CPU state', () => {

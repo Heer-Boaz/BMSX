@@ -158,6 +158,8 @@ void CPU::resumeAllocation() {
 	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
 		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(
 			assignment->key, assignment->value, assignment->extraHashSlots, this);
+		if (tableRebuild.census == TableCensus::RetryCurrent && pending.recovery == AllocationRecovery::RetryFresh)
+			tableRebuild.census = TableCensus::RetryFresh;
 	} else {
 		const auto& create = std::get<PendingTableCreation>(pending.operands);
 		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
@@ -181,7 +183,18 @@ void CPU::resumeAllocation() {
 
 void CPU::advanceTableStore(CallFrame& frame) {
 	const u32 receiver = tableRebuild.record;
-	instructionBudgetRemaining = TableRecord(m_heap, receiver).advanceRebuild(tableRebuild, instructionBudgetRemaining);
+	TableRecord table(m_heap, receiver);
+	const auto phase = tableRebuild.census;
+	if (phase == TableCensus::None) instructionBudgetRemaining = table.advanceRebuild(tableRebuild, instructionBudgetRemaining);
+	else {
+		m_currentInstructionPc = tableRebuild.instructionPc;
+		if (!table.advanceCensus(*this)) {
+			if (phase == TableCensus::RetryFresh) throw LuaOutOfMemorySignal{};
+			parkTableWrite(frame, receiver, tableRebuild.key, tableRebuild.value);
+			if (phase == TableCensus::RetryCurrent) m_pendingAllocation.recovery = AllocationRecovery::Fresh;
+			return;
+		}
+	}
 	if (tableRebuild.record || tableRebuild.result == TableStoreReturn::None) return;
 	// Result placement can grow a frame and collect. Do it only after both
 	// the replacement and its new edge have been published.

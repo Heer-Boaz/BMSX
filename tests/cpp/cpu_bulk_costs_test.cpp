@@ -171,6 +171,14 @@ void publishInPlaceArray(bool scalar) {
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(old+1)); r.set(2, valueInteger(73));
  const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
  grant(16); grant(1);
+ if (cpu.tableRebuild.density.cursor != 68 || cpu.tableRebuild.arrayStorage || cpu.instructionBudgetRemaining != 0)
+  throw std::runtime_error("first sixty-four tags included; one cycle scans four more before reservation");
+ const auto censusState = cpu.captureRuntimeState();
+ const auto censusRam = machine.memory.captureSaveState();
+ grant(495);
+ if (cpu.tableRebuild.arrayStorage != original || cpu.tableRebuild.arrayCleared || cpu.instructionBudgetRemaining != 0)
+  throw std::runtime_error("finishing the partial band must not borrow transfer cycles");
+ machine.memory.restoreSaveState(censusRam); cpu.restoreRuntimeState(censusState); grant(496);
  if (cpu.tableRebuild.arrayStorage != original || cpu.tableRebuild.arrayCleared != 16)
   throw std::runtime_error("in-place grant did not move sixteen tags");
  const auto state = cpu.captureRuntimeState();
@@ -205,8 +213,8 @@ void publishDisplacedArray(bool scalar, bool keepHash) {
  auto r = cpu.activeThread()->currentFrame->registers;
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(1025)); r.set(2, valueInteger(73));
  const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
- grant(16);
- if (cpu.tableRebuild.record != table.address() || cpu.tableRebuild.arrayStorage == original)
+ grant(16); grant(240);
+ if (cpu.tableRebuild.record != table.address() || !cpu.tableRebuild.arrayStorage || cpu.tableRebuild.arrayStorage == original)
   throw std::runtime_error("expected a detached replacement");
  for (int i=0; cpu.tableRebuild.arrayCleared <= 8192; ++i) {
   if (i >= 100) throw std::runtime_error("never entered retained tag transfer");
@@ -275,7 +283,7 @@ void publishFirstArray(bool scalar, int dense) {
   throw std::runtime_error("first-array restore changed retirement");
 }
 
-void publishRawStoreBeforeReturning(bool protectedCall) {
+void publishRawStoreBeforeReturning(bool protectedCall, bool census) {
  test::Blua32TestImage image;
  image.text.resize(2 * INSTRUCTION_BYTES);
  writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, protectedCall ? 5 : 4, 17);
@@ -283,9 +291,9 @@ void publishRawStoreBeforeReturning(bool protectedCall) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
  CpuMachine m(image, true);
  auto& cpu = m.cpu;
- auto table = cpu.createTable(0, 256);
- const auto key = valueString(cpu.stringPool().intern("new"));
- for (int i = 1; i <= 256; ++i) table.setInteger(-i, valueInteger(i));
+ auto table = cpu.createTable(census ? 2048 : 0, census ? 0 : 256);
+ const auto key = census ? valueInteger(2049) : valueString(cpu.stringPool().intern("new"));
+ for (int i = 1; i <= (census ? 2048 : 256); ++i) table.setInteger(census ? i : -i, valueInteger(i));
  auto* frame = cpu.activeThread()->currentFrame;
  const int a = protectedCall ? 1 : 0;
  if (protectedCall) frame->registers.set(0, valueBuiltinFunction(BuiltinFunctionId::PCall));
@@ -494,7 +502,7 @@ int main() {
    runNext(falseKey, valueNil(), {valueBool(false), valueBool(false)});
    runNext(falseKey, valueBool(false), {valueNil()});
   }
-  if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
+  if (scalar) for (bool census : {false, true}) { publishRawStoreBeforeReturning(false, census); publishRawStoreBeforeReturning(true, census); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
   publishInPlaceArray(scalar); publishDisplacedArray(scalar, true); publishDisplacedArray(scalar, false);

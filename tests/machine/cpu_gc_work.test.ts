@@ -1,3 +1,4 @@
+import { TableCensus } from '../../machine/ts/machine/cpu/table';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
@@ -427,6 +428,27 @@ test('an ordinary assist near capacity earns only the fraction of a quantum it p
 	assert.equal(frame.registers.getTag(0), ValueTag.Table);
 });
 
+test('a WIDE table store retries physical refusal in current then fresh epochs at its issue PC', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT, true)));
+	const frame = cpu.rootThread.currentFrame!, issuePc = frame.pc;
+	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	const table = cpu.createTable(1024, 0);
+	for (let i = 1; i <= 1024; ++i) cpu.gc.tables.setInteger(table, i, valueInteger(i));
+	frame.registers.setTable(0, table); frame.registers.setInteger(1, 1025); frame.top = 2;
+	cpu.gc.step(); assert.ok(cpu.gc.active());
+	while (cpu.heapAllocator.allocate(4088, true)) {}
+	const grant = (n: number) => cpu.runUntilDepth(0, n, cpu.rootThread.address, CpuRunKind.Scheduled);
+	assert.equal(grant(1), RunResult.Yielded); assert.equal(grant(240), RunResult.ParkedAllocation);
+	for (const phase of [TableCensus.RetryCurrent, TableCensus.RetryFresh]) {
+		for (let pulses = 0; !cpu.allocationReady(); ++pulses) { assert.ok(pulses < 128); cpu.advanceAllocationRecovery(); }
+		cpu.resumeAllocation();
+		assert.equal(cpu.allocationParked(), false); assert.equal(cpu.tableRebuild.census, phase); assert.equal(cpu.tableRebuild.scanned, 0);
+		assert.equal(grant(240), phase === TableCensus.RetryCurrent ? RunResult.ParkedAllocation : RunResult.Yielded);
+	}
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(cpu.readEpcWord(), issuePc);
+	assert.equal(cpu.tableRebuild.record, 0); assert.equal(cpu.gc.tables.getInteger(table, 1025), valueNil());
+});
+
 test('scheduled SETT yields on a logical refusal before collecting the dead backing', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT)));
 	const { luaHeap: budget, gc, rootThread } = cpu, frame = rootThread.currentFrame!;
@@ -436,7 +458,10 @@ test('scheduled SETT yields on a logical refusal before collecting the dead back
 	frame.registers.setTable(0, owner); frame.registers.setInteger(1, slots + 1); frame.top = 2;
 	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
 	assert.ok(!gc.active() && budget.usedBytes() + 5 * slots > budget.capacity());
-	assert.equal(cpu.runUntilDepth(0, 1, rootThread.address, CpuRunKind.Scheduled), RunResult.ParkedAllocation);
+	const scanCycles = (slots - 64) / 4;
+	assert.equal(cpu.runUntilDepth(0, 1, rootThread.address, CpuRunKind.Scheduled), RunResult.Yielded);
+	assert.equal(cpu.allocationParked(), false); assert.equal(cpu.tableRebuild.scanned, 64);
+	assert.equal(cpu.runUntilDepth(0, scanCycles, rootThread.address, CpuRunKind.Scheduled), RunResult.ParkedAllocation);
 	assert.ok(!gc.active() && gc.tableRecordAddress(garbage) !== 0, 'issue performs no recovery');
 	assert.equal(gc.tables.getInteger(owner, slots + 1), valueNil());
 	for (let pulses = 0; !cpu.allocationReady(); ++pulses) {
@@ -447,7 +472,7 @@ test('scheduled SETT yields on a logical refusal before collecting the dead back
 	assert.equal(gc.tableRecordAddress(garbage), 0);
 	assert.equal(cpu.tableRebuild.record, owner);
 	assert.equal(gc.tables.getInteger(owner, slots + 1), valueNil());
-	cpu.runUntilDepth(0, 2 * slots * 5 / 16, rootThread.address, CpuRunKind.Scheduled);
+	cpu.runUntilDepth(0, scanCycles + 2 * slots * 5 / 16, rootThread.address, CpuRunKind.Scheduled);
 	assert.equal(cpu.instructionBudgetRemaining, 0);
 	assert.equal(gc.tables.getInteger(owner, slots + 1), valueInteger(slots + 1));
 	assert.equal(frame.registers.get(7), valueNil());

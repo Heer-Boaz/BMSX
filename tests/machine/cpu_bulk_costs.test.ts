@@ -189,6 +189,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   r.setTable(0, t); r.setInteger(1, old+1); r.setInteger(2, 73);
   const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
   grant(16); grant(1);
+  assert.equal(cpu.tableRebuild.scanned, 68); assert.equal(cpu.tableRebuild.arrayStorage, 0); assert.equal(cpu.instructionBudgetRemaining, 0);
+  const censusState = cpu.captureRuntimeState(), censusRam = cpu.memory.captureSaveState();
+  grant(495);
+  assert.equal(cpu.tableRebuild.arrayStorage, original); assert.equal(cpu.tableRebuild.arrayCleared, 0); assert.equal(cpu.instructionBudgetRemaining, 0);
+  cpu.memory.restoreSaveState(censusRam); cpu.restoreRuntimeState(censusState); grant(496);
   assert.equal(cpu.tableRebuild.arrayStorage, original); assert.equal(cpu.tableRebuild.arrayCleared, 16);
   const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
   const check = () => {
@@ -215,8 +220,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   tables.setInteger(t, -1, valueInteger(71)); tables.setInteger(t, keepHash ? -2 : 1026, valueInteger(72));
   r.setTable(0, t); r.setInteger(1, 1025); r.setInteger(2, 73);
   const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
-  grant(16);
-  assert.equal(cpu.tableRebuild.record, t);
+  grant(16); grant(240);
+  assert.equal(cpu.tableRebuild.record, t); assert.ok(cpu.tableRebuild.arrayStorage);
   assert.notEqual(cpu.tableRebuild.arrayStorage, original);
   // Checkpoint partway through the retained tag plane, after the payload has moved.
   for (let i = 0; cpu.tableRebuild.arrayCleared <= 8192; ++i) { assert.ok(i < 100); grant(37); }
@@ -308,28 +313,29 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   assert.equal(tables.getInteger(t, 257), valueInteger(71));
  });
 
- for (const protect of [false, true]) test(`rawset publishes before growing its result window (${backend}, protected=${protect})`, () => {
+ for (const protect of [false, true]) for (const census of [false, true]) test(`rawset publishes before growing its result window (${backend}, protected=${protect}, census=${census})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.CALL, 0, protect ? 5 : 4, 17);
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
   const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
-  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, key = cpu.stringPool.intern('new');
-  for (let i=1; i<=256; ++i) tables.setInteger(t, -i, valueInteger(i));
+  const t = cpu.createTable(census ? 2048 : 0, census ? 0 : 256), tables = cpu.gc.tables;
+  const key = census ? valueInteger(2049) : valueString(cpu.stringPool.intern('new'));
+  for (let i=1; i<=(census ? 2048 : 256); ++i) tables.setInteger(t, census ? i : -i, valueInteger(i));
   const a = protect ? 1 : 0;
   if (protect) r.setBuiltinFunction(0, BuiltinFunctionId.PCall);
   r.setBuiltinFunction(a, BuiltinFunctionId.RawSet);
-  r.setTable(a+1, t); r.setString(a+2, key); r.setInteger(a+3, 9);
+  r.setTable(a+1, t); r.set(a+2, key); r.setInteger(a+3, 9);
   const original = r.get(0);
   cpu.runUntilDepth(0, 40, cpu.rootThread.address, CpuRunKind.Scheduled);
-  assert.equal(r.get(0), original); assert.ok(cpu.tableRebuild.record); assert.equal(tables.getStringKey(t, key), valueNil());
+  assert.equal(r.get(0), original); assert.ok(cpu.tableRebuild.record); assert.equal(tables.get(t, key), valueNil());
   const anchor = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
   for (const restored of [false, true]) {
    if (restored) { cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor); }
    for (let n=0; cpu.tableRebuild.record; ++n) {
     assert.ok(n<1024); assert.equal(cpu.runUntilDepth(0,8,cpu.rootThread.address,CpuRunKind.Scheduled), RunResult.Yielded);
    }
-   assert.equal(tables.getStringKey(t, key), valueInteger(9));
+   assert.equal(tables.get(t, key), valueInteger(9));
    assert.equal(cpu.rootThread.currentFrame!.registers.get(a), valueTable(t));
    if (protect) assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueBool(true));
    assert.equal(cpu.rootThread.currentFrame!.registers.get(15), valueNil());

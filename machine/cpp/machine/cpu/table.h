@@ -78,6 +78,7 @@ public:
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
 	int advanceRebuild(TableRebuild& job, int cycles);
+	bool advanceCensus(CPU& cpu);
 	static constexpr i32 HASH_STORE_PENDING = -4;
 	static constexpr i32 HASH_STORE_DECLINED = -2;
 	int tryAssignStringField(StringId key, Value value, u8 extraHashSlots = 0) noexcept;
@@ -218,10 +219,13 @@ private:
 	size_t hashValueSlot(size_t index) const { return hashSlots() + index; }
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	struct ResizePlan { size_t array, hash; bool keepHash; };
-	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
+	void countArrayRange(ArrayDensity&, u32 end) const;
+	void spendCensusGrant(ArrayDensity&, u32 capacity, int& cycles) const;
+	ResizePlan planRehash(Value key, u8 extraHashSlots, const ArrayDensity* counted) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
-	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr)
+	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
+		const ArrayDensity* counted = nullptr, LuaAllocationRecovery recovery = LuaAllocationRecovery::CurrentOrFresh)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr);

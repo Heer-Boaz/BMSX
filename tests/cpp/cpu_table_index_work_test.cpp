@@ -167,12 +167,13 @@ void integerStoreCensus() {
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		const int scan = spare ? 0 : (capacity - 64 + 3) / 4;
-		require(3 - generated.cpu.instructionBudgetRemaining == 18 + scan
+		require(3 - generated.cpu.instructionBudgetRemaining == 18 + (capacity >= 1024 ? 0 : scan)
 			&& generated.cpu.readFrameRegister(0, 8) == valueInteger(91),
 			"only an actual positive-integer repartition charges its array scan before the suffix");
 		auto table = asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap());
 		if (capacity == 8192 && !spare) {
-			require(generated.cpu.tableRebuild.record == table.address() && isNil(table.getInteger(capacity+1)),
+			test::runCpuParity(generated.cpu, scalar.cpu, scan);
+			require(generated.cpu.tableRebuild.arrayStorage && generated.cpu.tableRebuild.record == table.address() && isNil(table.getInteger(capacity+1)),
 				"the large store has reserved but not copied its destination");
 			test::runCpuParity(generated.cpu, scalar.cpu, 2 * capacity * 5 / 16);
 			require(generated.cpu.instructionBudgetRemaining == 0, "transfer retires at the exact byte grant");

@@ -125,7 +125,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableRebuild, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
+import { TableRecords, TableRebuild, TableCensus, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { StaticClosureIndex } from './static_closure_index';
@@ -693,6 +693,8 @@ export class CPU implements MappedPageInvalidator {
 		let retired: boolean;
 		if (pending.kind === PendingAllocationKind.TableAssignment) {
 			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots, this);
+			if (this.tableRebuild.census === TableCensus.RetryCurrent && pending.recovery === AllocationRecovery.RetryFresh)
+				this.tableRebuild.census = TableCensus.RetryFresh;
 		} else {
 			const address = this.allocateTable(pending.arraySize, pending.hashSize, LuaAllocationMode.Retry);
 			retired = address !== 0;
@@ -2049,7 +2051,7 @@ export class CPU implements MappedPageInvalidator {
 						this.resumePendingMemoryOperation();
 						if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
 						if (this.concat.active) this.advanceConcat(thread.currentFrame!);
-						if (this.tableRebuild.record) this.advanceTableStore(thread.currentFrame!);
+						if (this.tableRebuild.record && !this.advanceTableStore(thread.currentFrame!)) return RunResult.ParkedAllocation;
 					}
 					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
 						if (this.hardHalted
@@ -2164,7 +2166,7 @@ export class CPU implements MappedPageInvalidator {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
 					if (this.concat.active) this.advanceConcat(thread.currentFrame!);
-					if (this.tableRebuild.record) this.advanceTableStore(thread.currentFrame!);
+					if (this.tableRebuild.record && !this.advanceTableStore(thread.currentFrame!)) return RunResult.ParkedAllocation;
 				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
@@ -4349,10 +4351,20 @@ export class CPU implements MappedPageInvalidator {
 		const address = registers.getPayload(base);
 		this.gc.tables.load(address, registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
 	}
-	private advanceTableStore(frame: CallFrame): void {
+	private advanceTableStore(frame: CallFrame): boolean {
 		const j = this.tableRebuild, receiver = j.record;
-		this.instructionBudgetRemaining = this.gc.tables.advanceRebuild(this.tableRebuild, this.instructionBudgetRemaining);
-		if (j.record || j.result === TableStoreReturn.None) return;
+		const phase = j.census;
+		if (phase === TableCensus.None) this.instructionBudgetRemaining = this.gc.tables.advanceRebuild(j, this.instructionBudgetRemaining);
+		else {
+			this.currentInstructionPc = j.instructionPc;
+			if (!this.gc.tables.advanceCensus(this)) {
+				if (phase === TableCensus.RetryFresh) throw LUA_OUT_OF_MEMORY_SIGNAL;
+				this.parkTableWrite(frame, receiver, j.key, j.value, 0);
+				if (phase === TableCensus.RetryCurrent) this.pendingAllocation!.recovery = AllocationRecovery.Fresh;
+				return false;
+			}
+		}
+		if (j.record || j.result === TableStoreReturn.None) return true;
 		this.currentInstructionPc = j.instructionPc;
 		const results = this.acquireBuiltinResults();
 		try {
@@ -4362,6 +4374,7 @@ export class CPU implements MappedPageInvalidator {
 		} finally {
 			this.releaseBuiltinResults(results);
 		}
+		return true;
 	}
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;

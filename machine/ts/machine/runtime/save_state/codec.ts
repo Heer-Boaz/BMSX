@@ -1,3 +1,5 @@
+import { TableCensus } from '../../cpu/table';
+import { LuaAllocationRecovery } from '../../cpu/lua_heap';
 import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
@@ -1161,6 +1163,10 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
 		writer.u64(j.key); writer.u64(j.value);
 		writer.u32(j.result); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
+		writer.u32(j.census);
+		if (j.census !== TableCensus.None) {
+			writer.u32(j.recovery); writer.u32(j.scanned); writer.u32(j.live); writer.u32(j.slots); writer.u32(j.kept);
+		}
 	}
 	const concat = state.concat;
 	writer.bool(concat !== null);
@@ -1223,11 +1229,16 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 function readTableRebuild(reader: BinaryReader) {
 	const record = reader.u32();
 	if (!record) return null;
-	return { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(),
+	const j = { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(),
 		arrayStorage: reader.u32(), arraySlots: reader.u32(), arrayCleared: reader.u32(), capacity: reader.u32(),
 		cleared: reader.u32(), homes: reader.u32(), cursor: reader.u32(), free: reader.u32(), collisions: reader.u32(),
 		key: reader.u64() as Value, value: reader.u64() as Value,
-		result: reader.u32(), destination: reader.u32(), wanted: reader.u32(), instructionPc: reader.u32() };
+		result: reader.u32(), destination: reader.u32(), wanted: reader.u32(), instructionPc: reader.u32(), census: reader.u32(),
+		recovery: LuaAllocationRecovery.CurrentOrFresh, scanned: 0, live: 0, slots: 0, kept: 0 };
+	if (j.census !== TableCensus.None) {
+		j.recovery = reader.u32(); j.scanned = reader.u32(); j.live = reader.u32(); j.slots = reader.u32(); j.kept = reader.u32();
+	}
+	return j;
 }
 
 function readConcatAssembly(reader: BinaryReader): CpuRuntimeState['concat'] {

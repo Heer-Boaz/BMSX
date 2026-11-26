@@ -1191,6 +1191,11 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
 		writer.u64(j.key); writer.u64(j.value);
 		writer.u32(static_cast<u32>(j.result)); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
+		writer.u32(static_cast<u32>(j.census));
+		if (j.census != TableCensus::None) {
+			writer.u32(static_cast<u32>(j.recovery)); writer.u32(j.density.cursor); writer.u32(j.density.live);
+			writer.u32(j.density.slots); writer.u32(j.density.kept);
+		}
 	}
 	const auto& concat = state.concat;
 	writer.boolean(concat.active());
@@ -1275,6 +1280,11 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 		j.cursor = reader.u32(); j.free = reader.u32(); j.collisions = reader.u32();
 		j.key = reader.u64(); j.value = reader.u64();
 		j.result = static_cast<TableStoreReturn>(reader.u32()); j.destination = reader.u32(); j.wanted = reader.u32(); j.instructionPc = reader.u32();
+		j.census = static_cast<TableCensus>(reader.u32());
+		if (j.census != TableCensus::None) {
+			j.recovery = static_cast<LuaAllocationRecovery>(reader.u32());
+			j.density = {reader.u32(), reader.u32(), reader.u32(), reader.u32()};
+		}
 	}
 	auto& concat = state.concat;
 	if (reader.boolean()) {

@@ -150,7 +150,27 @@ int TableRecord::HashStorage<BulkWrite>::findFreeIndex(int first) const {
 	return -1;
 }
 
-TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) const {
+// Only keys beyond the current array can enter it from the hash. Below
+// that boundary the largest dense power and its population are final.
+void TableRecord::countArrayRange(ArrayDensity& d, u32 end) const {
+	const auto tags = values().tags;
+	static_assert(static_cast<u8>(ValueTag::Nil) == 0);
+	while (d.cursor < end) {
+		const u32 power = 1u << std::bit_width(d.cursor), stop = std::min(end, power);
+		d.live += countNonzeroBytes(tags + d.cursor, stop - d.cursor);
+		d.cursor = stop;
+		if (stop == power && d.live > power / 2u) { d.slots = power; d.kept = d.live; }
+	}
+}
+
+void TableRecord::spendCensusGrant(ArrayDensity& d, u32 capacity, int& cycles) const {
+	const u32 paidStart = std::max(d.cursor, 64u);
+	const u32 n = std::min(capacity - paidStart, 4u * std::min(static_cast<u32>(std::max(0, cycles)), (capacity + 3u) / 4u));
+	countArrayRange(d, paidStart + n);
+	cycles -= static_cast<int>((n + 3u) / 4u);
+}
+
+TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots, const ArrayDensity* counted) const {
 	const auto body = hashBody(hashSlots());
 	const auto& slots = body.slots;
 	const u32 added = valueIsInteger(key) ? arraySlot(asInteger(key)) : NO_ARRAY_SLOT;
@@ -169,22 +189,12 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 		// Only index 1 is dense enough by itself to select an array.
 		return added == 0 ? ResizePlan{1, 0, true} : ResizePlan{0, 1, false};
 	}
-	size_t totalKeys = 0;
+	ArrayDensity direct{};
+	if (!counted) { countArrayRange(direct, capacity); counted = &direct; }
+	size_t totalKeys = counted->live;
 	u32 firstHashArraySlot = NO_ARRAY_SLOT;
 	std::array<u32, 32> counts{};
-	size_t countBins = 0;
-
-	// Consecutive array indices already arrive in histogram order. Count
-	// each density band directly, including a partial last reservation.
-	const auto arrayValues = values();
-	for (u32 first = 0; first < capacity;) {
-		const u32 end = first + std::min(std::max(first, 1u), capacity - first);
-		static_assert(static_cast<u8>(ValueTag::Nil) == 0);
-		const u32 live = countNonzeroBytes(arrayValues.tags + first, end - first);
-		first = end;
-		counts[countBins++] = live;
-		totalKeys += live;
-	}
+	size_t countBins = capacity ? 1u + std::bit_width(capacity - 1u) : 0u;
 	auto countIntegerKey = [&counts, &countBins](size_t index) {
 		const size_t log = ceilLog2(index);
 		countBins = std::max(countBins, log + 1);
@@ -217,11 +227,10 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 	totalKeys += 1;
 	countIntegerKey(added + 1u);
 
-	size_t arraySize = 0;
-	size_t arrayKeys = 0;
-	size_t total = 0;
-	size_t power = 1;
-	for (size_t i = 0; i < countBins; ++i) {
+	size_t arraySize = counted->slots, arrayKeys = counted->kept, total = counted->live;
+	const size_t firstBin = std::bit_width(capacity);
+	size_t power = size_t{1} << firstBin;
+	for (size_t i = firstBin; i < countBins; ++i) {
 		total += counts[i];
 		if (total > power / 2) {
 			arraySize = power;
@@ -272,7 +281,8 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu)
+int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu,
+	const ArrayDensity* counted, LuaAllocationRecovery recovery)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	auto& budget = m_heap->budget;
 	const u32 array = arrayCapacity(), hash = hashSlots();
@@ -287,10 +297,21 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 		if (hash > HASH_CENSUS_LIMIT || arrayCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
 	}
-	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	for (;;) {
-		if (cpu) cpu->instructionBudgetRemaining -= arrayCycles + hashCycles;
-		const auto plan = planRehash(key, extraHashSlots);
+		if constexpr (Policy == HashStore::General || Policy == HashStore::Scheduled || Policy == HashStore::Resume) {
+			if (cpu && !counted && array >= 1024 && arrayCycles &&
+				(Policy == HashStore::Resume || arrayCycles > cpu->instructionBudgetRemaining)) {
+				auto& j = cpu->tableRebuild;
+				j = {.record=m_address, .key=key, .value=value, .instructionPc=cpu->readCurrentInstructionPc(),
+					.census=Policy == HashStore::General ? TableCensus::General : Policy == HashStore::Scheduled
+						? TableCensus::Scheduled : TableCensus::RetryCurrent, .recovery=recovery};
+				if constexpr (Policy != HashStore::Resume) spendCensusGrant(j.density, array, cpu->instructionBudgetRemaining);
+				return HASH_STORE_PENDING;
+			}
+		}
+		if (cpu) cpu->instructionBudgetRemaining -= (counted ? 0 : arrayCycles) + hashCycles;
+		const auto plan = planRehash(key, extraHashSlots, counted);
+		counted = nullptr;
 		const u32 requested = allocationCharge(plan.array, plan.hash);
 		bool admitted = true;
 		if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
@@ -329,6 +350,31 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 			}
 		}
 	}
+}
+
+bool TableRecord::advanceCensus(CPU& cpu) {
+	auto& j = cpu.tableRebuild;
+	const u32 capacity = arrayCapacity();
+	spendCensusGrant(j.density, capacity, cpu.instructionBudgetRemaining);
+	if (j.density.cursor != capacity) return true;
+
+	const auto phase = j.census;
+	const Value key = j.key, value = j.value;
+	const auto result = j.result;
+	const u32 pc = j.instructionPc, destination = j.destination, wanted = j.wanted;
+	j.record = 0;
+	j.census = TableCensus::None;
+	// Positive integer stores do not request speculative field slots.
+	const int slot = phase == TableCensus::Scheduled ? insertHashWithAdmission<HashStore::Scheduled>(key, value, 0, &cpu, &j.density)
+		: phase == TableCensus::General ? insertHashWithAdmission<HashStore::General>(key, value, 0, &cpu, &j.density, j.recovery)
+		: insertHashWithAdmission<HashStore::Resume>(key, value, 0, &cpu, &j.density);
+	if (slot == HASH_STORE_DECLINED) return false;
+	j.result = result; j.instructionPc = pc; j.destination = destination; j.wanted = wanted;
+	if (slot != HASH_STORE_PENDING) {
+		publishHashInsertion(key, value);
+		updateLengthHint(arraySlot(key), true);
+	}
+	return true;
 }
 
 int TableRecord::resize(const ResizePlan& plan, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested) {

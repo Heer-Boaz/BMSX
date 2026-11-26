@@ -1629,8 +1629,14 @@ When an indexed store must repartition a table to insert a positive Integer
 key, it scans the existing array slots to choose the new array size. The first
 64 slots of each such scan are included; each further group of four slots,
 including a partial group, costs one cycle. A scan of 65,536 slots adds
-16,368 cycles. For a positive Integer key, a hash smaller than 1,024 slots
-is also scanned: the first 64 slots are included, then each pair costs one
+16,368 cycles. For arrays of at least 1,024 slots, a grant that cannot pay
+for the whole scan counts only the slots it covers. The next grant resumes
+at the next tag. This is execution of the same store, not an allocation
+park: no replacement is reserved until the scan finishes. A reservation
+refusal after that point enters ordinary allocation recovery. Collection at
+tick boundaries and stopped final remark wait while the scan is in progress.
+
+For a positive Integer key, a hash smaller than 1,024 slots is also scanned: the first 64 slots are included, then each pair costs one
 cycle. The largest such scan (512 slots) adds 224 cycles. From 1,024 slots
 onward, the processor reads the Integer range counts instead. A hash-only
 addition uses the live count above 64 slots. An overwrite or an insertion that fits an

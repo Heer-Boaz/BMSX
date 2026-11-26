@@ -34,7 +34,10 @@ export const enum TableHeader {
 	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
 }
 export const enum TableStoreReturn { None, Call, Protected }
-export class TableRebuild {
+export const enum TableCensus { None, General, Scheduled, RetryCurrent, RetryFresh }
+class ArrayDensity { scanned = 0; live = 0; slots = 0; kept = 0; }
+export class TableRebuild extends ArrayDensity {
+	census = TableCensus.None; recovery = LuaAllocationRecovery.CurrentOrFresh;
 	record = 0; source = 0; count = 0; storage = 0; capacity = 0;
 	arrayStorage = 0; arraySlots = 0; arrayCleared = 0;
 	cleared = 0; homes = 0; cursor = 0; free = 0; collisions = 0;
@@ -43,6 +46,7 @@ export class TableRebuild {
 }
 const HASH_STORE_PENDING = -4;
 export class TableRecords {
+	private readonly directDensity = new ArrayDensity();
 	private readonly resizePlan = { array: 0, hash: 0, keepHash: false };
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
 	static readonly HEADER_BYTES = 36;
@@ -662,7 +666,22 @@ export class TableRecords {
 		while (bins <= log) counts[bins++] = 0;
 		++counts[log]; return bins;
 	}
-	private planRehash(record: number, key: Value, extraHashSlots: number): void {
+	private countArrayRange(record: number, capacity: number, d: ArrayDensity, end: number): void {
+		const tags = (this.arrayAddress(record) & RAM_RECORD_WORD_MASK) + 4 * capacity, ram = this.heap.memory.ramData();
+		while (d.scanned < end) {
+			const power = 2 ** (32 - Math.clz32(d.scanned)), stop = Math.min(end, power);
+			let n = 0;
+			for (let i = d.scanned; i < stop; ++i) n += +(ram[tags + i] !== ValueTag.Nil);
+			d.live += n; d.scanned = stop;
+			if (stop === power && d.live > power / 2) { d.slots = power; d.kept = d.live; }
+		}
+	}
+	private spendCensusGrant(record: number, capacity: number, d: ArrayDensity, cpu: CPU): void {
+		const paidStart = Math.max(d.scanned, 64), n = Math.min(capacity - paidStart, 4 * Math.max(0, cpu.instructionBudgetRemaining));
+		this.countArrayRange(record, capacity, d, paidStart + n);
+		cpu.instructionBudgetRemaining -= (n + 3) >>> 2;
+	}
+	private planRehash(record: number, key: Value, extraHashSlots: number, counted?: ArrayDensity): void {
 		const plan = this.resizePlan;
 		const added = valueTag(key) === ValueTag.Integer ? asInteger(key) - 1 : -1;
 		const memory = this.heap.memory, oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
@@ -688,16 +707,12 @@ export class TableRecords {
 			return;
 		}
 		const counts = TableRecords.rehashIntegerCounts;
-		let bins = 0, totalKeys = 0, firstHashArrayKey = TABLE_MAX_ARRAY_INDEX + 1;
-		const arrayTags = (this.arrayAddress(record) & RAM_RECORD_WORD_MASK) + 4 * oldArray, ram = memory.ramData();
-		// Slots arrive in histogram order; only hash keys need a logarithm.
-		for (let slot = 0, boundary = 1; slot < oldArray; boundary *= 2) {
-			const end = Math.min(boundary, oldArray);
-			let live = 0;
-			for (; slot < end; ++slot) live += +(ram[arrayTags + slot] !== ValueTag.Nil);
-			counts[bins++] = live;
-			totalKeys += live;
+		if (!counted) {
+			counted = this.directDensity;
+			counted.scanned = counted.live = counted.slots = counted.kept = 0;
+			this.countArrayRange(record, oldArray, counted, oldArray);
 		}
+		let bins = 0, totalKeys = counted.live, firstHashArrayKey = TABLE_MAX_ARRAY_INDEX + 1;
 		if (oldHash >= TableRecords.HASH_BAND_CAPACITY) {
 			const census = words + TableRecords.hashNodeBytes(oldHash);
 			totalKeys += memory.readRamRecordWord(census);
@@ -721,8 +736,10 @@ export class TableRecords {
 		}
 		++totalKeys;
 		bins = TableRecords.countIntegerKey(counts, bins, added + 1);
-		let arraySize = 0, arrayKeys = 0, total = 0, power = 1;
-		for (let bin = 0; bin < bins; ++bin) {
+		let arraySize = counted.slots, arrayKeys = counted.kept, total = counted.live;
+		const firstBin = 32 - Math.clz32(oldArray);
+		let power = 2 ** firstBin;
+		for (let bin = firstBin; bin < bins; ++bin) {
 			total += counts[bin];
 			if (total > power / 2) { arraySize = power; arrayKeys = total; }
 			power *= 2;
@@ -732,7 +749,8 @@ export class TableRecords {
 		plan.hash = TableRecords.hashCapacity(hashKeys);
 		plan.keepHash = arraySize > oldArray && added < arraySize && plan.hash === oldHash && firstHashArrayKey > arraySize;
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU): number {
+	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU,
+		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
@@ -740,10 +758,21 @@ export class TableRecords {
 			? (array - 64 + 3) >>> 2 : 0;
 		const hashCycles = hash > 64 && hash < TableRecords.HASH_BAND_CAPACITY && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
 			? (hash - 64) >>> 1 : 0;
-		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
-			if (cycleBudget) cycleBudget.instructionBudgetRemaining -= arrayCycles + hashCycles;
-			this.planRehash(record, key, extraHashSlots);
+			if (cycleBudget && !counted && array >= 1024 && arrayCycles &&
+				(policy === HashStore.Resume || arrayCycles > cycleBudget.instructionBudgetRemaining)) {
+				const j = cycleBudget.tableRebuild;
+				j.record = record; j.key = key; j.value = value; j.instructionPc = cycleBudget.readCurrentInstructionPc();
+				j.census = policy === HashStore.General ? TableCensus.General : policy === HashStore.Scheduled ? TableCensus.Scheduled : TableCensus.RetryCurrent;
+				j.recovery = recovery; j.scanned = j.live = j.slots = j.kept = 0;
+				j.source = j.count = j.storage = j.capacity = j.arrayStorage = j.arraySlots = j.arrayCleared = 0;
+				j.cleared = j.homes = j.cursor = j.free = j.collisions = j.destination = j.wanted = 0; j.result = TableStoreReturn.None;
+				if (policy !== HashStore.Resume) this.spendCensusGrant(record, array, j, cycleBudget);
+				return HASH_STORE_PENDING;
+			}
+			if (cycleBudget) cycleBudget.instructionBudgetRemaining -= (counted ? 0 : arrayCycles) + hashCycles;
+			this.planRehash(record, key, extraHashSlots, counted);
+			counted = undefined;
 			const requested = TableRecords.allocationCharge(plan.array, plan.hash);
 			const admitted = requested <= previous || (policy === HashStore.Resume || recovery !== LuaAllocationRecovery.CurrentOrFresh
 				? budget.usedBytes() + requested - previous <= budget.capacity()
@@ -788,6 +817,8 @@ export class TableRecords {
 		}
 		if (budget && (stagedGrowth || (oldHash > 64 && (oldArray === array || !oldArray) && !keepHash))) {
 			const j = budget.tableRebuild;
+			j.census = TableCensus.None; j.recovery = LuaAllocationRecovery.CurrentOrFresh;
+			j.scanned = j.live = j.slots = j.kept = 0;
 			j.record = record; j.source = keepHash ? 0 : oldWords; j.count = keepHash ? 0 : oldHash;
 			j.storage = keepHash ? 0 : storage; j.capacity = keepHash ? 0 : hash;
 			j.arraySlots = array !== oldArray ? array : 0; j.arrayStorage = j.arraySlots ? base : 0; j.arrayCleared = 0;
@@ -836,6 +867,22 @@ export class TableRecords {
 		if (!keepHash && hash > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(storage + TableRecords.hashNodeBytes(hash), live + (slot >= 0 ? 1 : 0));
 		this.heap.budget.replaceRecord(keepHash ? 0 : oldWords, previous, requested);
 		return slot;
+	}
+	public advanceCensus(cpu: CPU): boolean {
+		const j = cpu.tableRebuild, record = j.record, capacity = this.arrayCapacity(record);
+		this.spendCensusGrant(record, capacity, j, cpu);
+		if (j.scanned !== capacity) return true;
+		const policy = j.census === TableCensus.General ? HashStore.General : j.census === TableCensus.Scheduled ? HashStore.Scheduled : HashStore.Resume;
+		const { key, value, result, instructionPc, destination, wanted } = j;
+		j.record = 0; j.census = TableCensus.None;
+		const slot = this.insertHashWithAdmission(record, key, value, policy, 0, cpu, j, j.recovery);
+		if (slot === HASH_STORE_DECLINED) return false;
+		j.result = result; j.instructionPc = instructionPc; j.destination = destination; j.wanted = wanted;
+		if (slot !== HASH_STORE_PENDING) {
+			this.heap.writeTableAssignment(record, valueTag(value), valuePayload(value), key);
+			this.updateLengthHint(record, this.getArrayIndex(key), true);
+		}
+		return true;
 	}
 	public advanceRebuild(j: TableRebuild, cycles: number): number {
 		if (cycles <= 0) return cycles;
