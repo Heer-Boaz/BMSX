@@ -3,7 +3,6 @@
 #include "machine/cpu/jit/sljit/abi.h"
 
 namespace bmsx {
-enum class TableHeader : u32;
 
 // Shared scratch layout for string-table callers and the in-frame leaf.
 // These are host temporaries, not table records or callsite feedback.
@@ -36,9 +35,11 @@ public:
 	static constexpr auto returnAddress = begin + offsetof(Layout, returnAddress);
 };
 
-// Inputs: R0 points to the aligned table header; R1 is a logical slot
-// (including links in the word lane). Returns the physical RAM offset.
-void emitTableSlotOffset(sljit_compiler*, sljit_s32 destination, bool word, TableHeader backing);
+// Inputs: R0 points to the aligned table header; R1 is a logical array slot. Returns the physical RAM offset.
+void emitArraySlotOffset(sljit_compiler*, sljit_s32 destination, bool word);
+// R0 = header, R1 = slot, R3 = hash count. Bind backing once for both
+// independently mirrored key lanes. Returns word in R1 and tag in R3.
+void emitHashKeyOffsets(sljit_compiler*);
 // With the header in R0, advance the key offsets in R1 (word) and R3
 // (tag) to the corresponding value, clobbering R2.
 void emitHashValueOffsets(sljit_compiler*);

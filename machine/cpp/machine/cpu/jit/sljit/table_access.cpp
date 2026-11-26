@@ -5,20 +5,28 @@
 
 namespace bmsx {
 
-void emitTableSlotOffset(sljit_compiler* c, sljit_s32 destination, bool word, TableHeader backing) {
+void emitArraySlotOffset(sljit_compiler* c, sljit_s32 destination, bool word) {
 	if (word) {
 		sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
 	} else {
-		if (backing == TableHeader::HashStorage)
-			sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 3);
-		else
-			sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array), SLJIT_IMM, 2);
+		sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array), SLJIT_IMM, 2);
 		sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_R1, 0);
 	}
 	sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_MEM1(SLJIT_R0),
-		static_cast<u32>(backing));
+		static_cast<u32>(TableHeader::ArrayStorage));
 	sljit_emit_op2(c, SLJIT_AND, destination, 0, destination, 0, SLJIT_IMM,
 		word ? RAM_RECORD_WORD_MASK : MAIN_RAM_SIZE - 1u);
+}
+
+void emitHashKeyOffsets(sljit_compiler* c) {
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::HashStorage));
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R1, 0);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 }
 
 void emitHashValueOffsets(sljit_compiler* c) {

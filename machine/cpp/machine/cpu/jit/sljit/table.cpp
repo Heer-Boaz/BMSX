@@ -89,8 +89,8 @@ sljit_jump* NativeLowering::emitArrayRead(NativeBlockExitSite& exit, bool routeO
 	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array));
 	if (!routeOutside) fault(outside, exit, m_cache.state());
-	emitTableSlotOffset(c, SLJIT_R2, true, TableHeader::ArrayStorage);
-	emitTableSlotOffset(c, SLJIT_R3, false, TableHeader::ArrayStorage);
+	emitArraySlotOffset(c, SLJIT_R2, true);
+	emitArraySlotOffset(c, SLJIT_R3, false);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R2), 0);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, NativeBlockAbi::ramOperand(c, SLJIT_R3, SLJIT_R3), 0);
 	auto* own = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R3, 0,
@@ -108,7 +108,7 @@ sljit_jump* NativeLowering::emitArrayStore(int value, NativeStorePlan plan, Nati
 	if (!routeOutside) fault(outside, exit, m_cache.state());
 
 	for (bool word : {true, false}) {
-		emitTableSlotOffset(c, SLJIT_R3, word, TableHeader::ArrayStorage);
+		emitArraySlotOffset(c, SLJIT_R3, word);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), word ? wordOffset : tagOffset, SLJIT_R3, 0);
 	}
 	// Only an absent own element can dispatch __newindex. For an empty
@@ -213,34 +213,35 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	const sljit_sw prediction = reinterpret_cast<sljit_sw>(m_decodedPage ? slot.decoded : &slot.standalone);
 	sljit_sw saved = 0;
 	std::array<sljit_jump*, 3> checks;
+	// The live count bounds the decoded hint and locates the key tag plane.
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
+	auto* large = load ? sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES) : nullptr;
 	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
-	if (load) {
-		auto* small = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash),
-			SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
-		// In a large table only home is intrinsically a zero-surcharge slot.
-		// A cached displaced slot cannot certify how many links precede it.
-		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 1);
+	checks[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_R3, 0);
+	if (large) {
+		auto* ready = sljit_emit_jump(c, SLJIT_JUMP);
+		sljit_set_label(large, sljit_emit_label(c));
+		// Only home is intrinsically zero-surcharge in a large table. Its
+		// masked index is already below the nonzero count.
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
 		if (fixedKey) {
 			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, *fixedKey >> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
 		} else {
 			sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_IMM, BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
 			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
 		}
-		sljit_set_label(small, sljit_emit_label(c));
+		sljit_set_label(ready, sljit_emit_label(c));
 	}
-	checks[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
-		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
 	if (temporary) {
 		saved = NativeBlockAbi::fieldAddressOffset + *temporary * NativeBlockAbi::fieldAddressBytes;
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 2 * sizeof(u32), SLJIT_R1, 0);
 		if (!fixedKey)
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), saved + 3 * sizeof(u32), SLJIT_MEM1(SLJIT_SP), keyWord);
 	}
-	emitTableSlotOffset(c, SLJIT_R3, false, TableHeader::HashStorage);
+	emitHashKeyOffsets(c);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R3), 0);
 	checks[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		SLJIT_IMM, static_cast<u8>(ValueTag::String));
-	emitTableSlotOffset(c, SLJIT_R1, true, TableHeader::HashStorage);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, NativeBlockAbi::ramOperand(c, SLJIT_R2, SLJIT_R1), 0);
 	checks[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0,
 		fixedKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), fixedKey ? static_cast<sljit_sw>(*fixedKey) : keyWord);
