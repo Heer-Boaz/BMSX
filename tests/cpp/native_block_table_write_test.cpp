@@ -480,6 +480,30 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueBool(false));
 		run(other, 100, valueNil(), -1);
+
+		auto wide = cpu.createTable(0, 256);
+		const int wideHome = wide.beginStringProbe(key).node;
+		Value head;
+		for (int i = 0;; ++i) {
+			head = valueInteger(i);
+			if (static_cast<int>(hashCanonicalTableKey(head) & 255u) == wideHome) break;
+		}
+		wide.set(head, valueInteger(19));
+		run(wide, 1, valueNil(), 0); // A terminal home has no unbounded work.
+		wide.setStringKey(key, secondResult);
+		run(wide, 1, valueNil(), -1);
+		run(wide, 512, secondResult, 0);
+		auto wideMeta = cpu.createTable(0, 256);
+		const int metaHome = wideMeta.beginStringProbe(indexKey).node;
+		for (int i = 0;; ++i) {
+			head = valueInteger(i);
+			if (static_cast<int>(hashCanonicalTableKey(head) & 255u) == metaHome) break;
+		}
+		wideMeta.set(head, valueInteger(20));
+		wideMeta.setStringKey(indexKey, valueTable(holder.address()));
+		other.setMetatableAddress(wideMeta.address());
+		run(other, 1, valueNil(), -1);
+		run(other, 512, firstResult);
 	}
 }
 

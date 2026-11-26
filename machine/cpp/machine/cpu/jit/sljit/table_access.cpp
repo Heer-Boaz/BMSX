@@ -41,7 +41,7 @@ constexpr sljit_sw nilTag = static_cast<u8>(ValueTag::Nil);
 
 // An own prediction miss is not an absence proof. Follow the live chain,
 // with the signed cursor and visit bound of TableRecord::HashBody.
-sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterLinks = false) {
+sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, sljit_jump** meteredExit = nullptr) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
 	// Preserve the header and initial traversal bound across the home probe.
@@ -79,7 +79,7 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterLink
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
-	if (meterLinks) {
+	if (meteredExit) {
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash,
 			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
 		auto* included = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
@@ -111,6 +111,15 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterLink
 		sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
+		if (word && meteredExit) {
+			// The returning probe cannot retain a cursor across grants. Do
+			// not start a wide collision walk speculatively if its remaining
+			// bound exceeds the grant. A terminal home needs no walk.
+			auto* admitted = sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL | SLJIT_32, SLJIT_R0, 0, NativeBlockAbi::budget, 0);
+			*meteredExit = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32,
+				SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 2, SLJIT_IMM, 0);
+			sljit_set_label(admitted, sljit_emit_label(c));
+		}
 		auto* rejected = sljit_emit_label(c);
 		sljit_emit_op2(c, SLJIT_SUB32 | SLJIT_SET_Z, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 		exhausted[word] = sljit_emit_jump(c, SLJIT_EQUAL);
@@ -128,10 +137,10 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterLink
 	auto* missed = sljit_emit_label(c);
 	for (auto* jump : exhausted) sljit_set_label(jump, missed);
 	for (auto* jump : end) sljit_set_label(jump, missed);
-	if (meterLinks) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
+	if (meteredExit) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 
-	if (meterLinks) {
+	if (meteredExit) {
 		// Only an exhausted key search pays for nodes past home. The bound
 		// already counted every rejection, including the terminal node.
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash,
@@ -165,13 +174,14 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), cost, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_IMM, 0);
 	auto* receiver = sljit_emit_label(c);
-	auto* found = emitReceiverSearch(c, true, true);
+	sljit_jump *ownBudget, *metaBudget;
+	auto* found = emitReceiverSearch(c, true, &ownBudget);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), meta);
 	auto* noMeta = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	emitTableHeaderAddress(c);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), key,
 		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, tableIndexKey));
-	auto* hasIndex = emitReceiverSearch(c, true, true);
+	auto* hasIndex = emitReceiverSearch(c, true, &metaBudget);
 
 	// End of the live path: nil is a successful guest result.
 	sljit_set_label(noMeta, sljit_emit_label(c));
@@ -190,7 +200,10 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 		TABLE_INDEX_CHAIN_LIMIT * TABLE_INDEX_VISIT_CYCLES), receiver);
 	// Let the semantic owner handle calls, forwarding and loop faults.
 	// No visit charge or guest result has been published on this path.
-	sljit_set_label(semantic, sljit_emit_label(c));
+	auto* replay = sljit_emit_label(c);
+	sljit_set_label(semantic, replay);
+	sljit_set_label(ownBudget, replay);
+	sljit_set_label(metaBudget, replay);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, -1);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 
