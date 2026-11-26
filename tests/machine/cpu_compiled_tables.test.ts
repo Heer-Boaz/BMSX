@@ -383,7 +383,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	assert.equal(js.rootThread.frameAtDepth(0).registers.getInteger(3), 19);
 });
 
-test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', () => {
+test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', t => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 63, 63);
@@ -406,8 +406,11 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(retained));
 		cpu.collectTrackedHeapBytes();
 	}
+	const assist = t.mock.method(js, 'assistAllocation');
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
-	assert.equal(js.instructionBudgetRemaining, 0, 'failed NEWT pays prefix and base, not emergency collection or initialization');
+	const work = assist.mock.calls.reduce((sum, call) => sum + call.result!, 0);
+	assert.ok(work > 0, 'the request performed incremental allocation assists before recovery');
+	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT pays for actual assists but not emergency recovery or initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
