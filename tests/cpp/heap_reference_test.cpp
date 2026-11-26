@@ -58,6 +58,21 @@ void checkReferences(CPU& cpu) {
 	});
 }
 
+void markIssuedWhiteHeader() {
+	Machine machine;
+	auto& gc = machine.cpu.gcHeap();
+	const u32 table = machine.cpu.createTable().address();
+	const u32 raw = DYNAMIC_RAM_BASE + 0x600;
+	const u32 header = static_cast<u32>(ValueTag::Table) | ((0xfcu | gc.white()) << 8u);
+	machine.memory.writeRamRecordWord(raw, header);
+	require(!gc.markValue(valueTable(raw)) && machine.memory.readRamRecordWord(raw) == header,
+		"a matching white header in ordinary RAM cannot enter the gray queue");
+	machine.memory.writeRamRecordWord(table, header);
+	require(!gc.markValue(valueClosure(table)), "the reference kind must match");
+	require(gc.markValue(valueTable(table + MAIN_RAM_SIZE)), "the mirrored white record enters the queue");
+	require(!gc.markValue(valueTable(table)), "the same gray record is not enqueued again");
+}
+
 void liveReferencesAndReuse() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
 	static_assert(sizeof(decltype(cpu.rootThread()->address)) == sizeof(u32));
@@ -283,6 +298,7 @@ void isolatedHeaps() {
 }
 int main() {
 	try {
+		markIssuedWhiteHeader();
 		liveReferencesAndReuse(); restoreRebindsWithoutRetainingDiscardedFutures(); incrementalRestore();
 		builtinIdentitiesStayOutsideTheGcHeap(); closedCellLivesInRam(); sweepStopsVisitingReclaimedObjects();
 		sweepResumesAfterPublishingAndRestoring(); isolatedHeaps();

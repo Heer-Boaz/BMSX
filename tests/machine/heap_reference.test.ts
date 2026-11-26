@@ -11,7 +11,7 @@ import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
-import { valueTable, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { valueTable, valueClosure, valueBuiltinFunction, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -45,6 +45,18 @@ function checkReferences(cpu: CPU): void {
 	}
 	assert.equal(new Set(records).size, records.length);
 }
+
+test('marking selects issued white headers, not arbitrary byte patterns', () => {
+	const cpu = machine(), { gc, memory } = cpu, table = cpu.createTable();
+	const raw = DYNAMIC_RAM_BASE + 0x600, header = ValueTag.Table | ((0xfc | gc.white()) << 8);
+	memory.writeRamRecordWord(raw, header);
+	assert.equal(gc.markValue(valueTable(raw)), false);
+	assert.equal(memory.readRamRecordWord(raw), header);
+	memory.writeRamRecordWord(table, header);
+	assert.equal(gc.markValue(valueClosure(table)), false);
+	assert.equal(gc.markValue(valueTable(table + MAIN_RAM_SIZE)), true);
+	assert.equal(gc.markValue(valueTable(table)), false);
+});
 
 test('32-bit object payloads survive heap growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;

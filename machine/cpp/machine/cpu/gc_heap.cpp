@@ -256,15 +256,21 @@ u32 GcHeap::objectRecordAddress(u32 address, u8 kind) const {
 		&& arena.issuedObjectStart(offset - GC_OBJECT_PREFIX) ? RAM_BASE + offset : 0u;
 }
 
+bool GcHeap::markRecord(u32 address, u8 kind, u32 queue) {
+	const u32 offset = address & GC_RECORD_MASK;
+	const u32 header = memory.readRamRecordWord(offset);
+	if (static_cast<u8>(header) != kind || !unmarked(static_cast<u8>(header >> 8u))) return false;
+	if (!arena.issuedObjectStart(offset - GC_OBJECT_PREFIX)) return false;
+	enqueue(RAM_BASE + offset, GC_RECORD_LINK, queue);
+	return true;
+}
+
 u32 GcHeap::threadRecordAddress(u32 address) const {
 	return objectRecordAddress(address, THREAD_RECORD_KIND);
 }
 
 bool GcHeap::markThread(u32 address, u32 queue) {
-	const u32 record = threadRecordAddress(address);
-	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, queue);
-	return true;
+	return markRecord(address, THREAD_RECORD_KIND, queue);
 }
 
 u32 GcHeap::closureRecordAddress(u32 address) const {
@@ -272,10 +278,7 @@ u32 GcHeap::closureRecordAddress(u32 address) const {
 }
 
 bool GcHeap::markClosure(u32 address, u32 queue) {
-	const u32 record = closureRecordAddress(address);
-	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, queue);
-	return true;
+	return markRecord(address, static_cast<u8>(ValueTag::Closure), queue);
 }
 
 u32 GcHeap::tableRecordAddress(u32 address) const {
@@ -292,10 +295,7 @@ u32 GcHeap::openCellAddress(u32 address) const {
 }
 
 bool GcHeap::markTable(u32 address, u32 queue) {
-	const u32 record = tableRecordAddress(address);
-	if (record == 0u || !unmarked(memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-	enqueue(record, GC_RECORD_LINK, queue);
-	return true;
+	return markRecord(address, tableRecordKind, queue);
 }
 
 size_t GcHeap::markCell(u32 cell) {

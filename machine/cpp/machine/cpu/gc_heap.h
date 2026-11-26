@@ -179,6 +179,7 @@ private:
 	}
 	size_t clearWeakQuantum(size_t limit);
 	u32 objectRecordAddress(u32 address, u8 kind) const;
+	bool markRecord(u32 address, u8 kind, u32 queue);
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
 	void beginPaceCredit(u32 estimate, u32 runwayShift);
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);

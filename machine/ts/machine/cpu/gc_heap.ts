@@ -294,9 +294,11 @@ export class GcHeap {
 		return this.markRecord(address, ValueTag.Table);
 	}
 	private markRecord(address: number, kind: number, queue = GC_TRACE_HEAD): boolean {
-		const record = this.objectRecordAddress(address, kind);
-		if (record === 0 || !this.unmarked(this.memory.readRamRecordByte(record + GC_COLOR_OFFSET))) return false;
-		this.enqueue(record, GC_RECORD_LINK, queue);
+		const offset = address & GC_RECORD_MASK;
+		const header = this.memory.readRamRecordWord(offset);
+		if ((header & 0xff) !== kind || !this.unmarked(header >>> 8)) return false;
+		if (!this.arena.issuedObjectStart(offset - GC_OBJECT_PREFIX)) return false;
+		this.enqueue(RAM_BASE + offset, GC_RECORD_LINK, queue);
 		return true;
 	}
 	private markCell(cell: number): number {
