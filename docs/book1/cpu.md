@@ -1088,9 +1088,10 @@ operand in either case.
 
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
-execution context. When a STATIC prototype in ROM needs a new captureless
-closure, one BIOS activation handles admission, any collection work and
-retry, and initialization. It uses ordinary CPU cycles while devices
+execution context. A non-STATIC prototype constructs a distinct closure on
+each execution. To create a closure with no captures from a ROM prototype,
+one BIOS activation handles admission, any collection work and retry, and
+initialization. It uses ordinary CPU cycles while devices
 continue to advance. The new function becomes visible only when its record
 is ready. If the reservation still cannot be made, `CLOSURE` reports
 `OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
@@ -1529,7 +1530,7 @@ tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
 same admission and recovery procedure for a new captureless closure from
-a STATIC ROM prototype. Collection during a suspended table insertion
+a ROM prototype. Collection during a suspended table insertion
 can also run on ordinary CPU grants. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical
 budget and when its backing storage does not fit. After collection, the CPU
@@ -1549,7 +1550,7 @@ remaining cycles of the issuing grant. Fewer than three cycles defer the
 assist, not the reservation. An indivisible scan such as a record header may
 exceed the requested work. The BIOS performs these assists on ordinary CPU
 grants before reserving storage for a new Table or a new captureless closure
-from a STATIC ROM prototype.
+from a ROM prototype.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.

@@ -514,7 +514,7 @@ private:
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void finishAllocationRecovery();
-	void beginClosureReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
+	void beginClosureReservation(CallFrame&, int destination, HeapServiceRecordKind, u32 prototype, u32 domain, u32 nextPc);
 	void finishClosureReservation();
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);

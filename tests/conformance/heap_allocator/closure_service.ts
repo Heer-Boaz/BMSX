@@ -23,7 +23,7 @@ import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceClosureField, HeapServiceGcStage,
 } from '../../../machine/ts/spec/bmsx/heap_service';
-import { HEAP_PAGE_SIZE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { HEAP_PAGE_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -48,6 +48,17 @@ for i = 1, 2 do
 end
 return result
 `;
+const dynamicEntry = `
+local first, second
+local i = 1
+while i <= 2 do
+	local f = function() return 13 end
+	if i == 1 then first = f else second = f end
+	i = i + 1
+end
+if first == second then return 0 end
+return first() + second()
+`;
 const input = {
 	sampleInputControllerSnapshot() {},
 	supervisorRequestLineHigh: () => false,
@@ -58,40 +69,115 @@ mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join('tmp', 'bmsx-closure-heap-service-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
-	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(code, 2, OpCode.RET, 0, 2, 0);
-	writeInstruction(code, 3, OpCode.RET, 0, 0, 0);
-	writeInstruction(code, 4, OpCode.HALT, 0, 0, 0);
-	const bare = linkRawTestSystemBlua32({
-		text: code, functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 1 }, { firstWord: 4, wordCount: 1 }],
-		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
-		exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
-	});
-	const bareRuntime = new Runtime({
-		systemRomBytes: bare.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
-	}, input);
-	bareRuntime.boot();
-	const { cpu: bareCpu, scheduler: bareScheduler } = bareRuntime.machine;
-	const issuePc = bareCpu.readFramePc(0), original = bareCpu.readFrameRegister(0, 0);
-	const rejected = bareScheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-	assert.equal(bareCpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-	assert.equal(bareCpu.readEpcWord(), issuePc);
-	assert.equal(bareCpu.heapServiceActive(), false);
-	assert.equal(bareCpu.readFrameRegister(0, 0), original);
-	assert.equal(bareCpu['staticClosures'].find(bare.symbols.functionAddresses[1]), undefined, 'missing BIOS cannot allocate on the host');
-	const bareRom = join(directory, 'no-roster.rom'), bareTrace = join(directory, 'no-roster.txt');
-	writeFileSync(bareRom, bare.romBytes);
-	writeFileSync(bareTrace, 'J 1 1\nZ\n');
-	assert.deepEqual(execFileSync(native, [bareRom, bareTrace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), [
-		`${rejected} ${1 - bareCpu.instructionBudgetRemaining} 0 0 ${bareCpu.heapAllocator.occupiedBytes()} ${bareCpu.luaHeap.usedBytes()}`,
-		`${bareCpu.readCauseWord()} 0 ${issuePc}`,
-	]);
+	for (const canonical of [true, false]) {
+		const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
+		writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0);
+		writeInstruction(code, 2, OpCode.RET, 0, 2, 0);
+		writeInstruction(code, 3, OpCode.RET, 0, 0, 0);
+		writeInstruction(code, 4, OpCode.HALT, 0, 0, 0);
+		const bare = linkRawTestSystemBlua32({
+			text: code, functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 1, staticClosure: canonical }, { firstWord: 4, wordCount: 1 }],
+			systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+			exceptionFunctionIndex: 2, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+		});
+		const bareRuntime = new Runtime({
+			systemRomBytes: bare.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+		}, input);
+		bareRuntime.boot();
+		const { cpu: bareCpu, scheduler: bareScheduler } = bareRuntime.machine;
+		const issuePc = bareCpu.readFramePc(0), original = bareCpu.readFrameRegister(0, 0);
+		const rejected = bareScheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		assert.equal(bareCpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		assert.equal(bareCpu.readEpcWord(), issuePc);
+		assert.equal(bareCpu.heapServiceActive(), false);
+		assert.equal(bareCpu.readFrameRegister(0, 0), original);
+		assert.equal(bareCpu['staticClosures'].find(bare.symbols.functionAddresses[1]), undefined, 'missing BIOS cannot allocate on the host');
+		const bareRom = join(directory, 'no-roster.rom'), bareTrace = join(directory, 'no-roster.txt');
+		writeFileSync(bareRom, bare.romBytes);
+		writeFileSync(bareTrace, 'J 1 1\nZ\n');
+		assert.deepEqual(execFileSync(native, [bareRom, bareTrace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), [
+			`${rejected} ${1 - bareCpu.instructionBudgetRemaining} 0 0 ${bareCpu.heapAllocator.occupiedBytes()} ${bareCpu.luaHeap.usedBytes()}`,
+			`${bareCpu.readCauseWord()} 0 ${issuePc}`,
+		]);
+	}
 	for (const optLevel of [0, 3] as const) {
 		const system = linkTestSystemBlua32(compileHeapServiceSystem(entry, optLevel, [target]));
 		for (const scenario of ['cache', 'recovery', 'oom'] as const) proveClosure(system, optLevel, scenario);
+		proveDynamicClosure(linkTestSystemBlua32(compileHeapServiceSystem(dynamicEntry, optLevel)), optLevel);
 	}
+	function proveDynamicClosure(system: ReturnType<typeof linkTestSystemBlua32>, optLevel: number) {
+		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		runtime.boot();
+		const { cpu, memory, scheduler } = runtime.machine;
+		const management = cpu.heapAllocator.managementOffset(), record = management + HEAP_SERVICE_CLOSURE_OFFSET;
+		const pending = () => memory.readRamRecordWord(record + HeapServiceClosureField.Destination);
+		const traces = ['l'], expected: string[] = [];
+		const observe = (command: string, output: string | number) => {
+			traces.push(command);
+			expected.push(String(output));
+		};
+		const grant = (cycles: number) => {
+			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${pending()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		};
+		const seekAllocation = () => {
+			const issuingSite = () => pending() && cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1) === system.vectors.entryFunctionAddress;
+			for (let step = 0; step < 4096 && !issuingSite(); ++step) grant(1);
+			assert.ok(cpu.heapServiceActive() && issuingSite());
+			return cpu.getFrameDepth() - 1;
+		};
+		const retire = (caller: number) => {
+			const destination = pending() - 1, pc = cpu.readFramePc(caller), old = cpu.readFrameRegister(caller, destination);
+			const nextPc = memory.readRamRecordWord(record + HeapServiceClosureField.NextPc);
+			for (let step = 0; step < 2048 && cpu.heapServiceActive(); ++step) {
+				assert.equal(cpu.readFramePc(caller), pc);
+				assert.equal(cpu.readFrameRegister(caller, destination), old);
+				grant(1);
+			}
+			assert.equal(cpu.heapServiceActive(), false);
+			assert.equal(pending(), 0);
+			assert.equal(cpu.readFramePc(caller), nextPc);
+			const address = RAM_BASE + cpu.heapServiceResult();
+			const prototype = memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+			assert.equal(cpu.readFrameRegister(caller, destination), valueClosure(address));
+			assert.equal(memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL, 0);
+			assert.equal(cpu['staticClosures'].find(prototype), undefined);
+			const offset = address - RAM_BASE;
+			observe(`H ${offset} ${offset + CLOSURE_CAPTURE_WORDS}`, hashBytes(memory.ramData(), offset, CLOSURE_CAPTURE_WORDS));
+			observe('P', `${caller + 1} ${nextPc}`);
+			return [address, prototype] as const;
+		};
+		const caller = seekAllocation();
+		grant(1);
+		assert.ok(cpu.heapServiceActive());
+		const checkpoint = captureRuntimeSaveState(runtime);
+		traces.push('s');
+		const complete = () => {
+			const [address, prototype] = retire(caller);
+			const [second, samePrototype] = retire(seekAllocation());
+			assert.notEqual(address, second, 'the same prototype produces distinct closures');
+			assert.equal(prototype, samePrototype);
+			grant(4096);
+			assert.equal(cpu.getFrameDepth(), 0);
+			assert.deepEqual(runtime.readCompletionValues(), [valueInteger(26)]);
+			observe('C', 26);
+		};
+		const prefix = expected.length;
+		complete();
+		const continuation = expected.slice(prefix);
+		applyRuntimeSaveState(runtime, checkpoint);
+		traces.push('u');
+		complete();
+		assert.deepEqual(expected.slice(prefix + continuation.length), continuation);
+		const romPath = join(directory, `dynamic-O${optLevel}.rom`), tracePath = join(directory, `dynamic-O${optLevel}.txt`);
+		writeFileSync(romPath, system.romBytes);
+		writeFileSync(tracePath, traces.join('\n'));
+		const output = execFileSync(native, [romPath, tracePath, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n');
+		assert.deepEqual(output, expected);
+		console.log(`BIOS-CLOSURE-HEAP-SERVICE:PASS O${optLevel}-dynamic (${output.length} observations, distinct identity and rewind)`);
+	}
+
 	function proveClosure(system: ReturnType<typeof linkTestSystemBlua32>, optLevel: number, scenario: 'cache' | 'recovery' | 'oom') {
 		const refuse = scenario !== 'cache';
 		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
@@ -179,7 +265,9 @@ try {
 		assert.equal(memory.readRamRecordWord(root), operation);
 		assert.equal(cpu.allocationParked(), false);
 		const destination = pending() - 1;
-		const prototype = memory.readRamRecordWord(record + HeapServiceClosureField.Prototype);
+		const targetIndex = system.symbols.metadata.functionIds.findIndex(id => id.startsWith('module:fixture/canonical/') && id.endsWith('|function|canonical'));
+		assert.ok(targetIndex >= 0);
+		const prototype = system.symbols.functionAddresses[targetIndex];
 		const nextPc = memory.readRamRecordWord(record + HeapServiceClosureField.NextPc);
 		const oldValue = cpu.readFrameRegister(caller, destination);
 		function checkCaller() {

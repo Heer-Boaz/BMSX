@@ -66,8 +66,12 @@ bmsx::test::Blua32TestImage allocationImage() {
 void replayAllocationIdentities() {
 	auto image = allocationImage();
 	image.closureRelocations[0].functionAddress = bmsx::DYNAMIC_RAM_BASE;
-	SnapshotMachine machine(image, bmsx::BLUA32_FUNCTION_RECORD_SIZE);
+	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
+	image.closureRelocations[1].functionAddress = dynamicPrototype;
+	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.memory().writeBytes(bmsx::DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - bmsx::SYSTEM_ROM_BASE,
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
@@ -152,8 +156,12 @@ void capturesUsePhysicalRecords() {
 	auto image = allocationImage();
 	image.functions[1].staticClosure = false;
 	image.functions[1].upvalues = {{true, 0u}};
-	SnapshotMachine machine(image);
+	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
+	image.closureRelocations[1].functionAddress = dynamicPrototype;
+	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
 	cpu.runUntilDepth(0, 1000);
 	const auto closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
@@ -168,8 +176,12 @@ void inspectOpenAndClosedClosure() {
 	auto image = allocationImage();
 	image.functions[1].staticClosure = false;
 	image.functions[1].upvalues = {{true, 0u}};
-	SnapshotMachine machine(image);
+	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
+	image.closureRelocations[1].functionAddress = dynamicPrototype;
+	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
 	auto stopPc = machine.rom.textAddress + 5u * bmsx::INSTRUCTION_BYTES;
 	cpu.setExecutionHook({
@@ -254,10 +266,12 @@ void restoreUnrootedCanonicalClosure() {
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	constexpr auto address = bmsx::DYNAMIC_RAM_BASE;
-	image.closureRelocations = {{1u, address},
-		{4u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 2u)}};
-	SnapshotMachine machine(image, bmsx::BLUA32_FUNCTION_RECORD_SIZE);
+	constexpr auto dynamicPrototype = address + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
+	image.closureRelocations = {{1u, address}, {4u, dynamicPrototype}};
+	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
+	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
+		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.memory().writeBytes(address, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - bmsx::SYSTEM_ROM_BASE,
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	const auto cold = cpu.captureRuntimeState();

@@ -42,10 +42,10 @@ export const enum HeapServiceExecStage { Idle, First, Retry }
 // word; all admission/retry locals live only in the guest activation.
 export const HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
 export const enum HeapServiceClosureField {
-	Destination = 0, Prototype = 4, InstructionPc = 8, LastPc = 12, NextPc = 16,
+	Destination = 0, InstructionPc = 4, LastPc = 8, NextPc = 12,
 }
 
-export const enum HeapServiceRecordKind { Table, CanonicalClosure }
+export const enum HeapServiceRecordKind { Table, CanonicalClosure, DynamicClosure }
 export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50;

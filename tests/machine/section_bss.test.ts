@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -130,9 +130,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 	for (let address = DYNAMIC_RAM_BASE; address <= cartBss + 17 * 4; address += 4) memory.writeMappedU32LE(address, 0xfeedface);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
 	cpu.reset();
-	let result = RunResult.Yielded;
-	for (let i = 0; i < 10 && result === RunResult.Yielded; i++) result = cpu.runUntilDepth(0, 100000);
-	assert.equal(result, RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(305419896)]);
 	for (let i = 0; i < 9; i++) assert.equal(memory.readMappedU32LE(images.systemImage.header.bssAddress + 4 * i), 0);

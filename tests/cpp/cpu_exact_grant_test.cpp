@@ -455,10 +455,11 @@ void exactGrant(bool store) {
 		image.functions = {{.firstWord = 0, .wordCount = jump + 1u, .maxStack = 6},
 			{.firstWord = 6, .wordCount = 1, .maxStack = 1},
 			{.firstWord = 7, .wordCount = 1, .staticClosure = false}};
-		if (!store) image.closureRelocations = {{4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+		if (!store) image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
 		image.irqFunctionIndex = 1;
 		Machine native(image, false, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
+			if (!store) machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 			auto* frame = machine->cpu.activeThread()->frameAtDepth(0);
 			frame->registers.set(4, valueInteger(address));
 			frame->registers.set(5, valueInteger(0x12345678));
@@ -601,12 +602,13 @@ void exactGrantSweep(bool scalarControl) {
 	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6},
 		{.firstWord = 7, .wordCount = 1, .maxStack = 1},
 		{.firstWord = 8, .wordCount = 1, .staticClosure = false}};
-	image.closureRelocations = {{4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	image.closureRelocations = {{4, DYNAMIC_RAM_BASE}};
 	image.irqFunctionIndex = 1;
 	unsigned mismatchCount = 0;
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, scalarControl, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
+			machine->memory.writeBytes(DYNAMIC_RAM_BASE, machine->rom.bytes.data() + machine->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 			auto& frame = *machine->cpu.rootThread()->frameAtDepth(0);
 			frame.registers.set(4, valueInteger(address));
 			frame.registers.set(5, valueInteger(0x12345678));

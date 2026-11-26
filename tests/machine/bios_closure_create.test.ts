@@ -71,10 +71,10 @@ function fixture(optLevel: 0 | 3) {
 		const index = actual.findIndex((value, index) => value !== expected[index]);
 		assert.equal(actual[index], expected[index], `private RAM differs at offset 0x${(first + index).toString(16)}`);
 	}
-	function begin(proto: FunctionPrototype) {
+	function begin(proto: FunctionPrototype, canonical: boolean) {
 		assert.equal(proto.recordUpvalueCount, 0);
 		assert.ok(cpu.beginHeapService(entry.address,
-			[cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset, proto.functionAddress, proto.executionDomainId >>> 0]));
+			[cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset, proto.functionAddress, proto.executionDomainId >>> 0, +canonical]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -88,17 +88,17 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(cpu.heapServiceActive(), false);
 		return cycles;
 	}
-	function native(proto: FunctionPrototype) {
+	function native(proto: FunctionPrototype, canonical: boolean) {
 		const address = oracle.luaHeap.allocateClosureRecord(0, false);
-		initializeRecord(oracle.memory, address, proto, true, oracle.gc.white(), 0);
+		initializeRecord(oracle.memory, address, proto, canonical, oracle.gc.white(), 0);
 		oracle.gc.publishObject(address);
 		return address;
 	}
 	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, prototypes: [prototype(entry, -1), prototype(cart, 0), prototype(cart, 1)] };
 }
 
-for (const optLevel of [0, 3] as const) {
-	test(`canonical ROM Closure BIOS reservation and inventory match native at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
+	test(`captureless ROM Closure (${canonical}) BIOS reservation and inventory match native at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		for (const [step, proto] of f.prototypes.entries()) {
 			const before = f.memory.readRamRecordWord(f.control + OBJECT_HEAD), count = f.memory.readRamRecordWord(f.control + OBJECT_COUNT);
@@ -108,9 +108,9 @@ for (const optLevel of [0, 3] as const) {
 				cpu.memory.writeRamRecordByte(f.control + 1, 0xa0 | (step & 1));
 			}
 			const occupied = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
-			const address = f.native(proto);
-			const kind = ValueTag.Closure | ((step & 1) << 8) | (((proto.executionDomainId + 1) | CLOSURE_CANONICAL) << 16);
-			f.begin(proto);
+			const address = f.native(proto, canonical);
+			const kind = ValueTag.Closure | ((step & 1) << 8) | (((proto.executionDomainId + 1) | (canonical ? CLOSURE_CANONICAL : 0)) << 16);
+			f.begin(proto, canonical);
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			if (step === 0) {
 				for (let i = 0; i < 4096 && f.cpu.luaHeap.usedBytes() === occupied; ++i) f.grant(1);
@@ -145,14 +145,14 @@ for (const optLevel of [0, 3] as const) {
 	});
 }
 
-test('canonical ROM Closure BIOS allocation refusal leaves charge and inventory untouched', () => {
+for (const canonical of [true, false]) test(`captureless ROM Closure (${canonical}) refusal leaves charge and inventory untouched`, () => {
 	const f = fixture(3), arena = f.cpu.heapAllocator;
 	while (arena.allocate(4088, true)) { /* leave no complete page supply */ }
 	while (arena.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, true)) { /* exhaust the remaining Closure-size fits */ }
 	restoreCpuCheckpoint(f.oracle, captureCpuCheckpoint(f.cpu));
 	const occupied = f.cpu.luaHeap.usedBytes();
 	assert.equal(f.oracle.heapAllocator.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, false), 0);
-	f.begin(f.prototypes[0]);
+	f.begin(f.prototypes[0], canonical);
 	f.finish();
 	assert.equal(f.cpu.heapServiceResult(), 0);
 	assert.equal(f.cpu.luaHeap.usedBytes(), occupied);
@@ -167,8 +167,8 @@ const pins = [
 	['L', 'machine/ts/machine/cpu/closure.ts', 'dccda2a02992d7ad7a04ae4ee78b46ae7d310b6cf19d787252d73af3cf40d024', [[35, 35], [39, 43], [61, 65], [72, 74]]],
 	['R', 'machine/cpp/machine/cpu/closure.cpp', '989524624c0955ea61dde1cfe19a2e5bc6476902194c7117d95c1dc12c7a86c6', [[18, 25]]],
 	['H', 'machine/cpp/machine/cpu/closure.h', 'ef85f807bc81dc47034d15cabcf80bffd408c4e9f890827fcabbf11af8512663', [[54, 54], [58, 60], [64, 65], [69, 70]]],
-	['N', 'machine/ts/machine/cpu/cpu.ts', 'c199f4a87b23e09d9a9156020aa4acc8e616c083ef678b7f392b312802e700d8', [[1276, 1279], [1281, 1281]]],
-	['P', 'machine/cpp/machine/cpu/cpu.cpp', '518a1cfeafda8b2774ac2f8b09686656fd788cba82e909d9050074aae0ce4e30', [[161, 166], [585, 585], [587, 587]]],
+	['N', 'machine/ts/machine/cpu/cpu.ts', 'c199f4a87b23e09d9a9156020aa4acc8e616c083ef678b7f392b312802e700d8', [[1276, 1279], [1281, 1281], [4013, 4015], [4026, 4028]]],
+	['P', 'machine/cpp/machine/cpu/cpu.cpp', '518a1cfeafda8b2774ac2f8b09686656fd788cba82e909d9050074aae0ce4e30', [[161, 166], [585, 585], [587, 587], [2950, 2950], [2963, 2964]]],
 	['U', 'machine/ts/machine/cpu/gc_heap.ts', 'c2c3aa2c781339b31dc4c01215ab4573eda384c133efdeb4e653be0b61e6dba2', [[102, 102], [147, 155]]],
 	['V', 'machine/cpp/machine/cpu/gc_heap.cpp', '3b381497094c08ac1fdd96cad70a76fd8ab42d560bf23041cd87224afc7c4b3d', [[235, 244]]],
 	['W', 'machine/cpp/machine/cpu/gc_heap.h', '306c39028d8f2c953ca62d821a6f726646e12bd8cd21ac4693d98e0696ce84db', [[93, 93]]],
@@ -179,7 +179,7 @@ const pins = [
 	['M', 'machine/ts/spec/bmsx/memory_map.ts', '00dbd23e01f06a9aaf126c55fa7ba6c3306b5ac86caa3adfa695b6b9360fe1f0', [[6, 6]]],
 ] as const;
 
-test('canonical ROM Closure firmware binds the mirrored record layout and source effects', () => {
+test('captureless ROM Closure firmware binds the mirrored record layout and source effects', () => {
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([port]));
 	const file = workspace.updateFile(port, source);
 	const span = file.chunk.body.get(file.chunk.body.length - 1).span;

@@ -360,6 +360,7 @@ void closureAddressAlias(int source) {
 		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1, .staticClosure = false}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
+		m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + m->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
@@ -372,13 +373,13 @@ void closureAddressAlias(int source) {
 	require(block && block->terminal.exit == NativeBlockExit::CreateClosure && block->terminal.operands.closure.result == source
 		&& block->terminal.operands.closure.address == static_cast<u32>(source), "the generated body retains the aliasing WIDE register operand");
 #endif
-	for (int index : {2, 1, 2, 2, 1}) {
+	for (u32 address : {DYNAMIC_RAM_BASE, native.rom.functionAddresses[1], DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE, native.rom.functionAddresses[1]}) {
 		for (auto* m : {&native, &scalar}) {
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[index]));
+			m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(address));
 		}
 		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "both live operand paths consume the same grant"); requireParity(native, scalar);
-		require(native.cpu.readClosureBinding(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == native.rom.functionAddresses[index], "the full source address is sampled before its slot is replaced");
+		require(native.cpu.readClosureBinding(asClosure(native.cpu.readFrameRegister(0, source), native.cpu.gcHeap())).functionAddress == address, "the full source address is sampled before its slot is replaced");
 	}
 }
 

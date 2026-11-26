@@ -770,13 +770,13 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	// The linked allocate_record body owns admission, assistance and retry.
-	private beginClosureReservation(frame: CallFrame, destination: number, prototype: number, domain: number, nextPc: number): void {
+	private beginClosureReservation(frame: CallFrame, destination: number, kind: HeapServiceRecordKind, prototype: number, domain: number, nextPc: number): void {
 		const base = this.heapService.closureContinuationAddress, memory = this.memory;
-		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, prototype);
-		memory.writeRamRecordPair(base + HeapServiceClosureField.InstructionPc, this.currentInstructionPc, this.lastPc);
-		memory.writeRamRecordWord(base + HeapServiceClosureField.NextPc, nextPc);
+		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
+		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, nextPc);
 		frame.pc = this.currentInstructionPc;
 		const args = this.closureArgs;
+		args[1] = kind;
 		args[2] = prototype;
 		args[3] = domain;
 		args[5] = Math.max(this.instructionBudgetRemaining, 0);
@@ -794,7 +794,8 @@ export class CPU implements MappedPageInvalidator {
 		const offset = this.heapServiceResult();
 		if (offset === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		const address = RAM_BASE + offset, frame = this.activeThread.currentFrame!;
-		this.staticClosures.insert(memory.readRamRecordWord(base + HeapServiceClosureField.Prototype), address);
+		if ((memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)
+			this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
 		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
 		frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
 	}
@@ -3013,25 +3014,27 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const record = this.functionRecordLatch;
-		if ((record.flags & BLUA32_FUNCTION_STATIC) !== 0 && record.recordUpvalueCount === 0) {
-			let closure = this.findStaticClosureFromLatch();
-			if (closure === 0) {
-				if (record.romBacked) {
-					if (this.systemImage.heapServiceFunctions === null) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-						return;
-					}
-					this.beginClosureReservation(frame, a, record.functionAddress, record.executionDomainId, frame.pc);
-					this.requestYield();
-					return;
-				}
-				closure = this.allocateStaticClosureFromLatch();
+		const captureless = record.recordUpvalueCount === 0;
+		const canonical = captureless && (record.flags & BLUA32_FUNCTION_STATIC) !== 0;
+		if (canonical) {
+			const closure = this.findStaticClosureFromLatch();
+			if (closure !== 0) {
+				this.setRegisterClosureFast(frame, registers, a, closure);
+				return;
 			}
-			this.setRegisterClosureFast(frame, registers, a, closure);
-		} else {
-			const closure = this.createClosure(frame);
-			if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
 		}
+		if (captureless && record.romBacked) {
+			if (this.systemImage.heapServiceFunctions === null) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return;
+			}
+			const kind = canonical ? HeapServiceRecordKind.CanonicalClosure : HeapServiceRecordKind.DynamicClosure;
+			this.beginClosureReservation(frame, a, kind, record.functionAddress, record.executionDomainId, frame.pc);
+			this.requestYield();
+			return;
+		}
+		const closure = canonical ? this.allocateStaticClosureFromLatch() : this.createClosure(frame);
+		if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
 	}
 
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {

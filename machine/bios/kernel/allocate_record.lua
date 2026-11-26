@@ -4,7 +4,7 @@ module<const>
 -- T/C: the original timed record continuations; L: native LuaHeap;
 -- A: scheduled recovery; G: native collector recovery; S: raw operation
 -- selectors. The pinned BLua frame replaces the host's intermediate stages.
--- Operands are unrounded constructor hints or a canonical ROM binding.
+-- Operands are unrounded constructor hints or a captureless ROM binding.
 -- I: the reference instruction limited the hints to 15 bits. Rounded capacity,
 -- physical extent and logical charge fit a signed Integer.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:71-74 T:843,855-865
@@ -15,6 +15,7 @@ local tables<const> = require('kernel/table_create') -- C:7-8,78-83 T:803-804,85
 local closures<const> = require('kernel/closure_create') -- C:8,84-86 T:804,863-866
 
 local table_kind<const> = 0 -- S:49 C:6 T:802
+local canonical_closure_kind<const> = 1 -- S:49 C:84-86 T:863-866
 local direct<const> = 1 -- S:41 C:118 T:903
 local retry_current<const> = 3 -- S:41 C:5,138-140 T:801,912
 local retry_fresh<const> = 4 -- S:41 C:5,141-142 T:801,909
@@ -26,12 +27,13 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 	local state<const>, control<const>, occupied<const> = management + layout.arena_offset, management + layout.control_offset, management + layout.occupied_offset -- C:71-74
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- C:154-158 G:1228; raw root inputs are published without selecting a collector phase
 	local table<const> = kind == table_kind -- C:6 T:802
-	local binding, array_bytes, hash_bytes, charged, bytes -- C:7-8,55-57,78-86
+	local binding, array_bytes, hash_bytes, charged, bytes, canonical -- C:7-8,55-57,78-86
 	if table then -- C:6-8 T:802-804
 		binding, array_bytes, hash_bytes, charged, bytes = tables.plan_creation(operand0, operand1) -- C:7-8,56,80-81 T:803-804,843,845
 	else -- C:6-8,57,84
 		binding = operand1 -- C:7,85 T:864-865
-		charged = closures.canonical_bytes -- C:8,57 T:804,845
+		canonical = kind == canonical_closure_kind and 1 or 0 -- C:85-86 T:864-866; dynamic no-capture initialization omits the canonical bit
+		charged = closures.rom_closure_bytes -- C:8,57 T:804,845
 		bytes = charged -- C:57 T:845
 	end
 
@@ -86,7 +88,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			if table then -- C:78 T:854
 				offset = tables.create_table(state, control, occupied, operand0, binding, array_bytes, hash_bytes, charged) -- C:79-83 T:855-861 L:148-152
 			else -- C:84 T:862
-				offset = closures.create_closure(state, control, occupied, operand0, binding) -- C:85-86 T:863-866 L:148-152
+				offset = closures.create_closure(state, control, occupied, operand0, binding, canonical) -- C:85-86 T:863-866 L:148-152
 			end
 			if offset ~= 0 then break end -- C:102,116 T:890,901 L:152
 		end

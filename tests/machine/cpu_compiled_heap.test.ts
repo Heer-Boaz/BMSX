@@ -284,23 +284,25 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: source + 1 },
-		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1, staticClosure: false }], globalNames: ['target'] });
+		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1, staticClosure: false }], globalNames: ['target'] }, BLUA32_FUNCTION_RECORD_SIZE);
+	const template = image.symbols.functionAddresses[2] - SYSTEM_ROM_BASE;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 400);
 	}
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	const block = frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	assert.equal(block.terminal.exitBx, source); assert.equal(block.terminal.exitA, source);
-	for (const index of [2, 1, 2, 2, 1]) {
+	for (const address of [DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1], DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1]]) {
 		for (const cpu of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[index]));
+			cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(address));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, image.symbols.functionAddresses[index]);
+		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, address);
 	}
 });
 

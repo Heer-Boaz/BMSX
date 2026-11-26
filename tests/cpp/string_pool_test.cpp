@@ -515,17 +515,18 @@ test::Blua32TestImage externalCallImage() {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 3}, {.firstWord = 3, .wordCount = 1, .numParams = 1, .maxStack = 512, .staticClosure = false}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.closureRelocations = {{1, DYNAMIC_RAM_BASE}};
 	return image;
 }
 
 void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, externalCallImage());
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, externalCallImage(), BLUA32_FUNCTION_RECORD_SIZE);
 		Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		cpu.reset();
+		memory.writeBytes(DYNAMIC_RAM_BASE, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the real image returns a dynamic callee");
 		const auto completion = cpu.readCompletionValues();
 		require(valueIsClosure(completion.get(0)), "call admission receives an actual guest closure");

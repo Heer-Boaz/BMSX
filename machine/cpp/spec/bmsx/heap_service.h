@@ -51,10 +51,10 @@ enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 // word; all admission/retry locals live only in the guest activation.
 constexpr uint32_t HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
 enum class HeapServiceClosureField : uint32_t {
-	Destination = 0, Prototype = 4, InstructionPc = 8, LastPc = 12, NextPc = 16,
+	Destination = 0, InstructionPc = 4, LastPc = 8, NextPc = 12,
 };
 
-enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
+enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50u;

@@ -2988,22 +2988,23 @@ void CPU::linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot) {
 
 u32 CPU::createClosure(CallFrame& frame, int destination) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
-		&& functionRecord.upvalueCount == 0u) {
-		const auto prototype = decodePrototype(functionRecord);
-		if (const u32 first = findStaticClosure(prototype)) return first;
-		if (functionRecord.romBacked) {
-			if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::AllocateRecord)] == 0u) {
-				enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return 0u;
-			}
-			beginClosureReservation(frame, destination, prototype.functionAddress,
-				static_cast<u32>(prototype.executionDomainId), frame.readControl(FrameField::Pc));
-			requestYield();
+	const bool captureless = functionRecord.upvalueCount == 0u;
+	const bool canonical = captureless && (functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u;
+	if (canonical) {
+		if (const u32 first = findStaticClosure(decodePrototype(functionRecord))) return first;
+	}
+	if (captureless && functionRecord.romBacked) {
+		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::AllocateRecord)] == 0u) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return 0u;
 		}
-		return allocateStaticClosure(prototype);
+		const auto kind = canonical ? HeapServiceRecordKind::CanonicalClosure : HeapServiceRecordKind::DynamicClosure;
+		beginClosureReservation(frame, destination, kind, functionRecord.address,
+			static_cast<u32>(functionRecord.image->executionDomainId), frame.readControl(FrameField::Pc));
+		requestYield();
+		return 0u;
 	}
+	if (canonical) return allocateStaticClosure(decodePrototype(functionRecord));
 	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
 	m_closureCellScratch.resize(functionRecord.upvalueCount);
 	std::fill(m_closureCellScratch.begin(), m_closureCellScratch.end(), 0u);

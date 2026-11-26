@@ -558,13 +558,14 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4},
 		{.firstWord = 4, .wordCount = 1, .staticClosure = false}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.closureRelocations = {{1, DYNAMIC_RAM_BASE}};
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
 	auto& cpu = runtime.machine.cpu;
+	cpu.memory().writeBytes(DYNAMIC_RAM_BASE, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 	auto& heap = cpu.gcHeap();
 	auto& arena = cpu.heapAllocator();
 	auto& budget = cpu.luaHeap();

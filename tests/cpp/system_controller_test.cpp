@@ -148,10 +148,13 @@ auto makeClosureCartImage(
 	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	image.functions = {
-		{.firstWord = 0u, .wordCount = 6u},
+		{.firstWord = 0u, .wordCount = 6u, .maxStack = staticClosure ? 1u : 3u},
 		{.firstWord = 6u, .wordCount = 2u, .staticClosure = staticClosure},
 		{.firstWord = 8u, .wordCount = 1u},
 	};
+	// This hand-authored image isolates distinct captured-closure identities
+	// through the save wire. Captureless ROM allocation uses the linked BIOS.
+	if (!staticClosure) image.functions[1].upvalues = {{true, 2u}};
 	image.closureRelocations = {{
 		1u,
 		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::Cartridge, 1u),

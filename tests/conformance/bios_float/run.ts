@@ -3,10 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { buildPublicBiosFixture, PUBLIC_BIOS_PROBE_SOURCE } from '../../helpers/bios_linkage';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runSystemCaseRom } from '../../helpers/system_case_rom';
 
@@ -94,7 +96,8 @@ local function prepare<init>()
  *runs = *runs + 1
  return 99
 end
-local initialize<const> = blua32.closure(mem32le[mem32le[0x20] + 0x5c])
+local image<const> = mem32le[${BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local initialize<const> = blua32.closure(mem32le[image + ${BLUA32_IMAGE_INIT_FUNCTION_ADDRESS_OFFSET}])
 local cold<const> = *carried == 7 and *runs == 0
 local first_result<const> = initialize()
 local first<const> = first_result == nil and *carried == 11 and *runs == 1
@@ -103,12 +106,12 @@ return cold and first, second_result == nil and *carried == 16 and *runs == 2 an
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-bios-float-'));
 try {
 	for (const optLevel of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source), modules,
+		const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(source), modules,
 			{ entrySource: source, optLevel, programDomain: 'system' }));
 		const publicBios = buildPublicBiosFixture(PUBLIC_BIOS_PROBE_SOURCE, optLevel);
-		const numberText = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(numberTextSource), [],
+		const numberText = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(numberTextSource), [],
 			{ entrySource: numberTextSource, optLevel, programDomain: 'system' }));
-		const participants = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(participantSource), [],
+		const participants = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(participantSource), [],
 			{ entrySource: participantSource, optLevel, programDomain: 'system' }));
 		for (const [name, rom] of [
 			['float', image.romBytes], ['public-bios', publicBios.rom],

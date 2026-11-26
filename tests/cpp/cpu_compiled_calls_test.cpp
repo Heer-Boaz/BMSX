@@ -140,11 +140,15 @@ void inactiveFrameMetadata() {
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, 27);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
 	image.functions = {{.firstWord=0, .wordCount=5, .maxStack=8},
-		{.firstWord=DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
-		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=128, .staticClosure=false}};
+		{.firstWord=DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8},
+		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=128}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine generated(image, false), scalar(image, true);
+	for (auto* machine : {&generated, &scalar}) {
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
+		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.cpu.prepareSystemNativeCode();
 #endif
@@ -1879,6 +1883,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 		{.firstWord=2 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8, .staticClosure=false},
 		{.firstWord=3 * DECODED_PAGE_WORDS, .wordCount=2, .maxStack=8}};
 	if (!ramRecord) {
+		image.functions[1].staticClosure = true;
 		const auto prior = image.functions[1], next = image.functions[2];
 		image.functions.resize(replacement, prior);
 		image.functions.push_back(next);
@@ -1887,6 +1892,7 @@ void rawClosureCallBinding(bool ramRecord, bool marker) {
 	image.globalNames = {"rawBindingMarker"};
 	CpuMachine generated(image, false), scalar(image, true);
 	for (auto* machine : {&generated, &scalar}) {
+		if (!ramRecord) test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
 		if (ramRecord) machine->memory.writeBytes(sourceRecord,
 			machine->rom.bytes.data() + machine->rom.functionAddresses[1], BLUA32_FUNCTION_RECORD_SIZE);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
