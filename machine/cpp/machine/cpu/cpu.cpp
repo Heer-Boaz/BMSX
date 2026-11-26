@@ -160,6 +160,11 @@ void CPU::reset() {
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
+	if (tableRebuild.record && tableRebuild.arrayStorage) {
+		TableRecord table(m_heap, tableRebuild.record);
+		if (table.arrayAddress() == tableRebuild.arrayStorage)
+			table.advanceRebuild(tableRebuild, std::numeric_limits<int>::max());
+	}
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
 	for (auto& view : m_transferViews) view.select(0u);

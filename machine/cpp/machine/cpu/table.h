@@ -14,6 +14,7 @@
 #include "machine/cpu/value.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/table_lookup.h"
+#include "machine/cpu/table_rebuild.h"
 #include "machine/cpu/table_constructor_layout.h"
 #include "machine/memory/memory.h"
 
@@ -76,7 +77,7 @@ public:
 	bool tryAssignIntegerHash(i32 key, Value value) noexcept;
 	// A field write may complete without a VM handoff. Return the actual
 	// slot (-1 for completed nil), or HASH_STORE_DECLINED before mutation.
-	void advanceRebuild(CPU& cpu);
+	int advanceRebuild(TableRebuild& job, int cycles);
 	static constexpr i32 HASH_STORE_PENDING = -4;
 	static constexpr i32 HASH_STORE_DECLINED = -2;
 	int tryAssignStringField(StringId key, Value value, u8 extraHashSlots = 0) noexcept;

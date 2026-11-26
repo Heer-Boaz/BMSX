@@ -256,13 +256,13 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 		}
 	}
 	if constexpr (Policy != HashStore::ReturningIndex && Policy != HashStore::ReturningField) {
-		if ((stagedGrowth && base != oldBase) || (cpu && oldHash > 64 && (plan.array == oldArray || !oldArray) && !plan.keepHash)) {
+		if (stagedGrowth || (cpu && oldHash > 64 && (plan.array == oldArray || !oldArray) && !plan.keepHash)) {
 			const u32 array = plan.array != oldArray ? plan.array : 0;
 			const u32 hash = plan.keepHash ? 0u : plan.hash;
 			cpu->tableRebuild = {.record=m_address, .source=plan.keepHash ? 0u : hashAddress(), .count=plan.keepHash ? 0u : oldHash,
 				.storage=plan.keepHash ? 0u : storage, .capacity=hash, .arrayStorage=array ? base : 0u,
 				.arraySlots=array, .free=hash - 1u, .key=key, .value=value};
-			advanceRebuild(*cpu);
+			cpu->instructionBudgetRemaining = advanceRebuild(cpu->tableRebuild, cpu->instructionBudgetRemaining);
 			return HASH_STORE_PENDING;
 		}
 	}

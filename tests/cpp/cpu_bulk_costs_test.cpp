@@ -149,6 +149,46 @@ void replayInFlightHash(bool scalar) {
   throw std::runtime_error("replayed placement did not build the new hash integer census");
 }
 
+void publishInPlaceArray(bool scalar) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
+ image.systemGlobalNames = {"growing"};
+ CpuMachine machine(image, scalar);
+ auto& cpu = machine.cpu;
+ constexpr int old = 2047;
+ const auto root = cpu.stringPool().intern("growing");
+ auto& arena = cpu.heapAllocator();
+ arena.free(arena.allocate(12*old, true));
+ auto table = cpu.createTable(old, 0);
+ const u32 original = table.arrayAddress();
+ cpu.setSystemGlobalByKey(root, valueTable(table.address()));
+ const auto value = [](int i) { return i%3 ? valueInteger(-i) : valueBool(false); };
+ for (int i=1; i<=old; ++i) table.setInteger(i, value(i));
+ auto r = cpu.activeThread()->currentFrame->registers;
+ r.set(0, valueTable(table.address())); r.set(1, valueInteger(old+1)); r.set(2, valueInteger(73));
+ const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
+ grant(16); grant(1);
+ if (cpu.tableRebuild.arrayStorage != original || cpu.tableRebuild.arrayCleared != 16)
+  throw std::runtime_error("in-place grant did not move sixteen tags");
+ const auto state = cpu.captureRuntimeState();
+ const auto ram = machine.memory.captureSaveState();
+ const auto check = [&] {
+  if (table.arrayAddress() != original || table.arrayCapacity() != old+1 || table.getInteger(old+1) != valueInteger(73))
+   throw std::runtime_error("in-place growth did not retire at its original address");
+  for (int i=1; i<=old; ++i) if (table.getInteger(i) != value(i)) throw std::runtime_error("overlapping transfer corrupted slot");
+ };
+ grant(127);
+ if (cpu.tableRebuild.record != table.address()) throw std::runtime_error("early retirement");
+ grant(1); check();
+ const auto end = machine.memory.captureSaveState();
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); grant(128); check();
+ if (machine.memory.captureSaveState().ram != end.ram) throw std::runtime_error("in-place transfer replay changed RAM");
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); cpu.reset(); check();
+}
+
 void publishDisplacedArray(bool scalar, bool keepHash) {
  test::Blua32TestImage image;
  image.text.resize(2 * INSTRUCTION_BYTES);
@@ -457,7 +497,7 @@ int main() {
   if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
-  publishDisplacedArray(scalar, true); publishDisplacedArray(scalar, false);
+  publishInPlaceArray(scalar); publishDisplacedArray(scalar, true); publishDisplacedArray(scalar, false);
   publishFirstArray(scalar, 512); publishFirstArray(scalar, 1024);
   rebuildWork(scalar);
   hostGrantScratch(scalar);

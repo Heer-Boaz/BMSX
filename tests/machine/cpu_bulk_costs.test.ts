@@ -174,6 +174,35 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ test(`in-place growth resumes overlapping tag moves and survives reset (${backend})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+  const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['growing'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables;
+  const root = cpu.stringPool.intern('growing'), old = 2047;
+  cpu.heapAllocator.free(cpu.heapAllocator.allocate(old * 12, true));
+  const t = cpu.createTable(old, 0), original = tables.arrayAddress(t);
+  cpu.setSystemGlobalByKey(root, valueTable(t));
+  const value = (i: number) => i % 3 ? valueInteger(-i) : valueBool(false);
+  for (let i = 1; i <= old; ++i) tables.setInteger(t, i, value(i));
+  const r = cpu.rootThread.currentFrame!.registers;
+  r.setTable(0, t); r.setInteger(1, old+1); r.setInteger(2, 73);
+  const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
+  grant(16); grant(1);
+  assert.equal(cpu.tableRebuild.arrayStorage, original); assert.equal(cpu.tableRebuild.arrayCleared, 16);
+  const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  const check = () => {
+   assert.equal(tables.arrayAddress(t), original); assert.equal(tables.arrayCapacity(t), old+1);
+   for (let i = 1; i <= old; ++i) assert.equal(tables.getInteger(t, i), value(i));
+   assert.equal(tables.getInteger(t, old+1), valueInteger(73));
+  };
+  grant(127); assert.equal(cpu.tableRebuild.record, t); grant(1); check();
+  const end = cpu.memory.captureSaveState();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); grant(128); check();
+  assert.deepEqual(cpu.memory.captureSaveState().ram, end.ram);
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); cpu.reset(); check();
+ });
+
  for (const keepHash of [false, true]) test(`displaced array growth keeps both planes until publication (${backend}, keepHash=${keepHash})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);

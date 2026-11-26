@@ -787,6 +787,9 @@ export class CPU implements MappedPageInvalidator {
 		this.compiledCodeCache.retireAll();
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
+		const job = this.tableRebuild;
+		if (job.record && job.arrayStorage && job.arrayStorage === this.gc.tables.arrayAddress(job.record))
+			this.gc.tables.advanceRebuild(job, 0x7fffffff);
 		this.clearCompletionValues();
 		this.clearCallStack();
 		for (let index = 1; index < this.threadBanks.length; ++index) this.threadBanks[index].bindAddress(0);
@@ -4348,7 +4351,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 	private advanceTableStore(frame: CallFrame): void {
 		const j = this.tableRebuild, receiver = j.record;
-		this.gc.tables.advanceRebuild(this);
+		this.instructionBudgetRemaining = this.gc.tables.advanceRebuild(this.tableRebuild, this.instructionBudgetRemaining);
 		if (j.record || j.result === TableStoreReturn.None) return;
 		this.currentInstructionPc = j.instructionPc;
 		const results = this.acquireBuiltinResults();

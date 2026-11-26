@@ -1651,8 +1651,11 @@ block, the processor transfers 16 destination bytes per cycle. Each retained
 payload and tag goes to its position in the larger array; new slots are
 initialized to nil. The old array stays attached until publication. A hash
 that needs no repartitioning keeps its block and links; otherwise its
-replacement proceeds under the same cycle grants. Growth within the same
-block does not pay this transfer charge.
+replacement proceeds under the same cycle grants. When an array of at least
+1,024 slots grows within its existing block, retained payloads stay in place.
+The processor moves the retained tags and clears the new payloads and tags at
+the same 16 bytes per cycle. A reset during this in-place operation finishes
+the store before entering the reset program.
 
 The old hash remains attached until the replacement is complete. The processor
 then publishes the insertion before issuing another instruction or accepting

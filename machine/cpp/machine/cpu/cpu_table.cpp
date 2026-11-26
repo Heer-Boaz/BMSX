@@ -181,7 +181,7 @@ void CPU::resumeAllocation() {
 
 void CPU::advanceTableStore(CallFrame& frame) {
 	const u32 receiver = tableRebuild.record;
-	TableRecord(m_heap, receiver).advanceRebuild(*this);
+	instructionBudgetRemaining = TableRecord(m_heap, receiver).advanceRebuild(tableRebuild, instructionBudgetRemaining);
 	if (tableRebuild.record || tableRebuild.result == TableStoreReturn::None) return;
 	// Result placement can grow a frame and collect. Do it only after both
 	// the replacement and its new edge have been published.
