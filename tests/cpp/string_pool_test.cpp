@@ -58,6 +58,28 @@ void indexBytesAcrossRestore() {
 	}
 }
 
+void internComparesAllCandidateBytes() {
+	PoolMachine machine;
+	auto& pool = machine.cpu.stringPool();
+	std::array<char, 1170> buffer;
+	for (size_t i = 0; i < buffer.size(); ++i) buffer[i] = static_cast<char>(i * 197u);
+	for (size_t length : {63, 64, 65, 255, 256, 257, 1153}) {
+		for (size_t offset = 0; offset < 16; ++offset) {
+			const std::string_view input(buffer.data() + offset, length);
+			const auto id = pool.intern(input);
+			require(pool.find(input) == id, "unaligned matching bytes reuse the same String");
+			// Bus writes change the payload without changing its recorded hash.
+			for (size_t i = 0; i < length; ++i) {
+				const u32 at = id + BLUA32_STRING_RECORD_HEADER_SIZE + static_cast<u32>(i);
+				const u8 original = static_cast<u8>(input[i]);
+				machine.memory.writeRamRecordByte(at, original ^ 0x80u);
+				require(!pool.find(input), "same hash and length do not hide a differing byte");
+				machine.memory.writeRamRecordByte(at, original);
+			}
+		}
+	}
+}
+
 void borrowedSliceSurvivesEmergencyAllocation() {
 	PoolMachine machine;
 	auto& cpu = machine.cpu;
@@ -535,6 +557,7 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 int main() {
 	try {
 		indexBytesAcrossRestore();
+		internComparesAllCandidateBytes();
 		borrowedSliceSurvivesEmergencyAllocation();
 		reclaimUnreachableRecords();
 		collectEmptyString();

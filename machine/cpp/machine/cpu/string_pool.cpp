@@ -1,5 +1,6 @@
 #include "machine/cpu/string_pool.h"
 
+#include "common/bytes_equal.h"
 #include "common/endian.h"
 #include "common/hash_fnv.h"
 #include "machine/cpu/heap_allocator.h"
@@ -84,12 +85,12 @@ StringPool::ByteSpan StringPool::readBytes(StringId id, size_t start, size_t len
 bool StringPool::ByteSpan::consumeEqual(std::string_view prefix) {
 	const size_t n = std::min(first.size(), prefix.size());
 	if (n) {
-		if (std::memcmp(first.data(), prefix.data(), n) != 0) return false;
+		if (!bytesEqual(first.data(), prefix.data(), n)) return false;
 		first.remove_prefix(n);
 		prefix.remove_prefix(n);
 	}
 	if (!prefix.empty()) {
-		if (std::memcmp(wrapped.data(), prefix.data(), prefix.size()) != 0) return false;
+		if (!bytesEqual(wrapped.data(), prefix.data(), prefix.size())) return false;
 		wrapped.remove_prefix(prefix.size());
 	}
 	return true;
