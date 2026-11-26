@@ -413,3 +413,18 @@ test('record admission charges both storage blocks together and frees unissued a
 	assert.equal(budget.usedBytes(), used);
 	assert.equal(arena.occupiedBytes(), occupied);
 });
+
+test('a live tag at the end of a partial array band breaks the half-full tie', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)), tables = cpu.gc.tables;
+	for (const extra of [false, true]) {
+		const table = cpu.createTable(16383, 0);
+		for (let key = 1; key <= 4097; ++key) tables.setInteger(table, key, valueInteger(0));
+		for (let key = 8193; key <= 16381; key += 2) tables.setInteger(table, key, valueBool(false));
+		if (extra) tables.setInteger(table, 16383, valueBool(true));
+		tables.setInteger(table, 32769, valueInteger(73));
+		assert.equal(tables.arrayCapacity(table), extra ? 16384 : 8192);
+		assert.equal(tables.getInteger(table, 16381), valueBool(false));
+		assert.equal(tables.getInteger(table, 32769), valueInteger(73));
+	}
+});

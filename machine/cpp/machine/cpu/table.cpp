@@ -6,6 +6,7 @@
 #include <bit>
 #include <cstring>
 
+#include "common/count_nonzero.h"
 #include "machine/common/numeric.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/gc_heap.h"
@@ -178,8 +179,9 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 	const auto arrayValues = values();
 	for (u32 first = 0; first < capacity;) {
 		const u32 end = first + std::min(std::max(first, 1u), capacity - first);
-		u32 live = 0;
-		for (; first < end; ++first) live += arrayValues.tag(first) != ValueTag::Nil;
+		static_assert(static_cast<u8>(ValueTag::Nil) == 0);
+		const u32 live = countNonzeroBytes(arrayValues.tags + first, end - first);
+		first = end;
 		counts[countBins++] = live;
 		totalKeys += live;
 	}

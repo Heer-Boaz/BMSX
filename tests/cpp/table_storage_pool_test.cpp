@@ -27,6 +27,22 @@ void denseArrayRetainsBacking(bmsx::CPU& cpu) {
 	table.clear();
 }
 
+void partialBandDensity(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	for (bool extra : {false, true}) {
+		auto table = cpu.createTable(16383, 0);
+		for (int key = 1; key <= 4097; ++key) table.setInteger(key, valueInteger(0));
+		for (int key = 8193; key <= 16381; key += 2) table.setInteger(key, valueBool(false));
+		if (extra) table.setInteger(16383, valueBool(true));
+		table.setInteger(32769, valueInteger(73));
+		require(table.arrayCapacity() == (extra ? 16384u : 8192u),
+			"one live tag at the end of the partial density band breaks the half-full tie");
+		require(table.getInteger(16381) == valueBool(false) && table.getInteger(32769) == valueInteger(73),
+			"the sparse tail survives either partition");
+		table.clear();
+	}
+}
+
 void mixedGrowthKeepsUnchangedStorage(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	auto table = cpu.createTable(1, 1);
@@ -238,6 +254,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		denseArrayRetainsBacking(cpu);
+		partialBandDensity(cpu);
 		fullByteChainsWidenOnRehash(cpu);
 		mixedGrowthKeepsUnchangedStorage(cpu);
 		firstIntegerPlacement(cpu);

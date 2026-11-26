@@ -689,12 +689,12 @@ export class TableRecords {
 		}
 		const counts = TableRecords.rehashIntegerCounts;
 		let bins = 0, totalKeys = 0, firstHashArrayKey = TABLE_MAX_ARRAY_INDEX + 1;
-		const arrayTags = this.arrayAddress(record) + 4 * oldArray;
+		const arrayTags = (this.arrayAddress(record) & RAM_RECORD_WORD_MASK) + 4 * oldArray, ram = memory.ramData();
 		// Slots arrive in histogram order; only hash keys need a logarithm.
 		for (let slot = 0, boundary = 1; slot < oldArray; boundary *= 2) {
 			const end = Math.min(boundary, oldArray);
 			let live = 0;
-			for (; slot < end; ++slot) live += +(memory.readRamRecordByte(arrayTags + slot) !== ValueTag.Nil);
+			for (; slot < end; ++slot) live += +(ram[arrayTags + slot] !== ValueTag.Nil);
 			counts[bins++] = live;
 			totalKeys += live;
 		}
