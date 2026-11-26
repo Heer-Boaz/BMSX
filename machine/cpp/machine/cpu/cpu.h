@@ -391,6 +391,7 @@ private:
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
 	void executeHeapServiceStore(CallFrame&, int source, MemoryAccessKind, u32 address);
+	void writeHeapServiceProjection(u32 word);
 	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
 	u32 readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const;
 	// Ordinary CALL arguments borrow frame slots by index so backing growth can

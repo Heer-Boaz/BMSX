@@ -35,9 +35,9 @@ constexpr uint32_t HEAP_SERVICE_EXEC_STAGE_OFFSET = 0x860;
 constexpr uint32_t HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
 constexpr uint32_t HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
-constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0xc00;
+constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0x1000;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 16;
-constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 152;
+constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 384;
 
 enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 
@@ -121,5 +121,16 @@ constexpr uint32_t HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
 enum class HeapServiceTableResizeContextField : uint32_t {
 	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
 };
+
+// A private STORE selector, not a RAM latch or a mapped bus register.
+// The low three bits select a projection; record notifications include the
+// aligned record address, while root publication and release take no address.
+constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
+constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_MASK = 7;
+enum class HeapServiceProjection : uint32_t {
+	PublishRoots, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord, ReleaseStringWork,
+};
+constexpr uint32_t HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
+enum class HeapServiceGcArgumentField : uint32_t { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 };
 
 } // namespace bmsx

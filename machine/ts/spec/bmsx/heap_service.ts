@@ -26,9 +26,9 @@ export const HEAP_SERVICE_EXEC_STAGE_OFFSET = 0x860;
 export const HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
 export const HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 export const HEAP_SERVICE_FRAME_OFFSET = 0x880;
-export const HEAP_SERVICE_VALUE_OFFSET = 0xc00;
+export const HEAP_SERVICE_VALUE_OFFSET = 0x1000;
 export const HEAP_SERVICE_FRAME_COUNT = 16;
-export const HEAP_SERVICE_VALUE_COUNT = 152;
+export const HEAP_SERVICE_VALUE_COUNT = 384;
 
 export const enum HeapServiceExecStage { Idle, First, Retry }
 
@@ -113,3 +113,14 @@ export const HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
 export const enum HeapServiceTableResizeContextField {
 	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
 }
+
+// A private STORE selector, not a RAM latch or a mapped bus register.
+// The low three bits select a projection; record notifications include the
+// aligned record address, while root publication and release take no address.
+export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
+export const HEAP_SERVICE_GC_PROJECTION_MASK = 7;
+export const enum HeapServiceProjection {
+	PublishRoots, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord, ReleaseStringWork,
+}
+export const HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
+export const enum HeapServiceGcArgumentField { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 }

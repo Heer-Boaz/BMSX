@@ -1,0 +1,195 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
+	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
+import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { parseLuaChunk } from '../helpers/cpu_test_harness';
+
+const MODULE = 'kernel/gc_sweep_quantum', entrySource = 'halt_until_irq';
+const basis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
+const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_pace', 'kernel/word_arithmetic',
+	'kernel/gc_strings', 'kernel/gc_thread_compact', 'kernel/gc_objects', 'kernel/heap_admission', 'kernel/gc_epoch',
+	'kernel/gc_runtime_layout', MODULE].map(path => {
+	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
+	return { path, source, chunk: parseLuaChunk(source, path) };
+});
+const objectCount = 0x70, sweepLink = 0x74;
+const liveText = 'fused sweep-alive', deadText = 'fused sweep-garbage';
+
+function fixture(optLevel: 0 | 3) {
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
+	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
+	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'sweep_quantum');
+	assert.ok(symbol);
+	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
+	assert.ok(root >= 0);
+	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
+	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
+	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
+	const state = cpu.heapAllocator.managementOffset(), control = state + HEAP_GC_CONTROL_OFFSET;
+	const context = state + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, last = state + HEAP_SERVICE_THREAD_OFFSET;
+	function same<T>(action: (target: CPU) => T): T {
+		const result = action(cpu);
+		assert.deepEqual(action(oracle), result);
+		return result;
+	}
+	const [keep, live, dead, deadArray, deadHash] = same(target => {
+		const { gc, luaHeap, stringPool } = target;
+		luaHeap.setCollectionTarget(luaHeap.capacity());
+		const keep = target.createTable(2, 0), live = stringPool.intern(liveText);
+		const dead = stringPool.intern(deadText), deadArray = target.createTable(3, 0), deadHash = target.createTable(0, 8);
+		for (let n = 0; n < 4096 && gc.phase() !== GcPhase.Sweep; ++n)
+			gc.step(valueTable(keep), valueString(live), valueNil(), 0, false, 1);
+		assert.equal(gc.phase(), GcPhase.Sweep);
+		return [keep, live, dead, deadArray, deadHash];
+	});
+	const count = () => memory.readRamRecordWord(control + objectCount);
+	const nativeCount = () => oracle.memory.readRamRecordWord(control + objectCount);
+	const contextWord = (offset: Sweep) => memory.readRamRecordWord(context + offset);
+	const notices: number[] = [], nativeNotices: number[] = [];
+	cpu.gc.onRecordRetirement = address => { if (address !== null) notices.push(address); };
+	oracle.gc.onRecordRetirement = address => { if (address !== null) nativeNotices.push(address); };
+	function compare() {
+		for (const [from, to] of [[floor, context], [context + Sweep.ProtectedCapacity + 4, last]]) {
+			const actual = memory.ramData().subarray(from, to), expected = oracle.memory.ramData().subarray(from, to);
+			if (Buffer.compare(actual, expected) === 0) continue;
+			const mismatch = actual.findIndex((value, index) => value !== expected[index]);
+			assert.equal(actual[mismatch], expected[mismatch], `private RAM differs at 0x${(from + mismatch).toString(16)}`);
+		}
+	}
+	function begin(limit: number) {
+		const expected = oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
+		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [state, limit, 0, 0]));
+		return expected;
+	}
+	function grant(cycles: number) {
+		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
+		const spent = cycles - cpu.instructionBudgetRemaining;
+		assert.ok(spent > 0);
+		return spent;
+	}
+	function finish(expected: number) {
+		let spent = 0;
+		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(512);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.heapServiceResult(), expected);
+		assert.deepEqual(notices, nativeNotices, 'derived notices are emitted once in retirement order');
+		compare();
+		return spent;
+	}
+	return { cpu, memory, control, keep, live, dead, deadArray, deadHash, count, nativeCount, contextWord, notices, begin, grant, finish };
+}
+
+for (const opt of [0, 3] as const) {
+	test(`fused sweep keeps the original allowance and updates pace once across Object→String at O${opt}`, () => {
+		const f = fixture(opt), { cpu, memory } = f;
+		assert.equal(f.begin(0), 0);
+		f.finish(0);
+		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
+		const count = f.count(), charged = cpu.luaHeap.usedBytes(), paceBefore = cpu.gc.epochWork();
+		const work = f.begin(12);
+		assert.equal(work, 12);
+		for (let n = 0; n < 8192 && f.contextWord(Sweep.Action) === Action.None; ++n) f.grant(1);
+		assert.ok(cpu.heapServiceActive(), 'a record notice cannot retire the fused root');
+		assert.equal(f.contextWord(Sweep.Action), Action.ObserveRetiredRecord);
+		assert.equal(f.contextWord(Sweep.Deferred), f.deadHash);
+		assert.equal(f.count(), count, 'the count still belongs to the live object quantum');
+		assert.equal(cpu.gc.epochWork(), paceBefore);
+		assert.equal(memory.readRamRecordByte(f.deadHash), 0);
+		assert.ok(cpu.luaHeap.usedBytes() < charged);
+		assert.deepEqual(f.notices, [], 'arming the action is not the effect store');
+		const notice = captureCpuCheckpoint(cpu);
+		for (let n = 0; n < 128 && f.notices.length === 0; ++n) f.grant(1);
+		assert.deepEqual(f.notices, [f.deadHash]);
+		assert.ok(cpu.heapServiceActive(), 'the notice leaves the root running');
+		assert.equal(f.count(), count, 'notice dispatch precedes publishing the object frontier');
+		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
+		for (let n = 0; n < 8192 && cpu.gc.phase() === GcPhase.Sweep; ++n) f.grant(1);
+		assert.ok(cpu.heapServiceActive(), 'the same root owns both phases');
+		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+		assert.equal(f.count(), f.nativeCount());
+		assert.ok(f.count() <= count - 2);
+		assert.equal(f.contextWord(Sweep.Action), Action.None);
+		assert.equal(cpu.gc.epochWork(), paceBefore, 'object continuation does not account a second time');
+		const handoff = captureCpuCheckpoint(cpu);
+		const tail = f.finish(work);
+		assert.equal(cpu.gc.epochWork(), paceBefore + work);
+		restoreCpuCheckpoint(cpu, handoff);
+		assert.equal(f.finish(work), tail);
+		restoreCpuCheckpoint(cpu, notice);
+		f.notices.length = 0;
+		assert.ok(f.finish(work) > tail);
+		const rest = f.begin(4096);
+		f.finish(rest);
+		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.equal(cpu.stringPool.find(deadText), undefined);
+		assert.equal(cpu.stringPool.find(liveText), f.live);
+		assert.equal(cpu.gc.tableRecordAddress(f.keep), f.keep);
+		assert.equal(cpu.gc.tableRecordAddress(f.deadArray), 0);
+	});
+
+	test(`object exhaustion at exactly the grant defers String entry until the next quantum at O${opt}`, () => {
+		const f = fixture(opt), { cpu, memory, control } = f;
+		const limit = f.count();
+		assert.equal(f.begin(limit), limit);
+		f.finish(limit);
+		assert.equal(memory.readRamRecordWord(control + sweepLink), 0);
+		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
+		assert.equal(cpu.stringPool.find(deadText), f.dead);
+		f.finish(f.begin(1));
+		assert.equal(cpu.gc.phase(), GcPhase.Strings);
+	});
+}
+
+const pins = [
+	['T', 'machine/ts/machine/cpu/gc_heap.ts', '6e4a6f52041f90fe008b9bc48352f82c5b6aa2fa9f017486d20246a6b002015e'],
+	['C', 'machine/cpp/machine/cpu/gc_heap.cpp', '642cfe734d09e6ff9137cf072d003b978aed8773db642c435616d145ed9c953d'],
+	['S', 'machine/ts/spec/bmsx/heap_service.ts', 'bc482465da3c8ce3fd1f82417a618446394c5a7327a19ec6af858d50c2f35eba'],
+	['O', 'machine/ts/machine/cpu/gc_object.ts', 'eb2b0d0d5cd41541c3a1c33b062416b925e73469135db22262b5270f47471db3'],
+] as const;
+test('fused reclamation maps object handoff, residual String work, and the original pace retirement', () => {
+	const source = modules.find(module => module.path === MODULE)!.source;
+	assert.ok(source.includes(`-- Source basis: ${basis}.`));
+	const refs = new Map(pins.map(([key, file, sum]) => {
+		const text = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
+		assert.equal(createHash('sha256').update(text).digest('hex'), sum, file);
+		return [key as string, { lines: text.split('\n'), covered: new Set<number>() }];
+	}));
+	for (const [index, line] of source.slice(0, source.lastIndexOf('\nreturn {')).split('\n').entries()) {
+		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$)/.test(line)) continue;
+		const origin = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
+		assert.ok(origin, `${MODULE}:${index + 1}: missing origin`);
+		for (const entry of origin[1].trim().split(/\s+/)) {
+			const [key, spans] = entry.split(':'), ref = refs.get(key);
+			assert.ok(ref, entry);
+			for (const span of spans.split(',')) {
+				const [first, last = first] = span.split('-').map(Number);
+				assert.ok(first > 0 && last >= first && last <= ref.lines.length, entry);
+				for (let n = first; n <= last; ++n) ref.covered.add(n);
+			}
+		}
+	}
+	for (const [key, ranges] of [
+		['T', [[992, 1016], [1081, 1082], [1087, 1088], [1320, 1327], [1339, 1342], [1344, 1355], [1364, 1367], [1384, 1387]]],
+		['C', [[1027, 1035], [1072, 1082], [1166, 1167], [1175, 1176], [1413, 1434], [1438, 1443], [1462, 1465]]],
+	] as const) {
+		const ref = refs.get(key)!;
+		for (const [first, last] of ranges) for (let n = first; n <= last; ++n) {
+			if (/^\s*(?:$|\/\/|[{}]$)/.test(ref.lines[n - 1])) continue;
+			assert.ok(ref.covered.has(n), `${key}:${n}: ${ref.lines[n - 1]}`);
+		}
+	}
+});

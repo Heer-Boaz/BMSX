@@ -3,7 +3,7 @@
 static_assert(HEAP_SERVICE_THREAD_OFFSET + THREAD_HEAP_BYTES <= HEAP_SERVICE_RESULT_OFFSET);
 static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
-static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_RECORD_OFFSET);
+static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::DirectRecovery) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
@@ -16,11 +16,14 @@ static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObj
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_RECORD_CONTROL_OFFSET);
 static_assert(HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
+static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate) + sizeof(u32) <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET);
 static_assert(HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage) + sizeof(u32)
 	== HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET);
 static_assert(HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET + static_cast<u32>(HeapServiceTableResizeContextField::HashBytes) + sizeof(u32)
+	== HEAP_SERVICE_GC_PROJECTION_OFFSET);
+static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_GC_ARGUMENTS_OFFSET);
+static_assert(HEAP_SERVICE_GC_ARGUMENTS_OFFSET + static_cast<u32>(HeapServiceGcArgumentField::PendingTop) + sizeof(u32)
 	<= HEAP_SERVICE_THREAD_OFFSET);
 
 void CPU::initializeHeapService() {
@@ -132,10 +135,45 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 
 void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
 	admitHeapServiceAccess(kind, address);
-	const u32 end = RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
+	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
+	const u32 end = management + HEAP_SERVICE_THREAD_OFFSET;
 	if (address < m_memory.ramBusEnd() || address >= end)
 		throw BMSX_RUNTIME_ERROR("Heap service write is outside its private RAM port.");
 	const u32 word = wordOperand(frame.registers.get(source));
+	if (address - (management + HEAP_SERVICE_GC_PROJECTION_OFFSET) < sizeof(u32)) {
+		if (kind == MemoryAccessKind::U8) throw BMSX_RUNTIME_ERROR("Heap projection requires a word store.");
+		writeHeapServiceProjection(word);
+		return;
+	}
 	if (kind == MemoryAccessKind::U8) m_memory.writeRamRecordByte(address, static_cast<u8>(word));
 	else m_memory.writeRamRecordWord(address, word);
+}
+
+void CPU::writeHeapServiceProjection(u32 word) {
+	using Projection = HeapServiceProjection;
+	if (word == static_cast<u32>(Projection::PublishRoots)) {
+		publishHeapRemarkHead();
+		publishHeapRootBanks();
+		const u32 management = m_heapAllocator.managementOffset();
+		const u32 trace = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+		m_memory.writeRamRecordWord(trace + static_cast<u32>(HeapServiceTraceField::PendingStringWork), static_cast<u32>(m_stringPool.takeMarkWork()));
+		const u32 args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
+		const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
+		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.modeKey, m_heap.newIndexKey);
+		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ActiveThread), m_activeThread->address, pendingTop);
+		return;
+	}
+	if (word == static_cast<u32>(Projection::ReleaseStringWork)) {
+		const u32 trace = m_heapAllocator.managementOffset() + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+		m_stringPool.resumeMarkWork(m_memory.readRamRecordWord(trace + static_cast<u32>(HeapServiceTraceField::PendingStringWork)));
+		return;
+	}
+	const u32 record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
+	switch (static_cast<Projection>(word & HEAP_SERVICE_GC_PROJECTION_MASK)) {
+		case Projection::RebindRelocatedThread: rebindRelocatedThread(record); return;
+		case Projection::RetireCanonicalClosure: retireStaticClosure(record); return;
+		case Projection::RetireThreadView: retireThreadView(record); return;
+		case Projection::ObserveRetiredRecord: return; // No native record inspector.
+		default: throw BMSX_RUNTIME_ERROR("Unknown heap projection store command.");
+	}
 }

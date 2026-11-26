@@ -181,7 +181,9 @@ import {
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
+	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage, HeapServiceOperation,
+	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
 	HeapServiceRecordControlField, HeapServiceRecordKind,
 	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
@@ -4160,9 +4162,39 @@ export class CPU implements MappedPageInvalidator {
 			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address)
 				throw new Error('Heap service write is outside its private RAM port.');
 			const word = wordOperand(frame.registers.get(register));
-			if (kind === MemoryAccessKind.U8) memory.writeRamRecordByte(address, word);
+			if (((address - this.heapService.projectionAddress) >>> 0) < 4) {
+				if (kind === MemoryAccessKind.U8) throw new Error('Heap projection requires a word store.');
+				this.writeHeapServiceProjection(word);
+			} else if (kind === MemoryAccessKind.U8) memory.writeRamRecordByte(address, word);
 			else memory.writeRamRecordWord(address, word);
 		}
+	}
+
+	private writeHeapServiceProjection(word: number): void {
+		if (word === HeapServiceProjection.PublishRoots) {
+			this.publishHeapRemarkHead();
+			this.publishHeapRootBanks();
+			const memory = this.memory, management = this.heapAllocator.managementOffset();
+			const trace = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+			memory.writeRamRecordWord(trace + HeapServiceTraceField.PendingStringWork, this.stringPool.takeMarkWork());
+			const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, thread = this.activeThread.address;
+			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.modeKey, valuePayload(this.gc.tables.newIndexKey));
+			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ActiveThread, thread, this.pendingOperandTop(thread));
+			return;
+		}
+		if (word === HeapServiceProjection.ReleaseStringWork) {
+			const trace = this.heapAllocator.managementOffset() + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+			this.stringPool.resumeMarkWork(this.memory.readRamRecordWord(trace + HeapServiceTraceField.PendingStringWork));
+			return;
+		}
+		const record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
+		switch (word & HEAP_SERVICE_GC_PROJECTION_MASK) {
+			case HeapServiceProjection.RebindRelocatedThread: this.rebindRelocatedThread(record); return;
+			case HeapServiceProjection.RetireCanonicalClosure: this.retireStaticClosure(record); return;
+			case HeapServiceProjection.RetireThreadView: this.retireThreadView(record); return;
+			case HeapServiceProjection.ObserveRetiredRecord: this.gc.onRecordRetirement?.(record); return;
+		}
+		throw new Error('Unknown heap projection store command.');
 	}
 
 	private pushFrame(
