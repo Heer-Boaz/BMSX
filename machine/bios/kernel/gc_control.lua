@@ -135,9 +135,21 @@ end
 
 return {
 	internal = {
+		phase_offset = 0x00, -- T:83-85 H:90
 		white_offset = 0x01, -- T:86 H:91
+		changed_head_offset = 0x08, -- T:22 H:23
+		weak_visits_offset = 0x1c, -- T:25 H:27
+		trace_record_offset = 0x34, -- T:29 H:31
+		remark_visit_state_offset = 0x48, -- T:35 H:37
+		root_cursor_offset = 0x58, -- T:39 H:41
+		epoch_work_offset = 0x5c, -- T:40 H:42
+		last_epoch_work_offset = 0x60, -- T:41 H:43
+		physical_occupied_at_tick_offset = 0x64, -- T:42 H:44
+		physical_assist_offset = 0x68, -- T:43 H:45
+		object_head_offset = 0x6c, -- T:44 H:46
 		object_count_offset = 0x70, -- T:45 H:47
 		sweep_link_offset = 0x74, -- T:46 H:48
+		full_epochs_offset = 0x8c, -- T:52 H:55; word after the pace window
 		decode_gc_phase = decode_gc_phase,
 		phase = phase,
 		active = active,
