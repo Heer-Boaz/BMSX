@@ -9,6 +9,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -270,6 +271,36 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 		"collector deletion clears the forwarding method without changing the receiver's metatable");
 }
 
+void rebuildFullCollisionChain(CPU& cpu) {
+	for (const int capacity : {128, 256}) {
+		auto table = cpu.createTable(4, capacity);
+		table.setInteger(1, valueBool(false));
+		std::vector<int> keys;
+		for (int i = -1; keys.size() < static_cast<size_t>(capacity + 2); --i) {
+			if ((hashCanonicalTableKey(valueInteger(i)) & (capacity * 2 - 1)) == 0) keys.push_back(i);
+		}
+		for (int i = 0; i < capacity; ++i) table.setInteger(keys[i], valueInteger(i));
+		table.setInteger(keys[1], valueNil());
+		table.setInteger(keys[capacity], valueInteger(capacity));
+		require(table.hashSlots() == static_cast<u32>(capacity), "reclaim the dead collision without growing");
+		table.setInteger(keys.back(), valueInteger(capacity + 1));
+		require(table.hashSlots() == static_cast<u32>(2 * capacity), "grow a full chain");
+		for (int i = 0; i <= capacity + 1; ++i)
+			require(table.getInteger(keys[i]) == (i == 1 ? valueNil() : valueInteger(i)), "retain every live collision");
+		require(table.getInteger(1) == valueBool(false), "preserve the independent array");
+	}
+}
+
+void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
+	auto table = cpu.createTable(4, 128);
+	for (int k = -1; k >= -128; --k) table.setInteger(k, valueInteger(-k));
+	const auto words = table.hashAddress();
+	const Value prior = valueInteger(static_cast<i32>(memory.readRamRecordWord(words + 4 * 128)));
+	memory.writeRamRecordWord(words, 4);
+	table.setInteger(-129, valueBool(false));
+	require(table.getInteger(4) == prior, "the stored key word selects the reserved array slot during rebuild");
+}
+
 void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 	auto table = cpu.createTable(0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
@@ -356,6 +387,8 @@ int main() {
 		preparedLayoutMatchesAllMasks(cpu, memory);
 		inheritedAndFullWordKeys(cpu, memory);
 		fullHashGrowsAndRetainsMappings(cpu);
+		rebuildFullCollisionChain(cpu);
+		rebuildRoutesStoredIntegerByItsCurrentWord(cpu, memory);
 		std::cout << "String-key table tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

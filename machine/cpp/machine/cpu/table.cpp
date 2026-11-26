@@ -313,6 +313,11 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	if (!keepHash) bindHash(newHashSize, storage);
 	writeHeader(TableHeader::ArrayStorage, base);
 	if (!keepHash) initializeHash(storage, newHashSize);
+	if (oldHashSize > 64 && oldArraySize == newArraySize && !keepHash) {
+		const int slot = rebuildHashOnly(hashBodyAt<true>(oldStorage, oldHashSize), body, key, value);
+		m_heap->budget.replaceRecord(oldStorage, previous, requested);
+		return slot;
+	}
 	const int firstFree = static_cast<int>(newHashSize) - 1;
 	int nextFree = firstFree;
 	if (oldArraySize != newArraySize) {
@@ -340,6 +345,52 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
 	m_heap->budget.replaceRecord(keepHash ? 0 : oldStorage, previous, requested);
 	return slot;
+}
+
+// Reserve all chain heads before placing collisions. No displaced entry
+// needs a predecessor search, and each free candidate is visited at most once.
+int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& body, Value key, Value value) {
+	const int firstFree = static_cast<int>(body.count) - 1;
+	int nextFree = firstFree;
+	const u32 mask = body.count - 1u;
+	const u32 trigger = hashCanonicalTableKey(key) & mask;
+	body.slots.set(trigger, key);
+	body.slots.set(body.count + trigger, value);
+	// The source links are retired; the slot planes alone describe the
+	// mappings. Reuse that lane as a compact list of collided source slots.
+	const u32 array = arrayCapacity();
+	const auto arrayValues = values();
+	u32 collisions = 0;
+	for (u32 i = 0; i < source.count; ++i) {
+		const Value k = source.slots.get(i), v = source.slots.get(source.count + i);
+		if (isNil(k) || isNil(v)) continue;
+		if (valueIsInteger(k) && arraySlot(asInteger(k)) < array) {
+			arrayValues.set(arraySlot(asInteger(k)), v);
+			continue;
+		}
+		const u32 home = hashCanonicalTableKey(k) & mask;
+		if (body.slots.tag(home) == ValueTag::Nil) {
+			body.slots.set(home, k);
+			body.slots.set(body.count + home, v);
+		} else {
+			source.setNext(collisions++, i);
+		}
+	}
+	if (collisions) m_memory->invalidateRamWrite(source.links & RAM_RECORD_WORD_MASK,
+		collisions * (source.count <= BYTE_LINK_CAPACITY ? 1u : 4u));
+	for (u32 c = 0; c < collisions; ++c) {
+		const u32 i = source.next(c);
+		const Value k = source.slots.get(i);
+		const u32 home = hashCanonicalTableKey(k) & mask;
+		while (body.slots.tag(nextFree) != ValueTag::Nil) --nextFree;
+		const u32 dst = static_cast<u32>(nextFree--);
+		body.slots.set(dst, k);
+		body.slots.set(body.count + dst, source.slots.get(source.count + i));
+		body.setNext(dst, body.next(home));
+		body.setNext(home, dst);
+	}
+	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
+	return static_cast<int>(trigger);
 }
 
 void TableRecord::bindHash(size_t hashSize, u32 address) {

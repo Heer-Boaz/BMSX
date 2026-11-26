@@ -288,6 +288,7 @@ private:
 	static Value findStringField(const HashBody& body, StringId key, int& slot, u32* linkCycles);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
 	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
+	int rebuildHashOnly(const RebuildBody& source, const RebuildBody& body, Value key, Value value);
 	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr);

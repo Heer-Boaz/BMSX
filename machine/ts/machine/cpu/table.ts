@@ -742,6 +742,11 @@ export class TableRecords {
 		if (!keepHash) this.bindHash(record, hash, storage);
 		this.writeHeader(record, TableHeader.ArrayStorage, base);
 		if (!keepHash) this.initializeHash(storage, hash);
+		if (oldHash > 64 && oldArray === array && !keepHash) {
+			const slot = this.rebuildHashOnly(record, oldWords, oldHash, storage, hash, key, value);
+			this.heap.budget.replaceRecord(oldWords, previous, requested);
+			return slot;
+		}
 		const tags = storage + hash * 8, offset = base & RAM_RECORD_WORD_MASK;
 		if (array < oldArray) {
 			for (let i = array; i < oldArray; ++i) {
@@ -770,6 +775,49 @@ export class TableRecords {
 		const slot = this.reinsertMapping(record, key, value, array, hash, storage, tags);
 		this.heap.budget.replaceRecord(keepHash ? 0 : oldWords, previous, requested);
 		return slot;
+	}
+	private rebuildHashOnly(record: number, oldWords: number, oldHash: number, storage: number, hash: number,
+		key: Value, value: Value): number {
+		const memory = this.heap.memory, oldTags = oldWords + 8 * oldHash, tags = storage + 8 * hash;
+		const mask = hash - 1, trigger = hashCanonicalTableKey(key) & mask;
+		this.writeSlot(storage, tags, trigger, valueTag(key), valuePayload(key));
+		this.writeSlot(storage, tags, hash + trigger, valueTag(value), valuePayload(value));
+		const oldLinks = oldTags + oldHash * 2, links = tags + hash * 2;
+		const array = this.arrayCapacity(record), base = this.arrayAddress(record);
+		let collisions = 0, nextFree = mask;
+		// Reserve each home once. Only colliding source slots need a second
+		// visit; the retired link lane holds their indices until placement.
+		for (let i = 0; i < oldHash; ++i) {
+			const kt = memory.readRamRecordByte(oldTags + i), vt = memory.readRamRecordByte(oldTags + oldHash + i);
+			if (kt === ValueTag.Nil || vt === ValueTag.Nil) continue;
+			const kw = memory.readRamRecordWord(oldWords + 4 * i);
+			const index = (kw - 1) >>> 0;
+			if (kt === ValueTag.Integer && index < array) {
+				this.writeSlot(base, base + array * 4, index, vt, memory.readRamRecordWord(oldWords + 4 * (oldHash + i)));
+				continue;
+			}
+			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
+			if (memory.readRamRecordByte(tags + home) === ValueTag.Nil) {
+				this.writeSlot(storage, tags, home, kt, kw);
+				this.writeSlot(storage, tags, hash + home, vt, memory.readRamRecordWord(oldWords + 4 * (oldHash + i)));
+			} else {
+				this.setHashNext(oldLinks, oldHash, collisions++, i);
+			}
+		}
+		for (let c = 0; c < collisions; ++c) {
+			const i = this.hashNext(oldLinks, oldHash, c);
+			const kt = memory.readRamRecordByte(oldTags + i), kw = memory.readRamRecordWord(oldWords + 4 * i);
+			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
+			while (memory.readRamRecordByte(tags + nextFree) !== ValueTag.Nil) --nextFree;
+			const dst = nextFree--;
+			this.writeSlot(storage, tags, dst, kt, kw);
+			this.writeSlot(storage, tags, hash + dst, memory.readRamRecordByte(oldTags + oldHash + i),
+				memory.readRamRecordWord(oldWords + 4 * (oldHash + i)));
+			this.setHashNext(links, hash, dst, this.hashNext(links, hash, home));
+			this.setHashNext(links, hash, home, dst);
+		}
+		if (nextFree !== mask) this.writeHeader(record, TableHeader.Free, nextFree);
+		return trigger;
 	}
 	private updateLengthHint(record: number, slot: number, present: boolean): void {
 		const hint = this.lengthHint(record);

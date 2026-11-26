@@ -11,7 +11,7 @@ import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
-	valueBuiltinFunction, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueClosure, valueThread,
+	hashCanonicalTableKey, valueBuiltinFunction, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueClosure, valueThread,
 	valueString,
 	ValueTag,
 	valueIsTable,
@@ -225,6 +225,42 @@ test('mixed table migration preserves a sparse raw array prefix and hash overflo
 	assert.notEqual(tables.hashAddress(table), largeBody);
 	assert.deepEqual([1, 2, 3, 4, 5, 6, 7, -1, -3, 9].map(key => tables.getInteger(table, key)),
 		[valueBool(false), valueNil(), prefix, valueBool(true), valueNil(), valueNil(), tail, valueInteger(11), valueInteger(33), valueInteger(90)]);
+});
+
+test('a full collision chain compacts and grows across both link widths', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables;
+	for (const capacity of [128, 256]) {
+		const table = cpu.createTable(4, capacity);
+		tables.setInteger(table, 1, valueBool(false));
+		const keys: number[] = [];
+		for (let i = -1; keys.length < capacity + 2; --i) {
+			if ((hashCanonicalTableKey(valueInteger(i)) & (capacity * 2 - 1)) === 0) keys.push(i);
+		}
+		for (let i = 0; i < capacity; ++i) tables.setInteger(table, keys[i], valueInteger(i));
+		tables.setInteger(table, keys[1], valueNil());
+		tables.setInteger(table, keys[capacity], valueInteger(capacity));
+		assert.equal(tables.hashSize(table), capacity);
+		tables.setInteger(table, keys[capacity + 1], valueInteger(capacity + 1));
+		assert.equal(tables.hashSize(table), capacity * 2);
+		for (let i = 0; i <= capacity + 1; ++i) {
+			assert.equal(tables.getInteger(table, keys[i]), i === 1 ? valueNil() : valueInteger(i));
+		}
+		assert.equal(tables.getInteger(table, 1), valueBool(false));
+	}
+});
+
+test('hash rebuild routes a stored Integer by its current RAM word', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(4, 128), tables = cpu.gc.tables;
+	for (let k = -1; k >= -128; --k) tables.setInteger(table, k, valueInteger(-k));
+	const words = tables.hashAddress(table);
+	const prior = valueInteger(memory.readRamRecordWord(words + 4 * 128));
+	memory.writeRamRecordWord(words, 4);
+	tables.setInteger(table, -129, valueBool(false));
+	assert.equal(tables.getInteger(table, 4), prior);
 });
 
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
