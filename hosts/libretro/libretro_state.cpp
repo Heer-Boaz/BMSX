@@ -16,7 +16,7 @@ constexpr size_t kSaveStateBasePayloadCapacityBytes = 0x01000000u;
 size_t saveStatePayloadCapacityBytes(const Runtime& runtime) {
 	// An in-flight CONCATN adds the sampled prefix and one (Value, length)
 	// per nonempty source of the widest encoded C field.
-	constexpr size_t concatCapacity = MAIN_RAM_SIZE + 12u * MAX_EXT_REGISTER_BC + 32u;
+	constexpr size_t concatCapacity = MAIN_RAM_SIZE + 12u * MAX_EXT_REGISTER_BC + 10u * sizeof(u32) + 1u;
 	return kSaveStateBasePayloadCapacityBytes + concatCapacity
 		+ runtime.machine.cartridgeController.ramByteCount();
 }

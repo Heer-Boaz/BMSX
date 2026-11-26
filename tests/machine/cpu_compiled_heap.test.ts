@@ -103,6 +103,10 @@ for (const count of [0, 3, 513]) test(`compiled WIDE CONCATN reads exactly its r
 		assert.equal(js.runUntilDepth(0, 5), ref.runUntilDepth(0, 5)); assertParity(js, ref);
 		if (count === 513) {
 			assert.equal(js.rootThread.frameAtDepth(0).registers.get(513), valueBool(false));
+			const pending = js.captureRuntimeState().concat!;
+			assert.equal(pending.registersLeft, count);
+			assert.equal(pending.length, 0);
+			js.runUntilDepth(0, count); ref.runUntilDepth(0, count); assertParity(js, ref);
 			js.runUntilDepth(0, expected.length); ref.runUntilDepth(0, expected.length); assertParity(js, ref);
 		}
 		assert.equal(js.stringPool.toString(js.rootThread.frameAtDepth(0).registers.getStringId(513)), expected);

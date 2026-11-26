@@ -66,7 +66,7 @@ int main() {
 	machine.geometry.pendingCycles = 17;
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
-	state.cpuState.concat = {600, 0x1014, 31, 0, 3, 0xfaced00d, {{valueInteger(-7), 600}}, std::string("\0\xff\x80", 3)};
+	state.cpuState.concat = {600, 0x1014, 31, 0, 3, 0xfaced00d, 0, 0, {{valueInteger(-7), 600}}, std::string("\0\xff\x80", 3)};
 	state.cpuState.stringComparison = {0x80000100u, 0x1000u, 129, 199, -1, true, false};
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.rootThreadAddress = 0x083fa000u;

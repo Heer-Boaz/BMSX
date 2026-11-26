@@ -445,7 +445,9 @@ export class GcHeap {
 				const base = memory.readRamRecordWord(current + FrameField.StackBase) & FRAME_WINDOW_MASK;
 				const top = memory.readRamRecordWord(current + FrameField.Top) & FRAME_WINDOW_MASK;
 				const capacity = memory.readRamRecordWord(current + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
-				liveTop = Math.max(liveTop, base + Math.min(top, capacity));
+				// Unadmitted CONCATN sources still reside in this frame during final marking.
+				const pending = atomic ? this.cpu.pendingOperandTop(address) : 0;
+				liveTop = Math.max(liveTop, base + Math.min(Math.max(top, pending), capacity));
 			}
 			const tags = layout.offset + layout.capacity * 4;
 			while (next < liveTop && work < limit) {

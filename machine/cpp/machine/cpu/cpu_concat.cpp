@@ -9,6 +9,26 @@ namespace bmsx {
 // can succeed even when the arena cannot hold another copy.
 void CPU::advanceConcat(CallFrame& frame) {
 	auto& job = m_concat;
+	if (job.registersLeft) {
+		const u32 count = std::min(job.registersLeft, static_cast<u32>(instructionBudgetRemaining));
+		instructionBudgetRemaining -= count;
+		job.registersLeft -= count;
+		for (const u32 stop = job.nextRegister + count; job.nextRegister < stop; ++job.nextRegister) {
+			const Value v = frame.registers.get(job.nextRegister);
+			const u32 n = valueIsString(v) ? static_cast<u32>(m_stringPool.byteLength(asStringId(v)))
+				: static_cast<u32>(valueToString(v, m_stringPool).size());
+			if (n >= MAIN_RAM_SIZE - job.length) {
+				instructionBudgetRemaining -= static_cast<int>(MAIN_RAM_SIZE + job.registersLeft);
+				m_currentInstructionPc = job.instructionPc;
+				job.length = job.registersLeft = 0;
+				throw LuaOutOfMemorySignal{};
+			}
+			job.length += n;
+			if (n) job.sources.push_back({v, n});
+		}
+		if (job.registersLeft) return;
+		job.bytes.reserve(job.length);
+	}
 	const u32 start = static_cast<u32>(job.bytes.size());
 	u32 amount = std::min(job.length - start, static_cast<u32>(instructionBudgetRemaining));
 	instructionBudgetRemaining -= amount;
@@ -72,7 +92,7 @@ void CPU::concatenateValues(CallFrame& frame, int destination, int count, Operan
 		}
 		if (total > directBytes) {
 			job.bytes.reserve(total);
-			job.length = total; job.instructionPc = m_currentInstructionPc; job.destination = destination; job.source = job.offset = 0;
+			job.nextRegister = 0; job.length = total; job.instructionPc = m_currentInstructionPc; job.destination = destination; job.source = job.offset = 0;
 			job.hash = FNV1A32_OFFSET_BASIS;
 			if (instructionBudgetRemaining > 0) advanceConcat(frame);
 			return;
@@ -101,6 +121,17 @@ void CPU::executeConcat(CallFrame& frame, int destination, int leftOperand, int 
 }
 
 void CPU::executeConcatRange(CallFrame& frame, int destination, int base, int count) {
+	if (count > INLINE_CONCAT_OPERANDS) {
+		auto& job = m_concat;
+		job.sources.clear(); job.bytes.clear();
+		job.sources.reserve(count);
+		job.length = job.source = job.offset = 0;
+		job.nextRegister = base; job.registersLeft = count;
+		job.instructionPc = m_currentInstructionPc; job.destination = destination;
+		job.hash = FNV1A32_OFFSET_BASIS;
+		if (instructionBudgetRemaining > 0) advanceConcat(frame);
+		return;
+	}
 	instructionBudgetRemaining -= count;
 	concatenateValues(frame, destination, count, [&](int i) { return frame.registers.get(base + i); });
 }

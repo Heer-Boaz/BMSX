@@ -13,7 +13,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueBool, valueFloat, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -340,6 +340,43 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		}
 		assert.equal(cpu.captureRuntimeState().concat, null);
 	}
+});
+
+test('a wide CONCATN samples each register on its own cycle across GC and restore', () => {
+	const count = 65, code = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.CONCATN, 1, 1, 1, 1);
+	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0); writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, functions: [
+		{ firstWord: 0, wordCount: 2, maxStack: count + 1 }, { firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), pool = cpu.stringPool;
+	const frame = cpu.rootThread.currentFrame!, empty = pool.intern(''), first = pool.intern('first'), last = pool.intern('unread');
+	for (let i = 1; i <= count; ++i) frame.registers.setString(i, empty);
+	frame.registers.setString(2, first); frame.registers.setString(count, last); frame.top = 1;
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + 1);
+	const zero = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	assert.equal(zero.concat!.registersLeft, 64); assert.equal(zero.concat!.nextRegister, 2); assert.equal(zero.concat!.length, 0);
+	cpu.requestNonMaskableInterrupt(); assert.equal(cpu.enterPendingInterrupt(), false);
+	frame.registers.setBoolean(1, false);
+	for (let i = 2; i <= count; ++i) frame.registers.setString(i, empty);
+	cpu.runUntilDepth(0, 63); assert.equal(frame.registers.get(1), valueBool(false));
+	cpu.runUntilDepth(0, 1); assert.equal(frame.registers.getStringId(1), empty); assert.equal(cpu.instructionBudgetRemaining, 0);
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(zero);
+	cpu.runUntilDepth(0, 1);
+	const live = cpu.activeThread.currentFrame!; live.registers.setNil(2); live.registers.setInteger(3, -7);
+	cpu.collectTrackedHeapBytes();
+	assert.equal(pool.find('first'), first); assert.equal(pool.find('unread'), last);
+	const state = cpu.captureRuntimeState(), savedRam = memory.captureSaveState();
+	cpu.runUntilDepth(0, count - 2); const expected = 'first-7unread';
+	assert.equal(cpu.instructionBudgetRemaining, 0); assert.equal(live.registers.getStringId(1), empty);
+	cpu.runUntilDepth(0, expected.length); assert.equal(pool.bytes(live.registers.getStringId(1)), expected);
+	assert.equal(cpu.instructionBudgetRemaining, 0);
+	memory.restoreSaveState(savedRam); cpu.restoreRuntimeState(state);
+	const huge = pool.intern('huge'); memory.writeRamRecordWord(huge + BLUA32_STRING_LENGTH_OFFSET, MAIN_RAM_SIZE - 1);
+	cpu.activeThread.currentFrame!.registers.setString(4, huge);
+	cpu.runUntilDepth(0, 4);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+	assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress); assert.equal(cpu.captureRuntimeState().concat, null);
+	assert.equal(cpu.instructionBudgetRemaining, 4 - (count - 2) - MAIN_RAM_SIZE);
 });
 
 test('incremental collection budgets CONCATN roots while the input frontier advances', () => {

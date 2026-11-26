@@ -140,6 +140,8 @@ struct ConcatSource {
 
 struct ConcatAssembly {
 	u32 length = 0, instructionPc = 0, destination = 0, source = 0, offset = 0, hash = 0;
+	u32 nextRegister = 0, registersLeft = 0;
+	bool active() const { return length || registersLeft; }
 	std::vector<ConcatSource> sources;
 	std::string bytes;
 	bool operator==(const ConcatAssembly&) const = default;

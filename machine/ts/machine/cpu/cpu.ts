@@ -21,7 +21,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, INLINE_CONCAT_BYTES, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, INLINE_CONCAT_BYTES, INLINE_CONCAT_OPERANDS, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -796,7 +796,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.stringComparison = new StringComparisonLatch();
-		this.concat.length = 0;
+		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -1692,7 +1692,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.stringComparison = new StringComparisonLatch();
-		this.concat.length = 0;
+		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.yieldRequested = false;
@@ -1709,7 +1709,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.length !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1732,7 +1732,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.length !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -1856,7 +1856,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.length !== 0 || this.gc.fullEpochs()) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2038,7 +2038,7 @@ export class CPU implements MappedPageInvalidator {
 						&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 						this.resumePendingMemoryOperation();
 						if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
-						if (this.concat.length !== 0) this.advanceConcat(thread.currentFrame!);
+						if (this.concat.active) this.advanceConcat(thread.currentFrame!);
 					}
 					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
 						if (this.hardHalted
@@ -2152,7 +2152,7 @@ export class CPU implements MappedPageInvalidator {
 					&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
-					if (this.concat.length !== 0) this.advanceConcat(thread.currentFrame!);
+					if (this.concat.active) this.advanceConcat(thread.currentFrame!);
 				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
@@ -2393,7 +2393,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.length !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -2500,7 +2500,27 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private advanceConcat(frame: CallFrame): void {
-		const job = this.concat, amount = Math.min(this.instructionBudgetRemaining, job.length - job.cursor);
+		const job = this.concat;
+		if (job.registersLeft) {
+			const count = Math.min(job.registersLeft, this.instructionBudgetRemaining);
+			this.charge(count); job.registersLeft -= count;
+			for (const stop = job.nextRegister + count; job.nextRegister < stop; ++job.nextRegister) {
+				const v = frame.registers.get(job.nextRegister);
+				const n = valueTag(v) === ValueTag.String ? this.stringPool.byteLength(valuePayload(v)) >>> 0
+					: valueToByteString(v, this.stringPool).length;
+				if (n >= MAIN_RAM_SIZE - job.length) {
+					this.charge(MAIN_RAM_SIZE + job.registersLeft);
+					this.currentInstructionPc = job.instructionPc;
+					job.length = job.registersLeft = 0;
+					throw LUA_OUT_OF_MEMORY_SIGNAL;
+				}
+				job.length += n;
+				if (n) { job.values.push(v); job.lengths.push(n); }
+			}
+			if (job.registersLeft) return;
+			if (job.length > job.bytes.length) job.bytes = new Uint8Array(job.length);
+		}
+		const amount = Math.min(this.instructionBudgetRemaining, job.length - job.cursor);
 		this.charge(amount);
 		job.append(this.stringPool, amount);
 		if (job.cursor !== job.length) return;
@@ -2512,6 +2532,14 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeConcat(frame: CallFrame, a: number, b: number, c: number, range = false): void {
 		const count = range ? c : 2;
+		if (range && count > INLINE_CONCAT_OPERANDS) {
+			const job = this.concat;
+			job.values.length = job.lengths.length = 0;
+			job.start(0, this.currentInstructionPc, a);
+			job.nextRegister = b; job.registersLeft = count;
+			if (this.instructionBudgetRemaining > 0) this.advanceConcat(frame);
+			return;
+		}
 		if (range) this.charge(count);
 		const strings = this.stringPool;
 		let length = 0, conversions = 0;
@@ -4621,11 +4649,15 @@ export class CPU implements MappedPageInvalidator {
 		for (const value of this.localRoots) heap.markValue(value);
 	}
 
+	public pendingOperandTop(thread: number): number {
+		return this.concat.registersLeft && this.activeThread.address === thread ? this.concat.nextRegister + this.concat.registersLeft : 0;
+	}
+
 	public rootBankSlots(bank: GcRootBank): number {
 		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
-		if (bank === GcRootBank.ConcatOperands) return this.concat.length ? this.concat.values.length - this.concat.source : 0;
+		if (bank === GcRootBank.ConcatOperands) return this.concat.active ? this.concat.values.length - this.concat.source : 0;
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
 		return image === null ? 0 : image.constantStringRoots.length;
 	}

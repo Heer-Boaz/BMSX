@@ -1153,8 +1153,9 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.bool(scan.skipLess); writer.bool(scan.skipTie);
 	const concat = state.concat;
-	writer.u32(concat === null ? 0 : concat.length);
+	writer.bool(concat !== null);
 	if (concat !== null) {
+		writer.u32(concat.length); writer.u32(concat.registersLeft); writer.u32(concat.nextRegister);
 		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
 		writer.u32(concat.values.length);
 		for (let i = 0; i < concat.values.length; ++i) { writer.u64(concat.values[i]); writer.u32(concat.lengths[i]); }
@@ -1210,12 +1211,12 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 }
 
 function readConcatAssembly(reader: BinaryReader): CpuRuntimeState['concat'] {
-	const length = reader.u32();
-	if (!length) return null;
+	if (!reader.bool()) return null;
+	const length = reader.u32(), registersLeft = reader.u32(), nextRegister = reader.u32();
 	const instructionPc = reader.u32(), destination = reader.u32(), source = reader.u32(), offset = reader.u32(), hash = reader.u32();
 	const count = reader.u32(), values: Value[] = [], lengths: number[] = [];
 	for (let i = 0; i < count; ++i) { values.push(reader.u64() as Value); lengths.push(reader.u32()); }
-	return { length, instructionPc, destination, source, offset, hash, values, lengths, bytes: reader.bytes(reader.u32()) };
+	return { length, registersLeft, nextRegister, instructionPc, destination, source, offset, hash, values, lengths, bytes: reader.bytes(reader.u32()) };
 }
 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {

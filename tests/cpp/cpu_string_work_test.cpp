@@ -129,6 +129,52 @@ void grantedStringOrder(bool scalar, bool inclusive) {
 		"a saved first difference survives a change to consumed bytes and controls retirement");
 }
 
+void grantedConcatRegisters() {
+	constexpr int count = 65;
+	test::Blua32TestImage im; im.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(im.text, 0, static_cast<u8>(OpCode::CONCATN), 1, 1, 1, 1);
+	writeInstruction(im.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(im.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	im.functions = {{.firstWord=0,.wordCount=2,.maxStack=count+1},{.firstWord=2,.wordCount=1}}; im.exceptionFunctionIndex=1;
+	CpuMachine m(im, true); auto& cpu = m.cpu; auto& pool = cpu.stringPool(); auto& frame = m.restart();
+	const auto empty = pool.intern(""), first = pool.intern("first"), last = pool.intern("unread");
+	for (int i = 1; i <= count; ++i) frame.registers.set(i, valueString(empty));
+	frame.registers.set(2, valueString(first)); frame.registers.set(count, valueString(last)); frame.setTop(1);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)] + 1);
+	const auto zero = cpu.captureRuntimeState();
+	require(zero.concat.registersLeft == 64 && zero.concat.nextRegister == 2 && !zero.concat.length,
+		"an empty sampled operand does not retire the pending register scan");
+	const auto ram = m.memory.captureSaveState();
+	cpu.requestNonMaskableInterrupt();
+	require(!cpu.enterPendingInterrupt(), "the register scan is active before any result bytes are known");
+	frame.registers.set(1, valueBool(false));
+	for (int i = 2; i <= count; ++i) frame.registers.set(i, valueString(empty));
+	cpu.runUntilDepth(0, 63);
+	require(frame.registers.get(1) == valueBool(false), "an all-empty range waits for its final register");
+	cpu.runUntilDepth(0, 1);
+	require(frame.registers.get(1) == valueString(empty) && !cpu.instructionBudgetRemaining, "zero result bytes need no extra grant");
+	m.memory.restoreSaveState(ram); cpu.restoreRuntimeState(zero);
+	cpu.runUntilDepth(0, 1);
+	auto& live = *cpu.activeThread()->currentFrame;
+	live.registers.set(2, valueNil()); live.registers.set(3, valueInteger(-7));
+	cpu.collectHeap();
+	require(pool.find("first") == first && pool.find("unread") == last, "both sides of the admission frontier are GC roots");
+	const auto state = cpu.captureRuntimeState(); const auto savedRam = m.memory.captureSaveState();
+	cpu.runUntilDepth(0, count - 2);
+	const std::string expected = "first-7unread";
+	require(!cpu.instructionBudgetRemaining && live.registers.get(1) == valueString(empty), "final register cycle does not publish nonempty bytes");
+	cpu.runUntilDepth(0, expected.size());
+	require(pool.toString(asStringId(live.registers.get(1))) == expected && !cpu.instructionBudgetRemaining, "sample registers only on their cycle");
+	m.memory.restoreSaveState(savedRam); cpu.restoreRuntimeState(state);
+	const auto huge = pool.intern("huge");
+	m.memory.writeRamRecordWord(huge + BLUA32_STRING_LENGTH_OFFSET, MAIN_RAM_SIZE - 1u);
+	cpu.activeThread()->currentFrame->registers.set(4, valueString(huge));
+	cpu.runUntilDepth(0, 4);
+	require(cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY && cpu.readEpcWord() == m.rom.textAddress
+		&& !cpu.captureRuntimeState().concat.active() && cpu.instructionBudgetRemaining == 4 - (count - 2) - static_cast<int>(MAIN_RAM_SIZE),
+		"a resumed overlength range faults at issue PC with saturated byte and outstanding range charges");
+}
+
 void incrementalConcatRoots() {
 	constexpr int count = 48;
 	test::Blua32TestImage image;
@@ -503,6 +549,7 @@ void mappedStringCopiesStorage() {
 } // namespace
 int main() {
 	try {
+		grantedConcatRegisters();
 		incrementalConcatRoots();
 		ramStringPorts();
 		mappedStringCopiesStorage();

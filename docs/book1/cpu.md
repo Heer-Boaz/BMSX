@@ -635,18 +635,29 @@ CONCAT adds one cycle per byte in the converted, combined result. CONCATN
 adds C cycles for its supplied source range and one cycle per byte in the
 combined result. The result length includes zero bytes and the text of
 converted non-String values. These charges apply even when an identical String
-already exists. Results of at most 256 bytes are charged at issue. For a
-longer representable result the CPU samples the operand values and their byte
-counts at issue, then assembles one byte per available result cycle. Writes
-to source registers after issue do not replace operands. Until their last byte
-has been sampled, source Strings remain reachable even if the source registers
-are overwritten. The final mark scans unread operands within its normal work
-quanta. Writes to String payloads cannot change bytes already sampled.
+already exists.
+
+For CONCAT and for CONCATN with at most 64 operands, the CPU samples operand
+values and their byte counts at issue. It also charges results of at most 256
+bytes at issue. A longer result is assembled one byte per available result cycle.
+
+For CONCATN with more than 64 operands, each source cycle samples one
+register and its converted byte count, in ascending register order. A write
+before that cycle changes the operand; a later register write does not. While
+sources remain to be sampled, collection retains the active register window
+through the last source without changing the published frame top. Result
+assembly starts only after all source cycles and consumes one cycle per byte,
+including for results of 256 bytes or fewer.
+
+In either form, a sampled source String remains reachable until its last byte
+has been read, even if its source register is overwritten. The final mark
+scans unread operands within its normal work quanta. Writes to String payloads
+cannot change bytes already assembled.
 The destination is written only after the completed sequence has been interned; interrupts wait for
 retirement. An allocation fault retains the charge. A concatenation result must fit the
 22-bit byte length of a RAM String. At 4 MiB or more the instruction raises
 out-of-memory without interning the result or collecting. Its byte charge
-saturates at 4,194,304 cycles; the base and range charges still apply.
+saturates at 4,194,304 cycles; the base and full range charges still apply even if an early operand establishes the overflow.
 A zero-count CONCATN therefore costs
 only its three base cycles.
 

@@ -3,7 +3,7 @@ import type { StringPool } from './string_pool';
 import { ValueTag, valuePayload, valueTag, valueToByteString, type Value } from './value';
 
 export type ConcatAssemblyState = {
-	length: number; instructionPc: number; destination: number; source: number; offset: number; hash: number;
+	nextRegister: number; registersLeft: number; length: number; instructionPc: number; destination: number; source: number; offset: number; hash: number;
 	values: Value[]; lengths: number[]; bytes: Uint8Array;
 };
 
@@ -11,6 +11,9 @@ export type ConcatAssemblyState = {
 // is part of the machine state; retained host capacity is never serialized.
 export class ConcatAssembly {
 	length = 0;
+	nextRegister = 0;
+	registersLeft = 0;
+	get active(): boolean { return (this.length | this.registersLeft) !== 0; }
 	instructionPc = 0;
 	destination = 0;
 	source = 0;
@@ -23,6 +26,7 @@ export class ConcatAssembly {
 
 	start(length: number, instructionPc: number, destination: number): void {
 		if (length > this.bytes.length) this.bytes = new Uint8Array(length);
+		this.nextRegister = this.registersLeft = 0;
 		this.length = length; this.instructionPc = instructionPc; this.destination = destination;
 		this.cursor = this.source = this.offset = 0; this.hash = FNV1A32_OFFSET_BASIS;
 	}
@@ -44,14 +48,15 @@ export class ConcatAssembly {
 	}
 
 	capture(): ConcatAssemblyState | null {
-		if (!this.length) return null;
-		return { length: this.length, instructionPc: this.instructionPc, destination: this.destination, source: this.source, offset: this.offset,
+		if (!this.active) return null;
+		return { nextRegister: this.nextRegister, registersLeft: this.registersLeft, length: this.length, instructionPc: this.instructionPc, destination: this.destination, source: this.source, offset: this.offset,
 			hash: this.hash, values: this.values.slice(), lengths: this.lengths.slice(), bytes: this.bytes.slice(0, this.cursor) };
 	}
 
 	restore(state: ConcatAssemblyState | null): void {
-		if (state === null) { this.length = 0; return; }
-		this.start(state.length, state.instructionPc, state.destination);
+		if (state === null) { this.length = this.registersLeft = 0; return; }
+		this.start(state.registersLeft ? 0 : state.length, state.instructionPc, state.destination);
+		this.nextRegister = state.nextRegister; this.registersLeft = state.registersLeft; this.length = state.length;
 		this.source = state.source; this.offset = state.offset; this.hash = state.hash;
 		this.values = state.values.slice(); this.lengths = state.lengths.slice();
 		this.bytes.set(state.bytes); this.cursor = state.bytes.length;

@@ -218,6 +218,9 @@ void concatRange(int count) {
 		require(native.cpu.runUntilDepth(0, 5) == scalar.cpu.runUntilDepth(0, 5), "WIDE ranges consume the same grant"); requireParity(native, scalar);
 		if (count == 513) {
 			require(native.cpu.readFrameRegister(0, 513) == valueBool(false), "destination remains live during assembly");
+			const auto pending = native.cpu.captureRuntimeState().concat;
+			require(pending.registersLeft == static_cast<u32>(count) && pending.length == 0u, "a base-only grant has sampled no source registers");
+			native.cpu.runUntilDepth(0, count); scalar.cpu.runUntilDepth(0, count); requireParity(native, scalar);
 			native.cpu.runUntilDepth(0, expected.size()); scalar.cpu.runUntilDepth(0, expected.size()); requireParity(native, scalar);
 		}
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");

@@ -466,7 +466,12 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
 			const u32 top = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Top)) & FRAME_WINDOW_MASK;
 			const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
-			liveTop = std::max(liveTop, base + std::min(top, capacity));
+			// Unadmitted CONCATN sources still reside in this frame. The final
+			// pass must not clear its live operand window above the published top.
+			const auto& job = m_cpu.m_concat;
+			const u32 pending = atomic && job.registersLeft && address == m_cpu.activeThread()->address
+				? job.nextRegister + job.registersLeft : 0u;
+			liveTop = std::max(liveTop, base + std::min(std::max(top, pending), capacity));
 		}
 		auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
 		while (next < liveTop && work < limit) {
