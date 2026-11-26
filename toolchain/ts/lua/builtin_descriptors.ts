@@ -28,6 +28,7 @@ export const LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS: Readonly<Record<string, numbe
 
 export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
+	{ name: 'collectgarbage', params: ['option?'], signature: 'collectgarbage([option])' },
 	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
 	{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
 	{ name: 'getglobal', params: ['name'], signature: 'getglobal(name)', description: 'Reads a live ordinary global register by name, not a Terminal variable or system register.' },
