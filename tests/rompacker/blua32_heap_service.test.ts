@@ -15,13 +15,16 @@ import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_RECORD_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
-const recordSource = readFileSync(`machine/bios/${HEAP_SERVICE_RECORD_MODULE_PATH}.lua`, 'utf8');
 const allocator = readFileSync(`machine/bios/${HEAP_SERVICE_MODULE_PATH}.lua`, 'utf8');
+const serviceModules = HEAP_SERVICE_MODULES.slice(1).map(path => {
+	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
+	return { path, source, chunk: parseLuaChunk(source, path) };
+});
 const publicModules = BIOS_FUNCTION_EXPORTS.map(({ path }) => {
 	const source = 'module<const>\nlocal public_entry<const> = function() return 0 end\nreturn public_entry';
 	return { path, source, chunk: parseLuaChunk(source, path) };
@@ -31,7 +34,7 @@ const publicModules = BIOS_FUNCTION_EXPORTS.map(({ path }) => {
 const loadAddress = 0x104;
 
 function compile(preload: boolean, optLevel: 0 | 3 = 3, source = allocator, extraModules: readonly { path: string; source: string }[] = []) {
-	const modules = [...publicModules, ...[{ path: HEAP_SERVICE_MODULE_PATH, source }, { path: HEAP_SERVICE_RECORD_MODULE_PATH, source: recordSource }, ...extraModules].map(module => ({
+	const modules = [...publicModules, ...serviceModules, ...[{ path: HEAP_SERVICE_MODULE_PATH, source }, ...extraModules].map(module => ({
 		...module, chunk: parseLuaChunk(module.source, module.path),
 	}))];
 	const entrySource = 'return true';
@@ -72,14 +75,15 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	})));
 
 	const entryNames = ['reset', 'set_floor', 'floor', 'allocate', 'free', 'reserve_backing', 'resize_backing',
-		'shrink', 'allocation_bytes', 'occupied_bytes', 'is_object', 'reserve_record'];
+		'shrink', 'allocation_bytes', 'occupied_bytes', 'is_object', 'reserve_record', 'sweep_step'];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {
 		const address = readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * operation);
 		const index = blua32FunctionIndexAtAddress(layout, address);
-		const path = operation === HeapServiceOperation.ReserveRecord ? HEAP_SERVICE_RECORD_MODULE_PATH : HEAP_SERVICE_MODULE_PATH;
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path
-			&& entry.exportPathKey === `bmsx_dlmalloc_${entryNames[operation]}`)!;
+		const path = operation === HeapServiceOperation.StringSweep ? HEAP_SERVICE_STRINGS_MODULE_PATH
+			: operation === HeapServiceOperation.ReserveRecord ? HEAP_SERVICE_RECORD_MODULE_PATH : HEAP_SERVICE_MODULE_PATH;
+		const binding = operation === HeapServiceOperation.StringSweep ? entryNames[operation] : `bmsx_dlmalloc_${entryNames[operation]}`;
+		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === binding)!;
 		assert.equal(linked.symbols.metadata.functionIds[index], object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length);
 		functions.add(index);

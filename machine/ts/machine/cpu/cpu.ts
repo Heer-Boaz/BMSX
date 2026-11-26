@@ -2237,18 +2237,23 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
+			const fullStringSweep = this.gc.fullStringSweepActive();
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						this.finishExecFloorService();
-						this.finishNewTableReservation();
+						if (fullStringSweep) this.gc.finishFullStringSweep();
+						else {
+							this.finishExecFloorService();
+							this.finishNewTableReservation();
+						}
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
 				}
-				return this.hardHalted ? RunResult.Halted : RunResult.Yielded;
+				if (this.hardHalted) return RunResult.Halted;
+				return fullStringSweep && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 			}
@@ -2266,10 +2271,12 @@ export class CPU implements MappedPageInvalidator {
 					this.instructionBudgetRemaining = instructionBudget;
 					if (instructionBudget <= 0) return RunResult.Yielded;
 					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
-					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words));
+					const services = this.systemImage.heapServiceFunctions;
+					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words,
+						services === null ? 0 : services[HeapServiceOperation.StringSweep]));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
-					if (instructionBudget <= 0) return RunResult.Yielded;
+					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;
 					continue;
 				}
 				const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);

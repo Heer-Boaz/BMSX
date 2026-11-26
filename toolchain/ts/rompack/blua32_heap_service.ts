@@ -11,21 +11,24 @@ import { blua32FunctionIndexAtAddress, type Blua32ImageLayout } from './blua32_i
 
 export const HEAP_SERVICE_MODULE_PATH = 'kernel/dlmalloc';
 export const HEAP_SERVICE_RECORD_MODULE_PATH = 'kernel/dlmalloc_record';
-export const HEAP_SERVICE_MODULES = [HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH] as const;
+export const HEAP_SERVICE_STRINGS_MODULE_PATH = 'kernel/gc_strings';
+export const HEAP_SERVICE_MODULES = [HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH] as const;
+const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
-	[HeapServiceOperation.Reset]: ['reset', 3],
-	[HeapServiceOperation.SetFloor]: ['set_floor', 2],
-	[HeapServiceOperation.Floor]: ['floor', 1],
-	[HeapServiceOperation.Allocate]: ['allocate', 3],
-	[HeapServiceOperation.Free]: ['free', 2],
-	[HeapServiceOperation.ReserveBacking]: ['reserve_backing', 3],
-	[HeapServiceOperation.ResizeBacking]: ['resize_backing', 3],
-	[HeapServiceOperation.Shrink]: ['shrink', 3],
-	[HeapServiceOperation.AllocationBytes]: ['allocation_bytes', 2],
-	[HeapServiceOperation.OccupiedBytes]: ['occupied_bytes', 1],
-	[HeapServiceOperation.IsObject]: ['is_object', 2],
-	[HeapServiceOperation.ReserveRecord]: ['reserve_record', 9, HEAP_SERVICE_RECORD_MODULE_PATH],
+	[HeapServiceOperation.Reset]: ['bmsx_dlmalloc_reset', 3],
+	[HeapServiceOperation.SetFloor]: ['bmsx_dlmalloc_set_floor', 2],
+	[HeapServiceOperation.Floor]: ['bmsx_dlmalloc_floor', 1],
+	[HeapServiceOperation.Allocate]: ['bmsx_dlmalloc_allocate', 3],
+	[HeapServiceOperation.Free]: ['bmsx_dlmalloc_free', 2],
+	[HeapServiceOperation.ReserveBacking]: ['bmsx_dlmalloc_reserve_backing', 3],
+	[HeapServiceOperation.ResizeBacking]: ['bmsx_dlmalloc_resize_backing', 3],
+	[HeapServiceOperation.Shrink]: ['bmsx_dlmalloc_shrink', 3],
+	[HeapServiceOperation.AllocationBytes]: ['bmsx_dlmalloc_allocation_bytes', 2],
+	[HeapServiceOperation.OccupiedBytes]: ['bmsx_dlmalloc_occupied_bytes', 1],
+	[HeapServiceOperation.IsObject]: ['bmsx_dlmalloc_is_object', 2],
+	[HeapServiceOperation.ReserveRecord]: ['bmsx_dlmalloc_reserve_record', 9, HEAP_SERVICE_RECORD_MODULE_PATH],
+	[HeapServiceOperation.StringSweep]: ['sweep_step', 5, HEAP_SERVICE_STRINGS_MODULE_PATH],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */
@@ -38,15 +41,14 @@ export function linkBlua32HeapService(
 ): void {
 	const localFunctions = new Set<number>();
 	for (const { path, exportPathKey } of moduleExports) {
-		if (path !== HEAP_SERVICE_MODULE_PATH && path !== HEAP_SERVICE_RECORD_MODULE_PATH) continue;
+		if (!serviceModules.has(path)) continue;
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, exportPathKey));
 		if (address !== undefined) localFunctions.add(blua32FunctionIndexAtAddress(image, address));
 	}
 
 	const roots: number[] = [];
 	for (let op = 0; op < HeapServiceOperation.Count; ++op) {
-		const [name, params, path = HEAP_SERVICE_MODULE_PATH] = entries[op];
-		const symbol = `bmsx_dlmalloc_${name}`;
+		const [symbol, params, path = HEAP_SERVICE_MODULE_PATH] = entries[op];
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, symbol));
 		if (address === undefined) throw new Error(`Heap service entry '${symbol}' is not a linked static function.`);
 		const index = blua32FunctionIndexAtAddress(image, address);

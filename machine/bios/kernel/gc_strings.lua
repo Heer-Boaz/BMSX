@@ -20,6 +20,10 @@ local string_next_offset<const> = 12 -- I:61
 local max_ram_records<const> = ram_size >> 4 -- T:28 C:28 I:56; divide by 16-byte String header
 local ram_bucket_extent_mask<const> = 2 * max_ram_records - 1 -- T:29 C:30
 local ram_bucket_rehash<const> = 0x80000000 -- T:30 C:31
+local ram_bucket_shrink<const> = 0x40000000 -- T:31 C:32
+local sweep_rehash<const> = 0x80000000 -- T:22 C:23
+local sweep_shrink<const> = 0xc0000000 -- T:23 C:24
+local sign_bit<const> = 0x80000000 -- C:26,302,480,517; BLua32 unsigned order of a RAM word
 local min_shrink_buckets<const> = (2 * 4096) >> 2 -- T:25 C:26 S:32
 
 struct string_metadata
@@ -123,8 +127,39 @@ local rehash_step<const> = function(metadata, arena, old_count, next_base, allow
 	return work -- T:300 C:294
 end
 
--- The contiguous bucket-walk branch of sweepStep. Its caller still owns
--- switching to rehash/shrink or ending the cycle when this scan is complete.
+local shrink_step<const> = function(metadata, arena, count, allowance, exact_shrink_boundary) -- T:303 C:297
+	local state<const>: *string_metadata = ram_base + metadata -- T:304-305 C:298-299
+	local base<const>, half<const> = state.buckets, count >> 1 -- T:304 C:298
+	local start<const> = state.rehash_ready -- T:305 C:299
+	local ready, work = start, 0 -- T:306 C:300-301
+	-- Only the current upper bucket may have live links in both halves.
+	while work < allowance and (ready ~ sign_bit) < (half ~ sign_bit) do -- T:308 C:302
+		local upper<const>: *u32 = ram_base + ((base + 4 * (half + ready)) & ram_word_mask) -- T:309 C:303
+		local record<const> = *upper -- T:310 C:304
+		if record ~= 0 then -- T:311 C:304
+			local link<const>: *u32 = ram_base + ((record + string_next_offset) & ram_word_mask) -- T:312 C:306
+			local lower<const>: *u32 = ram_base + ((base + 4 * ready) & ram_word_mask) -- T:312 C:305
+			*upper = *link -- T:313 C:307
+			*link = *lower -- T:314 C:308
+			*lower = record -- T:315 C:309
+		else ready = ready + 1 end -- T:316 C:310
+		work = work + 1 -- T:317 C:311
+	end
+	-- TS also publishes if the raw cursor is beyond half; C++ publishes
+	-- only at equality. The produced cursor never advances past half.
+	if work < allowance and (exact_shrink_boundary == 0 or ready == half) then -- T:319-322 C:313
+		allocator.bmsx_dlmalloc_shrink(arena, base - ram_base, 4 * half) -- T:323 C:314 A:70-72 E:68-70
+		state.capacity = half -- T:324 C:315
+		state.rehash_ready = 0 -- T:325 C:316
+		state.sweep = 0 -- T:326 C:317
+		return work + 1 -- T:327 C:318
+	end
+	if ready ~= start then state.rehash_ready = ready end -- T:320 C:320
+	return work -- T:321 C:321
+end
+
+-- The contiguous bucket-walk branch of sweepStep. The driver owns the
+-- handoff to rehash/shrink or the end of the cycle.
 local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, next_base, allowance) -- T:468-474 C:459-464
 	local work = 0 -- T:472 C:463
 	local state<const>: *string_metadata = ram_base + metadata -- T:475-478 C:465-468
@@ -137,22 +172,33 @@ local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, 
 	local link, remaining = state.sweep_link, state.sweep_left -- T:478 C:468
 	-- The next-directory prefixes are stable until the scan finishes.
 	while index < finish and allowance ~= 0 do -- T:481 C:471
-		local bucket<const> = index < count and base + 4 * index -- T:482 C:472
-			or (index < low_end and next_base + 4 * (index - count) or next_base + 4 * (index - ready)) -- T:483 C:473
+		local bucket -- T:482 C:472
+		if index < count then -- T:482 C:472
+			bucket = base + 4 * index -- T:482 C:472
+		elseif index < low_end then -- T:483 C:473
+			bucket = next_base + 4 * (index - count) -- T:483 C:473
+		else -- T:483 C:473
+			bucket = next_base + 4 * (index - ready) -- T:483 C:473
+		end
 		if link == 0 then -- T:484 C:474
 			link = bucket -- T:484 C:475
 			work = work + 1 -- T:484 C:476
 			allowance = allowance - 1 -- T:484 C:477
 		end
 		if link == bucket then -- T:486 C:480
-			remaining = (used ~ 0x80000000) < (max_ram_records ~ 0x80000000) and used or max_ram_records -- T:486 C:480; unsigned min
+			if (used ~ sign_bit) < (max_ram_records ~ sign_bit) then -- T:486 C:480; unsigned min
+				remaining = used -- T:486 C:480
+			else -- T:486 C:480
+				remaining = max_ram_records -- T:486 C:480
+			end
 		end
 		local link_word: *u32 = ram_base + (link & ram_word_mask) -- T:487 C:481
 		local record = *link_word -- T:487 C:481
 		while record ~= 0 and remaining ~= 0 and allowance ~= 0 do -- T:488 C:482
 			local kind<const>: *u8 = ram_base + (record & ram_byte_mask) -- T:489 C:483
 			if *kind ~= string_record_kind then break end -- T:489 C:483
-			local next_word<const>: *u32 = ram_base + ((record + string_next_offset) & ram_word_mask) -- T:490 C:484
+			local next_link<const> = record + string_next_offset -- T:490,497 C:484,494
+			local next_word<const>: *u32 = ram_base + (next_link & ram_word_mask) -- T:490 C:484
 			local next_record<const> = *next_word -- T:490 C:484
 			remaining = remaining - 1 -- T:491 C:485
 			allowance = allowance - 1 -- T:491 C:486
@@ -168,13 +214,15 @@ local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, 
 				*charged = *charged - bytes -- T:495 C:492; TS LuaHeap 272-273 / C++ LuaHeap 279-280
 				used = used - 1 -- T:496 C:493
 			else -- T:497 C:494
-				link = record + string_next_offset -- T:497 C:494
-				link_word = ram_base + (link & ram_word_mask) -- T:493,497,501 C:489,494,498
+				link = next_link -- T:497 C:494
+				link_word = next_word -- T:493,497,501 C:489,494,498
 			end
 			record = next_record -- T:498 C:495
 		end
-		if record ~= 0 and remaining ~= 0 and allowance == 0 then break end -- T:500 C:497
-		if record ~= 0 then *link_word = 0 end -- T:501 C:498
+		if record ~= 0 then -- T:500-501 C:497-498
+			if remaining ~= 0 and allowance == 0 then break end -- T:500 C:497
+			*link_word = 0 -- T:501 C:498
+		end
 		link = 0 -- T:502 C:499
 		remaining = 0 -- T:502 C:499
 		index = index + 1 -- T:502 C:500
@@ -189,8 +237,40 @@ local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, 
 	return work, allowance, true -- T:510-514 C:508-512; preserve locals needed by the handoff
 end
 
+local sweep_step<const> = function(metadata, arena, occupied, allowance, exact_shrink_boundary) -- T:468 C:459
+	local state<const>: *string_metadata = ram_base + metadata -- T:469,473 C:460
+	local cursor<const>, control<const> = state.sweep, state.capacity -- T:469 C:460
+	local count<const> = control & ram_bucket_extent_mask -- T:469 C:460
+	if cursor == sweep_shrink then -- T:470 C:461
+		local work<const> = shrink_step(metadata, arena, count, allowance, exact_shrink_boundary) -- T:470 C:461
+		return work -- T:470 C:461; fixed one-word result on the System stack
+	end
+	local next_base<const> = (control & ram_bucket_rehash) ~= 0 and state.rehash_base or 0 -- T:471 C:462
+	local work = 0 -- T:472 C:463
+	if cursor ~= sweep_rehash then -- T:474 C:464
+		local complete -- T:506 C:504
+		work, allowance, complete = sweep_buckets(metadata, arena, occupied, cursor, count, next_base, allowance) -- T:474,508,510 C:464,506,508
+		if not complete then return work end -- T:508 C:506
+	end
+	-- Emergency admission can retire the old directory without waiting for
+	-- another distinct intern.
+	if next_base ~= 0 then -- T:513 C:511
+		if allowance ~= 0 then work = work + rehash_step(metadata, arena, count, next_base, allowance) end -- T:514 C:512
+		if state.rehash_base ~= 0 then -- T:515 C:513
+			state.sweep = sweep_rehash -- T:516 C:514
+			return work -- T:517 C:515
+		end
+	elseif count >= min_shrink_buckets and (state.used ~ sign_bit) <= ((count >> 2) ~ sign_bit) then -- T:519 C:517
+		state.capacity = count | ram_bucket_shrink -- T:520 C:518
+		state.sweep = sweep_shrink -- T:521 C:519
+		return work + shrink_step(metadata, arena, count, allowance, exact_shrink_boundary) -- T:522 C:520
+	end
+	state.sweep = 0 -- T:524 C:522
+	return work -- T:525 C:523
+end
+
 return {
-	internal = { is_ram_string_id = is_ram_string_id },
+	internal = { is_ram_string_id = is_ram_string_id, shrink_step = shrink_step },
 	mark = mark,
 	begin_reachability_epoch = begin_reachability_epoch,
 	begin_sweep = begin_sweep,
@@ -198,4 +278,5 @@ return {
 	estimate_sweep_work = estimate_sweep_work,
 	rehash_step = rehash_step,
 	sweep_buckets = sweep_buckets,
+	sweep_step = sweep_step,
 }

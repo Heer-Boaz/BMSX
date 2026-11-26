@@ -94,14 +94,16 @@ public:
 	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
 	bool stoppedFinalMarkPending() const;
 	void requestFullCollection();
-	size_t stepFullCollection(u32 epochs, size_t words);
+	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction);
+	bool fullStringSweepActive() const;
+	void finishFullStringSweep();
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
-		size_t limit = GC_STEP_WORDS);
+		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u);
 	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
@@ -169,7 +171,9 @@ private:
 	size_t remarkVisits(size_t allowance);
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
 	size_t accountEpochWork(size_t work);
-	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit);
+	size_t finishStepWork(u32 occupiedBefore, size_t work);
+	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit, bool stopBeforeStrings);
+	void finishStrings();
 	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);

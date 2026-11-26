@@ -12,10 +12,10 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, Count,
 };
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 2u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 3u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -46,5 +46,9 @@ enum class HeapServiceNewtField : uint32_t {
 	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
 };
 enum class HeapServiceNewtStage : uint32_t { Idle, Direct, Scheduled, RetryCurrent, RetryFresh };
+
+constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
+enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8 };
+enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep };
 
 } // namespace bmsx

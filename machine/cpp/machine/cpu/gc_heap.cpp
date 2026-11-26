@@ -5,6 +5,7 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/image_format.h"
+#include "spec/bmsx/heap_service.h"
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -949,24 +950,41 @@ void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1,
 	m_cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
 }
 
-size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
+size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
+	size_t limit, u32 stringSweepFunction) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 	const u32 occupied = arena.occupiedBytes();
-	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit);
+	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit, stringSweepFunction != 0u);
+	if (stringSweepFunction != 0u && work < limit && phase() == GcPhase::Strings) {
+		const u32 management = arena.managementOffset();
+		const u32 state = management + HEAP_SERVICE_GC_OFFSET;
+		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
+		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore), occupied);
+		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(HeapServiceGcStage::FullStringSweep));
+		const std::array arguments{management + HEAP_STRING_METADATA_OFFSET, arena.stateOffset(),
+			management + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(limit - work), 1u};
+		m_cpu.beginHeapService(stringSweepFunction, arguments);
+		return work;
+	}
+	return finishStepWork(occupied, work);
+}
+
+size_t GcHeap::finishStepWork(u32 occupiedBefore, size_t work) {
 	if (active()) {
 		// Every quantum, whichever assist ran it, pays the current pace,
 		// including the first one after a cycle priced its runway.
 		// Swept bytes are not a refund of allocation work already paid.
 		const u32 basis = memory.readRamRecordWord(m_controlOffset + GC_PACE_BASIS);
 		const u32 paid = memory.readRamRecordWord(m_controlOffset + GC_PACE_PAID);
-		updatePaceCredit(basis + arena.occupiedBytes() - occupied, paid + static_cast<u32>(work),
+		updatePaceCredit(basis + arena.occupiedBytes() - occupiedBefore, paid + static_cast<u32>(work),
 			memory.readRamRecordWord(m_controlOffset + GC_PACE_ESTIMATE), memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY));
 	}
 	return accountEpochWork(work);
 }
 
-size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {
+size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
+	size_t limit, bool stopBeforeStrings) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
@@ -1041,20 +1059,25 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 				break;
 			}
 			case GcPhase::Strings: {
+				if (stopBeforeStrings) return work;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement strings(profile.stringReclaimNanoseconds);
 #endif
 				work += m_stringPool.sweepStep(limit - work);
-				if (!m_stringPool.sweeping()) {
-					setPhase(GcPhase::Pause);
-					budget.finishCollection();
-				}
+				finishStrings();
 				return work;
 			}
 			case GcPhase::Pause: break;
 		}
 	}
 	return work;
+}
+
+void GcHeap::finishStrings() {
+	if (!m_stringPool.sweeping()) {
+		setPhase(GcPhase::Pause);
+		budget.finishCollection();
+	}
 }
 
 LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Value root0, Value root1, Value root2, u32 growingThread) {
@@ -1077,10 +1100,29 @@ void GcHeap::requestFullCollection() {
 	m_cpu.requestYield();
 }
 
-size_t GcHeap::stepFullCollection(u32 epochs, size_t words) {
-	const size_t work = finalMarkPending() ? stepFinalMark(words) : step(valueNil(), valueNil(), valueNil(), 0u, true, words);
+size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction) {
+	const size_t work = finalMarkPending() ? stepFinalMark(words)
+		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction);
 	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
 	return work;
+}
+
+bool GcHeap::fullStringSweepActive() const {
+	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	return memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage))
+		== static_cast<u32>(HeapServiceGcStage::FullStringSweep);
+}
+
+void GcHeap::finishFullStringSweep() {
+	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	const u32 prefixWork = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork));
+	const u32 occupiedBefore = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore));
+	finishStrings();
+	// The returned words price the collector, not CPU time: BLua32 already ran
+	// those instructions under the ordinary cycle counter.
+	finishStepWork(occupiedBefore, prefixWork + m_cpu.heapServiceResult());
+	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, fullEpochs() - 1u);
+	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(HeapServiceGcStage::Idle));
 }
 
 size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread) {

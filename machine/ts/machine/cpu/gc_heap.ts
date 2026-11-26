@@ -1,4 +1,5 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { HEAP_SERVICE_GC_OFFSET, HeapServiceGcField, HeapServiceGcStage } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -80,6 +81,8 @@ export class GcHeap {
 	// creates host identities. A replacement invalidates the whole view.
 	public onRecordRetirement: ((address: number | null) => void) | null = null;
 	private readonly controlOffset: number;
+	private readonly sweepServiceOffset: number;
+	private readonly sweepServiceArgs: number[];
 	public phase(): GcPhase {
 		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
@@ -110,6 +113,8 @@ export class GcHeap {
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory,
 		public readonly arena: HeapAllocator, private readonly modeKey: StringId, newIndexKey: StringId) {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		this.sweepServiceOffset = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+		this.sweepServiceArgs = [cpu.stringPool.metadataOffset, arena.allocatorStateOffset(), budget.occupiedOffset, 0, 0];
 		this.threads = new ThreadRecords(memory, arena, budget);
 		this.tables = new TableRecords(this, newIndexKey);
 	}
@@ -870,27 +875,49 @@ export class GcHeap {
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
-		limit = GC_STEP_WORDS): number {
+		limit = GC_STEP_WORDS, stringSweepFunction = 0): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
 		try {
 			const occupied = this.arena.occupiedBytes();
-			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit);
-			if (this.active()) {
-				// Every quantum, whichever assist ran it, pays the current pace,
-				// including the first one after a cycle priced its runway.
-				const basis = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS);
-				const paid = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAID);
-				this.updatePaceCredit(basis + this.arena.occupiedBytes() - occupied, paid + work,
-					this.memory.readRamRecordWord(this.controlOffset + GC_PACE_ESTIMATE),
-					this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY));
+			const stopBeforeStrings = stringSweepFunction !== 0;
+			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit, stopBeforeStrings);
+			if (stopBeforeStrings && work < limit && this.phase() === GcPhase.Strings) {
+				const base = this.sweepServiceOffset;
+				this.memory.writeRamRecordWord(base + HeapServiceGcField.PrefixWork, work);
+				this.memory.writeRamRecordWord(base + HeapServiceGcField.OccupiedBefore, occupied);
+				this.memory.writeRamRecordWord(base + HeapServiceGcField.Stage, HeapServiceGcStage.FullStringSweep);
+				this.sweepServiceArgs[3] = limit - work;
+				this.cpu.beginHeapService(stringSweepFunction, this.sweepServiceArgs);
+				return work; // Only native work draws the legacy per-unit charge.
 			}
-			return this.accountEpochWork(work);
+			return this.finishStepWork(occupied, work);
 		}
 		finally { this.diagnostics?.endStep(); }
 	}
-	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number): number {
+
+	private finishStepWork(occupiedBefore: number, work: number): number {
+		if (this.active()) {
+			// Every quantum, whichever assist ran it, pays the current pace,
+			// including the first one after a cycle priced its runway.
+			const basis = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_BASIS);
+			const paid = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_PAID);
+			this.updatePaceCredit(basis + this.arena.occupiedBytes() - occupiedBefore, paid + work,
+				this.memory.readRamRecordWord(this.controlOffset + GC_PACE_ESTIMATE),
+				this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY));
+		}
+		return this.accountEpochWork(work);
+	}
+
+	private finishStrings(): void {
+		if (!this.cpu.stringPool.sweeping()) {
+			this.setPhase(GcPhase.Pause);
+			this.budget.finishCollection();
+		}
+	}
+
+	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number, stopBeforeStrings: boolean): number {
 		let work = 0;
 		if (this.remarkStage() !== RemarkStage.None) {
 			work += this.remarkVisits(limit);
@@ -947,11 +974,10 @@ export class GcHeap {
 					}
 					break;
 				case GcPhase.Strings:
+					if (stopBeforeStrings) return work;
 					this.diagnostics?.phase('stringReclaimNanoseconds');
 					work += this.cpu.stringPool.sweepStep(limit - work);
-					if (!this.cpu.stringPool.sweeping()) {
-						this.setPhase(GcPhase.Pause); this.budget.finishCollection();
-					}
+					this.finishStrings();
 					return work;
 			}
 		}
@@ -976,10 +1002,26 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
 		this.cpu.requestYield();
 	}
-	public stepFullCollection(epochs: number, words: number): number {
-		const work = this.finalMarkPending() ? this.stepFinalMark(words) : this.step(valueNil(), valueNil(), valueNil(), 0, true, words);
+	public stepFullCollection(epochs: number, words: number, stringSweepFunction: number): number {
+		const work = this.finalMarkPending() ? this.stepFinalMark(words)
+			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, stringSweepFunction);
 		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, epochs - 1);
 		return work;
+	}
+	public fullStringSweepActive(): boolean {
+		return this.memory.readRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage) === HeapServiceGcStage.FullStringSweep;
+	}
+
+	public finishFullStringSweep(): void {
+		const base = this.sweepServiceOffset;
+		const occupied = this.memory.readRamRecordWord(base + HeapServiceGcField.OccupiedBefore);
+		const prefixWork = this.memory.readRamRecordWord(base + HeapServiceGcField.PrefixWork);
+		this.finishStrings();
+		// The returned words price the collector, not CPU time: BLua32 already ran
+		// those instructions under the ordinary cycle counter.
+		this.finishStepWork(occupied, prefixWork + this.cpu.heapServiceResult());
+		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.fullEpochs() - 1);
+		this.memory.writeRamRecordWord(base + HeapServiceGcField.Stage, HeapServiceGcStage.Idle);
 	}
 	public collect(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;

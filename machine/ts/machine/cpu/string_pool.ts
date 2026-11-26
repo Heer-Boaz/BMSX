@@ -61,7 +61,7 @@ function matchesBytes(candidate: Uint8Array, start: number, mask: number, source
 export class StringPool {
 	private readonly localRoots: StringId[] = [];
 	private readonly localRootBases: number[] = [];
-	private readonly metadataOffset: number;
+	public readonly metadataOffset: number;
 	private readonly romView: MemoryByteView;
 	private markWork = 0;
 

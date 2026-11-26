@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const port = 'machine/bios/kernel/gc_control.lua';
-// Source basis: df704905d4b791f9e06a37fd1aa71ea3c143152b.
+const basis = 'df704905d4b791f9e06a37fd1aa71ea3c143152b';
 const pins = [
 	['T', 'machine/ts/machine/cpu/gc_heap.ts', '82c6d20aecf27b2d9280f98f4b54333c44726fcb6f33872d3c830adccde3b25c'],
 	['C', 'machine/cpp/machine/cpu/gc_heap.cpp', 'b782755c1085990616a515259482718cbb9466a026c8eb0f13f1efccf0769a07'],
@@ -19,7 +20,9 @@ const pins = [
 test('the BIOS GC control map covers each statement and native operation in its pinned slice', () => {
 	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
 	for (const [key, file, digest] of pins) {
-		const source = readFileSync(file, 'utf8').replaceAll('\r\n', '\n');
+		// Production source can move or disappear as its callsites switch to
+		// firmware. Source coordinates and digests refer to the frozen version.
+		const source = execFileSync('git', ['show', basis + ':' + file], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
 		assert.equal(createHash('sha256').update(source).digest('hex'), digest, `${file}: review the pinned mapping before updating this reference`);
 		sources.set(key, { lines: source.split('\n'), covered: new Set() });
 	}

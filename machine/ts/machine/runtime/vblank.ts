@@ -96,7 +96,9 @@ export class VblankState {
 		const pending = memory.readRamRecordWord(address);
 		// A service can stop between allocator writes. Keep one legacy
 		// pressure opportunity per tick, not a sample of the torn arena.
-		if (cpu.heapServiceActive() || pending !== 0) memory.writeRamRecordWord(address, pending + 1);
-		else cpu.gc.assistPhysicalPressureAtTick();
+		if (cpu.heapServiceActive() || pending !== 0) {
+			// As at the immediate assist, an explicit full epoch owns this edge.
+			if (cpu.gc.fullEpochs() === 0) memory.writeRamRecordWord(address, pending + 1);
+		} else cpu.gc.assistPhysicalPressureAtTick();
 	}
 }

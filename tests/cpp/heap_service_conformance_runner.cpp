@@ -94,6 +94,23 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'L': {
+					int cycles;
+					trace >> cycles;
+					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
+						+ HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::Stage));
+					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
+						<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.gcHeap().fullEpochs()
+						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
+				case 'b': {
+					std::string seed;
+					trace >> seed;
+					std::cout << cpu.stringPool().intern(seed) << '\n';
+					break;
+				}
 				case 'D': {
 					int cycles;
 					trace >> cycles;

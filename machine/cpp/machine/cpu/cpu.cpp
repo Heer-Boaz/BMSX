@@ -2506,13 +2506,17 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
 	if (heapServiceActive()) {
+		const bool fullStringSweep = m_heap.fullStringSweepActive();
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				finishExecutionFloor();
-				finishNewTableReservation();
+				if (fullStringSweep) m_heap.finishFullStringSweep();
+				else {
+					finishExecutionFloor();
+					finishNewTableReservation();
+				}
 			} catch (const LuaOutOfMemorySignal&) {
 				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
 				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
@@ -2523,7 +2527,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				if (!handleThreadError(value)) enterLuaFaultException(error.reason, value);
 			}
 		}
-		return (m_runSignals & RunHardHalted) != 0u ? RunResult::Halted : RunResult::Yielded;
+		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
+		return fullStringSweep && kind == CpuRunKind::Scheduled ? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {
 		instructionBudgetRemaining = instructionBudget;
@@ -2539,8 +2544,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			instructionBudgetRemaining = instructionBudget;
 			if (instructionBudget <= 0) return RunResult::Yielded;
 			const auto words = std::clamp(instructionBudget / GC_WORK_WORD_CYCLES, 1, static_cast<int>(GC_STEP_WORDS));
-			chargeCollectionWork(m_heap.stepFullCollection(epochs, words));
+			chargeCollectionWork(m_heap.stepFullCollection(epochs, words,
+				m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StringSweep)]));
 			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
+			if (heapServiceActive()) return RunResult::Yielded;
 			instructionBudget = instructionBudgetRemaining;
 			if (instructionBudget <= 0) return RunResult::Yielded;
 			continue;

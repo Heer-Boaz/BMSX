@@ -36,7 +36,8 @@ const modules = [
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 const BUCKETS = 0x00, CAPACITY = 0x04, EPOCH = 0x0c, SWEEP = 0x10;
 const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
-const RAM_BUCKET_REHASH = 0x80000000, SWEEP_REHASH = 0x80000000;
+const RAM_BUCKET_REHASH = 0x80000000, RAM_BUCKET_SHRINK = 0x40000000;
+const SWEEP_REHASH = 0x80000000, SWEEP_SHRINK = 0xc0000000;
 const names = ['bios-string-collision-a', 'bios-string-collision-b', 'bios-string-collision-c', 'bios-string-collision-d'];
 
 function fixture(optLevel: 0 | 3) {
@@ -245,7 +246,7 @@ for (const optLevel of [0, 3] as const) {
 	});
 
 	test(`BLua sweeps both prepared prefixes without advancing the frozen rehash at O${optLevel}`, () => {
-		const { cpu, memory, oracle, metadata, arena, occupied, floor, word, compare, begin, finish, invoke } = fixture(optLevel);
+		const { cpu, memory, oracle, metadata, arena, occupied, word, invoke } = fixture(optLevel);
 		const pool = oracle.stringPool;
 		const count = memory.readRamRecordWord(metadata + CAPACITY);
 		const nextBase = oracle.heapAllocator.allocate(8 * count, true);
@@ -277,21 +278,11 @@ for (const optLevel of [0, 3] as const) {
 		invoke('begin_sweep', 0);
 
 		for (let quantum = 0; quantum < 6 * count; ++quantum) {
-			const cursor = memory.readRamRecordWord(metadata + SWEEP);
-			const work = pool.sweepStep(1);
-			const complete = oracle.memory.readRamRecordWord(metadata + SWEEP) === SWEEP_REHASH;
-			if (complete) {
-				begin('sweep_buckets', arena, occupied, cursor, count, nextBase, 1, 1);
-				assert.equal(finish(), work);
-				const sweep = metadata + SWEEP - floor;
-				compare(0, sweep);
-				compare(sweep + 4);
-				assert.equal(memory.readRamRecordWord(metadata + SWEEP), cursor);
-				break;
-			}
-			invoke('sweep_buckets', work, arena, occupied, cursor, count, nextBase, 1, 0);
+			invoke('sweep_step', pool.sweepStep(1), arena, occupied, 1, 0);
+			assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), ready);
+			if (memory.readRamRecordWord(metadata + SWEEP) === SWEEP_REHASH) break;
 		}
-		assert.equal(oracle.memory.readRamRecordWord(metadata + SWEEP), SWEEP_REHASH);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), SWEEP_REHASH);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_BASE), nextBase);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), ready);
 		// Coalescing may reuse freed payload for free-list links. Check the
@@ -302,5 +293,100 @@ for (const optLevel of [0, 3] as const) {
 			}
 		}
 		assert.equal(memory.readRamRecordWord(occupied), charged - bytes);
+		invoke('sweep_step', pool.sweepStep(0), arena, occupied, 0, 0);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), SWEEP_REHASH);
+		const allowance = 4 * count;
+		invoke('sweep_step', pool.sweepStep(allowance), arena, occupied, allowance, 0);
+		assert.equal(memory.readRamRecordWord(metadata + BUCKETS), nextBase);
+		assert.equal(memory.readRamRecordWord(metadata + CAPACITY), 2 * count);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), 0);
+	});
+
+	test(`BLua republishes a contracted String directory, resumes a link move, and preserves the mirror boundary at O${optLevel}`, () => {
+		const { cpu, memory, oracle, ids, metadata, arena, occupied, word, compare, begin, grant, finish, invoke } = fixture(optLevel);
+		const pool = oracle.stringPool;
+		const oldBase = memory.readRamRecordWord(metadata + BUCKETS);
+		const oldCount = memory.readRamRecordWord(metadata + CAPACITY);
+		const count = 2048, half = count >>> 1;
+		const base = oracle.heapAllocator.allocate(4 * count, true);
+		assert.ok(base > 0);
+		assert.equal(cpu.heapAllocator.allocate(4 * count, true), base);
+		for (const mem of [memory, oracle.memory]) mem.ramData().fill(0, base - RAM_BASE, base - RAM_BASE + 4 * count);
+		let records = 0, upperRecords = 0;
+		for (let i = 0; i < oldCount; ++i) {
+			let record = memory.readRamRecordWord(oldBase + 4 * i);
+			while (record !== 0) {
+				const link = record + BLUA32_STRING_NEXT_OFFSET, next = memory.readRamRecordWord(link);
+				const index = memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) & (count - 1);
+				const target = base + 4 * index;
+				for (const mem of [memory, oracle.memory]) {
+					mem.writeRamRecordWord(link, mem.readRamRecordWord(target));
+					mem.writeRamRecordWord(target, record);
+				}
+				++records;
+				if (index >= half) ++upperRecords;
+				record = next;
+			}
+		}
+		assert.ok(records <= (count >>> 2) && upperRecords > 0, 'the enlarged directory is sparse and has upper links');
+		word(BUCKETS, base);
+		word(CAPACITY, count);
+		cpu.heapAllocator.free(oldBase);
+		oracle.heapAllocator.free(oldBase);
+		const backingBytes = cpu.heapAllocator.allocationBytes(base), charged = memory.readRamRecordWord(occupied);
+		pool.beginSweep();
+		invoke('begin_sweep', 0);
+		function step(allowance: number, exact = 1) {
+			invoke('sweep_step', pool.sweepStep(allowance), arena, occupied, allowance, exact);
+		}
+		step(count + records);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), SWEEP_SHRINK);
+		assert.equal(memory.readRamRecordWord(metadata + CAPACITY), count | RAM_BUCKET_SHRINK);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), 0);
+		let first = 0;
+		while (memory.readRamRecordWord(base + 4 * (half + first)) === 0) ++first;
+		step(first);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), first);
+
+		const upper = base + 4 * (half + first), lower = base + 4 * first;
+		const record = memory.readRamRecordWord(upper), next = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
+		const oldLower = memory.readRamRecordWord(lower);
+		begin('sweep_step', arena, occupied, 1, 1);
+		for (let i = 0; i < 256 && memory.readRamRecordWord(upper) === record; ++i) grant(1);
+		assert.equal(memory.readRamRecordWord(upper), next, 'the upper bucket has unlinked');
+		assert.equal(memory.readRamRecordWord(lower), oldLower, 'the lower bucket has not published');
+		assert.ok(cpu.heapServiceActive());
+		const partial = captureCpuCheckpoint(cpu);
+		const work = pool.sweepStep(1);
+		assert.equal(finish(), work);
+		compare();
+		restoreCpuCheckpoint(cpu, partial);
+		assert.equal(finish(), work);
+		compare();
+
+		step(half + upperRecords - first - 1);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), half);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), SWEEP_SHRINK);
+		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes, 'the exact work boundary still owns both halves');
+		const atBoundary = captureCpuCheckpoint(cpu), oracleAtBoundary = captureCpuCheckpoint(oracle);
+		step(1);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), 0);
+		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes - 4 * half);
+
+		restoreCpuCheckpoint(cpu, atBoundary);
+		restoreCpuCheckpoint(oracle, oracleAtBoundary);
+		word(REHASH_READY, half + 1);
+		// The C++ reference leaves this raw state and allocation untouched.
+		invoke('sweep_step', 0, arena, occupied, 1, 1);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), half + 1);
+		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes);
+		// The TS reference publishes even though the raw cursor overshot.
+		step(1, 0);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), 0);
+		assert.equal(memory.readRamRecordWord(metadata + CAPACITY), half);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), 0);
+		assert.equal(memory.readRamRecordWord(occupied), charged);
+		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes - 4 * half);
+		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i], name);
 	});
 }

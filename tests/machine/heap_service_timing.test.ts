@@ -6,11 +6,13 @@ import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
+import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET, HeapServiceNewtStage,
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET,
+	HeapServiceGcField, HeapServiceGcStage, HeapServiceNewtStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -138,5 +140,54 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 	assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Maintenance);
 	assert.equal(runtime.vblank.hasDeferredPressure(), false);
 	frames.runCyclesToNextLogicalTick(30_000);
+	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
+});
+
+test('timed String GC crosses VBlank after a zero-work native prefix', () => {
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
+		[{ path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' }]));
+	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine;
+	const frames = runtime.frameScheduler;
+	const boot = captureRuntimeSaveState(runtime);
+	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	const edge = scheduler.nowCycles;
+	applyRuntimeSaveState(runtime, boot);
+	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-vblank-string-${i}`);
+
+	// Reach the boundary after the first small String quantum, still in
+	// the explicit collection. Reserve the real frame grant for the next.
+	const slice = () => scheduler.runCpuSlice(0, 3, undefined, CpuRunKind.Scheduled);
+	for (let i = 0; i < 2048 && !cpu.heapServiceActive(); ++i) slice();
+	assert.equal(cpu.heapServiceActive(), true,
+		`phase ${cpu.gc.phase()} epochs ${cpu.gc.fullEpochs()} fault ${cpu.readLuaFaultReasonWord()} depth ${cpu.getFrameDepth()}`);
+	for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) assert.equal(slice(), RunResult.CollectionProgress);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(cpu.gc.phase(), GcPhase.Strings);
+	assert.equal(cpu.gc.fullEpochs(), 1);
+	const depth = cpu.getFrameDepth(), callerPc = cpu.readFramePc(depth - 1);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
+	assert.equal(frames.runCyclesToNextLogicalTick(64), true);
+	assert.ok(scheduler.nowCycles >= edge);
+	assert.ok(frames.lastTickCpuUsedCycles > 0, 'firmware used the pre-VBlank grant, not an idle wait');
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	assert.equal(memory.readRamRecordWord(control + HeapServiceGcField.Stage), HeapServiceGcStage.FullStringSweep);
+	assert.equal(memory.readRamRecordWord(control + HeapServiceGcField.PrefixWork), 0);
+	assert.equal(cpu.enterPendingInterrupt(), false);
+	assert.equal(cpu.readFramePc(depth - 1), callerPc);
+	assert.equal(runtime.vblank.hasDeferredPressure(), false, 'an explicit epoch suppresses VBlank pressure rather than postponing it');
+
+	assert.equal(frames.stepInstruction(0), InstructionStepResult.Advanced, 'String GC instruction grants do not retire a caller instruction');
+	assert.equal(cpu.readFramePc(depth - 1), callerPc);
+	assert.equal(frames.runCyclesToNextLogicalTick(100_000), false);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(runtime.vblank.hasDeferredPressure(), false);
+	assert.equal(cpu.gc.fullEpochs(), 0);
+	assert.equal(cpu.stringPool.find('dead-vblank-string-23'), undefined);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 });

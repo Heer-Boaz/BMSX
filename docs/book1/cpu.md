@@ -1503,9 +1503,12 @@ always performs the fresh cycle. For a full collection requested through the BIO
 the CPU admits marking, final remark and reclamation work against successive
 cycle grants. Each positive grant admits up to one collection quantum, at
 one work word per three cycles, with a minimum allowance of one word. An
-indivisible record operation can exceed its allowance; the CPU charges the
-actual work. Device time advances for that work, while interrupt entry and
-execution of the following instruction wait until the fresh cycle completes.
+indivisible record operation can exceed its allowance. String reclamation in
+these quanta uses ordinary CPU cycles while the resident memory routine runs;
+the CPU does not also charge three cycles per String work word. The rest of
+the quantum is charged for the actual work it performs. Device time advances
+for both, while interrupt entry and execution of the following instruction
+wait until the fresh cycle completes.
 
 Collection between reservation attempts for `NEWT` or a table insertion can
 pause execution with the console clock stopped. For a table insertion this
@@ -1523,7 +1526,8 @@ than three cycles defer the assist, not the reservation. An indivisible
 scan such as a record header may exceed the requested work. The charge stays
 with the instruction even if the reservation later fails or parks. A retry does not
 repay completed work. An explicit step or full collection also pays 3 cycles per work word,
-including work to finish an already active cycle. This also applies when
+including work to finish an already active cycle, except for String work
+executed by the resident routine during a full collection. This also applies when
 program replacement requests a collection to free its static region.
 If an allocation fails and the issuing instruction performs emergency
 collection before retrying, it pays the same price for that work, even if

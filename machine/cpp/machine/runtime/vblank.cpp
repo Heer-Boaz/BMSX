@@ -85,8 +85,10 @@ void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState
 	const u32 pending = memory.readRamRecordWord(address);
 	// A service can stop between allocator writes. Keep one legacy
 	// pressure opportunity per tick, not a sample of the torn arena.
-	if (cpu.heapServiceActive() || pending != 0u) memory.writeRamRecordWord(address, pending + 1u);
-	else cpu.gcHeap().assistPhysicalPressureAtTick();
+	if (cpu.heapServiceActive() || pending != 0u) {
+		// An explicit collection skips this edge instead of deferring an assist.
+		if (cpu.gcHeap().fullEpochs() == 0u) memory.writeRamRecordWord(address, pending + 1u);
+	} else cpu.gcHeap().assistPhysicalPressureAtTick();
 }
 
 } // namespace bmsx
