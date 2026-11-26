@@ -85,11 +85,23 @@ StringPool::ByteSpan StringPool::readBytes(StringId id, size_t start, size_t len
 	return {{reinterpret_cast<const char*>(rom.data() + offset), length}, {}};
 }
 
-bool StringPool::ByteSpan::equalBytes(const ByteSpan& other) const {
-	const size_t shared = std::min(first.size(), other.first.size());
-	if (shared != 0 && std::memcmp(first.data(), other.first.data(), shared) != 0) return false;
-	for (size_t i = shared, end = size(); i < end; ++i)
-		if (byteAt(i) != other.byteAt(i)) return false;
+bool StringPool::ByteSpan::consumeEqual(std::string_view prefix) {
+	const size_t n = std::min(first.size(), prefix.size());
+	if (n) {
+		if (std::memcmp(first.data(), prefix.data(), n) != 0) return false;
+		first.remove_prefix(n);
+		prefix.remove_prefix(n);
+	}
+	if (!prefix.empty()) {
+		if (std::memcmp(wrapped.data(), prefix.data(), prefix.size()) != 0) return false;
+		wrapped.remove_prefix(prefix.size());
+	}
+	return true;
+}
+
+bool StringPool::InternKey::matches(ByteSpan candidate) const {
+	if (!candidate.consumeEqual(head)) return false;
+	for (const auto part : tail) if (!candidate.consumeEqual(part)) return false;
 	return true;
 }
 
@@ -161,21 +173,21 @@ std::string_view StringPool::bindRomStringBytes(u32 address, u32 cartridgeSlot, 
 	return {reinterpret_cast<const char*>(record.data() + BLUA32_STRING_RECORD_HEADER_SIZE), length};
 }
 
-u32 StringPool::lookupRamChain(u32 bucket, u32 hash, const ByteSpan& bytes) const {
+u32 StringPool::lookupRamChain(u32 bucket, u32 hash, const InternKey& bytes) const {
 	u32 record = m_memory.readRamRecordWord(bucket);
 	if (record == 0u) return 0;
 	u32 remaining = std::min(metadata(USED), MAX_RAM_RECORDS);
 	while (record != 0u && remaining-- != 0u) {
 		if (m_memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) == hash
-			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.size()) {
-			if (bytes.equalBytes(readBytes(record, 0, bytes.size()))) return record;
+			&& (m_memory.readRamRecordWord(record + BLUA32_STRING_LENGTH_OFFSET) & (MAIN_RAM_SIZE - 1u)) == bytes.length) {
+			if (bytes.matches(readBytes(record, 0, bytes.length))) return record;
 		}
 		record = m_memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET);
 	}
 	return 0;
 }
 
-u32 StringPool::lookupRam(u32 hash, const ByteSpan& bytes) const {
+u32 StringPool::lookupRam(u32 hash, const InternKey& bytes) const {
 	const u32 control = metadata(CAPACITY), count = control & RAM_BUCKET_EXTENT_MASK;
 	if (count == 0u) return 0u;
 	const u32 index = hash & (count - 1u);
@@ -200,7 +212,7 @@ u32 StringPool::lookupRam(u32 hash, const ByteSpan& bytes) const {
 	return lookupRamChain(metadata(BUCKETS) + 4u * index, hash, bytes);
 }
 
-u32 StringPool::lookupRom(u32 directory, u32 hash, const ByteSpan& bytes) const {
+u32 StringPool::lookupRom(u32 directory, u32 hash, const InternKey& bytes) const {
 	const u32 table = ROM_TABLES + 8u * directory;
 	const u32 count = metadata(table + 4u);
 	if (count == 0u) return 0;
@@ -216,14 +228,14 @@ u32 StringPool::lookupRom(u32 directory, u32 hash, const ByteSpan& bytes) const 
 		if (remaining-- == 0u) throw BMSX_RUNTIME_ERROR("BLua32 ROM String chain is invalid.");
 		const auto header = bindRomStringHeader(record, cartridgeSlot);
 		const u32 length = readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET);
-		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.size()
-			&& bytes.equalBytes({bindRomStringBytes(record, cartridgeSlot, length), {}})) return romStringId(record, cartridgeSlot);
+		if (readLE32(header.data() + BLUA32_STRING_HASH_OFFSET) == hash && length == bytes.length
+			&& bytes.matches({bindRomStringBytes(record, cartridgeSlot, length), {}})) return romStringId(record, cartridgeSlot);
 		record = readLE32(header.data() + BLUA32_STRING_NEXT_OFFSET);
 	}
 	return 0;
 }
 
-u32 StringPool::lookup(u32 hash, const ByteSpan& bytes) const {
+u32 StringPool::lookup(u32 hash, const InternKey& bytes) const {
 	if (const u32 match = lookupRam(hash, bytes)) return match;
 	if (const u32 match = lookupRom(0u, hash, bytes)) return match;
 	const u32 first = metadata(FIRST_CART);
@@ -237,12 +249,12 @@ StringId StringPool::resolveImageRecord(ExecutionDomainId domain, u32 address) {
 	const auto header = bindRomStringHeader(address, cartridgeSlot);
 	const u32 hash = readLE32(header.data() + BLUA32_STRING_HASH_OFFSET);
 	const auto bytes = bindRomStringBytes(address, cartridgeSlot, readLE32(header.data() + BLUA32_STRING_LENGTH_OFFSET));
-	if (const u32 match = lookup(hash, {bytes, {}})) return retain(match);
+	if (const u32 match = lookup(hash, {bytes, {}, bytes.size()})) return retain(match);
 	throw BMSX_RUNTIME_ERROR("BLua32 ROM String is missing from its bucket.");
 }
 
 std::optional<StringId> StringPool::find(std::string_view value) const {
-	const u32 id = lookup(fnv1a32(value), {value, {}});
+	const u32 id = lookup(fnv1a32(value), {value, {}, value.size()});
 	return id == 0 ? std::nullopt : std::optional<StringId>(id);
 }
 
@@ -309,16 +321,34 @@ size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
 }
 
 StringId StringPool::intern(std::string_view value) {
-	return intern({value, {}}, fnv1a32(value), 0u);
+	const u32 hash = fnv1a32(value);
+	if (const auto match = lookup(hash, {value, {}, value.size()})) return retain(match);
+	return insert({value, {}}, hash, 0u);
+}
+
+StringId StringPool::internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes) {
+	const auto a = readBytes(left, 0, leftBytes), b = readBytes(right, 0, rightBytes);
+	const std::string_view tail[]{a.wrapped, b.first, b.wrapped};
+	const InternKey key{a.first, tail, a.size() + b.size()};
+	u32 hash = fnv1a32(key.head);
+	for (const auto part : tail) hash = fnv1a32(part, hash);
+	if (const auto match = lookup(hash, key)) return retain(match);
+	// Snapshot the source before allocation can collect or reuse an operand.
+	std::string text;
+	text.reserve(key.length);
+	text.append(key.head);
+	for (const auto part : tail) text.append(part);
+	return insert({text, {}}, hash, 0u);
 }
 
 StringId StringPool::internSlice(StringId id, size_t offset, size_t count) {
 	const auto bytes = readBytes(id, offset, count);
-	return intern(bytes, fnv1a32(bytes.wrapped, fnv1a32(bytes.first)), id);
+	const u32 hash = fnv1a32(bytes.wrapped, fnv1a32(bytes.first));
+	if (const auto match = lookup(hash, {bytes.first, {&bytes.wrapped, 1}, count})) return retain(match);
+	return insert(bytes, hash, id);
 }
 
-StringId StringPool::intern(const ByteSpan& bytes, u32 hash, StringId source) {
-	if (const u32 id = lookup(hash, bytes)) return retain(id);
+StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 	Value root = valueNil();
 	if (source != 0u) {
 		// Retain the borrow in the current sweep as well as a new collection.

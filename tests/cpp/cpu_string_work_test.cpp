@@ -98,12 +98,21 @@ void ramStringPorts() {
 		const auto slice = pool.internSlice(mirror, 6, 6);
 		require(pool.toString(slice) == bytes.substr(6, 6) && pool.intern(bytes.substr(6, 6)) == slice,
 			"a byte slice crossing the physical seam interns the same result as ordinary bytes");
+		const auto doubled = pool.internConcat(mirror, bytes.size(), mirror, bytes.size());
+		require(pool.toString(doubled) == bytes + bytes && pool.intern(bytes + bytes) == doubled,
+			"a concatenation miss assembles both wrapped operands in order");
+		const auto prefix = pool.intern(bytes.substr(0, 5)), suffix = pool.intern(bytes.substr(5));
 		const u32 metadata = machine.cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
 		const u32 count = memory.readRamRecordWord(metadata + 4u);
 		const u32 bucket = memory.readRamRecordWord(metadata) + 4u * (fnv1a32(bytes) & (count - 1u));
 		memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
 		memory.writeRamRecordWord(bucket, mirror);
 		require(pool.find(bytes) == mirror, "intern probing compares the wrapped bytes");
+		require(pool.internConcat(prefix, 5, suffix, bytes.size() - 5) == mirror,
+			"an intern hit crosses the candidate seam at a different offset than the operand boundary");
+		memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + 12u, '!');
+		require(pool.internConcat(prefix, 5, suffix, bytes.size() - 5) == straight,
+			"a matching stored hash cannot hide a mismatch in the wrapped suffix");
 	}
 }
 

@@ -5,6 +5,16 @@ inline StringId concatenateValues(StringPool& strings, int& cycles, int count, O
 		cycles -= static_cast<int>(MAIN_RAM_SIZE);
 		throw LuaOutOfMemorySignal{};
 	};
+	if (count == 2) {
+		const Value left = operand(0), right = operand(1);
+		if (valueIsString(left) && valueIsString(right)) {
+			const auto a = asStringId(left), b = asStringId(right);
+			const u32 n = strings.byteLength(a), m = strings.byteLength(b);
+			if (n >= MAIN_RAM_SIZE || m >= MAIN_RAM_SIZE - n) oversized();
+			cycles -= static_cast<int>(n + m);
+			return strings.internConcat(a, n, b, m);
+		}
+	}
 	u32 stringBytes = 0;
 	for (int index = 0; index < count; ++index) {
 		const Value value = operand(index);

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,6 +26,8 @@ class StringPool {
 public:
 	StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena);
 	StringId intern(std::string_view value);
+	// Concatenation supplies the two lengths it admitted against the result limit.
+	StringId internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes);
 	// Intern the admitted byte range while rooting its source during allocation.
 	StringId internSlice(StringId id, size_t offset, size_t count);
 	std::optional<StringId> find(std::string_view value) const;
@@ -54,12 +57,18 @@ private:
 		std::string_view first;
 		std::string_view wrapped;
 		size_t size() const { return first.size() + wrapped.size(); }
-		// The caller already matched lengths.
-		bool equalBytes(const ByteSpan& other) const;
+		// Compare and advance over a prefix of this two-extent payload.
+		bool consumeEqual(std::string_view prefix);
 		u8 byteAt(size_t index) const {
 			if (index < first.size()) return static_cast<u8>(first[index]);
 			return static_cast<u8>(wrapped[index - first.size()]);
 		}
+	};
+	struct InternKey {
+		std::string_view head;
+		std::span<const std::string_view> tail;
+		size_t length;
+		bool matches(ByteSpan candidate) const;
 	};
 	Span<const u8> romStorage(u32 address) const;
 	u32 readWord(u32 base, u32 displacement = 0) const;
@@ -69,11 +78,11 @@ private:
 	void writeMetadata(u32 field, u32 word);
 	Span<const u8> bindRomStringHeader(u32 address, u32 cartridgeSlot) const;
 	std::string_view bindRomStringBytes(u32 address, u32 cartridgeSlot, u32 length) const;
-	u32 lookupRamChain(u32 bucket, u32 hash, const ByteSpan& bytes) const;
-	u32 lookupRam(u32 hash, const ByteSpan& bytes) const;
-	u32 lookupRom(u32 directory, u32 hash, const ByteSpan& bytes) const;
-	u32 lookup(u32 hash, const ByteSpan& bytes) const;
-	StringId intern(const ByteSpan& bytes, u32 hash, StringId source);
+	u32 lookupRamChain(u32 bucket, u32 hash, const InternKey& bytes) const;
+	u32 lookupRam(u32 hash, const InternKey& bytes) const;
+	u32 lookupRom(u32 directory, u32 hash, const InternKey& bytes) const;
+	u32 lookup(u32 hash, const InternKey& bytes) const;
+	StringId insert(const ByteSpan& bytes, u32 hash, StringId source);
 	size_t rehashStep(u32 oldCount, u32 nextBase, size_t allowance);
 	size_t shrinkStep(u32 oldCount, size_t allowance);
 	bool mark(StringId id);
