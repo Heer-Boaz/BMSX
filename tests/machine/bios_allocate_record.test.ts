@@ -11,6 +11,7 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRecordKind as Kind, HeapServiceRecordStage as Mode,
 } from '../../machine/ts/spec/bmsx/heap_service';
@@ -24,23 +25,34 @@ import { parseLuaChunk } from '../helpers/cpu_test_harness';
 const modulePath = 'kernel/allocate_record', sourcePath = `machine/bios/${modulePath}.lua`;
 const nativeBasis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
 const entrySource = 'halt_until_irq', headOffset = 0x6c;
+const gateProbe = `module<const>
+local gate<const> = require('kernel/bios_create_table')
+local probe<const> = function(management, mode, array_tag, array, hash_tag, hash)
+	local status<const>, tag<const>, word<const> = gate.create_table(management, 0, mode, array_tag, array, hash_tag, hash)
+	return status | (tag << 28) | word
+end
+return { probe = probe }`;
 
 function fixture(optLevel: 0 | 3) {
 	const modules = [
 		'dlmalloc', 'dlmalloc_record', 'gc_runtime_layout', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch',
 		'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace', 'string_record',
 		'gc_trace', 'gc_root_banks', 'gc_remark', 'gc_weak_quantum', 'gc_weak_table', 'gc_mark_quantum', 'gc_atomic_quantum', 'gc_thread_compact',
-		'gc_objects', 'gc_sweep_quantum', 'gc_step', 'closure_create', 'table_create', 'allocate_record',
+		'gc_objects', 'gc_sweep_quantum', 'gc_step', 'closure_create', 'table_create', 'allocate_record', 'bios_create_table',
 	].map(name => {
 		const path = `kernel/${name}`, source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 		return { path, source, chunk: parseLuaChunk(source, path) };
 	});
+	modules.push({ path: 'test/gate_probe', source: gateProbe, chunk: parseLuaChunk(gateProbe, 'test/gate_probe') });
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === modulePath && entry.exportPathKey === 'allocate_record')!;
 	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
+	const probe = object.sections.rodata.moduleExports.find(entry => entry.path === 'test/gate_probe' && entry.exportPathKey === 'probe')!;
+	const gate = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[probe.slotName]);
+	assert.ok(gate >= 0);
+	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root, gate]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
 	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
@@ -49,6 +61,11 @@ function fixture(optLevel: 0 | 3) {
 	const prototype = linked.image.functions[root].address;
 	function begin(kind: Kind, operand0: number, operand1: number, mode: Mode, sourceCycles = 0) {
 		assert.ok(cpu.beginHeapService(prototype, [management, kind, operand0, operand1, mode, sourceCycles]));
+	}
+	function callGate(arrayTag: number, array: number, hashTag: number, hash: number) {
+		assert.ok(cpu.beginHeapService(linked.image.functions[gate].address, [management, Mode.Direct, arrayTag, array, hashTag, hash]));
+		finish();
+		return cpu.heapServiceResult();
 	}
 	function grant(budget: number): number {
 		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
@@ -70,7 +87,8 @@ function fixture(optLevel: 0 | 3) {
 		const index = actual.findIndex((word, i) => word !== expected[i]);
 		assert.equal(actual[index], expected[index], `owned RAM differs at 0x${(from + index).toString(16)}`);
 	}
-	return { cpu, oracle, memory, control, prototype, head: () => memory.readRamRecordWord(control + headOffset), begin, grant, finish, compare };
+	return { cpu, oracle, memory, control, prototype, head: () => memory.readRamRecordWord(control + headOffset),
+		begin, grant, finish, compare, callGate };
 }
 
 function exhaust(f: ReturnType<typeof fixture>) {
@@ -80,6 +98,25 @@ function exhaust(f: ReturnType<typeof fixture>) {
 }
 
 for (const optLevel of [0, 3] as const) {
+	test(`The guest table entry returns tagged success and faults without host table construction at O${optLevel}`, () => {
+		const f = fixture(optLevel), { cpu } = f;
+		const before = f.head();
+		const word = f.callGate(ValueTag.Integer, 5, ValueTag.Integer, 9);
+		const address = word & 0x0fff_ffff;
+		assert.equal(word >>> 28, ValueTag.Table);
+		assert.equal(f.head(), address);
+		assert.notEqual(address, before);
+		assert.equal(cpu.gc.tables.arrayCapacity(address), 5);
+		assert.equal(cpu.gc.tables.hashSize(address), 16);
+
+		assert.equal(f.callGate(ValueTag.String, 1, ValueTag.Integer, 2), LUA_FAULT_REASON_INVALID_ARGUMENT + 1);
+		assert.equal(f.callGate(ValueTag.Integer, 0x8000, ValueTag.Integer, 2), LUA_FAULT_REASON_INVALID_ARGUMENT + 1);
+		assert.equal(f.head(), address);
+		exhaust(f);
+		assert.equal(f.callGate(ValueTag.Integer, 31, ValueTag.Integer, 129), LUA_FAULT_REASON_OUT_OF_MEMORY + 1);
+		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+	});
+
 	test(`BIOS direct and scheduled records own their refused reservation, sweep and retry at O${optLevel}`, () => {
 		const f = fixture(optLevel), { cpu, memory, oracle } = f;
 		const array = 31, hash = 129, capacity = TableRecords.hashCapacity(hash);
