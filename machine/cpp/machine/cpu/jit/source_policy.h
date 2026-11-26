@@ -134,12 +134,13 @@ inline constexpr bool isNativeWarmDispatch(u8 dispatch) {
 
 inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool privateFirmware = false) {
 	if (privateFirmware) {
-		// The fixed BIOS lane shares ALU/branch lowering. Its activation and
-		// private write ports remain at the owning scalar dispatch boundaries.
+		// Fixed firmware shares ALU/branch lowering but selects the private
+		// record aperture instead of the ordinary bus.
 		switch (static_cast<OpCode>(instruction.op)) {
 			case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
 			case OpCode::JMP: return instruction.a == 0;
 			case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
+			case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
 				return instruction.c == static_cast<int>(MemoryAccessKind::U8)
 					|| instruction.c == static_cast<int>(MemoryAccessKind::U32LE)
 					|| instruction.c == static_cast<int>(MemoryAccessKind::Word);

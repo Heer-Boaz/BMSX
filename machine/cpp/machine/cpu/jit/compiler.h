@@ -36,6 +36,7 @@ struct NativeCodeBindings {
 	// Standalone blocks have no owner to retire them when history is armed.
 	bool historyWriteWatches = true;
 	bool privateFirmware = false;
+	u32 privateStoreEnd = 0u, privateProjection = 0u;
 };
 
 class NativeCompiler {

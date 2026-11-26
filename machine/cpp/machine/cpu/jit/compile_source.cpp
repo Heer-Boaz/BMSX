@@ -15,6 +15,7 @@
 #endif
 #include "machine/memory/memory.h"
 #include "spec/blua32/instruction_format.h"
+#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 
@@ -253,6 +254,11 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages, m_nativeHistoryWrites);
 	bindings.privateFirmware = first.page.privateFirmware;
+	if (bindings.privateFirmware) {
+		const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
+		bindings.privateStoreEnd = management + HEAP_SERVICE_THREAD_OFFSET;
+		bindings.privateProjection = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
+	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (pending) {
 		pending->image = &image;

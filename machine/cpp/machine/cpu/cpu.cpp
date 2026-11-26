@@ -2593,6 +2593,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			== m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::FullCollection)];
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		synchronizeNativeHistoryWrites();
+#endif
 #if defined(BMSX_ENABLE_NATIVE_COMPILER_WORKER)
 		publishNativeCompilation();
 		serviceNativeDemand();

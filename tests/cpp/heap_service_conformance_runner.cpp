@@ -191,7 +191,8 @@ int main(int argc, char** argv) {
 					const auto& profile = cpu.nativeGateProfile();
 					std::cout << "native-firmware " << profile.privateFirmwareEntries << ' '
 						<< profile.privateFirmwareCycles << ' ' << profile.lastPrivateFirmwareEntryPc << ' '
-						<< cpu.heapServiceResult() << '\n';
+						<< cpu.heapServiceResult() << ' '
+						<< profile.exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries << '\n';
 #else
 					throw std::runtime_error("Firmware native PC evidence requires BMSX_NATIVE_GATE_PROFILE.");
 #endif

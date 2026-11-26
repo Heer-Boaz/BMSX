@@ -205,10 +205,13 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		if (run->privateFirmware) {
 			// This lane never enters an ordinary closure gate or the public bus.
 			switch (kind) {
-			case NativeBlockExit::ReadMemory: {
+			case NativeBlockExit::ReadMemory:
+			case NativeBlockExit::WriteMemory: {
 				const auto& access = exit->operands.memory;
 				const u32 address = wordOperand(readRK(*frame->executionImage, frame->registers, access.address)) + access.displacement;
-				cpu.executeHeapServiceLoad(*frame, access.slot, access.format, address);
+				if (kind == NativeBlockExit::ReadMemory)
+					cpu.executeHeapServiceLoad(*frame, access.slot, access.format, address);
+				else cpu.executeHeapServiceStore(*frame, access.slot, access.format, address);
 				break;
 			}
 			case NativeBlockExit::SkipInstruction: cpu.skipNextInstruction(*frame, true); break;
