@@ -242,9 +242,12 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	const Value owner = valueTable(m_address);
 	// Only a positive integer insertion inspects the array tag lane.
 	constexpr u32 included = 64;
-	const int scanCycles = array > included && valueIsInteger(key) && asInteger(key) > 0
+	const int arrayCycles = array > included && valueIsInteger(key) && asInteger(key) > 0
 		? static_cast<int>((array - included + 3u) / 4u) : 0;
-	if constexpr (Policy == HashStore::ReturningIndex) {
+	// A hash census visits the key and value lanes, regardless of key type.
+	const int hashCycles = hash > included ? static_cast<int>((hash - included + 1u) / 2u) : 0;
+	const int scanCycles = arrayCycles + hashCycles;
+	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 		if (scanCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
 	}
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
@@ -584,12 +587,12 @@ int TableRecord::setOwn(Value rawKey, Value value, int slot, u8 extraHashSlots, 
 	return slot;
 }
 
-int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots) {
+int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots, int* cycles) {
 	if (isNil(value)) {
 		removeFromHash(key, slot);
 		return -1;
 	}
-	return assignHash<HashStore::General>(key, value, slot, extraHashSlots);
+	return assignHash<HashStore::General>(key, value, slot, extraHashSlots, cycles);
 }
 
 void TableRecord::publishHashInsertion(Value key, Value value) {
@@ -903,8 +906,8 @@ void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& resul
 	});
 }
 
-int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots) {
-	return setHash(valueString(key), value, slot, extraHashSlots);
+int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots, int* cycles) {
+	return setHash(valueString(key), value, slot, extraHashSlots, cycles);
 }
 
 bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {

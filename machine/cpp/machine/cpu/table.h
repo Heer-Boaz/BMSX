@@ -118,7 +118,7 @@ public:
 		if (metatableAddress()) return std::nullopt;
 		return valueNil();
 	}
-	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
 	u32 resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
@@ -290,7 +290,7 @@ private:
 	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
 	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
-	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr);
 	template <HashStore Policy>
 	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);

@@ -212,7 +212,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 	TableRecord table(m_heap, result.receiver);
 	const int slot = m_runKind == CpuRunKind::Scheduled
 		? table.assignScheduled(valueString(key), value, instructionBudgetRemaining, result.slot, extraHashSlots)
-		: table.setStringKey(key, value, result.slot, extraHashSlots);
+		: table.setStringKey(key, value, result.slot, extraHashSlots, &instructionBudgetRemaining);
 	if (slot == TableRecord::HASH_STORE_DECLINED)
 		return parkTableWrite(frame, result.receiver, valueString(key), value, extraHashSlots);
 	if (result.extraVisits == 0) predictedSlot = slot;

@@ -63,8 +63,8 @@ void writeRoutes(bool scalar) {
   auto r = frame->registers;
   const bool integer = op == OpCode::SETI;
   const Value key = integer ? valueInteger(1) : valueString(cpu.stringPool().intern("field"));
-  auto prepare = [&](int capacity) {
-   auto table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
+  auto prepare = [&](int array, int hash) {
+   auto table = cpu.createTable(array, hash);
    if (op == OpCode::CALL) {
     r.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::RawSet)); r.set(1, valueTable(table.address())); r.set(2, key); r.set(3, valueInteger(73));
    } else {
@@ -72,12 +72,23 @@ void writeRoutes(bool scalar) {
    }
    return table;
   };
-  prepare(1); machine.warm(scalar);
-  auto table = prepare(0); machine.restart();
+  prepare(integer ? 1 : 0, integer ? 0 : 1); machine.warm(scalar);
+  auto table = prepare(0, 0); machine.restart();
   const int base = BASE_CYCLES[static_cast<u8>(op)] + (op == OpCode::CALL ? 1 : 0);
   if (cpu.runUntilDepth(0, base) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || table.get(key) != valueInteger(73))
    throw std::runtime_error("every table-write route completes growth at its ordinary charge");
+  for (const int hash : {64, 128, 1024}) for (auto kind : {CpuRunKind::Direct, CpuRunKind::Scheduled}) {
+   auto full = prepare(integer ? 0 : 512, hash);
+   for (int i = 1; i <= hash; ++i) full.setInteger(-i, valueInteger(i));
+   for (const bool overwrite : {false, true}) {
+    machine.restart();
+    if (cpu.runUntilDepth(0, base, 0u, kind) != RunResult::Yielded
+     || cpu.instructionBudgetRemaining != (overwrite ? 0 : -(hash - 64) / 2)
+     || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || full.get(key) != valueInteger(73))
+     throw std::runtime_error("a hash census debits the issuing store exactly once, including rawset");
+   }
+  }
  }
 }
 
@@ -138,10 +149,12 @@ void rebuildWork(bool scalar) {
    capacity = 1024;
   }
   const Value key = r.get(1); machine.restart();
-  if (cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)]) != RunResult::Yielded
-   || cpu.instructionBudgetRemaining != 0 || table.storedSlotCount() != capacity
+  const auto result = cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)]);
+  const int recoveryCost = scenario == "failed-growth" ? 2 * ((hash - 64) / 2) + GC_WORK_WORD_CYCLES * static_cast<int>(
+   machine.memory.readRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK)) : 0;
+  if (result != RunResult::Yielded || cpu.instructionBudgetRemaining != -recoveryCost || table.storedSlotCount() != capacity
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))
-   throw std::runtime_error("table rebuild pays only the opcode, also under collection pressure: " + scenario);
+   throw std::runtime_error("table rebuild charges completed scans and emergency collection: " + scenario);
   if (scenario == "failed-growth") {
    if (cpu.readLuaFaultReasonWord() != LUA_FAULT_REASON_OUT_OF_MEMORY || !isNil(table.get(key)) || table.get(valueFloat(0.5f)) != valueInteger(0))
     throw std::runtime_error("failed replacement does not mutate mappings");

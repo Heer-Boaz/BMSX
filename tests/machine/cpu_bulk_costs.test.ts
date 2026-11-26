@@ -1,10 +1,11 @@
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_LAST_EPOCH_WORK, GC_WORK_WORD_CYCLES, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
@@ -170,9 +171,11 @@ return true`, 3);
     'every replacement initializes its entire key/value storage');
   }
  });
+}
 
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
  for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.CALL]) {
-  test(`every table-write route grows at the ordinary instruction charge (${backend}, ${op})`, () => {
+  test(`table-write routes charge large scans but not overwrites (${backend}, ${op})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
    writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : op === OpCode.CALL ? 4 : 1, op === OpCode.CALL ? 1 : 2);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
@@ -182,8 +185,8 @@ return true`, 3);
    const entry = image.image.functions[0].codeAddress;
    const integer = op === OpCode.SETI;
    const key = integer ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
-   const prepare = (capacity: number) => {
-    const table = cpu.createTable(integer ? capacity : 0, integer ? 0 : capacity);
+   const prepare = (array: number, hash: number) => {
+    const table = cpu.createTable(array, hash);
     if (op === OpCode.CALL) {
      r.setBuiltinFunction(0, BuiltinFunctionId.RawSet); r.setTable(1, table);
      r.set(2, key); r.setInteger(3, 73);
@@ -192,21 +195,34 @@ return true`, 3);
     }
     return table;
    };
-   prepare(1); cpu.runUntilDepth(0, 10000);
+   prepare(integer ? 1 : 0, integer ? 0 : 1); cpu.runUntilDepth(0, 10000);
    if (backend === CpuExecutionBackend.JavaScript) {
     assert.ok(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
      'the allocating miss is entered from an adopted generated region');
    }
-   const table = prepare(0);
+   const table = prepare(0, 0);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    const base = BASE_CYCLES[op] + (op === OpCode.CALL ? 1 : 0);
    assert.equal(cpu.runUntilDepth(0, base), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, 0);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
+   for (const hash of [64, 128, 1024]) for (const kind of [CpuRunKind.Direct, CpuRunKind.Scheduled]) {
+    const full = prepare(integer ? 0 : 512, hash);
+    for (let i = 1; i <= hash; ++i) cpu.gc.tables.setInteger(full, -i, valueInteger(i));
+    for (const overwrite of [false, true]) {
+     cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+     assert.equal(cpu.runUntilDepth(0, base, cpu.rootThread.address, kind), RunResult.Yielded);
+     assert.equal(cpu.instructionBudgetRemaining, overwrite || hash === 64 ? 0 : -(hash - 64) / 2);
+     assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
+     assert.equal(cpu.gc.tables.get(full, key), valueInteger(73));
+    }
+   }
   });
  }
+}
 
+for (const backend of [CpuExecutionBackend.Interpreter]) {
  for (const scenario of ['array-growth', 'hash-to-array', 'array-to-hash', 'mixed', 'same-capacity', 'weak-collection', 'failed-growth'] as const) {
   test(`table rebuild adds no storage surcharge: ${scenario} (${backend})`, () => {
    const text = new Uint8Array(33 * INSTRUCTION_BYTES);
@@ -271,7 +287,9 @@ return true`, 3);
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT]), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 0, 'table rebuild pays only the opcode, also under collection pressure');
+   const recoveryCost = scenario === 'failed-growth' ? 2 * ((hash - 64) / 2) + GC_WORK_WORD_CYCLES *
+    cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK) : 0;
+   assert.equal(cpu.instructionBudgetRemaining + recoveryCost, 0, 'only the two completed scans and the recovered epoch add to the base charge');
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(table), capacity);
    if (scenario === 'failed-growth') {

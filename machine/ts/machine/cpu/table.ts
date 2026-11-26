@@ -537,8 +537,8 @@ export class TableRecords {
 	}
 	public setStringKey(record: number, key: StringId, value: Value): void { this.setHash(record, valueString(key), value); }
 	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number,
-		resolved = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
-		return this.setHash(record, valueString(key), valueFromTag(tag, word), resolved, HashStore.General, extraHashSlots);
+		resolved = TABLE_HASH_UNPROBED, extraHashSlots = 0, budget?: CPU): number {
+		return this.setHash(record, valueString(key), valueFromTag(tag, word), resolved, HashStore.General, extraHashSlots, budget);
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
 		if (tag === ValueTag.Nil || predicted < 0) return false;
@@ -689,8 +689,10 @@ export class TableRecords {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
-		const scanCycles = array > 64 && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
+		const arrayCycles = array > 64 && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
 			? (array - 64 + 3) >>> 2 : 0;
+		const hashCycles = hash > 64 ? (hash - 64 + 1) >>> 1 : 0;
+		const scanCycles = arrayCycles + hashCycles;
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
 			if (cycleBudget) cycleBudget.instructionBudgetRemaining -= scanCycles;

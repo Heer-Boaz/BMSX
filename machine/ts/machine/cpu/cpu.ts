@@ -729,7 +729,7 @@ export class CPU implements MappedPageInvalidator {
 		const extraHashSlots = assignment.extraVisits === 0 ? page.operandByte[pageOffset] : 0;
 		const slot = this.runKind === CpuRunKind.Scheduled
 			? tables.assignScheduled(assignment.receiver, field, value, this, assignment.slot, extraHashSlots)
-			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots);
+			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots, this);
 		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value, extraHashSlots);
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
@@ -4328,7 +4328,7 @@ export class CPU implements MappedPageInvalidator {
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
 		if (args.length < 3 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2));
+		this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2), this);
 		out.push(registers.get(base));
 	}
 

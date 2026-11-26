@@ -1624,8 +1624,14 @@ When an indexed store must repartition a table to insert a positive Integer
 key, it scans the existing array slots to choose the new array size. The first
 64 slots of each such scan are included; each further group of four slots,
 including a partial group, costs one cycle. A scan of 65,536 slots adds
-16,368 cycles. An overwrite or an insertion that fits an existing slot does
-not perform this scan. A failed reservation does not refund a completed
+16,368 cycles. For any key, planning the new capacity also scans the old
+hash slots. The first 64 hash slots are included; each additional pair of
+hash slots (key and value in each) costs one cycle, including a partial
+pair. These charges add when both parts are scanned. A full 1,024-slot
+hash scanned for a new String key therefore adds 480 cycles, regardless
+of the reserved array size. An overwrite or an insertion that fits an
+existing slot performs neither scan. A store through `rawset` pays the same
+scan charges. A failed reservation does not refund a completed
 scan; a recovery attempt that scans again pays for its own work.
 Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
 An incremental allocation assist adds its work charge as specified above. An insertion that

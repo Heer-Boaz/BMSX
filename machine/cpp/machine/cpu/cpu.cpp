@@ -1530,7 +1530,7 @@ void CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out) {
 	if (!valueIsTable(target) || args.size() < 3) {
 		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
-	TableRecord(m_heap, valuePayload(target)).set(args[1], args[2]);
+	TableRecord(m_heap, valuePayload(target)).set(args[1], args[2], &instructionBudgetRemaining);
 	out.push_back(target);
 }
 
