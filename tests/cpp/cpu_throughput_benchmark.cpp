@@ -25,7 +25,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, FieldMiss, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
+enum class Workload { Registers, Tables, FieldMiss, FieldHitStableSlot, FieldHitAlternatingSlot, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -51,6 +51,18 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 1, static_cast<u8>(OpCode::GETFIELD), 6, 6, 0);
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 7, 6, 0);
 		writeInstruction(text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+		break;
+	case Workload::FieldHitStableSlot:
+	case Workload::FieldHitAlternatingSlot:
+		image.text.resize(6 * INSTRUCTION_BYTES);
+		image.functions[0].wordCount = 6;
+		image.constants = {std::string("field")};
+		writeInstruction(text, 0, static_cast<u8>(OpCode::GETFIELD), 6, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::BOR), 7, 7, 6);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::MOV), 0, 1, 0);
+		writeInstruction(text, 4, static_cast<u8>(OpCode::MOV), 1, 2, 0);
+		writeInstruction(text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
 		break;
 	case Workload::Tables:
 		image.constants = {std::string("field")};
@@ -241,6 +253,36 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			throw std::runtime_error("Field miss must traverse the specified chain.");
 		registers.set(7, valueBool(false));
 	}
+	const bool fieldHit = workload == Workload::FieldHitStableSlot || workload == Workload::FieldHitAlternatingSlot;
+	if (fieldHit) {
+		const auto field = cpu.stringPool().intern("field");
+		int slots[2];
+		for (int i = 0; i < 2; ++i) {
+			auto table = cpu.createTable(0, i == 1 && workload == Workload::FieldHitAlternatingSlot ? 128 : 64);
+			registers.set(i, valueTable(table.address()));
+			cpu.activeThread()->currentFrame->setTop(i + 1);
+			const auto home = table.beginStringProbe(field).node;
+			// Insert the field as the first displaced node. Each subsequent
+			// collision is inserted after home, leaving the field at the tail.
+			for (int n = 0, added = 0; added < fieldNodes;) {
+				if (added == 1) {
+					slots[i] = table.setStringKey(field, valueInteger(i + 1));
+				} else {
+					const auto key = cpu.stringPool().intern("field_" + std::to_string(n++));
+					if (table.beginStringProbe(key).node != home) continue;
+					table.setStringKey(key, valueBool(false));
+				}
+				++added;
+			}
+			auto probe = table.beginStringProbe(field);
+			if (table.advanceStringProbe(field, probe, table.hashSlots()) != static_cast<size_t>(fieldNodes)
+				|| probe.value != valueInteger(i + 1)) throw std::runtime_error("Expected the field at the specified depth.");
+		}
+		if ((slots[0] == slots[1]) != (workload == Workload::FieldHitStableSlot))
+			throw std::runtime_error("Unexpected aliasing of predicted field slots.");
+		registers.set(7, valueInteger(0));
+		cpu.activeThread()->currentFrame->setTop(8);
+	}
 	if (workload == Workload::Tables) {
 		TableRecord table = cpu.createTable(8, 1);
 		registers.set(0, valueTable(table.address()));
@@ -292,6 +334,8 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			codeOutcomes |= value == valueInteger(1) ? 2u : 0u;
 		}
 	}
+	if (fieldHit && cpu.readFrameRegister(0, 7) != valueInteger(3))
+		throw std::runtime_error("The same field read must have observed both receiver values.");
 	if (workload == Workload::FieldMiss && !isNil(cpu.readFrameRegister(0, 7)))
 		throw std::runtime_error("The field miss loop must have published its nil result.");
 	if (workload == Workload::CodeWrites && codeOutcomes != 3u) {
@@ -363,19 +407,26 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 }
 
 int main(int argc, char** argv) {
-	bool fieldMisses = false, ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
+	bool fieldMisses = false, fieldHits = false, ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
 	for (int argument = 1; argument < argc; ++argument) {
 		const std::string_view option(argv[argument]);
 		if (option == "--field-misses") fieldMisses = true;
+		else if (option == "--field-hits") fieldHits = true;
 		else if (option == "--ram-records") ramRecords = true;
 		else if (option == "--comparisons") comparisons = true;
 		else if (option == "--allocations") allocations = true;
 		else if (option == "--fully-backed") fullyBacked = true;
 		else if (option == "--context") context = true;
-		else throw std::runtime_error("Expected --field-misses, --ram-records, --comparisons, --allocations, --context or --fully-backed.");
+		else throw std::runtime_error("Expected --field-hits, --field-misses, --ram-records, --comparisons, --allocations, --context or --fully-backed.");
 	}
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
+		if (fieldHits) {
+			measure(Workload::FieldHitStableSlot, "field-hit-stable-64", grant, round, fullyBacked, 64);
+			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-16", grant, round, fullyBacked, 16);
+			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-64", grant, round, fullyBacked, 64);
+			continue;
+		}
 		if (fieldMisses) {
 			measure(Workload::FieldMiss, "field-miss-1", grant, round, fullyBacked, 1);
 			measure(Workload::FieldMiss, "field-miss-16", grant, round, fullyBacked, 16);
