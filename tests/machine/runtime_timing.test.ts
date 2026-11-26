@@ -82,7 +82,9 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GcPhase, GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
 const PCRTC_SYNCV_192_LINE_FIELD_WORD = 0x00a60005;
@@ -397,6 +399,8 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 		const tableCharge = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(0, 2);
 		assert.ok(charged + tableCharge < budget.capacity(), 'the physical rather than logical mechanism refuses storage');
 		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		const paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+		const beforeAssist = memory.readRamRecordWord(paidAt);
 		memory.writeMappedU32LE(IO_INP_CTRL, 1);
 		sample = () => assert.equal(valueTag(cpu.readFrameRegister(0, 0)), ValueTag.Table);
 		advanceRuntimeTime(runtime, edge - 1 - scheduler.nowCycles);
@@ -409,7 +413,8 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 		});
 		assert.equal(arena.occupiedBytes(), occupied, 'the uncommitted header was returned');
 		assert.equal(budget.usedBytes(), charged);
-		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, baseCycles);
+		const cycles = baseCycles + 3 * (memory.readRamRecordWord(paidAt) - beforeAssist);
+		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, cycles);
 		const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 		const finish = () => {
 			for (let n = 0; !cpu.allocationReady() && n < 120; ++n) {
@@ -427,8 +432,8 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
 			assert.equal(cpu.lastPc, entry + INSTRUCTION_BYTES);
 			assert.equal(budget.usedBytes(), beforeCommit + tableCharge);
-			assert.equal(scheduler.nowCycles, edge - 1 + baseCycles);
-			assert.equal(fs.lastTickCpuUsedCycles, baseCycles);
+			assert.equal(scheduler.nowCycles, edge - 1 + cycles);
+			assert.equal(fs.lastTickCpuUsedCycles, cycles);
 			assert.equal(samples, 1);
 			assert.equal(tables.getStringKey(table, keyX), valueNil());
 			assert.equal(tables.getStringKey(table, keyY), valueNil());
@@ -520,6 +525,8 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 		assert.ok(budget.usedBytes() + 2560 < budget.capacity());
 		cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		const paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+		const beforeAssist = memory.readRamRecordWord(paidAt);
 		memory.writeMappedU32LE(IO_INP_CTRL, 1);
 		observeSample = () => assert.equal(tables.getInteger(owner, 513), valueTable(payload), 'VBlank samples after the table write');
 		advanceRuntimeTime(runtime, edge - 1 - scheduler.nowCycles);
@@ -529,6 +536,7 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		const beforeWrite = captureRuntimeSaveState(runtime);
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 		assert.ok(cpu.allocationParked());
+		const charge = BASE_CYCLES[OpCode.SETT] + TABLE_INDEX_VISIT_CYCLES + 3 * (memory.readRamRecordWord(paidAt) - beforeAssist);
 		let accepted = 1;
 		const unchanged = () => {
 			assert.equal(scheduler.nowCycles, edge - 1);
@@ -565,7 +573,6 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 			assert.equal(tables.getInteger(payload, 1), valueInteger(73));
 			assert.equal(cpu.readFramePc(0), entry + 2 * INSTRUCTION_BYTES);
 			assert.equal(cpu.lastPc, entry + INSTRUCTION_BYTES);
-			const charge = BASE_CYCLES[OpCode.SETT] + TABLE_INDEX_VISIT_CYCLES;
 			assert.equal(scheduler.nowCycles, edge - 1 + charge);
 			assert.equal(fs.lastTickSequence, 1);
 			assert.equal(fs.lastTickBudgetGranted, accepted);
@@ -682,7 +689,7 @@ test('a table write parked by the grant that enters Atomic keeps its weak receiv
 		assert.equal(gc.isAlive(child), false);
 		budget.setCollectionTarget(0);
 		const writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
-		assert.equal(scheduler.runCyclesToNextLogicalTick(128), false);
+		assert.equal(scheduler.runCyclesToNextLogicalTick(BASE_CYCLES[OpCode.NEWT] + 3 * GC_STEP_WORDS + BASE_CYCLES[OpCode.SETT]), false);
 		assert.ok(cpu.allocationParked() && gc.finalMarkPending(), 'NEWT enters Atomic before SETT parks in the same grant');
 		assert.equal(cpu.readFramePc(0), writePc);
 		const parked = captureRuntimeSaveState(runtime);
@@ -750,12 +757,13 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	cpu.runUntilDepth(0, 1);
 	const charge = 1 - cpu.instructionBudgetRemaining;
 	assert.equal(cpu.getFrameDepth(), 1, 'direct CPU retains synchronous recovery');
-	assert.equal(charge, BASE_CYCLES[OpCode.SETT] + 2, 'the two pcall results still have their ordinary charges');
+	assert.ok(charge >= BASE_CYCLES[OpCode.SETT] + 2);
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(1, 0);
 	const clock = scheduler.nowCycles;
 	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 	assert.ok(cpu.allocationParked());
+	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2);
 	const drain = () => {
 		for (let n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);

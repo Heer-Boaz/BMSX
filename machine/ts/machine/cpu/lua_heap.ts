@@ -51,7 +51,7 @@ export class LuaHeap {
 		const pressure = nextBytes > reserve;
 		const debt = nextBytes - target;
 		const allowance = pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
-		const work = gc.step(root0, root1, root2, growingThread, false, allowance);
+		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
 		if (pressure) this.creditStep();
 		else if (gc.active()) {
 			// A work unit covers four bytes at a two-times pace. Preserve

@@ -863,7 +863,7 @@ export class GcHeap {
 			const runway = this.memory.readRamRecordWord(this.controlOffset + GC_PACE_RUNWAY);
 			allowance = Math.min(GC_STEP_WORDS, Math.trunc(work / runway) - paid);
 		}
-		this.step(root0, root1, root2, growingThread, false, allowance);
+		this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,

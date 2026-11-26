@@ -1375,8 +1375,7 @@ reference has gone.
 Marking and reclamation can continue in later steps. The automatic final
 remark and weak-entry clearing pause execution between grants; an interrupt
 or device deadline cannot occur partway through that pause. The CPU resumes
-with its previous cycle budget. Collection work does not advance the machine
-clock, regardless of the number of live objects or entries examined.
+with its previous cycle budget after this stopped maintenance.
 
 When a write requires a rescan, the allocation joins a queue rather than
 immediately restarting the first scan. The second pass revisits Threads
@@ -1456,10 +1455,12 @@ console clock stopped. No table or new mapping is visible until the reservation
 succeeds. The instruction completes, or raises its error, before the console
 accepts a following interrupt or device deadline.
 
-An allocation assist, explicit collection or emergency collection can delay
-execution, but none adds guest cycles. An allocation that fails retains the
-ordinary charges for the parts of the instruction it already performed; it
-does not add a collection charge or admit the failed reservation.
+When an instruction assists incremental collection to admit a logical charge
+or reserve physical storage, it pays **3 cycles per collector work word**
+actually performed, not per word requested. The charge stays with the
+instruction even if the reservation later fails or parks. A retry does not
+repay completed work. Vertical blanking maintenance, explicit collection and
+emergency recovery do not incur this allocation-assist charge.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 
@@ -1549,16 +1550,16 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
 
-`NEWT` costs 24 cycles whether the construction succeeds or fails. The
+`NEWT` has a base charge of 24 cycles whether the construction succeeds or fails. The
 capacity requests determine the storage reservation against the
-language-allocation budget, not the instruction's cycle charge.
+language-allocation budget; they do not change that base charge.
 
-An insertion may reserve more storage. Its charge does not depend on
+An insertion may reserve more storage. Its base charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
 arranged or moved. A `SETFIELD` prefix request does not change this charge.
 Storage growth counts against the language-allocation
 budget. A metamethod invocation pays its ordinary call charge separately.
-Collection does not add to the instruction's cycle charge. An insertion that
+An incremental allocation assist adds its work charge as specified above. An insertion that
 fails to reserve storage leaves the requested mapping unmodified.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}

@@ -65,14 +65,14 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 		const size_t limit = capacity();
 		const size_t reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
 		if (nextBytes > reserveEdge) {
-			m_cpu.stepHeap(root0, root1, root2, growingThread);
+			m_cpu.assistAllocation(root0, root1, root2, growingThread, GC_STEP_WORDS);
 			creditStep();
 		} else {
 			// Lua's allocation debt, credited in actual collector work.
 			// Two work bytes per allocation byte, four work bytes per word.
 			const size_t debt = nextBytes - collectionTarget();
 			const size_t words = std::min(GC_STEP_WORDS, std::max(GC_ASSIST_MIN_WORDS, (debt + 1u) >> 1u));
-			const size_t work = m_cpu.gcHeap().step(root0, root1, root2, growingThread, false, words);
+			const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words);
 			if (m_cpu.collecting()) {
 				const size_t credited = usedBytes() + byteCount + 2u * work;
 				setCollectionTarget(static_cast<u32>(std::min(reserveEdge, credited > debt ? credited - debt : 0u)));

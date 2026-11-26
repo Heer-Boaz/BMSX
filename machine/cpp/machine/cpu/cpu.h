@@ -270,6 +270,7 @@ public:
 	bool advanceAllocationRecovery();
 	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
+	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words);
 	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }
 	class LocalRootsScope {
@@ -576,7 +577,7 @@ private:
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
 	PendingAllocation m_pendingAllocation;
-	CpuRunKind m_runKind = CpuRunKind::Direct;
+	CpuRunKind m_runKind = CpuRunKind::Idle;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::array<u32, COP0_EXEC + 1u> m_cop0Words{};

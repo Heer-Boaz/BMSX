@@ -11,6 +11,7 @@
 #endif
 
 #include "common/compiler.h"
+#include "common/scope_exit.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/source_policy.h"
 #include "machine/cpu/jit/runtime/execution.h"
@@ -2353,6 +2354,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		return RunResult::ParkedAllocation;
 	}
 	m_runKind = kind;
+	ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	if (target == 0u) target = m_rootView.address;
@@ -2448,6 +2450,12 @@ void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
 
 size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread) {
 	return m_heap.collect(root0, root1, root2, growingThread);
+}
+
+size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words) {
+	const size_t work = m_heap.step(root0, root1, root2, growingThread, false, words);
+	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= 3 * static_cast<int>(work);
+	return work;
 }
 
 size_t CPU::stepHeap(Value root0, Value root1, Value root2, u32 growingThread) {

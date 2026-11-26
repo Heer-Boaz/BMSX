@@ -2415,9 +2415,13 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	const auto beforePressure = cpu.luaHeap().usedBytes();
 	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix) == RunResult::Yielded
 		&& underPressure.hashSlots() == grownHash && underPressure.getStringKey(field) == raw
-		&& cpu.readFrameRegister(0, 9) == raw && cpu.readFrameRegister(0, 11) == valueInteger(39)
-		&& cpu.luaHeap().usedBytes() == beforePressure + charge,
-		"growth requiring collector assistance completes once through the semantic owner and preserves the live suffix");
+		&& cpu.luaHeap().usedBytes() == beforePressure + charge && cpu.instructionBudgetRemaining < 0
+		&& cpu.readFramePc(0) == suffixPc && cpu.readFrameRegister(0, 9) == valueInteger(-9),
+		"the assisted store publishes once and exhausts the grant before its suffix");
+	require(test::runCpuParity(cpu, scalar.cpu, throughSuffix - throughStore) == RunResult::Yielded
+		&& cpu.instructionBudgetRemaining == 0 && cpu.readFrameRegister(0, 9) == raw
+		&& cpu.readFrameRegister(0, 11) == valueInteger(39) && cpu.luaHeap().usedBytes() == beforePressure + charge,
+		"the next grant runs the two live moves without replaying the allocation");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(writeExits == beforeAssist + 1, "pressure still publishes the activation before collecting");
 #endif
@@ -2576,7 +2580,10 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 			registers.set(4, valueInteger(-4));
 		}
 		const int grant = throughStore + (suffix ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)] : 0);
-		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded && cpu.instructionBudgetRemaining == 0
+		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "dynamic store consumes its grant");
+		const int paid = table == pressure ? static_cast<int>(cpu.memory().readRamRecordWord(
+			cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID)) : 0;
+		require((table != pressure || paid > 0) && cpu.instructionBudgetRemaining == -3 * paid
 			&& cpu.readFramePc(0) == pc + (suffix ? 4u : 3u) * INSTRUCTION_BYTES
 			&& cpu.readCurrentInstructionPc() == pc + (suffix ? 3u : 1u) * INSTRUCTION_BYTES
 			&& cpu.lastPc == pc + (suffix ? 3u : 2u) * INSTRUCTION_BYTES
@@ -2637,7 +2644,7 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 #endif
 	for (auto* machine : {&native, &scalar})
 		machine->cpu.luaHeap().setCollectionTarget(static_cast<u32>(machine->cpu.luaHeap().usedBytes()));
-	run(pressure, growth, raw, true);
+	run(pressure, growth, raw, false);
 	auto pressured = asTable(cpu.readFrameRegister(0, pressure), cpu.gcHeap());
 	require(pressured.hashSlots() == 2 && pressured.getStringKey(growth) == raw && pressured.getStringKey(resident) == valueBool(false),
 		"allocation under pressure completes the same logical store once through its semantic owner");

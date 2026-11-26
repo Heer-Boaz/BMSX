@@ -231,7 +231,7 @@ export const enum RunResult {
 	ParkedAllocation,
 }
 
-export const enum CpuRunKind { Direct, Scheduled }
+export const enum CpuRunKind { Idle, Direct, Scheduled }
 
 export const enum AllocationRecovery { None, Current, RetryCurrent, Fresh, RetryFresh }
 export const enum PendingAllocationKind { TableAssignment, TableCreation }
@@ -285,7 +285,7 @@ export class CPU implements MappedPageInvalidator {
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
 	private pendingAllocation: PendingAllocation | null = null;
-	private runKind = CpuRunKind.Direct;
+	private runKind = CpuRunKind.Idle;
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
 	private scalarRegisterTop = -1;
@@ -1981,15 +1981,19 @@ export class CPU implements MappedPageInvalidator {
 			this.instructionBudgetRemaining = instructionBudget;
 			return RunResult.ParkedAllocation;
 		}
-		this.runKind = kind;
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
-		for (;;) {
-			const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
-			if (!this.threadSwitchRequested) return result;
-			this.threadSwitchRequested = false;
-			this.yieldRequested = false;
-			instructionBudget = this.instructionBudgetRemaining;
-			if (instructionBudget <= 0) return RunResult.Yielded;
+		this.runKind = kind;
+		try {
+			for (;;) {
+				const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
+				if (!this.threadSwitchRequested) return result;
+				this.threadSwitchRequested = false;
+				this.yieldRequested = false;
+				instructionBudget = this.instructionBudgetRemaining;
+				if (instructionBudget <= 0) return RunResult.Yielded;
+			}
+		} finally {
+			this.runKind = CpuRunKind.Idle;
 		}
 	}
 
@@ -4467,6 +4471,12 @@ export class CPU implements MappedPageInvalidator {
 				}
 			}
 		}
+	}
+
+	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number): number {
+		const work = this.gc.step(root0, root1, root2, growingThread, false, words);
+		if (this.runKind !== CpuRunKind.Idle) this.charge(3 * work);
+		return work;
 	}
 
 	public collectTrackedHeapBytes(root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {

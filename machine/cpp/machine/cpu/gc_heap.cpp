@@ -944,7 +944,7 @@ void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1,
 		const u32 runway = memory.readRamRecordWord(m_controlOffset + GC_PACE_RUNWAY);
 		allowance = std::min<u64>(GC_STEP_WORDS, work / runway - paid);
 	}
-	step(root0, root1, root2, growingThread, false, allowance);
+	m_cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit) {

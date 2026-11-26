@@ -11,6 +11,6 @@ enum class RunResult {
 	ParkedAllocation,
 };
 
-enum class CpuRunKind : uint8_t { Direct, Scheduled };
+enum class CpuRunKind : uint8_t { Idle, Direct, Scheduled };
 
 } // namespace bmsx

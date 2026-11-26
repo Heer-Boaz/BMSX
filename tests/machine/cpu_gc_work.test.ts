@@ -349,7 +349,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		assert.equal(frame.registers.get(7), valueInteger(37), 'fresh grant executes successor, not CALL/collection again');
 	});
 
-	test(`NEWT pays its base charge even when it assists GC (${backend}, WIDE=${wide})`, () => {
+	test(`NEWT pays its base charge and actual allocation assist (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.NEWT, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
@@ -363,7 +363,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		cpu.luaHeap.setCollectionTarget(0);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT]);
+		const work = cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID);
+		assert.ok(work > 0);
+		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT] - 3 * work);
 		assert.ok(cpu.gc.active(), 'allocation actually assisted an in-progress collection');
 		assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 52, 'request52 is admitted after collection and excluded from B_pre');
 		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), valueNil());

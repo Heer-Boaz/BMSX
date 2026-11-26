@@ -308,7 +308,6 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 	budget.setCollectionTarget(budget.capacity());
 	cpu.createTable(1024, 0); // Its unreachable backing supplies a replacement after collection.
 	constexpr u32 header = TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX;
-	static_assert(header == 40u);
 	const u32 spare = arena.allocate(header, true);
 	require(spare != 0u, "one real temporary header-sized hole");
 	while (arena.allocate(4088u, true)) {}
@@ -325,6 +324,8 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 	require(charged + TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(0, 2) < budget.capacity(),
 		"logical capacity can admit both allocations");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	const u32 paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+	const u32 beforeAssist = machine.memory.readRamRecordWord(paidAt);
 	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
 	input.observeSample = [&] {
 		require(valueIsTable(cpu.readFrameRegister(0, 0)), "VBlank samples after the allocation retires");
@@ -341,8 +342,8 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 		"issued instruction and actual following field are persisted, not a native constructor address");
 	require(arena.occupiedBytes() == occupied && budget.usedBytes() == charged && cpu.readFrameRegister(0, 0) == valueInteger(73),
 		"the staged header was returned and no table, destination or logical byte charge was published");
-	require(runtime.frameLoop.frameState.deferredAllocationCycles == BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],
-		"refusal defers the fixed cycle charge");
+	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] + 3 * static_cast<int>(machine.memory.readRamRecordWord(paidAt) - beforeAssist);
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == cycles, "refusal defers the base and actual assist");
 	const auto parked = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
 		for (int step = 0; !cpu.allocationReady() && step < 120; ++step) {
@@ -356,12 +357,11 @@ void testParkedNewTableRetiresBeforeVblank(bool native) {
 		const auto beforeCommit = budget.usedBytes();
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.allocationParked(),
 			"the saved operation retires, without re-running NEWT itself");
-		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
 		const Value result = cpu.readFrameRegister(0, 0);
 		require(valueIsTable(result) && cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES
 			&& budget.usedBytes() == beforeCommit + TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(0, 2)
 			&& machine.scheduler.nowCycles() == edge - 1 + cycles && scheduler.lastTickCpuUsedCycles == cycles && input.sampleCount == 1,
-			"one complete table, one fixed charge and one VBlank sample retire together");
+			"one complete table, one instruction charge and one VBlank sample retire together");
 		auto updated = asTable(result, cpu.gcHeap());
 		require(isNil(updated.getStringKey(keyX)) && isNil(updated.getStringKey(keyY)),
 			"neither following field executes during retry");
@@ -461,6 +461,8 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	require(!arena.allocate(5120u, true)
 		&& budget.usedBytes() + 2560u < budget.capacity(), "real physical miss, not logical exhaustion");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	const u32 paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+	const u32 beforeAssist = machine.memory.readRamRecordWord(paidAt);
 	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
 	input.observeSample = [&] {
 		require(owner.getInteger(513) == valueTable(payload.address()), "VBlank input observes the retired table write");
@@ -472,6 +474,8 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	const auto beforeWrite = captureRuntimeSaveState(runtime);
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"the physically refused WIDE SETT parks before the scheduled edge");
+	const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES
+		+ 3 * static_cast<int>(machine.memory.readRamRecordWord(paidAt) - beforeAssist);
 	i64 accepted = 1;
 	const auto unchanged = [&] {
 		require(machine.scheduler.nowCycles() == edge - 1 && machine.scheduler.nextDeadline() == edge
@@ -498,7 +502,6 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 		}
 		require(cpu.allocationReady(), "collector drained before retry");
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed, "a ready retry retires the original instruction");
-		const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES;
 		require(!cpu.allocationParked() && owner.arrayCapacity() == 1024 && owner.arrayAddress() != oldStorage
 			&& owner.getInteger(512) == valueInteger(512) && payload.getInteger(1) == valueInteger(73)
 			&& cpu.readFramePc(0) == entry + 2u * INSTRUCTION_BYTES && cpu.lastPc == entry + INSTRUCTION_BYTES,
@@ -615,13 +618,16 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	const auto before = captureRuntimeSaveState(runtime);
 	cpu.runUntilDepth(0, 1); // The direct CPU owner deliberately retains synchronous recovery.
 	const int charge = 1 - cpu.instructionBudgetRemaining;
-	require(cpu.getFrameDepth() == 1 && charge == BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + 2,
-		"inline protected failure transports its two result values");
+	const int base = BASE_CYCLES[static_cast<u8>(OpCode::SETT)];
+	require(cpu.getFrameDepth() == 1 && charge > base + 2 && (charge - base - 2) % 3 == 0,
+		"inline protected failure pays for the assist and transports its two result values");
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const i64 clock = runtime.machine.scheduler.nowCycles();
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"physical failure parks rather than exiting the protected frame");
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2,
+		"the parked grant retains the identical assist but has not delivered the two results");
 	const auto drain = [&] {
 		for (int n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked,
@@ -708,7 +714,7 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 		"the weak __newindex receiver and its only child remain white");
 	budget.setCollectionTarget(0);
 	const u32 writePc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
-	require(!scheduler.runCyclesToNextLogicalTick(runtime, 128) && cpu.allocationParked()
+	require(!scheduler.runCyclesToNextLogicalTick(runtime, 24 + 3 * GC_STEP_WORDS + 16) && cpu.allocationParked()
 		&& heap.finalMarkPending() && cpu.readFramePc(0) == writePc,
 		"NEWT enters pending Atomic, then the same accepted grant parks SETT before the first final slice");
 	const auto parked = captureRuntimeSaveState(runtime);

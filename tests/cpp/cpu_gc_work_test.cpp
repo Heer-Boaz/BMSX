@@ -416,9 +416,10 @@ void allocationCollectionAndFailure() {
 		for (auto* m : {&generated, &scalar}) {
 			m->cpu.luaHeap().setCollectionTarget(0);
 		}
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == 1 - 24 && generated.cpu.collecting(),
-			"automatic GC advances; only NEWT's 24 cycles are charged");
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "NEWT exhausts the short grant");
+		const auto work = generated.memory.readRamRecordWord(generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID);
+		require(work > 0 && generated.cpu.instructionBudgetRemaining == 1 - 24 - 3 * static_cast<int>(work) && generated.cpu.collecting(),
+			"NEWT pays its base charge and actual allocation assist");
 		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 52 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request52 is admitted after collection");
 		test::runCpuParity(generated.cpu, scalar.cpu, 2);
