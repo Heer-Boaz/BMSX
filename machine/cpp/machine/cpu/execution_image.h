@@ -110,7 +110,8 @@ struct NativeImageWarmup {
 #endif
 
 struct DecodedInstructionPage {
-	explicit DecodedInstructionPage(const MappedPageBinding& binding) : mapping(binding) {
+	explicit DecodedInstructionPage(const MappedPageBinding& binding, bool privateFirmware = false)
+		: mapping(binding), privateFirmware(privateFirmware) {
 		refreshState.fill(DECODED_REFRESH_DECODE);
 	}
 
@@ -119,6 +120,7 @@ struct DecodedInstructionPage {
 	std::array<uint32_t, DECODED_PAGE_WORDS> sourceWords{};
 	std::array<uint32_t, DECODED_PAGE_WORDS> bodyWords{};
 	MappedPageBinding mapping;
+	const bool privateFirmware;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	std::array<u8, DECODED_PAGE_WORDS> nativeVisits{};
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -142,9 +144,10 @@ struct DecodedInstructionPage {
 // words have stable addresses across later fetches and native publication.
 class DecodedPageDirectory {
 public:
+	explicit DecodedPageDirectory(bool privateFirmware = false) : m_privateFirmware(privateFirmware) {}
 	struct Entry {
-		explicit Entry(const MappedPageBinding& binding)
-			: key(binding.key), page(binding) {}
+		Entry(const MappedPageBinding& binding, bool privateFirmware)
+			: key(binding.key), page(binding, privateFirmware) {}
 		const u64 key;
 		DecodedInstructionPage page;
 	};
@@ -169,6 +172,7 @@ private:
 	std::array<std::unique_ptr<Group>, (1u + CARTRIDGE_SLOT_COUNT) * GROUPS_PER_APERTURE> m_groups{};
 	// Invalidate all published pages without walking empty directory slots.
 	std::vector<std::unique_ptr<Entry>> m_entries;
+	const bool m_privateFirmware;
 };
 
 struct Blua32ExecutionImage {
@@ -195,6 +199,15 @@ struct Blua32ExecutionImage {
 	NativeImageWarmup nativeWarmup;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
+	// An ordinary System activation and a fixed BIOS activation can share the
+	// same physical ROM PC. Their links and decoded dispatch metadata cannot.
+	struct PrivateFirmwareCode {
+		std::unique_ptr<NativeCodeLookup> lookup;
+		DecodedPageDirectory decoded{true};
+	};
+	std::unique_ptr<PrivateFirmwareCode> privateFirmwareCode;
+	DecodedPageDirectory& nativeSourceDirectory(bool privateFirmware);
+	std::unique_ptr<NativeCodeLookup>& nativeLookup(bool privateFirmware);
 #endif
 	DecodedPageDirectory decodedPages;
 private:

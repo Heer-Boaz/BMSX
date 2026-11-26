@@ -436,7 +436,7 @@ private:
 	void clearNativeContinuationBindings();
 #endif
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
-	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
+	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc, bool privateFirmware = false);
 	void refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	void decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
@@ -528,7 +528,7 @@ private:
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
 
-	void skipNextInstruction(CallFrame& frame);
+	void skipNextInstruction(CallFrame& frame, bool privateFirmware = false);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
 	friend struct NativeCpuRunState;
@@ -549,7 +549,7 @@ private:
 	void compileNativeRoot(Blua32ExecutionImage&, u32 functionAddress, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
-		MappedBusSignals, NativeWarmupAdmission* = nullptr);
+		MappedBusSignals, NativeWarmupAdmission* = nullptr, bool privateFirmware = false);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
@@ -573,7 +573,7 @@ private:
 		// backing words or the rest of the physical page.
 		std::array<std::bitset<DECODED_PAGE_WORDS>, NATIVE_VERSION_REGION_MAX_PAGES> feedbackHeads;
 		u32 pageCount = 0, slot = 0, rootPc = 0;
-		bool invalidated = false;
+		bool invalidated = false, privateFirmware = false;
 		std::span<const NativeCodeSourcePage> sources() const { return std::span(pages).first(pageCount); }
 	} m_pendingNativeCompilation;
 #endif

@@ -35,6 +35,7 @@ struct NativeCodeBindings {
 	std::span<const NativeCodeSourcePage> sourcePages;
 	// Standalone blocks have no owner to retire them when history is armed.
 	bool historyWriteWatches = true;
+	bool privateFirmware = false;
 };
 
 class NativeCompiler {

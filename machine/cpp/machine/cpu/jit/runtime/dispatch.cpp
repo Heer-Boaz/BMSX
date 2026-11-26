@@ -202,6 +202,25 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	void* const* continuation = exit->continuationCells[run->cartridgeSlot];
 	u32 continuationPc = exit->nextPc;
 	try {
+		if (run->privateFirmware) {
+			// This lane never enters an ordinary closure gate or the public bus.
+			switch (kind) {
+			case NativeBlockExit::ReadMemory: {
+				const auto& access = exit->operands.memory;
+				const u32 address = wordOperand(readRK(*frame->executionImage, frame->registers, access.address)) + access.displacement;
+				cpu.executeHeapServiceLoad(*frame, access.slot, access.format, address);
+				break;
+			}
+			case NativeBlockExit::SkipInstruction: cpu.skipNextInstruction(*frame, true); break;
+			case NativeBlockExit::InvalidOperand:
+			case NativeBlockExit::InvalidConstant: throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			default: BMSX_UNREACHABLE();
+			}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
+#endif
+			return nullptr;
+		}
 		auto transition = NativeBlockTransition::NextInstruction;
 		switch (kind) {
 		case NativeBlockExit::CompletedCall:

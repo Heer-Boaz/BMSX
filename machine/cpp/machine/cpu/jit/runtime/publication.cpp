@@ -158,7 +158,8 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 	std::ranges::transform(sources, pages.begin(), &NativeCodeSourcePage::page);
 	if (!m_nativeCode.tryInstall(region, std::span(pages).first(sources.size()), admission,
 		m_nativeCompilationProfiling ? &m_nativeCompilationProfile : nullptr)) return false;
-	auto& lookup = image.nativeCodeLookup;
+	const bool privateFirmware = sources.front().page->privateFirmware;
+	auto& lookup = image.nativeLookup(privateFirmware);
 	if (!lookup) lookup = std::make_unique<NativeCodeLookup>();
 	for (const auto& source : sources) {
 		auto& page = *source.page;

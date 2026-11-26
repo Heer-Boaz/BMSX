@@ -26,8 +26,8 @@ void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
 	nativeStackCapacity = thread.stackCapacity;
 	nativeFrameLimit = thread.retainedFrameLimit();
 	haltedCallDepth = cpu->m_haltedUntilIrqThreadAddress == thread.address ? cpu->m_haltedUntilIrqFrameDepth : -1;
-	cartridgeSlot = cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
-	codeRoot = image.nativeCodeLookup->root(cartridgeSlot);
+	cartridgeSlot = privateFirmware ? 0u : cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
+	codeRoot = (privateFirmware ? image.privateFirmwareCode->lookup : image.nativeCodeLookup)->root(cartridgeSlot);
 	state.constants = image.constPool;
 	state.frame = &frame;
 	state.remainingCycles = budget;

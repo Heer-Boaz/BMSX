@@ -5,6 +5,7 @@
 
 #include "machine/cpu/decoded_instruction.h"
 #include "spec/blua32/cop0.h"
+#include "spec/blua32/memory_access_kind.h"
 
 namespace bmsx {
 
@@ -131,7 +132,28 @@ inline constexpr bool isNativeWarmDispatch(u8 dispatch) {
 }
 #endif
 
-inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
+inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool privateFirmware = false) {
+	if (privateFirmware) {
+		// The fixed BIOS lane shares ALU/branch lowering. Its activation and
+		// private write ports remain at the owning scalar dispatch boundaries.
+		switch (static_cast<OpCode>(instruction.op)) {
+			case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
+			case OpCode::JMP: return instruction.a == 0;
+			case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
+				return instruction.c == static_cast<int>(MemoryAccessKind::U8)
+					|| instruction.c == static_cast<int>(MemoryAccessKind::U32LE)
+					|| instruction.c == static_cast<int>(MemoryAccessKind::Word);
+			case OpCode::KSMI: case OpCode::K0: case OpCode::K1:
+			case OpCode::KNIL: case OpCode::KTRUE: case OpCode::KFALSE: case OpCode::LOADNIL:
+			case OpCode::LOADK: case OpCode::LOADKR:
+			case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::UNM:
+			case OpCode::NOT: case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR:
+			case OpCode::SHL: case OpCode::SHR: case OpCode::BNOT:
+			case OpCode::JMPIF: case OpCode::JMPIFNOT: case OpCode::EQ: case OpCode::LT: case OpCode::LE:
+				return true;
+			default: return false;
+		}
+	}
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::JMP: return instruction.a == 0;
 		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);

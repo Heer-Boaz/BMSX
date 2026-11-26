@@ -239,6 +239,19 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		emitLeave(slow, Charge::Pending);
 		return;
 	}
+	if (m_bindings.privateFirmware) {
+		// The decoded private lane only emits aligned scalar Integer loads.
+		// Synthetic root planes and socket-encoded ROM use the typed port.
+		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
+		fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0,
+			SLJIT_IMM, m_bindings.ramBytes - width), slow, m_cache.state());
+		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
+		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
+		emitBackingLoad(kind, false);
+		const auto target = m_cache.write(access.slot, ValueTag::Integer);
+		sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
+		return;
+	}
 	// Keep ordinary RAM on the fall-through path. MMIO always goes to the bus.
 	sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
 	auto* io = sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, IO_SLOT_COUNT * IO_WORD_SIZE);

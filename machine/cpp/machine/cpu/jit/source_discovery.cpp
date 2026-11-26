@@ -39,7 +39,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		const auto& instruction = page.words[cursor];
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
-			|| !nativeSourceCanEmit(instruction)) continue;
+			|| !nativeSourceCanEmit(instruction, page.privateFirmware)) continue;
 		const u32 finalWordPc = pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		if (finalWordPc > source.lastPc) continue;
 		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {

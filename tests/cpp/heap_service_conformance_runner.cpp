@@ -169,6 +169,34 @@ int main(int argc, char** argv) {
 					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
 					break;
 				}
+				case 'o': {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+					u32 function;
+					int cycles;
+					trace >> function >> cycles;
+					const auto depth = cpu.getFrameDepth();
+					const auto& reads = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadMemory)];
+					const auto readCount = reads.entries;
+					cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, function);
+					if (runtime.cpuExecution.runSuspendedUntilDepth(runtime, depth, cycles) != CpuSuspendedRunResult::Completed)
+						throw std::runtime_error("Ordinary System call did not complete.");
+					std::cout << asInteger(cpu.readCompletionValues().get(0)) << ' ' << reads.entries - readCount << '\n';
+#else
+					throw std::runtime_error("Ordinary System native aperture evidence requires BMSX_NATIVE_GATE_PROFILE.");
+#endif
+					break;
+				}
+				case 'n': {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+					const auto& profile = cpu.nativeGateProfile();
+					std::cout << "native-firmware " << profile.privateFirmwareEntries << ' '
+						<< profile.privateFirmwareCycles << ' ' << profile.lastPrivateFirmwareEntryPc << ' '
+						<< cpu.heapServiceResult() << '\n';
+#else
+					throw std::runtime_error("Firmware native PC evidence requires BMSX_NATIVE_GATE_PROFILE.");
+#endif
+					break;
+				}
 				case 'q': {
 					int depth, cycles;
 					trace >> depth >> cycles;

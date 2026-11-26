@@ -31,11 +31,23 @@ DecodedInstructionPage& DecodedPageDirectory::bind(const MappedPageBinding& bind
 	if (!group) group = std::make_unique<Group>();
 	auto& page = (*group)[pageIndex(binding.key)];
 	if (!page) {
-		m_entries.push_back(std::make_unique<Entry>(binding));
+		m_entries.push_back(std::make_unique<Entry>(binding, m_privateFirmware));
 		page = &m_entries.back()->page;
 	}
 	return *page;
 }
+
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+DecodedPageDirectory& Blua32ExecutionImage::nativeSourceDirectory(bool privateFirmware) {
+	if (!privateFirmware) return decodedPages;
+	if (!privateFirmwareCode) privateFirmwareCode = std::make_unique<PrivateFirmwareCode>();
+	return privateFirmwareCode->decoded;
+}
+
+std::unique_ptr<NativeCodeLookup>& Blua32ExecutionImage::nativeLookup(bool privateFirmware) {
+	return privateFirmware ? privateFirmwareCode->lookup : nativeCodeLookup;
+}
+#endif
 
 Blua32RomFunctionDirectory Blua32RomFunctionDirectory::read(const Memory& memory,
 	ExecutionDomainId domain, const u8* header) {

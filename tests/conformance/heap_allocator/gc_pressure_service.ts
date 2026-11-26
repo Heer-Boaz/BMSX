@@ -7,6 +7,8 @@ import { AcceptedInterruptKind, CpuRunKind, RunResult } from '../../../machine/t
 import { GC_LAST_EPOCH_WORK, GC_PACE_PAID, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../../machine/ts/machine/cpu/lua_heap';
+import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueTable } from '../../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime, CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
@@ -16,12 +18,12 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import {
 	CPU_CAUSE_IRQ, CPU_CAUSE_NMI, CPU_STATUS_MODE_STACK_MASK, CPU_STATUS_RFE_RESTORE_MASK,
 } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_IRQ_FORWARD_OFFSET, HeapServiceIrqForwardField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_IRQ_FORWARD_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceIrqForwardField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_CART_SELECT, IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
-import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -53,12 +55,22 @@ const deadStringText = 'an IRQ maintenance pass should reclaim this String';
 mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join('tmp', 'bmsx-production-irqs-'));
 try {
-	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	const proveGeneratedTrace = process.env.BMSX_TEST_PINNED_NATIVE_PROFILE === '1';
+	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
+		configure: proveGeneratedTrace ? ['-DBMSX_NATIVE_GATE_PROFILE=ON'] : [],
+	});
 	for (const optLevel of [0, 3] as const) {
 		const bios = compileHeapServiceSystem(systemSource, optLevel);
 		const cart = (entrySource: string) => compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel });
 		const pair = linkTestBlua32Pair(bios, cart(cartSource));
 		const other = linkTestBlua32Pair(bios, cart(cartSource.replace('= 71', '= 73')));
+		const systemObject = encodeCompiledProgramObject(bios);
+		const exported = systemObject.sections.rodata.moduleExports.find(item => item.path === 'kernel/gc_table_trace'
+			&& item.exportPathKey === 'trace_table_edges')!;
+		const targetIndex = pair.systemSymbols.metadata.functionIds.indexOf(systemObject.link.symbols.exportProtoIdBySlot[exported.slotName]);
+		assert.ok(targetIndex >= 0, 'the linked System image contains the Table trace export');
+		const target = pair.systemImage.functions[targetIndex];
+		let nativeTraceCycles = 0, nativeTraceEntries = 0;
 		const media = { systemRomBytes: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes, other.cartRomBytes), machineModel: PSX_MACHINE_SPEC };
 		const runtime = new Runtime(media, input);
 		runtime.boot();
@@ -128,13 +140,28 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			observe(`L ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+			if (proveGeneratedTrace) trace.push('n');
 			return result;
 		}
-		function finishPrelude() {
+		function finishPrelude(shortGrants = false) {
+			let tested = false;
 			for (let i = 0; i < 16384 && cpu.heapServiceActive(); ++i) {
+				if (shortGrants && !tested) {
+					const depth = memory.readRamRecordWord(management + HEAP_SERVICE_THREAD_OFFSET + ThreadField.FrameDepth);
+					const frame = management + HEAP_SERVICE_FRAME_OFFSET + (depth - 1) * FRAME_CONTROL_BYTES;
+					if (memory.readRamRecordWord(frame + FrameField.Function) === target.address) {
+						for (let j = 0; j < 16; ++j) {
+							assert.equal(grant(1), RunResult.CollectionProgress);
+							markMemory(management + HEAP_SERVICE_THREAD_OFFSET,
+								management + HEAP_SERVICE_VALUE_OFFSET + THREAD_STACK_SLOT_BYTES * HEAP_SERVICE_VALUE_COUNT);
+						}
+						tested = true;
+					}
+				}
 				assert.equal(grant(4096), RunResult.CollectionProgress);
 				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no host phase handoffs');
 			}
+			if (shortGrants) assert.ok(tested, 'pause in the linked Table trace itself');
 			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(lane(), 0);
 			assert.equal(cpu.getFrameDepth(), callerDepth + 1);
@@ -207,7 +234,7 @@ try {
 		observe('N');
 		assert.equal(cpu.enterPendingInterrupt(), false, 'an accepted prelude excludes reentry including NMI');
 		observe('I', 0);
-		finishPrelude();
+		finishPrelude(true);
 		assert.equal(word(sampled), occupied);
 		assert.equal(word(assist), 1);
 		assert.equal(word(epochWork), GC_STEP_WORDS);
@@ -220,7 +247,19 @@ try {
 		function run(name: string, commands: readonly string[], checkpoint: string) {
 			const script = join(directory, `trace-O${optLevel}-${name}.txt`);
 			writeFileSync(script, commands.join('\n'));
-			return execFileSync(native, [bootPath, script, checkpoint, cartPath, secondCartPath], { encoding: 'utf8' }).trimEnd().split('\n');
+			const rows = execFileSync(native, [bootPath, script, checkpoint, cartPath, secondCartPath], { encoding: 'utf8' }).trimEnd().split('\n');
+			let previousEntries = 0, previousCycles = 0;
+			return rows.filter(row => {
+				if (!row.startsWith('native-firmware ')) return true;
+				const [entries, cycles, lastPc] = row.slice('native-firmware '.length).split(' ').map(Number);
+				if (lastPc >= target.codeAddress && lastPc < target.codeAddress + target.codeByteCount) {
+					nativeTraceEntries += entries - previousEntries;
+					nativeTraceCycles += cycles - previousCycles;
+				}
+				previousEntries = entries;
+				previousCycles = cycles;
+				return false;
+			});
 		}
 		assert.deepEqual(run('ts-checkpoint', ['X', ...trace.slice(replayStart)], partialPath), expected.slice(expectedStart));
 		assert.deepEqual(run('native', trace, seed), expected);
@@ -279,6 +318,10 @@ try {
 		deliver({ pc: issuePc, irqStatus }, count + 1, IRQ_VBLANK, 0);
 		assert.deepEqual(run('inside-dispatch', ['X', ...trace.slice(insideTrace)], insidePath), expected.slice(insideExpected));
 
+		if (proveGeneratedTrace) {
+			assert.ok(nativeTraceEntries > 0 && nativeTraceCycles > 0, 'the linked Table trace entered timed native firmware');
+			console.log(`O${optLevel}: ${nativeTraceEntries} native entries, ${nativeTraceCycles} charged cycles in grants whose last native entry was in Table trace`);
+		}
 		console.log(`BIOS-GC-PRESSURE-IRQ:PASS O${optLevel} (real EXEC, VBlank masking/ACK, cart forwarding, suspended RFE boundary, NMI, portable rewind, Atomic and sweep)`);
 	}
 	rmSync(directory, { recursive: true });

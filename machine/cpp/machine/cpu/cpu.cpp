@@ -747,31 +747,41 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 			|| (address >= CART_ROM_BASE && address < CART_ROM_END)) {
 			image->romCallBindings.fill({});
 		}
-		for (const auto& entry : image->decodedPages.entries()) {
-			auto& [key, page] = *entry;
-			if (key >= invalidationStart && key < endKey) {
+		const auto rebindPages = [&](DecodedPageDirectory& directory) {
+			for (const auto& entry : directory.entries()) {
+				auto& [key, page] = *entry;
+				if (key < invalidationStart || key >= endKey) continue;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				page.retireNativeBlocks();
 #endif
 				// The physical mapping has already changed. Rebind in place:
-				// suspended frames and the native directory retain the page itself.
+				// suspended frames and native links retain the page itself.
 				m_memory.bindMappedPage(static_cast<u32>(key),
 					mappedBusSignalsForCartridgeSlot(mappedPageDomainIndex(key) == 2u) | MAPPED_BUS_INSTRUCTION_FETCH,
 					page.mapping);
 				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
-		}
+		};
+		rebindPages(image->decodedPages);
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		if (image->privateFirmwareCode && address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+			rebindPages(image->privateFirmwareCode->decoded);
+#endif
 	}
 }
 
-DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
+DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc, bool privateFirmware) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-	const auto slot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+	const auto slot = privateFirmware ? 0u : m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 	const u64 key = mappedPageAddressKey(pageAddress, slot);
-	if (frame.decodedPage && frame.decodedPage->mapping.key == key) {
+	if (frame.decodedPage && frame.decodedPage->mapping.key == key && frame.decodedPage->privateFirmware == privateFirmware) {
 		return *frame.decodedPage;
 	}
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	auto& directory = frame.executionImage->nativeSourceDirectory(privateFirmware);
+#else
 	auto& directory = frame.executionImage->decodedPages;
+#endif
 	auto* page = directory.find(key);
 	if (!page) {
 		MappedPageBinding binding;
@@ -784,9 +794,9 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 }
 
 
-void CPU::skipNextInstruction(CallFrame& frame) {
+void CPU::skipNextInstruction(CallFrame& frame, bool privateFirmware) {
 	const u32 pc = frame.readControl(FrameField::Pc);
-	DecodedInstructionPage& page = decodedPageForFrame(frame, pc);
+	DecodedInstructionPage& page = decodedPageForFrame(frame, pc, privateFirmware);
 	const u32 offset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if ((page.refreshState[offset] & DECODED_REFRESH_DECODE) != 0u
 		&& !decodeInstruction(frame, page, offset, pc, false)) {
@@ -1953,9 +1963,11 @@ RunResult CPU::runLoop(
 } while (0)
 	bool canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	constexpr bool privateFirmware = HeapService;
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState(*this, targetDepth);
+	nativeState.privateFirmware = privateFirmware;
 #define OBSERVE_SCALAR_ARITHMETIC(left, right) do { \
 	if constexpr (!Instrumented && !HeapService) { \
 		if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) { \
@@ -1968,6 +1980,8 @@ RunResult CPU::runLoop(
 		} \
 	} \
 } while (0)
+#else
+	constexpr bool privateFirmware = false;
 #endif
 	for (;;) {
 		try {
@@ -2070,17 +2084,17 @@ dispatch_fetch:
 			}
 			if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			decodedPage = &decodedPageForFrame(*frame, pc);
+			decodedPage = &decodedPageForFrame(*frame, pc, privateFirmware);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_bound_page:
-			if constexpr (!Instrumented && !HeapService) {
+			if constexpr (!Instrumented) {
 				if (nativeState.hotSidePc) {
 					const bool atTarget = *nativeState.hotSidePc == pc;
 					nativeState.hotSidePc.reset();
 					const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 					if (atTarget && !decodedPage->refreshState[word]
 						&& isNativeWarmDispatch(decodedPage->words[word].dispatchOp))
-						prepareNativeBlock(*frame, *decodedPage, pc, m_executionBusSignals);
+						prepareNativeBlock(*frame, *decodedPage, pc, HeapService ? mappedBusSignalsForCartridgeSlot(0u) : m_executionBusSignals);
 				}
 			}
 #endif
@@ -2112,7 +2126,7 @@ dispatch_decode:
 			m_lastExecutionDomainId = image->executionDomainId;
 			lastPc = nextPc - INSTRUCTION_BYTES;
 			uint8_t dispatchOp;
-			if constexpr (HeapService) {
+			if constexpr (HeapService && !privateFirmware) {
 				dispatchOp = decoded->op;
 			} else if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
@@ -2151,7 +2165,7 @@ dispatch_decode:
 		} \
 	} \
 	PUBLISH_SCALAR_FRONTIER(); \
-	skipNextInstruction(FRAME); \
+	skipNextInstruction(FRAME, privateFirmware); \
 	DISPATCH_CONTINUE(); \
 } while (0)
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2220,7 +2234,7 @@ dispatch_instruction:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				// Warmth selects an execution tier for the admitted instruction.
 				// It is not a guest opcode: dispatch the selected operation once.
-				if (!HeapService && isNativeWarmDispatch(dispatchOp)) {
+				if (isNativeWarmDispatch(dispatchOp)) {
 					const bool entry = FRAME.compilationEntry;
 					FRAME.compilationEntry = rewritten || dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarmBoundary);
 					dispatchOp = decoded->op;
@@ -2231,7 +2245,7 @@ dispatch_instruction:
 						if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
 						if (entry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
 							&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
-							prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
+							prepareNativeBlock(FRAME, *decodedPage, pc, HeapService ? mappedBusSignalsForCartridgeSlot(0u) : m_executionBusSignals);
 							if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock))
 								dispatchOp = decoded->dispatchOp;
 						}
@@ -2411,11 +2425,22 @@ dispatch_instruction:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_native_block: {
 				PUBLISH_SCALAR_FRONTIER();
-				nativeState.enterFrame(*frame, instructionBudgetRemaining + nativeFirstDispatchCycles);
+				const int nativeBudget = instructionBudgetRemaining + nativeFirstDispatchCycles;
+				nativeState.enterFrame(*frame, nativeBudget);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 				const int nativeStartBudget = nativeState.state.remainingCycles;
 #endif
 				nativeBlock->execute(nativeState);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+				if constexpr (HeapService) {
+					const int retiredCycles = nativeBudget - instructionBudgetRemaining;
+					if (retiredCycles > 0) {
+						++m_nativeGateProfile.privateFirmwareEntries;
+						m_nativeGateProfile.privateFirmwareCycles += retiredCycles;
+						m_nativeGateProfile.lastPrivateFirmwareEntryPc = nativeBlock->firstPc;
+					}
+				}
+#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 				// Helpers publish the authoritative CPU grant before returning or
 				// reporting an error; the native state's copy can then be stale.
@@ -2429,7 +2454,9 @@ dispatch_native_block: {
 				total.concatn += counts.concatn;
 #endif
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
-				if (allocationParked()) return RunResult::ParkedAllocation;
+				if constexpr (!HeapService) {
+					if (allocationParked()) return RunResult::ParkedAllocation;
+				}
 				DISPATCH_CONTINUE();
 			}
 #endif
@@ -2458,9 +2485,9 @@ dispatch_rebind_frame:
 				pc = frame->readControl(FrameField::Pc);
 				// A function record can supply a raw unaligned code address. Leave
 				// its address exception to the ordinary instruction-fetch boundary.
-				if (!HeapService && (pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
 					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-					decodedPage = &decodedPageForFrame(FRAME, pc);
+					decodedPage = &decodedPageForFrame(FRAME, pc, privateFirmware);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 						if (nativeBlock && std::endian::native == std::endian::little && !thread.stackRequiresScalar()) {
@@ -2554,6 +2581,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const auto gcStage = cartLane == 0u && destination == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
+#if defined(BMSX_ENABLE_NATIVE_COMPILER_WORKER)
+		publishNativeCompilation();
+		serviceNativeDemand();
+#endif
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
