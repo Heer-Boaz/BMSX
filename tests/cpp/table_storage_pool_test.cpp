@@ -44,6 +44,21 @@ void mixedGrowthKeepsUnchangedStorage(bmsx::CPU& cpu) {
 	table.clear();
 }
 
+void fullByteChainsWidenOnRehash(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	auto source = cpu.createTable(0, 128);
+	for (i32 key = 1; key <= 128; ++key) source.setInteger(-key, valueInteger(key));
+	auto copy = source.copyOwn();
+	copy.setInteger(-129, valueBool(true));
+	require(source.hashSlots() == 128 && copy.hashSlots() == 256, "growth crosses the signed byte index boundary");
+	for (i32 key = 1; key <= 128; ++key)
+		require(source.getInteger(-key) == valueInteger(key) && copy.getInteger(-key) == valueInteger(key),
+			"widened collision chains retain every mapping");
+	require(isNil(source.getInteger(-129)) && copy.getInteger(-129) == valueBool(true), "growth leaves the source alone");
+	source.clear();
+	copy.clear();
+}
+
 void tableSlotWritesMarkBothHistoryPages(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	constexpr u32 capacity = MAPPED_PAGE_BYTE_SIZE / sizeof(u32);
@@ -199,6 +214,7 @@ int main() {
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
 		denseArrayRetainsBacking(cpu);
+		fullByteChainsWidenOnRehash(cpu);
 		mixedGrowthKeepsUnchangedStorage(cpu);
 		tableSlotWritesMarkBothHistoryPages(cpu);
 		rebuildingHashMarksAllDestinationPages(cpu);

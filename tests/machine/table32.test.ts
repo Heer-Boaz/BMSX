@@ -28,14 +28,29 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, cpu.gc.tables.getTrackedHeapBytes(table));
 	const base = cpu.gc.tables.arrayAddress(table);
-	const links = cpu.gc.tables.hashAddress(table) + 2 * 16 * 4;
+	const links = cpu.gc.tables.hashAddress(table) + 16 * 10;
 	const tags = base + 8 * 4;
-	assert.equal(cpu.memory.readRamRecordWord(links), 0xffffffff);
+	assert.equal(cpu.memory.readRamRecordByte(links), 0xff);
 	cpu.gc.tables.setInteger(table, 3, v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.memory.readRamRecordWord(base + 8), 0xffa12345);
 	assert.equal(cpu.memory.readRamRecordByte(tags + 2), v.ValueTag.Float);
 	assert.equal(cpu.gc.tables.getInteger(table, 3), v.valueFloatBits(0xffa12345));
 	cpu.gc.tables.clear(table); assert.equal(cpu.luaHeap.usedBytes() - start, 32);
+});
+
+test('full byte-index chains survive copying and widening during rehash', () => {
+	const cpu = machine(), tables = cpu.gc.tables, source = cpu.createTable(0, 128);
+	for (let key = 1; key <= 128; ++key) tables.setInteger(source, -key, v.valueInteger(key));
+	const copy = tables.copyOwn(source);
+	tables.setInteger(copy, -129, v.valueBool(true));
+	assert.equal(tables.hashSize(source), 128);
+	assert.equal(tables.hashSize(copy), 256);
+	for (let key = 1; key <= 128; ++key) {
+		assert.equal(tables.getInteger(source, -key), v.valueInteger(key));
+		assert.equal(tables.getInteger(copy, -key), v.valueInteger(key));
+	}
+	assert.equal(tables.getInteger(source, -129), v.valueNil());
+	assert.equal(tables.getInteger(copy, -129), v.valueBool(true));
 });
 
 test('array growth keeps a full hash when none of its keys move into the array', () => {

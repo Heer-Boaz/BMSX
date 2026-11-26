@@ -10,7 +10,7 @@ void emitTableSlotOffset(sljit_compiler* c, sljit_s32 destination, bool word, Ta
 		sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_R1, 0, SLJIT_IMM, 2);
 	} else {
 		if (backing == TableHeader::HashStorage)
-			sljit_emit_op2(c, SLJIT_MUL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 12);
+			sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 3);
 		else
 			sljit_emit_op2(c, SLJIT_SHL32, destination, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Array), SLJIT_IMM, 2);
 		sljit_emit_op2(c, SLJIT_ADD32, destination, 0, destination, 0, SLJIT_R1, 0);
@@ -66,8 +66,7 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0),
 		static_cast<u32>(TableHeader::HashStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
-	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
-	sljit_emit_op2(c, SLJIT_SHL, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 2);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
 	auto* node = sljit_emit_label(c);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
@@ -89,9 +88,17 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_IMM, 1);
 	auto* last = sljit_emit_jump(c, SLJIT_EQUAL);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
-	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash);
+	auto* wide = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TableRecord::BYTE_LINK_CAPACITY);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R0, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2);
+	sljit_emit_op1(c, SLJIT_MOV_S8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
+	auto* linked = sljit_emit_jump(c, SLJIT_JUMP);
+	sljit_set_label(wide, sljit_emit_label(c));
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R3, 0, SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R0, SLJIT_R1), 2);
+	sljit_set_label(linked, sljit_emit_label(c));
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0), node);
 	sljit_set_label(last, sljit_emit_label(c));
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
@@ -274,7 +281,7 @@ sljit_label* emitTableIteratorScan(sljit_compiler* c) {
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), Scratch::words, SLJIT_R0, 0);
-	sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount, SLJIT_IMM, 12);
+	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), Scratch::hashCount, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_R2, 0);
 	auto* hashLoop = sljit_emit_label(c);
 	auto* exhausted = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,

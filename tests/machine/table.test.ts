@@ -177,11 +177,11 @@ test('table values come directly from the allocator-owned RAM block', () => {
 	const headerBytes = arena.allocationBytes(table - GC_OBJECT_PREFIX), backingBytes = arena.allocationBytes(base);
 	assert.equal(arena.occupiedBytes() - occupiedBefore, headerBytes + backingBytes + arena.allocationBytes(hash), 'the header and body are separate chunks');
 	assert.equal(memory.readRamRecordWord(base), 71);
-	assert.equal(memory.readRamRecordWord(hash + 2 * 4), 0xffffffff, 'the hash-chain word follows the four payload words');
+	assert.equal(memory.readRamRecordByte(hash + 10), 0xff, 'the one-node chain ends after the two payloads and tags');
 	const tags = base + 2 * 4;
 	assert.equal(memory.readRamRecordByte(tags), ValueTag.Integer);
 	assert.equal(memory.readRamRecordWord(table + TableHeader.Hash), 1, 'the table header owns the hash capacity');
-	assert.equal(memory.readRamRecordByte(hash + 12 + 1), ValueTag.Nil, 'the spare hash value remains nil');
+	assert.equal(memory.readRamRecordByte(hash + 8 + 1), ValueTag.Nil, 'the spare hash value remains nil');
 	const backing = table + TableHeader.ArrayStorage;
 	assert.equal(memory.readRamRecordWord(backing), base);
 	memory.writeRamRecordWord(backing, base + MAIN_RAM_SIZE);
@@ -232,7 +232,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const table = cpu.createTable(0, 1024);
 	for (let key = -1; key >= -1024; key--) cpu.gc.tables.setInteger(table, key, valueInteger(key));
-	const links = cpu.gc.tables.hashAddress(table) + 1024 * 2 * 4;
+	const links = cpu.gc.tables.hashAddress(table) + 1024 * 10;
 	for (let slot = 0; slot < 1024; slot++) {
 		let count = 0;
 		for (let next = slot; next !== -1; next = (memory.readRamRecordWord(links + next * 4) | 0)) {

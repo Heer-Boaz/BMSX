@@ -86,7 +86,7 @@ u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
 	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
 	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
 		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(), TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity), mode,
-		14u * hashCapacity, static_cast<u32>(TableHeader::HashStorage));
+		TableRecord::hashStorageBytes(hashCapacity), static_cast<u32>(TableHeader::HashStorage));
 	if (!address) return 0u;
 	TableRecord(m_heap, address).initialize(arraySize, hashCapacity);
 	m_heap.publishObject(address);

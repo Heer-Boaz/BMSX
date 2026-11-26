@@ -430,7 +430,7 @@ export class CPU implements MappedPageInvalidator {
 	private allocateTable(arraySize: number, hashSize: number, mode: LuaAllocationMode): number {
 		const hashCapacity = TableRecords.hashCapacity(hashSize);
 		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, 5 * arraySize,
-			TableHeader.ArrayStorage, valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity), mode, 14 * hashCapacity, TableHeader.HashStorage);
+			TableHeader.ArrayStorage, valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity), mode, TableRecords.hashStorageBytes(hashCapacity), TableHeader.HashStorage);
 		if (address === 0) return 0;
 		this.gc.tables.initialize(address, arraySize, hashCapacity);
 		this.gc.publishObject(address);

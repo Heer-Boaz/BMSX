@@ -32,7 +32,7 @@ TableRecord TableRecord::copyOwn() const {
 	const u32 array = arrayCapacity(), hash = hashSlots();
 	const u32 target = m_heap->budget.allocateRecord(HEADER_BYTES, true, 5u * array,
 		static_cast<u32>(TableHeader::ArrayStorage), valueTable(m_address), valueNil(), valueNil(), HEADER_CHARGE + allocationCharge(array, hash),
-		LuaAllocationMode::Direct, 14u * hash, static_cast<u32>(TableHeader::HashStorage));
+		LuaAllocationMode::Direct, hashStorageBytes(hash), static_cast<u32>(TableHeader::HashStorage));
 	TableRecord copy(*m_heap, target);
 	const auto copyStorage = [&](u32 target, u32 source, u32 bytes) {
 		if (!bytes) return;
@@ -41,7 +41,7 @@ TableRecord TableRecord::copyOwn() const {
 		m_memory->invalidateRamWrite(dst, bytes);
 	};
 	copyStorage(copy.arrayAddress(), arrayAddress(), 5u * array);
-	copyStorage(copy.hashAddress(), hashAddress(), 14u * hash);
+	copyStorage(copy.hashAddress(), hashAddress(), hashStorageBytes(hash));
 	const u32 absent = m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE);
 	const u32 kind = static_cast<u32>(ValueTag::Table) | (u32{m_heap->white()} << 8u)
 		| (absent << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
@@ -65,7 +65,7 @@ void TableRecord::setArraySlot(size_t slot, const Value& value) {
 }
 
 u32 TableRecord::storageBytes(size_t arraySize, size_t hashSize) {
-	return static_cast<u32>(5u * arraySize + 14u * hashSize);
+	return static_cast<u32>(5u * arraySize + hashStorageBytes(hashSize));
 }
 
 u32 TableRecord::allocationCharge(size_t arraySize, size_t hashSize) {
@@ -208,7 +208,7 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
 		if (GcHeap::pacedPhase(m_heap->phase())) m_heap->assistBeforeReservation(bytes);
 	}
-	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(14u * plan.hash, true) : 0u;
+	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
 	return resize(plan, storage, key, value, previous, requested);
 }
@@ -333,10 +333,10 @@ void TableRecord::initializeHash(u32 address, u32 count) {
 	if (!count) return;
 	const u32 base = address & RAM_RECORD_WORD_MASK;
 	u8* words = m_memory->ramData() + base;
-	std::fill(words, words + count * 8u, u8{0});
-	std::fill(words + count * 8u, words + count * 12u, u8{0xff});
-	std::fill(words + count * 12u, words + count * 14u, u8{0});
-	m_memory->invalidateRamWrite(base, count * 14u);
+	const u32 bytes = hashStorageBytes(count);
+	std::fill(words, words + count * 10u, u8{0});
+	std::fill(words + count * 10u, words + bytes, u8{0xff});
+	m_memory->invalidateRamWrite(base, bytes);
 }
 
 void TableRecord::freeStorage() {

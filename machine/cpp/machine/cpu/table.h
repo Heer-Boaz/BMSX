@@ -37,6 +37,8 @@ class TableRecord {
 public:
 	TableRecord(GcHeap& heap, u32 address) : m_heap(&heap), m_memory(&heap.memory), m_address(address) {}
 	static constexpr u32 HEADER_BYTES = 36, HEADER_CHARGE = 32;
+	static constexpr u32 BYTE_LINK_CAPACITY = 128;
+	static constexpr u32 hashStorageBytes(size_t hash) { return static_cast<u32>(hash * (hash <= BYTE_LINK_CAPACITY ? 11u : 14u)); }
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
 	void initialize(size_t arrayCapacity, size_t hashCapacity);
@@ -245,13 +247,18 @@ private:
 		u32 count, links;
 		int findFreeIndex(int first) const;
 		i32 next(u32 index) const {
-			return static_cast<i32>(slots.memory->readRamRecordWord(links + index * 4u));
+			const u8* lane = slots.tags + 2u * count;
+			if (count <= BYTE_LINK_CAPACITY) return static_cast<i8>(lane[index]);
+			return static_cast<i32>(readLE32(lane + index * 4u));
 		}
 		void setNext(u32 index, i32 next) const {
-			if constexpr (BulkWrite)
-				writeLE32(slots.words + (2u * count + index) * sizeof(u32), static_cast<u32>(next));
-			else
-				slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
+			if (count <= BYTE_LINK_CAPACITY) {
+				if constexpr (BulkWrite) slots.tags[2u * count + index] = static_cast<u8>(next);
+				else slots.memory->writeRamRecordByte(links + index, static_cast<u8>(next));
+			} else {
+				if constexpr (BulkWrite) writeLE32(slots.tags + 2u * count + index * 4u, static_cast<u32>(next));
+				else slots.memory->writeRamRecordWord(links + index * 4u, static_cast<u32>(next));
+			}
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
 		int findString(StringId key, u32 home) const;
@@ -273,7 +280,7 @@ private:
 	template<bool BulkWrite = false>
 	HashStorage<BulkWrite> hashBodyAt(u32 storage, u32 count) const {
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
-		return {{m_memory, words, words + 12u * count}, count, storage + 8u * count};
+		return {{m_memory, words, words + 8u * count}, count, storage + 10u * count};
 	}
 	static Value findStringField(const HashBody& body, StringId key, int& slot);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
