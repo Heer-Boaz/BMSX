@@ -193,7 +193,7 @@ private:
 	u32 objectRecordAddress(u32 address, u8 kind) const;
 	bool markRecord(u32 address, u8 kind, u32 queue);
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
-	size_t sweepObject(u32 address, u32 header, u32 next, u32& link, u32& removed, u8 white, u32 growingThread, bool compactThreads);
+	size_t compactThreadStack(u32 address);
 	void beginPaceCredit(u32 estimate, u32 runwayShift);
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);

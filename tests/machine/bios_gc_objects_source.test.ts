@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
 import { numberConstantValue } from '../../toolchain/ts/lua/number';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -18,6 +18,8 @@ const pins = [
 	['V', 'machine/ts/machine/cpu/value.ts'], ['W', 'machine/cpp/machine/cpu/value.h'],
 	['I', 'machine/ts/machine/cpu/thread_record.ts'], ['J', 'machine/cpp/machine/cpu/thread_record.h'],
 	['U', 'machine/ts/machine/cpu/upvalue.ts'], ['Z', 'machine/cpp/machine/cpu/upvalue.h'],
+	['L', 'machine/ts/machine/cpu/closure.ts'], ['K', 'machine/cpp/machine/cpu/closure.h'], ['E', 'machine/cpp/machine/cpu/closure.cpp'],
+	['F', 'machine/ts/machine/cpu/call_state.ts'], ['G', 'machine/cpp/machine/cpu/call_state.h'],
 	['M', 'machine/ts/spec/bmsx/memory_map.ts'],
 ] as const;
 
@@ -43,13 +45,25 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 	}
 	const returnSpan = objectFile.chunk.body.get(objectFile.chunk.body.length - 1).span;
 	const context = types.resolve(port, { name: 'object_sweep_context', arrayLengths: [], span: returnSpan });
-	assert.equal(context.size, Sweep.Allowance + 4, 'only the five guest-owned context words belong to the firmware struct');
+	assert.equal(context.size, Sweep.ProtectedCapacity + 4);
 	for (const [name, offset] of [['link', Sweep.Link], ['work', Sweep.Work], ['removed', Sweep.Removed],
-		['deferred', Sweep.Deferred], ['allowance', Sweep.Allowance]] as const) {
+		['deferred', Sweep.Deferred], ['allowance', Sweep.Allowance], ['mirror_policy', Sweep.MirrorPolicy],
+		['action', Sweep.Action], ['header', Sweep.Header], ['next', Sweep.Next],
+		['value_block', Sweep.ValueBlock], ['value_capacity', Sweep.ValueCapacity], ['frame_block', Sweep.FrameBlock],
+		['frame_capacity', Sweep.FrameCapacity], ['protected_block', Sweep.ProtectedBlock], ['protected_capacity', Sweep.ProtectedCapacity]] as const) {
 		const field = context.struct!.fields.get(name);
 		assert.ok(field, name);
 		assert.equal(field.offset, offset, name);
 		assert.equal(field.size, 4, name);
+	}
+	for (const [name, action] of [['none', Action.None], ['compact_thread', Action.CompactThread],
+		['retire_canonical_closure', Action.RetireCanonicalClosure], ['retire_thread_view', Action.RetireThreadView],
+		['observe_retired_record', Action.ObserveRetiredRecord]] as const) {
+		const decl = objectFile.decls.find(decl => decl.name === `action_${name}`);
+		assert.ok(decl, name);
+		const value = types.constants.constant(decl);
+		assert.ok(value?.kind === 'number');
+		assert.equal(numberConstantValue(value.value), action, name);
 	}
 });
 
@@ -70,7 +84,7 @@ test('the object sweep maps reachable work and separately identifies the deferre
 			const [key, intervals] = entry.split(':');
 			const ref = sources.get(key);
 			assert.ok(ref, `${port}:${index + 1}: unknown source ${key}`);
-			const coverage = /\bdeferred = address\b/.test(line) ? ref.deferred : ref.mapped;
+			const coverage = /\bpending = action_(?!none)|\bcontext.action = action_observe_retired_record/.test(line) ? ref.deferred : ref.mapped;
 			for (const interval of intervals.split(',')) {
 				const [first, last = first] = interval.split('-').map(Number);
 				assert.ok(first > 0 && last >= first && last <= ref.lines.length, `${port}:${index + 1}: invalid origin ${entry}`);
@@ -79,14 +93,24 @@ test('the object sweep maps reachable work and separately identifies the deferre
 		}
 	}
 	const mapped = [
-		['T', [[738, 773], [781, 782], [784, 786], [792, 792], [794, 794]]],
-		['C', [[801, 835], [841, 845], [849, 849], [852, 853]]],
+		['T', [[738, 773], [781, 782], [784, 787], [789, 792], [794, 797], [799, 802], [804, 805]]],
+		['C', [[801, 835], [841, 847], [849, 853], [857, 857], [859, 864]]],
 		['A', [[165, 173]]], ['B', [[73, 75], [508, 517]]],
+		['L', [[42, 44], [50, 54]]], ['K', [[64, 66]]], ['E', [[68, 72]]],
+		['I', [[118, 120], [122, 124], [128, 128], [130, 130]]], ['J', [[59, 64]]],
 	] as const;
 	const deferred = [
-		['T', [[774, 779], [783, 783], [787, 791], [793, 793], [796, 804]]],
-		['C', [[836, 839], [846, 848], [850, 851], [857, 863]]],
+		['T', [[774, 779], [783, 783], [788, 788], [793, 793], [798, 798], [803, 803]]],
+		['C', [[836, 839], [848, 848], [858, 858]]],
 	] as const;
+	// The common TS Thread view also samples scratch-only metadata. Dead
+	// release consumes none of these values, and C++ never reads them here.
+	const thread = sources.get('I')!;
+	for (const [line, field] of [[121, 'offset'], [125, 'depth'], [126, 'protectedDepth'], [127, 'top'],
+		[129, 'frameOffset'], [131, 'protectedOffset']] as const) {
+		assert.ok(thread.lines[line - 1].trimStart().startsWith(`target.${field} = `));
+		assert.equal(thread.mapped.has(line), false);
+	}
 	for (const [ranges, type] of [[mapped, 'mapped'], [deferred, 'deferred']] as const) {
 		for (const [key, slices] of ranges) {
 			const ref = sources.get(key)!;

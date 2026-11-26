@@ -806,9 +806,17 @@ size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThr
 	size_t work = 0;
 	u32 removed = 0;
 	while (address != 0u && work < allowance) {
-		const u32 next = memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE);
+		// The cursor names the link to the next unvisited object. Unlink
+		// garbage before freeing it, so the cursor always remains live.
+		const u32 nextLink = address - GC_OBJECT_LINK_BEFORE;
+		const u32 next = memory.readRamRecordWord(nextLink);
 		const u32 header = memory.readRamRecordWord(address);
-		work += sweepObject(address, header, next, link, removed, currentWhite, growingThread, compactThreads);
+		const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (currentWhite ^ 1u);
+		if (garbage) {
+			memory.writeRamRecordWord(link, next);
+			++removed;
+		} else link = nextLink;
+		work += sweepRecord(address, header, garbage, currentWhite, growingThread, compactThreads);
 		address = next;
 	}
 	if (removed != 0u) {
@@ -819,16 +827,11 @@ size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThr
 	return work;
 }
 
-inline size_t GcHeap::sweepObject(u32 address, u32 header, u32 next, u32& link, u32& removed, u8 currentWhite,
-	u32 growingThread, bool compactThreads) {
-	// Unlink garbage before freeing it, so the link to the next unvisited
-	// record remains live across both native and firmware work.
-	const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (currentWhite ^ 1u);
-	if (garbage) {
-		memory.writeRamRecordWord(link, next);
-		++removed;
-	} else link = address - GC_OBJECT_LINK_BEFORE;
-	return sweepRecord(address, header, garbage, currentWhite, growingThread, compactThreads);
+inline size_t GcHeap::compactThreadStack(u32 address) {
+	const auto layout = ThreadRecord::storageLayout(memory, address);
+	const u32 retained = ThreadRecord::shrinkStack(*this, address, layout);
+	if (retained != 0u) m_cpu.rebindRelocatedThread(address);
+	return 2u * ceilDiv4(retained);
 }
 
 size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhite, u32 growingThread, bool compactThreads) {
@@ -836,10 +839,7 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 	if (!garbage) {
 		memory.writeRamRecordByte(address + GC_COLOR_OFFSET, currentWhite);
 		if (kind != THREAD_RECORD_KIND || !compactThreads || address == growingThread) return 1;
-		const auto layout = ThreadRecord::storageLayout(memory, address);
-		const u32 retained = ThreadRecord::shrinkStack(*this, address, layout);
-		if (retained != 0u) m_cpu.rebindRelocatedThread(address);
-		return 1 + 2 * ceilDiv4(retained);
+		return 1u + compactThreadStack(address);
 	}
 	if (kind == tableRecordKind) {
 		TableRecord(*this, address).freeRecord();
@@ -974,6 +974,8 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred), 0u);
 			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Allowance), static_cast<u32>(limit - work));
 			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::MirrorPolicy), 1u);
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Action),
+				static_cast<u32>(HeapServiceObjectSweepAction::None));
 			startObjectSweep(objectSweepFunction, full);
 			return work;
 		}
@@ -1161,28 +1163,34 @@ size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFuncti
 	const u32 objectState = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const u32 state = management + HEAP_SERVICE_GC_OFFSET;
 	const bool compactThreads = stage == HeapServiceGcStage::FullObjectSweep;
-	if (const u32 address = memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred))) {
-		const u32 next = memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE);
-		const u32 header = memory.readRamRecordWord(address);
-		if (static_cast<u8>(header) == tableRecordKind) {
-			// A restored debugger callback has no native observer here; the
-			// firmware can retire the Table in the issuing quantum's order.
-			startObjectSweep(objectSweepFunction, compactThreads);
-			return 0u;
+	const auto action = static_cast<HeapServiceObjectSweepAction>(memory.readRamRecordWord(
+		objectState + static_cast<u32>(HeapServiceObjectSweepField::Action)));
+	if (action != HeapServiceObjectSweepAction::None) {
+		const u32 address = memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred));
+		size_t nativeWork = 0;
+		switch (action) {
+			case HeapServiceObjectSweepAction::CompactThread: {
+				const u32 workAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Work);
+				nativeWork = compactThreadStack(address);
+				// The policy counts the complete record, but its traversal ran in firmware.
+				memory.writeRamRecordWord(workAddress, memory.readRamRecordWord(workAddress) + 1u + static_cast<u32>(nativeWork));
+				break;
+			}
+			case HeapServiceObjectSweepAction::RetireCanonicalClosure:
+				m_cpu.retireStaticClosure(address);
+				break;
+			case HeapServiceObjectSweepAction::RetireThreadView:
+				m_cpu.retireThreadView(address);
+				break;
+			case HeapServiceObjectSweepAction::ObserveRetiredRecord:
+				// There is no native debugger observer for an imported TS action.
+				break;
+			case HeapServiceObjectSweepAction::None:
+				BMSX_UNREACHABLE();
 		}
-		const u32 linkAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Link);
-		const u32 workAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Work);
-		const u32 removedAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Removed);
-		const u32 objectWork = memory.readRamRecordWord(workAddress);
-		u32 link = memory.readRamRecordWord(linkAddress);
-		u32 removed = memory.readRamRecordWord(removedAddress);
-		const auto callbackWork = sweepObject(address, header, next, link, removed, white(), 0u, compactThreads);
-		memory.writeRamRecordWord(linkAddress, link);
-		memory.writeRamRecordWord(workAddress, static_cast<u32>(objectWork + callbackWork));
-		memory.writeRamRecordWord(removedAddress, removed);
-		// Even at the limit, the firmware must publish the quantum's cursor and count.
+		// Any guest retirement and the quantum epilogue belong to the re-entered BIOS.
 		startObjectSweep(objectSweepFunction, compactThreads);
-		return callbackWork;
+		return nativeWork;
 	}
 
 	const size_t work = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork)) + m_cpu.heapServiceResult();

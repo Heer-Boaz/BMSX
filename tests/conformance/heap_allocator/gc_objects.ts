@@ -7,7 +7,7 @@ import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceObjectSweepField as Sweep } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -63,7 +63,8 @@ try {
 		const phase = (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep;
 		const seed = ['E 4096', 'Y 3 8', `W ${table} ${header}`, `W ${control} ${phase}`,
 			`W ${control + SWEEP_LINK} ${control + OBJECT_HEAD}`, `W ${context + Sweep.Link} ${control + OBJECT_HEAD}`,
-			`W ${context + Sweep.Work} 0`, `W ${context + Sweep.Removed} 0`, `W ${context + Sweep.Deferred} 0`, `W ${context + Sweep.Allowance} 1`];
+			`W ${context + Sweep.Work} 0`, `W ${context + Sweep.Removed} 0`, `W ${context + Sweep.Deferred} 0`, `W ${context + Sweep.Allowance} 1`,
+			`W ${context + Sweep.Action} ${Action.None}`];
 		const verify = [`H ${floor} ${management}`, `H ${occupied} ${occupied + 4}`,
 			`H ${arena} ${management + HEAP_SERVICE_THREAD_OFFSET}`, `H ${control + OBJECT_HEAD} ${control + SWEEP_LINK + 4}`];
 		function run(name: string, quantum: string[]) {

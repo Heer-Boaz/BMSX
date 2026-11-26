@@ -1504,9 +1504,9 @@ the CPU admits marking, final remark and reclamation work against successive
 cycle grants. Each positive grant admits up to one collection quantum, at
 one work word per three cycles, with a minimum allowance of one word. An
 indivisible record operation can exceed its allowance. The resident sweep
-traverses the object inventory and reclaims Table, upvalue and String storage
-using ordinary CPU cycles. Work done by those instructions is not charged a
-second time per work word. The rest of the quantum is charged for the actual
+traverses the object inventory and reclaims Table, upvalue, Closure, dead
+Thread and String storage using ordinary CPU cycles. This work is not charged
+a second time per work word. The rest of the quantum is charged for the actual
 work it performs. Device time advances for both, while interrupt entry and
 execution of the following instruction wait until the fresh cycle completes.
 

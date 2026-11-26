@@ -3,18 +3,26 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, captureCount } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_WORK_WORD_CYCLES, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../../machine/ts/machine/cpu/lua_heap';
-import { ValueTag, valueInteger, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
+import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import {
 	applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin,
 } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcStage, HeapServiceObjectSweepField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import {
+	HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcStage,
+	HeapServiceObjectSweepAction, HeapServiceObjectSweepField,
+} from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -29,7 +37,19 @@ return 211, saved
 `;
 const boot = {
 	path: 'fixture_sweep_boot',
-	source: 'fixture_thread = __bmsx_coroutine_create\nfixture_collect = __bmsx_collect_garbage',
+	source: `
+fixture_thread = __bmsx_coroutine_create
+fixture_collect = __bmsx_collect_garbage
+local make_dead_thread<const> = function(count)
+	return fixture_thread(function()
+		count = count + 1
+		return count
+	end)
+end
+local canonical<const> = function() return 64 end
+fixture_dead_thread = make_dead_thread(41)
+fixture_dead_canonical = canonical
+`,
 };
 const input = {
 	sampleInputControllerSnapshot() {},
@@ -38,6 +58,9 @@ const input = {
 };
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const finishGrant = 1117;
+const requiredActions = (1 << HeapServiceObjectSweepAction.CompactThread)
+	| (1 << HeapServiceObjectSweepAction.RetireThreadView)
+	| (1 << HeapServiceObjectSweepAction.RetireCanonicalClosure);
 
 mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-production-object-sweep-'));
@@ -78,6 +101,21 @@ try {
 		for (let i = 0; i < 16 && !gc.fullEpochs(); ++i) step(65536);
 		assert.equal(gc.fullEpochs(), 1);
 		const caller = cpu.getFrameDepth() - 1, callerPc = cpu.readFramePc(caller);
+		const action = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Action);
+		const deferred = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
+		const dropRoot = (name: string, tag: ValueTag) => {
+			const key = cpu.stringPool.intern(name), value = cpu.getGlobalByKey(key);
+			assert.equal(valueTag(value), tag);
+			const address = valuePayload(value);
+			cpu.setGlobalByKey(key, valueNil());
+			observe(`f ${name}`, `${tag} ${address}`);
+			return address;
+		};
+		const deadThread = dropRoot('fixture_dead_thread', ValueTag.Thread);
+		const deadCanonical = dropRoot('fixture_dead_canonical', ValueTag.Closure);
+		const deadCaptured = memory.readRamRecordWord(deadThread + ThreadField.Entry);
+		assert.ok(captureCount(memory, deadCaptured) > 0);
+		assert.ok(memory.readRamRecordByte(deadCanonical + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL);
 		// Fit two dead Tables on either side of the guest's live Thread;
 		// full collection delegates that intervening compaction to its owner.
 		const first = cpu.createTable(3, 8);
@@ -95,6 +133,8 @@ try {
 		}
 		assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
 		assert.equal(gc.phase(), GcPhase.Sweep);
+		const servicePc = () => memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Pc);
+		const entryPc = servicePc();
 		assert.equal(head(), first);
 		assert.equal(reference.machine.cpu.gc.fullEpochs(), 0);
 		assert.ok(nativeWork > 0);
@@ -124,34 +164,59 @@ try {
 		assert.equal(originalCharge - budget.usedBytes(), 3 * 5);
 		assert.equal(count(), originalCount);
 		applyRuntimeSaveState(runtime, partial);
+		// The host-only Thread view notification cannot release any of the
+		// record's storage. That happens in the next pinned invocation.
+		for (let i = 0; i < 16384 && (action() !== HeapServiceObjectSweepAction.RetireThreadView
+			|| deferred() !== deadThread || servicePc() !== entryPc); ++i)
+			assert.equal(step(1), RunResult.CollectionProgress);
+		assert.equal(deferred(), deadThread);
+		assert.equal(action(), HeapServiceObjectSweepAction.RetireThreadView);
+		assert.equal(servicePc(), entryPc, 'the native hook completed and BIOS has re-entered before physical release');
+		assert.equal(consumed, BASE_CYCLES[OpCode.RET] + 1, 'a view notification does not bill legacy collector work');
+		assert.equal(count(), originalCount);
+		assert.equal(cursor(), originalCursor);
+		assert.ok(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX));
+		const pendingRelease = captureRuntimeSaveState(runtime);
+		for (let i = 0; i < 4096 && cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX); ++i) step(1);
+		assert.equal(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), false);
+		const releasedAt = budget.usedBytes();
+		applyRuntimeSaveState(runtime, pendingRelease);
+		for (let i = 0; i < 4096 && cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX); ++i) step(1);
+		assert.equal(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), false);
+		assert.equal(budget.usedBytes(), releasedAt);
+		applyRuntimeSaveState(runtime, partial);
 		function finish(compareTsReference = true) {
-			let hostHandoff = false, cycles = 0;
+			let actions = 0, cycles = 0;
 			for (let i = 0; i < 512 && gc.fullEpochs(); ++i) {
 				assert.equal(step(finishGrant), RunResult.CollectionProgress);
 				cycles += consumed;
-				if (gc.sweepStage() === HeapServiceGcStage.FullObjectSweep)
-					hostHandoff ||= memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred) !== 0;
+				if (gc.sweepStage() === HeapServiceGcStage.FullObjectSweep && action() !== HeapServiceObjectSweepAction.None)
+					actions |= 1 << action();
 			}
 			assert.equal(gc.fullEpochs(), 0);
 			assert.equal(gc.sweepStage(), HeapServiceGcStage.Idle);
 			assert.equal(gc.phase(), GcPhase.Pause);
-			assert.ok(hostHandoff, 'the intervening live Thread uses its native compaction owner');
+			assert.equal(actions & requiredActions, requiredActions, 'the guest reached all three native ownership boundaries');
 			assert.ok(cycles > 0);
 			assert.equal(cpu.readFramePc(caller), callerPc);
 			assert.equal(gc.tableRecordAddress(first), 0);
 			assert.equal(gc.tableRecordAddress(tail), 0);
+			assert.equal(gc.threadRecordAddress(deadThread), 0);
+			assert.equal(gc.closureRecordAddress(deadCanonical), 0);
+			assert.equal(gc.closureRecordAddress(deadCaptured), 0);
 			assert.equal(budget.usedBytes(), reference.machine.cpu.luaHeap.usedBytes());
 			const produced = memory.ramData().subarray(floor, context);
 			const nativeProduced = reference.machine.memory.ramData().subarray(floor, context);
 			if (compareTsReference)
 				assert.equal(Buffer.compare(produced, nativeProduced), 0, 'heap plus active policy equal the native TS quantum');
-			return [cycles, String(hashBytes(produced, 0, produced.length))] as const;
+			return [cycles, String(hashBytes(produced, 0, produced.length)), actions] as const;
 		}
-		const [tsCycles, tsHash] = finish();
+		const firstResult = finish();
+		const [tsCycles, tsHash, tsActions] = firstResult;
 		const finishedRam = history.capture(memory, partialRam);
 		history.restore(memory, finishedRam, partialRam);
 		applyRuntimeCheckpointState(runtime, partial, RuntimeRestoreOrigin.HistorySeek);
-		assert.deepEqual(finish(), [tsCycles, tsHash]);
+		assert.deepEqual(finish(), firstResult);
 		assert.equal(step(65536), RunResult.Halted);
 		const completion = runtime.readCompletionValues();
 		assert.equal(completion[0], valueInteger(211));
@@ -175,16 +240,17 @@ try {
 		const [cppPaid, cppHash, cppRewindPaid, cppRewindHash, cppRestorePaid, cppRestoreHash, importedPaid, importedHash] =
 			outputs.slice(commonExpected.length, -2);
 		assert.ok(+cppPaid.split(' ')[0] > 0);
+		assert.equal(+cppPaid.split(' ')[2] & requiredActions, requiredActions);
 		assert.deepEqual([cppHash, cppRewindHash, cppRestoreHash], [oracle.at(-1), oracle.at(-1), oracle.at(-1)]);
 		assert.equal(cppRewindPaid, cppPaid);
 		assert.equal(cppRestorePaid, cppPaid);
-		assert.equal(importedPaid, `${tsCycles} 0`);
+		assert.equal(importedPaid, `${tsCycles} 0 ${tsActions}`);
 		assert.equal(importedHash, tsHash, 'TS-origin quantum keeps array-first after C++ re-entry');
 		assert.equal(outputs.at(-1), '211');
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeCheckpointPath),
 			PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-		const [reverseCycles, reverseHash] = finish(false);
-		assert.equal(`${reverseCycles} 0`, cppPaid);
+		const [reverseCycles, reverseHash, reverseActions] = finish(false);
+		assert.equal(`${reverseCycles} 0 ${reverseActions}`, cppPaid);
 		assert.equal(reverseHash, cppHash, 'C++-origin quantum keeps hash-first after TS re-entry');
 		console.log(`BIOS-GC-OBJECT-SERVICE:PASS O${optLevel} (TS/C++ native differentials; rewind; bidirectional cross-core restore)`);
 	}

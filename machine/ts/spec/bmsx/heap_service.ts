@@ -9,7 +9,7 @@ export const enum HeapServiceOperation {
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 4;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 5;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -49,4 +49,10 @@ export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecovery
 // The originating mirror's release and shrink policies last through the
 // remainder of this quantum, including an Object-to-String handoff.
 export const HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
-export const enum HeapServiceObjectSweepField { Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20 }
+export const enum HeapServiceObjectSweepField {
+	Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20,
+	Action = 24, Header = 28, Next = 32,
+	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
+	ProtectedBlock = 52, ProtectedCapacity = 56,
+}
+export const enum HeapServiceObjectSweepAction { None, CompactThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord }

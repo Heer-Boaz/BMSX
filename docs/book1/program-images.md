@@ -308,7 +308,7 @@ The remaining header slots identify the program's format, sections and linkage:
 | `5CH` | System ROM only, when flag bit 1 is set: absolute address of the private heap-service descriptor in RODATA. |
 
 Provide the complete 92-byte header. A system image with flag bit 1 set
-has a 96-byte header. Cartridge images leave bit 1 clear. The version 4
+has a 96-byte header. Cartridge images leave bit 1 clear. The version 5
 descriptor consists of 17 little-endian words: version, required Value-slot
 count, required frame count, and fourteen absolute function-record addresses.
 The descriptor is not part of the cartridge BIOS call table and does not

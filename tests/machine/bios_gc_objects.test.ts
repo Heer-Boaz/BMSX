@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES } from '../../machine/ts/machine/cpu/call_state';
+import { closureRecordBytes, initializeRecord as initializeClosure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueThread } from '../../machine/ts/machine/cpu/value';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-	HeapServiceObjectSweepField as Sweep,
+	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -44,7 +46,7 @@ function fixture(optLevel: 0 | 3) {
 	const context = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const arena = cpu.heapAllocator.allocatorStateOffset();
 	const floor = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
-	const parts = [[floor, context], [context + Sweep.Allowance + 4, end]] as const;
+	const parts = [[floor, context], [context + Sweep.ProtectedCapacity + 4, end]] as const;
 	function compare() {
 		for (const [first, last] of parts) {
 			const actual = memory.ramData().subarray(first, last), expected = oracle.memory.ramData().subarray(first, last);
@@ -84,22 +86,21 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(context + Sweep.Removed, 0);
 		memory.writeRamRecordWord(context + Sweep.Deferred, 0);
 		memory.writeRamRecordWord(context + Sweep.Allowance, allowance);
+		memory.writeRamRecordWord(context + Sweep.Action, Action.None);
 		resume(growing, compact, hashFirst, observer);
 	}
-	function handleDeferred(growing: number, compact: boolean) {
-		const address = contextWord(Sweep.Deferred), link = contextWord(Sweep.Link);
+	function handleDeferred(): void {
+		const address = contextWord(Sweep.Deferred);
 		assert.notEqual(address, 0);
-		assert.equal(memory.readRamRecordWord(link), address, 'deferred record is still linked');
-		const nextLink = address - GC_OBJECT_LINK_BEFORE;
-		const header = memory.readRamRecordWord(address), white = cpu.gc.white();
-		const garbage = ((header >>> (8 * GC_COLOR_OFFSET)) & GC_COLOR_MASK) === (white ^ 1);
-		// Only the existing native record operation runs here; this does not
-		// call or commit another collector quantum.
-		if (garbage) memory.writeRamRecordWord(link, memory.readRamRecordWord(nextLink));
-		const work = cpu.gc['sweepRecord'](address, header, garbage, white, growing, compact);
-		memory.writeRamRecordWord(context + Sweep.Link, garbage ? link : nextLink);
-		memory.writeRamRecordWord(context + Sweep.Work, contextWord(Sweep.Work) + work);
-		memory.writeRamRecordWord(context + Sweep.Removed, contextWord(Sweep.Removed) + +garbage);
+		switch (contextWord(Sweep.Action)) {
+			case Action.RetireCanonicalClosure: cpu.retireStaticClosure(address); return;
+			case Action.RetireThreadView: cpu.retireThreadView(address); return;
+			case Action.ObserveRetiredRecord: cpu.gc.onRecordRetirement!(address); return;
+			case Action.CompactThread:
+				memory.writeRamRecordWord(context + Sweep.Work, contextWord(Sweep.Work) + 1 + cpu.gc['compactThreadStack'](address));
+				return;
+		}
+		assert.fail('expected a pending host action');
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -115,6 +116,7 @@ function fixture(optLevel: 0 | 3) {
 		begin(allowance, growing, +compact);
 		assert.equal(finish(), oracle.gc['sweepObjects'](allowance, growing, compact));
 		assert.equal(contextWord(Sweep.Deferred), 0);
+		assert.equal(contextWord(Sweep.Action), Action.None);
 		compare();
 	}
 	compare();
@@ -192,33 +194,52 @@ for (const optLevel of [0, 3] as const) {
 		compare();
 	});
 
-	test(`BLua retains one native sweep quantum across observer, Thread and Closure handoffs at O${optLevel}`, () => {
+	test(`BLua retains one native quantum across pre-release, compaction and observer actions at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, occupied, allocate, cell, color, setCursor, compare,
 			begin, grant, finish, contextWord, resume, handleDeferred } = fixture(optLevel);
-		const deadThread = allocate(target => target.createThread(0));
-		const deadClosure = allocate(target => {
-			let existing = 0;
-			target.gc.visitObjectRecords(null, (_, record) => {
-				if (target.memory.readRamRecordByte(record) === ValueTag.Closure) existing = record;
-			});
-			assert.ok(existing !== 0, 'firmware entry owns a real Closure prototype');
-			const address = target.luaHeap.allocateClosureRecord(0);
-			initializeClosure(target.memory, address, target.captureClosureBinding(existing), false, target.gc.white(), 0);
-			target.gc.publishObject(address);
+		const deadThread = allocate(target => {
+			const address = target.createThread(0);
+			target.luaHeap.reserveThreadControls(address, ThreadField.ProtectedBlock, 4, 0, valueThread(address));
+			const mem = target.memory;
+			mem.writeRamRecordWord(address + ThreadField.FrameCapacity, mem.readRamRecordWord(address + ThreadField.FrameCapacity) | 0xa0000000);
+			mem.writeRamRecordWord(address + ThreadField.ProtectedCapacity, mem.readRamRecordWord(address + ThreadField.ProtectedCapacity) | 0x80000000);
 			return address;
 		});
-		const liveThread = allocate(target => target.createThread(0));
+		function closure(captures: number, canonical: boolean, latched: boolean, kind = ValueTag.Closure) {
+			return allocate(target => {
+				let existing = 0;
+				target.gc.visitObjectRecords(null, (_, record) => {
+					if (target.memory.readRamRecordByte(record) === ValueTag.Closure) existing = record;
+				});
+				assert.ok(existing !== 0, 'firmware entry owns a real Closure prototype');
+				const prototype = target.captureClosureBinding(existing);
+				const address = target.luaHeap.allocateClosureRecord(captures, latched);
+				initializeClosure(target.memory, address, prototype, canonical, target.gc.white(), captures, latched);
+				target.memory.writeRamRecordByte(address, kind);
+				target.gc.publishObject(address);
+				if (canonical) target['staticClosures'].insert(prototype.functionAddress, address);
+				return address;
+			});
+		}
+		const canonical = closure(2, true, true);
+		const opaque = closure(0x2001, false, false, ValueTag.DeadKey);
+		const ordinary = closure(7, false, true);
+		const liveThread = allocate(target => {
+			const address = target.createThread(0);
+			target.luaHeap.reserveThreadFrameStorage(address, 32, 8, valueThread(address));
+			return address;
+		});
 		const table = allocate(target => target.createTable(4, 2));
 		const deadCell = cell();
 		const white = oracle.gc.white();
-		for (const address of [deadThread, deadClosure, table, deadCell]) color(address, white ^ 1);
+		const dead = [deadThread, canonical, opaque, ordinary, table, deadCell];
+		for (const address of dead) color(address, white ^ 1);
 		color(liveThread, 3);
 		const published = control + OBJECT_HEAD;
 		setCursor(published);
 		const inventory = memory.readRamRecordWord(control + OBJECT_COUNT);
 		const charged = memory.readRamRecordWord(occupied);
-		// Compaction preserves the currently growing root Thread. The other
-		// live Thread must defer, even though its color can be assigned in RAM.
+		// Compaction preserves the growing root, but shrinks the other live Thread.
 		const growing = cpu.rootThread.address, allowance = 4096;
 		assert.equal(oracle.rootThread.address, growing);
 		const observed: number[][] = [], refObserved: number[][] = [];
@@ -230,44 +251,91 @@ for (const optLevel of [0, 3] as const) {
 					mem.readRamRecordWord(control + SWEEP_LINK), mem.readRamRecordWord(occupied)]);
 			};
 		}
+		const valueCapacity = memory.readRamRecordWord(deadThread + ThreadField.StackCapacity);
+		const frameCapacity = memory.readRamRecordWord(deadThread + ThreadField.FrameCapacity);
+		const protectedCapacity = memory.readRamRecordWord(deadThread + ThreadField.ProtectedCapacity);
+		const threadDebits = [valueCapacity * THREAD_STACK_SLOT_BYTES, (frameCapacity & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES,
+			(protectedCapacity & THREAD_CONTROL_COUNT_MASK) * PROTECTED_CALL_BYTES, THREAD_HEAP_BYTES];
 		const expectedWork = oracle.gc['sweepObjects'](allowance, growing, true);
-		assert.deepEqual(refObserved.map(([address]) => address), [table, deadClosure, deadThread]);
+		assert.deepEqual(refObserved.map(([address]) => address), [table, ordinary, canonical, deadThread]);
 		begin(allowance, growing, 1, 0, 1);
-		assert.equal(finish(), 1, 'one Upvalue precedes the host-only Table');
-		assert.equal(memory.readRamRecordWord(published), table);
+		assert.equal(finish(), 1, 'only the Upvalue is charged before the Table observer');
+		assert.equal(memory.readRamRecordWord(published), liveThread, 'Table is already unlinked at its observer');
 		assert.equal(contextWord(Sweep.Deferred), table);
-		assert.equal(contextWord(Sweep.Work), 1);
-		assert.equal(contextWord(Sweep.Removed), 1);
-		assert.equal(memory.readRamRecordWord(occupied), charged - UPVALUE_HEAP_BYTES);
+		assert.equal(contextWord(Sweep.Action), Action.ObserveRetiredRecord);
+		assert.equal(contextWord(Sweep.Removed), 2);
+		assert.equal(memory.readRamRecordWord(occupied), charged - UPVALUE_HEAP_BYTES - TableRecords.HEADER_CHARGE - 4 * 5 - 2 * 10);
 		assert.deepEqual(observed, []);
 		const partial = captureCpuCheckpoint(cpu);
 
 		function finishWholeQuantum() {
-			let work = contextWord(Sweep.Work);
-			for (const address of [table, liveThread, deadClosure, deadThread]) {
+			let cumulative = 1;
+			for (const [action, address] of [
+				[Action.ObserveRetiredRecord, table], [Action.CompactThread, liveThread],
+				[Action.ObserveRetiredRecord, ordinary], [Action.RetireCanonicalClosure, canonical],
+				[Action.ObserveRetiredRecord, canonical], [Action.RetireThreadView, deadThread],
+				[Action.ObserveRetiredRecord, deadThread],
+			] as const) {
+				assert.equal(contextWord(Sweep.Action), action);
 				assert.equal(contextWord(Sweep.Deferred), address);
-				assert.equal(memory.readRamRecordWord(contextWord(Sweep.Link)), address);
+				assert.equal(contextWord(Sweep.Work), cumulative);
+				const link = contextWord(Sweep.Link), next = contextWord(Sweep.Next);
+				assert.equal(memory.readRamRecordWord(link), next, 'the link already leads to the next record');
 				assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory, 'no prefix commits between owners');
 				assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), published, 'only the saved link advances between owners');
-				if (address === liveThread) assert.equal(memory.readRamRecordByte(address + GC_COLOR_OFFSET), 3);
-				if (address === deadClosure) assert.equal(contextWord(Sweep.Link), liveThread - GC_OBJECT_LINK_BEFORE);
-				handleDeferred(growing, true);
+				const issued = cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX);
+				assert.equal(issued, action !== Action.ObserveRetiredRecord, 'pre-release owner sees issued storage, observer sees retirement');
+				if (action === Action.CompactThread) {
+					assert.equal(link, liveThread - GC_OBJECT_LINK_BEFORE);
+					assert.equal(memory.readRamRecordByte(address + GC_COLOR_OFFSET), white, 'recolor before handing off compaction');
+				}
+				if (action === Action.RetireCanonicalClosure)
+					assert.equal(contextWord(Sweep.Header), memory.readRamRecordWord(address));
+				if (action === Action.RetireThreadView) {
+					for (const [saved, field] of [[Sweep.ValueBlock, ThreadField.StackBlock], [Sweep.ValueCapacity, ThreadField.StackCapacity],
+						[Sweep.FrameBlock, ThreadField.FrameBlock], [Sweep.FrameCapacity, ThreadField.FrameCapacity],
+						[Sweep.ProtectedBlock, ThreadField.ProtectedBlock], [Sweep.ProtectedCapacity, ThreadField.ProtectedCapacity]] as const)
+						assert.equal(contextWord(saved), memory.readRamRecordWord(address + field), 'latch raw Thread backing fields before view invalidation');
+				}
+				let charge = memory.readRamRecordWord(occupied);
+				handleDeferred();
+				if (action === Action.CompactThread) {
+					assert.ok(contextWord(Sweep.Work) > cumulative + 1, 'native compaction supplied retained-word work');
+					assert.ok(memory.readRamRecordWord(occupied) < charge);
+				} else assert.equal(memory.readRamRecordWord(occupied), charge, 'host action cannot release BIOS storage');
 				resume(growing, 1, 0, 1);
-			if (address === deadThread) {
-				for (let i = 0; i < 2048 && memory.readRamRecordWord(control + OBJECT_COUNT) === inventory; ++i) grant(1);
-				assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory - 4);
-				assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), published, 'commit the count before the cursor');
+				let partialRelease: ReturnType<typeof captureCpuCheckpoint> | null = null;
+				if (action === Action.RetireThreadView) {
+					for (const [i, bytes] of threadDebits.entries()) {
+						for (let i = 0; i < 4096 && memory.readRamRecordWord(occupied) === charge; ++i) grant(1);
+						charge -= bytes;
+						assert.equal(memory.readRamRecordWord(occupied), charge, 'release values, frames, protected controls, then Thread');
+						if (i === 0) partialRelease = captureCpuCheckpoint(cpu);
+					}
+				}
+				if (action === Action.ObserveRetiredRecord && address === deadThread) {
+					for (let i = 0; i < 2048 && memory.readRamRecordWord(control + OBJECT_COUNT) === inventory; ++i) grant(1);
+					assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory - dead.length);
+					assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), published, 'commit count before cursor');
+				}
+				cumulative = finish();
+				if (partialRelease !== null) {
+					restoreCpuCheckpoint(cpu, partialRelease);
+					assert.equal(finish(), cumulative, 'resume inside BIOS storage release, not the host action');
+					assert.equal(memory.readRamRecordWord(occupied), charge, 'rewind did not replay the first backing release');
+				}
+				if (action === Action.RetireCanonicalClosure) {
+					assert.equal(memory.readRamRecordWord(occupied), charge - closureRecordBytes(2, true));
+					assert.equal(contextWord(Sweep.Work), cumulative, 'post-release callback still precedes charging the Closure');
+				}
 			}
-				const cumulative = finish();
-				assert.ok(cumulative > work, 'the next entry retains the native owner work');
-				work = cumulative;
-			}
-			assert.equal(work, expectedWork);
+			assert.equal(cumulative, expectedWork);
 			assert.equal(contextWord(Sweep.Deferred), 0);
-			assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory - 4);
+			assert.equal(contextWord(Sweep.Action), Action.None);
+			assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory - dead.length);
 			assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), 0);
 			assert.equal(memory.readRamRecordByte(liveThread + GC_COLOR_OFFSET), white);
-			assert.deepEqual(observed, refObserved, 'observers see the same unpublished cursor/count and logical-byte sequence');
+			assert.deepEqual(observed, refObserved, 'observe the same unpublished cursor/count and logical-byte sequence');
 			compare();
 		}
 		finishWholeQuantum();

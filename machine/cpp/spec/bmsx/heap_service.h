@@ -15,7 +15,7 @@ enum class HeapServiceOperation : uint32_t {
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 };
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 4u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 5u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -56,6 +56,12 @@ enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationReco
 // The originating mirror's release and shrink policies last through the
 // remainder of this quantum, including an Object-to-String handoff.
 constexpr uint32_t HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
-enum class HeapServiceObjectSweepField : uint32_t { Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20 };
+enum class HeapServiceObjectSweepField : uint32_t {
+	Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20,
+	Action = 24, Header = 28, Next = 32,
+	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
+	ProtectedBlock = 52, ProtectedCapacity = 56,
+};
+enum class HeapServiceObjectSweepAction : uint32_t { None, CompactThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord };
 
 } // namespace bmsx

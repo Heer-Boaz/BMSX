@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { AllocationRecovery, CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -290,7 +291,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.equal(finish(), completedAt);
 });
 
-test('production object sweep retains the published frontier across debugger callbacks and restore', () => {
+test('production object sweep frees records before debugger callbacks without publishing the frontier', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
 		[{ path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' }]));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
@@ -309,15 +310,23 @@ test('production object sweep retains the published frontier across debugger cal
 	};
 	const callbacks: number[][] = [];
 	gc.onRecordRetirement = address => {
-		if (address !== null) callbacks.push([address, count(), cursor()]);
+		if (address !== null) callbacks.push([address, count(), cursor(),
+			+cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX)]);
 	};
 	for (let i = 0; i < 64 && gc.sweepStage() !== HeapServiceGcStage.FullObjectSweep; ++i) slice(12_288);
 	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
 	const frontier = [count(), cursor()];
 	assert.notEqual(frontier[1], 0);
-	for (let i = 0; i < 2048 && !callbacks.some(([address]) => address === newer); ++i)
+	const newerBlock = newer - RAM_BASE - GC_OBJECT_PREFIX;
+	assert.ok(cpu.heapAllocator.issuedObjectStart(newerBlock));
+	let releasedInFirmware = false;
+	for (let i = 0; i < 2048 && !callbacks.some(([address]) => address === newer); ++i) {
 		assert.equal(slice(1)[0], RunResult.CollectionProgress);
-	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier]]);
+		if (cpu.heapServiceActive() && !callbacks.some(([address]) => address === newer))
+			releasedInFirmware ||= !cpu.heapAllocator.issuedObjectStart(newerBlock);
+	}
+	assert.equal(releasedInFirmware, true, 'a firmware instruction releases the object before handing off');
+	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier, 0]]);
 	assert.equal(callbacks.some(([address]) => address === older), false);
 	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
 	assert.equal(cpu.heapServiceActive(), true, 'the retired Table hands back to the same firmware quantum');
@@ -330,8 +339,8 @@ test('production object sweep retains the published frontier across debugger cal
 		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) grants.push(slice(1024));
 		assert.equal(gc.fullEpochs(), 0);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.deepEqual(callbacks.filter(([address]) => address === older || address === newer), [[older, ...frontier]]);
-		for (const [, objectCount, sweepLink] of callbacks) assert.deepEqual([objectCount, sweepLink], frontier);
+		assert.deepEqual(callbacks.filter(([address]) => address === older || address === newer), [[older, ...frontier, 0]]);
+		for (const [, objectCount, sweepLink, allocated] of callbacks) assert.deepEqual([objectCount, sweepLink, allocated], [...frontier, 0]);
 		assert.ok(count() <= frontier[0] - 2);
 		assert.equal(cursor(), 0);
 		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);

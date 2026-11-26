@@ -1,6 +1,7 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import {
 	HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcField, HeapServiceGcStage, HeapServiceObjectSweepField,
+	HeapServiceObjectSweepAction,
 } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
@@ -779,12 +780,7 @@ export class GcHeap {
 		if (!garbage) {
 			this.memory.writeRamRecordByte(address + GC_COLOR_OFFSET, white);
 			if (kind !== THREAD_RECORD_KIND || !compactThreads || address === growingThread) return 1;
-			const layout = this.threadLayout;
-			this.threads.readLayout(address, layout);
-			const retained = this.threads.shrinkStack(address, layout);
-			// Rebind the tag plane and reservations. Sweep charges retained extents, not host copies.
-			if (retained !== 0) this.cpu.rebindRelocatedThread(address);
-			return 1 + 2 * ceilDiv4(retained);
+			return 1 + this.compactThreadStack(address);
 		}
 		if (kind === ValueTag.Table) {
 			this.tables.freeRecord(address);
@@ -811,6 +807,16 @@ export class GcHeap {
 		this.onRecordRetirement?.(address);
 		return 1;
 	}
+
+	private compactThreadStack(address: number): number {
+		const layout = this.threadLayout;
+		this.threads.readLayout(address, layout);
+		const retained = this.threads.shrinkStack(address, layout);
+		// Rebind the tag plane and reservations. Sweep charges retained extents, not host copies.
+		if (retained !== 0) this.cpu.rebindRelocatedThread(address);
+		return 2 * ceilDiv4(retained);
+	}
+
 	private accountEpochWork(work: number): number {
 		const epochWork = this.memory.readRamRecordWord(this.controlOffset + GC_EPOCH_WORK) + work;
 		if (this.active()) {
@@ -1053,39 +1059,43 @@ export class GcHeap {
 		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Deferred, 0);
 		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Allowance, limit - prefixWork);
 		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.MirrorPolicy, 0);
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Action, HeapServiceObjectSweepAction.None);
 		this.runObjectSweep(functionAddress, stage === HeapServiceGcStage.FullObjectSweep);
 	}
 
 	private runObjectSweep(functionAddress: number, compactThreads: boolean): void {
-		const hashFirst = this.memory.readRamRecordWord(this.objectSweepOffset + HeapServiceObjectSweepField.MirrorPolicy);
 		this.objectSweepArgs[5] = +compactThreads;
-		this.objectSweepArgs[6] = hashFirst;
-		// A foreign quantum retains its hash-first release order; the local
-		// observer only requests Table retirement through our array-first owner.
-		this.objectSweepArgs[7] = +(hashFirst === 0 && this.onRecordRetirement !== null);
+		this.objectSweepArgs[6] = this.memory.readRamRecordWord(this.objectSweepOffset + HeapServiceObjectSweepField.MirrorPolicy);
+		this.objectSweepArgs[7] = +(this.onRecordRetirement !== null);
 		this.cpu.beginHeapService(functionAddress, this.objectSweepArgs);
 	}
 
 	public finishObjectSweep(stage: HeapServiceGcStage, objectFunction: number, stringFunction: number): number {
 		const context = this.objectSweepOffset, memory = this.memory;
-		const deferred = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
+		const action = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Action);
 		const full = stage === HeapServiceGcStage.FullObjectSweep;
-		if (deferred !== 0) {
-			const nextLink = deferred - GC_OBJECT_LINK_BEFORE;
-			const next = memory.readRamRecordWord(nextLink);
-			const header = memory.readRamRecordWord(deferred);
-			const white = this.white();
-			const garbage = ((header >>> 8) & GC_COLOR_MASK) === (white ^ 1);
-			if (garbage) {
-				const link = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Link);
-				memory.writeRamRecordWord(link, next);
-				const removed = context + HeapServiceObjectSweepField.Removed;
-				memory.writeRamRecordWord(removed, memory.readRamRecordWord(removed) + 1);
-			} else memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Link, nextLink);
-			const work = this.sweepRecord(deferred, header, garbage, white, 0, full);
-			const completed = context + HeapServiceObjectSweepField.Work;
-			memory.writeRamRecordWord(completed, memory.readRamRecordWord(completed) + work);
-			// Even a callback that exhausted the allowance needs the BIOS epilogue.
+		if (action !== HeapServiceObjectSweepAction.None) {
+			const address = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
+			let work = 0;
+			switch (action) {
+				case HeapServiceObjectSweepAction.CompactThread: {
+					work = this.compactThreadStack(address);
+					const completed = context + HeapServiceObjectSweepField.Work;
+					memory.writeRamRecordWord(completed, memory.readRamRecordWord(completed) + 1 + work);
+					break;
+				}
+				case HeapServiceObjectSweepAction.RetireCanonicalClosure:
+					this.cpu.retireStaticClosure(address);
+					break;
+				case HeapServiceObjectSweepAction.RetireThreadView:
+					this.cpu.retireThreadView(address);
+					break;
+				case HeapServiceObjectSweepAction.ObserveRetiredRecord:
+					this.onRecordRetirement?.(address);
+					break;
+			}
+			// Firmware acknowledges the action and finishes the same quantum,
+			// even if the native compaction already exhausted its allowance.
 			this.runObjectSweep(objectFunction, full);
 			return work;
 		}

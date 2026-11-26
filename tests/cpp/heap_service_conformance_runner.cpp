@@ -109,14 +109,21 @@ int main(int argc, char** argv) {
 					int cycles;
 					trace >> cycles;
 					const u32 epochs = cpu.gcHeap().fullEpochs();
+					const u32 actionOffset = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_OBJECT_SWEEP_OFFSET
+						+ static_cast<u32>(HeapServiceObjectSweepField::Action);
 					i64 spent = 0;
+					u32 actions = 0;
 					for (int grant = 0; grant < 4096 && cpu.gcHeap().fullEpochs() == epochs; ++grant) {
 						scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
 						spent += cycles - cpu.instructionBudgetRemaining;
+						if (cpu.gcHeap().sweepStage() == HeapServiceGcStage::FullObjectSweep) {
+							const u32 action = memory.readRamRecordWord(actionOffset);
+							if (action != 0u) actions |= 1u << action;
+						}
 					}
 					if (cpu.gcHeap().fullEpochs() == epochs || cpu.heapServiceActive())
 						throw std::runtime_error("Timed collection did not complete its epoch");
-					std::cout << spent << ' ' << cpu.gcHeap().fullEpochs() << '\n';
+					std::cout << spent << ' ' << cpu.gcHeap().fullEpochs() << ' ' << actions << '\n';
 					break;
 				}
 				case 'w': {
@@ -129,6 +136,15 @@ int main(int argc, char** argv) {
 					std::string seed;
 					trace >> seed;
 					std::cout << cpu.stringPool().intern(seed) << '\n';
+					break;
+				}
+				case 'f': {
+					std::string name;
+					trace >> name;
+					const auto key = cpu.stringPool().intern(name);
+					const auto value = cpu.getGlobalByKey(key);
+					cpu.setGlobalByKey(key, valueNil());
+					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
 					break;
 				}
 				case 'D': {
