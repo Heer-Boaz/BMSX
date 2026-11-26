@@ -372,8 +372,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		const u8* descriptor = bytes.data();
 		const u32 values = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
 		const u32 frames = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
-		if (readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET) != HEAP_SERVICE_DESCRIPTOR_VERSION
-			|| values == 0u || values > HEAP_SERVICE_VALUE_COUNT || frames == 0u || frames > HEAP_SERVICE_FRAME_COUNT)
+		if (values == 0u || values > HEAP_SERVICE_VALUE_COUNT || frames == 0u || frames > HEAP_SERVICE_FRAME_COUNT)
 			throw BMSX_RUNTIME_ERROR("Heap service descriptor does not fit the private CPU stack.");
 		const u8* functions = descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
 		for (u32 index = 0; index < static_cast<u32>(HeapServiceOperation::Count); ++index) {

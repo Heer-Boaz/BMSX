@@ -1,7 +1,7 @@
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET,
-	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION, HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET,
+	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { programModuleExportKey, type ProgramModuleExport } from '../lua/compiler/program';
@@ -82,7 +82,6 @@ export function linkBlua32HeapService(
 		throw new Error(`Heap service requires ${valueSlots} Value slots and ${frames} frames, beyond its fixed stack.`);
 
 	const { bytes } = image;
-	writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION);
 	writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, valueSlots);
 	writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, frames);
 	for (let op = 0; op < roots.length; ++op)

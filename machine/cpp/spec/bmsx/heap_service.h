@@ -18,11 +18,9 @@ enum class HeapServiceOperation : uint32_t {
 };
 using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 10u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 12u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
 	+ 4u * static_cast<uint32_t>(HeapServiceOperation::Count);
 

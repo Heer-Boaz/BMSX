@@ -176,7 +176,7 @@ import { HEAP_GC_CONTROL_OFFSET, HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
-	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION, HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET,
+	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
@@ -1130,9 +1130,8 @@ export class CPU implements MappedPageInvalidator {
 			const descriptor = this.executionTableView.bytes, offset = this.executionTableView.byteOffset;
 			const values = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
 			const frames = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
-			if (readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET) !== HEAP_SERVICE_DESCRIPTOR_VERSION
-				|| values === 0 || values > HEAP_SERVICE_VALUE_COUNT || frames === 0 || frames > HEAP_SERVICE_FRAME_COUNT)
-				throw new Error('Unsupported heap service descriptor.');
+			if (values === 0 || values > HEAP_SERVICE_VALUE_COUNT || frames === 0 || frames > HEAP_SERVICE_FRAME_COUNT)
+				throw new Error('Heap service descriptor does not fit the private CPU stack.');
 			const functions = offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
 			const versions = romFunctions.versions;
 			heapServiceFunctions = new Uint32Array(HeapServiceOperation.Count);

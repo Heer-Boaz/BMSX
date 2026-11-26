@@ -10,11 +10,9 @@ export const enum HeapServiceOperation {
 	RootHead, RootBanks, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 10;
-export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
-export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
-export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
-export const HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 12;
+export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
+export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4;
+export const HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8;
 export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HeapServiceOperation.Count;
 
 // Private CPU runtime stack, inside the management reservation. These
