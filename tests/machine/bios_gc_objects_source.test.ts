@@ -20,6 +20,7 @@ const pins = [
 	['U', 'machine/ts/machine/cpu/upvalue.ts'], ['Z', 'machine/cpp/machine/cpu/upvalue.h'],
 	['L', 'machine/ts/machine/cpu/closure.ts'], ['K', 'machine/cpp/machine/cpu/closure.h'], ['E', 'machine/cpp/machine/cpu/closure.cpp'],
 	['F', 'machine/ts/machine/cpu/call_state.ts'], ['G', 'machine/cpp/machine/cpu/call_state.h'],
+	['Q', 'machine/ts/machine/common/numeric.ts'], ['R', 'machine/cpp/machine/common/numeric.h'],
 	['M', 'machine/ts/spec/bmsx/memory_map.ts'],
 ] as const;
 
@@ -56,7 +57,7 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 		assert.equal(field.offset, offset, name);
 		assert.equal(field.size, 4, name);
 	}
-	for (const [name, action] of [['none', Action.None], ['compact_thread', Action.CompactThread],
+	for (const [name, action] of [['none', Action.None], ['rebind_relocated_thread', Action.RebindRelocatedThread],
 		['retire_canonical_closure', Action.RetireCanonicalClosure], ['retire_thread_view', Action.RetireThreadView],
 		['observe_retired_record', Action.ObserveRetiredRecord]] as const) {
 		const decl = objectFile.decls.find(decl => decl.name === `action_${name}`);
@@ -93,15 +94,16 @@ test('the object sweep maps reachable work and separately identifies the deferre
 		}
 	}
 	const mapped = [
-		['T', [[738, 773], [781, 782], [784, 787], [789, 792], [794, 797], [799, 802], [804, 805]]],
-		['C', [[801, 835], [841, 847], [849, 853], [857, 857], [859, 864]]],
+		['T', [[738, 776], [779, 779], [781, 782], [784, 787], [789, 792], [794, 797], [799, 802], [804, 805]]],
+		['C', [[801, 837], [839, 839], [841, 847], [849, 853], [857, 857], [859, 864]]],
 		['A', [[165, 173]]], ['B', [[73, 75], [508, 517]]],
 		['L', [[42, 44], [50, 54]]], ['K', [[64, 66]]], ['E', [[68, 72]]],
 		['I', [[118, 120], [122, 124], [128, 128], [130, 130]]], ['J', [[59, 64]]],
+		['Q', [[66, 68]]], ['R', [[69, 71]]],
 	] as const;
 	const deferred = [
-		['T', [[774, 779], [783, 783], [788, 788], [793, 793], [798, 798], [803, 803]]],
-		['C', [[836, 839], [848, 848], [858, 858]]],
+		['T', [[778, 778], [783, 783], [788, 788], [793, 793], [798, 798], [803, 803]]],
+		['C', [[838, 838], [848, 848], [858, 858]]],
 	] as const;
 	// The common TS Thread view also samples scratch-only metadata. Dead
 	// release consumes none of these values, and C++ never reads them here.

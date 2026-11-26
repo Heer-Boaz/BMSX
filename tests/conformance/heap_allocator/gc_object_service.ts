@@ -31,14 +31,28 @@ import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
-local saved<const> = fixture_thread(function() return 4 end)
+local function grow(depth, value)
+	if depth == 0 then return value end
+	return grow(depth - 1, value + 1) + 1
+end
+local saved<const> = fixture_thread(function(seed)
+	local before<const> = grow(seed, 3)
+	local resumed<const> = fixture_yield(before)
+	return before + resumed
+end)
+local started, yielded = fixture_resume(saved, 24)
+fixture_live_thread = saved
 fixture_collect()
-return 211, saved
+local done, value = fixture_resume(saved, 7)
+if not started or not done then return -1 end
+return value, saved, yielded
 `;
 const boot = {
 	path: 'fixture_sweep_boot',
 	source: `
 fixture_thread = __bmsx_coroutine_create
+fixture_resume = __bmsx_coroutine_resume
+fixture_yield = __bmsx_coroutine_yield
 fixture_collect = __bmsx_collect_garbage
 local make_dead_thread<const> = function(count)
 	return fixture_thread(function()
@@ -58,7 +72,7 @@ const input = {
 };
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const finishGrant = 1117;
-const requiredActions = (1 << HeapServiceObjectSweepAction.CompactThread)
+const requiredActions = (1 << HeapServiceObjectSweepAction.RebindRelocatedThread)
 	| (1 << HeapServiceObjectSweepAction.RetireThreadView)
 	| (1 << HeapServiceObjectSweepAction.RetireCanonicalClosure);
 
@@ -100,6 +114,13 @@ try {
 		observe('Y 6 16', tail);
 		for (let i = 0; i < 16 && !gc.fullEpochs(); ++i) step(65536);
 		assert.equal(gc.fullEpochs(), 1);
+		const live = cpu.getGlobalByKey(cpu.stringPool.intern('fixture_live_thread'));
+		assert.equal(valueTag(live), ValueTag.Thread);
+		const liveThread = valuePayload(live);
+		const liveCapacity = () => memory.readRamRecordWord(liveThread + ThreadField.StackCapacity);
+		const liveFrameCapacity = () => memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity);
+		const oldCapacity = liveCapacity(), oldFrameCapacity = liveFrameCapacity();
+		assert.ok(oldCapacity > 32 && oldFrameCapacity > 4);
 		const caller = cpu.getFrameDepth() - 1, callerPc = cpu.readFramePc(caller);
 		const action = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Action);
 		const deferred = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
@@ -116,8 +137,7 @@ try {
 		const deadCaptured = memory.readRamRecordWord(deadThread + ThreadField.Entry);
 		assert.ok(captureCount(memory, deadCaptured) > 0);
 		assert.ok(memory.readRamRecordByte(deadCanonical + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL);
-		// Fit two dead Tables on either side of the guest's live Thread;
-		// full collection delegates that intervening compaction to its owner.
+		// Fit two dead Tables on either side of the suspended live Thread.
 		const first = cpu.createTable(3, 8);
 		observe('Y 3 8', first);
 		const grant = GC_STEP_WORDS * GC_WORK_WORD_CYCLES;
@@ -151,19 +171,50 @@ try {
 		assert.equal(cursor(), originalCursor);
 		assert.equal(cpu.readFramePc(caller), callerPc);
 		assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
-		const partial = captureRuntimeSaveState(runtime);
-		const partialRam = history.capture(memory, baseline);
-		writeFileSync(checkpointPath, encodeRuntimeSaveState(partial));
 		const referenceTrace = trace.slice(0, referenceEnd);
-		const nativeCheckpointTrace = [...trace, 'S', 's'];
-		const commonExpected = [...expected];
+		const nativePrefix = trace.slice(), commonExpected = expected.slice();
 
 		// Array-first is visible one allocator mutation at a time. The original
 		// object count/cursor still await the whole quantum including host records.
 		for (let i = 0; i < 1024 && budget.usedBytes() === originalCharge; ++i) step(1);
 		assert.equal(originalCharge - budget.usedBytes(), 3 * 5);
 		assert.equal(count(), originalCount);
-		applyRuntimeSaveState(runtime, partial);
+
+		// The live coroutine's retained tags move before its capacity is
+		// published. Stop on an actual store, not at the host view notification.
+		const block = memory.readRamRecordWord(liveThread + ThreadField.StackBlock);
+		const sourceTags = block + oldCapacity * 4;
+		const relocatedTags = block + (oldCapacity >>> 1) * 4;
+		let changed = 0;
+		while (changed < (oldCapacity >>> 1)
+			&& memory.readRamRecordWord(sourceTags + changed) === memory.readRamRecordWord(relocatedTags + changed)) changed += 4;
+		assert.ok(changed < (oldCapacity >>> 1), 'fixture contains live tags whose relocation is observable');
+		const tagWord = memory.readRamRecordWord(sourceTags + changed);
+		for (let i = 0; i < 16384 && memory.readRamRecordWord(relocatedTags + changed) !== tagWord; ++i)
+			assert.equal(step(1), RunResult.CollectionProgress);
+		assert.equal(memory.readRamRecordWord(relocatedTags + changed), tagWord);
+		assert.equal(liveCapacity(), oldCapacity);
+		assert.equal(liveFrameCapacity(), oldFrameCapacity);
+		assert.equal(cpu.readFramePc(caller), callerPc);
+		assert.equal(action(), HeapServiceObjectSweepAction.None);
+		assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
+		const partial = captureRuntimeSaveState(runtime);
+		const partialRam = history.capture(memory, baseline);
+		writeFileSync(checkpointPath, encodeRuntimeSaveState(partial));
+		// The preceding Table releases its array first on TS and its hash
+		// first on C++. Each core advances to the same observed tag store.
+		const nativeCheckpointTrace = [...nativePrefix, `j ${relocatedTags + changed} ${tagWord}`, 'S', 's'];
+
+		for (let i = 0; i < 16384 && (action() !== HeapServiceObjectSweepAction.RebindRelocatedThread
+			|| deferred() !== liveThread || servicePc() !== entryPc); ++i)
+			assert.equal(step(1), RunResult.CollectionProgress);
+		assert.equal(deferred(), liveThread);
+		assert.equal(action(), HeapServiceObjectSweepAction.RebindRelocatedThread);
+		assert.equal(servicePc(), entryPc);
+		assert.equal(consumed, BASE_CYCLES[OpCode.RET] + 1, 'rebinding a view does not bill policy work');
+		assert.equal(liveCapacity(), oldCapacity >>> 1, 'stack was shrunk before rebinding');
+		assert.equal(liveFrameCapacity(), oldFrameCapacity >>> 1, 'frame backing was shrunk before rebinding');
+
 		// The host-only Thread view notification cannot release any of the
 		// record's storage. That happens in the next pinned invocation.
 		for (let i = 0; i < 16384 && (action() !== HeapServiceObjectSweepAction.RetireThreadView
@@ -204,6 +255,8 @@ try {
 			assert.equal(gc.threadRecordAddress(deadThread), 0);
 			assert.equal(gc.closureRecordAddress(deadCanonical), 0);
 			assert.equal(gc.closureRecordAddress(deadCaptured), 0);
+			assert.equal(liveCapacity(), oldCapacity >>> 1);
+			assert.equal(liveFrameCapacity(), oldFrameCapacity >>> 1);
 			assert.equal(budget.usedBytes(), reference.machine.cpu.luaHeap.usedBytes());
 			const produced = memory.ramData().subarray(floor, context);
 			const nativeProduced = reference.machine.memory.ramData().subarray(floor, context);
@@ -219,8 +272,9 @@ try {
 		assert.deepEqual(finish(), firstResult);
 		assert.equal(step(65536), RunResult.Halted);
 		const completion = runtime.readCompletionValues();
-		assert.equal(completion[0], valueInteger(211));
+		assert.equal(completion[0], valueInteger(58));
 		assert.equal(valueTag(completion[1]), ValueTag.Thread);
+		assert.equal(completion[2], valueInteger(51));
 
 		function runNative(name: string, commands: string[]) {
 			const path = join(directory, `trace-O${optLevel}-${name}.txt`);
@@ -234,11 +288,12 @@ try {
 			...nativeCheckpointTrace, `x ${nativeCheckpointPath}`, ...finishCommands, 'u', ...finishCommands, 'U', ...finishCommands,
 			'X', ...finishCommands, 'L 65536', 'C',
 		]);
-		assert.equal(outputs.length, commonExpected.length + 10);
+		assert.equal(outputs.length, commonExpected.length + 11);
 		const mismatch = commonExpected.findIndex((line, index) => outputs[index] !== line);
-		assert.equal(mismatch, -1, `cores differ before the first retirement: #${mismatch}`);
+		assert.equal(mismatch, -1, `cores differ before the first Table release: #${mismatch}`);
+		assert.ok(+outputs[commonExpected.length] > 0, 'native checkpoint advanced to the tag store');
 		const [cppPaid, cppHash, cppRewindPaid, cppRewindHash, cppRestorePaid, cppRestoreHash, importedPaid, importedHash] =
-			outputs.slice(commonExpected.length, -2);
+			outputs.slice(commonExpected.length + 1, -2);
 		assert.ok(+cppPaid.split(' ')[0] > 0);
 		assert.equal(+cppPaid.split(' ')[2] & requiredActions, requiredActions);
 		assert.deepEqual([cppHash, cppRewindHash, cppRestoreHash], [oracle.at(-1), oracle.at(-1), oracle.at(-1)]);
@@ -246,13 +301,16 @@ try {
 		assert.equal(cppRestorePaid, cppPaid);
 		assert.equal(importedPaid, `${tsCycles} 0 ${tsActions}`);
 		assert.equal(importedHash, tsHash, 'TS-origin quantum keeps array-first after C++ re-entry');
-		assert.equal(outputs.at(-1), '211');
+		assert.equal(outputs.at(-1), '58');
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeCheckpointPath),
 			PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		assert.equal(memory.readRamRecordWord(relocatedTags + changed), tagWord);
+		assert.equal(liveCapacity(), oldCapacity);
+		assert.equal(liveFrameCapacity(), oldFrameCapacity);
 		const [reverseCycles, reverseHash, reverseActions] = finish(false);
 		assert.equal(`${reverseCycles} 0 ${reverseActions}`, cppPaid);
 		assert.equal(reverseHash, cppHash, 'C++-origin quantum keeps hash-first after TS re-entry');
-		console.log(`BIOS-GC-OBJECT-SERVICE:PASS O${optLevel} (TS/C++ native differentials; rewind; bidirectional cross-core restore)`);
+		console.log(`BIOS-GC-OBJECT-SERVICE:PASS O${optLevel} (TS/C++ native differentials; live stack shrink; rewind and cross-core restore mid-compaction)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

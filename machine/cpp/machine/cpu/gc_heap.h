@@ -97,7 +97,7 @@ public:
 	void requestFullCollection();
 	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction = 0u);
 	HeapServiceGcStage sweepStage() const;
-	size_t finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction);
+	void finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction);
 	void finishStringSweep(HeapServiceGcStage stage);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);

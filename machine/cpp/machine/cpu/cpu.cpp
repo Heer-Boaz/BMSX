@@ -2516,10 +2516,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					case HeapServiceGcStage::FullObjectSweep:
 					case HeapServiceGcStage::AllocationRecoveryObjectSweep: {
 						const auto& services = m_systemImage->heapServiceFunctions;
-						const auto work = m_heap.finishObjectSweep(sweep,
+						m_heap.finishObjectSweep(sweep,
 							services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
 							services[static_cast<size_t>(HeapServiceOperation::StringSweep)]);
-						if (sweep == HeapServiceGcStage::FullObjectSweep) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullStringSweep:

@@ -27,7 +27,7 @@ end
 return { sweep = sweep }
 `;
 const modules = [
-	...['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_objects'].map(path =>
+	...['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/gc_objects'].map(path =>
 		({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
 	{ path: PROBE, source: probeSource },
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));

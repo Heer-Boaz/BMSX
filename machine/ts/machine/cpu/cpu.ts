@@ -2259,8 +2259,7 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.FullObjectSweep:
 							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
 								const services = this.systemImage.heapServiceFunctions!;
-								const work = this.gc.finishObjectSweep(sweep, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
-								if (sweep === HeapServiceGcStage.FullObjectSweep) this.chargeCollectionWork(work);
+								this.gc.finishObjectSweep(sweep, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
 								break;
 							}
 							case HeapServiceGcStage.FullStringSweep:

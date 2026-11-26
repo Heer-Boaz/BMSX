@@ -9,7 +9,7 @@ export const enum HeapServiceOperation {
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 5;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 6;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -44,8 +44,8 @@ export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
 export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep }
 
-// Locals of the original objectsweep quantum, retained across a host-only
-// record. Object count and cursor are not committed at such a handoff.
+// Locals of the original object sweep quantum, retained across derived-view
+// notifications. Object count and cursor are not committed at such a handoff.
 // The originating mirror's release and shrink policies last through the
 // remainder of this quantum, including an Object-to-String handoff.
 export const HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
@@ -55,4 +55,4 @@ export const enum HeapServiceObjectSweepField {
 	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
 	ProtectedBlock = 52, ProtectedCapacity = 56,
 }
-export const enum HeapServiceObjectSweepAction { None, CompactThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord }
+export const enum HeapServiceObjectSweepAction { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord }

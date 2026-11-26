@@ -1158,7 +1158,7 @@ HeapServiceGcStage GcHeap::sweepStage() const {
 	return static_cast<HeapServiceGcStage>(memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage)));
 }
 
-size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction) {
+void GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction) {
 	const u32 management = arena.managementOffset();
 	const u32 objectState = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const u32 state = management + HEAP_SERVICE_GC_OFFSET;
@@ -1167,15 +1167,10 @@ size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFuncti
 		objectState + static_cast<u32>(HeapServiceObjectSweepField::Action)));
 	if (action != HeapServiceObjectSweepAction::None) {
 		const u32 address = memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred));
-		size_t nativeWork = 0;
 		switch (action) {
-			case HeapServiceObjectSweepAction::CompactThread: {
-				const u32 workAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Work);
-				nativeWork = compactThreadStack(address);
-				// The policy counts the complete record, but its traversal ran in firmware.
-				memory.writeRamRecordWord(workAddress, memory.readRamRecordWord(workAddress) + 1u + static_cast<u32>(nativeWork));
+			case HeapServiceObjectSweepAction::RebindRelocatedThread:
+				m_cpu.rebindRelocatedThread(address);
 				break;
-			}
 			case HeapServiceObjectSweepAction::RetireCanonicalClosure:
 				m_cpu.retireStaticClosure(address);
 				break;
@@ -1188,9 +1183,9 @@ size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFuncti
 			case HeapServiceObjectSweepAction::None:
 				BMSX_UNREACHABLE();
 		}
-		// Any guest retirement and the quantum epilogue belong to the re-entered BIOS.
+		// The notification only changes views; firmware owns the same quantum.
 		startObjectSweep(objectSweepFunction, compactThreads);
-		return nativeWork;
+		return;
 	}
 
 	const size_t work = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork)) + m_cpu.heapServiceResult();
@@ -1208,7 +1203,6 @@ size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFuncti
 		finishStepWork(occupiedBefore, work);
 		memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceGcStage::Idle));
 	}
-	return 0u;
 }
 
 void GcHeap::finishStringSweep(HeapServiceGcStage stage) {

@@ -4,9 +4,11 @@ module<const>
 -- T/C/H refer to the two GcHeap owners and the C++ header. A/B/D are
 -- the Table record owners, O/P are GC object constants, V/W are Value tags,
 -- I/J are Thread record kinds, U/Z are Upvalue records, and M is RAM decode.
--- L/K/E are the Closure owners and F/G define frame and protected-call sizes.
+-- L/K/E are the Closure owners, F/G frame and protected-call sizes,
+-- and Q/R define stack compaction's retained-word charge.
 local control_layout<const> = require('kernel/gc_control') -- T:740,744,762 C:802,806,824
 local allocator<const> = require('kernel/dlmalloc_record') -- T:789,792,799-802 C:849,852,859-862 A:167-168,172 B:510-511,516
+local thread_compact<const> = require('kernel/gc_thread_compact') -- T:774-776 C:836-837
 local ram_base<const> = 0x08000000 -- M:6
 local ram_word_mask<const> = 0x003ffffc -- M:9
 local ram_byte_mask<const> = 0x003fffff -- M:7
@@ -35,7 +37,7 @@ local frame_bytes<const> = 56 -- F:21 G:34
 local protected_bytes<const> = 20 -- F:152 G:28
 local thread_control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
 local action_none<const> = 0 -- T:766 C:828; private protocol, no host action
-local action_compact_thread<const> = 1 -- T:774-779 C:836-839; private host action
+local action_rebind_relocated_thread<const> = 1 -- T:778 C:838; private host action after physical shrink
 local action_retire_canonical_closure<const> = 2 -- T:788 C:848; private host action
 local action_retire_thread_view<const> = 3 -- T:798 C:858; private host action
 local action_observe_retired_record<const> = 4 -- T:783,793,803; private host action
@@ -151,7 +153,7 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 				return work -- T:794,804; native observation precedes charging this record
 			end
 		end
-		if prior ~= action_compact_thread then work = work + 1 end -- T:758,779,794,804 C:820,839,853,863; compact work is supplied by the native owner
+		work = work + 1 -- T:758,779,794,804 C:820,839,853,863; the per-record word retires after its host action
 	end
 	while address ~= 0 and work < allowance do -- T:747 C:809
 		local next_link<const> = address - object_link_before -- T:750 C:812
@@ -194,7 +196,11 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 			local color<const>: *u8 = ram_base + ((address + color_offset) & ram_byte_mask) -- T:772 C:834
 			*color = white -- T:772 C:834
 			if kind == thread_kind and compact_threads ~= 0 and address ~= growing_thread then -- T:773 C:835
-				pending = action_compact_thread -- T:774-779 C:836-839
+				local retained<const> = thread_compact.shrink_stack(arena, occupied, address) -- T:774-776 C:836-837
+				if retained ~= 0 then -- T:778 C:838
+					work = work + 2 * ((retained + 3) >> 2) -- T:779 C:839 Q:66-68 R:69-71; policy work, not a second CPU charge
+					pending = action_rebind_relocated_thread -- T:778 C:838
+				end
 			end
 		end
 		if pending ~= action_none then -- T:758-761 C:820-823; retain the uncommitted quantum
@@ -206,7 +212,7 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 			context.action = pending -- T:774-779,783,788,793,798,803 C:836-839,848,858
 			return work -- T:758,766 C:820,828; cumulative, not an independently committed quantum
 		end
-		work = work + 1 -- T:758,773,784,794,804 C:820,835,843,853,863
+		work = work + 1 -- T:758,773,779,784,794,804 C:820,835,839,843,853,863
 		address = next_record -- T:759 C:821
 	end
 	if removed ~= 0 then -- T:761 C:823

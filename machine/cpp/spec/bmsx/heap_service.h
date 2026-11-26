@@ -15,7 +15,7 @@ enum class HeapServiceOperation : uint32_t {
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 };
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 5u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 6u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -51,8 +51,8 @@ constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
 enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep };
 
-// Locals of the original objectsweep quantum, retained across a host-only
-// record. Object count and cursor are not committed at such a handoff.
+// Locals of the original object sweep quantum, retained across derived-view
+// notifications. Object count and cursor are not committed at such a handoff.
 // The originating mirror's release and shrink policies last through the
 // remainder of this quantum, including an Object-to-String handoff.
 constexpr uint32_t HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
@@ -62,6 +62,6 @@ enum class HeapServiceObjectSweepField : uint32_t {
 	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
 	ProtectedBlock = 52, ProtectedCapacity = 56,
 };
-enum class HeapServiceObjectSweepAction : uint32_t { None, CompactThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord };
+enum class HeapServiceObjectSweepAction : uint32_t { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord };
 
 } // namespace bmsx

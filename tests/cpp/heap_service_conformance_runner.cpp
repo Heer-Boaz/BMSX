@@ -105,6 +105,20 @@ int main(int argc, char** argv) {
 						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'j': {
+					u32 address, word;
+					trace >> address >> word;
+					int grants = 0;
+					while (memory.readRamRecordWord(address) != word && grants < 16384) {
+						if (scheduler.runCpuSlice(0, 1, 0u, CpuRunKind::Scheduled) != RunResult::CollectionProgress)
+							throw std::runtime_error("Object sweep lost the CPU before the observed store");
+						++grants;
+					}
+					if (grants == 0 || memory.readRamRecordWord(address) != word || !cpu.heapServiceActive())
+						throw std::runtime_error("Object sweep did not suspend at the observed store");
+					std::cout << grants << '\n';
+					break;
+				}
 				case 'g': {
 					int cycles;
 					trace >> cycles;

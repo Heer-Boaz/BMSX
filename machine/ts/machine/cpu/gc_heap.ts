@@ -1070,20 +1070,16 @@ export class GcHeap {
 		this.cpu.beginHeapService(functionAddress, this.objectSweepArgs);
 	}
 
-	public finishObjectSweep(stage: HeapServiceGcStage, objectFunction: number, stringFunction: number): number {
+	public finishObjectSweep(stage: HeapServiceGcStage, objectFunction: number, stringFunction: number): void {
 		const context = this.objectSweepOffset, memory = this.memory;
 		const action = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Action);
 		const full = stage === HeapServiceGcStage.FullObjectSweep;
 		if (action !== HeapServiceObjectSweepAction.None) {
 			const address = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
-			let work = 0;
 			switch (action) {
-				case HeapServiceObjectSweepAction.CompactThread: {
-					work = this.compactThreadStack(address);
-					const completed = context + HeapServiceObjectSweepField.Work;
-					memory.writeRamRecordWord(completed, memory.readRamRecordWord(completed) + 1 + work);
+				case HeapServiceObjectSweepAction.RebindRelocatedThread:
+					this.cpu.rebindRelocatedThread(address);
 					break;
-				}
 				case HeapServiceObjectSweepAction.RetireCanonicalClosure:
 					this.cpu.retireStaticClosure(address);
 					break;
@@ -1094,10 +1090,9 @@ export class GcHeap {
 					this.onRecordRetirement?.(address);
 					break;
 			}
-			// Firmware acknowledges the action and finishes the same quantum,
-			// even if the native compaction already exhausted its allowance.
+			// The notification only changes views; firmware owns the same quantum.
 			this.runObjectSweep(objectFunction, full);
-			return work;
+			return;
 		}
 
 		const base = this.sweepServiceOffset;
@@ -1114,7 +1109,6 @@ export class GcHeap {
 			this.finishStepWork(occupied, work);
 			memory.writeRamRecordWord(base + HeapServiceGcField.Stage, HeapServiceGcStage.Idle);
 		}
-		return 0;
 	}
 
 	public finishStringSweep(stage: HeapServiceGcStage): void {

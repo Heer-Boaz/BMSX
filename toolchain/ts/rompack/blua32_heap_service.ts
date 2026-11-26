@@ -15,7 +15,7 @@ export const HEAP_SERVICE_STRINGS_MODULE_PATH = 'kernel/gc_strings';
 export const HEAP_SERVICE_OBJECTS_MODULE_PATH = 'kernel/gc_objects';
 export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
-	'kernel/gc_control', HEAP_SERVICE_OBJECTS_MODULE_PATH,
+	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH,
 ] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
