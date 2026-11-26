@@ -414,6 +414,31 @@ void explicitCollectionAndNoReplay() {
 	}
 }
 
+void scheduledLogicalRefusalParks() {
+	Machine m(image(OpCode::SETT));
+	auto& cpu = m.cpu;
+	auto& budget = cpu.luaHeap();
+	budget.setCollectionTarget(budget.capacity());
+	constexpr int slots = 8192;
+	auto owner = cpu.createTable(slots, 0);
+	for (int i = 1; i <= slots; ++i) owner.setInteger(i, valueInteger(i));
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(owner.address())); frame.registers.set(1, valueInteger(slots + 1)); frame.setTop(2);
+	const auto garbage = cpu.createTable((budget.capacity() - budget.usedBytes() - 32768) / 5, 0).address();
+	require(!cpu.collecting() && budget.usedBytes() + 5 * slots > budget.capacity(), "the proposed growth exceeds logical headroom");
+	require(cpu.runUntilDepth(0, 1, 0u, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
+		"SETT parks before collecting on a logical refusal");
+	require(!cpu.collecting() && cpu.gcHeap().tableRecordAddress(garbage) != 0u && isNil(owner.getInteger(slots + 1)),
+		"issue neither collects nor publishes the store");
+	for (int pulses = 0; !cpu.allocationReady(); ++pulses) {
+		require(pulses < 64, "the recovered epoch finishes"); cpu.advanceAllocationRecovery();
+	}
+	cpu.resumeAllocation();
+	require(!cpu.allocationParked() && cpu.gcHeap().tableRecordAddress(garbage) == 0u
+		&& owner.getInteger(slots + 1) == valueInteger(slots + 1) && isNil(frame.registers.get(7)),
+		"the reclaimed space admits the original store without executing its successor");
+}
+
 void concatRecoveryChargesIssuingInstruction() {
 	Machine generated(image(OpCode::CONCAT)), scalar(image(OpCode::CONCAT), true);
 	for (auto* m : {&generated, &scalar}) {
@@ -1833,7 +1858,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
+		scheduledLogicalRefusalParks(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

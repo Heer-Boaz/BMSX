@@ -2,7 +2,7 @@ import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
@@ -380,6 +380,28 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(frame.registers.get(7), valueInteger(37));
 	});
 }
+
+test('scheduled SETT yields on a logical refusal before collecting the dead backing', () => {
+	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT)));
+	const { luaHeap: budget, gc, rootThread } = cpu, frame = rootThread.currentFrame!;
+	budget.setCollectionTarget(budget.capacity());
+	const slots = 8192, owner = cpu.createTable(slots, 0);
+	for (let i = 1; i <= slots; ++i) gc.tables.setInteger(owner, i, valueInteger(i));
+	frame.registers.setTable(0, owner); frame.registers.setInteger(1, slots + 1); frame.top = 2;
+	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
+	assert.ok(!gc.active() && budget.usedBytes() + 5 * slots > budget.capacity());
+	assert.equal(cpu.runUntilDepth(0, 1, rootThread.address, CpuRunKind.Scheduled), RunResult.ParkedAllocation);
+	assert.ok(!gc.active() && gc.tableRecordAddress(garbage) !== 0, 'issue performs no recovery');
+	assert.equal(gc.tables.getInteger(owner, slots + 1), valueNil());
+	for (let pulses = 0; !cpu.allocationReady(); ++pulses) {
+		assert.ok(pulses < 64); cpu.advanceAllocationRecovery();
+	}
+	cpu.resumeAllocation();
+	assert.ok(!cpu.allocationParked());
+	assert.equal(gc.tableRecordAddress(garbage), 0);
+	assert.equal(gc.tables.getInteger(owner, slots + 1), valueInteger(slots + 1));
+	assert.equal(frame.registers.get(7), valueNil());
+});
 
 test('CONCAT pays for synchronous recovery of a refused String record before its successor', () => {
 	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.CONCAT)));

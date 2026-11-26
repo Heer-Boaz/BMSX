@@ -1463,8 +1463,11 @@ cycle grants. Device time advances for that work, while interrupt entry and
 execution of the following instruction wait until the fresh cycle completes.
 
 Recovery for `NEWT` or for a table insertion can pause execution with the
-console clock stopped. No table or new mapping is visible until the reservation
-succeeds. The instruction completes, or raises its error, before the console
+console clock stopped. For a table insertion this applies both when its
+proposed capacity exceeds the remaining logical budget and when its backing
+storage does not fit. After collection, the CPU replans the insertion using
+the surviving mappings. No table or new mapping is visible until the
+reservation succeeds. The instruction completes, or raises its error, before the console
 accepts a following interrupt or device deadline.
 
 When an instruction assists incremental collection to admit a logical charge

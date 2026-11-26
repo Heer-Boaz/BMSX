@@ -709,7 +709,7 @@ export class TableRecords {
 				extraHashSlots = 0;
 				continue;
 			}
-			if (policy === HashStore.Resume || (policy === HashStore.Scheduled && admitted && recovery === LuaAllocationRecovery.CurrentOrFresh)) return HASH_STORE_DECLINED;
+			if (policy !== HashStore.General) return HASH_STORE_DECLINED;
 			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
 			// Weak clearing can make the existing reservation fit.
 			if (hash !== 0) {

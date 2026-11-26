@@ -276,11 +276,9 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 			extraHashSlots = 0;
 			continue;
 		}
-		if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField || Policy == HashStore::Resume) {
+		if constexpr (Policy != HashStore::General) {
 			return HASH_STORE_DECLINED;
 		} else {
-			if constexpr (Policy == HashStore::Scheduled)
-				if (admitted && recovery == LuaAllocationRecovery::CurrentOrFresh) return HASH_STORE_DECLINED;
 			recovery = m_heap->recoverAllocation(recovery, owner, key, value);
 			// Weak clearing can make an existing slot available.
 			if (hash != 0u) {
