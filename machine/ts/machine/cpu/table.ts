@@ -27,7 +27,7 @@ type TableLookupSlot = { value: Value; slot: number };
 export type TableLookupResult = TableLookupSlot & { extraVisits: number; status: TableLookupStatus; receiver: number };
 type StoredEntryVisitor = (key: Value, value: Value) => void;
 type StoredValuePredicate = (value: Value) => boolean;
-export interface TableStringProbe { node: number; remaining: number; value: Value }
+export interface TableStringProbe extends TableLookupSlot { node: number; remaining: number }
 
 export const enum TableHeader {
 	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
@@ -277,24 +277,35 @@ export class TableRecords {
 		const count = this.hashSize(record);
 		probe.node = count === 0 ? -1 : hashCanonicalTableKey(valueString(key)) & (count - 1);
 		probe.remaining = count;
-		probe.value = valueNil();
+		probe.value = valueNil(); probe.slot = -1;
 	}
 	public advanceStringProbe(record: number, key: StringId, probe: TableStringProbe, limit: number): number {
 		const hash = this.hashSize(record), words = this.hashAddress(record);
-		const memory = this.heap.memory, tags = words + 8 * hash, links = tags + hash * 2;
-		const available = Math.min(probe.remaining, limit);
+		return this.scanStringNodes(key, probe.node, hash, words, words + 8 * hash, Math.min(limit, probe.remaining), probe, probe);
+	}
+	private scanStringNodes(key: StringId, node: number, hash: number, words: number, tags: number,
+		allowance: number, result: TableLookupSlot, cursor?: TableStringProbe): number {
+		const memory = this.heap.memory, links = tags + hash * 2;
 		let inspected = 0;
-		while (probe.node >= 0 && inspected < available) {
-			const slot = probe.node;
+		while (node >= 0 && inspected < allowance) {
 			++inspected;
-			if (memory.readRamRecordByte(tags + slot) === ValueTag.String && memory.readRamRecordWord(words + slot * 4) === key) {
-				probe.value = valueFromTag(memory.readRamRecordByte(tags + slot + hash), memory.readRamRecordWord(words + (slot + hash) * 4));
-				probe.node = -1;
-				break;
+			const slot = this.matchingStringValueSlot(key, node, hash, words, tags);
+			if (slot >= 0) {
+				result.slot = node;
+				result.value = valueFromTag(memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + slot * 4));
+				if (cursor) {
+					cursor.node = -1;
+					cursor.remaining -= inspected;
+				}
+				return inspected;
 			}
-			probe.node = this.hashNext(links, hash, probe.node);
+			node = this.hashNext(links, hash, node);
 		}
-		probe.remaining -= inspected;
+		result.value = valueNil(); result.slot = -1;
+		if (cursor) {
+			cursor.node = node;
+			cursor.remaining -= inspected;
+		}
 		return inspected;
 	}
 	private matchingStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
@@ -331,20 +342,11 @@ export class TableRecords {
 					}
 				}
 			}
-			const links = tags + hash * 2;
-			let index = hashCanonicalTableKey(valueString(key)) & (hash - 1), remaining = hash;
-			for (; index >= 0 && remaining !== 0; --remaining) {
-				const slot = this.matchingStringValueSlot(key, index, hash, words, tags);
-				if (slot >= 0) {
-					const tag = memory.readRamRecordByte(tags + slot);
-					result.slot = tag === ValueTag.Nil ? -1 : index;
-					result.value = tag === ValueTag.Nil ? valueNil() : valueFromTag(tag, memory.readRamRecordWord(words + slot * 4));
-					return Math.max(0, hash - remaining + 1 - TABLE_STRING_HIT_BASE_NODES);
-				}
-				index = this.hashNext(links, hash, index);
-			}
-			result.value = valueNil(); result.slot = -1;
-			return Math.max(0, hash - remaining - 1);
+			const home = hashCanonicalTableKey(valueString(key)) & (hash - 1);
+			const inspected = this.scanStringNodes(key, home, hash, words, tags, hash, result);
+			if (result.slot < 0) return Math.max(0, inspected - 1);
+			if (isNil(result.value)) { result.slot = -1; result.value = valueNil(); }
+			return Math.max(0, inspected - TABLE_STRING_HIT_BASE_NODES);
 		}
 		result.value = valueNil(); result.slot = -1; return 0;
 	}

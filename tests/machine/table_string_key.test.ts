@@ -18,7 +18,7 @@ test('aligned String identities distribute home slots and preserve displaced col
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const tables = cpu.gc.tables, table = cpu.createTable(0, 8);
 	const keys: number[][] = Array.from({ length: 8 }, () => []);
-	const probe = { node: -1, remaining: 0, value: valueNil() };
+	const probe = { node: -1, remaining: 0, slot: -1, value: valueNil() };
 	for (let i = 10; i < 90; ++i) {
 		const key = cpu.stringPool.intern(`table-home-key-${i}`);
 		const home = (key >>> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT) & 7;
@@ -26,7 +26,7 @@ test('aligned String identities distribute home slots and preserve displaced col
 		assert.equal(probe.node, home, 'use record identity bits, not zero byte-offset bits');
 		keys[home].push(key);
 	}
-	assert.ok(keys.every(group => group.length >= 2), 'the interned records exercise all eight homes');
+	assert.ok(keys.every(group => group.length >= 3), 'the interned records exercise all eight homes');
 	const [resident, collided] = keys[0];
 	assert.equal(tables.storeStringKey(table, resident, ValueTag.Integer, 11), 0);
 	const slot = tables.storeStringKey(table, collided, ValueTag.Integer, 22);
@@ -39,6 +39,20 @@ test('aligned String identities distribute home slots and preserve displaced col
 	assert.equal(probe.value, valueInteger(22));
 	assert.equal(tables.getStringKey(table, resident), valueInteger(11));
 	assert.equal(tables.getStringKey(table, incoming), valueInteger(33));
+	const displaced = probe.slot;
+	tables.setStringKey(table, collided, valueNil());
+	for (const key of [collided, keys[0][2]]) {
+		tables.beginStringProbe(table, key, probe);
+		assert.equal(tables.advanceStringProbe(table, key, probe, 0), 0);
+		assert.deepEqual([probe.node, probe.remaining], [0, 8]);
+		assert.equal(tables.advanceStringProbe(table, key, probe, 1), 1);
+		assert.deepEqual([probe.node, probe.remaining], [displaced, 7]);
+		assert.equal(tables.advanceStringProbe(table, key, probe, 1), 1);
+		assert.deepEqual([probe.node, probe.remaining, probe.value, probe.slot],
+			[-1, 6, valueNil(), key === collided ? displaced : -1]);
+		assert.equal(tables.getStringKeyCached(table, key, -1, probe), key === collided ? 0 : 1);
+		assert.equal(probe.slot, -1, 'neither nil result publishes a prediction');
+	}
 });
 
 test('known string chains preserve mixed-key collisions, cached updates, tombstones and rehash order', () => {

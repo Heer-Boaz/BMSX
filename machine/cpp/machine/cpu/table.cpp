@@ -111,20 +111,30 @@ int TableRecord::HashStorage<BulkWrite>::findNode(const Value& key, u32 home, bo
 }
 
 template<bool BulkWrite>
-inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home, u32* linkCycles) const {
-	int index = static_cast<int>(home);
-	u32 remaining = count;
-	for (; index >= 0 && remaining != 0u; --remaining) {
-		const u32 slot = static_cast<u32>(index);
+inline int TableRecord::HashStorage<BulkWrite>::scanStringNodes(StringId key, i32& node, u32& available) const {
+	while (node >= 0 && available != 0u) {
+		const i32 slot = node;
+		--available;
 		if (matchesString(slot, key)) {
-			const u32 prior = count - remaining;
-			if (linkCycles && prior >= TABLE_STRING_HIT_BASE_NODES) *linkCycles += prior - (TABLE_STRING_HIT_BASE_NODES - 1u);
-			return index;
+			node = -1;
+			return slot;
 		}
-		index = next(slot);
+		node = next(slot);
 	}
-	if (linkCycles && remaining != count) *linkCycles += count - remaining - 1u;
 	return -1;
+}
+
+template<bool BulkWrite>
+inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home, u32* linkCycles) const {
+	i32 node = static_cast<i32>(home);
+	u32 remaining = count;
+	const int slot = scanStringNodes(key, node, remaining);
+	if (linkCycles) {
+		const u32 inspected = count - remaining;
+		const u32 included = slot >= 0 ? TABLE_STRING_HIT_BASE_NODES : 1u;
+		if (inspected > included) *linkCycles += inspected - included;
+	}
+	return slot;
 }
 
 template<bool BulkWrite>
@@ -707,19 +717,12 @@ TableStringProbe TableRecord::beginStringProbe(StringId key) const {
 
 size_t TableRecord::advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const {
 	const auto body = hashBody(hashSlots());
-	const auto available = std::min<size_t>(probe.remaining, limit);
-	size_t inspected = 0;
-	while (probe.node >= 0 && inspected < available) {
-		const u32 slot = static_cast<u32>(probe.node);
-		++inspected;
-		if (body.matchesString(slot, key)) {
-			probe.value = body.slots.get(body.count + slot);
-			probe.node = -1;
-			break;
-		}
-		probe.node = body.next(slot);
-	}
-	probe.remaining -= static_cast<u32>(inspected);
+	const u32 allowance = static_cast<u32>(std::min<size_t>(probe.remaining, limit));
+	u32 left = allowance;
+	probe.slot = body.scanStringNodes(key, probe.node, left);
+	if (probe.slot >= 0) probe.value = body.slots.get(body.count + static_cast<u32>(probe.slot));
+	const u32 inspected = allowance - left;
+	probe.remaining -= inspected;
 	return inspected;
 }
 

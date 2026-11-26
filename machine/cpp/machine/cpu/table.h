@@ -32,6 +32,7 @@ struct TableStringProbe {
 	i32 node;
 	u32 remaining;
 	Value value = valueNil();
+	i32 slot = -1;
 };
 
 class TableRecord {
@@ -262,6 +263,7 @@ private:
 			}
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
+		int scanStringNodes(StringId key, i32& node, u32& available) const;
 		int findString(StringId key, u32 home, u32* linkCycles = nullptr) const;
 		bool matchesString(u32 node, StringId key) const {
 			const u32 slot = node;

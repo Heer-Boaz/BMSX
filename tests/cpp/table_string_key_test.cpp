@@ -56,6 +56,25 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	require(table.advanceStringProbe(collided, probe, 8) == 2 && probe.value == valueInteger(22)
 		&& table.getStringKey(resident) == valueInteger(11) && table.getStringKey(incoming) == valueBool(false),
 		"displacement preserves the original chain and each full String identity");
+	table.setStringKey(collided, valueNil());
+	StringId missing;
+	for (int i = 0;; ++i) {
+		missing = cpu.stringPool().intern("missing-table-home-" + std::to_string(i));
+		if (table.beginStringProbe(missing).node == 0) break;
+	}
+	for (const auto key : {collided, missing}) {
+		auto cursor = table.beginStringProbe(key);
+		require(table.advanceStringProbe(key, cursor, 0) == 0 && cursor.node == 0 && cursor.remaining == 8,
+			"a zero allowance leaves the home for the next grant");
+		require(table.advanceStringProbe(key, cursor, 1) == 1 && cursor.node == prediction && cursor.remaining == 7,
+			"after rejecting home the next grant starts at the displaced node");
+		require(table.advanceStringProbe(key, cursor, 1) == 1 && cursor.node < 0 && cursor.remaining == 6
+			&& isNil(cursor.value) && cursor.slot == (key == collided ? prediction : -1),
+			"the sliced result distinguishes a retained nil key from an exhausted search");
+		int hint = -1; u32 cost = 0;
+		require(isNil(table.getStringKeyCached(key, hint, &cost)) && hint == -1 && cost == (key == collided ? 0u : 1u),
+			"the unsliced read prices that same nil match differently from absence");
+	}
 }
 
 void collisionAndMutationParity(CPU& cpu) {

@@ -84,7 +84,7 @@ export class GcHeap {
 	}
 	public white(): number { return this.memory.readRamRecordByte(this.controlOffset + 1) & 1; }
 	private setPhase(phase: GcPhase): void { this.memory.writeRamRecordByte(this.controlOffset, phase); }
-	private readonly modeProbe: TableStringProbe & { work: number } = { node: -1, remaining: 0, value: valueNil(), work: 0 };
+	private readonly modeProbe: TableStringProbe & { work: number } = { node: -1, remaining: 0, slot: -1, value: valueNil(), work: 0 };
 	private readonly traceBoth = (key: Value, value: Value): void => { this.markValue(key); this.markValue(value); };
 	private readonly traceKey = (key: Value): void => { this.markValue(key); };
 	private readonly traceValue = (_key: Value, value: Value): void => { this.markValue(value); };
