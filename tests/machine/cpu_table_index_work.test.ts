@@ -157,6 +157,44 @@ function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`direct __index probes consume the instruction grant for every indexed-read form (${backend})`, () => {
+		for (const [op, kind] of forms) for (const inherited of [false, true]) {
+			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
+			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
+			const root = cpu.createTable(), meta = cpu.createTable(0, 128), parent = cpu.createTable(2, 1);
+			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
+			const method = valueString(cpu.stringPool.intern('__index'));
+			frame.registers.setTable(0, root); frame.registers.set(1, key);
+			cpu.gc.tables.setMetatableAddress(root, meta); cpu.gc.tables.set(parent, key, valueBool(false));
+			for (let i = 0, n = 0; i < 96; ++i) {
+				if (inherited && i === 1) cpu.gc.tables.set(meta, method, valueTable(parent));
+				else {
+					let other: Value;
+					do other = valueInteger(n++); while (((hashCanonicalTableKey(other) ^ hashCanonicalTableKey(method)) & 127) !== 0);
+					cpu.gc.tables.set(meta, other, valueInteger(i));
+				}
+			}
+			const total = 2 + BASE_CYCLES[op] + (inherited ? 32 + 8 : 95);
+			cpu.runUntilDepth(0, (total + 4) * 68);
+			for (const grant of [3, total, total + 1]) {
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+				frame.registers.setInteger(8, 91);
+				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
+				const marker = grant > total, expected = inherited ? valueBool(false) : valueNil();
+				assert.equal(cpu.instructionBudgetRemaining, grant - total - (marker ? 2 : 0));
+				assert.equal(frame.registers.get(6), expected);
+				assert.equal(frame.registers.get(8), marker ? expected : valueInteger(91));
+			}
+			if (inherited) {
+				cpu.gc.tables.set(meta, method, valueTable(root));
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+				cpu.runUntilDepth(0, 3);
+				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
+				assert.equal(3 - cpu.instructionBudgetRemaining, 2 + BASE_CYCLES[op] + 32 * 32 + 31 * 8);
+			}
+		}
+	});
+
 	test(`a trained String slot pays for its current chain depth, including after restore (${backend})`, () => {
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);

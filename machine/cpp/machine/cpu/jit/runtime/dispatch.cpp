@@ -341,8 +341,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				state.remainingCycles -= static_cast<int>(table.resolveStringIndexCached(asStringId(key), slot, result));
 				if (result.extraVisits == 0u && result.slot >= 0) slot = result.slot;
 			} else if (kind == NativeBlockExit::ReadInteger) {
-				table.resolveIntegerIndex(access.key, result);
-			} else table.resolveIndex(key, result);
+				state.remainingCycles -= static_cast<int>(table.resolveIntegerIndex(access.key, result));
+			} else state.remainingCycles -= static_cast<int>(table.resolveIndex(key, result));
 
 			// An inherited result (or a result from the String library) is
 			// not evidence about the receiver's own slot.

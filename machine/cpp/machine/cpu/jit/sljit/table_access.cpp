@@ -171,7 +171,7 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	emitTableHeaderAddress(c);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), key,
 		SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, tableIndexKey));
-	auto* hasIndex = emitReceiverSearch(c, true);
+	auto* hasIndex = emitReceiverSearch(c, true, true);
 
 	// End of the live path: nil is a successful guest result.
 	sljit_set_label(noMeta, sljit_emit_label(c));

@@ -266,6 +266,59 @@ void growingStringHitCharges() {
 	}
 }
 
+void directIndexMemberWork() {
+	for (const auto [op, kind] : forms) for (bool inherited : {false, true}) {
+		Program program(op, false);
+		Machine generated(program.image, false), scalar(program.image, true);
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			auto receiver = cpu.createTable(), meta = cpu.createTable(0, 128), parent = cpu.createTable(2, 1);
+			const auto key = keyFor(cpu, kind);
+			const auto method = valueString(cpu.stringPool().intern("__index"));
+			const u32 home = hashCanonicalTableKey(method) & 127u;
+			receiver.setMetatableAddress(meta.address());
+			parent.set(key, valueBool(false));
+			auto r = cpu.activeThread()->currentFrame->registers;
+			r.set(0, valueTable(receiver.address())); r.set(1, key);
+			for (int i = 0, n = 0; i < 96; ++i) {
+				if (inherited && i == 1) meta.set(method, valueTable(parent.address()));
+				else {
+					Value other;
+					do other = valueInteger(n++); while ((hashCanonicalTableKey(other) & 127u) != home);
+					meta.set(other, valueInteger(i));
+				}
+			}
+		}
+		const int total = 2 + BASE_CYCLES[static_cast<u8>(op)] + (inherited ? 32 + TABLE_INDEX_VISIT_CYCLES : 95);
+		for (int grant : {3, total, total + 1}) {
+			for (auto* m : {&generated, &scalar}) {
+				m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+				m->cpu.activeThread()->currentFrame->registers.set(8, valueInteger(91));
+			}
+			test::runCpuParity(generated.cpu, scalar.cpu, grant);
+			const Value expected = inherited ? valueBool(false) : valueNil();
+			const bool marker = grant > total;
+			require(generated.cpu.instructionBudgetRemaining == grant - total - (marker ? 2 : 0)
+				&& generated.cpu.readFrameRegister(0, 6) == expected
+				&& generated.cpu.readFrameRegister(0, 8) == (marker ? expected : valueInteger(91)),
+				"the direct __index probe is paid once even for a non-String requested key");
+		}
+		if (inherited) {
+			for (auto* m : {&generated, &scalar}) {
+				auto& cpu = m->cpu;
+				const auto receiver = cpu.readFrameRegister(0, 0);
+				auto root = asTable(receiver, cpu.gcHeap());
+				TableRecord(cpu.gcHeap(), root.metatableAddress()).setStringKey(cpu.stringPool().intern("__index"), receiver);
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+			}
+			test::runCpuParity(generated.cpu, scalar.cpu, 3);
+			require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP
+				&& 3 - generated.cpu.instructionBudgetRemaining == 2 + BASE_CYCLES[static_cast<u8>(op)] + 32 * 32 + 31 * TABLE_INDEX_VISIT_CYCLES,
+				"a fault retains every direct method search without repaying speculative native probes");
+		}
+	}
+}
+
 void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
@@ -598,7 +651,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}

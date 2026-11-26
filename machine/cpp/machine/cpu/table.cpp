@@ -692,11 +692,11 @@ void TableRecord::setInteger(int indexValue, const Value& value) {
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 }
 
-Value TableRecord::getStringKey(StringId key) const {
+Value TableRecord::getStringKey(StringId key, u32* linkCycles) const {
 	const u32 count = hashSlots();
 	if (count == 0u) return valueNil();
 	const auto body = hashBody(count);
-	const int nodeIndex = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u));
+	const int nodeIndex = body.findString(key, hashCanonicalTableKey(valueString(key)) & (count - 1u), linkCycles);
 	return nodeIndex < 0 ? valueNil() : body.slots.get(count + static_cast<u32>(nodeIndex));
 }
 
@@ -762,7 +762,7 @@ u32 TableRecord::newIndexMetatable() const {
 
 template <bool Assignment, bool OwnMiss, typename Lookup>
 void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
-	u32 visitLimit) const {
+	u32 visitLimit, u32* linkCycles) const {
 	TableRecord current = *this;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -801,7 +801,7 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 		Value parent;
 		if constexpr (Assignment) {
 			parent = current.getStringKey(m_heap->newIndexKey);
-		} else parent = current.getStringKey(m_heap->indexKey);
+		} else parent = current.getStringKey(m_heap->indexKey, linkCycles);
 		if (!valueIsTable(parent)) {
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
@@ -820,14 +820,17 @@ u32 TableRecord::resolveIndex(const Value& rawKey, TableLookupResult& result, u3
 	if (valueIsString(rawKey)) return resolveStringIndexCached(asStringId(rawKey), -1, result, visitLimit);
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
+	u32 links = 0;
 	resolveIndexChain(-1, result, [key, miss](const TableRecord& table, int&) {
 		return miss ? valueNil() : table.getCanonical(key);
-	}, visitLimit);
-	return 0;
+	}, visitLimit, &links);
+	return links;
 }
 
-void TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
-	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); });
+u32 TableRecord::resolveIntegerIndex(int key, TableLookupResult& result) const {
+	u32 links = 0;
+	resolveIndexChain(-1, result, [key](const TableRecord& table, int&) { return table.getInteger(key); }, TABLE_INDEX_CHAIN_LIMIT, &links);
+	return links;
 }
 
 void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) const {
@@ -836,13 +839,13 @@ void TableRecord::resolveStringIndex(StringId key, TableLookupResult& result) co
 
 u32 TableRecord::resolveMissingStringIndex(StringId key, TableLookupResult& result) const {
 	u32 links = 0;
-	resolveIndexChain<false, true>(-1, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); });
+	resolveIndexChain<false, true>(-1, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, TABLE_INDEX_CHAIN_LIMIT, &links);
 	return links;
 }
 
 u32 TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit) const {
 	u32 links = 0;
-	resolveIndexChain(predictedSlot, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, visitLimit);
+	resolveIndexChain(predictedSlot, result, [&](const TableRecord& table, int& slot) { return table.getStringKeyCached(key, slot, &links); }, visitLimit, &links);
 	return links;
 }
 

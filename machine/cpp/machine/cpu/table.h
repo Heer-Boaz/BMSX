@@ -93,7 +93,7 @@ public:
 	}
 	Value getInteger(int index) const;
 	void setInteger(int index, const Value& value);
-	Value getStringKey(StringId key) const;
+	Value getStringKey(StringId key, u32* linkCycles = nullptr) const;
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
 	Value getStringKeyCached(StringId key, int& predictedSlot, u32* linkCycles = nullptr) const;
@@ -121,7 +121,7 @@ public:
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
 	Value metatableField(StringId key) const;
 	u32 resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
-	void resolveIntegerIndex(int key, TableLookupResult& result) const;
+	u32 resolveIntegerIndex(int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId key, TableLookupResult& result) const;
 	u32 resolveMissingStringIndex(StringId key, TableLookupResult& result) const;
 	u32 resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
@@ -303,7 +303,7 @@ private:
 	Value getHash(const Value& key) const;
 	template <bool Assignment = false, bool OwnMiss = false, typename Lookup>
 	void resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
-		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
+		u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT, u32* linkCycles = nullptr) const;
 
 	ValueSlots<false> values() const { u8* words = m_memory->ramData() + (arrayAddress() & RAM_RECORD_WORD_MASK);
 		return {m_memory, words, words + arrayCapacity() * 4u}; }

@@ -354,18 +354,19 @@ export class TableRecords {
 		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
 		const key = canonicalTableKey(rawKey);
 		const arrayIndex = this.getArrayIndex(key);
-		let current = record;
+		let current = record, links = 0;
 		for (let depth = 0; depth < visitLimit; ++depth) {
 			const own = validKey ? this.getCanonical(current, key, arrayIndex) : valueNil();
 			if (!isNil(own)) {
-				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return 0;
+				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
 			const meta = this.metatableAddress(current);
 			if (meta === 0) {
 				result.value = depth === 0 ? own : valueNil();
-				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return 0;
+				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
-			const next = this.getStringKey(meta, indexKey);
+			links += this.getStringKeyCached(meta, indexKey, -1, result);
+			const next = result.value;
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.value = tag === ValueTag.Nil ? valueNil() : next;
@@ -373,11 +374,11 @@ export class TableRecords {
 				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
 					result.receiver = current; result.status = TableLookupStatus.Invoke;
 				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
-				return 0;
+				return links;
 			}
 			current = valuePayload(next);
 		}
-		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return 0;
+		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return links;
 	}
 	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
 		this.resolveIndex(record, indexKey, valueInteger(key), result);
@@ -396,7 +397,13 @@ export class TableRecords {
 			if (result.slot >= 0) {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
-			const next = this.metafield(current, indexKey);
+			const meta = this.metatableAddress(current);
+			if (meta === 0) {
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
+			}
+			links += this.getStringKeyCached(meta, indexKey, -1, result);
+			const next = result.value;
+			result.slot = -1;
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;

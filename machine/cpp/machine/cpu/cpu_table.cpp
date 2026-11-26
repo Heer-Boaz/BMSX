@@ -62,7 +62,7 @@ bool CPU::loadTableIndex(CallFrame& frame, int destination, Value base, Value ke
 
 bool CPU::loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index) {
 	TableLookupResult result;
-	TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(index, result);
+	instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, tableIndexAddress(base)).resolveIntegerIndex(index, result));
 	return finishTableRead(frame, destination, base, valueInteger(index), result);
 }
 

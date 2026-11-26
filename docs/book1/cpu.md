@@ -1178,8 +1178,8 @@ finding the key adds **one cycle per inspected node after the first**. An
 empty hash adds nothing. Finding the key, including a retained key with a nil
 value, does not exhaust the search. For a match, the first 64 inspected
 nodes are covered; each further node costs one cycle. A match at node 256
-therefore adds 192 cycles. These charges apply to the requested
-key, not to retrieval of the metatable member. For example, a missing field
+therefore adds 192 cycles. The direct search for `__index` is also a String-key search and is
+charged separately under the same rule, whatever the requested key type. For example, a missing field
 whose chain contains 64 nodes adds 63 cycles even on a Table with no metatable.
 
 An indexed read writes its destination and extends `top` only after obtaining a result, including an ordinary missing-key result of nil. A failed lookup leaves that destination unchanged. For `SELF`, the preceding receiver copy into `R(A+1)` remains visible even if the lookup fails.
