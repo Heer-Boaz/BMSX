@@ -54,8 +54,8 @@ test('the String collector source map pins both mirrors and covers the migrated 
 		}
 	}
 	const slices = [
-		['T', [[267, 301], [430, 436], [445, 445], [454, 467]]],
-		['C', [[262, 295], [419, 426], [438, 438], [443, 457]]],
+		['T', [[267, 301], [430, 436], [445, 445], [454, 467], [475, 509]]],
+		['C', [[262, 295], [419, 426], [438, 438], [443, 457], [465, 507]]],
 	] as const;
 	for (const [key, ranges] of slices) {
 		const ref = sources.get(key)!;

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_NEXT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 } from '../../machine/ts/spec/bmsx/heap_service';
@@ -23,7 +23,12 @@ local sweeping<const> = function(metadata)
 	if strings.sweeping(metadata) then return 1 end
 	return 0
 end
-return { sweeping = sweeping }
+local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, next_base, allowance, done)
+	local work, remaining, complete = strings.sweep_buckets(metadata, arena, occupied, cursor, count, next_base, allowance)
+	if remaining ~= allowance - work or complete ~= (done ~= 0) then return -1 end
+	return work
+end
+return { sweeping = sweeping, sweep_buckets = sweep_buckets }
 `;
 const modules = [
 	...['kernel/dlmalloc', STRINGS].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
@@ -31,7 +36,7 @@ const modules = [
 ].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 const BUCKETS = 0x00, CAPACITY = 0x04, EPOCH = 0x0c, SWEEP = 0x10;
 const SWEEP_LINK = 0x30, SWEEP_LEFT = 0x34, REHASH_BASE = 0x38, REHASH_READY = 0x3c;
-const RAM_BUCKET_REHASH = 0x80000000;
+const RAM_BUCKET_REHASH = 0x80000000, SWEEP_REHASH = 0x80000000;
 const names = ['bios-string-collision-a', 'bios-string-collision-b', 'bios-string-collision-c', 'bios-string-collision-d'];
 
 function fixture(optLevel: 0 | 3) {
@@ -41,7 +46,7 @@ function fixture(optLevel: 0 | 3) {
 	const entries = new Map<string, number>();
 	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
 		if (path !== STRINGS && path !== PROBE || exportPathKey.startsWith('internal.')
-			|| path === STRINGS && exportPathKey === 'sweeping') continue;
+			|| path === STRINGS && (exportPathKey === 'sweeping' || exportPathKey === 'sweep_buckets')) continue;
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
 		assert.ok(index >= 0, exportPathKey);
 		entries.set(exportPathKey, index);
@@ -52,6 +57,7 @@ function fixture(optLevel: 0 | 3) {
 	const oracle = createTestSystemCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET;
+	const occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = management + 0x400;
 	assert.equal(cpu.runUntilDepth(0, 1024), RunResult.Halted);
 	assert.equal(oracle.runUntilDepth(0, 1024), RunResult.Halted);
@@ -65,10 +71,10 @@ function fixture(optLevel: 0 | 3) {
 	const actual = memory.ramData().subarray(floor, end);
 	const expected = oracle.memory.ramData().subarray(floor, end);
 
-	function compare() {
-		if (Buffer.compare(actual, expected) === 0) return;
-		const index = actual.findIndex((byte, index) => byte !== expected[index]);
-		assert.equal(actual[index], expected[index], `private arena byte 0x${(floor + index).toString(16)}`);
+	function compare(start = 0, stop = actual.length) {
+		if (Buffer.compare(actual.subarray(start, stop), expected.subarray(start, stop)) === 0) return;
+		const offset = actual.subarray(start, stop).findIndex((byte, index) => byte !== expected[start + index]) + start;
+		assert.equal(actual[offset], expected[offset], `private arena byte 0x${(floor + offset).toString(16)}`);
 	}
 	function word(field: number, value: number) {
 		memory.writeRamRecordWord(metadata + field, value);
@@ -93,7 +99,7 @@ function fixture(optLevel: 0 | 3) {
 		compare();
 	}
 	compare();
-	return { cpu, memory, oracle, ids, metadata, arena, word, compare, begin, grant, finish, invoke };
+	return { cpu, memory, oracle, ids, metadata, arena, occupied, floor, word, compare, begin, grant, finish, invoke };
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -177,5 +183,124 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(metadata + BUCKETS), nextBase);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied - oldBytes, 'the old directory storage is released');
 		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i]);
+	});
+
+	test(`BLua sweeps retained and dead Strings and resumes between unlink and release at O${optLevel}`, () => {
+		const { cpu, memory, oracle, ids, metadata, arena, occupied, floor, compare, begin, grant, finish, invoke } = fixture(optLevel);
+		const pool = oracle.stringPool;
+		const base = memory.readRamRecordWord(metadata + BUCKETS);
+		const count = memory.readRamRecordWord(metadata + CAPACITY);
+		const bucketOf = (record: number) => memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) & (count - 1);
+		const dead = ids.reduce((earlier, id) => bucketOf(id) < bucketOf(earlier) ? id : earlier);
+		assert.ok(bucketOf(dead) < count - 1, 'the dead String does not end the bucket subphase');
+		const deadBytes = BLUA32_STRING_RECORD_HEADER_SIZE + pool.byteLength(dead);
+
+		pool.beginReachabilityEpoch();
+		invoke('begin_reachability_epoch', 0);
+		for (let index = 0; index < count; ++index) {
+			for (let record = memory.readRamRecordWord(base + 4 * index); record !== 0; record = memory.readRamRecordWord(record + BLUA32_STRING_NEXT_OFFSET)) {
+				if (record === dead) continue;
+				pool.markReachable(record);
+				invoke('mark', pool.takeMarkWork(), record);
+			}
+		}
+		pool.beginSweep();
+		invoke('begin_sweep', 0);
+
+		let deadLink = base + 4 * bucketOf(dead);
+		while (memory.readRamRecordWord(deadLink) !== dead) deadLink = memory.readRamRecordWord(deadLink) + BLUA32_STRING_NEXT_OFFSET;
+		for (let quantum = 0; quantum < count * 4 && memory.readRamRecordWord(metadata + SWEEP_LINK) !== deadLink; ++quantum) {
+			const cursor = memory.readRamRecordWord(metadata + SWEEP);
+			invoke('sweep_buckets', pool.sweepStep(1), arena, occupied, cursor, count, 0, 1, 0);
+		}
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP_LINK), deadLink);
+		const charged = memory.readRamRecordWord(occupied);
+		const next = memory.readRamRecordWord(dead + BLUA32_STRING_NEXT_OFFSET);
+		begin('sweep_buckets', arena, occupied, memory.readRamRecordWord(metadata + SWEEP), count, 0, 1, 0);
+		for (let i = 0; i < 256 && memory.readRamRecordWord(deadLink) === dead; ++i) grant(1);
+		assert.equal(memory.readRamRecordWord(deadLink), next);
+		assert.equal(memory.readRamRecordByte(dead), BLUA32_STRING_RECORD_KIND, 'retirement has not cleared the record kind');
+		assert.equal(memory.readRamRecordWord(occupied), charged, 'no logical release has been admitted yet');
+		const partial = captureCpuCheckpoint(cpu);
+		const firstWork = pool.sweepStep(1);
+		assert.equal(finish(), firstWork);
+		compare();
+		restoreCpuCheckpoint(cpu, partial);
+		assert.equal(finish(), firstWork);
+		compare();
+		assert.equal(memory.readRamRecordByte(dead), 0);
+		assert.equal(memory.readRamRecordWord(occupied), charged - deadBytes);
+
+		const cursor = memory.readRamRecordWord(metadata + SWEEP), allowance = 4096;
+		begin('sweep_buckets', arena, occupied, cursor, count, 0, allowance, 1);
+		assert.equal(finish(), pool.sweepStep(allowance));
+		// The reference goes on to end the cycle. The bucket kernel returns
+		// its exact handoff instead, still leaving that one write to its caller.
+		const sweep = metadata + SWEEP - floor;
+		compare(0, sweep);
+		compare(sweep + 4);
+		assert.equal(memory.readRamRecordWord(metadata + SWEEP), cursor);
+		assert.equal(oracle.memory.readRamRecordWord(metadata + SWEEP), 0);
+		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i] === dead ? undefined : ids[i]);
+	});
+
+	test(`BLua sweeps both prepared prefixes without advancing the frozen rehash at O${optLevel}`, () => {
+		const { cpu, memory, oracle, metadata, arena, occupied, floor, word, compare, begin, finish, invoke } = fixture(optLevel);
+		const pool = oracle.stringPool;
+		const count = memory.readRamRecordWord(metadata + CAPACITY);
+		const nextBase = oracle.heapAllocator.allocate(8 * count, true);
+		assert.ok(nextBase > 0);
+		assert.equal(cpu.heapAllocator.allocate(8 * count, true), nextBase);
+		word(CAPACITY, count | RAM_BUCKET_REHASH);
+		word(REHASH_BASE, nextBase);
+		let low = 0, high = 0, ready = 0;
+		for (let quantum = 0; quantum < 4 * count && ready < count - 1 && (low === 0 || high === 0); ++quantum) {
+			invoke('rehash_step', pool['rehashStep'](count, nextBase, 1), arena, count, nextBase, 1);
+			ready = memory.readRamRecordWord(metadata + REHASH_READY);
+			if (ready === 0) continue;
+			low ||= memory.readRamRecordWord(nextBase + 4 * (ready - 1));
+			high ||= memory.readRamRecordWord(nextBase + 4 * (count + ready - 1));
+		}
+		assert.ok(ready > 0 && ready < count && low !== 0 && high !== 0, 'both frozen prefixes contain a String');
+		const retired = [low, high].map(record => {
+			const index = memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) & (2 * count - 1);
+			return { record, bucket: nextBase + 4 * index };
+		});
+		const previousEpoch = (memory.readRamRecordWord(metadata + EPOCH) & 1) ^ 1;
+		for (const mem of [memory, oracle.memory]) {
+			mem.writeRamRecordByte(low + 1, previousEpoch);
+			mem.writeRamRecordByte(high + 1, previousEpoch);
+		}
+		const bytes = 2 * BLUA32_STRING_RECORD_HEADER_SIZE + pool.byteLength(low) + pool.byteLength(high);
+		const charged = memory.readRamRecordWord(occupied);
+		pool.beginSweep();
+		invoke('begin_sweep', 0);
+
+		for (let quantum = 0; quantum < 6 * count; ++quantum) {
+			const cursor = memory.readRamRecordWord(metadata + SWEEP);
+			const work = pool.sweepStep(1);
+			const complete = oracle.memory.readRamRecordWord(metadata + SWEEP) === SWEEP_REHASH;
+			if (complete) {
+				begin('sweep_buckets', arena, occupied, cursor, count, nextBase, 1, 1);
+				assert.equal(finish(), work);
+				const sweep = metadata + SWEEP - floor;
+				compare(0, sweep);
+				compare(sweep + 4);
+				assert.equal(memory.readRamRecordWord(metadata + SWEEP), cursor);
+				break;
+			}
+			invoke('sweep_buckets', work, arena, occupied, cursor, count, nextBase, 1, 0);
+		}
+		assert.equal(oracle.memory.readRamRecordWord(metadata + SWEEP), SWEEP_REHASH);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_BASE), nextBase);
+		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), ready);
+		// Coalescing may reuse freed payload for free-list links. Check the
+		// directories, not the underlying byte formerly used for record kind.
+		for (const { record, bucket } of retired) {
+			for (let id = memory.readRamRecordWord(bucket); id !== 0; id = memory.readRamRecordWord(id + BLUA32_STRING_NEXT_OFFSET)) {
+				assert.notEqual(id, record);
+			}
+		}
+		assert.equal(memory.readRamRecordWord(occupied), charged - bytes);
 	});
 }

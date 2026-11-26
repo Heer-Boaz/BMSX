@@ -12,7 +12,10 @@ local ram_size<const> = 0x00400000 -- S:7
 local ram_byte_mask<const> = ram_size - 1 -- T:27 S:7
 local ram_word_mask<const> = ram_size - 4 -- S:9
 local string_gc_epoch_mask<const> = 1 -- T:17 H:18
+local string_header_bytes<const> = 16 -- I:56
+local string_record_kind<const> = 5 -- I:57
 local string_hash_offset<const> = 4 -- I:59
+local string_length_offset<const> = 8 -- I:60
 local string_next_offset<const> = 12 -- I:61
 local max_ram_records<const> = ram_size >> 4 -- T:28 C:28 I:56; divide by 16-byte String header
 local ram_bucket_extent_mask<const> = 2 * max_ram_records - 1 -- T:29 C:30
@@ -120,6 +123,72 @@ local rehash_step<const> = function(metadata, arena, old_count, next_base, allow
 	return work -- T:300 C:294
 end
 
+-- The contiguous bucket-walk branch of sweepStep. Its caller still owns
+-- switching to rehash/shrink or ending the cycle when this scan is complete.
+local sweep_buckets<const> = function(metadata, arena, occupied, cursor, count, next_base, allowance) -- T:468-474 C:459-464
+	local work = 0 -- T:472 C:463
+	local state<const>: *string_metadata = ram_base + metadata -- T:475-478 C:465-468
+	local charged<const>: *u32 = ram_base + occupied -- T:495 C:492; address of the logical word in LuaHeap.releaseRecord
+	local base<const>, epoch<const> = state.buckets, state.epoch & string_gc_epoch_mask -- T:475 C:465
+	local ready<const> = state.rehash_ready -- T:476 C:466
+	local low_end<const> = count + ready -- T:476 C:466
+	local finish<const> = low_end + ready -- T:476 C:466
+	local index, used = cursor - 1, state.used -- T:477 C:467
+	local link, remaining = state.sweep_link, state.sweep_left -- T:478 C:468
+	-- The next-directory prefixes are stable until the scan finishes.
+	while index < finish and allowance ~= 0 do -- T:481 C:471
+		local bucket<const> = index < count and base + 4 * index -- T:482 C:472
+			or (index < low_end and next_base + 4 * (index - count) or next_base + 4 * (index - ready)) -- T:483 C:473
+		if link == 0 then -- T:484 C:474
+			link = bucket -- T:484 C:475
+			work = work + 1 -- T:484 C:476
+			allowance = allowance - 1 -- T:484 C:477
+		end
+		if link == bucket then -- T:486 C:480
+			remaining = (used ~ 0x80000000) < (max_ram_records ~ 0x80000000) and used or max_ram_records -- T:486 C:480; unsigned min
+		end
+		local link_word: *u32 = ram_base + (link & ram_word_mask) -- T:487 C:481
+		local record = *link_word -- T:487 C:481
+		while record ~= 0 and remaining ~= 0 and allowance ~= 0 do -- T:488 C:482
+			local kind<const>: *u8 = ram_base + (record & ram_byte_mask) -- T:489 C:483
+			if *kind ~= string_record_kind then break end -- T:489 C:483
+			local next_word<const>: *u32 = ram_base + ((record + string_next_offset) & ram_word_mask) -- T:490 C:484
+			local next_record<const> = *next_word -- T:490 C:484
+			remaining = remaining - 1 -- T:491 C:485
+			allowance = allowance - 1 -- T:491 C:486
+			work = work + 1 -- T:491 C:487
+			local mark_byte<const>: *u8 = ram_base + ((record + 1) & ram_byte_mask) -- T:492 C:488
+			if (*mark_byte & string_gc_epoch_mask) ~= epoch then -- T:492 C:488
+				*link_word = next_record -- T:493 C:489
+				*kind = 0 -- T:494 C:491
+				-- Every bucket in this scan is from the RAM directory.
+				local length_word<const>: *u32 = ram_base + ((record + string_length_offset) & ram_word_mask) -- T:80-87,495 C:54-62,492
+				local bytes<const> = string_header_bytes + (*length_word & ram_byte_mask) -- T:85-87,495 C:60-62,492
+				allocator.bmsx_dlmalloc_free(arena, record - ram_base) -- T:495 C:492 A:61 E:59; TS LuaHeap 270-271 / C++ LuaHeap 277-278
+				*charged = *charged - bytes -- T:495 C:492; TS LuaHeap 272-273 / C++ LuaHeap 279-280
+				used = used - 1 -- T:496 C:493
+			else -- T:497 C:494
+				link = record + string_next_offset -- T:497 C:494
+				link_word = ram_base + (link & ram_word_mask) -- T:493,497,501 C:489,494,498
+			end
+			record = next_record -- T:498 C:495
+		end
+		if record ~= 0 and remaining ~= 0 and allowance == 0 then break end -- T:500 C:497
+		if record ~= 0 then *link_word = 0 end -- T:501 C:498
+		link = 0 -- T:502 C:499
+		remaining = 0 -- T:502 C:499
+		index = index + 1 -- T:502 C:500
+	end
+	state.used = used -- T:504 C:502
+	state.sweep_link = link -- T:505 C:503
+	state.sweep_left = remaining -- T:505 C:503
+	if index < finish then -- T:506 C:504
+		state.sweep = index + 1 -- T:507 C:505
+		return work, allowance, false -- T:508 C:506; this quantum has not reached the handoff
+	end
+	return work, allowance, true -- T:510-514 C:508-512; preserve locals needed by the handoff
+end
+
 return {
 	internal = { is_ram_string_id = is_ram_string_id },
 	mark = mark,
@@ -128,4 +197,5 @@ return {
 	sweeping = sweeping,
 	estimate_sweep_work = estimate_sweep_work,
 	rehash_step = rehash_step,
+	sweep_buckets = sweep_buckets,
 }
