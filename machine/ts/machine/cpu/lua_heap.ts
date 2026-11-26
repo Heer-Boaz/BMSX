@@ -53,8 +53,10 @@ export class LuaHeap {
 		const debt = nextBytes - target;
 		const allowance = pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
 		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
-		if (pressure) this.creditStep();
-		else if (gc.active()) {
+		if (!work || !gc.active()) return true;
+		if (pressure) {
+			this.setCollectionTarget(this.usedBytes() + Math.trunc(GC_ASSIST_BYTES * Math.min(work, GC_STEP_WORDS) / GC_STEP_WORDS));
+		} else {
 			// A work unit covers four bytes at a two-times pace. Preserve
 			// unpaid debt and count the pending request in the new frontier.
 			this.setCollectionTarget(Math.min(reserve, Math.max(0, this.usedBytes() + byteCount + 2 * work - debt)));
@@ -256,7 +258,7 @@ export class LuaHeap {
 
 	public stepRuntime(): boolean {
 		this.cpu.chargeCollectionWork(this.cpu.gc.step());
-		this.creditStep();
+		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + GC_ASSIST_BYTES);
 		return !this.cpu.gc.active();
 	}
 
@@ -285,9 +287,6 @@ export class LuaHeap {
 		if (oldBytes !== newBytes) this.accountAllocation(newBytes - oldBytes);
 	}
 
-	private creditStep(): void {
-		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + GC_ASSIST_BYTES);
-	}
 	public finishCollection(): void {
 		const liveBytes = this.usedBytes();
 		const capacity = this.capacity();

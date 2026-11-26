@@ -266,13 +266,13 @@ void allocationRoots(bool closure) {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
-		TableRecord table = m->cpu.createTable(0, 1); auto& strings = m->cpu.stringPool();
+		TableRecord table = m->cpu.createTable(1024, 1); auto& strings = m->cpu.stringPool();
 		table.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(9, valueTable(table.address())); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
 		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
 		m->cpu.luaHeap().setCollectionTarget(heap.first);
 	}
-	require(native.cpu.runUntilDepth(0, 6) == scalar.cpu.runUntilDepth(0, 6), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
+	require(native.cpu.runUntilDepth(0, 516) == scalar.cpu.runUntilDepth(0, 516), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
 		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; TableRecord retained = asTable(r.get(7), m->cpu.gcHeap());

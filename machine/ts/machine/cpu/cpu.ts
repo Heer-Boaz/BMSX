@@ -4618,6 +4618,10 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number): number {
+		if (this.runKind !== CpuRunKind.Idle) {
+			if (this.instructionBudgetRemaining < GC_WORK_WORD_CYCLES) return 0;
+			words = Math.min(words, Math.trunc(this.instructionBudgetRemaining / GC_WORK_WORD_CYCLES));
+		}
 		const work = this.gc.step(root0, root1, root2, growingThread, false, words);
 		this.chargeCollectionWork(work);
 		return work;

@@ -66,15 +66,16 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 		const size_t limit = capacity();
 		const size_t reserveEdge = limit - (limit >> COLLECTION_RESERVE_SHIFT);
 		if (nextBytes > reserveEdge) {
-			m_cpu.assistAllocation(root0, root1, root2, growingThread, GC_STEP_WORDS);
-			creditStep();
+			const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, GC_STEP_WORDS);
+			if (work && m_cpu.collecting())
+				setCollectionTarget(usedBytes() + GC_ASSIST_BYTES * std::min(work, GC_STEP_WORDS) / GC_STEP_WORDS);
 		} else {
 			// Lua's allocation debt, credited in actual collector work.
 			// Two work bytes per allocation byte, four work bytes per word.
 			const size_t debt = nextBytes - collectionTarget();
 			const size_t words = std::min(GC_STEP_WORDS, std::max(GC_ASSIST_MIN_WORDS, (debt + 1u) >> 1u));
 			const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words);
-			if (m_cpu.collecting()) {
+			if (work && m_cpu.collecting()) {
 				const size_t credited = usedBytes() + byteCount + 2u * work;
 				setCollectionTarget(static_cast<u32>(std::min(reserveEdge, credited > debt ? credited - debt : 0u)));
 			}
@@ -264,7 +265,7 @@ void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingT
 
 bool LuaHeap::stepRuntime() {
 	m_cpu.chargeCollectionWork(m_cpu.stepHeap(valueNil(), valueNil(), valueNil()));
-	creditStep();
+	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + GC_ASSIST_BYTES));
 	return !m_cpu.collecting();
 }
 
@@ -294,10 +295,6 @@ void LuaHeap::resizeRecordCharge(u32 oldBytes, u32 newBytes) {
 		auto& memory = m_cpu.memory();
 		memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) - oldBytes + newBytes);
 	}
-}
-
-void LuaHeap::creditStep() {
-	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + GC_ASSIST_BYTES));
 }
 
 size_t LuaHeap::capacity() const {

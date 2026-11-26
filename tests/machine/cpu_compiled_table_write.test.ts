@@ -302,12 +302,12 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const retained = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		const retained = cpu.createTable(1024, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.createTable()); r.setTable(9, retained); frame.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
-	runCpuParity(js, ref, 6);
+	runCpuParity(js, ref, 516);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);

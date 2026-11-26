@@ -481,14 +481,17 @@ void concatRecoveryChargesIssuingInstruction() {
 }
 
 void allocationCollectionAndFailure() {
-	for (bool wide : {false, true}) {
+	for (bool wide : {false, true}) for (const int grant : {1, 24 + 192}) {
 		Machine generated(image(OpCode::NEWT, wide)), scalar(image(OpCode::NEWT, wide), true);
 		for (auto* m : {&generated, &scalar}) {
 			m->cpu.luaHeap().setCollectionTarget(0);
 		}
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "NEWT exhausts the short grant");
+		require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "NEWT exhausts the short grant");
 		const auto work = generated.memory.readRamRecordWord(generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID);
-		require(work > 0 && generated.cpu.instructionBudgetRemaining == 1 - 24 - 3 * static_cast<int>(work) && generated.cpu.collecting(),
+		require(grant == 1 ? work == 0u : work >= 64u && work < 64u + THREAD_HEAP_BYTES / 4u,
+			"ordinary allocation requests only funded work up to an indivisible record header");
+		require(generated.cpu.instructionBudgetRemaining == grant - 24 - 3 * static_cast<int>(work)
+			&& generated.cpu.collecting() == (grant > 24),
 			"NEWT pays its base charge and actual allocation assist");
 		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 52 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request52 is admitted after collection");

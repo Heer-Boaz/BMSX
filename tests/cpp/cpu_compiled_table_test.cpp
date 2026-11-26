@@ -1011,7 +1011,7 @@ void stringStoreGrowthRoots(bool generic, bool full) {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto& r = frame.registers;
-		auto& strings = m->cpu.stringPool(); auto retained = m->cpu.createTable(0, 1);
+		auto& strings = m->cpu.stringPool(); auto retained = m->cpu.createTable(1024, 1);
 		retained.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		auto receiver = m->cpu.createTable(0, full ? 1 : 0);
 		if (full) receiver.setStringKey(strings.intern("resident"), valueInteger(71));
@@ -1026,7 +1026,7 @@ void stringStoreGrowthRoots(bool generic, bool full) {
 			&& !machine.cpu.collecting(),
 			"an exhausted grant stops before the store and its possible collection");
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 1); requireParity(native, scalar);
+	test::runCpuParity(native.cpu, scalar.cpu, 516); requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
 		auto& strings = m->cpu.stringPool();
 		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto retained = asTable(r.get(7), m->cpu.gcHeap());
@@ -2588,11 +2588,12 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 			registers.set(2, value);
 			registers.set(4, valueInteger(-4));
 		}
-		const int grant = throughStore + (suffix ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)] : 0);
+		const int assistCycles = table == pressure ? GC_WORK_WORD_CYCLES : 0;
+		const int grant = throughStore + assistCycles + (suffix ? BASE_CYCLES[static_cast<u8>(OpCode::MOV)] : 0);
 		require(test::runCpuParity(cpu, scalar.cpu, grant) == RunResult::Yielded, "dynamic store consumes its grant");
 		const int paid = table == pressure ? static_cast<int>(cpu.memory().readRamRecordWord(
 			cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID)) : 0;
-		require((table != pressure || paid > 0) && cpu.instructionBudgetRemaining == -3 * paid
+		require((table != pressure || paid > 0) && cpu.instructionBudgetRemaining == assistCycles - GC_WORK_WORD_CYCLES * paid
 			&& cpu.readFramePc(0) == pc + (suffix ? 4u : 3u) * INSTRUCTION_BYTES
 			&& cpu.readCurrentInstructionPc() == pc + (suffix ? 3u : 1u) * INSTRUCTION_BYTES
 			&& cpu.lastPc == pc + (suffix ? 3u : 2u) * INSTRUCTION_BYTES

@@ -2489,6 +2489,10 @@ void CPU::chargeCollectionWork(size_t work) {
 }
 
 size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words) {
+	if (m_runKind != CpuRunKind::Idle) {
+		if (instructionBudgetRemaining < GC_WORK_WORD_CYCLES) return 0;
+		words = std::min(words, static_cast<size_t>(instructionBudgetRemaining / GC_WORK_WORD_CYCLES));
+	}
 	const size_t work = m_heap.step(root0, root1, root2, growingThread, false, words);
 	chargeCollectionWork(work);
 	return work;

@@ -141,14 +141,14 @@ for (const closure of [false, true]) test(`compiled allocation publishes moved r
 		closure ? CompiledBlockExit.CreateClosure : CompiledBlockExit.Concat);
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(0, 1);
+		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(1024, 1);
 		cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(9, table); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
 		root.top = 0;
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		cpu.luaHeap.setCollectionTarget(trackedBytes);
 	}
-	assert.equal(js.runUntilDepth(0, 6), ref.runUntilDepth(0, 6)); assertParity(js, ref);
+	assert.equal(js.runUntilDepth(0, 516), ref.runUntilDepth(0, 516)); assertParity(js, ref);
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);
 		assert.ok(cpu.gc.active(), 'allocation started the configured collection assist');

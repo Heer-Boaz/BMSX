@@ -1738,7 +1738,7 @@ void crossPageCalls(bool open, u32 recordOffset) {
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress + 2u * INSTRUCTION_BYTES);
 		const auto heap = std::pair{machine->cpu.luaHeap().usedBytes(), machine->cpu.luaHeap().collectionTarget()};
 		machine->cpu.luaHeap().setCollectionTarget(heap.first);
-		require(machine->cpu.runUntilDepth(0, callPrefix) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
+		require(machine->cpu.runUntilDepth(0, callPrefix + 6) == RunResult::Yielded && machine->cpu.activeThread()->frameDepth() == 2,
 			"the allocation assist completes CALL but not a callee instruction in its exhausted grant");
 		require(machine->cpu.runUntilDepth(1, 50) == RunResult::Halted && machine->cpu.activeThread()->frameDepth() == 1
 			&& machine->cpu.activeThread()->stackCapacity > capacity && machine->cpu.readFrameRegister(0, 4) == valueInteger(7),

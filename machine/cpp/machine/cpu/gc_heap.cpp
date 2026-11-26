@@ -1062,7 +1062,7 @@ LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Valu
 	if (first) ++m_cpu.m_diagnosticGcProfile.fullCollections;
 #endif
 	// Recovery finishes just this epoch, without allocating to shrink live stacks.
-	do { m_cpu.assistAllocation(root0, root1, root2, growingThread, GC_STEP_WORDS); } while (active());
+	do { m_cpu.chargeCollectionWork(step(root0, root1, root2, growingThread, false, GC_STEP_WORDS)); } while (active());
 	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
 }
 

@@ -1441,10 +1441,12 @@ amount above the threshold is allocation debt. Each ordinary assist does a
 bounded amount of collector work, then credits that work against the debt.
 Credit beyond the outstanding debt permits more allocation before the next
 assist, up to the start of the final eighth of capacity. Unpaid debt makes
-subsequent allocations assist again. Within that final eighth, an assist runs
-a full work quantum and sets the threshold to the remaining occupied budget
-plus 256 bytes before admitting the pending request. An explicit step also
-sets that threshold while the cycle remains active. When the cycle completes,
+subsequent allocations assist again. Within that final eighth, an assist requests
+a full work quantum. While the cycle remains active, a full quantum earns
+256 bytes above the remaining occupied budget; a partial quantum earns the
+corresponding fraction, rounded down. If no work is done, the threshold stays unchanged.
+An explicit step sets the threshold to the remaining occupied budget plus
+256 bytes while the cycle remains active. When the cycle completes,
 let `L` be the remaining occupied budget and `K` the total language-allocation
 capacity. The next threshold is:
 
@@ -1510,8 +1512,11 @@ accepts a following interrupt or device deadline.
 
 When an instruction assists incremental collection to admit a logical charge
 or reserve physical storage, it pays **3 cycles per collector work word**
-actually performed, not per word requested. The charge stays with the
-instruction even if the reservation later fails or parks. A retry does not
+actually performed, not per word requested. Logical and physical
+assists each request at most one word per three remaining grant cycles. Fewer
+than three cycles defer the assist, not the reservation. An indivisible
+scan such as a record header may exceed the requested work. The charge stays
+with the instruction even if the reservation later fails or parks. A retry does not
 repay completed work. An explicit step or full collection also pays 3 cycles per work word,
 including work to finish an already active cycle. This also applies when
 program replacement requests a collection to free its static region.

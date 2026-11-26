@@ -14,7 +14,7 @@ import { THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/c
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -428,7 +428,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
 		const trackedBytes = cpu.luaHeap.usedBytes();
 		cpu.luaHeap.setCollectionTarget(trackedBytes);
-		cpu.runUntilDepth(0, 2);
+		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + 6);
 		assert.ok(cpu.gc.active(), 'stack growth triggers an allocation assist');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);

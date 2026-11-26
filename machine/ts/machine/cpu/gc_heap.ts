@@ -961,7 +961,7 @@ export class GcHeap {
 		const continueCurrent = first && this.active();
 		if (first && this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		// Recovery finishes just this epoch, without allocating to shrink live stacks.
-		do { this.cpu.assistAllocation(t0, t1, t2, growingThread, GC_STEP_WORDS); } while (this.active());
+		do { this.cpu.chargeCollectionWork(this.step(t0, t1, t2, growingThread, false, GC_STEP_WORDS)); } while (this.active());
 		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
 	}
 
