@@ -180,6 +180,34 @@ int main(int argc, char** argv) {
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'q': {
+					u32 stop, limit;
+					trace >> stop >> limit;
+					const auto base = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+					const int frame = cpu.getFrameDepth() - 1;
+					const auto issue = memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::InstructionPc));
+					const auto before = scheduler.nowCycles();
+					u32 visited = 0;
+					bool reached = false;
+					for (u32 grant = 0; grant < limit; ++grant) {
+						if (!cpu.heapServiceActive() || cpu.allocationParked() || cpu.readFramePc(frame) != issue)
+							throw std::runtime_error("Direct NEWT lost its issuing continuation");
+						visited |= 1u << static_cast<u32>(cpu.gcHeap().serviceStage());
+						const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, 1);
+						const auto stage = memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::Stage));
+						if (stage != stop) continue;
+						if ((stop == static_cast<u32>(HeapServiceNewtStage::Idle) && cpu.readLuaFaultReasonWord() == 0u)
+							|| scheduler.nowCycles() <= before)
+							throw std::runtime_error("Direct NEWT did not retire at its expected boundary");
+						std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before << ' '
+							<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes()
+							<< ' ' << cpu.luaHeap().usedBytes() << ' ' << visited << '\n';
+						reached = true;
+						break;
+					}
+					if (!reached) throw std::runtime_error("Direct NEWT did not reach the fixture stage");
+					break;
+				}
 				case 'K': {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					cpu.prepareSystemNativeCode();

@@ -2522,23 +2522,26 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
+				const u32 newTable = m_heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+				const bool directRecovery = gcStage != HeapServiceGcStage::Idle
+					&& m_memory.readRamRecordWord(newTable + static_cast<u32>(HeapServiceNewtField::Stage)) == static_cast<u32>(HeapServiceNewtStage::DirectRecovery);
 				switch (gcStage) {
 					case HeapServiceGcStage::FullTrace:
 					case HeapServiceGcStage::MaintenanceTrace: {
 						const auto work = m_heap.finishTraceQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullTrace) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullTrace || directRecovery) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRemark:
 					case HeapServiceGcStage::MaintenanceRemark: {
 						const auto work = m_heap.finishRemarkQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRemark) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullRemark || directRecovery) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRootHead:
 					case HeapServiceGcStage::MaintenanceRootHead: {
 						const auto work = m_heap.finishRootHead(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRootHead) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullRootHead || directRecovery) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRootBanks:
@@ -2562,13 +2565,14 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					case HeapServiceGcStage::PressureStringSweep:
 					case HeapServiceGcStage::AllocationRecoveryStringSweep:
 						m_heap.finishStringSweep(gcStage);
-						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();
+						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep && !directRecovery) finishAllocationRecovery();
 						break;
 					case HeapServiceGcStage::Idle:
 						finishExecutionFloor();
 						finishNewTableReservation();
 						break;
 				}
+				if (directRecovery && !heapServiceActive()) finishDirectNewTableRecovery();
 			} catch (const LuaOutOfMemorySignal&) {
 				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
 				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);

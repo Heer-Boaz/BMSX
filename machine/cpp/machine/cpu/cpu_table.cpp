@@ -165,24 +165,22 @@ void CPU::finishNewTableReservation() {
 		frame.writeControl(FrameField::Pc, nextPc);
 		return;
 	}
+	if (stage == HeapServiceNewtStage::Direct) {
+		// Every partial reservation was released. Publish the original
+		// one-epoch recovery policy before the next BIOS instruction.
+		const u32 recoveryAddress = base + static_cast<u32>(HeapServiceNewtField::DirectRecovery);
+		const auto recovery = m_heap.beginAllocationRecovery(static_cast<LuaAllocationRecovery>(m_memory.readRamRecordWord(recoveryAddress)));
+		m_memory.writeRamRecordWord(recoveryAddress, static_cast<u32>(recovery));
+		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceNewtStage::DirectRecovery));
+		advanceDirectNewTableRecovery();
+		return;
+	}
 	const PendingTableCreation create{
 		destination,
 		static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::ArraySize))),
 		static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::HashSize))),
 	};
 	switch (stage) {
-		case HeapServiceNewtStage::Direct: {
-			// The firmware has released every partial reservation. Only now
-			// may native collection run, following the original direct retry.
-			const u32 recoveryAddress = base + static_cast<u32>(HeapServiceNewtField::DirectRecovery);
-			const auto recovery = m_heap.recoverAllocation(static_cast<LuaAllocationRecovery>(m_memory.readRamRecordWord(recoveryAddress)));
-			m_memory.writeRamRecordWord(recoveryAddress, static_cast<u32>(recovery));
-			m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceNewtStage::Direct));
-			const size_t hashCapacity = TableRecord::hashCapacity(create.hashSize);
-			startNewTableReservation(static_cast<u32>(create.arraySize), static_cast<u32>(hashCapacity), 5u * create.arraySize, TableRecord::hashStorageBytes(hashCapacity),
-				TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(create.arraySize, hashCapacity));
-			return;
-		}
 		case HeapServiceNewtStage::Scheduled:
 			frame.writeControl(FrameField::Pc, nextPc);
 			parkAllocation(frame, create);
@@ -193,9 +191,37 @@ void CPU::finishNewTableReservation() {
 		case HeapServiceNewtStage::RetryFresh:
 			throw LuaOutOfMemorySignal{};
 		case HeapServiceNewtStage::Idle:
+		case HeapServiceNewtStage::Direct:
+		case HeapServiceNewtStage::DirectRecovery:
 			BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();
+}
+
+void CPU::advanceDirectNewTableRecovery() {
+	const auto& services = m_systemImage->heapServiceFunctions;
+	do {
+		const size_t work = m_heap.finalMarkPending()
+			? m_heap.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage::MaintenanceTrace, &services)
+			: m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS, HeapServiceGcStage::AllocationRecoveryStringSweep, &services);
+		chargeCollectionWork(work);
+		// A quantum may spend its entire allowance draining native work
+		// already done before this request. It did not admit firmware.
+	} while (!heapServiceActive() && m_heap.active());
+}
+
+void CPU::finishDirectNewTableRecovery() {
+	if (m_heap.active()) {
+		advanceDirectNewTableRecovery();
+		return;
+	}
+	const u32 base = m_heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+	const u32 arraySize = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::ArraySize));
+	const int hashSize = static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::HashSize)));
+	const u32 hashCapacity = static_cast<u32>(TableRecord::hashCapacity(hashSize));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::Stage), static_cast<u32>(HeapServiceNewtStage::Direct));
+	startNewTableReservation(arraySize, hashCapacity, 5u * arraySize, TableRecord::hashStorageBytes(hashCapacity),
+		TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity));
 }
 
 void CPU::markPendingAllocationRoots(GcHeap& heap) {

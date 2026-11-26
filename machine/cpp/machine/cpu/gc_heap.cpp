@@ -1202,16 +1202,21 @@ void GcHeap::finishStrings() {
 	}
 }
 
-LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Value root0, Value root1, Value root2, u32 growingThread) {
+LuaAllocationRecovery GcHeap::beginAllocationRecovery(LuaAllocationRecovery next) {
 	if (next == LuaAllocationRecovery::Exhausted) throw LuaOutOfMemorySignal{};
 	const bool first = next == LuaAllocationRecovery::CurrentOrFresh;
 	const bool continueCurrent = first && active();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	if (first) ++m_cpu.m_diagnosticGcProfile.fullCollections;
 #endif
+	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
+}
+
+LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Value root0, Value root1, Value root2, u32 growingThread) {
+	const auto afterEpoch = beginAllocationRecovery(next);
 	// Recovery finishes just this epoch, without allocating to shrink live stacks.
 	do { m_cpu.chargeCollectionWork(step(root0, root1, root2, growingThread, false, GC_STEP_WORDS)); } while (active());
-	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
+	return afterEpoch;
 }
 
 void GcHeap::requestFullCollection() {

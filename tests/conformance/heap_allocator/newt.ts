@@ -44,8 +44,9 @@ try {
 		const romPath = join(directory, `system-O${optLevel}.rom`);
 		writeFileSync(romPath, system.romBytes);
 		let newtPc = 0;
-		for (const scenario of ['direct', 'scheduled', 'oom', 'recovered'] as const) {
-			const scheduled = scenario !== 'direct';
+		for (const scenario of ['direct', 'scheduled', 'oom', 'recovered', 'direct-oom'] as const) {
+			const directOom = scenario === 'direct-oom';
+			const scheduled = scenario !== 'direct' && !directOom;
 			const configuration = {
 				systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
 			};
@@ -59,6 +60,7 @@ try {
 			const stageAddress = arena.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
 			const stage = () => memory.readRamRecordWord(stageAddress);
 			const trace: string[] = [], expected: string[] = [];
+			let directRecoveryOutput = -1;
 			const observe = (command: string, value: string | number) => {
 				trace.push(command);
 				expected.push(String(value));
@@ -78,7 +80,7 @@ try {
 			const label = `O${optLevel}-${scenario}`;
 			const checkpointPath = join(directory, `newt-${label}.state`);
 			const nativeCheckpointPath = join(directory, `newt-${label}-native.state`);
-			if (scenario === 'oom' || scenario === 'recovered') {
+			if (scenario === 'oom' || scenario === 'recovered' || directOom) {
 				for (let i = 0; i < 256 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i) step(1);
 				assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), newtPc);
 				const allocate = (bytes: number) => {
@@ -131,134 +133,191 @@ try {
 				const refusedArena = hashBytes(memory.ramData(), state, 0x200);
 				applyRuntimeSaveState(runtime, referenceStart);
 				const frames = runtime.frameScheduler;
-				assert.ok(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame));
-				const edge = scheduler.nowCycles;
-				applyRuntimeSaveState(runtime, referenceStart);
-				const wait = edge - scheduler.nowCycles - 96;
-				assert.ok(wait > 0);
-				advanceRuntimeTime(runtime, wait);
-				observe(`v ${wait}`, scheduler.nowCycles);
+				let edge = scheduler.nowCycles;
+				if (scheduled) {
+					assert.ok(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame));
+					edge = scheduler.nowCycles;
+					applyRuntimeSaveState(runtime, referenceStart);
+					const wait = edge - scheduler.nowCycles - 96;
+					assert.ok(wait > 0);
+					advanceRuntimeTime(runtime, wait);
+					observe(`v ${wait}`, scheduler.nowCycles);
+				}
 				step(1);
-				assert.equal(stage(), HeapServiceNewtStage.Scheduled);
+				const reservation = scheduled ? HeapServiceNewtStage.Scheduled : HeapServiceNewtStage.Direct;
+				assert.equal(stage(), reservation);
 				const partial = physical + physicalRecord + physicalArray;
 				for (let i = 0; i < 2048 && arena.occupiedBytes() < partial; ++i) step(1);
 				assert.ok(cpu.heapServiceActive());
 				assert.equal(arena.occupiedBytes(), partial, 'both the record and array block are reserved before the hash refusal');
 				assert.equal(budget.usedBytes(), logical);
-				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) step(1);
-				assert.ok(cpu.allocationParked());
+				for (let i = 0; i < 4096 && stage() === reservation; ++i) step(1);
+				assert.equal(cpu.allocationParked(), scheduled);
 				assert.equal(arena.occupiedBytes(), physical, 'refused hash returns both partial reservations');
 				assert.equal(budget.usedBytes(), logical);
 				observe(`H ${state} ${state + 0x200}`, refusedArena);
 				assert.equal(hashBytes(memory.ramData(), state, 0x200), refusedArena, 'allocation bookkeeping equals the WASM reference');
 				assert.equal(cpu.readFramePc(caller), newtPc);
-				const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
-				const schedulerStep = (step: 'a' | 'd') => {
-					const admitted = cpu.gc.serviceStage();
-					const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark
-						|| admitted === HeapServiceGcStage.MaintenanceRootHead || admitted === HeapServiceGcStage.MaintenanceRootBanks;
-					const op = step === 'd' && mark ? 'k' : step;
-					const before = frames.lastTickSequence;
-					const cycle = scheduler.nowCycles;
-					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
-					if (op === 'k') {
-						// The mark and root visitors keep the native mirrors'
-						// different admission, color and fixed-root paths.
-						// Keep precise device-edge and subsequent timing checks.
-						for (let grant = 1; cpu.gc.serviceStage() === admitted && grant < 65536; ++grant)
-							frames.stepInstruction(1);
-						assert.notEqual(cpu.gc.serviceStage(), admitted);
-						assert.ok(scheduler.nowCycles > cycle);
-					}
-					observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
-					return result;
-				};
-				for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
-					const result = schedulerStep('a');
-					assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
-					assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
-				}
-				// The interrupted-epoch fixture already admitted native
-				// roots before parking, unlike the fresh OOM epoch.
-				assert.equal(cpu.gc.serviceStage(), discarded ? HeapServiceGcStage.MaintenanceRootBanks : HeapServiceGcStage.MaintenanceRootHead);
-				assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
-				const recoverySlice = () => {
-					const before = scheduler.nowCycles;
-					const result = schedulerStep('d');
-					if (result === InstructionStepResult.Blocked) {
+				if (directOom) {
+					assert.ok(cpu.heapServiceActive());
+					assert.equal(stage(), HeapServiceNewtStage.DirectRecovery);
+					assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceRootHead);
+					assert.equal(cpu.captureRuntimeState().pendingAllocation, null);
+					assert.equal(cpu.readLuaFaultReasonWord(), 0);
+					const guard = new Runtime(configuration, runtimeInput);
+					guard.boot();
+					applyRuntimeSaveState(guard, captureRuntimeSaveState(runtime));
+					guard.machine.cpu.requestNonMaskableInterrupt();
+					assert.equal(guard.machine.cpu.enterPendingInterrupt(), false, 'the Direct continuation alone excludes NMI');
+					trace.push('S', 'N'); observe('I', 0); trace.push('U');
+					const runDirectTo = (stop: HeapServiceNewtStage) => {
+						const before = scheduler.nowCycles;
+						let visited = 0;
+						for (let grant = 0; grant < 65536; ++grant) {
+							assert.equal(cpu.readFramePc(caller), newtPc);
+							assert.equal(cpu.allocationParked(), false);
+							assert.ok(cpu.heapServiceActive());
+							visited |= 1 << cpu.gc.serviceStage();
+							const result = runtime.cpuExecution.runSuspendedUntilDepth(0, 1);
+							if (stage() !== stop) continue;
+							const elapsed = scheduler.nowCycles - before;
+							assert.ok(elapsed > 0);
+							observe(`q ${stop} 65536`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()} ${visited}`);
+							return visited;
+						}
+						assert.fail(`Direct NEWT did not reach stage ${stop}`);
+					};
+					directRecoveryOutput = expected.length;
+					const recovered = runDirectTo(HeapServiceNewtStage.Direct);
+					const stages = [HeapServiceGcStage.MaintenanceRootHead, HeapServiceGcStage.MaintenanceRootBanks,
+						HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
+						HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep];
+					assert.equal(recovered, stages.reduce((mask, entered) => mask | (1 << entered), 0));
+					assert.ok(cpu.heapServiceActive());
+					assert.equal(cpu.readFramePc(caller), newtPc);
+					assert.equal(cpu.readLuaFaultReasonWord(), 0);
+					assert.equal(cpu.stringPool.find('dead'), undefined, 'Direct ran reclamation before retrying');
+					body = () => {
+						assert.equal(stage(), HeapServiceNewtStage.Direct);
+						assert.equal(runDirectTo(HeapServiceNewtStage.Idle), 1 << HeapServiceGcStage.Idle, 'the fresh epoch is not repeated');
+						assert.equal(cpu.heapServiceActive(), false);
+						assert.equal(cpu.captureRuntimeState().pendingAllocation, null);
 						assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
-						assert.equal(scheduler.nowCycles, before, 'a native maintenance boundary does not consume device time');
-					} else {
-						assert.equal(result, InstructionStepResult.Advanced);
-						assert.ok(scheduler.nowCycles > before, 'firmware advances device time');
-					}
-					assert.ok(cpu.allocationParked());
-					assert.equal(cpu.readFramePc(caller), newtPc);
-				};
-				let recoveryStages = 0;
-				let partialLogicalBytes = 0;
-				for (let i = 0; i < 65536 && memory.readRamRecordByte(deadString) !== 0; ++i) {
-					partialLogicalBytes = budget.usedBytes();
-					recoveryStages |= 1 << cpu.gc.serviceStage();
-					recoverySlice();
-					assert.equal(cpu.allocationReady(), false);
-				}
-				for (const entered of [HeapServiceGcStage.MaintenanceRootBanks, HeapServiceGcStage.MaintenanceTrace,
-					HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
-					HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep]) {
-					assert.notEqual(recoveryStages & (1 << entered), 0, `allocation recovery enters BIOS stage ${entered}`);
-				}
-				assert.equal(memory.readRamRecordByte(deadString), 0, 'checkpoint after unlinking but before charging the reclaimed String');
-				assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
-				assert.equal(budget.usedBytes(), partialLogicalBytes);
-				assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
-				assert.ok(scheduler.nowCycles >= edge);
-				assert.equal(pressure(), 1);
-				const checkpointCycles = scheduler.nowCycles;
-				const finishSweep = () => {
-					for (let i = 0; i < 65536 && !cpu.allocationReady(); ++i) {
-						recoverySlice();
-						assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
-					}
-					assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
-					assert.ok(cpu.allocationReady());
-					assert.ok(scheduler.nowCycles > checkpointCycles);
-					assert.equal(cpu.readFramePc(caller), newtPc);
-				};
-				const tryReservation = (expectedStage: HeapServiceNewtStage) => {
-					schedulerStep('d');
-					assert.equal(stage(), expectedStage);
-					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) schedulerStep('d');
-					assert.equal(stage(), HeapServiceNewtStage.Idle);
-				};
-				body = () => {
-					finishSweep();
-					assert.equal(cpu.stringPool.find('dead'), undefined);
-					if (discarded) {
-						assert.equal(cpu.stringPool.find(longString), discarded);
-						tryReservation(HeapServiceNewtStage.RetryCurrent);
-						assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
-						finishSweep();
-						assert.equal(cpu.stringPool.find(longString), undefined);
-					}
-					tryReservation(HeapServiceNewtStage.RetryFresh);
-					assert.equal(cpu.allocationParked(), false);
-					if (scenario === 'oom') {
 						assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 						assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
 						assert.equal(cpu.readEpcWord(), newtPc);
 						observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
-					} else {
-						assert.ok(cpu.readFramePc(caller) > newtPc);
-						assert.ok(arena.occupiedBytes() < physical, 'collecting the dead String freed room for the hash');
-						for (let i = 0; i < 1024 && cpu.getFrameDepth() !== 0; ++i) schedulerStep('d');
-						assert.equal(cpu.getFrameDepth(), 0);
-						assert.equal(runtime.readCompletionValues()[0], valueInteger(183));
-						assert.equal(pressure(), 0, 'deferred pressure is served after the request retires');
-						observe('C', 183);
+						observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
+					};
+				} else {
+					const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
+					const schedulerStep = (step: 'a' | 'd') => {
+						const admitted = cpu.gc.serviceStage();
+						const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark
+							|| admitted === HeapServiceGcStage.MaintenanceRootHead || admitted === HeapServiceGcStage.MaintenanceRootBanks;
+						const op = step === 'd' && mark ? 'k' : step;
+						const before = frames.lastTickSequence;
+						const cycle = scheduler.nowCycles;
+						const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
+						if (op === 'k') {
+							// The mark and root visitors keep the native mirrors'
+							// different admission, color and fixed-root paths.
+							// Keep precise device-edge and subsequent timing checks.
+							for (let grant = 1; cpu.gc.serviceStage() === admitted && grant < 65536; ++grant)
+								frames.stepInstruction(1);
+							assert.notEqual(cpu.gc.serviceStage(), admitted);
+							assert.ok(scheduler.nowCycles > cycle);
+						}
+						observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+						return result;
+					};
+					for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
+						const result = schedulerStep('a');
+						assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
+						assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
 					}
-					observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
-				};
+					// The interrupted-epoch fixture already admitted native
+					// roots before parking, unlike the fresh OOM epoch.
+					assert.equal(cpu.gc.serviceStage(), discarded ? HeapServiceGcStage.MaintenanceRootBanks : HeapServiceGcStage.MaintenanceRootHead);
+					assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
+					const recoverySlice = () => {
+						const before = scheduler.nowCycles;
+						const result = schedulerStep('d');
+						if (result === InstructionStepResult.Blocked) {
+							assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
+							assert.equal(scheduler.nowCycles, before, 'a native maintenance boundary does not consume device time');
+						} else {
+							assert.equal(result, InstructionStepResult.Advanced);
+							assert.ok(scheduler.nowCycles > before, 'firmware advances device time');
+						}
+						assert.ok(cpu.allocationParked());
+						assert.equal(cpu.readFramePc(caller), newtPc);
+					};
+					let recoveryStages = 0;
+					let partialLogicalBytes = 0;
+					for (let i = 0; i < 65536 && memory.readRamRecordByte(deadString) !== 0; ++i) {
+						partialLogicalBytes = budget.usedBytes();
+						recoveryStages |= 1 << cpu.gc.serviceStage();
+						recoverySlice();
+						assert.equal(cpu.allocationReady(), false);
+					}
+					for (const entered of [HeapServiceGcStage.MaintenanceRootBanks, HeapServiceGcStage.MaintenanceTrace,
+						HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
+						HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep]) {
+						assert.notEqual(recoveryStages & (1 << entered), 0, `allocation recovery enters BIOS stage ${entered}`);
+					}
+					assert.equal(memory.readRamRecordByte(deadString), 0, 'checkpoint after unlinking but before charging the reclaimed String');
+					assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+					assert.equal(budget.usedBytes(), partialLogicalBytes);
+					assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
+					assert.ok(scheduler.nowCycles >= edge);
+					assert.equal(pressure(), 1);
+					const checkpointCycles = scheduler.nowCycles;
+					const finishSweep = () => {
+						for (let i = 0; i < 65536 && !cpu.allocationReady(); ++i) {
+							recoverySlice();
+							assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
+						}
+						assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
+						assert.ok(cpu.allocationReady());
+						assert.ok(scheduler.nowCycles > checkpointCycles);
+						assert.equal(cpu.readFramePc(caller), newtPc);
+					};
+					const tryReservation = (expectedStage: HeapServiceNewtStage) => {
+						schedulerStep('d');
+						assert.equal(stage(), expectedStage);
+						for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) schedulerStep('d');
+						assert.equal(stage(), HeapServiceNewtStage.Idle);
+					};
+					body = () => {
+						finishSweep();
+						assert.equal(cpu.stringPool.find('dead'), undefined);
+						if (discarded) {
+							assert.equal(cpu.stringPool.find(longString), discarded);
+							tryReservation(HeapServiceNewtStage.RetryCurrent);
+							assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
+							finishSweep();
+							assert.equal(cpu.stringPool.find(longString), undefined);
+						}
+						tryReservation(HeapServiceNewtStage.RetryFresh);
+						assert.equal(cpu.allocationParked(), false);
+						if (scenario === 'oom') {
+							assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+							assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
+							assert.equal(cpu.readEpcWord(), newtPc);
+							observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
+						} else {
+							assert.ok(cpu.readFramePc(caller) > newtPc);
+							assert.ok(arena.occupiedBytes() < physical, 'collecting the dead String freed room for the hash');
+							for (let i = 0; i < 1024 && cpu.getFrameDepth() !== 0; ++i) schedulerStep('d');
+							assert.equal(cpu.getFrameDepth(), 0);
+							assert.equal(runtime.readCompletionValues()[0], valueInteger(183));
+							assert.equal(pressure(), 0, 'deferred pressure is served after the request retires');
+							observe('C', 183);
+						}
+						observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
+					};
+				}
 			} else {
 				for (let i = 0; i < 256 && !cpu.heapServiceActive(); ++i) step(1);
 				assert.ok(cpu.heapServiceActive(), 'executing NEWT enters actual System BIOS instructions');
@@ -366,7 +425,14 @@ try {
 				encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
 			}).trimEnd().split('\n');
 			assert.equal(output.length, expected.length);
-			const mismatch = output.findIndex((line, i) => line !== expected[i]);
+			if (directOom) {
+				// Native mirrors choose different instructions before the retry
+				// handoff, but its phase, allocator state and actual retry agree.
+				const actual = output[directRecoveryOutput].split(' '), want = expected[directRecoveryOutput].split(' ');
+				assert.ok(+actual[1] > 0);
+				assert.deepEqual([actual[0], ...actual.slice(2)], [want[0], ...want.slice(2)]);
+			}
+			const mismatch = output.findIndex((line, i) => i !== directRecoveryOutput && line !== expected[i]);
 			assert.equal(mismatch, -1, `first differing NEWT observation ${mismatch}: native=${output[mismatch]}, TS=${expected[mismatch]}`);
 			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeCheckpointPath),
 				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
@@ -374,7 +440,7 @@ try {
 			body();
 			assert.deepEqual(trace.slice(command), continuation, 'C++ checkpoint resumes the same command sequence');
 			assert.deepEqual(expected.slice(result), results, 'C++ checkpoint resumes the same work and RAM on TS');
-			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${output.length} observations, ${scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-initialization'} rewind and cross-core restore)`);
+			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${output.length} observations, ${directOom ? 'Direct-recovery' : scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-initialization'} rewind and cross-core restore)`);
 		}
 	}
 	rmSync(directory, { recursive: true });

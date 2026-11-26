@@ -121,6 +121,7 @@ public:
 		const HeapServiceFunctions* services = nullptr);
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	// The owner retries its actual request after each recovered epoch.
+	LuaAllocationRecovery beginAllocationRecovery(LuaAllocationRecovery next);
 	LuaAllocationRecovery recoverAllocation(LuaAllocationRecovery next,
 		Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	size_t collect(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);

@@ -37,7 +37,7 @@ export const enum HeapServiceNewtField {
 	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12,
 	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
 }
-export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, RetryFresh }
+export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }

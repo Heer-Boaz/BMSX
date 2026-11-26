@@ -1101,16 +1101,22 @@ export class GcHeap {
 		if (this.remarkStage() !== RemarkStage.Roots) return work;
 		return this.remarkRoots(t0, t1, t2, limit, work, false);
 	}
-	/** The owner retries its actual request after each recovered epoch. */
-	public recoverAllocation(next: LuaAllocationRecovery, t0 = valueNil(), t1 = valueNil(),
-		t2 = valueNil(), growingThread = 0): LuaAllocationRecovery {
+	/** Latch the next retry policy before completing exactly one epoch. */
+	public beginAllocationRecovery(next: LuaAllocationRecovery): LuaAllocationRecovery {
 		if (next === LuaAllocationRecovery.Exhausted) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		const first = next === LuaAllocationRecovery.CurrentOrFresh;
 		const continueCurrent = first && this.active();
 		if (first && this.diagnostics !== null) ++this.diagnostics.fullCollections;
+		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
+	}
+
+	/** The owner retries its actual request after each recovered epoch. */
+	public recoverAllocation(next: LuaAllocationRecovery, t0 = valueNil(), t1 = valueNil(),
+		t2 = valueNil(), growingThread = 0): LuaAllocationRecovery {
+		const afterEpoch = this.beginAllocationRecovery(next);
 		// Recovery finishes just this epoch, without allocating to shrink live stacks.
 		do { this.cpu.chargeCollectionWork(this.step(t0, t1, t2, growingThread, false, GC_STEP_WORDS)); } while (this.active());
-		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
+		return afterEpoch;
 	}
 
 	public fullEpochs(): number { return this.memory.readRamRecordByte(this.controlOffset + GC_FULL_EPOCHS); }

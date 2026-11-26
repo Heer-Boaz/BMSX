@@ -1518,12 +1518,12 @@ quantum is charged for the actual work it performs. Device time advances for
 both, while interrupt entry and execution of the following instruction wait
 until the fresh cycle completes.
 
-Collection between reservation attempts for `NEWT` or a table insertion can
-pause execution with the console clock stopped. For an instruction suspended
-between attempts, resident root scanning, tracing, remark visits,
-weak-entry removal and sweeping run on ordinary CPU grants: devices continue
-to advance. The CPU settles any unpaid
-cycles already accepted for the issuing instruction before the
+If a physical reservation for `NEWT` fails, the allocator frees its partial
+reservation before collection. It retries the same request after the permitted
+collection cycle. For `NEWT` or a table insertion suspended between attempts,
+resident root scanning, tracing, remark visits, weak-entry removal and sweeping
+run on ordinary CPU grants: devices continue to advance. The CPU settles any
+unpaid cycles already accepted for the issuing instruction before the
 routine runs, and does not charge them again on retry. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical
 budget and when its backing storage does not fit. After collection, the CPU
@@ -1542,11 +1542,12 @@ repay completed work. An explicit step or full collection also pays 3 cycles per
 including work to finish an already active cycle, except for the ordinary
 CPU cycles of the resident routine during a full collection. This also applies when
 program replacement requests a collection to free its static region.
-If an allocation fails and the issuing instruction performs emergency
-collection before retrying, it pays the same price for that work, even if
-the retry fails. The display-tick assist uses its own CPU grants and is not
-charged to the issuing instruction. A physical pressure opportunity during
-timed recovery is deferred until the pending allocation retires, so it cannot change the
+In emergency recovery, the issuing instruction pays the same price for any
+collector work it performs itself, even if the retry fails. Resident work
+run on ordinary grants is not charged a second time. The display-tick assist
+also uses its own CPU grants and is not charged to the issuing instruction.
+A physical pressure opportunity during timed recovery is deferred until the
+pending allocation retires, so it cannot change the
 collection-and-retry order.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}

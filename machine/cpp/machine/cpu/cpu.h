@@ -523,6 +523,8 @@ private:
 	bool beginNewTableReservation(CallFrame&, PendingTableCreation, HeapServiceNewtStage, u32 nextPc);
 	void startNewTableReservation(u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
 	void finishNewTableReservation();
+	void advanceDirectNewTableRecovery();
+	void finishDirectNewTableRecovery();
 	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
