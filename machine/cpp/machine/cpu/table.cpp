@@ -111,15 +111,19 @@ int TableRecord::HashStorage<BulkWrite>::findNode(const Value& key, u32 home, bo
 }
 
 template<bool BulkWrite>
-inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home, u32* missLinks) const {
+inline int TableRecord::HashStorage<BulkWrite>::findString(StringId key, u32 home, u32* linkCycles) const {
 	int index = static_cast<int>(home);
 	u32 remaining = count;
 	for (; index >= 0 && remaining != 0u; --remaining) {
 		const u32 slot = static_cast<u32>(index);
-		if (matchesString(slot, key)) return index;
+		if (matchesString(slot, key)) {
+			const u32 prior = count - remaining;
+			if (linkCycles && prior >= TABLE_STRING_HIT_BASE_NODES) *linkCycles += prior - (TABLE_STRING_HIT_BASE_NODES - 1u);
+			return index;
+		}
 		index = next(slot);
 	}
-	if (missLinks && remaining != count) *missLinks += count - remaining - 1u;
+	if (linkCycles && remaining != count) *linkCycles += count - remaining - 1u;
 	return -1;
 }
 
@@ -719,8 +723,8 @@ size_t TableRecord::advanceStringProbe(StringId key, TableStringProbe& probe, si
 	return inspected;
 }
 
-Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot, u32* missLinks) {
-	const int node = body.findString(key, hashCanonicalTableKey(valueString(key)) & (body.count - 1u), missLinks);
+Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot, u32* linkCycles) {
+	const int node = body.findString(key, hashCanonicalTableKey(valueString(key)) & (body.count - 1u), linkCycles);
 	if (node >= 0) {
 		const Value value = body.slots.get(body.count + static_cast<u32>(node));
 		if (!isNil(value)) {
@@ -732,15 +736,15 @@ Value TableRecord::findStringField(const HashBody& body, StringId key, int& slot
 	return valueNil();
 }
 
-Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* missLinks) const {
+Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* linkCycles) const {
 	const u32 count = hashSlots();
 	if (count != 0u) {
 		const auto body = hashBody(count);
-		if (predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
+		if (count <= TABLE_STRING_HIT_BASE_NODES && predictedSlot >= 0 && static_cast<u32>(predictedSlot) < count) {
 			const Value predicted = body.predictedString(predictedSlot, key);
 			if (!isNil(predicted)) return predicted;
 		}
-		return findStringField(body, key, predictedSlot, missLinks);
+		return findStringField(body, key, predictedSlot, linkCycles);
 	}
 	predictedSlot = -1;
 	return valueNil();

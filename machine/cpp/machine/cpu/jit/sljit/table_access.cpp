@@ -41,7 +41,7 @@ constexpr sljit_sw nilTag = static_cast<u8>(ValueTag::Nil);
 
 // An own prediction miss is not an absence proof. Follow the live chain,
 // with the signed cursor and visit bound of TableRecord::HashBody.
-sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss = false) {
+sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterLinks = false) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	auto* empty = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 0);
 	// Preserve the header and initial traversal bound across the home probe.
@@ -79,6 +79,16 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
+	if (meterLinks) {
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
+		auto* included = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES - 1);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_R0, 0);
+		sljit_set_label(included, sljit_emit_label(c));
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
+	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
 	auto* nilMatch = stringKey ? sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, nilTag) : nullptr;
@@ -118,17 +128,17 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, bool meterMiss
 	auto* missed = sljit_emit_label(c);
 	for (auto* jump : exhausted) sljit_set_label(jump, missed);
 	for (auto* jump : end) sljit_set_label(jump, missed);
-	if (meterMiss) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
+	if (meterLinks) sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining, SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 
-	if (meterMiss) {
+	if (meterLinks) {
 		// Only an exhausted key search pays for nodes past home. The bound
 		// already counted every rejection, including the terminal node.
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), hash,
 			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
 		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, 1);
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::missLinks,
-			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::missLinks, SLJIT_R2, 0);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_R2, 0);
 	}
 
 	auto* absent = sljit_emit_label(c);
@@ -153,7 +163,7 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), field, SLJIT_MEM1(SLJIT_SP), key);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), cost, SLJIT_IMM, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::missLinks, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_IMM, 0);
 	auto* receiver = sljit_emit_label(c);
 	auto* found = emitReceiverSearch(c, true, true);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), meta);
@@ -191,7 +201,7 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, -1);
 	sljit_set_label(own, sljit_emit_label(c));
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), cost,
-		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::missLinks);
+		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	return entry;
 }
@@ -199,7 +209,11 @@ sljit_label* emitStringReadProbe(sljit_compiler* c) {
 sljit_label* emitOwnStringSlotProbe(sljit_compiler* c) {
 	auto* entry = sljit_emit_label(c);
 	sljit_emit_op_dst(c, SLJIT_FAST_ENTER, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
+	// Home has already been tried in large tables. Only the semantic exit
+	// may retire a variable-cost displaced hit from a fixed-cost region.
+	auto* semantic = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
 	auto* found = emitReceiverSearch(c, true);
+	sljit_set_label(semantic, sljit_emit_label(c));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R1, 0, SLJIT_IMM, -1);
 	sljit_emit_op_src(c, SLJIT_FAST_RETURN, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::returnAddress);
 	sljit_set_label(found, sljit_emit_label(c));

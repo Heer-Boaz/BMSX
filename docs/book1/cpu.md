@@ -1176,7 +1176,9 @@ hash probes or depend on earlier accesses.
 For a String key, each visited target that exhausts its hash search without
 finding the key adds **one cycle per inspected node after the first**. An
 empty hash adds nothing. Finding the key, including a retained key with a nil
-value, does not exhaust the search. This charge applies to the requested
+value, does not exhaust the search. For a match, the first 64 inspected
+nodes are covered; each further node costs one cycle. A match at node 256
+therefore adds 192 cycles. These charges apply to the requested
 key, not to retrieval of the metatable member. For example, a missing field
 whose chain contains 64 nodes adds 63 cycles even on a Table with no metatable.
 

@@ -14,6 +14,7 @@ import type { ValueWriteTarget } from './value_slots';
 
 const TABLE_HASH_NEXT_END = -1;
 const TABLE_MAX_ARRAY_INDEX = 0x7fffffff;
+const TABLE_STRING_HIT_BASE_NODES = 64;
 const TABLE_HASH_SLOT_BUDGET_BYTES = 10;
 // A fixed-string Store carries an unprobed, absent (-1), or matched hash node,
 // including a matched tombstone.
@@ -180,18 +181,14 @@ export class TableRecords {
 		}
 		return -1;
 	}
-	private findStringNodeIndex(key: StringId, home: number, hash: number, words: number, tags: number, meterMiss = false): number {
-		const memory = this.heap.memory, links = tags + hash * 2;
+	private findStringNodeIndex(key: StringId, home: number, hash: number, words: number, tags: number): number {
+		const links = tags + hash * 2;
 		let index = home;
-		let remaining = hash;
-		for (; index >= 0 && remaining !== 0; --remaining) {
-			const slot = index;
-			if (memory.readRamRecordByte(tags + slot) === ValueTag.String
-				&& memory.readRamRecordWord(words + slot * 4) === key) return index;
+		for (let remaining = hash; index >= 0 && remaining !== 0; --remaining) {
+			if (this.matchingStringValueSlot(key, index, hash, words, tags) >= 0) return index;
 			index = this.hashNext(links, hash, index);
 		}
-		// A metered miss returns minus the number of inspected nodes.
-		return meterMiss && remaining !== hash ? remaining - hash : -1;
+		return -1;
 	}
 
 	public get(record: number, rawKey: Value): Value {
@@ -300,19 +297,19 @@ export class TableRecords {
 		probe.remaining -= inspected;
 		return inspected;
 	}
-	private predictedStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
+	private matchingStringValueSlot(key: StringId, keySlot: number, hash: number, words: number, tags: number): number {
 		const memory = this.heap.memory;
 		return memory.readRamRecordByte(tags + keySlot) === ValueTag.String
 			&& memory.readRamRecordWord(words + keySlot * 4) === key ? keySlot + hash : -1;
 	}
 	public loadPredictedStringKey(record: number, key: StringId, predicted: number, target: ValueWriteTarget, destination: number): boolean {
-		if (predicted < 0) return false;
 		const hash = this.hashSize(record);
-		if (predicted >= hash) return false;
+		if (hash > TABLE_STRING_HIT_BASE_NODES) predicted = hashCanonicalTableKey(valueString(key)) & (hash - 1);
+		if (predicted < 0 || predicted >= hash) return false;
 		const words = this.hashAddress(record);
 		const tags = words + 8 * hash;
 		const keySlot = predicted;
-		const slot = this.predictedStringValueSlot(key, keySlot, hash, words, tags);
+		const slot = this.matchingStringValueSlot(key, keySlot, hash, words, tags);
 		if (slot < 0) return false;
 		const memory = this.heap.memory, tag = memory.readRamRecordByte(tags + slot);
 		if (tag === ValueTag.Nil) return false;
@@ -325,8 +322,8 @@ export class TableRecords {
 		if (hash !== 0) {
 			const words = this.hashAddress(record);
 			const tags = words + 8 * hash, memory = this.heap.memory;
-			if (predicted >= 0 && predicted < hash) {
-				const slot = this.predictedStringValueSlot(key, predicted, hash, words, tags);
+			if (hash <= TABLE_STRING_HIT_BASE_NODES && predicted >= 0 && predicted < hash) {
+				const slot = this.matchingStringValueSlot(key, predicted, hash, words, tags);
 				if (slot >= 0) {
 					const tag = memory.readRamRecordByte(tags + slot);
 					if (tag !== ValueTag.Nil) {
@@ -334,16 +331,20 @@ export class TableRecords {
 					}
 				}
 			}
-			const index = this.findStringNodeIndex(key, hashCanonicalTableKey(valueString(key)) & (hash - 1), hash, words, tags, true);
-			if (index >= 0) {
-				const slot = hash + index;
-				const tag = memory.readRamRecordByte(tags + slot);
-				if (tag !== ValueTag.Nil) {
-					result.value = valueFromTag(tag, memory.readRamRecordWord(words + slot * 4)); result.slot = index; return 0;
+			const links = tags + hash * 2;
+			let index = hashCanonicalTableKey(valueString(key)) & (hash - 1), remaining = hash;
+			for (; index >= 0 && remaining !== 0; --remaining) {
+				const slot = this.matchingStringValueSlot(key, index, hash, words, tags);
+				if (slot >= 0) {
+					const tag = memory.readRamRecordByte(tags + slot);
+					result.slot = tag === ValueTag.Nil ? -1 : index;
+					result.value = tag === ValueTag.Nil ? valueNil() : valueFromTag(tag, memory.readRamRecordWord(words + slot * 4));
+					return Math.max(0, hash - remaining + 1 - TABLE_STRING_HIT_BASE_NODES);
 				}
+				index = this.hashNext(links, hash, index);
 			}
 			result.value = valueNil(); result.slot = -1;
-			return index < 0 ? -index - 1 : 0;
+			return Math.max(0, hash - remaining - 1);
 		}
 		result.value = valueNil(); result.slot = -1; return 0;
 	}

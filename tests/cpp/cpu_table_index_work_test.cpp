@@ -209,6 +209,63 @@ void exhaustedStringChainCharges() {
 	}
 }
 
+void growingStringHitCharges() {
+	for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
+		Program program(op, false);
+		Machine generated(program.image, false), scalar(program.image, true);
+		int n = 0, previousDepth = 0;
+		for (int depth : {64, 65, 96}) {
+			int next = n;
+			for (auto* m : {&generated, &scalar}) {
+				auto& cpu = m->cpu;
+				const auto key = keyFor(cpu, KeyKind::String);
+				auto r = cpu.activeThread()->currentFrame->registers;
+				auto table = depth == 64 ? cpu.createTable(0, 128) : asTable(r.get(0), cpu.gcHeap());
+				r.set(0, valueTable(table.address())); r.set(1, key);
+				const auto home = hashCanonicalTableKey(key) & 127u;
+				next = n;
+				for (int i = previousDepth; i < depth; ++i) {
+					if (i == 1) table.set(key, valueInteger(73));
+					else {
+						Value other;
+						do other = valueInteger(next++); while ((hashCanonicalTableKey(other) & 127u) != home);
+						table.set(other, valueBool(false));
+					}
+				}
+				auto probe = table.beginStringProbe(asStringId(key));
+				require(table.advanceStringProbe(asStringId(key), probe, 128) == static_cast<size_t>(depth)
+					&& probe.value == valueInteger(73), "the field stays at the live chain tail");
+			}
+			n = next; previousDepth = depth;
+			const int charge = 2 + BASE_CYCLES[static_cast<u8>(op)] + depth - 64;
+			for (const int grant : {3, charge, charge + 1}) {
+				for (auto* m : {&generated, &scalar}) {
+					m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+					m->cpu.activeThread()->currentFrame->registers.set(8, valueInteger(91));
+				}
+				test::runCpuParity(generated.cpu, scalar.cpu, grant);
+				const bool marker = grant > charge;
+				require(generated.cpu.instructionBudgetRemaining == grant - charge - (marker ? 2 : 0)
+					&& generated.cpu.readFrameRegister(0, 6) == valueInteger(73)
+					&& generated.cpu.readFrameRegister(0, 8) == valueInteger(marker ? 73 : 91),
+					"training a still-valid slot cannot hide a growing successful chain from the grant");
+			}
+		}
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			auto root = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+			const auto key = keyFor(cpu, KeyKind::String);
+			root.set(key, valueNil());
+			makeChain(cpu, root, 2, key, valueBool(false));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		}
+		test::runCpuParity(generated.cpu, scalar.cpu, 3);
+		require(3 - generated.cpu.instructionBudgetRemaining == 2 + BASE_CYCLES[static_cast<u8>(op)] + 32 + TABLE_INDEX_VISIT_CYCLES
+			&& generated.cpu.readFrameRegister(0, 6) == valueBool(false),
+			"a matched tombstone retains its hit cost when the lookup continues on another table");
+	}
+}
+
 void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
@@ -541,7 +598,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); exhaustedStringChainCharges(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}

@@ -214,6 +214,20 @@ std::array<sljit_jump*, 3> NativeLowering::emitStringValueAddress(NativeBlockExi
 	sljit_sw saved = 0;
 	std::array<sljit_jump*, 3> checks;
 	sljit_emit_op1(c, SLJIT_MOV_S32, SLJIT_R1, 0, SLJIT_MEM0(), prediction);
+	if (load) {
+		auto* small = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash),
+			SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
+		// In a large table only home is intrinsically a zero-surcharge slot.
+		// A cached displaced slot cannot certify how many links precede it.
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash), SLJIT_IMM, 1);
+		if (fixedKey) {
+			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R2, 0, SLJIT_IMM, *fixedKey >> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
+		} else {
+			sljit_emit_op2(c, SLJIT_LSHR32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), keyWord, SLJIT_IMM, BLUA32_STRING_RECORD_ALIGNMENT_SHIFT);
+			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+		}
+		sljit_set_label(small, sljit_emit_label(c));
+	}
 	checks[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R1, 0,
 		SLJIT_MEM1(SLJIT_R0), static_cast<u32>(TableHeader::Hash));
 	if (temporary) {

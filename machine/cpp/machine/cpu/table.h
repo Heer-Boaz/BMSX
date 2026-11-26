@@ -18,6 +18,7 @@
 
 namespace bmsx {
 
+inline constexpr u32 TABLE_STRING_HIT_BASE_NODES = 64;
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 
 enum class TableHeader : u32 {
@@ -95,19 +96,19 @@ public:
 	Value getStringKey(StringId key) const;
 	TableStringProbe beginStringProbe(StringId key) const;
 	size_t advanceStringProbe(StringId key, TableStringProbe& probe, size_t limit) const;
-	Value getStringKeyCached(StringId key, int& predictedSlot, u32* missLinks = nullptr) const;
+	Value getStringKeyCached(StringId key, int& predictedSlot, u32* linkCycles = nullptr) const;
 	// A plain table resolves even an absent field. An unresolved lookup
 	// must visit the live metatable; it must not train the receiver's slot.
-	std::optional<Value> readOwnStringField(StringId key, int& predicted, u32* missLinks = nullptr) const {
+	std::optional<Value> readOwnStringField(StringId key, int& predicted, u32* linkCycles = nullptr) const {
 		const u32 count = hashSlots();
 		if (count) {
 			const auto body = hashBody(count);
-			if (predicted >= 0 && static_cast<u32>(predicted) < count) {
+			if (count <= TABLE_STRING_HIT_BASE_NODES && predicted >= 0 && static_cast<u32>(predicted) < count) {
 				const auto own = body.predictedString(predicted, key);
 				if (!isNil(own)) return own;
 			}
 			int slot;
-			const auto own = findStringField(body, key, slot, missLinks);
+			const auto own = findStringField(body, key, slot, linkCycles);
 			if (slot >= 0) {
 				predicted = slot;
 				return own;
@@ -261,7 +262,7 @@ private:
 			}
 		}
 		int findNode(const Value& key, u32 home, bool matchDead = false) const;
-		int findString(StringId key, u32 home, u32* missLinks = nullptr) const;
+		int findString(StringId key, u32 home, u32* linkCycles = nullptr) const;
 		bool matchesString(u32 node, StringId key) const {
 			const u32 slot = node;
 			return slots.tag(slot) == ValueTag::String && slots.word(slot) == key;
@@ -282,7 +283,7 @@ private:
 		u8* words = m_memory->ramData() + (storage & RAM_RECORD_WORD_MASK);
 		return {{m_memory, words, words + 8u * count}, count, storage + 10u * count};
 	}
-	static Value findStringField(const HashBody& body, StringId key, int& slot, u32* missLinks);
+	static Value findStringField(const HashBody& body, StringId key, int& slot, u32* linkCycles);
 	static bool loadHashEntry(const HashBody& body, u32 slot, Value& key, Value& value);
 	u32 nextStoredEntry(const HashBody& body, u32 position, Value& key, Value& value) const;
 	int reinsertMapping(const RebuildBody& body, int& nextFree, Value key, Value value) noexcept;

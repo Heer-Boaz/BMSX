@@ -157,6 +157,49 @@ function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	test(`a trained String slot pays for its current chain depth, including after restore (${backend})`, () => {
+		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
+			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
+			let frame = cpu.rootThread.currentFrame!;
+			const start = frame.pc, root = cpu.createTable(0, 128), key = valueString(cpu.stringPool.intern('field'));
+			frame.registers.setTable(0, root); frame.registers.set(1, key);
+			let n = 0, placed = 0;
+			for (const depth of [64, 65, 96]) {
+				while (placed < depth) {
+					if (placed === 1) cpu.gc.tables.set(root, key, valueInteger(73));
+					else {
+						let other: Value;
+						do other = valueInteger(n++); while (((hashCanonicalTableKey(other) ^ hashCanonicalTableKey(key)) & 127) !== 0);
+						cpu.gc.tables.set(root, other, valueBool(false));
+					}
+					++placed;
+				}
+				const charge = 2 + BASE_CYCLES[op] + depth - 64;
+				cpu.runUntilDepth(0, (charge + 4) * 68);
+				if (backend === CpuExecutionBackend.JavaScript)
+					assert.ok(frame.decodedPage!.compiledBlocks!.entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
+				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+				const saved = captureCpuCheckpoint(cpu);
+				for (const grant of [3, charge, charge + 1]) {
+					frame.registers.setInteger(8, 91);
+					assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
+					const marker = grant > charge;
+					assert.equal(cpu.instructionBudgetRemaining, grant - charge - (marker ? 2 : 0));
+					assert.equal(frame.registers.get(6), valueInteger(73));
+					assert.equal(frame.registers.getInteger(8), marker ? 73 : 91);
+					restoreCpuCheckpoint(cpu, saved);
+					frame = cpu.rootThread.currentFrame!;
+				}
+			}
+			cpu.gc.tables.set(root, key, valueNil());
+			chain(cpu, root, 2, key, valueBool(false));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
+			cpu.runUntilDepth(0, 3);
+			assert.equal(3 - cpu.instructionBudgetRemaining, 2 + BASE_CYCLES[op] + 32 + 8);
+			assert.equal(frame.registers.get(6), valueBool(false));
+		}
+	});
+
 	test(`an exhausted eight-node String chain charges seven cycles before its successor (${backend})`, () => {
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
