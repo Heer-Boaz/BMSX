@@ -98,7 +98,6 @@ def main():
         "limitations": [
             "Generic word-level/bit cells are unmapped to a fabrication library; counts are not ASIC gates or area.",
             "No cell timing, pad delays, clock/path constraints, STA, power or process corners are qualified.",
-            "BADP ROM indices 89..255 remain unspecified and unqualified; synthesis can exploit undefined selectors.",
             "Inferred memories are generic cells, not selected or qualified ASIC SRAM macros; register Q-bit counts exclude their stored bits.",
             "Codec/state correctness is checked separately; synthesis does not prove those contracts.",
         ],

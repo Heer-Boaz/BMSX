@@ -4,6 +4,8 @@
 
 #include "common/endian.h"
 
+#include <algorithm>
+
 namespace bmsx {
 
 namespace {
@@ -25,6 +27,21 @@ inline constexpr i32 APU_BADP_INDEX_TABLE[16] = {
 	-1, -1, -1, -1, 2, 4, 6, 8,
 };
 
+// Signed predictor delta in the upper bits, next step index in the low byte.
+inline constexpr auto APU_BADP_TRANSITIONS = [] {
+	std::array<i32, 89 * 16> table{};
+	for (i32 index = 0; index < 89; ++index) {
+		const i32 step = APU_BADP_STEP_TABLE[index];
+		for (i32 code = 0; code < 16; ++code) {
+			i32 delta = (step >> 3) + ((code & 4) ? step : 0)
+				+ ((code & 2) ? step >> 1 : 0) + ((code & 1) ? step >> 2 : 0);
+			if (code & 8) delta = -delta;
+			table[index * 16 + code] = delta * 256 + std::clamp(index + APU_BADP_INDEX_TABLE[code], 0, 88);
+		}
+	}
+	return table;
+}();
+
 inline void loadApuBadpBlock(const u8* data, u32 channels, ApuBadpDecoderState& decoder, size_t offset) {
 	const size_t blockFrames = static_cast<size_t>(readLE16(data + offset));
 	const size_t blockBytes = static_cast<size_t>(readLE16(data + offset + 2));
@@ -33,7 +50,7 @@ inline void loadApuBadpBlock(const u8* data, u32 channels, ApuBadpDecoderState& 
 	size_t cursor = offset + 4;
 	for (u32 channel = 0; channel < channels; channel += 1) {
 		decoder.predictors[channel] = readI16LE(data + cursor);
-		decoder.stepIndices[channel] = static_cast<i32>(data[cursor + 2]);
+		decoder.stepIndices[channel] = std::min<i32>(data[cursor + 2], 88);
 		cursor += 4;
 	}
 	decoder.blockEnd = blockEnd;
@@ -56,21 +73,9 @@ inline void decodeNextApuBadpFrame(const u8* data, u32 channels, ApuBadpDecoderS
 		const u8 packed = data[payloadIndex];
 		const i32 code = (decoder.nibbleCursor & 1) == 0 ? static_cast<i32>((packed >> 4) & 0x0f) : static_cast<i32>(packed & 0x0f);
 		decoder.nibbleCursor += 1;
-		const i32 step = APU_BADP_STEP_TABLE[stepIndex];
-		i32 diff = step >> 3;
-		if ((code & 4) != 0) diff += step;
-		if ((code & 2) != 0) diff += step >> 1;
-		if ((code & 1) != 0) diff += step >> 2;
-		if ((code & 8) != 0) {
-			predictor -= diff;
-		} else {
-			predictor += diff;
-		}
-		if (predictor < -32768) predictor = -32768;
-		if (predictor > 32767) predictor = 32767;
-		stepIndex += APU_BADP_INDEX_TABLE[code];
-		if (stepIndex < 0) stepIndex = 0;
-		if (stepIndex > 88) stepIndex = 88;
+		const i32 transition = APU_BADP_TRANSITIONS[stepIndex * 16 + code];
+		predictor = std::clamp(predictor + (transition >> 8), -32768, 32767);
+		stepIndex = transition & 0xff;
 		if (channel == 0) {
 			left = predictor;
 		} else {

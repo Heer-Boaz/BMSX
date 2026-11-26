@@ -31,12 +31,12 @@ export function emitBadpStepVectors(): void {
         badp: createApuBadpDecoderState(),
         badpTransition: createApuBadpTransition(), sourceRevision,
     };
-    process.stdout.write(`${89 * 16 * predictors.length}\n`);
-    for (let index = 0; index < 89; ++index) for (let code = 0; code < 16; ++code) {
+    process.stdout.write(`${256 * 16 * predictors.length}\n`);
+    for (let index = 0; index < 256; ++index) for (let code = 0; code < 16; ++code) {
         for (let seed = 0; seed < predictors.length; ++seed) {
             const left = predictors[seed];
             const right = predictors[(seed + 4) % predictors.length];
-            const rightIndex = 88 - index;
+            const rightIndex = 255 - index;
             const packed = (code << 4) | (code ^ 8);
             writeLE16(bytes, 4, left);
             bytes[6] = index;
@@ -82,8 +82,8 @@ function structuralFixture(spec: Case): Fixture {
     for (let block = 0; block < 2; ++block) {
         const begin = 64 + block * 16;
         writeLE16(bytes, begin, 2);writeLE16(bytes, begin + 2, 16);
-        writeLE16(bytes, begin + 4, 100 + block * 1000);bytes[begin + 6] = 20 + block;
-        writeLE16(bytes, begin + 8, -200 - block * 1300);bytes[begin + 10] = 23 + block;
+        writeLE16(bytes, begin + 4, 100 + block * 1000);bytes[begin + 6] = block === 0 ? 89 : 20;
+        writeLE16(bytes, begin + 8, -200 - block * 1300);bytes[begin + 10] = block === 0 ? 23 : 255;
         bytes[begin + 12] = block === 0 ? 0x12 : 0x9a;
         bytes[begin + 13] = block === 0 ? 0x34 : 0xbc;
         bytes[begin + 14] = block === 0 ? 0x56 : 0xde;

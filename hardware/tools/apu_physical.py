@@ -321,9 +321,7 @@ def main():
             "arithmetic_golden_stereo_cases": step["golden_cases"],
             "arithmetic_predictor_seeds_per_index_code": step["predictor_seeds_per_index_code"],
             "raw_step_index_bits": step["raw_header_index_bits_preserved"],
-            "undefined_step_indices_qualified": step[
-                "undefined_header_indices_89_through_255_qualified"
-            ],
+            "saturated_header_indices_qualified": step["saturated_header_indices_qualified"],
         },
         "execution_results": rows,
         "system_organization_budget": system_budget(normal, upload),
@@ -361,7 +359,6 @@ def main():
             "Cold starts, first uncached loop endpoints, live START/source replacement, reverse traversal and overlapping source edits can exceed 768 clocks; all measured work is drained and every overrun remains reported.",
             "No numeric PLAY preparation allowance is added. Current-cycle software preparation is not evidence for an instantaneous physical launch or a permitted audible delay.",
             "Complete phase, interpolation, filter/gain/mix, command and output-clock scheduling remains outside this decoder slice. Spare decoder/memory clocks alone do not certify the whole APU.",
-            "The manuals and current TS/C++ owners do not define a common initial BADP table lookup for raw header indices89..255. They are preserved but not qualified or silently clipped.",
         ],
         "input_sha256": {
             str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()

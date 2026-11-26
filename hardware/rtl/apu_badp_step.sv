@@ -4,13 +4,6 @@
 // combinational; the decoder owner registers the resulting frame and indices.
 // No multiplier, block cache, memory port or hidden playback state is present.
 //
-// Book I's header index is a raw BYTE. Preserve all eight selector bits here:
-// the manual only supplies ROM entries 0..88, and the existing TS/C++ owners do
-// not define a common result outside that range. Direct lookup leaves that
-// unresolved boundary visible; it does not preclip, truncate or fabricate ROM
-// contents. Qualification therefore covers header indices 0..88. The AFTER-step
-// index saturation below is the specified codec operation, not input repair.
-//
 // Production reference: DuckStation src/core/spu.cpp Voice::DecodeBlock keeps
 // codec recurrence/retained samples separate from RAM transfers and playback.
 // Its PS1 ADPCM format and block predecode behavior are not imported into BADP.
@@ -43,8 +36,11 @@ module apu_badp_step (
     localparam [8*5-1:0] INDEX_ROM = {
         5'sd8,5'sd6,5'sd4,5'sd2,-5'sd1,-5'sd1,-5'sd1,-5'sd1
     };
-    wire [14:0] step_l = STEP_ROM[step_index_l*15+:15];
-    wire [14:0] step_r = STEP_ROM[step_index_r*15+:15];
+    // The initial selector is a full header byte; the step index saturates at 88.
+    wire [6:0] index_l = step_index_l > 8'd88 ? 7'd88 : step_index_l[6:0];
+    wire [6:0] index_r = step_index_r > 8'd88 ? 7'd88 : step_index_r[6:0];
+    wire [14:0] step_l = STEP_ROM[index_l*15+:15];
+    wire [14:0] step_r = STEP_ROM[index_r*15+:15];
     wire [16:0] wide_step_l = {2'b00,step_l};
     wire [16:0] wide_step_r = {2'b00,step_r};
     wire [16:0] difference_l = (wide_step_l>>3)
@@ -62,8 +58,8 @@ module apu_badp_step (
         + (packed_codes[3] ? -$signed({1'b0,difference_r}) : $signed({1'b0,difference_r}));
     wire signed [4:0] index_delta_l = INDEX_ROM[packed_codes[6:4]*5+:5];
     wire signed [4:0] index_delta_r = INDEX_ROM[packed_codes[2:0]*5+:5];
-    wire signed [9:0] updated_index_l = $signed({2'b00,step_index_l}) + index_delta_l;
-    wire signed [9:0] updated_index_r = $signed({2'b00,step_index_r}) + index_delta_r;
+    wire signed [9:0] updated_index_l = $signed({3'b000,index_l}) + index_delta_l;
+    wire signed [9:0] updated_index_r = $signed({3'b000,index_r}) + index_delta_r;
 
     assign next_predictor_l = predicted_l < -18'sd32768 ? 16'sh8000 :
         predicted_l > 18'sd32767 ? 16'sd32767 : predicted_l[15:0];

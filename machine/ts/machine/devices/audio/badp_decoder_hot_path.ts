@@ -38,6 +38,18 @@ const BADP_INDEX_TABLE = new Int32Array([
 	-1, -1, -1, -1, 2, 4, 6, 8,
 ]);
 
+// Signed predictor delta in the upper bits, next step index in the low byte.
+const BADP_TRANSITIONS = new Int32Array(89 * 16);
+for (let index = 0; index < 89; ++index) {
+	const step = BADP_STEP_TABLE[index]!;
+	for (let code = 0; code < 16; ++code) {
+		let delta = (step >> 3) + ((code & 4) ? step : 0)
+			+ ((code & 2) ? step >> 1 : 0) + ((code & 1) ? step >> 2 : 0);
+		if (code & 8) delta = -delta;
+		BADP_TRANSITIONS[index * 16 + code] = delta * 256 + clamp(index + BADP_INDEX_TABLE[code]!, 0, 88);
+	}
+}
+
 export function createApuBadpDecoderState(): ApuBadpDecoderState {
 	return {
 		predictors: new Int32Array(2),
@@ -175,7 +187,7 @@ function loadApuBadpBlock(record: ApuBadpDecodeTarget, offset: number): void {
 	let cursor = blockOffset + 4;
 	for (let channel = 0; channel < record.channels; channel += 1) {
 		badp.predictors[channel] = readI16LE(bytes, cursor);
-		badp.stepIndices[channel] = bytes[cursor + 2]!;
+		badp.stepIndices[channel] = Math.min(bytes[cursor + 2]!, 88);
 		cursor += 4;
 	}
 	badp.blockEnd = blockEnd;
@@ -240,23 +252,10 @@ function decodeNextApuBadpFrame(record: ApuBadpDecodeTarget): void {
 		const packed = bytes[payloadIndex]!;
 		const code = (badp.nibbleCursor & 1) === 0 ? ((packed >> 4) & 0x0f) : (packed & 0x0f);
 		badp.nibbleCursor += 1;
-		let predictor = badp.predictors[channel]!;
-		let stepIndex = badp.stepIndices[channel]!;
-		const step = BADP_STEP_TABLE[stepIndex]!;
-		let diff = step >> 3;
-		if ((code & 4) !== 0) diff += step;
-		if ((code & 2) !== 0) diff += step >> 1;
-		if ((code & 1) !== 0) diff += step >> 2;
-		if ((code & 8) !== 0) {
-			predictor -= diff;
-		} else {
-			predictor += diff;
-		}
-		predictor = clamp(predictor, -32768, 32767);
-		stepIndex += BADP_INDEX_TABLE[code]!;
-		stepIndex = clamp(stepIndex, 0, 88);
+		const transition = BADP_TRANSITIONS[badp.stepIndices[channel]! * 16 + code]!;
+		const predictor = clamp(badp.predictors[channel]! + (transition >> 8), -32768, 32767);
 		badp.predictors[channel] = predictor;
-		badp.stepIndices[channel] = stepIndex;
+		badp.stepIndices[channel] = transition & 0xff;
 		if (channel === 0) {
 			left = predictor;
 		} else {

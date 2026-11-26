@@ -723,7 +723,7 @@ The header predictor is a starting accumulator, **not an extra first output fram
 
 ### Exact nibble recurrence {#sec-apu-exact-nibble-recurrence}
 
-The step table has 89 entries, indexed 0 through 88.
+The step table has 89 entries, indexed 0 through 88. Header bytes 89 through 255 select initial index 88. The first nibble therefore uses step 32767 and updates the index starting from 88.
 
 | Index | Step | Index | Step | Index | Step | Index | Step |
 |---:|---:|---:|---:|---:|---:|---:|---:|
