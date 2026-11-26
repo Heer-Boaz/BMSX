@@ -109,6 +109,17 @@ CPU::CPU(
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument."));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'"));
 	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NAN] = valueString(m_stringPool.intern("Table index is NaN."));
+	// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
+	using Remark = HeapServiceRemarkHeadField;
+	const u32 management = m_heapAllocator.managementOffset();
+	const u32 remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
+	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::Mode), m_heap.modeKey);
+	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Index), m_heap.indexKey, m_heap.newIndexKey);
+	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Length), m_heap.lengthKey, valuePayload(m_errorInErrorHandlingValue));
+	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::FaultIds), RAM_BASE + faults);
+	for (u32 reason = 0; reason < m_luaFaultErrorValues.size(); ++reason) {
+		m_memory.writeRamRecordWord(faults + reason * sizeof(u32), valuePayload(m_luaFaultErrorValues[reason]));
+	}
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -2517,8 +2528,16 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					case HeapServiceGcStage::MaintenanceTrace: {
 						const auto& services = m_systemImage->heapServiceFunctions;
 						const auto work = m_heap.finishTraceQuantum(services[static_cast<size_t>(HeapServiceOperation::Trace)],
-							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], gcStage);
+							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], services[static_cast<size_t>(HeapServiceOperation::Remark)], gcStage);
 						if (gcStage == HeapServiceGcStage::FullTrace) chargeCollectionWork(work);
+						break;
+					}
+					case HeapServiceGcStage::FullRemark:
+					case HeapServiceGcStage::MaintenanceRemark: {
+						const auto& services = m_systemImage->heapServiceFunctions;
+						const auto work = m_heap.finishRemarkQuantum(services[static_cast<size_t>(HeapServiceOperation::Trace)],
+							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], gcStage);
+						if (gcStage == HeapServiceGcStage::FullRemark) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullWeakClear:
@@ -2574,7 +2593,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			const auto& services = m_systemImage->heapServiceFunctions;
 			chargeCollectionWork(m_heap.stepFullCollection(epochs, words,
 				services[static_cast<size_t>(HeapServiceOperation::StringSweep)], services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
-				services[static_cast<size_t>(HeapServiceOperation::Trace)], services[static_cast<size_t>(HeapServiceOperation::WeakClear)]));
+				services[static_cast<size_t>(HeapServiceOperation::Trace)], services[static_cast<size_t>(HeapServiceOperation::WeakClear)],
+				services[static_cast<size_t>(HeapServiceOperation::Remark)]));
 			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
 			if (heapServiceActive()) return RunResult::Yielded;
 			instructionBudget = instructionBudgetRemaining;
@@ -3126,6 +3146,24 @@ void CPU::releaseLocalRoots(size_t base) {
 void CPU::trackLocalRoot(Value value) {
 	if (m_localRootScopeDepth > 0) {
 		m_localRoots.push_back(value);
+	}
+}
+
+void CPU::publishHeapRemarkHead() {
+	using Field = HeapServiceRemarkHeadField;
+	const u32 head = m_heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::StringIndexTag), static_cast<u32>(valueTag(m_stringIndexTable)));
+	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::StringIndexWord), valuePayload(m_stringIndexTable), m_stringComparison.remaining);
+	if (m_stringComparison.remaining) {
+		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ComparisonLeft), m_stringComparison.left, m_stringComparison.right);
+	}
+	if (const auto* assignment = allocationParked() ? std::get_if<PendingTableAssignment>(&m_pendingAllocation.operands) : nullptr) {
+		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), assignment->receiver);
+		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(assignment->key)), valuePayload(assignment->key));
+		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(assignment->value)), valuePayload(assignment->value));
+		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 1u);
+	} else {
+		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 0u);
 	}
 }
 

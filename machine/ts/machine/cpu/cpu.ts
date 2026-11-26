@@ -181,6 +181,7 @@ import {
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
+	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 } from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -448,6 +449,17 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
+		// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
+		const management = this.heapAllocator.managementOffset();
+		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
+		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, this.modeKey);
+		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Index, this.indexKey, newIndexKey);
+		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Length, this.lengthKey, this.errorInErrorHandlingStringId);
+		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.FaultIds, RAM_BASE + faults);
+		for (let reason = 0; reason < this.luaFaultErrorStringIds.length; ++reason) {
+			const id = reason === LUA_FAULT_REASON_EXPLICIT_ERROR ? 0 : this.luaFaultErrorStringIds[reason];
+			memory.writeRamRecordWord(faults + reason * 4, id);
+		}
 		this.rootThread = new Thread(this.gc);
 		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
 		this.rootThread.bindAddress(this.createThread(0));
@@ -791,7 +803,8 @@ export class CPU implements MappedPageInvalidator {
 			const services = this.systemImage.heapServiceFunctions;
 			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
 				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep,
-				services === null ? 0 : services[HeapServiceOperation.ObjectSweep], services === null ? 0 : services[HeapServiceOperation.Trace]);
+				services === null ? 0 : services[HeapServiceOperation.ObjectSweep], services === null ? 0 : services[HeapServiceOperation.Trace],
+				services === null ? 0 : services[HeapServiceOperation.Remark]);
 		}
 		this.finishAllocationRecovery();
 		return true;
@@ -800,7 +813,8 @@ export class CPU implements MappedPageInvalidator {
 	public advanceFinalMark(): void {
 		const services = this.systemImage.heapServiceFunctions;
 		this.gc.stepFinalMark(GC_STEP_WORDS, services === null ? 0 : services[HeapServiceOperation.Trace],
-			services === null ? 0 : services[HeapServiceOperation.WeakClear], HeapServiceGcStage.MaintenanceTrace);
+			services === null ? 0 : services[HeapServiceOperation.WeakClear], HeapServiceGcStage.MaintenanceTrace,
+			services === null ? 0 : services[HeapServiceOperation.Remark]);
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2265,8 +2279,16 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
 								const services = this.systemImage.heapServiceFunctions!;
-								const work = this.gc.finishTraceQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear], gcStage);
+								const work = this.gc.finishTraceQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear],
+									services[HeapServiceOperation.Remark], gcStage);
 								if (gcStage === HeapServiceGcStage.FullTrace) this.chargeCollectionWork(work);
+								break;
+							}
+							case HeapServiceGcStage.FullRemark:
+							case HeapServiceGcStage.MaintenanceRemark: {
+								const services = this.systemImage.heapServiceFunctions!;
+								const work = this.gc.finishRemarkQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear], gcStage);
+								if (gcStage === HeapServiceGcStage.FullRemark) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullWeakClear:
@@ -2315,7 +2337,8 @@ export class CPU implements MappedPageInvalidator {
 					const services = this.systemImage.heapServiceFunctions;
 					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words,
 						services === null ? 0 : services[HeapServiceOperation.StringSweep], services === null ? 0 : services[HeapServiceOperation.ObjectSweep],
-						services === null ? 0 : services[HeapServiceOperation.Trace], services === null ? 0 : services[HeapServiceOperation.WeakClear]));
+						services === null ? 0 : services[HeapServiceOperation.Trace], services === null ? 0 : services[HeapServiceOperation.WeakClear],
+						services === null ? 0 : services[HeapServiceOperation.Remark]));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
 					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;
@@ -5061,6 +5084,25 @@ export class CPU implements MappedPageInvalidator {
 	public collectTrackedHeapBytes(root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
 		this.gc.collect(root0, root1, root2);
 		return this.luaHeap.usedBytes();
+	}
+
+	public publishHeapRemarkHead(): void {
+		const memory = this.memory, head = this.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		const stringIndex = this.stringIndexTable, comparison = this.stringComparison;
+		memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.StringIndexTag, valueTag(stringIndex));
+		memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.StringIndexWord, valuePayload(stringIndex), comparison.remaining);
+		if (comparison.remaining !== 0) {
+			memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.ComparisonLeft, comparison.left, comparison.right);
+		}
+		const pending = this.pendingAllocation;
+		if (pending?.kind === PendingAllocationKind.TableAssignment) {
+			memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.Receiver, pending.receiver);
+			memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.KeyTag, valueTag(pending.key), valuePayload(pending.key));
+			memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.ValueTag, valueTag(pending.value), valuePayload(pending.value));
+			memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment, 1);
+		} else {
+			memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment, 0);
+		}
 	}
 
 	public markRootHead(heap: GcHeap): void {

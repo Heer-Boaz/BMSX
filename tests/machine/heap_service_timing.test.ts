@@ -166,7 +166,7 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	// is already pinned. Reserve the real frame grant for the next String quantum.
 	const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
-	const fullStages = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullWeakClear,
+	const fullStages = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear,
 		HeapServiceGcStage.FullObjectSweep, HeapServiceGcStage.FullStringSweep];
 	const seen = new Set<HeapServiceGcStage>();
 	let enteredStrings = false;
@@ -260,7 +260,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		assert.equal(outcome, cpu.heapServiceActive() ? InstructionStepResult.Advanced : InstructionStepResult.Blocked);
 		assert.equal(cpu.allocationReady(), false);
 		assert.equal(cpu.readFramePc(caller), issuePc);
-		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native prefix and final-mark work remain stopped');
+		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native recovery before firmware admission remains stopped');
 	}
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceTrace);
@@ -329,7 +329,7 @@ test('production object sweep frees records before debugger callbacks without pu
 		if (address !== null) callbacks.push([address, count(), cursor(),
 			+cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX)]);
 	};
-	const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullWeakClear];
+	const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
 	const seen = new Set<HeapServiceGcStage>();
 	for (let i = 0; i < 64 && gc.serviceStage() !== HeapServiceGcStage.FullObjectSweep; ++i) {
 		const stage = gc.serviceStage();

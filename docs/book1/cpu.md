@@ -1483,9 +1483,10 @@ It can yield earlier at a phase boundary. The interrupt wait alone does not
 start collection or advance the final remark. A collection started by physical
 pressure can finish over later ticks without further allocation. The
 display-tick assist does not advance the console clock. When scheduled
-execution resumes with a final remark pending, tracing and weak-entry removal
-run on ordinary CPU grants; other final-remark work can run with the clock
-stopped. Free space may be separated by retained allocations, so enough
+execution resumes with a final remark pending, revisiting threads and weak
+tables, tracing, and weak-entry removal run on ordinary CPU grants. Scanning
+the remaining roots can still run with the clock stopped. Free space may be
+separated by retained allocations, so enough
 unoccupied bytes does not guarantee that an allocation of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
@@ -1506,9 +1507,10 @@ the CPU admits marking, final remark and reclamation work against successive
 cycle grants. Each positive grant admits up to one collection quantum, at
 one work word per three cycles, with a minimum allowance of one word. An
 indivisible record operation can exceed its allowance. The resident memory
-routine scans the records awaiting tracing and removes weak entries before
-reclamation. The sweep traverses the object inventory, reclaims Table,
-upvalue, Closure, dead Thread and String storage, and can shrink the stack of
+routine scans records awaiting tracing, revisits threads and weak tables and
+marks the fixed roots, then removes weak entries before reclamation. The sweep
+traverses the object inventory, reclaims Table, upvalue, Closure, dead Thread
+and String storage, and can shrink the stack of
 a retained Thread during a full collection. These operations use ordinary CPU
 cycles and are not charged a second time per work word. The rest of the
 quantum is charged for the actual work it performs. Device time advances for
@@ -1517,8 +1519,8 @@ until the fresh cycle completes.
 
 Collection between reservation attempts for `NEWT` or a table insertion can
 pause execution with the console clock stopped. For an instruction suspended
-between attempts, resident tracing, weak-entry removal and sweeping run on
-ordinary CPU grants: devices continue to advance. The CPU settles any unpaid
+between attempts, resident tracing, remark visits, weak-entry removal and
+sweeping run on ordinary CPU grants: devices continue to advance. The CPU settles any unpaid
 cycles already accepted for the issuing instruction before the
 routine runs, and does not charge them again on retry. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical

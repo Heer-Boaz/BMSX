@@ -601,6 +601,7 @@ private:
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
+	void publishHeapRemarkHead();
 	void markRootHead(GcHeap& heap);
 	void markScopedRoots(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);

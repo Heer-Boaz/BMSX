@@ -103,14 +103,15 @@ try {
 			trace.push(command);
 			expected.push(String(value));
 		};
-		const timedTraceObservations = new Set<number>();
+		const markGrant = 1 << 20;
+		const timedMarkObservations = new Set<number>();
 		let consumed = 0;
-		const step = (cycles: number, completesTrace = false) => {
+		const step = (cycles: number, completesMarkStage = false) => {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			consumed = cycles - cpu.instructionBudgetRemaining;
-			if (completesTrace) {
+			if (completesMarkStage) {
 				assert.ok(consumed > 0 && consumed < cycles);
-				timedTraceObservations.add(expected.length);
+				timedMarkObservations.add(expected.length);
 			}
 			observe(`L ${cycles}`, `${result} ${consumed} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
 			return result;
@@ -150,10 +151,10 @@ try {
 		for (let i = 0; i < 128 && gc.serviceStage() !== HeapServiceGcStage.FullObjectSweep; ++i) {
 			const before = captureRuntimeSaveState(runtime);
 			referenceEnd = trace.length;
-			// Complete an already-admitted trace with a grant larger than either
-			// source mirror's path. Its collector work allowance was fixed earlier.
-			const tracing = gc.serviceStage() === HeapServiceGcStage.FullTrace;
-			assert.equal(step(tracing ? 1 << 20 : grant, tracing), RunResult.CollectionProgress);
+			// Retire each already-admitted mark stage with a grant larger than
+			// either mirror's path. Its source allowance was fixed earlier.
+			const marking = gc.serviceStage() === HeapServiceGcStage.FullTrace || gc.serviceStage() === HeapServiceGcStage.FullRemark;
+			assert.equal(step(marking ? markGrant : grant, marking), RunResult.CollectionProgress);
 			if (gc.serviceStage() === HeapServiceGcStage.FullObjectSweep) {
 				applyRuntimeSaveState(reference, before);
 				nativeWork = reference.machine.cpu.gc.stepFullCollection(1, GC_STEP_WORDS, 0, 0);
@@ -298,14 +299,13 @@ try {
 		]);
 		assert.equal(outputs.length, commonExpected.length + 11);
 		for (const [index, line] of commonExpected.entries()) {
-			if (timedTraceObservations.has(index)) {
-				// TS checks the head kind/color before issuance, while C++ checks
-				// issuance first. Compare the completed quantum, not identical
-				// instruction counts on these two source paths.
-				const nativeTrace = outputs[index].split(' '), tsTrace = line.split(' ');
-				assert.ok(+nativeTrace[1] > 0 && +nativeTrace[1] < 1 << 20);
-				nativeTrace[1] = tsTrace[1];
-				assert.deepEqual(nativeTrace, tsTrace, `cores differ at trace retirement: #${index}`);
+			if (timedMarkObservations.has(index)) {
+				// Gray admission preserves each mirror's original check order.
+				// Remark likewise preserves the Mode and explicit-error paths.
+				const nativeMark = outputs[index].split(' '), tsMark = line.split(' ');
+				assert.ok(+nativeMark[1] > 0 && +nativeMark[1] < markGrant);
+				nativeMark[1] = tsMark[1];
+				assert.deepEqual(nativeMark, tsMark, `cores differ at mark-stage retirement: #${index}`);
 			} else assert.equal(outputs[index], line, `cores differ before the first Table release: #${index}`);
 		}
 		assert.ok(+outputs[commonExpected.length] > 0, 'native checkpoint advanced to the tag store');

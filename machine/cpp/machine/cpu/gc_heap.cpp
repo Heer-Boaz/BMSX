@@ -16,8 +16,8 @@ namespace bmsx {
 
 GcHeap::GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings)
 	: budget(budget), memory(memory), arena(arena)
-	, indexKey(strings.intern("__index")), newIndexKey(strings.intern("__newindex")), lengthKey(strings.intern("__len"))
-	, m_cpu(cpu), m_modeKey(strings.intern("__mode")), m_stringPool(strings)
+	, indexKey(strings.intern("__index")), newIndexKey(strings.intern("__newindex")), lengthKey(strings.intern("__len")), modeKey(strings.intern("__mode"))
+	, m_cpu(cpu), m_stringPool(strings)
 	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
 
 namespace {
@@ -333,8 +333,8 @@ std::pair<int, size_t> GcHeap::probeTableMode(const TableRecord& table, size_t l
 		auto probe = address == current
 			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
 				memory.readRamRecordWord(m_controlOffset + GC_MODE_REMAINING)}
-			: meta.beginStringProbe(m_modeKey);
-		const size_t work = meta.advanceStringProbe(m_modeKey, probe, limit);
+			: meta.beginStringProbe(modeKey);
+		const size_t work = meta.advanceStringProbe(modeKey, probe, limit);
 		if (probe.node >= 0 && probe.remaining != 0u) {
 			memory.writeRamRecordPair(m_controlOffset + GC_MODE_META, address, static_cast<u32>(probe.node));
 			memory.writeRamRecordWord(m_controlOffset + GC_MODE_REMAINING, probe.remaining);
@@ -702,24 +702,26 @@ size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 	return accountEpochWork(work);
 }
 
-size_t GcHeap::stepFinalMark(size_t limit, u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage) {
+size_t GcHeap::stepFinalMark(size_t limit, u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage, u32 remarkFunction) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
 #endif
-	const size_t work = finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit, traceFunction, weakFunction, traceStage);
+	const size_t work = finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit, traceFunction, weakFunction, traceStage, remarkFunction);
 	return traceFunction != 0u && m_cpu.heapServiceActive() ? work : accountEpochWork(work);
 }
 
 size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit,
-	u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-#endif
+	u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage, u32 remarkFunction) {
 	size_t work = 0;
+	if (traceFunction != 0u) prepareMarkQuantum(true, limit, 0u);
 	if (remarkStage() == RemarkStage::None) setRemarkStage(RemarkStage::Threads);
 	if (remarkStage() <= RemarkStage::Weak) {
+		if (remarkFunction != 0u) {
+			startRemarkQuantum(remarkFunction, traceStage, limit, 0u);
+			return 0u;
+		}
 		work += remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return work;
 	}
@@ -732,6 +734,10 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 		markValue(root0); markValue(root1); markValue(root2);
 		work += m_stringPool.takeMarkWork();
 	}
+	return finalMarkTail(limit, work, traceFunction, weakFunction, traceStage, 1u);
+}
+
+size_t GcHeap::finalMarkTail(size_t limit, size_t work, u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage, u32 mirror) {
 	if (work >= limit) return work;
 	if (remarkStage() == RemarkStage::Roots) {
 		work = remarkRoots(valueNil(), valueNil(), valueNil(), limit, work, true);
@@ -739,15 +745,15 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 	}
 	if (remarkStage() == RemarkStage::Trace) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		GcPhaseMeasurement traceTime(profile.traceNanoseconds);
+		GcPhaseMeasurement traceTime(m_cpu.m_diagnosticGcProfile.traceNanoseconds);
 #endif
 		if (traceFunction != 0u) {
-			beginTraceQuantum(traceFunction, traceStage, true, limit, work, 0u);
+			startTraceQuantum(traceFunction, traceStage, work, true);
 			return work;
 		}
 		return finishAtomicTrace(limit, traceQuantum(true, limit, work));
 	}
-	return atomicWeakWork(limit, work, weakFunction, traceStage, 1u);
+	return atomicWeakWork(limit, work, weakFunction, traceStage, mirror);
 }
 
 size_t GcHeap::finishAtomicTrace(size_t limit, size_t work, u32 weakFunction, HeapServiceGcStage traceStage, u32 mirror) {
@@ -766,7 +772,7 @@ size_t GcHeap::atomicWeakWork(size_t limit, size_t work, u32 weakFunction, HeapS
 		memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::PendingStringWork), static_cast<u32>(m_stringPool.takeMarkWork()));
 		const auto weakStage = traceStage == HeapServiceGcStage::FullTrace ? HeapServiceGcStage::FullWeakClear : HeapServiceGcStage::MaintenanceWeakClear;
 		memory.writeRamRecordWord(management + HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(weakStage));
-		const std::array args{m_controlOffset, arena.stateOffset(), management + HEAP_STRING_METADATA_OFFSET, context, m_modeKey, newIndexKey, mirror};
+		const std::array args{m_controlOffset, arena.stateOffset(), management + HEAP_STRING_METADATA_OFFSET, context, modeKey, newIndexKey, mirror};
 		m_cpu.beginHeapService(weakFunction, args);
 		return work;
 	}
@@ -982,14 +988,14 @@ void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1,
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
-	size_t limit, u32 stringSweepFunction, HeapServiceGcStage stringSweepStage, u32 objectSweepFunction, u32 traceFunction) {
+	size_t limit, u32 stringSweepFunction, HeapServiceGcStage stringSweepStage, u32 objectSweepFunction, u32 traceFunction, u32 remarkFunction) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 	const u32 occupied = arena.occupiedBytes();
 	const auto traceStage = stringSweepStage == HeapServiceGcStage::FullStringSweep
 		? HeapServiceGcStage::FullTrace : HeapServiceGcStage::MaintenanceTrace;
 	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit,
-		stringSweepFunction != 0u, objectSweepFunction != 0u, traceFunction, traceStage, occupied);
+		stringSweepFunction != 0u, objectSweepFunction != 0u, traceFunction, traceStage, occupied, remarkFunction);
 	if (traceFunction != 0u && m_cpu.heapServiceActive()) return work;
 	if (work < limit && (stringSweepFunction != 0u || objectSweepFunction != 0u)) {
 		const auto sweepPhase = phase();
@@ -1057,13 +1063,19 @@ size_t GcHeap::finishStepWork(u32 occupiedBefore, size_t work) {
 }
 
 size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
-	size_t limit, bool stopBeforeStrings, bool stopBeforeObjects, u32 traceFunction, HeapServiceGcStage traceStage, u32 occupiedBefore) {
+	size_t limit, bool stopBeforeStrings, bool stopBeforeObjects, u32 traceFunction, HeapServiceGcStage traceStage, u32 occupiedBefore,
+	u32 remarkFunction) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 #endif
 	size_t work = 0;
 	if (remarkStage() != RemarkStage::None) {
+		if (remarkFunction != 0u && remarkStage() <= RemarkStage::Weak) {
+			prepareMarkQuantum(false, limit, occupiedBefore);
+			startRemarkQuantum(remarkFunction, traceStage, limit, 0u);
+			return 0u;
+		}
 		work += remarkVisits(limit);
 		if (remarkStage() != RemarkStage::Roots) return work;
 		work = remarkRoots(root0, root1, root2, limit, work, false);
@@ -1078,7 +1090,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 #endif
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
-			m_stringPool.markReachable(m_modeKey);
+			m_stringPool.markReachable(modeKey);
 			m_cpu.markRootHead(*this);
 			memory.writeRamRecordWord(m_controlOffset + GC_ROOT_CURSOR, static_cast<u32>(GcRootBank::SystemGlobals) << TRACE_CURSOR_BITS);
 			// Pace the whole cycle by the previous one's work, or one unit per
@@ -1103,7 +1115,8 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
 #endif
 					if (traceFunction != 0u) {
-						beginTraceQuantum(traceFunction, traceStage, false, limit, work, occupiedBefore);
+						prepareMarkQuantum(false, limit, occupiedBefore);
+						startTraceQuantum(traceFunction, traceStage, work, false);
 						return work;
 					}
 					work = traceQuantum(false, limit, work);
@@ -1137,13 +1150,18 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 	return work;
 }
 
-size_t GcHeap::finishMajorTrace(Value root0, Value root1, Value root2, size_t limit, size_t work) {
+size_t GcHeap::finishMajorTrace(Value root0, Value root1, Value root2, size_t limit, size_t work, u32 remarkFunction,
+	HeapServiceGcStage traceStage) {
 	if (work >= limit) return work;
 	if (phase() == GcPhase::MarkAgain) {
 		setPhase(GcPhase::Atomic);
 		return work;
 	}
 	setRemarkStage(RemarkStage::Threads);
+	if (remarkFunction != 0u) {
+		startRemarkQuantum(remarkFunction, traceStage, limit, work);
+		return work;
+	}
 	work += remarkVisits(limit - work);
 	if (remarkStage() != RemarkStage::Roots) return work;
 	return remarkRoots(root0, root1, root2, limit, work, false);
@@ -1182,10 +1200,11 @@ void GcHeap::requestFullCollection() {
 	m_cpu.requestYield();
 }
 
-size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction, u32 traceFunction, u32 weakFunction) {
-	const size_t work = finalMarkPending() ? stepFinalMark(words, traceFunction, weakFunction, HeapServiceGcStage::FullTrace)
+size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction, u32 traceFunction,
+	u32 weakFunction, u32 remarkFunction) {
+	const size_t work = finalMarkPending() ? stepFinalMark(words, traceFunction, weakFunction, HeapServiceGcStage::FullTrace, remarkFunction)
 		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction, HeapServiceGcStage::FullStringSweep,
-			objectSweepFunction, traceFunction);
+			objectSweepFunction, traceFunction, remarkFunction);
 	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
 	return work;
 }
@@ -1195,48 +1214,87 @@ HeapServiceGcStage GcHeap::serviceStage() const {
 	return static_cast<HeapServiceGcStage>(memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage)));
 }
 
-void GcHeap::beginTraceQuantum(u32 function, HeapServiceGcStage stage, bool atomic, size_t limit, size_t work, u32 occupiedBefore) {
+void GcHeap::prepareMarkQuantum(bool atomic, size_t limit, u32 occupiedBefore) {
 	const u32 management = arena.managementOffset();
 	const u32 state = management + HEAP_SERVICE_GC_OFFSET, context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 	if (!atomic) memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore), occupiedBefore);
 	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Limit), static_cast<u32>(limit));
 	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Atomic), static_cast<u32>(atomic));
 	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::MirrorPolicy), 1u);
-	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stage));
-	startTraceQuantum(function, work, atomic);
 }
 
-void GcHeap::startTraceQuantum(u32 function, size_t work, bool atomic) {
+void GcHeap::startTraceQuantum(u32 function, HeapServiceGcStage stage, size_t work, bool atomic) {
 	const u32 management = arena.managementOffset(), context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+	memory.writeRamRecordWord(management + HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stage));
 	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Work), static_cast<u32>(work));
 	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::PendingStringWork), static_cast<u32>(m_stringPool.takeMarkWork()));
 	const auto& concat = m_cpu.m_concat;
 	const u32 pending = atomic && concat.registersLeft ? static_cast<u32>(concat.nextRegister + concat.registersLeft) : 0u;
-	const std::array args{m_controlOffset, arena.stateOffset(), management + HEAP_STRING_METADATA_OFFSET, context, m_modeKey,
+	const std::array args{m_controlOffset, arena.stateOffset(), management + HEAP_STRING_METADATA_OFFSET, context, modeKey,
 		m_cpu.activeThread()->address, pending, memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::MirrorPolicy))};
 	m_cpu.beginHeapService(function, args);
 }
 
-size_t GcHeap::finishTraceQuantum(u32 function, u32 weakFunction, HeapServiceGcStage stage) {
-	const u32 management = arena.managementOffset();
-	const u32 state = management + HEAP_SERVICE_GC_OFFSET, context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+size_t GcHeap::finishTraceQuantum(u32 function, u32 weakFunction, u32 remarkFunction, HeapServiceGcStage stage) {
+	const u32 context = arena.managementOffset() + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 	const bool atomic = memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Atomic)) != 0u;
 	const u32 limit = memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Limit));
 	const size_t traced = m_cpu.heapServiceResult();
 	m_stringPool.resumeMarkWork(memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::PendingStringWork)));
 	const size_t work = atomic ? finishAtomicTrace(limit, traced, weakFunction, stage,
 		memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::MirrorPolicy)))
-		: finishMajorTrace(valueNil(), valueNil(), valueNil(), limit, traced);
-	if (m_cpu.heapServiceActive()) return work - traced;
+		: finishMajorTrace(valueNil(), valueNil(), valueNil(), limit, traced, remarkFunction, stage);
+	retireMarkQuantum(function, stage, limit, work, atomic);
+	return work - traced;
+}
+
+void GcHeap::startRemarkQuantum(u32 function, HeapServiceGcStage traceStage, size_t limit, size_t work) {
+	const u32 management = arena.managementOffset(), context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+	const u32 head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	const u32 pending = static_cast<u32>(m_stringPool.takeMarkWork());
+	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Work), static_cast<u32>(work));
+	memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::PendingStringWork), pending);
+	memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::PendingStringWork), pending);
+	m_cpu.publishHeapRemarkHead();
+	const auto stage = traceStage == HeapServiceGcStage::FullTrace ? HeapServiceGcStage::FullRemark : HeapServiceGcStage::MaintenanceRemark;
+	memory.writeRamRecordWord(management + HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stage));
+	const std::array args{m_controlOffset, arena.stateOffset(), management + HEAP_STRING_METADATA_OFFSET, head,
+		static_cast<u32>(limit - work), memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::MirrorPolicy))};
+	m_cpu.beginHeapService(function, args);
+}
+
+size_t GcHeap::finishRemarkQuantum(u32 traceFunction, u32 weakFunction, HeapServiceGcStage stage) {
+	const u32 management = arena.managementOffset(), context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+	const bool atomic = memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Atomic)) != 0u;
+	const u32 limit = memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Limit));
+	const size_t visited = memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::Work)) + m_cpu.heapServiceResult();
+	const u32 pending = memory.readRamRecordWord(management + HEAP_SERVICE_REMARK_HEAD_OFFSET
+		+ static_cast<u32>(HeapServiceRemarkHeadField::PendingStringWork));
+	m_stringPool.resumeMarkWork(pending);
+	const auto traceStage = stage == HeapServiceGcStage::FullRemark ? HeapServiceGcStage::FullTrace : HeapServiceGcStage::MaintenanceTrace;
+	size_t work = visited, guestMarkWork = 0;
+	if (remarkStage() == RemarkStage::Roots) {
+		// The resident head scan already paid ordinary cycles for these marks.
+		guestMarkWork = pending - memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::PendingStringWork));
+		work = atomic ? finalMarkTail(limit, work, traceFunction, weakFunction, traceStage,
+			memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTraceField::MirrorPolicy)))
+			: remarkRoots(valueNil(), valueNil(), valueNil(), limit, work, false);
+	}
+	retireMarkQuantum(traceFunction, traceStage, limit, work, atomic);
+	return work - visited - guestMarkWork;
+}
+
+void GcHeap::retireMarkQuantum(u32 traceFunction, HeapServiceGcStage stage, size_t limit, size_t work, bool atomic) {
+	if (m_cpu.heapServiceActive()) return;
+	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
 	if (!atomic && work < limit && phase() == GcPhase::MarkAgain) {
 		// Mark -> Remark -> MarkAgain can all share the source allowance.
-		startTraceQuantum(function, work, false);
+		startTraceQuantum(traceFunction, stage, work, false);
 	} else {
 		if (atomic) accountEpochWork(work);
 		else finishStepWork(memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore)), work);
 		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(HeapServiceGcStage::Idle));
 	}
-	return work - traced;
 }
 
 void GcHeap::finishWeakQuantum() {

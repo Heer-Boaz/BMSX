@@ -63,7 +63,7 @@ try {
 		const traceContext = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 		const resultOffset = management + HEAP_SERVICE_RESULT_OFFSET;
 		const trace: string[] = [], expected: string[] = [];
-		const mirroredTraceGrants = new Set<number>();
+		const mirroredMarkGrants = new Set<number>();
 		const observe = (command: string, value: string | number) => {
 			trace.push(command);
 			expected.push(String(value));
@@ -91,11 +91,13 @@ try {
 		reference.boot();
 		const referenceCpu = reference.machine.cpu, referenceMem = reference.machine.memory;
 		const grant = GC_STEP_WORDS * GC_WORK_WORD_CYCLES;
-		const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullWeakClear];
-		const traceTransitions = [
-			[GcPhase.Mark, GcPhase.MarkAgain, HeapServiceGcStage.FullTrace],
-			[GcPhase.MarkAgain, GcPhase.Atomic, HeapServiceGcStage.Idle],
-			[GcPhase.Atomic, GcPhase.Atomic, HeapServiceGcStage.FullWeakClear],
+		const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
+		const markTransitions = [
+			[HeapServiceGcStage.FullTrace, GcPhase.Mark, HeapServiceGcStage.FullRemark, GcPhase.Mark],
+			[HeapServiceGcStage.FullRemark, GcPhase.Mark, HeapServiceGcStage.FullTrace, GcPhase.MarkAgain],
+			[HeapServiceGcStage.FullTrace, GcPhase.MarkAgain, HeapServiceGcStage.Idle, GcPhase.Atomic],
+			[HeapServiceGcStage.FullRemark, GcPhase.Atomic, HeapServiceGcStage.FullTrace, GcPhase.Atomic],
+			[HeapServiceGcStage.FullTrace, GcPhase.Atomic, HeapServiceGcStage.FullWeakClear, GcPhase.Atomic],
 		] as const;
 		const seen = new Set<HeapServiceGcStage>();
 		for (let i = 0; i < 128 && (gc.phase() !== GcPhase.Sweep || cpu.heapServiceActive()); ++i) {
@@ -105,12 +107,12 @@ try {
 				seen.add(admitted);
 			}
 			assert.equal(step(grant), RunResult.CollectionProgress);
-			assert.equal(cpu.readFramePc(caller), callerPc, 'trace and weak grants do not admit the caller');
-			if (admitted === HeapServiceGcStage.FullTrace) {
-				assert.deepEqual([beforePhase, gc.phase(), stage()], traceTransitions[mirroredTraceGrants.size],
-					'the full grant reaches a named trace retirement, not an arbitrary in-flight PC');
+			assert.equal(cpu.readFramePc(caller), callerPc, 'trace, remark and weak grants do not admit the caller');
+			if (admitted === HeapServiceGcStage.FullTrace || admitted === HeapServiceGcStage.FullRemark) {
+				assert.deepEqual([admitted, beforePhase, stage(), gc.phase()], markTransitions[mirroredMarkGrants.size],
+					'the full grant reaches a named mark retirement, not an arbitrary in-flight PC');
 				assert.ok(consumed > 0 && consumed < grant);
-				mirroredTraceGrants.add(observation);
+				mirroredMarkGrants.add(observation);
 				// Compare native work, limit, atomic flag and carry; the
 				// trailing MirrorPolicy deliberately selects a different origin.
 				observe(`H ${traceContext} ${traceContext + HeapServiceTraceField.MirrorPolicy}`,
@@ -120,14 +122,14 @@ try {
 				observe('P', `${caller + 1} ${callerPc}`);
 			}
 		}
-		assert.deepEqual([...seen], beforeSweep, 'the linked BIOS ran Trace and ClearWeak before reclamation');
-		assert.equal(mirroredTraceGrants.size, traceTransitions.length);
+		assert.deepEqual([...seen], beforeSweep, 'the linked BIOS ran Trace, Remark and ClearWeak before reclamation');
+		assert.equal(mirroredMarkGrants.size, markTransitions.length);
 		assert.equal(stage(), HeapServiceGcStage.Idle);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(gc.phase(), GcPhase.Sweep);
 		assert.equal(gc.fullEpochs(), 1);
 		// Compare at the original reclamation quantum's own admission
-		// boundary, not at the new earlier Trace/Weak service entries.
+		// boundary, not at the earlier marking service entries.
 		applyRuntimeSaveState(reference, captureRuntimeSaveState(runtime));
 		const nativeWork = referenceCpu.gc.stepFullCollection(gc.fullEpochs(), GC_STEP_WORDS, 0);
 		assert.equal(step(grant), RunResult.CollectionProgress);
@@ -234,13 +236,13 @@ try {
 		}).trimEnd().split('\n');
 		assert.equal(output.length, expected.length);
 		const index = output.findIndex((line, i) => {
-			if (!mirroredTraceGrants.has(i)) return line !== expected[i];
-			// Origin-specific gate order and color-byte stores are preserved
-			// by the Trace BIOS. They use different instruction counts (O0:
-			// 15–59 cycles apart; O3: 11–47 here) despite matching retired work.
+			if (!mirroredMarkGrants.has(i)) return line !== expected[i];
+			// The preserved Trace/Remark mirror paths can take different
+			// instruction counts despite matching retired work (Trace:
+			// O0 15–59, O3 11–47 cycles apart; Remark: O0 61, O3 23 here).
 			const [result, cycles, ...state] = line.split(' ');
 			const [targetResult, , ...targetState] = expected[i].split(' ');
-			assert.ok(+cycles > 0 && +cycles < grant, `native trace retirement at observation ${i}`);
+			assert.ok(+cycles > 0 && +cycles < grant, `native marking retirement at observation ${i}`);
 			return result !== targetResult || state.join(' ') !== targetState.join(' ');
 		});
 		assert.equal(index, -1, `first differing full String GC observation ${index}: native=${output[index]}, TS=${expected[index]}`);

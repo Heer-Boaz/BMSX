@@ -154,17 +154,19 @@ try {
 				assert.equal(cpu.readFramePc(caller), newtPc);
 				const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
 				const schedulerStep = (step: 'a' | 'd') => {
-					const op = step === 'd' && cpu.gc.serviceStage() === HeapServiceGcStage.MaintenanceTrace ? 'k' : step;
+					const admitted = cpu.gc.serviceStage();
+					const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark;
+					const op = step === 'd' && mark ? 'k' : step;
 					const before = frames.lastTickSequence;
 					const cycle = scheduler.nowCycles;
 					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
 					if (op === 'k') {
-						// Native trace mirrors check issuance and color in different
-						// order. Compare at retirement, including the device edge,
-						// while retaining single-instruction timing elsewhere.
-						for (let grant = 1; cpu.gc.serviceStage() === HeapServiceGcStage.MaintenanceTrace && grant < 65536; ++grant)
+						// Trace checks issuance in a different order, and the
+						// remark root pass differs at the Mode and fault slots.
+						// Keep precise device-edge and subsequent timing checks.
+						for (let grant = 1; cpu.gc.serviceStage() === admitted && grant < 65536; ++grant)
 							frames.stepInstruction(1);
-						assert.notEqual(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceTrace);
+						assert.notEqual(cpu.gc.serviceStage(), admitted);
 						assert.ok(scheduler.nowCycles > cycle);
 					}
 					observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
@@ -198,7 +200,7 @@ try {
 					recoverySlice();
 					assert.equal(cpu.allocationReady(), false);
 				}
-				for (const entered of [HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceWeakClear,
+				for (const entered of [HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
 					HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep]) {
 					assert.notEqual(recoveryStages & (1 << entered), 0, `allocation recovery enters BIOS stage ${entered}`);
 				}

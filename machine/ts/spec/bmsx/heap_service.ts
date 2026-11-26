@@ -6,10 +6,10 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 8;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 9;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -44,7 +44,17 @@ export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
 export const enum HeapServiceGcStage {
 	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
-	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear,
+	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
+}
+
+// CPU-published head roots borrowed by a single remark quantum. Static
+// fault identifiers are a separate pinned word plane, populated at boot.
+export const HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;
+export const HEAP_SERVICE_REMARK_FAULTS_OFFSET = 0x6c8;
+export const enum HeapServiceRemarkHeadField {
+	PendingStringWork = 0, Mode = 4, Index = 8, NewIndex = 12, Length = 16, Error = 20, FaultIds = 24,
+	StringIndexTag = 28, StringIndexWord = 32, ComparisonRemaining = 36, ComparisonLeft = 40, ComparisonRight = 44,
+	HasPendingAssignment = 48, Receiver = 52, KeyTag = 56, KeyWord = 60, ValueTag = 64, ValueWord = 68,
 }
 
 // Locals of the original object sweep quantum, retained across derived-view

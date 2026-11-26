@@ -207,13 +207,16 @@ int main(int argc, char** argv) {
 					auto& frames = runtime.frameScheduler;
 					const auto before = frames.lastTickSequence;
 					const auto cycles = scheduler.nowCycles();
+					const auto admitted = cpu.gcHeap().serviceStage();
 					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
 					if (op == 'k') {
-						for (int grant = 1; cpu.gcHeap().serviceStage() == HeapServiceGcStage::MaintenanceTrace && grant < 65536; ++grant)
+						if (admitted != HeapServiceGcStage::MaintenanceTrace && admitted != HeapServiceGcStage::MaintenanceRemark)
+							throw std::runtime_error("Expected an active allocation-recovery mark stage");
+						for (int grant = 1; cpu.gcHeap().serviceStage() == admitted && grant < 65536; ++grant)
 							frames.stepInstruction(runtime, 1);
-						if (cpu.gcHeap().serviceStage() == HeapServiceGcStage::MaintenanceTrace || scheduler.nowCycles() <= cycles)
-							throw std::runtime_error("Allocation recovery did not retire the timed trace");
+						if (cpu.gcHeap().serviceStage() == admitted || scheduler.nowCycles() <= cycles)
+							throw std::runtime_error("Allocation recovery did not retire the timed mark stage");
 					}
 					const u32 management = cpu.heapAllocator().managementOffset();
 					std::cout << result << ' ' << (op == 'k' ? 1 : scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)

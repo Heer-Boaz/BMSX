@@ -71,6 +71,7 @@ public:
 	const StringId indexKey;
 	const StringId newIndexKey;
 	const StringId lengthKey;
+	const StringId modeKey;
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;
@@ -96,9 +97,10 @@ public:
 	bool stoppedFinalMarkPending() const;
 	void requestFullCollection();
 	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction = 0u,
-		u32 traceFunction = 0u, u32 weakFunction = 0u);
+		u32 traceFunction = 0u, u32 weakFunction = 0u, u32 remarkFunction = 0u);
 	HeapServiceGcStage serviceStage() const;
-	size_t finishTraceQuantum(u32 function, u32 weakFunction, HeapServiceGcStage stage);
+	size_t finishTraceQuantum(u32 function, u32 weakFunction, u32 remarkFunction, HeapServiceGcStage stage);
+	size_t finishRemarkQuantum(u32 traceFunction, u32 weakFunction, HeapServiceGcStage stage);
 	void finishWeakQuantum();
 	void finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction);
 	void finishStringSweep(HeapServiceGcStage stage);
@@ -109,13 +111,13 @@ public:
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u, HeapServiceGcStage stringSweepStage = HeapServiceGcStage::Idle,
-		u32 objectSweepFunction = 0u, u32 traceFunction = 0u);
+		u32 objectSweepFunction = 0u, u32 traceFunction = 0u, u32 remarkFunction = 0u);
 	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	// Only the stopped mutator may advance the final pass.
 	size_t stepFinalMark(size_t limit = GC_STEP_WORDS, u32 traceFunction = 0u, u32 weakFunction = 0u,
-		HeapServiceGcStage traceStage = HeapServiceGcStage::Idle);
+		HeapServiceGcStage traceStage = HeapServiceGcStage::Idle, u32 remarkFunction = 0u);
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	// The owner retries its actual request after each recovered epoch.
 	LuaAllocationRecovery recoverAllocation(LuaAllocationRecovery next,
@@ -179,21 +181,25 @@ private:
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
 	size_t accountEpochWork(size_t work);
 	size_t finishStepWork(u32 occupiedBefore, size_t work);
-	size_t finishMajorTrace(Value root0, Value root1, Value root2, size_t limit, size_t work);
+	size_t finishMajorTrace(Value root0, Value root1, Value root2, size_t limit, size_t work,
+		u32 remarkFunction = 0u, HeapServiceGcStage traceStage = HeapServiceGcStage::Idle);
 	size_t finishAtomicTrace(size_t limit, size_t work, u32 weakFunction = 0u, HeapServiceGcStage traceStage = HeapServiceGcStage::Idle, u32 mirror = 1u);
 	size_t atomicWeakWork(size_t limit, size_t work, u32 weakFunction, HeapServiceGcStage traceStage, u32 mirror);
 	size_t finishAtomicCollection(size_t work);
 	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit,
-		bool stopBeforeStrings, bool stopBeforeObjects, u32 traceFunction, HeapServiceGcStage traceStage, u32 occupiedBefore);
-	void beginTraceQuantum(u32 function, HeapServiceGcStage stage, bool atomic, size_t limit, size_t work, u32 occupiedBefore);
-	void startTraceQuantum(u32 function, size_t work, bool atomic);
+		bool stopBeforeStrings, bool stopBeforeObjects, u32 traceFunction, HeapServiceGcStage traceStage, u32 occupiedBefore, u32 remarkFunction);
+	void prepareMarkQuantum(bool atomic, size_t limit, u32 occupiedBefore);
+	void startTraceQuantum(u32 function, HeapServiceGcStage stage, size_t work, bool atomic);
+	void startRemarkQuantum(u32 function, HeapServiceGcStage traceStage, size_t limit, size_t work);
+	void retireMarkQuantum(u32 traceFunction, HeapServiceGcStage stage, size_t limit, size_t work, bool atomic);
 	void saveSweepQuantum(HeapServiceGcStage stage, u32 occupiedBefore, size_t work, size_t limit);
 	void startStringSweep(u32 stringSweepFunction, size_t allowance, u32 exactShrinkBoundary);
 	void startObjectSweep(u32 objectSweepFunction, bool compactThreads);
 	void beginStrings();
 	void finishStrings();
 	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit,
-		u32 traceFunction = 0u, u32 weakFunction = 0u, HeapServiceGcStage traceStage = HeapServiceGcStage::Idle);
+		u32 traceFunction = 0u, u32 weakFunction = 0u, HeapServiceGcStage traceStage = HeapServiceGcStage::Idle, u32 remarkFunction = 0u);
+	size_t finalMarkTail(size_t limit, size_t work, u32 traceFunction, u32 weakFunction, HeapServiceGcStage traceStage, u32 mirror);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
 	}
@@ -210,7 +216,6 @@ private:
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
 	CPU& m_cpu;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
-	StringId m_modeKey;
 	StringPool& m_stringPool;
 	const u32 m_controlOffset;
 };
