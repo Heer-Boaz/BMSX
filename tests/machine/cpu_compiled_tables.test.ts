@@ -2,6 +2,8 @@ import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
+import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -383,7 +385,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	assert.equal(js.rootThread.frameAtDepth(0).registers.getInteger(3), 19);
 });
 
-test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', t => {
+test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 63, 63);
@@ -406,11 +408,10 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(retained));
 		cpu.collectTrackedHeapBytes();
 	}
-	const assist = t.mock.method(js, 'assistAllocation');
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
-	const work = assist.mock.calls.reduce((sum, call) => sum + call.result!, 0);
+	const work = js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
 	assert.ok(work > 0, 'the request performed collector work');
-	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT retains all incremental and recovery work, but not initialization');
+	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT pays the recovered epoch despite having no cycles for an ordinary assist');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
