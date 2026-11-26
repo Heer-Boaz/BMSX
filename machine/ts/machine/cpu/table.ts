@@ -354,31 +354,12 @@ export class TableRecords {
 		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
 		const key = canonicalTableKey(rawKey);
 		const arrayIndex = this.getArrayIndex(key);
-		let current = record, links = 0;
-		for (let depth = 0; depth < visitLimit; ++depth) {
-			const own = validKey ? this.getCanonical(current, key, arrayIndex) : valueNil();
-			if (!isNil(own)) {
-				result.value = own; result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
-			}
-			const meta = this.metatableAddress(current);
-			if (meta === 0) {
-				result.value = depth === 0 ? own : valueNil();
-				result.slot = -1; result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
-			}
-			links += this.getStringKeyCached(meta, indexKey, -1, result);
-			const next = result.value;
-			const tag = valueTag(next);
-			if (tag !== ValueTag.Table) {
-				result.value = tag === ValueTag.Nil ? valueNil() : next;
-				result.slot = -1; result.extraVisits = depth;
-				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
-					result.receiver = current; result.status = TableLookupStatus.Invoke;
-				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
-				return links;
-			}
-			current = valuePayload(next);
+		result.value = validKey ? this.getCanonical(record, key, arrayIndex) : valueNil();
+		result.slot = -1;
+		if (!isNil(result.value)) {
+			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return 0;
 		}
-		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return links;
+		return this.resolveIndexMiss(record, indexKey, key, validKey, arrayIndex, result, visitLimit, 0);
 	}
 	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
 		this.resolveIndex(record, indexKey, valueInteger(key), result);
@@ -391,14 +372,20 @@ export class TableRecords {
 		return meta !== 0 ? this.getStringKey(meta, key) : valueNil();
 	}
 	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult, visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
-		let current = record, links = 0;
-		for (let depth = 0; depth < visitLimit; ++depth) {
-			links += this.getStringKeyCached(current, key, predicted, result);
-			if (result.slot >= 0) {
-				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
-			}
+		const links = this.getStringKeyCached(record, key, predicted, result);
+		if (result.slot >= 0) {
+			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return links;
+		}
+		return this.resolveIndexMiss(record, indexKey, valueString(key), true, -1, result, visitLimit, links);
+	}
+	private resolveIndexMiss(current: number, indexKey: StringId, key: Value, validKey: boolean, arrayIndex: number,
+		result: TableLookupResult, visitLimit: number, links: number): number {
+		const stringKey = valueTag(key) === ValueTag.String;
+		let depth = 0, anchor = 0, anchorDepth = 0, anchorLinks = 0;
+		for (;;) {
 			const meta = this.metatableAddress(current);
 			if (meta === 0) {
+				if (depth !== 0) result.value = valueNil();
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
 			links += this.getStringKeyCached(meta, indexKey, -1, result);
@@ -408,16 +395,34 @@ export class TableRecords {
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;
 				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
-					result.value = next; result.receiver = current; result.status = TableLookupStatus.Invoke;
-				} else if (tag !== ValueTag.Nil) {
-					result.value = next; result.status = TableLookupStatus.Forward;
-				} else result.status = TableLookupStatus.Resolved;
+					result.receiver = current; result.status = TableLookupStatus.Invoke;
+				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
 				return links;
 			}
-			predicted = -1;
 			current = valuePayload(next);
+			++depth;
+			// An inherited visit never uses the original receiver's slot hint.
+			// A complete repeated period has the same key, edges and probe cost.
+			if (anchorDepth !== 0 && current === anchor) {
+				const period = depth - anchorDepth;
+				const repeats = ((visitLimit - depth) / period) >>> 0;
+				links += repeats * (links - anchorLinks);
+				depth += repeats * period;
+			} else if ((depth & (depth - 1)) === 0) {
+				anchor = current; anchorDepth = depth; anchorLinks = links;
+			}
+			if (depth === visitLimit) {
+				result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return links;
+			}
+			if (stringKey) {
+				links += this.getStringKeyCached(current, valuePayload(key), -1, result);
+			} else {
+				result.value = validKey ? this.getCanonical(current, key, arrayIndex) : valueNil();
+			}
+			if (!isNil(result.value)) {
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
+			}
 		}
-		result.extraVisits = visitLimit - 1; result.status = TableLookupStatus.ChainExhausted; return links;
 	}
 	public resolveAssignment(record: number, rawKey: Value, result: TableLookupResult,
 		fixedString = false): void {

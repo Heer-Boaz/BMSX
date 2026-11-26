@@ -319,6 +319,47 @@ void directIndexMemberWork() {
 	}
 }
 
+void periodicIndexChainKeepsThePartialTail() {
+	Program program(OpCode::GETFIELD, false);
+	Machine generated(program.image, false), scalar(program.image, true);
+	constexpr std::array next{1, 2, 3, 4, 2};
+	for (auto* m : {&generated, &scalar}) {
+		auto& cpu = m->cpu;
+		const std::array roots{cpu.createTable(), cpu.createTable(), cpu.createTable(), cpu.createTable(), cpu.createTable()};
+		const auto method = valueString(cpu.stringPool().intern("__index")), key = keyFor(cpu, KeyKind::String);
+		const u32 home = hashCanonicalTableKey(method) & 127u;
+		for (size_t i = 0; i < roots.size(); ++i) {
+			auto meta = cpu.createTable(0, 128);
+			auto receiver = roots[i];
+			receiver.setMetatableAddress(meta.address());
+			for (int j = 0, n = 0; j < 65 + static_cast<int>(i); ++j) {
+				if (j == 1) meta.set(method, valueTable(roots[next[i]].address()));
+				else {
+					Value other;
+					do other = valueInteger(n++); while ((hashCanonicalTableKey(other) & 127u) != home);
+					meta.set(other, valueBool(false));
+				}
+			}
+		}
+		u32 links = 0;
+		int position = 0;
+		TableLookupResult result;
+		for (u32 limit = 1; limit <= TABLE_INDEX_CHAIN_LIMIT; ++limit) {
+			links += 1 + position;
+			position = next[position];
+			require(roots[0].resolveIndex(key, result, limit) == links && result.extraVisits == limit - 1
+				&& result.status == TableLookupStatus::ChainExhausted,
+				"a nonuniform period after an acyclic prefix charges exactly the admitted visits and fractional last period");
+		}
+		cpu.activeThread()->currentFrame->registers.set(0, valueTable(roots[0].address()));
+	}
+	test::runCpuParity(generated.cpu, scalar.cpu, 3);
+	// Two prefix visits (1+2), then ten periods of 3+4+5.
+	require(3 - generated.cpu.instructionBudgetRemaining == 2 + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)] + 123 + 31 * TABLE_INDEX_VISIT_CYCLES
+		&& generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP,
+		"the generated read publishes the same complete periodic fault as the scalar path");
+}
+
 void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
@@ -651,7 +692,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}

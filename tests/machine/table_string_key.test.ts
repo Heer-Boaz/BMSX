@@ -224,3 +224,31 @@ test('fixed string assignment probes the terminal table only if it can invoke a 
 	assert.equal(tables.getStringKey(forwarded, absent), valueNil());
 	assert.equal(tables.getStringKey(source, field), valueNil());
 });
+
+test('a periodic __index path retains the cost of its prefix and last incomplete round', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, next = [1, 2, 3, 4, 2], roots = next.map(() => cpu.createTable());
+	const indexKey = cpu.stringPool.intern('__index'), method = valueString(indexKey), key = valueString(cpu.stringPool.intern('field'));
+	for (let i = 0; i < roots.length; ++i) {
+		const meta = cpu.createTable(0, 128);
+		tables.setMetatableAddress(roots[i], meta);
+		for (let j = 0, n = 0; j < 65 + i; ++j) {
+			if (j === 1) tables.set(meta, method, valueTable(roots[next[i]]));
+			else {
+				let other: Value;
+				do other = valueInteger(n++); while (((hashCanonicalTableKey(other) ^ hashCanonicalTableKey(method)) & 127) !== 0);
+				tables.set(meta, other, valueBool(false));
+			}
+		}
+	}
+	const result = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
+	let links = 0, position = 0;
+	for (let limit = 1; limit <= 32; ++limit) {
+		links += 1 + position;
+		position = next[position];
+		assert.equal(tables.resolveIndex(roots[0], indexKey, key, result, limit), links);
+		assert.equal(result.extraVisits, limit - 1);
+		assert.equal(result.status, TableLookupStatus.ChainExhausted);
+	}
+});

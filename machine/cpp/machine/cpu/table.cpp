@@ -764,6 +764,7 @@ template <bool Assignment, bool OwnMiss, typename Lookup>
 void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 	u32 visitLimit, u32* linkCycles) const {
 	TableRecord current = *this;
+	u32 anchor = 0, anchorDepth = 0, anchorLinks = 0;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
 		u32 metatable;
@@ -811,6 +812,24 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			return;
 		}
 		current.m_address = valuePayload(parent);
+		if constexpr (!Assignment) {
+			// No guest code runs on Table-to-Table edges. From the same
+			// receiver and key, one full period repeats the same probe work.
+			// Anchor at inherited depths 1,2,4,..., where there is no initial
+			// slot prediction or pre-probed own miss to skew the first period.
+			const u32 nextDepth = depth + 1u;
+			if (anchorDepth && current.m_address == anchor) {
+				if (!linkCycles) break;
+				const u32 period = nextDepth - anchorDepth;
+				const u32 repeats = (visitLimit - nextDepth) / period;
+				*linkCycles += repeats * (*linkCycles - anchorLinks);
+				depth += repeats * period;
+			} else if (std::has_single_bit(nextDepth)) {
+				anchor = current.m_address;
+				anchorDepth = nextDepth;
+				if (linkCycles) anchorLinks = *linkCycles;
+			}
+		}
 		slot = -1;
 	}
 	result = {valueNil(), -1, visitLimit - 1, TableLookupStatus::ChainExhausted};
