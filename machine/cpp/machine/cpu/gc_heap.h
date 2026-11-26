@@ -96,7 +96,6 @@ public:
 	bool finalMarkPending() const { return phase() == GcPhase::Atomic; }
 	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
 	bool stoppedFinalMarkPending() const;
-	void requestFullCollection();
 	size_t stepFullCollection(u32 epochs, size_t words, const HeapServiceFunctions* services = nullptr);
 	HeapServiceGcStage serviceStage() const;
 	size_t finishTraceQuantum(const HeapServiceFunctions& services, HeapServiceGcStage stage);

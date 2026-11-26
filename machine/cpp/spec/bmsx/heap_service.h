@@ -16,7 +16,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
+	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, FullCollection, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -93,6 +93,8 @@ enum class HeapServiceRootPlane : uint32_t {
 	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
+// A word load samples the current instruction grant after paying the load.
+constexpr uint32_t HEAP_SERVICE_REMAINING_GRANT_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
 
 // CPU-published head roots and the pinned static fault-ID word plane.
 constexpr uint32_t HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;

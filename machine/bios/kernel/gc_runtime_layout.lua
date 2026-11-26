@@ -1,8 +1,8 @@
 module<const>
 
--- Management word addresses in the pinned system context, relative to the
--- management reservation. The CPU publishes data here; it does not select
--- collector phases. The effect address is a private store strobe, not RAM.
+-- Pinned System context: relative management offsets and CPU-private ports.
+-- The CPU makes data available without selecting collector phases. The
+-- effect address is a private store strobe, not RAM.
 return {
 	ram_base = 0x08000000,
 	metadata_offset = 0x300,
@@ -15,6 +15,7 @@ return {
 	trace_context_offset = 0x740,
 	effect_offset = 0x788,
 	arguments_offset = 0x790,
+	remaining_grant_address = 0x02c00000,
 	publish_roots = 0,
 	release_string_work = 5,
 }

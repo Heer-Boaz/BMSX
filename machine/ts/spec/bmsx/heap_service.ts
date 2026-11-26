@@ -9,7 +9,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
+	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, FullCollection, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -84,6 +84,8 @@ export const enum HeapServiceRootPlane {
 	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
 }
 export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_SERVICE_ROOT_PORT_SHIFT;
+// A word load samples the current instruction grant after paying the load.
+export const HEAP_SERVICE_REMAINING_GRANT_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
 
 // CPU-published head roots borrowed by a single remark quantum. Static
 // fault identifiers are a separate pinned word plane, populated at boot.

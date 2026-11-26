@@ -88,6 +88,7 @@
 		"test:bios-call": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/bios_call.ts",
 		"test:bios-closure-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closure_service.ts",
 		"test:bios-gc-fused-record": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_fused_record.ts",
+		"test:bios-gc-full": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_full_service.ts",
 		"test:bios-table-growth-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_growth_service.ts",
 		"test:bios-table-resize-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_resize_service.ts",
 		"test:bios-call-native-gate": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/native_bios_call.ts",

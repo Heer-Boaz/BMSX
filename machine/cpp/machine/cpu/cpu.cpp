@@ -996,7 +996,7 @@ void CPU::commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSigna
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -1019,7 +1019,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	u32 functionAddress
 ) {
 	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
@@ -1312,8 +1312,16 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CollectGarbage: {
 			if (!args.empty() && !valueIsNumber(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const i32 operation = args.empty() ? 0 : integerOperand(args[0]);
-			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) m_heap.requestFullCollection();
-			else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
+			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) {
+				const u32 entry = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::FullCollection)];
+				if (entry == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+				++m_diagnosticGcProfile.fullCollections;
+#endif
+				const std::array args{m_heapAllocator.managementOffset()};
+				beginHeapService(entry, args);
+				requestYield();
+			} else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
 				out.push_back(valueInteger(m_luaHeap.usedBytes()));
 				out.push_back(valueInteger(m_luaHeap.capacity()));
 			} else if (operation == static_cast<int>(GarbageCollectionOperation::Step)) out.push_back(valueBool(m_luaHeap.stepRuntime()));
@@ -1744,7 +1752,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 
 bool CPU::enterPendingInterrupt() {
 	if (heapServiceActive()) return false;
-	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -2579,6 +2587,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		const u32 destination = m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Destination));
 		const auto gcStage = cartLane == 0u && destination == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
+		// Debugger stepping accounts a pinned full collector as machine progress,
+		// not as a second cartridge instruction. The activation owns all phases.
+		const bool fullCollection = m_heapServiceView.firstFrame->readControl(FrameField::Function)
+			== m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::FullCollection)];
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 #if defined(BMSX_ENABLE_NATIVE_COMPILER_WORKER)
@@ -2654,7 +2666,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
+		return (fullCollection || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {
@@ -2667,25 +2679,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	if (target == 0u) target = m_rootView.address;
 	for (;;) {
-		if (const u32 epochs = m_heap.fullEpochs()) {
-			instructionBudgetRemaining = instructionBudget;
-			if (instructionBudget <= 0) return RunResult::Yielded;
-			const auto words = std::clamp(instructionBudget / GC_WORK_WORD_CYCLES, 1, static_cast<int>(GC_STEP_WORDS));
-			const auto& services = m_systemImage->heapServiceFunctions;
-			chargeCollectionWork(m_heap.stepFullCollection(epochs, words,
-				services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr));
-			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
-			if (heapServiceActive()) return RunResult::Yielded;
-			instructionBudget = instructionBudgetRemaining;
-			if (instructionBudget <= 0) return RunResult::Yielded;
-			continue;
-		}
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
-		if ((m_runSignals & RunThreadSwitch) == 0u) {
-			if (kind != CpuRunKind::Direct || result != RunResult::Yielded || instructionBudgetRemaining <= 0 || !m_heap.fullEpochs()) return result;
-			instructionBudget = instructionBudgetRemaining;
-			continue;
-		}
+		if ((m_runSignals & RunThreadSwitch) == 0u) return result;
 		m_runSignals &= ~(RunThreadSwitch | RunYield);
 		instructionBudget = instructionBudgetRemaining;
 		if (instructionBudget <= 0) return RunResult::Yielded;
@@ -2921,7 +2916,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (heapServiceActive() || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
 	if (!image.admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))

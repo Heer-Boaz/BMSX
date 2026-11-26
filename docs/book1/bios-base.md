@@ -108,11 +108,10 @@ cycle finishes. It draws from successive CPU grants: display and timer events
 continue, but no interrupt handler or following instruction runs during the
 collection. Use it at a suitable point, such as a loading screen. Each
 underlying collection-control primitive call adds 4 base cycles beyond
-`CALL`, with ordinary result placement. During a full collection, the
-resident sweep uses ordinary CPU cycles instead of
-the three-cycle charge per work word. Other collector work in this call and
-in a step costs three cycles per work word actually performed. Reading counts
-does not incur a collector work charge.
+`CALL`, with ordinary result placement. A full collection, including any
+work left in the active cycle, costs the ordinary CPU cycles of the resident
+routine. A step costs three cycles per work word actually performed.
+Reading counts does not incur a collector work charge.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 

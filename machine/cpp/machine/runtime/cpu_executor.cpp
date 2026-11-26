@@ -119,9 +119,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 }
 
 InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameState& frameState) {
-	const auto& cpu = runtime.machine.cpu;
-	const CpuSliceResult result = runSlice(runtime, frameState,
-		!cpu.heapServiceActive() && cpu.gcHeap().fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
+	const CpuSliceResult result = runSlice(runtime, frameState, 1);
 	switch (result) {
 		case CpuSliceResult::Advanced:
 			return InstructionStepResult::Advanced;

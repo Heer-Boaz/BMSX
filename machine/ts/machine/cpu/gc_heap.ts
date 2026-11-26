@@ -1131,11 +1131,6 @@ export class GcHeap {
 		return (finished - before) >>> 0;
 	}
 	public stoppedFinalMarkPending(): boolean { return this.finalMarkPending() && !this.cpu.tableRebuild.record && !this.fullEpochs(); }
-	public requestFullCollection(): void {
-		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
-		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
-		this.cpu.requestYield();
-	}
 	public stepFullCollection(epochs: number, words: number, services: Uint32Array | null = null): number {
 		const work = this.finalMarkPending() ? this.stepFinalMark(words, HeapServiceGcStage.FullTrace, services)
 			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, HeapServiceGcStage.FullStringSweep, services);

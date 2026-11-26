@@ -1,9 +1,10 @@
+import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { TableCensus } from '../../machine/ts/machine/cpu/table';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
+import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
@@ -19,7 +20,7 @@ import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
+import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId, GarbageCollectionOperation } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -329,33 +330,17 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
-	test(`explicit collection issues once and holds its successor across grants (${backend}, WIDE=${wide})`, () => {
+	test(`an unbound explicit collection does not enter a native fallback (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
-		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			while (cpu.gc.fullEpochs()) cpu.runUntilDepth(0, 1);
-		}
-		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.registers.setNil(7); frame.top = 1;
+		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
 		const doomed = cpu.createTable(16384, 0);
-		assert.equal(cpu.runUntilDepth(0, 36), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(cpu.gc.fullEpochs(), 1);
-		for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
-			assert.ok(grants < 64);
-			assert.equal(cpu.runUntilDepth(0, 96, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.CollectionProgress);
-			assert.equal(frame.registers.get(7), valueNil());
-		}
-		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'the successor cannot observe uncollected garbage');
-		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), valueNil());
-		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.get(7), valueNil());
-		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.get(7), valueInteger(37), 'fresh grant executes successor, not CALL/collection again');
+		cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+		assert.equal(cpu.readEpcWord(), pc);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.gc.fullEpochs(), 0);
+		assert.equal(cpu.gc.tableRecordAddress(doomed), doomed);
 	});
 }
 
@@ -447,51 +432,29 @@ test('fixed admission distinguishes an impossible size from a recoverable shorta
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
-test('collect and step charge CALL, placement and actual collector work across heap shapes', () => {
+test('collectgarbage step charges CALL, placement and actual work across heap shapes', () => {
 	const program = source(OpCode.CALL);
 	writeInstruction(program.text, 0, OpCode.CALL, 0, 2, 2);
 	const image = linkRawTestSystemBlua32(program);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		for (const operation of [GarbageCollectionOperation.Collect, GarbageCollectionOperation.Step]) {
-			const physicalWork: number[] = [];
-			for (const capacity of [1, 8192]) {
-				const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-				if (capacity > 1) cpu.rootThread.resizeStack(capacity);
-				frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
-				frame.registers.setInteger(1, operation);
-				frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
-				cpu.setGlobalByKey(cpu.stringPool.intern('kept across CALL'), frame.registers.get(5));
-				const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-				if (operation === GarbageCollectionOperation.Collect) cpu.runUntilDepth(0, 1);
-				const work = operation === GarbageCollectionOperation.Collect ? cpu.gc.collect() : cpu.gc.step();
-				physicalWork.push(work);
-				memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-				let cycles = 1 - cpu.instructionBudgetRemaining;
-				const trace = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
-				let markSlices = 0, remarkSlices = 0;
-				for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
-					assert.ok(grants < 100);
-					const grant = 3 * 512;
-					const phase = cpu.gc.phase(), record = memory.readRamRecordWord(trace);
-					assert.equal(cpu.runUntilDepth(0, grant, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.CollectionProgress);
-					const paid = grant - cpu.instructionBudgetRemaining;
-					if (record !== 0 && memory.readRamRecordWord(trace) === record && cpu.gc.phase() === phase) {
-						if (phase === GcPhase.Mark) ++markSlices;
-						else if (phase === GcPhase.Atomic) ++remarkSlices;
-						// Mid-array and stack scans finish at most one two-word slot across the grant.
-						assert.ok(paid >= grant && paid <= grant + 3);
-					}
-					cycles += paid;
-				}
-				if (capacity > 1 && operation === GarbageCollectionOperation.Collect) assert.ok(markSlices > 1 && remarkSlices > 1);
-				assert.equal(cycles, 32 + 4 + 1 + 3 * work);
-				assert.equal(cpu.readFrameRegister(0, 0),
-					operation === GarbageCollectionOperation.Step ? valueBool(false) : valueNil());
-				assert.equal(cpu.gc.active(), operation === GarbageCollectionOperation.Step);
-			}
-			assert.ok(physicalWork[1] > physicalWork[0], 'the larger scan incurs a larger charge');
+		const physicalWork: number[] = [];
+		for (const capacity of [1, 8192]) {
+			const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+			if (capacity > 1) cpu.rootThread.resizeStack(capacity);
+			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
+			frame.registers.setInteger(1, GarbageCollectionOperation.Step);
+			frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
+			cpu.setGlobalByKey(cpu.stringPool.intern('kept across CALL'), frame.registers.get(5));
+			const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+			const work = cpu.gc.step();
+			physicalWork.push(work);
+			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(1 - cpu.instructionBudgetRemaining, 32 + 4 + 1 + 3 * work);
+			assert.equal(cpu.readFrameRegister(0, 0), valueBool(false));
+			assert.equal(cpu.gc.active(), true);
 		}
+		assert.ok(physicalWork[1] > physicalWork[0], 'the larger scan incurs a larger charge');
 	}
 });
 

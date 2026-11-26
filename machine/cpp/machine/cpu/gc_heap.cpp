@@ -1227,14 +1227,6 @@ LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Valu
 	return afterEpoch;
 }
 
-void GcHeap::requestFullCollection() {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	++m_cpu.m_diagnosticGcProfile.fullCollections;
-#endif
-	memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, active() ? 2u : 1u);
-	m_cpu.requestYield();
-}
-
 size_t GcHeap::stepFullCollection(u32 epochs, size_t words, const HeapServiceFunctions* services) {
 	const size_t work = finalMarkPending() ? stepFinalMark(words, HeapServiceGcStage::FullTrace, services)
 		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, HeapServiceGcStage::FullStringSweep, services);

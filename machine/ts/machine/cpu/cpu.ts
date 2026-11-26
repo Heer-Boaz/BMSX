@@ -189,7 +189,8 @@ import {
 	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
-	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE, HeapServiceRootBankField, HeapServiceRootPlane,
+	HEAP_SERVICE_REMAINING_GRANT_ADDRESS, HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
+	HeapServiceRootBankField, HeapServiceRootPlane,
 } from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -311,6 +312,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
+	private readonly fullCollectionArgs: readonly [number];
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
@@ -434,6 +436,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
+		this.fullCollectionArgs = [this.heapAllocator.managementOffset()];
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
@@ -1975,7 +1978,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1999,7 +2002,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 	): void {
 		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -2123,7 +2126,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() || this.heapServiceActive()) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.heapServiceActive()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2344,6 +2347,10 @@ export class CPU implements MappedPageInvalidator {
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
 			const destination = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Destination);
 			const gcStage = cartLane === 0 && destination === 0 ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
+			// Debugger stepping reports paid machine progress, not a second
+			// cartridge instruction. The activation owns all collector phases.
+			const fullCollection = this.heapService.thread.firstFrame!.functionAddress
+				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.FullCollection];
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
@@ -2407,7 +2414,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return (cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
+				return (fullCollection || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
@@ -2421,23 +2428,8 @@ export class CPU implements MappedPageInvalidator {
 		this.runKind = kind;
 		try {
 			for (;;) {
-				const epochs = this.gc.fullEpochs();
-				if (epochs !== 0) {
-					this.instructionBudgetRemaining = instructionBudget;
-					if (instructionBudget <= 0) return RunResult.Yielded;
-					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
-					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words, this.systemImage.heapServiceFunctions));
-					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
-					instructionBudget = this.instructionBudgetRemaining;
-					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;
-					continue;
-				}
 				const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
-				if (!this.threadSwitchRequested) {
-					if (kind !== CpuRunKind.Direct || result !== RunResult.Yielded || this.instructionBudgetRemaining <= 0 || !this.gc.fullEpochs()) return result;
-					instructionBudget = this.instructionBudgetRemaining;
-					continue;
-				}
+				if (!this.threadSwitchRequested) return result;
 				this.threadSwitchRequested = false;
 				this.yieldRequested = false;
 				instructionBudget = this.instructionBudgetRemaining;
@@ -2820,7 +2812,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -4005,6 +3997,8 @@ export class CPU implements MappedPageInvalidator {
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
 			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {
 				word = this.readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
+			} else if (address === HEAP_SERVICE_REMAINING_GRANT_ADDRESS && kind !== MemoryAccessKind.U8) {
+				word = this.instructionBudgetRemaining;
 			} else {
 				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
 				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
@@ -4431,7 +4425,14 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CollectGarbage: {
 				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : integerOperand(args.registers.get(args.base));
 				switch (operation) {
-					case GarbageCollectionOperation.Collect: this.gc.requestFullCollection(); break;
+					case GarbageCollectionOperation.Collect: {
+						const functions = this.systemImage.heapServiceFunctions;
+						if (functions === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+						if (this.gc.diagnostics !== null) ++this.gc.diagnostics.fullCollections;
+						this.beginHeapService(functions[HeapServiceOperation.FullCollection], this.fullCollectionArgs);
+						this.requestYield();
+						break;
+					}
 					case GarbageCollectionOperation.Count:
 						out.push(valueInteger(this.luaHeap.usedBytes()));
 						out.push(valueInteger(this.luaHeap.capacity()));

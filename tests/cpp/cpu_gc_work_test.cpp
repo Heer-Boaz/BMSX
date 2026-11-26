@@ -385,33 +385,22 @@ void collectorWorkIgnoresInactiveThreadFrames() {
 		"inactive frame storage must not consume marking, atomic or sweep work");
 }
 
-void explicitCollectionAndNoReplay() {
-	for (bool wide : {false, true}) {
+void unboundExplicitCollectionDoesNotUseNativeFallback() {
+	for (const bool wide : {false, true}) {
 		Machine generated(image(OpCode::CALL, wide)), scalar(image(OpCode::CALL, wide), true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& frame = *m->cpu.rootThread()->currentFrame;
 			frame.registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
-			frame.writeControl(bmsx::FrameField::Top, 1);
+			frame.setTop(1);
 		}
 		const auto doomed = generated.cpu.createTable(16384, 0).address();
 		require(scalar.cpu.createTable(16384, 0).address() == doomed, "both backends start with the same garbage");
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 36) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.gcHeap().fullEpochs() == 1,
-			"issue retires before collection starts");
-		for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
-			require(grants < 64 && test::runCpuParity(generated.cpu, scalar.cpu, 96, 0, CpuRunKind::Scheduled) == RunResult::CollectionProgress
-				&& isNil(generated.cpu.readFrameRegister(0, 7)), "the collector holds the successor across grants");
-		}
-		require(generated.cpu.gcHeap().tableRecordAddress(doomed) == 0u,
-			"explicit collection reclaims its unreachable record before the next instruction");
-		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
-			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
-		test::runCpuParity(generated.cpu, scalar.cpu, 0);
-		require(generated.cpu.instructionBudgetRemaining == 0 && isNil(generated.cpu.readFrameRegister(0, 7)),
-			"zero grant performs no replay or collection");
-		test::runCpuParity(generated.cpu, scalar.cpu, 2);
-		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
-			"fresh grant executes only the actual successor, not the completed builtin");
+		test::runCpuParity(generated.cpu, scalar.cpu, 1);
+		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+			&& generated.cpu.readEpcWord() == generated.rom.textAddress
+			&& !generated.cpu.heapServiceActive() && generated.cpu.gcHeap().fullEpochs() == 0
+			&& generated.cpu.gcHeap().tableRecordAddress(doomed) == doomed,
+			"an unbound narrow or WIDE CALL cannot run a native full collection");
 	}
 }
 
@@ -515,51 +504,29 @@ void logicalAdmissionFailure() {
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
 }
 
-void collectionPrimitivePaysActualWork() {
+void collectionStepPaysActualWork() {
 	auto source = image(OpCode::CALL);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::CALL), 0, 2, 2);
-	for (auto operation : {GarbageCollectionOperation::Collect, GarbageCollectionOperation::Step}) {
-		size_t previousWork = 0;
-		for (u32 capacity : {1u, 8192u}) {
-			Machine generated(source), scalar(source, true), inspected(source, true);
-			for (auto* machine : {&generated, &scalar, &inspected}) {
-				auto& cpu = machine->cpu;
-				auto& frame = *cpu.rootThread()->currentFrame;
-				if (capacity > 1) cpu.rootThread()->resizeStack(capacity);
-				frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
-				frame.registers.set(1, valueInteger(static_cast<i32>(operation)));
-				frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
-				frame.setTop(6);
-				cpu.setGlobalByKey(cpu.stringPool().intern("kept across CALL"), frame.registers.get(5));
-			}
-			const bool step = operation == GarbageCollectionOperation::Step;
-			if (!step) inspected.cpu.runUntilDepth(0, 1); // Full collection starts after CALL places its results.
-			const size_t work = step ? inspected.cpu.stepHeap(valueNil(), valueNil(), valueNil()) : inspected.cpu.collectHeap();
-			require(work > previousWork, "the same guest instruction causes different physical work");
-			previousWork = work;
-			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "the primitive is issued once");
-			int cycles = 1 - generated.cpu.instructionBudgetRemaining;
-			const auto trace = generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
-			int markSlices = 0, remarkSlices = 0;
-			for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
-				constexpr int grant = 3 * 512;
-				const auto phase = generated.cpu.gcHeap().phase();
-				const auto record = generated.memory.readRamRecordWord(trace);
-				require(grants < 100 && test::runCpuParity(generated.cpu, scalar.cpu, grant, 0, CpuRunKind::Scheduled) == RunResult::CollectionProgress, "full collection advances");
-				const int paid = grant - generated.cpu.instructionBudgetRemaining;
-				if (record && generated.memory.readRamRecordWord(trace) == record && generated.cpu.gcHeap().phase() == phase) {
-					if (phase == GcPhase::Mark) ++markSlices;
-					else if (phase == GcPhase::Atomic) ++remarkSlices;
-					require(paid >= grant && paid <= grant + 3, "mid-array and stack scans stop within one slot of the grant");
-				}
-				cycles += paid;
-			}
-			if (capacity > 1 && !step) require(markSlices > 1 && remarkSlices > 1, "both mark and atomic scans span short grants");
-			require(cycles == 32 + 4 + 1 + 3 * static_cast<int>(work)
-				&& generated.cpu.readFrameRegister(0, 0) == (step ? valueBool(false) : valueNil())
-				&& generated.cpu.collecting() == step,
-				"both execution routes pay CALL, primitive, placement and the measured collector work");
+	size_t previousWork = 0;
+	for (u32 capacity : {1u, 8192u}) {
+		Machine generated(source), scalar(source, true), inspected(source, true);
+		for (auto* machine : {&generated, &scalar, &inspected}) {
+			auto& cpu = machine->cpu;
+			auto& frame = *cpu.rootThread()->currentFrame;
+			if (capacity > 1) cpu.rootThread()->resizeStack(capacity);
+			frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
+			frame.registers.set(1, valueInteger(static_cast<i32>(GarbageCollectionOperation::Step)));
+			frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
+			frame.setTop(6);
+			cpu.setGlobalByKey(cpu.stringPool().intern("kept across CALL"), frame.registers.get(5));
 		}
+		const size_t work = inspected.cpu.stepHeap(valueNil(), valueNil(), valueNil());
+		require(work > previousWork, "the same guest instruction causes different physical work");
+		previousWork = work;
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "the primitive is issued once");
+		require(1 - generated.cpu.instructionBudgetRemaining == 32 + 4 + 1 + 3 * static_cast<int>(work)
+			&& generated.cpu.readFrameRegister(0, 0) == valueBool(false) && generated.cpu.collecting(),
+			"both execution routes pay CALL, primitive, placement and the measured collector work");
 	}
 }
 
@@ -1904,8 +1871,8 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Sweep);
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
-		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure(); collectionPrimitivePaysActualWork();
+		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); unboundExplicitCollectionDoesNotUseNativeFallback();
+		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure(); collectionStepPaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

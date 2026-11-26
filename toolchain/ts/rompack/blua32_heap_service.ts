@@ -22,6 +22,7 @@ export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
 export const HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH = 'kernel/table_reserve_growth';
 export const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
+const FULL_COLLECTION_MODULE = 'kernel/gc_full';
 const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
@@ -33,7 +34,7 @@ export const HEAP_SERVICE_MODULES = [
 	'kernel/gc_weak_table', HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH,
 	'kernel/gc_barrier', 'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH,
-	INTERRUPT_PRELUDE_MODULE, 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
+	INTERRUPT_PRELUDE_MODULE, FULL_COLLECTION_MODULE, 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
 	'kernel/gc_runtime_layout', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
 ] as const;
@@ -62,6 +63,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.ReserveTableGrowth]: ['reserve_table_growth', 8, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH],
 	[HeapServiceOperation.ResizeTable]: ['execute_table_resize', 7, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],
+	[HeapServiceOperation.FullCollection]: ['collect_full', 1, FULL_COLLECTION_MODULE],
 };
 
 const guestCalls: Record<Exclude<BiosCall, BiosCall.Count>, readonly [string, string]> = {

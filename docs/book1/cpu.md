@@ -1511,20 +1511,16 @@ the request. If no cycle was active, or the retry still does not fit, the CPU ru
 tries the request again. A fresh cycle can remove garbage retained only by an
 earlier scan of the interrupted cycle. A request that still cannot fit raises
 the out-of-memory error without admitting its bytes. Explicit full collection
-always performs the fresh cycle. For a full collection requested through the BIOS,
-the CPU admits marking, final remark and reclamation work against successive
-cycle grants. Each positive grant admits up to one collection quantum, at
-one work word per three cycles, with a minimum allowance of one word. An
-indivisible record operation can exceed its allowance. The resident memory
-routine marks roots, scans records awaiting tracing, revisits threads and weak
-tables, then removes weak entries before reclamation. The sweep
-traverses the object inventory, reclaims Table, upvalue, Closure, dead Thread
-and String storage, and can shrink the stack of
-a retained Thread during a full collection. These operations use ordinary CPU
-cycles and are not charged a second time per work word. The rest of the
-quantum is charged for the actual work it performs. Device time advances for
-both, while interrupt entry and execution of the following instruction wait
-until the fresh cycle completes.
+always performs the fresh cycle. For a full collection requested through the
+BIOS, the resident routine marks roots, scans reachable records, revisits
+Threads and weak Tables, then removes weak entries before reclaiming storage.
+It can also shrink the stack of a surviving Thread. The routine continues
+across CPU grants. At the start of a quantum it allows one work word per
+three remaining cycles, with a minimum allowance of one word and a maximum
+of 4,096 words. An indivisible record operation can exceed the allowance.
+Work words size the quantum; they do not add a charge to the ordinary cycles
+of its instructions. Device time advances while the routine runs. Interrupt
+entry and the following instruction wait until the fresh cycle completes.
 
 If a physical reservation for a new Table fails, the BIOS releases its
 partial reservation before collecting and retrying the same request. The
@@ -1558,10 +1554,11 @@ Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.
 That charge remains even if a reservation later fails or parks, and a retry
-does not repay completed work. An explicit step or full collection also pays 3 cycles per work word,
-including work to finish an already active cycle, except for the ordinary
-CPU cycles of the resident routine during a full collection. This also applies when
-program replacement requests a collection to free its static region.
+does not repay completed work. An explicit incremental step also pays
+3 cycles per work word. A full collection requested by the BIOS collection
+service uses ordinary CPU cycles instead, including work to finish an active
+cycle. Program replacement can separately request collection to free its
+static region.
 In emergency recovery, the issuing instruction pays the same price for any
 collector work it performs itself, even if the retry fails. Resident work
 run on ordinary grants is not charged a second time. A VBlank IRQ assist

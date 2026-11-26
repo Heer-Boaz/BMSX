@@ -1,3 +1,5 @@
+import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { HeapServiceOperation } from '../../machine/ts/spec/bmsx/heap_service';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -82,7 +84,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { GcPhase, GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
@@ -332,58 +334,63 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 });
 
 test('a full collection spans CPU grants and resumes its outstanding fresh epoch after restore', () => {
-	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CALL, 0, 1, 1);
-	writeInstruction(code, 1, OpCode.K1, 1, 0, 0);
-	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({
-		text: code, functions: [{ firstWord: 0, wordCount: 3, maxStack: 3 }],
-		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
-		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
-	});
+	const image = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 1', 0,
+		[{ path: 'fixture_full_timing', source: 'fixture_collect = __bmsx_collect_garbage' }]));
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(),
 		machineModel: PSX_MACHINE_SPEC }, new TimingInputSource());
 	runtime.boot();
 	const { cpu } = runtime.machine, { gc } = cpu;
-	const frame = cpu.rootThread.currentFrame!;
-	const live = cpu.createTable(16 * GC_STEP_WORDS, 0);
+	const live = cpu.createTable(8, 0);
 	cpu.setGlobalByKey(cpu.stringPool.intern('retained across both epochs'), valueTable(live));
 	const floating = cpu.createTable();
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
-	frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
 	runtime.frameLoop.beginFrameState(16_000_000, 0);
 	const step = () => runtime.frameScheduler.stepInstruction(0);
-	assert.equal(step(), InstructionStepResult.Executed);
-	const pc = cpu.readFramePc(0);
+	const full = cpu['systemImage'].heapServiceFunctions![HeapServiceOperation.FullCollection];
+	const explicitCollection = () => cpu.heapServiceActive() && cpu['heapService'].thread.firstFrame!.functionAddress === full;
+	for (let steps = 0; !explicitCollection() && steps < 4096; ++steps) assert.notEqual(step(), InstructionStepResult.Blocked);
+	assert.equal(explicitCollection(), true);
+	const caller = cpu.getFrameDepth() - 1, pc = cpu.readFramePc(caller);
+	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(gc.fullEpochs(), 0, 'CALL binds the service without choosing the epochs');
+	for (let steps = 0; !gc.fullEpochs() && steps < 128; ++steps) assert.equal(step(), InstructionStepResult.Advanced);
 	assert.equal(gc.fullEpochs(), 2);
-	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0]));
+	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, cpu.readFrameFunctionAddress(caller)));
 	assert.equal(gc.fullEpochs(), 2, 'the rejected call must not displace either outstanding epoch');
-	assert.equal(cpu.readFramePc(0), pc);
-	assert.equal(step(), InstructionStepResult.Advanced, 'a tracing grant is not an executed guest instruction');
-	assert.equal(cpu.readFramePc(0), pc);
+	assert.equal(cpu.readFramePc(caller), pc);
+	for (let i = 0; i < 8; ++i) {
+		const clock = runtime.machine.scheduler.nowCycles;
+		assert.equal(step(), InstructionStepResult.Advanced, 'a paid tracing grant does not execute a caller instruction');
+		assert.ok(runtime.machine.scheduler.nowCycles > clock);
+		assert.equal(cpu.readFramePc(caller), pc);
+	}
 	const snapshot = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const finish = () => {
 		const costs: number[] = [];
 		let reachedFresh = false;
-		while (gc.fullEpochs()) {
-			assert.ok(costs.length < 500);
-			const before = runtime.machine.scheduler.nowCycles;
-			// A display edge may close the frame; reoffer budget independently of the collector.
-			if (!runtime.frameLoop.frameActive) runtime.frameLoop.beginFrameState(16_000_000, 0);
-			assert.equal(step(), InstructionStepResult.Advanced);
-			costs.push(runtime.machine.scheduler.nowCycles - before);
+		// Supply ordinary bounded CPU grants after the debugger observations.
+		// A one-cycle debugger grant yields a one-word policy allowance, not
+		// a fast-forward of all firmware that works on that word.
+		while (cpu.heapServiceActive()) {
+			assert.ok(costs.length < 4096);
+			const grant = 911;
+			assert.equal(runtime.machine.scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled), RunResult.CollectionProgress);
+			const paid = grant - cpu.instructionBudgetRemaining;
+			assert.ok(paid > 0);
+			advanceRuntimeTime(runtime, paid);
+			costs.push(paid);
 			if (gc.fullEpochs() === 1 && !reachedFresh) {
 				assert.notEqual(gc.tableRecordAddress(floating), 0, 'floating garbage survived the first epoch');
 				reachedFresh = true;
 			}
-			assert.equal(cpu.readFramePc(0), pc);
+			assert.equal(cpu.readFramePc(caller), pc);
 		}
 		assert.ok(reachedFresh && costs.filter(cost => cost > 0).length > 4);
 		assert.equal(gc.tableRecordAddress(floating), 0);
 		assert.equal(gc.tableRecordAddress(live), live);
 		if (!runtime.frameLoop.frameActive) runtime.frameLoop.beginFrameState(16_000_000, 0);
-		assert.equal(step(), InstructionStepResult.Executed);
-		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(1));
+		for (let i = 0; i < 128 && cpu.getFrameDepth(); ++i) assert.notEqual(step(), InstructionStepResult.Blocked);
+		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(1)]);
 		return costs;
 	};
 	const expected = finish();

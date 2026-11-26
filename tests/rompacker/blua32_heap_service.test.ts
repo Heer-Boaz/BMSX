@@ -81,6 +81,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, 'reserve_table_growth'],
 		[HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'execute_table_resize'],
 		['kernel/vblank_irq', 'before_cart_irq'],
+		['kernel/gc_full', 'collect_full'],
 		['kernel/bios_create_table', 'create_table'],
 	];
 	const functions = new Set<number>();
