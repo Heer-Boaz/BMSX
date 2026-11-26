@@ -1,5 +1,6 @@
 import type { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { decodeBlua32InstructionAtPc, indexBlua32FunctionInstructions, type DecodedInstruction } from '../../toolchain/ts/rompack/disassembler';
+import { decodeBlua32InstructionAtPc, type DecodedInstruction } from '../../toolchain/ts/rompack/blua32_instruction_decode';
+import { indexBlua32FunctionInstructions } from '../../toolchain/ts/rompack/disassembler';
 import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32InlineCallSitesAtPc, type Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';

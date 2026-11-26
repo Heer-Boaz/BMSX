@@ -24,6 +24,7 @@ module<const>
 -- to 32 bits and >> is logical. For unsigned comparisons of potentially
 -- high-bit-set words, use the sign-bit rotation from math.ult. Byte offsets
 -- and chunk spans bounded by installed RAM compare identically as Integers.
+-- C calls forward exactly one result, not an open BLua result window.
 local ram_base<const> = 0x08000000 -- H:11-16; replace the supplied host view with the main RAM address
 local sign_bit<const> = 0x80000000 -- C:28; representation of unsigned ordering
 local pinuse<const> = 1 -- C:32
@@ -355,7 +356,8 @@ local tmalloc_large<const> = function(a, nb) -- C:279
 	local v = 0 -- C:281
 	local rsize = 0 - nb -- C:281
 	local idx<const> = tree_index(nb) -- C:282
-	local t = read_word(treelink(a, idx)) -- C:283
+	local link<const> = treelink(a, idx) -- C:283
+	local t = read_word(link) -- C:283
 	if t ~= 0 then -- C:284
 		local sizebits = nb << leftshift_for_tree_index(idx) -- C:285
 		local rst = 0 -- C:285
@@ -376,8 +378,13 @@ local tmalloc_large<const> = function(a, nb) -- C:279
 	end
 	local s<const>: *bmsx_dlmalloc_state = ram_base + a -- C:300,308
 	if t == 0 and v == 0 then -- C:299
-		local leftbits<const> = left_bits(idx2bit(idx)) & s.treemap -- C:300
-		if leftbits ~= 0 then t = read_word(treelink(a, lowest_bit(leftbits))) end -- C:301
+		local bit<const> = idx2bit(idx) -- C:300
+		local leftbits<const> = left_bits(bit) & s.treemap -- C:300
+		if leftbits ~= 0 then -- C:301
+			local i<const> = lowest_bit(leftbits) -- C:301
+			local link<const> = treelink(a, i) -- C:301
+			t = read_word(link) -- C:301
+		end
 	end
 	while t ~= 0 do -- C:303
 		local trem<const> = chunksize(a, t) - nb -- C:304
@@ -400,7 +407,9 @@ end
 
 local tmalloc_small<const> = function(a, nb) -- C:321
 	local s<const>: *bmsx_dlmalloc_state = ram_base + a -- C:323
-	local t = read_word(treelink(a, lowest_bit(s.treemap))) -- C:323
+	local i<const> = lowest_bit(s.treemap) -- C:323
+	local link<const> = treelink(a, i) -- C:323
+	local t = read_word(link) -- C:323
 	local v = t -- C:324
 	local rsize = chunksize(a, t) - nb -- C:324
 	while true do -- C:325
@@ -611,12 +620,12 @@ local allocate_from_ram<const> = function(a, bytes) -- C:503
 		chunk.head = (last - begin) | pinuse -- C:519
 		local foot<const>: *bmsx_dlmalloc_chunk = ram_base + last
 		foot.head = arena_top_foot -- C:520
-		return mspace_malloc(a, bytes) -- C:521
+		return (mspace_malloc(a, bytes)) -- C:521
 	end
 	if reserve <= available then -- C:523
 		local begin<const> = (first - reserve) & ~(page_bytes - 1) -- C:524
 		s.segment = begin -- C:525
-		return prepend_alloc(a, begin, first, size) -- C:526
+		return (prepend_alloc(a, begin, first, size)) -- C:526
 	end
 
 	local chunk<const>: *bmsx_dlmalloc_chunk = ram_base + first
@@ -625,7 +634,7 @@ local allocate_from_ram<const> = function(a, bytes) -- C:503
 	if size > span or (first == top and size == span) then return 0 end -- C:534
 	s.segment = floor -- C:535
 	prepend_alloc(a, floor, first, 0) -- C:536
-	return mspace_malloc(a, bytes) -- C:537
+	return (mspace_malloc(a, bytes)) -- C:537
 end
 
 local bmsx_dlmalloc_set_floor<const> = function(a, floor) -- C:543
@@ -769,7 +778,7 @@ local bmsx_dlmalloc_reserve_backing<const> = function(a, offset, bytes) -- C:617
 			return offset -- C:652
 		end
 	end
-	return bmsx_dlmalloc_allocate(a, bytes, 0) -- C:655
+	return (bmsx_dlmalloc_allocate(a, bytes, 0)) -- C:655
 end
 
 local bmsx_dlmalloc_resize_backing<const> = function(a, offset, bytes) -- C:658
@@ -789,7 +798,7 @@ local bmsx_dlmalloc_resize_backing<const> = function(a, offset, bytes) -- C:658
 end
 
 local bmsx_dlmalloc_allocation_bytes<const> = function(a, offset) -- C:674
-	return chunksize(a, offset - 8) -- C:676
+	return (chunksize(a, offset - 8)) -- C:676
 end
 
 local bmsx_dlmalloc_is_object<const> = function(a, offset) -- C:679

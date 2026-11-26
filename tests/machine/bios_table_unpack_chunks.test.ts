@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asStringId, valueBool, valueIsString } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
+import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 

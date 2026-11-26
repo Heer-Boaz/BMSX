@@ -6,6 +6,7 @@ import { FNV1A32_OFFSET_BASIS, hashBytes } from '../../../machine/ts/common/hash
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -117,14 +118,20 @@ const directory = mkdtempSync(join('tmp', 'bmsx-blua-dlmalloc-'));
 try {
 	const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 	for (const optLevel of [0, 3] as const) {
-		const { image, romBytes } = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(entrySource, 'dlmalloc_probe.lua'), modules,
+		const { image, romBytes, symbols } = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(entrySource, 'dlmalloc_probe.lua'), modules,
 			{ entrySource, optLevel, programDomain: 'system' }));
+		const allocatorEntries = image.functions.flatMap((_, index) =>
+			symbols.metadata.functionIds[index].startsWith(`module:${modulePath}/`)
+			&& symbols.metadata.functionIds[index].includes('|constant|bmsx_dlmalloc_') ? [index] : []);
+		assert.equal(allocatorEntries.length, 11);
+		const { valueSlots, frames } = deriveBlua32FixedStack(image, allocatorEntries);
 		assert.equal(image.header.bssAddress, RAM_BASE + floor);
 		assert.equal(image.header.bssByteCount, arenaBytes);
 		const path = join(directory, `dlmalloc-O${optLevel}.rom`);
 		writeFileSync(path, romBytes);
 		assert.equal(runSystemCaseRom(romBytes, () => assert.fail('unexpected suspension')), 0);
 		assert.equal(execFileSync(nativeRunner, [path, 'run'], { encoding: 'utf8' }).trim(), '0');
+		console.log(`Allocator O${optLevel} fixed stack: ${valueSlots} value slots, ${frames} frames`);
 	}
 	rmSync(directory, { recursive: true });
 	console.log(`BIOS-DLMALLOC-PARITY:PASS (${operationCount} C-oracle operations and 4 arena digests at O0/O3, TS and C++)`);
