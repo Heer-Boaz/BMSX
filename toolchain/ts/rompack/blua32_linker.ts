@@ -97,6 +97,9 @@ import type {
 } from '../lua/compiler/program';
 import { programModuleExportKey } from '../lua/compiler/program';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import {
+	HEAP_SERVICE_DESCRIPTOR_SIZE, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
+} from '../../../machine/ts/spec/bmsx/heap_service';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { fmix32, hashText } from '../../../machine/ts/common/hash';
 import { Blua32RomStringLayout } from './blua32_rom_strings';
@@ -108,6 +111,7 @@ import type {
 } from './blua32_bios_imports';
 import { SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT } from './system';
 import { evaluateProgramLinkValueExpression } from '../lua/compiler/compile_time_number';
+import { HEAP_SERVICE_MODULE_PATH, linkBlua32HeapService } from './blua32_heap_service';
 
 const RETIRED_FUNCTION_BYTES = 2 * INSTRUCTION_BYTES;
 
@@ -704,9 +708,14 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const functionCount = functionLayout.protoIndexBySlot.length;
 	const textByteCount = text.code.byteLength + (functionLayout.hasTombstones ? RETIRED_FUNCTION_BYTES : 0);
 
-	let offset = BLUA32_IMAGE_HEADER_SIZE;
+	const heapService = input.domain === 'system' && input.metadata.preloadModules.includes(HEAP_SERVICE_MODULE_PATH);
+	if (input.domain === 'system' && input.previous !== undefined
+		&& ((input.previous.image.header.flags & HEAP_SERVICE_IMAGE_FLAG) !== 0) !== heapService)
+		throw new Error('Changing the system heap service requires rebuilding and booting the system ROM.');
+	let offset = heapService ? HEAP_SERVICE_IMAGE_HEADER_SIZE : BLUA32_IMAGE_HEADER_SIZE;
 	let rodataOffset = 0;
 	let dataLoadOffset = 0;
+	let heapServiceOffset = 0;
 	if (input.domain === 'cart') {
 		rodataOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
 		offset = rodataOffset + rodata.bytes.byteLength;
@@ -728,6 +737,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		offset = functionTableOffset + tableCapacity;
 		rodataOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
 		offset = rodataOffset + rodata.bytes.byteLength;
+		if (heapService) {
+			heapServiceOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
+			offset = heapServiceOffset + HEAP_SERVICE_DESCRIPTOR_SIZE;
+		}
 		dataLoadOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
 		offset = dataLoadOffset + data.bytes.byteLength;
 	}
@@ -839,6 +852,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		rodata.symbols,
 		rodataAddress,
 	);
+	const rodataByteCount = heapService ? heapServiceOffset + HEAP_SERVICE_DESCRIPTOR_SIZE - rodataOffset : rodata.bytes.byteLength;
 	const rodataBytes = rodata.bytes.slice();
 	for (let index = 0; index < object.link.rodataConstRelocs.length; index += 1) {
 		const reloc = object.link.rodataConstRelocs[index];
@@ -848,7 +862,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const bytes = new Uint8Array(imageByteCount);
 	writeLE32(bytes, BLUA32_IMAGE_MAGIC_OFFSET, BLUA32_IMAGE_MAGIC);
 	writeLE32(bytes, BLUA32_IMAGE_BYTE_COUNT_OFFSET, imageByteCount);
-	writeLE32(bytes, BLUA32_IMAGE_FLAGS_OFFSET, 0);
+	writeLE32(bytes, BLUA32_IMAGE_FLAGS_OFFSET, heapService ? HEAP_SERVICE_IMAGE_FLAG : 0);
+	if (heapService) writeLE32(bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, input.loadAddress + heapServiceOffset);
 	writeLE32(bytes, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, functionTableAddress);
 	writeLE32(bytes, BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, functionCount);
 	writeLE32(bytes, BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, input.loadAddress + constantTableOffset);
@@ -860,7 +875,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	writeLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, input.loadAddress + stringBucketOffset);
 	writeLE32(bytes, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, stringBucketCount);
 	writeLE32(bytes, BLUA32_IMAGE_RODATA_ADDRESS_OFFSET, rodataAddress);
-	writeLE32(bytes, BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET, rodataBytes.byteLength);
+	writeLE32(bytes, BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET, rodataByteCount);
 	writeLE32(bytes, BLUA32_IMAGE_DATA_LOAD_ADDRESS_OFFSET, dataLoadAddress);
 	writeLE32(bytes, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET, data.bytes.byteLength);
 	writeLE32(bytes, BLUA32_IMAGE_DATA_ADDRESS_OFFSET, input.dataAddress);
@@ -940,7 +955,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 
 	const staticLayoutToken = buildStaticLayoutToken(
 		rodataAddress,
-		rodataBytes.byteLength,
+		rodataByteCount,
 		rodata.symbols,
 		input.dataAddress,
 		data.bytes.byteLength,
@@ -1042,6 +1057,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	};
 	const layout = decodeBlua32Image(bytes, input.loadAddress);
 	if (input.domain === 'system') {
+		if (heapService)
+			linkBlua32HeapService(layout, heapServiceOffset, rodata.moduleExports, localFunctionAddressBySymbol, object.link.constValueRelocs);
 		return {
 			domain: 'system',
 			bytes,

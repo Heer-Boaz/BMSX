@@ -15,6 +15,11 @@ export type Blua32FixedStack = {
 	readonly frames: number;
 };
 
+type Blua32FixedStackBoundary = {
+	readonly functions: ReadonlySet<number>;
+	readonly lateConstants: ReadonlySet<number>;
+};
+
 /**
  * Derive the backing required for fixed-window heap-service entry points and
  * check that the linked operations stay within their scalar instruction set.
@@ -23,13 +28,18 @@ export type Blua32FixedStack = {
  * the caller's own window. This does not give ordinary CALL/CLOSURE private
  * memory authority or remove the runtime's usual closure allocation.
  */
-export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly number[]): Blua32FixedStack {
+export function deriveBlua32FixedStack(
+	image: Blua32ImageLayout,
+	roots: readonly number[],
+	boundary?: Blua32FixedStackBoundary,
+): Blua32FixedStack {
 	const visited = new Map<number, Blua32FixedStack>();
 	const ancestors = new Set<number>();
 	const constantTagOffset = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_TAG_OFFSET;
 
 	function admitConstant(index: number, reject: (reason: string) => never): void {
 		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
+		if (boundary?.lateConstants.has(index)) reject('constant is relocated after heap service verification');
 		const tag = readLE32(image.bytes, constantTagOffset + index * BLUA32_CONSTANT_RECORD_SIZE);
 		if (tag !== Blua32ConstantTag.Nil && tag !== Blua32ConstantTag.False
 			&& tag !== Blua32ConstantTag.True && tag !== Blua32ConstantTag.Integer)
@@ -40,6 +50,8 @@ export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly
 		const known = visited.get(index);
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
+		if (boundary !== undefined && !boundary.functions.has(index))
+			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the heap service module.`);
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
 		if (!fn.staticClosure || fn.isVararg || fn.upvalues.length !== 0)
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static, fixed-arity and capture-free.`);
@@ -103,6 +115,8 @@ export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly
 					const target = blua32FunctionIndexAtAddress(image, address);
 					if ((c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0 || target < 0 || a >= width)
 						reject('requires a local ROM function record');
+					if (boundary !== undefined && !boundary.functions.has(target))
+						reject('static target leaves the heap service module');
 					const record = image.functions[target];
 					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
 						reject('callee must be static, fixed-arity and capture-free');

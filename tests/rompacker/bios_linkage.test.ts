@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import * as v from '../../machine/ts/machine/cpu/value';
+import {
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
 import { BiosFunction, BIOS_FUNCTION_MODULE_PATHS } from '../../machine/ts/spec/bmsx/bios';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTestBlua32PairCpu, createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
@@ -13,10 +17,11 @@ import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '.
 
 test('published BIOS slots derive addresses and RAM occupancy from the ROM header', () => {
 	const rom = new Uint8Array(0x200);
-	writeLE32(rom, 0x20, 0x100);
-	writeLE32(rom, 0x110, 0x1230);
-	writeLE32(rom, 0x14c, 0x080c0020);
-	writeLE32(rom, 0x150, 0x34);
+	const image = 0x100;
+	writeLE32(rom, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, image);
+	writeLE32(rom, image + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, 0x1230);
+	writeLE32(rom, image + BLUA32_IMAGE_BSS_ADDRESS_OFFSET, 0x080c0020);
+	writeLE32(rom, image + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, 0x34);
 	assert.deepEqual(BIOS_FUNCTION_MODULE_PATHS, ['math/sin', 'string/float/decode', 'gpu/system_vram_region']);
 	assert.equal(BiosFunction.TurnPhaseSine, 0);
 	assert.equal(BiosFunction.DecodeFloat, 1);

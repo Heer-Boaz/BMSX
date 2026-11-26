@@ -4,13 +4,40 @@
 
 namespace bmsx {
 
+// System BLua32 image extension. The descriptor lives in immutable RODATA
+// and is not part of the cartridge-callable BIOS slot list.
+constexpr uint32_t HEAP_SERVICE_IMAGE_FLAG = 1u << 1u;
+constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
+constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
+
+enum class HeapServiceOperation : uint32_t {
+	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, Count,
+};
+
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 1u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 12u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
+	+ 4u * static_cast<uint32_t>(HeapServiceOperation::Count);
+
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
 constexpr uint32_t HEAP_SERVICE_THREAD_OFFSET = 0x800;
 constexpr uint32_t HEAP_SERVICE_RESULT_OFFSET = 0x850;
+constexpr uint32_t HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET = 0x854;
+constexpr uint32_t HEAP_SERVICE_EXEC_TARGET_OFFSET = 0x858;
+constexpr uint32_t HEAP_SERVICE_EXEC_FLOOR_OFFSET = 0x85c;
+constexpr uint32_t HEAP_SERVICE_EXEC_STAGE_OFFSET = 0x860;
+constexpr uint32_t HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
+constexpr uint32_t HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
 constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0xc00;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 16;
 constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 128;
+
+enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 
 } // namespace bmsx

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { writeLE32 } from '../../machine/ts/common/endian';
+import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -17,11 +18,11 @@ import { parseLuaChunk } from './cpu_test_harness';
 export const PUBLIC_BIOS_PROBE_SOURCE = `module<entry>
 data firmware_value: word = 11
 bss firmware_buffer: word[7]
-local image<const> = mem32le[0x20]
-local functions<const> = mem32le[image + 0x10]
+local image<const> = mem32le[${BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local functions<const> = mem32le[image + ${BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET}]
 local sine<const> = blua32.closure(functions)
-local decode<const> = blua32.closure(functions + 0x20)
-local region<const> = blua32.closure(functions + 0x40)
+local decode<const> = blua32.closure(functions + ${BLUA32_FUNCTION_RECORD_SIZE})
+local region<const> = blua32.closure(functions + ${2 * BLUA32_FUNCTION_RECORD_SIZE})
 local origin<const>, extent<const> = region()
 return sine(0x40000000) == 65536 and decode(0x3fa00000, 0, 4) == 1.25,
     origin == 0x02d002c0 and extent == 0x00fc0140`;

@@ -279,8 +279,8 @@ selection and instruction operation.
 
 ## BLua32 executable image {#sec-memory-blua32-executable-image}
 
-The BLua32 program header occupies **92 bytes** in ROM. Its offsets are relative
-to the program-header address obtained above. The CPU uses these six unsigned
+The base BLua32 program header occupies **92 bytes** in ROM. Its offsets are
+relative to the program-header address obtained above. The CPU uses these six unsigned
 32-bit little-endian fields to establish the program's constants and name banks:
 
 | Image byte offset | Field | Unit and interpretation |
@@ -305,8 +305,16 @@ The remaining header slots identify the program's format, sections and linkage:
 | `48H`, `4CH` | BSS address; BSS byte count. |
 | `50H`, `54H` | TEXT address; TEXT byte count. |
 | `58H` | Preparation-sequence function-record address; zero when no sequence is present. |
+| `5CH` | System ROM only, when flag bit 1 is set: absolute address of the private heap-service descriptor in RODATA. |
 
-Provide the complete 92-byte header. Reset and EXEC also read
+Provide the complete 92-byte header. A system image with flag bit 1 set
+has a 96-byte header. Cartridge images leave bit 1 clear. The version 1
+descriptor consists of 14 little-endian words: version, required Value-slot
+count, required frame count, and eleven absolute function-record addresses.
+The descriptor is not part of the cartridge BIOS call table and does not
+publish additional BIOS calls.
+
+Reset and EXEC also read
 the DATA byte count and run address (`40H`, `44H`) and the BSS address and
 byte count (`48H`, `4CH`): the larger of the two section ends sets the
 language-heap floor; see
