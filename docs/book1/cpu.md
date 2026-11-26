@@ -703,6 +703,14 @@ whether the operands are the same String. EQ and comparisons involving other
 value kinds have no text-length surcharge. The comparison completes, including
 its skip decision, before the CPU accepts a pending interrupt.
 
+If the shorter String has at most 64 bytes, the byte cycles are charged at issue.
+When the shorter String is longer than 64 bytes, the CPU samples both record
+references and their lengths at issue. Each byte cycle available after issue advances one
+position. If the grant ends, the next grant continues at that position. A
+difference fixes the ordering but does not cancel the remaining byte cycles.
+Only after the last byte cycle can the following instruction execute. A write to a String
+record between grants cannot change the comparison of bytes already consumed.
+
 Equality respects value kinds. Different kinds are unequal; there is no numeric-string or boolean-number equality conversion. Integer and Float are subtypes of Number and compare by their exact numerical values. NaN is unequal even to itself; Integer zero and both Float zero signs compare equal. Table, Closure, and Thread equality is reference identity rather than a comparison of their contents.
 
 | Matching operand kinds | EQ predicate |

@@ -132,6 +132,14 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
+struct StringComparisonLatch {
+	StringId left = 0, right = 0;
+	u32 offset = 0, remaining = 0;
+	i32 order = 0;
+	bool skipLess = false, skipTie = false;
+	bool operator==(const StringComparisonLatch&) const = default;
+};
+
 // Main RAM owns language heap and stack records. Only CPU latches live here.
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -154,6 +162,7 @@ struct CpuRuntimeState {
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation pendingMemory;
+	StringComparisonLatch stringComparison;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
@@ -436,6 +445,8 @@ private:
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
 	u32 createClosure(CallFrame& frame);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
+	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
+	void advanceStringComparison(CallFrame& frame);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
@@ -577,6 +588,7 @@ private:
 	u32 m_runSignals = 0u;
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
+	StringComparisonLatch m_stringComparison;
 	PendingAllocation m_pendingAllocation;
 	CpuRunKind m_runKind = CpuRunKind::Idle;
 	u32 m_currentInstructionPc = 0;

@@ -3,6 +3,7 @@ import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
@@ -277,6 +278,41 @@ assert(string.sub(s,258,255) == '' and string.sub(s,1,0) == '')
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.equal(cpu.getFrameDepth(), 0);
 });
+
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+	for (const op of [OpCode.LT, OpCode.LE]) test(`String order retires across grants and restores its byte position (${backend}, ${op})`, () => {
+		const code = new Uint8Array(4 * INSTRUCTION_BYTES);
+		writeInstruction(code, 0, op, 0, 1, 2);
+		for (let i = 1; i < 4; ++i) writeInstruction(code, i, OpCode.JMP, 0, 63, 63, 255);
+		const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const pc = image.image.functions[0].codeAddress;
+		const a = cpu.stringPool.intern('x'.repeat(513)), b = cpu.stringPool.intern('x'.repeat(512) + 'y');
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setString(1, a); frame.registers.setString(2, op === OpCode.LE ? a : b); frame.top = 3;
+		for (let i = 0; i < 24; ++i) {
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+			cpu.runUntilDepth(0, BASE_CYCLES[op] + 513);
+		}
+		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) >>> 2]);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
+		cpu.runUntilDepth(0, BASE_CYCLES[op] + 7);
+		const anchor = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+		assert.equal(anchor.stringComparison.offset, 7);
+		assert.equal(anchor.stringComparison.remaining, 506);
+		for (const step of [1, 129]) {
+			memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
+			memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE, 122);
+			cpu.requestNonMaskableInterrupt(); assert.equal(cpu.enterPendingInterrupt(), false);
+			for (let remaining = 506; remaining;) {
+				const grant = Math.min(remaining, step);
+				cpu.runUntilDepth(0, grant); remaining -= grant;
+				assert.equal(cpu.instructionBudgetRemaining, 0);
+				assert.equal(cpu.activeThread.currentFrame!.pc, pc + (remaining ? 4 : 8));
+			}
+		}
+	});
+}
 
 const portCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);

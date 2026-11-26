@@ -428,7 +428,15 @@ DISPATCH_LABEL(BNOT) {
 #define DISPATCH_COMPARISON(name) \
 	DISPATCH_LABEL(name) { \
 		const Value operands[]{readRK(IMAGE, FRAME.registers, decoded->b), readRK(IMAGE, FRAME.registers, decoded->c)}; \
-		if (testValueComparison<OpCode::name>(operands, m_stringPool, instructionBudgetRemaining) != (decoded->a != 0)) { \
+		const auto predicate = testValueComparison<OpCode::name>(operands, m_stringPool, instructionBudgetRemaining); \
+		if constexpr (OpCode::name != OpCode::EQ) { \
+			if (predicate == LONG_STRING_COMPARISON) { \
+				PUBLISH_SCALAR_FRONTIER(); \
+				beginStringComparison(FRAME, asStringId(operands[0]), asStringId(operands[1]), OpCode::name == OpCode::LE, decoded->a != 0); \
+				DISPATCH_CONTINUE(); \
+			} \
+		} \
+		if (predicate != (decoded->a != 0)) { \
 			DISPATCH_SKIP_NEXT(); \
 		} \
 		COMPARISON_FALLTHROUGH(); \

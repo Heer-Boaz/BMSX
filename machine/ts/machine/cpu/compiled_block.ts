@@ -55,10 +55,12 @@ export const enum CompiledBlockExit {
 	WriteGlobal,
 	WriteSystemGlobal,
 	IterateTable,
+	StringOrder,
 }
 
 const sideExitKinds: (CompiledBlockExit | undefined)[] = [];
 for (const [op, exit] of [
+	[OpCode.LT, CompiledBlockExit.StringOrder], [OpCode.LE, CompiledBlockExit.StringOrder],
 	[OpCode.MFC0, CompiledBlockExit.ControlFault], [OpCode.MTC0, CompiledBlockExit.ControlFault],
 	[OpCode.GETFIELD, CompiledBlockExit.ReadField], [OpCode.SELF, CompiledBlockExit.ReadField],
 	[OpCode.SETFIELD, CompiledBlockExit.WriteField], [OpCode.GETT, CompiledBlockExit.ReadIndex],
@@ -214,6 +216,7 @@ export type EmittedJavaScriptBlock = {
 	readonly terminalIndex: number;
 	readonly takenIndex: number;
 	readonly deferredJumpIndex: number;
+	readonly stringOrderExit: number;
 	readonly admissionCycles: number;
 	readonly admissionVarargs: number;
 	readonly openVarargs: number;
@@ -244,6 +247,7 @@ export function emitJavaScriptBlock(
 	let finalWord = firstWord;
 	let formatCycles = 0;
 	let controlAccess = false;
+	let stringOrderExit = -1;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
 		finalWord = word;
 		const op = page.ops[word];
@@ -263,6 +267,7 @@ export function emitJavaScriptBlock(
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
 		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
+		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
 				exitA: page.a[word], exitB: page.b[word], exitC: page.c[word], exitBx: page.bx[word], exitWord: word, page,
@@ -372,7 +377,7 @@ export function emitJavaScriptBlock(
 		exits.push({ ...terminal, nextPc: page.bx[finalWord] });
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
-		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex,
+		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex, stringOrderExit,
 		admissionCycles, admissionVarargs, openVarargs, formatCycles };
 }
 
@@ -381,7 +386,7 @@ export function finishJavaScriptBlock(page: DecodedInstructionPage, block: Emitt
 	const finalOp = page.ops[block.finalWord];
 	if (compiledBlockComparison(finalOp)) {
 		const expected = page.a[block.finalWord] !== 0;
-		return emitComparison(page, block.finalWord, block.registers, matched => {
+		return emitComparison(page, block.finalWord, block.registers, block.stringOrderExit, matched => {
 			if (matched !== expected) return transfer(block.takenIndex);
 			const terminal = transfer(block.terminalIndex);
 			return block.deferredJumpIndex < 0 ? terminal

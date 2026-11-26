@@ -1179,6 +1179,9 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(static_cast<u32>(state.pendingMemory.accessKind));
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
+	const auto& scan = state.stringComparison;
+	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
+	writer.i32(scan.order); writer.boolean(scan.skipLess); writer.boolean(scan.skipTie);
 	const auto& pending = state.pendingAllocation;
 	writer.u32(static_cast<u32>(pending.recovery));
 	if (pending.recovery != AllocationRecovery::None) {
@@ -1243,6 +1246,7 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.accessKind = static_cast<MemoryAccessKind>(reader.u32());
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
+	state.stringComparison = {reader.u32(), reader.u32(), reader.u32(), reader.u32(), reader.i32(), reader.boolean(), reader.boolean()};
 	auto& pending = state.pendingAllocation;
 	pending.recovery = static_cast<AllocationRecovery>(reader.u32());
 	if (pending.recovery != AllocationRecovery::None) {

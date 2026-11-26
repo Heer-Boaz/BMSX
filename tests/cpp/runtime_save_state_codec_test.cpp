@@ -65,6 +65,7 @@ int main() {
 	machine.geometry.pendingCycles = 17;
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
+	state.cpuState.stringComparison = {0x80000100u, 0x1000u, 129, 199, -1, true, false};
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.rootThreadAddress = 0x083fa000u;
 	state.cpuState.activeThreadAddress = 0x083fa040u;
@@ -86,6 +87,7 @@ int main() {
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
+	require(decoded.cpuState.stringComparison == state.cpuState.stringComparison, "String comparison restores both ROM socket identity and scan progress");
 	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked creation stores its exact WIDE instruction and capacities");
 	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, 9u, valueString(0x298u), valueFloatBits(0xffc12345u)};
 	const auto assignment = decodeRuntimeSaveState(encodeRuntimeSaveState(state), state.ram.size(), machine.gxGpu.vramBytes.size());

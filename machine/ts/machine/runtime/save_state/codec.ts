@@ -1149,6 +1149,9 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.pendingMemory.accessKind);
 	writer.i32(state.pendingMemory.registerIndex);
 	writer.i32(state.pendingMemory.wordCount);
+	const scan = state.stringComparison;
+	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
+	writer.i32(scan.order); writer.bool(scan.skipLess); writer.bool(scan.skipTie);
 	const pending = state.pendingAllocation;
 	writer.u32(pending === null ? AllocationRecovery.None : pending.recovery);
 	if (pending !== null) {
@@ -1225,6 +1228,10 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			instructionPc: reader.u32(), nextPc: reader.u32(), address: reader.u32(),
 			accessKind: reader.u32() as MemoryAccessKind,
 			registerIndex: reader.i32(), wordCount: reader.i32(),
+		},
+		stringComparison: {
+			left: reader.u32(), right: reader.u32(), offset: reader.u32(), remaining: reader.u32(),
+			order: reader.i32(), skipLess: reader.bool(), skipTie: reader.bool(),
 		},
 		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),

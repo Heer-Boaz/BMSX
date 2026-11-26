@@ -552,6 +552,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
+			stringComparison: { left: 0x80000100, right: 0x1000, offset: 129, remaining: 199, order: -1, skipLess: true, skipTie: false },
 			pendingAllocation: null,
 			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,

@@ -1,3 +1,5 @@
+export const INLINE_STRING_COMPARE_BYTES = 64;
+
 export const enum OpCode {
 	WIDE,
 	MOV,

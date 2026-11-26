@@ -238,6 +238,9 @@ void NativeIrRegion::finalizeBlockExits(NativeIrBlock& block) {
 			auto& plan = *numeric;
 			if (plan.guardLeft || plan.guardRight)
 				appendExit(scalarReplay(before, std::exchange(plan.feedbackAssumption, {})), instruction.replay);
+		} else if (const auto* cmp = std::get_if<NativeComparison>(&instruction.operation); cmp && cmp->operation != OpCode::EQ
+				&& std::get<NativeComparisonStrategy>(cmp->strategy) == NativeComparisonStrategy::Kernel) {
+			appendExit(scalarReplay(before), instruction.replay);
 		} else if (std::holds_alternative<NativeReplay>(instruction.operation)) {
 			appendExit(scalarReplay(before), instruction.replay);
 		}

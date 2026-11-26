@@ -4,7 +4,7 @@
 #include "spec/blua32/instruction_format.h"
 
 namespace bmsx {
-void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction&) {
+void NativeLowering::lowerOperation(const NativeComparison& comparison, const NativeInstruction& instruction) {
 	const auto& ir = m_ir[m_current];
 	auto& taken = *sideExit(ir.taken);
 	auto& terminal = m_blocks[m_current]->terminal;
@@ -93,6 +93,10 @@ void NativeLowering::lowerOperation(const NativeComparison& comparison, const Na
 		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(m_compiler, SLJIT_MOV32, NativeBlockAbi::budget, 0, SLJIT_MEM1(NativeBlockAbi::state),
 			offsetof(NativeBlockRunState, remainingCycles));
+		if (op != OpCode::EQ) {
+			fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, LONG_STRING_COMPARISON),
+				*sideExit(instruction.replay), m_cache.state());
+		}
 		matched = sljit_emit_cmp(m_compiler, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 		break;
 	}

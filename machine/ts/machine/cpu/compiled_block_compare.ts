@@ -1,10 +1,10 @@
-import { OpCode } from '../../spec/blua32/opcode';
+import { INLINE_STRING_COMPARE_BYTES, OpCode } from '../../spec/blua32/opcode';
 import type { JavaScriptRegisterCache } from './compiled_block_registers';
 import type { DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
 
 /** A comparison has two control successors and never writes operand A. */
-export function emitComparison(page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache,
+export function emitComparison(page: DecodedInstructionPage, word: number, registers: JavaScriptRegisterCache, stringOrderExit: number,
 	transfer: (matched: boolean) => string): string {
 	const left = page.b[word], right = page.c[word];
 	let source = `{const l=${registers.tagOperand(left)},r0=${registers.tagOperand(right)};let M=false;`;
@@ -15,7 +15,7 @@ else if(l===r0)M=l<=${ValueTag.True}||${registers.wordOperand(left)}===${registe
 	} else {
 		const operator = page.ops[word] === OpCode.LT ? '<' : '<=';
 		source += `if(${numeric}) M=${registers.numberOperand(left)}${operator}${registers.numberOperand(right)};
-else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)},ln=q.byteLength(leftId),rn=q.byteLength(rightId),shared=Math.min(ln,rn);B-=shared;M=(q.compareBytes(leftId,rightId,0,shared)||ln-rn)${operator}0;}`;
+else if(l===${ValueTag.String}&&r0===${ValueTag.String}) {const leftId=${registers.wordOperand(left)},rightId=${registers.wordOperand(right)},ln=q.byteLength(leftId),rn=q.byteLength(rightId),shared=Math.min(ln,rn);if(shared>${INLINE_STRING_COMPARE_BYTES})${registers.exit(stringOrderExit)}B-=shared;M=(q.compareBytes(leftId,rightId,0,shared)||ln-rn)${operator}0;}`;
 	}
 	return `${source}if(M){${transfer(true)}}else{${transfer(false)}}}`;
 }

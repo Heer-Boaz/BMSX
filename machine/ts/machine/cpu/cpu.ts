@@ -20,7 +20,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
-import { BASE_CYCLES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
 	COP0_BAD_ADDRESS,
@@ -201,6 +201,7 @@ export type CpuRuntimeState = {
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
+	stringComparison: StringComparisonLatch;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
 	statusWord: number;
@@ -233,6 +234,11 @@ export const enum RunResult {
 }
 
 export const enum CpuRunKind { Idle, Direct, Scheduled }
+
+class StringComparisonLatch {
+	left = 0; right = 0; offset = 0; remaining = 0;
+	order = 0; skipLess = false; skipTie = false;
+}
 
 export const enum AllocationRecovery { None, Current, RetryCurrent, Fresh, RetryFresh }
 export const enum PendingAllocationKind { TableAssignment, TableCreation }
@@ -287,6 +293,7 @@ export class CPU implements MappedPageInvalidator {
 	private memoryWriteBlockedAddress = 0;
 	private pendingAllocation: PendingAllocation | null = null;
 	private runKind = CpuRunKind.Idle;
+	private stringComparison = new StringComparisonLatch();
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
 	private scalarRegisterTop = -1;
@@ -785,6 +792,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
+		this.stringComparison = new StringComparisonLatch();
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -1679,6 +1687,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
+		this.stringComparison = new StringComparisonLatch();
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.yieldRequested = false;
@@ -1695,7 +1704,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1718,7 +1727,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -1842,7 +1851,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.gc.fullEpochs()) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.gc.fullEpochs()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2021,7 +2030,10 @@ export class CPU implements MappedPageInvalidator {
 			while (thread.frameDepth > targetDepth) {
 				try {
 					if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
-						&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
+						&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
+						this.resumePendingMemoryOperation();
+						if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
+					}
 					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
 						if (this.hardHalted
 							|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)
@@ -2131,7 +2143,10 @@ export class CPU implements MappedPageInvalidator {
 		while (thread.frameDepth > targetDepth) {
 			try {
 				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
-					&& !this.yieldRequested && !this.isHaltedUntilIrq()) this.resumePendingMemoryOperation();
+					&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
+					this.resumePendingMemoryOperation();
+					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
+				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
 						|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)
@@ -2371,7 +2386,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -2743,6 +2758,24 @@ export class CPU implements MappedPageInvalidator {
 		if (available !== valueCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	}
 
+	private beginStringComparison(frame: CallFrame, left: number, right: number, ln: number, rn: number, inclusive: boolean, expected: boolean): void {
+		const s = this.stringComparison;
+		s.left = left; s.right = right; s.offset = 0; s.remaining = Math.min(ln, rn); s.order = 0;
+		s.skipLess = !expected; s.skipTie = (inclusive ? ln <= rn : ln < rn) !== expected;
+		if (this.instructionBudgetRemaining > 0) this.advanceStringComparison(frame);
+	}
+
+	private advanceStringComparison(frame: CallFrame): void {
+		const s = this.stringComparison, n = Math.min(s.remaining, this.instructionBudgetRemaining);
+		if (s.order === 0) s.order = Math.sign(this.stringPool.compareBytes(s.left, s.right, s.offset, n));
+		s.offset += n; s.remaining -= n; this.charge(n);
+		if (s.remaining !== 0) return;
+		const skip = s.order === 0 ? s.skipTie : (s.order < 0) === s.skipLess;
+		s.left = s.right = s.offset = s.order = 0;
+		s.skipLess = s.skipTie = false;
+		if (skip) this.skipNextInstruction(frame);
+	}
+
 	private resumePendingMemoryOperation(): void {
 		const operation = this.pendingMemory;
 		if (operation.kind === PendingMemoryKind.None) return;
@@ -2952,6 +2985,12 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.Return:
 					redispatch = !this.executeReturn(frame, exit.exitA, exit.exitB);
 					break;
+				case CompiledBlockExit.StringOrder: {
+					const left = valuePayload(this.readRKValue(frame, exit.exitB)), right = valuePayload(this.readRKValue(frame, exit.exitC));
+					this.beginStringComparison(frame, left, right, this.stringPool.byteLength(left), this.stringPool.byteLength(right),
+						exit.page.ops[exit.exitWord] === OpCode.LE, exit.exitA !== 0);
+					redispatch = true; break;
+				}
 				case CompiledBlockExit.SkipInstruction: this.skipNextInstruction(frame); redispatch = true; break;
 				case CompiledBlockExit.IterateTable:
 					if (this.stepTableIterator(frame, exit.exitA, exit.exitB, exit.exitC)) {
@@ -3275,6 +3314,10 @@ export class CPU implements MappedPageInvalidator {
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
 						const ln = this.stringPool.byteLength(l), rn = this.stringPool.byteLength(r), shared = Math.min(ln, rn);
+						if (shared > INLINE_STRING_COMPARE_BYTES) {
+							this.beginStringComparison(frame, l, r, ln, rn, false, a !== 0);
+							return;
+						}
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) < 0;
 					}
@@ -3336,6 +3379,10 @@ export class CPU implements MappedPageInvalidator {
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
 						const ln = this.stringPool.byteLength(l), rn = this.stringPool.byteLength(r), shared = Math.min(ln, rn);
+						if (shared > INLINE_STRING_COMPARE_BYTES) {
+							this.beginStringComparison(frame, l, r, ln, rn, true, a !== 0);
+							return;
+						}
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) <= 0;
 					}
@@ -4341,6 +4388,7 @@ export class CPU implements MappedPageInvalidator {
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
+			stringComparison: { ...this.stringComparison },
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
 			statusWord: this.cop0Words[COP0_STATUS],
@@ -4404,6 +4452,7 @@ export class CPU implements MappedPageInvalidator {
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
+		Object.assign(this.stringComparison, state.stringComparison);
 		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.pendingAllocation = state.pendingAllocation === null ? null : { ...state.pendingAllocation };
 		this.cop0Words[COP0_STATUS] = state.statusWord;
@@ -4541,6 +4590,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
 			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
 		heap.markValue(this.stringIndexTable);
+		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
 		if (this.pendingAllocation !== null) this.markPendingAllocationRoots(heap, this.pendingAllocation);
 	}
 

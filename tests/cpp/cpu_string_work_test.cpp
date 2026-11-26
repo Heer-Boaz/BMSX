@@ -73,6 +73,62 @@ void logicalStringWork(bool scalar, OpCode op) {
 #endif
 }
 
+void grantedStringOrder(bool scalar, bool inclusive) {
+	test::Blua32TestImage image;
+	const auto op = inclusive ? OpCode::LE : OpCode::LT;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(op), 0, 1, 2);
+	for (int i = 1; i < 4; ++i) writeInstruction(image.text, i, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
+	CpuMachine machine(image, scalar);
+	auto& cpu = machine.cpu;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (!scalar) {
+		cpu.prepareSystemNativeCode();
+		auto& image = *cpu.activeThread()->currentFrame->executionImage;
+		require(image.nativeCodeLookup != nullptr, "long comparison has a prepared native image");
+		const auto* page = image.nativeCodeLookup->find(machine.rom.textAddress, 0);
+		require(page && page->nativeBlocks->entries[(machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES],
+			"long comparison starts at a published native entry");
+	}
+#endif
+	auto& frame = machine.restart();
+	const auto a = cpu.stringPool().intern(std::string(513, 'x'));
+	const auto b = cpu.stringPool().intern(std::string(512, 'x') + 'y');
+	frame.registers.set(1, valueString(a)); frame.registers.set(2, valueString(inclusive ? a : b)); frame.setTop(3);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(op)] + 7);
+	const auto anchor = cpu.captureRuntimeState();
+	const auto ram = machine.memory.captureSaveState();
+	require(anchor.stringComparison.offset == 7 && anchor.stringComparison.remaining == 506
+		&& cpu.instructionBudgetRemaining == 0, "issue only scans the available byte cycles");
+	for (int step : {1, 129}) {
+		machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
+		machine.memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE, 'z');
+		cpu.requestNonMaskableInterrupt();
+		require(!cpu.enterPendingInterrupt(), "NMI cannot split a comparison");
+		for (int remaining = 506; remaining;) {
+			const int grant = std::min(remaining, step);
+			cpu.runUntilDepth(0, grant); remaining -= grant;
+			require(cpu.instructionBudgetRemaining == 0, "resumed bytes consume exactly their grant");
+			if (remaining) require(cpu.activeThread()->currentFrame->readControl(FrameField::Pc) == machine.rom.textAddress + 4,
+				"no skip until the final byte cycle");
+		}
+		require(cpu.activeThread()->currentFrame->readControl(FrameField::Pc) == machine.rom.textAddress + 8,
+			"restore resumes at the saved byte, and retires exactly one skip");
+	}
+	// A mismatch in the first grant fixes the result, not the duration.
+	machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
+	machine.memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 7, 'z');
+	cpu.runUntilDepth(0, 1);
+	const auto mismatch = cpu.captureRuntimeState();
+	require(mismatch.stringComparison.remaining == 505 && mismatch.stringComparison.order == (inclusive ? 0 : 1),
+		"the compare pipeline latches unsigned ordering independently of remaining time");
+	machine.memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 7, 'a');
+	cpu.restoreRuntimeState(mismatch); cpu.runUntilDepth(0, 505);
+	require(cpu.activeThread()->currentFrame->readControl(FrameField::Pc) == machine.rom.textAddress + (inclusive ? 8 : 4),
+		"a saved first difference survives a change to consumed bytes and controls retirement");
+}
+
 // String records and their index use the physical RAM port, even when
 // software writes untrusted words to the language heap via the main bus.
 void ramStringPorts() {
@@ -366,6 +422,7 @@ int main() {
 		mappedStringCopiesStorage();
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
+			grantedStringOrder(scalar, false); grantedStringOrder(scalar, true);
 			selectAndChar(scalar);
 			openSelectPlacesAliasedResults(scalar);
 		}
