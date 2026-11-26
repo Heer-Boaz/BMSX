@@ -409,8 +409,8 @@ test('compiled NEWT materializes allocation roots and leaves destination untouch
 	const assist = t.mock.method(js, 'assistAllocation');
 	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
 	const work = assist.mock.calls.reduce((sum, call) => sum + call.result!, 0);
-	assert.ok(work > 0, 'the request performed incremental allocation assists before recovery');
-	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT pays for actual assists but not emergency recovery or initialization');
+	assert.ok(work > 0, 'the request performed collector work');
+	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT retains all incremental and recovery work, but not initialization');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);

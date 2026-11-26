@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/errors.h"
 #include "machine/cpu/upvalue.h"
 
 namespace bmsx {
@@ -82,9 +83,15 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 	return true;
 }
 
+bool LuaHeap::prepareFixedAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+	if (prepareAllocation(byteCount, root0, root1, root2, growingThread)) return true;
+	if (byteCount > capacity()) throw LuaOutOfMemorySignal{};
+	return false;
+}
+
 LuaAllocationRecovery LuaHeap::admit(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
-	if (!prepareAllocation(byteCount, root0, root1, root2, growingThread)) {
+	if (!prepareFixedAllocation(byteCount, root0, root1, root2, growingThread)) {
 		do {
 			recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
 		} while (usedBytes() + byteCount > capacity());
@@ -127,7 +134,7 @@ u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backin
 	const u32 charged = recordCharge.value_or(bytes + backingBytes + secondBytes);
 	if (mode != LuaAllocationMode::Direct) {
 		const bool admitted = mode == LuaAllocationMode::Scheduled
-			? prepareAllocation(charged, root0, root1, root2)
+			? prepareFixedAllocation(charged, root0, root1, root2)
 			: usedBytes() + charged <= capacity();
 		if (!admitted) return 0u;
 		if (mode == LuaAllocationMode::Scheduled)

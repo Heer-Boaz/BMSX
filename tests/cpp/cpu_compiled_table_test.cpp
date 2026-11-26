@@ -827,7 +827,10 @@ void wideAllocationFailure() {
 		cpu.collectHeap();
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
-	require(native.cpu.instructionBudgetRemaining == 0, "failed NEWT pays prefix and base, not emergency collection or initialization");
+	const auto control = native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const int work = native.memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK);
+	require(work > 0 && native.cpu.instructionBudgetRemaining == -3 * work,
+		"a WIDE NEWT that could fit alone pays the recovery epoch, but not initialization");
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
 		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9,

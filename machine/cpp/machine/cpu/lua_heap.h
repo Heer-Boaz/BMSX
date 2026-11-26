@@ -59,6 +59,7 @@ public:
 	size_t capacity() const;
 
 private:
+	bool prepareFixedAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	enum class LuaAllocationAssist { None, Step, Limit };
 	LuaAllocationAssist allocationAssist(size_t nextBytes) const noexcept;
 	u32 reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, u32 charged, u32 secondBytes, u32 secondField);

@@ -1249,9 +1249,9 @@ Use addressed byte storage for exact device records and payloads.
 
 Automatic collection advances incrementally as allocations cross the assist
 threshold. It traces and reclaims the same pool regardless of object age.
-An explicit step advances that collector; an explicit full collection and
-an emergency collection before an otherwise over-capacity request remain
-synchronous.
+An explicit step advances that collector. An explicit full collection
+finishes before the following instruction executes. An allocation that
+requires emergency collection waits for its recovery attempt.
 
 The occupied-byte counts used for admission are:
 
@@ -1455,9 +1455,14 @@ of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
-If a request exceeds the logical budget or cannot reserve the storage it
-needs, the CPU completes any active cycle and retries the request. If no cycle
-was active, or the retry still does not fit, the CPU runs one fresh cycle and
+If the fixed logical increase alone exceeds the entire arena capacity, the
+request raises out-of-memory without starting or finishing a collection.
+A table insertion can change its required increase after weak entries clear;
+its proposed capacity is not a fixed request.
+
+If a request could fit but exceeds the remaining logical budget or cannot
+reserve the storage it needs, the CPU completes any active cycle and retries
+the request. If no cycle was active, or the retry still does not fit, the CPU runs one fresh cycle and
 tries the request again. A fresh cycle can remove garbage retained only by an
 earlier scan of the interrupted cycle. A request that still cannot fit raises
 the out-of-memory error without admitting its bytes. Explicit full collection

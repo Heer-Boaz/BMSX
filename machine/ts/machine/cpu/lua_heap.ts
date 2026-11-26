@@ -1,3 +1,4 @@
+import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import { closureRecordBytes } from './closure';
 import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
@@ -61,10 +62,16 @@ export class LuaHeap {
 		return true;
 	}
 
+	private prepareFixedAllocation(byteCount: number, root0: Value, root1: Value, root2: Value, growingThread = 0): boolean {
+		if (this.prepareAllocation(byteCount, root0, root1, root2, growingThread)) return true;
+		if (byteCount > this.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		return false;
+	}
+
 	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
 		root2: Value = valueNil(), growingThread = 0): LuaAllocationRecovery {
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
-		if (!this.prepareAllocation(byteCount, root0, root1, root2, growingThread)) {
+		if (!this.prepareFixedAllocation(byteCount, root0, root1, root2, growingThread)) {
 			do {
 				recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
 			} while (this.usedBytes() + byteCount > this.capacity());
@@ -108,7 +115,7 @@ export class LuaHeap {
 		mode = LuaAllocationMode.Direct, secondBytes = 0, secondField = 0): number {
 		const charged = recordCharge ?? (bytes + backingBytes + secondBytes);
 		if (mode !== LuaAllocationMode.Direct) {
-			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareAllocation(charged, root0, root1, root2)
+			const admitted = mode === LuaAllocationMode.Scheduled ? this.prepareFixedAllocation(charged, root0, root1, root2)
 				: this.usedBytes() + charged <= this.capacity();
 			if (!admitted) return 0;
 			if (mode === LuaAllocationMode.Scheduled) this.assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes, root0, root1, root2);

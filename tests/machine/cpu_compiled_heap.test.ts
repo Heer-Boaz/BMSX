@@ -11,7 +11,7 @@ import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine
 import { valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -233,7 +233,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	}
 });
 
-for (const range of [false, true]) for (const bytes of [3 << 19, 2 << 20, (2 << 20) + 1])
+for (const range of [false, true]) for (const bytes of [3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1])
 test(`compiled concatenation retains the exact fault prefix (range=${range}, operand bytes=${bytes})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
@@ -256,8 +256,9 @@ test(`compiled concatenation retains the exact fault prefix (range=${range}, ope
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	const afterWork = js.memory.readRamRecordWord(lastWorkAt);
-	const work = 2 * bytes < MAIN_RAM_SIZE ? afterWork : 0;
-	if (2 * bytes < MAIN_RAM_SIZE) assert.ok(work > 0);
+	const recoverableSize = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= js.luaHeap.capacity();
+	const work = recoverableSize ? afterWork : 0;
+	if (recoverableSize) assert.ok(work > 0);
 	else assert.equal(afterWork, beforeWork, 'size fault does not run a recovery epoch');
 	assert.equal(js.instructionBudgetRemaining, -Math.min(2 * bytes, MAIN_RAM_SIZE) - (range ? 2 : 0) - 3 * work);
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);

@@ -402,9 +402,9 @@ void concatAllocationFault(bool range, int bytes) {
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
 	const int afterWork = native.memory.readRamRecordWord(lastWorkAt);
-	const bool fitsLength = 2 * bytes < static_cast<int>(MAIN_RAM_SIZE);
-	const int work = fitsLength ? afterWork : 0;
-	require(fitsLength ? work > 0 : afterWork == beforeWork, "only a representable result attempts recovery");
+	const bool fitsArena = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= native.cpu.luaHeap().capacity();
+	const int work = fitsArena ? afterWork : 0;
+	require(fitsArena ? work > 0 : afterWork == beforeWork, "only a record that could fit attempts recovery");
 	require(native.cpu.instructionBudgetRemaining == -std::min(2 * bytes, static_cast<int>(MAIN_RAM_SIZE)) - (range ? 2 : 0) - 3 * work,
 		"oversized result saturates the byte debit; an ordinary allocation fault retains recovery work");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
@@ -439,7 +439,7 @@ int main() {
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
 		allocationRoots(false); allocationRoots(true); canonicalImmediateClosure(); closureBusFault(false); closureBusFault(true);
 		closureAddressAlias(0); closureAddressAlias(513); concatRangeCrossesLimitDuringConversion();
-		for (int bytes : {3 << 19, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
+		for (int bytes : {3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
 		std::cout << "Compiled CPU heap tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

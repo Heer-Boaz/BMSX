@@ -439,6 +439,28 @@ void scheduledLogicalRefusalParks() {
 		"the reclaimed space admits the original store without executing its successor");
 }
 
+void impossibleNewTableDoesNotPark() {
+	auto source = image(OpCode::NEWT, true);
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 63, 63);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::NEWT), 0, 63, 63, 63);
+	source.functions = {{.firstWord=0, .wordCount=3, .maxStack=8}, {.firstWord=3, .wordCount=1}};
+	source.exceptionFunctionIndex = 1;
+	for (bool scalar : {false, true}) {
+		Machine m(source, scalar);
+		auto& cpu = m.cpu;
+		auto& arena = cpu.heapAllocator();
+		require(arena.setFloor(RAM_BASE + arena.managementOffset() - 16384u), "set the language arena to 16 KiB");
+		auto& frame = *cpu.rootThread()->currentFrame;
+		frame.registers.set(0, valueInteger(73)); frame.setTop(1);
+		const auto result = cpu.runUntilDepth(0, 1, 0u, CpuRunKind::Scheduled);
+		require(result != RunResult::ParkedAllocation && !cpu.allocationParked()
+			&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY && cpu.readEpcWord() == m.rom.textAddress,
+			"impossible scheduled NEWT faults at its WIDE issue PC");
+		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]
+			&& cpu.readFrameRegister(0, 0) == valueInteger(73), "no recovery charge or destination write");
+	}
+}
+
 void concatRecoveryChargesIssuingInstruction() {
 	Machine generated(image(OpCode::CONCAT)), scalar(image(OpCode::CONCAT), true);
 	for (auto* m : {&generated, &scalar}) {
@@ -476,13 +498,21 @@ void allocationCollectionAndFailure() {
 	}
 	Machine failure(image()); auto& cpu = failure.cpu;
 	const auto doomed = cpu.createTable(16384, 0).address();
+	const auto used = cpu.luaHeap().usedBytes();
 	cpu.instructionBudgetRemaining = 1;
+	for (bool active : {false, true}) {
+		if (active) cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+		bool failed = false;
+		try { cpu.luaHeap().admit(cpu.luaHeap().capacity() + 1); }
+		catch (const LuaOutOfMemorySignal&) { failed = true; }
+		require(failed && cpu.collecting() == active && cpu.luaHeap().usedBytes() == used
+			&& cpu.gcHeap().tableRecordAddress(doomed) == doomed, "an impossible charge leaves the current epoch untouched");
+	}
 	bool failed = false;
-	try { cpu.luaHeap().admit(4 * 1024 * 1024); }
+	try { cpu.luaHeap().admit(cpu.luaHeap().capacity()); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
 	require(failed && cpu.instructionBudgetRemaining == 1 && cpu.luaHeap().usedBytes() == bootBytes
-		&& cpu.gcHeap().tableRecordAddress(doomed) == 0u,
-		"failed admission completes emergency collection, with no cycle debit or pending bytes");
+		&& cpu.gcHeap().tableRecordAddress(doomed) == 0u, "a capacity-sized request still attempts recovery");
 	cpu.runUntilDepth(0, 1);
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
 }
@@ -1858,7 +1888,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		scheduledLogicalRefusalParks(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
+		scheduledLogicalRefusalParks(); impossibleNewTableDoesNotPark(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

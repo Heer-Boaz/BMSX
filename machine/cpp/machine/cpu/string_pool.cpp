@@ -375,8 +375,7 @@ StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 			}
 		}
 	}
-	// Keep an oversized request in the allocation admission path: the
-	// full-bank request cannot fit, but still clocks the final collection.
+	// An unrepresentable length requests the full bank and fails fixed admission.
 	const u32 size = static_cast<u32>(std::min(bytes.size(), size_t(MAIN_RAM_SIZE)));
 	const u32 id = m_heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + size, false, 0, 0, root);
 	const u32 currentControl = metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;

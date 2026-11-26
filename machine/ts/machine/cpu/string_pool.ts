@@ -377,8 +377,7 @@ export class StringPool {
 				}
 			}
 		}
-		// An unrepresentable length requests the full bank and still clocks
-		// the final collection before the admission fault.
+		// An unrepresentable length requests the full bank and fails fixed admission.
 		const id = this.heap.allocateRecord(BLUA32_STRING_RECORD_HEADER_SIZE + Math.min(length, MAIN_RAM_SIZE), false, 0, 0, root);
 		const currentControl = this.metadata(CAPACITY), current = currentControl & RAM_BUCKET_EXTENT_MASK;
 		let index = hash & (current - 1), base = this.metadata(BUCKETS);

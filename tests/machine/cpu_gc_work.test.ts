@@ -1,3 +1,4 @@
+import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -422,14 +423,42 @@ test('CONCAT pays for synchronous recovery of a refused String record before its
 	assert.equal(frame.registers.get(7), valueInteger(37));
 });
 
-test('failed allocation outside execution finishes emergency collection without a cycle debit or pending bytes', () => {
+test('an impossible WIDE NEWT faults at issue instead of parking a scheduled allocation', () => {
+	const program = source(OpCode.NEWT, true);
+	writeInstruction(program.text, 0, OpCode.WIDE, 0, 63, 63);
+	writeInstruction(program.text, 1, OpCode.NEWT, 0, 63, 63, 63);
+	const image = linkRawTestSystemBlua32({ ...program, functions: [
+		{ firstWord: 0, wordCount: 3, maxStack: 8 }, { firstWord: 3, wordCount: 1 }],
+		exceptionFunctionIndex: 1 });
+	const { cpu } = createTestSystemCpu(image), arena = cpu.heapAllocator;
+	assert.ok(arena.setFloor(RAM_BASE + arena.managementOffset() - 16384));
+	const frame = cpu.rootThread.currentFrame!, issuePc = frame.pc;
+	frame.registers.setInteger(0, 73); frame.top = 1;
+	const result = cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled);
+	assert.notEqual(result, RunResult.ParkedAllocation);
+	assert.equal(cpu.allocationParked(), false);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+	assert.equal(cpu.readEpcWord(), issuePc);
+	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT]);
+	assert.equal(frame.registers.get(0), valueInteger(73));
+});
+
+test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
-	const doomed = cpu.createTable(16384, 0);
+	const doomed = cpu.createTable(16384, 0), used = cpu.luaHeap.usedBytes();
 	cpu.instructionBudgetRemaining = 1;
-	assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.equal(cpu.instructionBudgetRemaining, 1);
+	for (const active of [false, true]) {
+		if (active) cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity() + 1), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
+		assert.equal(cpu.gc.active(), active);
+		assert.equal(cpu.gc.tableRecordAddress(doomed), doomed);
+		assert.equal(cpu.luaHeap.usedBytes(), used);
+	}
+	// Exactly capacity is not oversized. Recovery must reclaim before it can fault.
+	assert.throws(() => cpu.luaHeap.admit(cpu.luaHeap.capacity()), e => e === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.equal(cpu.gc.tableRecordAddress(doomed), 0);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
+	assert.equal(cpu.instructionBudgetRemaining, 1, 'host admission is outside guest execution');
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
