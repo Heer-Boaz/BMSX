@@ -1,4 +1,7 @@
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { readLE32 } from '../../../machine/ts/common/endian';
+import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import {
 	OpCode, OPCODE_RK_OPERANDS, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, RK_OPERAND_B, RK_OPERAND_C,
@@ -13,7 +16,8 @@ export type Blua32FixedStack = {
 };
 
 /**
- * Derive the backing required for a set of fixed-window firmware entry points.
+ * Derive the backing required for fixed-window heap-service entry points and
+ * check that the linked operations stay within their scalar instruction set.
  * Prove over linked instructions, after inlining and relocation. CALL places
  * the next non-vararg frame at A+1 in the current stack, not at the end of
  * the caller's own window. This does not give ordinary CALL/CLOSURE private
@@ -22,6 +26,15 @@ export type Blua32FixedStack = {
 export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly number[]): Blua32FixedStack {
 	const visited = new Map<number, Blua32FixedStack>();
 	const ancestors = new Set<number>();
+	const constantTagOffset = image.header.constantTableAddress - image.address + BLUA32_CONSTANT_TAG_OFFSET;
+
+	function admitConstant(index: number, reject: (reason: string) => never): void {
+		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
+		const tag = readLE32(image.bytes, constantTagOffset + index * BLUA32_CONSTANT_RECORD_SIZE);
+		if (tag !== Blua32ConstantTag.Nil && tag !== Blua32ConstantTag.False
+			&& tag !== Blua32ConstantTag.True && tag !== Blua32ConstantTag.Integer)
+			reject('constant is not an Integer, nil or Boolean');
+	}
 
 	function measure(index: number): Blua32FixedStack {
 		const known = visited.get(index);
@@ -72,10 +85,18 @@ export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly
 				throw new Error(`Fixed-stack ${OPCODE_NAMES[op]} at 0x${pc.toString(16)}: ${reason}.`);
 			};
 			const reads = OPCODE_SCALAR_REGISTER_READS[op], rk = OPCODE_RK_OPERANDS[op];
+			const rb = (rk & RK_OPERAND_B) !== 0 ? signExtend(b, rkBitsB) : b;
+			const rc = (rk & RK_OPERAND_C) !== 0 ? signExtend(c, rkBitsC) : c;
 			if (((reads & REGISTER_OPERAND_A) !== 0 && a >= width)
-				|| ((reads & REGISTER_OPERAND_B) !== 0 && b >= width && ((rk & RK_OPERAND_B) === 0 || b < (1 << (rkBitsB - 1))))
-				|| ((reads & REGISTER_OPERAND_C) !== 0 && c >= width && ((rk & RK_OPERAND_C) === 0 || c < (1 << (rkBitsC - 1)))))
+				|| ((reads & REGISTER_OPERAND_B) !== 0 && rb >= width)
+				|| ((reads & REGISTER_OPERAND_C) !== 0 && rc >= width))
 				reject('operand exceeds the function record');
+			if (rb < 0) admitConstant(-1 - rb, reject);
+			if (rc < 0) admitConstant(-1 - rc, reject);
+			if (op === OpCode.LOADK) admitConstant(bx, reject);
+			if ((op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D)
+				&& c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8)
+				reject('not a heap-service memory format');
 			switch (op) {
 				case OpCode.CLOSURE: {
 					const address = bx << 4;
@@ -99,8 +120,8 @@ export function deriveBlua32FixedStack(image: Blua32ImageLayout, roots: readonly
 					if (a + b - 1 > width) reject('return window exceeds the function record');
 					continue;
 				case OpCode.MOV:
-					if (a >= width || b >= width || c > ValueMoveKind.FloatFromBits) reject('not a scalar register move');
-					registers[a] = c === ValueMoveKind.Copy ? registers[b] : 0;
+					if (a >= width || c !== ValueMoveKind.Copy) reject('not a scalar register copy');
+					registers[a] = registers[b];
 					break;
 				case OpCode.LOADNIL:
 					if (a + b > width) reject('nil window exceeds the function record');
