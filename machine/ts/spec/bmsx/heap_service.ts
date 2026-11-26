@@ -6,10 +6,11 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
+	RootHead, RootBanks, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 9;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 10;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -45,7 +46,25 @@ export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore
 export const enum HeapServiceGcStage {
 	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
 	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
+	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
 }
+
+// Four Thread addresses followed by the seven root-bank descriptors.
+export const HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
+export const HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
+export const HEAP_SERVICE_ROOT_BANK_SIZE = 16;
+export const HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 7 * HEAP_SERVICE_ROOT_BANK_SIZE;
+export const enum HeapServiceRootBankField { Count = 0, Payloads = 4, Tags = 8, Names = 12 }
+
+// CPU-private load selectors for the existing non-RAM root storage. These
+// logical planes do not occupy memory or participate in ordinary bus decode.
+export const HEAP_SERVICE_ROOT_PORT_BASE = 0x01000000;
+export const HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
+export const HEAP_SERVICE_ROOT_PORT_STRIDE = 1 << HEAP_SERVICE_ROOT_PORT_SHIFT;
+export const enum HeapServiceRootPlane {
+	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+}
+export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_SERVICE_ROOT_PORT_SHIFT;
 
 // CPU-published head roots borrowed by a single remark quantum. Static
 // fault identifiers are a separate pinned word plane, populated at boot.

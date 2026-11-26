@@ -2526,20 +2526,26 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				switch (gcStage) {
 					case HeapServiceGcStage::FullTrace:
 					case HeapServiceGcStage::MaintenanceTrace: {
-						const auto& services = m_systemImage->heapServiceFunctions;
-						const auto work = m_heap.finishTraceQuantum(services[static_cast<size_t>(HeapServiceOperation::Trace)],
-							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], services[static_cast<size_t>(HeapServiceOperation::Remark)], gcStage);
+						const auto work = m_heap.finishTraceQuantum(m_systemImage->heapServiceFunctions, gcStage);
 						if (gcStage == HeapServiceGcStage::FullTrace) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRemark:
 					case HeapServiceGcStage::MaintenanceRemark: {
-						const auto& services = m_systemImage->heapServiceFunctions;
-						const auto work = m_heap.finishRemarkQuantum(services[static_cast<size_t>(HeapServiceOperation::Trace)],
-							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], gcStage);
+						const auto work = m_heap.finishRemarkQuantum(m_systemImage->heapServiceFunctions, gcStage);
 						if (gcStage == HeapServiceGcStage::FullRemark) chargeCollectionWork(work);
 						break;
 					}
+					case HeapServiceGcStage::FullRootHead:
+					case HeapServiceGcStage::MaintenanceRootHead: {
+						const auto work = m_heap.finishRootHead(m_systemImage->heapServiceFunctions, gcStage);
+						if (gcStage == HeapServiceGcStage::FullRootHead) chargeCollectionWork(work);
+						break;
+					}
+					case HeapServiceGcStage::FullRootBanks:
+					case HeapServiceGcStage::MaintenanceRootBanks:
+						m_heap.finishRootBanks(m_systemImage->heapServiceFunctions, gcStage);
+						break;
 					case HeapServiceGcStage::FullWeakClear:
 					case HeapServiceGcStage::MaintenanceWeakClear:
 						m_heap.finishWeakQuantum();
@@ -2592,9 +2598,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			const auto words = std::clamp(instructionBudget / GC_WORK_WORD_CYCLES, 1, static_cast<int>(GC_STEP_WORDS));
 			const auto& services = m_systemImage->heapServiceFunctions;
 			chargeCollectionWork(m_heap.stepFullCollection(epochs, words,
-				services[static_cast<size_t>(HeapServiceOperation::StringSweep)], services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
-				services[static_cast<size_t>(HeapServiceOperation::Trace)], services[static_cast<size_t>(HeapServiceOperation::WeakClear)],
-				services[static_cast<size_t>(HeapServiceOperation::Remark)]));
+				services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr));
 			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
 			if (heapServiceActive()) return RunResult::Yielded;
 			instructionBudget = instructionBudgetRemaining;
@@ -3189,6 +3193,66 @@ void CPU::markScopedRoots(GcHeap& heap) {
 	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
+}
+
+void CPU::publishHeapRootBanks() {
+	using Field = HeapServiceRootBankField;
+	const u32 descriptor = m_heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	m_memory.writeRamRecordPair(descriptor, m_rootView.address, m_activeThread ? m_activeThread->address : 0u);
+	m_memory.writeRamRecordPair(descriptor + 8u, m_completionThreadAddress, m_haltedUntilIrqThreadAddress);
+	const auto publish = [this](u32 address, u32 count, u32 payloads, u32 tags, u32 names) {
+		m_memory.writeRamRecordPair(address + static_cast<u32>(Field::Count), count, payloads);
+		m_memory.writeRamRecordPair(address + static_cast<u32>(Field::Tags), tags, names);
+	};
+	const u32 banks = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
+	m_systemGlobalBank.publishHeapRootBank(banks);
+	m_globalBank.publishHeapRootBank(banks + HEAP_SERVICE_ROOT_BANK_SIZE);
+	u32 destination = banks + 2u * HEAP_SERVICE_ROOT_BANK_SIZE;
+	for (u32 plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
+		const auto& image = m_executionImagesByDomain[plane];
+		publish(destination, image ? static_cast<u32>(image->constantStringRoots.size()) : 0u,
+			HEAP_SERVICE_ROOT_PORT_BASE + plane * HEAP_SERVICE_ROOT_PORT_STRIDE, 0u, 0u);
+	}
+	publish(destination, static_cast<u32>(m_completionValueCount),
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE,
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionTags) * HEAP_SERVICE_ROOT_PORT_STRIDE, 0u);
+	const u32 count = static_cast<u32>(rootBankSlots(GcRootBank::ConcatOperands));
+	const u32 source = count == 0u ? 0u : m_concat.source;
+	publish(destination + HEAP_SERVICE_ROOT_BANK_SIZE, count,
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE + 4u * source,
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatTags) * HEAP_SERVICE_ROOT_PORT_STRIDE + source, 0u);
+}
+
+u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {
+	const auto plane = static_cast<HeapServiceRootPlane>(offset >> HEAP_SERVICE_ROOT_PORT_SHIFT);
+	const u32 address = offset & (HEAP_SERVICE_ROOT_PORT_STRIDE - 1u);
+	const bool byte = kind == MemoryAccessKind::U8;
+	const u32 slot = byte ? address : address >> 2u;
+	switch (plane) {
+		case HeapServiceRootPlane::SystemConstants:
+		case HeapServiceRootPlane::Cart0Constants:
+		case HeapServiceRootPlane::Cart1Constants: {
+			const auto& image = m_executionImagesByDomain[static_cast<u32>(plane)];
+			if (!byte && image && slot < image->constantStringRoots.size()) return image->constantStringRoots[slot];
+			break;
+		}
+		case HeapServiceRootPlane::CompletionPayloads:
+		case HeapServiceRootPlane::CompletionTags:
+			if (byte == (plane == HeapServiceRootPlane::CompletionTags) && slot < m_completionValueCount)
+				return byte ? m_completionValues.tags()[slot] : m_completionValues.words()[slot];
+			break;
+		case HeapServiceRootPlane::ConcatPayloads:
+		case HeapServiceRootPlane::ConcatTags:
+			if (byte == (plane == HeapServiceRootPlane::ConcatTags) && m_concat.active()
+				&& slot >= m_concat.source && slot < m_concat.sources.size()) {
+				const Value value = m_concat.sources[slot].value;
+				return byte ? static_cast<u32>(valueTag(value)) : valuePayload(value);
+			}
+			break;
+		case HeapServiceRootPlane::Count:
+			break;
+	}
+	throw BMSX_RUNTIME_ERROR("Heap service read is outside its root port.");
 }
 
 size_t CPU::rootBankSlots(GcRootBank bank) const {

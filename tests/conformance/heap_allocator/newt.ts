@@ -155,14 +155,15 @@ try {
 				const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
 				const schedulerStep = (step: 'a' | 'd') => {
 					const admitted = cpu.gc.serviceStage();
-					const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark;
+					const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark
+						|| admitted === HeapServiceGcStage.MaintenanceRootHead || admitted === HeapServiceGcStage.MaintenanceRootBanks;
 					const op = step === 'd' && mark ? 'k' : step;
 					const before = frames.lastTickSequence;
 					const cycle = scheduler.nowCycles;
 					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
 					if (op === 'k') {
-						// Trace checks issuance in a different order, and the
-						// remark root pass differs at the Mode and fault slots.
+						// The mark and root visitors keep the native mirrors'
+						// different admission, color and fixed-root paths.
 						// Keep precise device-edge and subsequent timing checks.
 						for (let grant = 1; cpu.gc.serviceStage() === admitted && grant < 65536; ++grant)
 							frames.stepInstruction(1);
@@ -177,7 +178,9 @@ try {
 					assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
 					assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
 				}
-				assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceTrace);
+				// The interrupted-epoch fixture already admitted native
+				// roots before parking, unlike the fresh OOM epoch.
+				assert.equal(cpu.gc.serviceStage(), discarded ? HeapServiceGcStage.MaintenanceRootBanks : HeapServiceGcStage.MaintenanceRootHead);
 				assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
 				const recoverySlice = () => {
 					const before = scheduler.nowCycles;
@@ -200,7 +203,8 @@ try {
 					recoverySlice();
 					assert.equal(cpu.allocationReady(), false);
 				}
-				for (const entered of [HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
+				for (const entered of [HeapServiceGcStage.MaintenanceRootBanks, HeapServiceGcStage.MaintenanceTrace,
+					HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
 					HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep]) {
 					assert.notEqual(recoveryStages & (1 << entered), 0, `allocation recovery enters BIOS stage ${entered}`);
 				}

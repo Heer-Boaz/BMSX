@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace bmsx {
@@ -12,10 +13,12 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
+	RootHead, RootBanks, Count,
 };
+using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 9u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 10u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -52,7 +55,25 @@ enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBe
 enum class HeapServiceGcStage : uint32_t {
 	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
 	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
+	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
 };
+
+// Four Thread addresses followed by the seven root-bank descriptors.
+constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
+constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
+constexpr uint32_t HEAP_SERVICE_ROOT_BANK_SIZE = 16;
+constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 7u * HEAP_SERVICE_ROOT_BANK_SIZE;
+enum class HeapServiceRootBankField : uint32_t { Count = 0, Payloads = 4, Tags = 8, Names = 12 };
+
+// CPU-private load selectors for the existing non-RAM root storage. These
+// logical planes do not occupy memory or participate in ordinary bus decode.
+constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BASE = 0x01000000;
+constexpr uint32_t HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
+constexpr uint32_t HEAP_SERVICE_ROOT_PORT_STRIDE = 1u << HEAP_SERVICE_ROOT_PORT_SHIFT;
+enum class HeapServiceRootPlane : uint32_t {
+	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+};
+constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
 
 // CPU-published head roots and the pinned static fault-ID word plane.
 constexpr uint32_t HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;

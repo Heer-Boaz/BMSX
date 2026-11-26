@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
+import {
+	MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_DMA,
+	mappedBusSignalsForCartridgeSlot,
+} from '../../../machine/ts/machine/memory/bus_signals';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -12,7 +16,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { BLUA32_STRING_ROM_ADDRESS_MASK } from '../../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_PORT_BASE, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { CART_MMIO_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -145,6 +149,14 @@ try {
 		assert.equal(memory.readMappedU32LE(lastWord), 0);
 		assert.notEqual(memory.readBusFaultSequence(), sequence);
 		observe(`M ${lastWord}`, '0 1');
+		// Root selectors are private CPU load operands, not bus addresses.
+		const cartridge = mappedBusSignalsForCartridgeSlot(0);
+		for (const signals of [cartridge, cartridge | MAPPED_BUS_INSTRUCTION_FETCH, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY]) {
+			const sequence = memory.readBusFaultSequence();
+			assert.equal(memory.readMappedBusU32LE(HEAP_SERVICE_ROOT_PORT_BASE, signals), 0);
+			assert.notEqual(memory.readBusFaultSequence(), sequence);
+			observe(`Q ${HEAP_SERVICE_ROOT_PORT_BASE} ${signals}`, '0 1');
+		}
 		begin('reset', [STATE, FLOOR, LIMIT]);
 		arena.reset(FLOOR, LIMIT);
 		finish(0);
@@ -232,6 +244,8 @@ try {
 			['poke_word', [IO_IRQ_FLAGS, 0], /outside its private RAM port/],
 			['poke_word', [lastWord, 0], /outside its private RAM port/],
 			['poke_word', [SYSTEM_ROM_BASE, 0], /outside its private RAM port/],
+			['poke_word', [HEAP_SERVICE_ROOT_PORT_BASE, 0], /outside its private RAM port/],
+			['peek_byte', [HEAP_SERVICE_ROOT_PORT_BASE], /outside its root port/],
 			['peek_word', [CART_MMIO_BASE], /outside installed RAM and ROM/],
 			['peek_word', [BLUA32_STRING_ROM_ADDRESS_MASK + 1], /outside installed RAM and ROM/],
 			['peek_word', [IO_IRQ_FLAGS + 1], /requires an aligned byte or word/],

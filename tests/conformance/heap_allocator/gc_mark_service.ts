@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_COLOR_MASK, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { UPVALUE_NEXT, UPVALUE_RECORD_KIND } from '../../../machine/ts/machine/cpu/upvalue';
@@ -63,6 +63,7 @@ try {
 		const index = () => memory.readRamRecordWord(control + GC_TRACE_HEAD) & GC_GRAY_INDEX_MASK;
 		const epochWork = () => memory.readRamRecordWord(control + firstEpochWork);
 		const trace: string[] = [], expected: string[] = [];
+		const rootRetirements = new Set<number>();
 		let spent = 0;
 		function step(cycles: number, record = false) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -96,12 +97,25 @@ try {
 			const before = captureRuntimeSaveState(runtime);
 			assert.equal(step(allowance, true), RunResult.CollectionProgress);
 			if (cpu.heapServiceActive()) {
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.FullTrace);
+				assert.equal(gc.serviceStage(), HeapServiceGcStage.FullRootHead);
 				applyRuntimeSaveState(reference, before);
 				nativeLimit = memory.readRamRecordWord(context + HeapServiceTraceField.Limit);
-				nativeWork = reference.machine.cpu.gc.stepFullCollection(1, nativeLimit, 0, 0);
+				nativeWork = reference.machine.cpu.gc.stepFullCollection(1, nativeLimit);
 			}
 		}
+		assert.equal(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
+		for (const stage of [HeapServiceGcStage.FullRootBanks, HeapServiceGcStage.FullTrace]) {
+			const grant = 1 << 20;
+			rootRetirements.add(expected.length);
+			assert.equal(step(grant, true), RunResult.CollectionProgress);
+			assert.ok(spent > 0 && spent < grant);
+			assert.equal(gc.serviceStage(), stage);
+			assert.equal(cpu.readFramePc(caller), callerPc);
+			const end = control + GC_LAST_EPOCH_WORK + 4;
+			trace.push(`H ${control} ${end}`, 'P');
+			expected.push(String(hashBytes(memory.ramData(), control, end - control)), `${caller + 1} ${callerPc}`);
+		}
+		assert.equal(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
 		assert.equal(gc.serviceStage(), HeapServiceGcStage.FullTrace);
 		assert.ok(index() !== 0 && nativeWork > 0);
 		const oldIndex = index(), recordOffset = oldIndex << GC_RECORD_SHIFT, record = RAM_BASE + recordOffset;
@@ -201,7 +215,15 @@ try {
 			`j ${slots} 0`, 'S', 's', `x ${nativeWeakStatePath}`,
 			hashWeak, ...finishCommands, 'u', hashWeak, ...finishCommands, 'U', hashWeak, ...finishCommands,
 		]);
-		assert.deepEqual(cpp.slice(0, launchExpected.length), launchExpected, 'both production cores park at the same trace admission');
+		for (const [index, want] of launchExpected.entries()) {
+			if (rootRetirements.has(index)) {
+				// The two original head/Thread-root mirror paths may execute
+				// different instructions; the retirement frontier is exact.
+				const actual = cpp[index].split(' '), fields = want.split(' ');
+				assert.ok(+actual[1] > 0 && +actual[1] < 1 << 20);
+				assert.deepEqual([actual[0], ...actual.slice(2)], [fields[0], ...fields.slice(2)]);
+			} else assert.equal(cpp[index], want, `both production cores park at the same trace admission: ${index}`);
+		}
 		let out = launchExpected.length;
 		assert.ok(+cpp[out++] > 0);
 		assert.equal(+cpp[out++], hashBytes(markPartial.ram, recordOffset, 4));

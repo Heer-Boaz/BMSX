@@ -234,10 +234,8 @@ bool CPU::advanceAllocationRecovery() {
 			if (m_heap.finalMarkPending()) advanceFinalMark();
 			else {
 				const auto& services = m_systemImage->heapServiceFunctions;
-				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS,
-					services[static_cast<size_t>(HeapServiceOperation::StringSweep)], HeapServiceGcStage::AllocationRecoveryStringSweep,
-					services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)], services[static_cast<size_t>(HeapServiceOperation::Trace)],
-					services[static_cast<size_t>(HeapServiceOperation::Remark)]);
+				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS, HeapServiceGcStage::AllocationRecoveryStringSweep,
+					services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
 			}
 			finishAllocationRecovery();
 			return true;
@@ -249,9 +247,8 @@ bool CPU::advanceAllocationRecovery() {
 
 void CPU::advanceFinalMark() {
 	const auto& services = m_systemImage->heapServiceFunctions;
-	m_heap.stepFinalMark(GC_STEP_WORDS, services[static_cast<size_t>(HeapServiceOperation::Trace)],
-		services[static_cast<size_t>(HeapServiceOperation::WeakClear)], HeapServiceGcStage::MaintenanceTrace,
-		services[static_cast<size_t>(HeapServiceOperation::Remark)]);
+	m_heap.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage::MaintenanceTrace,
+		services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
 }
 
 void CPU::finishAllocationRecovery() {

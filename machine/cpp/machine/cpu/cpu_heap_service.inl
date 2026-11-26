@@ -5,6 +5,10 @@ static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFF
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_NEWT_OFFSET);
 static_assert(HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::DirectRecovery) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
+static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
+static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
+static_assert(HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES <= RAM_BASE);
+static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STRIDE);
 static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
@@ -104,6 +108,8 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 	if (address - RAM_BASE < m_memory.ramByteCount()) {
 		// Raw records may project into the bus-visible part or beneath MMIO.
 		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
+	} else if (address - HEAP_SERVICE_ROOT_PORT_BASE < HEAP_SERVICE_ROOT_PORT_BYTES) {
+		word = readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
 	} else {
 		const u32 slot = address >> BLUA32_STRING_ROM_SOCKET_SHIFT;
 		const u32 busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;

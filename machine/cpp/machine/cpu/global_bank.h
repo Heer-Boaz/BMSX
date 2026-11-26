@@ -37,6 +37,7 @@ public:
 	std::optional<u32> find(StringId key) const;
 	u32 registerName(StringId key, Value pending = valueNil());
 	GlobalBankState captureState() const { return m_state; }
+	void publishHeapRootBank(u32 descriptor) const;
 	void bind(GlobalBankState state);
 	void clear();
 

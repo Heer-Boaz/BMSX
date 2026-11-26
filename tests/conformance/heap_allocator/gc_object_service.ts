@@ -153,11 +153,12 @@ try {
 			referenceEnd = trace.length;
 			// Retire each already-admitted mark stage with a grant larger than
 			// either mirror's path. Its source allowance was fixed earlier.
-			const marking = gc.serviceStage() === HeapServiceGcStage.FullTrace || gc.serviceStage() === HeapServiceGcStage.FullRemark;
+			const marking = gc.serviceStage() === HeapServiceGcStage.FullTrace || gc.serviceStage() === HeapServiceGcStage.FullRemark
+				|| gc.serviceStage() === HeapServiceGcStage.FullRootHead || gc.serviceStage() === HeapServiceGcStage.FullRootBanks;
 			assert.equal(step(marking ? markGrant : grant, marking), RunResult.CollectionProgress);
 			if (gc.serviceStage() === HeapServiceGcStage.FullObjectSweep) {
 				applyRuntimeSaveState(reference, before);
-				nativeWork = reference.machine.cpu.gc.stepFullCollection(1, GC_STEP_WORDS, 0, 0);
+				nativeWork = reference.machine.cpu.gc.stepFullCollection(1, GC_STEP_WORDS);
 			}
 		}
 		assert.equal(gc.serviceStage(), HeapServiceGcStage.FullObjectSweep);

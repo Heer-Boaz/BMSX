@@ -91,28 +91,41 @@ try {
 		reference.boot();
 		const referenceCpu = reference.machine.cpu, referenceMem = reference.machine.memory;
 		const grant = GC_STEP_WORDS * GC_WORK_WORD_CYCLES;
-		const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
+		// The source allowance is latched on admission. A larger active
+		// instruction grant reaches the retirement of the first global scan.
+		const markGrant = 65536;
+		const beforeSweep = [HeapServiceGcStage.FullRootHead, HeapServiceGcStage.FullRootBanks,
+			HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
 		const markTransitions = [
+			[HeapServiceGcStage.FullRootHead, GcPhase.Mark, HeapServiceGcStage.FullRootBanks, GcPhase.Mark],
+			[HeapServiceGcStage.FullRootBanks, GcPhase.Mark, HeapServiceGcStage.FullTrace, GcPhase.Mark],
 			[HeapServiceGcStage.FullTrace, GcPhase.Mark, HeapServiceGcStage.FullRemark, GcPhase.Mark],
-			[HeapServiceGcStage.FullRemark, GcPhase.Mark, HeapServiceGcStage.FullTrace, GcPhase.MarkAgain],
+			[HeapServiceGcStage.FullRemark, GcPhase.Mark, HeapServiceGcStage.FullRootBanks, GcPhase.Mark],
+			[HeapServiceGcStage.FullRootBanks, GcPhase.Mark, HeapServiceGcStage.FullTrace, GcPhase.MarkAgain],
 			[HeapServiceGcStage.FullTrace, GcPhase.MarkAgain, HeapServiceGcStage.Idle, GcPhase.Atomic],
-			[HeapServiceGcStage.FullRemark, GcPhase.Atomic, HeapServiceGcStage.FullTrace, GcPhase.Atomic],
+			[HeapServiceGcStage.FullRemark, GcPhase.Atomic, HeapServiceGcStage.FullRootBanks, GcPhase.Atomic],
+			[HeapServiceGcStage.FullRootBanks, GcPhase.Atomic, HeapServiceGcStage.FullTrace, GcPhase.Atomic],
 			[HeapServiceGcStage.FullTrace, GcPhase.Atomic, HeapServiceGcStage.FullWeakClear, GcPhase.Atomic],
 		] as const;
 		const seen = new Set<HeapServiceGcStage>();
+		let markRetirements = 0;
 		for (let i = 0; i < 128 && (gc.phase() !== GcPhase.Sweep || cpu.heapServiceActive()); ++i) {
 			const admitted = stage(), beforePhase = gc.phase(), observation = expected.length;
 			if (admitted !== HeapServiceGcStage.Idle) {
 				assert.ok(beforeSweep.includes(admitted), `unexpected explicit GC stage before Sweep: ${admitted}`);
 				seen.add(admitted);
 			}
-			assert.equal(step(grant), RunResult.CollectionProgress);
-			assert.equal(cpu.readFramePc(caller), callerPc, 'trace, remark and weak grants do not admit the caller');
-			if (admitted === HeapServiceGcStage.FullTrace || admitted === HeapServiceGcStage.FullRemark) {
-				assert.deepEqual([admitted, beforePhase, stage(), gc.phase()], markTransitions[mirroredMarkGrants.size],
+			assert.equal(step(admitted === HeapServiceGcStage.Idle ? grant : markGrant), RunResult.CollectionProgress);
+			assert.equal(cpu.readFramePc(caller), callerPc, 'marking and weak grants do not admit the caller');
+			if (admitted !== HeapServiceGcStage.Idle && admitted !== HeapServiceGcStage.FullWeakClear) {
+				const retirement = markRetirements++;
+				assert.deepEqual([admitted, beforePhase, stage(), gc.phase()], markTransitions[retirement],
 					'the full grant reaches a named mark retirement, not an arbitrary in-flight PC');
-				assert.ok(consumed > 0 && consumed < grant);
-				mirroredMarkGrants.add(observation);
+				assert.ok(consumed > 0 && consumed < markGrant);
+				if (admitted === HeapServiceGcStage.FullTrace || admitted === HeapServiceGcStage.FullRemark
+					|| admitted === HeapServiceGcStage.FullRootHead
+					|| (admitted === HeapServiceGcStage.FullRootBanks && retirement === 1))
+					mirroredMarkGrants.add(observation);
 				// Compare native work, limit, atomic flag and carry; the
 				// trailing MirrorPolicy deliberately selects a different origin.
 				observe(`H ${traceContext} ${traceContext + HeapServiceTraceField.MirrorPolicy}`,
@@ -122,8 +135,8 @@ try {
 				observe('P', `${caller + 1} ${callerPc}`);
 			}
 		}
-		assert.deepEqual([...seen], beforeSweep, 'the linked BIOS ran Trace, Remark and ClearWeak before reclamation');
-		assert.equal(mirroredMarkGrants.size, markTransitions.length);
+		assert.deepEqual([...seen], beforeSweep, 'the linked BIOS ran RootHead, RootBanks, Trace, Remark and ClearWeak before reclamation');
+		assert.equal(markRetirements, markTransitions.length);
 		assert.equal(stage(), HeapServiceGcStage.Idle);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(gc.phase(), GcPhase.Sweep);
@@ -131,7 +144,7 @@ try {
 		// Compare at the original reclamation quantum's own admission
 		// boundary, not at the earlier marking service entries.
 		applyRuntimeSaveState(reference, captureRuntimeSaveState(runtime));
-		const nativeWork = referenceCpu.gc.stepFullCollection(gc.fullEpochs(), GC_STEP_WORDS, 0);
+		const nativeWork = referenceCpu.gc.stepFullCollection(gc.fullEpochs(), GC_STEP_WORDS);
 		assert.equal(step(grant), RunResult.CollectionProgress);
 		assert.equal(stage(), HeapServiceGcStage.FullObjectSweep);
 		assert.ok(cpu.heapServiceActive(), 'the explicit GC granted the private objectsweep from the linked ROM');
@@ -237,12 +250,16 @@ try {
 		assert.equal(output.length, expected.length);
 		const index = output.findIndex((line, i) => {
 			if (!mirroredMarkGrants.has(i)) return line !== expected[i];
-			// The preserved Trace/Remark mirror paths can take different
-			// instruction counts despite matching retired work (Trace:
-			// O0 15–59, O3 11–47 cycles apart; Remark: O0 61, O3 23 here).
+			// The preserved mirror paths can take different instruction counts
+			// despite matching retired work and raw frontiers. Here initial
+			// RootHead differs by 121/82 cycles (O0/O3): C++ visits the
+			// explicit fault root; initial RootBanks differs by 7 when first
+			// enqueuing an object with the origin's color store. Later root
+			// banks compare exact timing. Trace differs by 15–59/11–47 and
+			// Remark by 61/23 cycles.
 			const [result, cycles, ...state] = line.split(' ');
 			const [targetResult, , ...targetState] = expected[i].split(' ');
-			assert.ok(+cycles > 0 && +cycles < grant, `native marking retirement at observation ${i}`);
+			assert.ok(+cycles > 0 && +cycles < markGrant, `native marking retirement at observation ${i}`);
 			return result !== targetResult || state.join(' ') !== targetState.join(' ');
 		});
 		assert.equal(index, -1, `first differing full String GC observation ${index}: native=${output[index]}, TS=${expected[index]}`);

@@ -143,7 +143,7 @@ int main(int argc, char** argv) {
 				case 'w': {
 					u32 words;
 					trace >> words;
-					std::cout << cpu.gcHeap().stepFullCollection(cpu.gcHeap().fullEpochs(), words, 0u, 0u) << '\n';
+					std::cout << cpu.gcHeap().stepFullCollection(cpu.gcHeap().fullEpochs(), words) << '\n';
 					break;
 				}
 				case 'b': {
@@ -211,7 +211,8 @@ int main(int argc, char** argv) {
 					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
 					if (op == 'k') {
-						if (admitted != HeapServiceGcStage::MaintenanceTrace && admitted != HeapServiceGcStage::MaintenanceRemark)
+						if (admitted != HeapServiceGcStage::MaintenanceTrace && admitted != HeapServiceGcStage::MaintenanceRemark
+							&& admitted != HeapServiceGcStage::MaintenanceRootHead && admitted != HeapServiceGcStage::MaintenanceRootBanks)
 							throw std::runtime_error("Expected an active allocation-recovery mark stage");
 						for (int grant = 1; cpu.gcHeap().serviceStage() == admitted && grant < 65536; ++grant)
 							frames.stepInstruction(runtime, 1);
@@ -301,11 +302,18 @@ int main(int argc, char** argv) {
 					std::cout << hash << '\n';
 					break;
 				}
-				case 'M': {
+				case 'M':
+				case 'Q': {
 					u32 address;
 					trace >> address;
+					MappedBusSignals signals = MAPPED_BUS_MASTER_CPU;
+					if (op == 'Q') {
+						u32 raw;
+						trace >> raw;
+						signals = static_cast<MappedBusSignals>(raw);
+					}
 					const u32 sequence = memory.readBusFaultSequence();
-					const u32 value = memory.readMappedU32LE(address);
+					const u32 value = memory.readMappedBusU32LE(address, signals);
 					std::cout << value << ' ' << (memory.readBusFaultSequence() != sequence) << '\n';
 					break;
 				}

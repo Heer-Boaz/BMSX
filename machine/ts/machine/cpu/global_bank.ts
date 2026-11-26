@@ -1,4 +1,5 @@
-import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { HeapServiceRootBankField } from '../../spec/bmsx/heap_service';
+import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
@@ -30,6 +31,15 @@ export class GlobalBank {
 	}
 	public name(slot: number): StringId { return this.memory.readRamRecordWord(this.base + 4 * slot); }
 	public captureState(): GlobalBankState { return { base: this.base, capacity: this.capacity, count: this.count }; }
+
+	public publishHeapRootBank(descriptor: number): void {
+		const { memory, base, capacity, count } = this;
+		const names = RAM_BASE + (base & RAM_RECORD_WORD_MASK);
+		const payloads = RAM_BASE + ((base + 12 * capacity) & RAM_RECORD_WORD_MASK);
+		const tags = RAM_BASE + ((base + 16 * capacity) & (MAIN_RAM_SIZE - 1));
+		memory.writeRamRecordPair(descriptor + HeapServiceRootBankField.Count, count, payloads);
+		memory.writeRamRecordPair(descriptor + HeapServiceRootBankField.Tags, tags, names);
+	}
 
 	public bind(state: GlobalBankState): void {
 		this.base = state.base; this.capacity = state.capacity; this.count = state.count;

@@ -182,6 +182,8 @@ import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
+	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
+	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE, HeapServiceRootBankField, HeapServiceRootPlane,
 } from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -800,21 +802,15 @@ export class CPU implements MappedPageInvalidator {
 		if (recovery === AllocationRecovery.RetryCurrent || recovery === AllocationRecovery.RetryFresh) return false;
 		if (this.gc.finalMarkPending()) this.advanceFinalMark();
 		else {
-			const services = this.systemImage.heapServiceFunctions;
 			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
-				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep,
-				services === null ? 0 : services[HeapServiceOperation.ObjectSweep], services === null ? 0 : services[HeapServiceOperation.Trace],
-				services === null ? 0 : services[HeapServiceOperation.Remark]);
+				HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions);
 		}
 		this.finishAllocationRecovery();
 		return true;
 	}
 
 	public advanceFinalMark(): void {
-		const services = this.systemImage.heapServiceFunctions;
-		this.gc.stepFinalMark(GC_STEP_WORDS, services === null ? 0 : services[HeapServiceOperation.Trace],
-			services === null ? 0 : services[HeapServiceOperation.WeakClear], HeapServiceGcStage.MaintenanceTrace,
-			services === null ? 0 : services[HeapServiceOperation.Remark]);
+		this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2278,19 +2274,26 @@ export class CPU implements MappedPageInvalidator {
 						switch (gcStage) {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
-								const services = this.systemImage.heapServiceFunctions!;
-								const work = this.gc.finishTraceQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear],
-									services[HeapServiceOperation.Remark], gcStage);
+								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
 								if (gcStage === HeapServiceGcStage.FullTrace) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRemark:
 							case HeapServiceGcStage.MaintenanceRemark: {
-								const services = this.systemImage.heapServiceFunctions!;
-								const work = this.gc.finishRemarkQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear], gcStage);
+								const work = this.gc.finishRemarkQuantum(this.systemImage.heapServiceFunctions!, gcStage);
 								if (gcStage === HeapServiceGcStage.FullRemark) this.chargeCollectionWork(work);
 								break;
 							}
+							case HeapServiceGcStage.FullRootHead:
+							case HeapServiceGcStage.MaintenanceRootHead: {
+								const work = this.gc.finishRootHead(this.systemImage.heapServiceFunctions!, gcStage);
+								if (gcStage === HeapServiceGcStage.FullRootHead) this.chargeCollectionWork(work);
+								break;
+							}
+							case HeapServiceGcStage.FullRootBanks:
+							case HeapServiceGcStage.MaintenanceRootBanks:
+								this.gc.finishRootBanks(this.systemImage.heapServiceFunctions!, gcStage);
+								break;
 							case HeapServiceGcStage.FullWeakClear:
 							case HeapServiceGcStage.MaintenanceWeakClear:
 								this.gc.finishWeakQuantum();
@@ -2334,11 +2337,7 @@ export class CPU implements MappedPageInvalidator {
 					this.instructionBudgetRemaining = instructionBudget;
 					if (instructionBudget <= 0) return RunResult.Yielded;
 					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
-					const services = this.systemImage.heapServiceFunctions;
-					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words,
-						services === null ? 0 : services[HeapServiceOperation.StringSweep], services === null ? 0 : services[HeapServiceOperation.ObjectSweep],
-						services === null ? 0 : services[HeapServiceOperation.Trace], services === null ? 0 : services[HeapServiceOperation.WeakClear],
-						services === null ? 0 : services[HeapServiceOperation.Remark]));
+					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words, this.systemImage.heapServiceFunctions));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
 					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;
@@ -3896,6 +3895,8 @@ export class CPU implements MappedPageInvalidator {
 			if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
 				// Raw records may project into the bus-visible part or beneath MMIO.
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
+			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {
+				word = this.readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
 			} else {
 				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
 				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
@@ -5128,6 +5129,66 @@ export class CPU implements MappedPageInvalidator {
 
 	public pendingOperandTop(thread: number): number {
 		return this.concat.registersLeft && this.activeThread.address === thread ? this.concat.nextRegister + this.concat.registersLeft : 0;
+	}
+
+	private writeHeapRootBank(address: number, count: number, payloads: number, tags: number, names: number): void {
+		this.memory.writeRamRecordPair(address + HeapServiceRootBankField.Count, count, payloads);
+		this.memory.writeRamRecordPair(address + HeapServiceRootBankField.Tags, tags, names);
+	}
+
+	/** Publish addresses and extents only. Root data stays with its CPU owner. */
+	public publishHeapRootBanks(): void {
+		const memory = this.memory, descriptor = this.heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		memory.writeRamRecordPair(descriptor, this.rootThread.address, this.activeThread.address);
+		memory.writeRamRecordPair(descriptor + 8, this.completionThread, this.haltedUntilIrqThread);
+		const banks = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
+		this.systemGlobalBank.publishHeapRootBank(banks);
+		this.globalBank.publishHeapRootBank(banks + HEAP_SERVICE_ROOT_BANK_SIZE);
+		let destination = banks + 2 * HEAP_SERVICE_ROOT_BANK_SIZE;
+		for (let plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
+			const image = this.executionImagesByDomain[plane];
+			this.writeHeapRootBank(destination, image === null ? 0 : image.constantStringRoots.length,
+				HEAP_SERVICE_ROOT_PORT_BASE + plane * HEAP_SERVICE_ROOT_PORT_STRIDE, 0, 0);
+		}
+		this.writeHeapRootBank(destination, this.completionValueCount,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionTags * HEAP_SERVICE_ROOT_PORT_STRIDE, 0);
+		const count = this.rootBankSlots(GcRootBank.ConcatOperands);
+		const source = count === 0 ? 0 : this.concat.source;
+		this.writeHeapRootBank(destination + HEAP_SERVICE_ROOT_BANK_SIZE, count,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE + 4 * source,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatTags * HEAP_SERVICE_ROOT_PORT_STRIDE + source, 0);
+	}
+
+	private readHeapServiceRoot(offset: number, kind: MemoryAccessKind): number {
+		const plane = offset >>> HEAP_SERVICE_ROOT_PORT_SHIFT;
+		const address = offset & (HEAP_SERVICE_ROOT_PORT_STRIDE - 1);
+		const byte = kind === MemoryAccessKind.U8;
+		const slot = byte ? address : address >>> 2;
+		switch (plane) {
+			case HeapServiceRootPlane.SystemConstants:
+			case HeapServiceRootPlane.Cart0Constants:
+			case HeapServiceRootPlane.Cart1Constants: {
+				const image = this.executionImagesByDomain[plane];
+				if (!byte && image !== null && slot < image.constantStringRoots.length) return image.constantStringRoots[slot];
+				break;
+			}
+			case HeapServiceRootPlane.CompletionPayloads:
+			case HeapServiceRootPlane.CompletionTags:
+				if (byte === (plane === HeapServiceRootPlane.CompletionTags) && slot < this.completionValueCount)
+					return byte ? this.completionValueSlots.getTag(slot) : this.completionValueSlots.getPayload(slot);
+				break;
+			case HeapServiceRootPlane.ConcatPayloads:
+			case HeapServiceRootPlane.ConcatTags: {
+				const concat = this.concat;
+				if (byte === (plane === HeapServiceRootPlane.ConcatTags) && concat.active && slot >= concat.source && slot < concat.values.length) {
+					const value = concat.values[slot];
+					return byte ? valueTag(value) : valuePayload(value);
+				}
+				break;
+			}
+		}
+		throw new Error('Heap service read is outside its root port.');
 	}
 
 	public rootBankSlots(bank: GcRootBank): number {

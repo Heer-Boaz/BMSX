@@ -391,6 +391,7 @@ private:
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
 	void executeHeapServiceStore(CallFrame&, int source, MemoryAccessKind, u32 address);
 	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
+	u32 readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const;
 	// Ordinary CALL arguments borrow frame slots by index so backing growth can
 	// rebind them. Detached implicit calls carry complete Values until admission.
 	struct CallValueSource {
@@ -602,6 +603,7 @@ private:
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
 	void publishHeapRemarkHead();
+	void publishHeapRootBanks();
 	void markRootHead(GcHeap& heap);
 	void markScopedRoots(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);

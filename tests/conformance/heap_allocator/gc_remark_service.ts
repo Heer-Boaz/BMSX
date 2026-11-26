@@ -105,13 +105,21 @@ try {
 			const before = captureRuntimeSaveState(runtime);
 			assert.equal(launch(launchGrant), RunResult.CollectionProgress);
 			if (cpu.heapServiceActive()) {
-				assert.equal(stage(), HeapServiceGcStage.FullTrace);
+				assert.equal(stage(), HeapServiceGcStage.FullRootHead);
 				writeFileSync(beforeMark, encodeRuntimeSaveState(before));
 				applyRuntimeSaveState(reference, before);
-				referenceWork = reference.machine.cpu.gc.stepFullCollection(1, nativeWords, 0, 0);
+				referenceWork = reference.machine.cpu.gc.stepFullCollection(1, nativeWords);
 			}
 		}
 		assert.ok(referenceWork > 0);
+		assert.equal(word(GC_ROOT_CURSOR), 0);
+		assert.equal(launch(1 << 20), RunResult.CollectionProgress);
+		assert.equal(stage(), HeapServiceGcStage.FullRootBanks);
+		assert.notEqual(word(GC_ROOT_CURSOR), 0);
+		assert.equal(launch(1 << 20), RunResult.CollectionProgress);
+		assert.equal(stage(), HeapServiceGcStage.FullTrace);
+		assert.equal(word(GC_ROOT_CURSOR), 0);
+		blocked();
 		// The large trace grant reaches the native-to-BIOS boundary without
 		// assuming the TS and C++ record admissions took identical cycles.
 		assert.equal(launch(1 << 20), RunResult.CollectionProgress);

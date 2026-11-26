@@ -6,11 +6,14 @@ import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/mach
 import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { type Value, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import {
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_BANKS_SIZE, HEAP_SERVICE_ROOT_PORT_BASE,
+	HEAP_SERVICE_ROOT_PORT_STRIDE, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRootPlane,
+} from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -20,21 +23,38 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
-const ROOTS = 'kernel/gc_root_banks', entrySource = 'halt_until_irq';
+const ROOTS = 'kernel/gc_root_banks', PORT = 'test/gc_root_port', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', ROOTS].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
+const portSource = `module<const>
+local read_byte<const> = function(address)
+	local byte<const>: *u8 = address
+	return *byte
+end
+local write_word<const> = function(address)
+	local word<const>: *u32 = address
+	*word = 0
+end
+return { read_byte = read_byte, write_word = write_word }
+`;
+modules.push({ path: PORT, source: portSource, chunk: parseLuaChunk(portSource, PORT) });
 
-const CURSOR_BITS = 20, BANK_BYTES = 16, THREAD_BYTES = 16, DESCRIPTOR_BYTES = THREAD_BYTES + BANK_BYTES * 7;
+const CURSOR_BITS = 20;
 function fixture(optLevel: 0 | 3) {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === ROOTS && entry.exportPathKey === 'trace_root_banks')!;
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-	assert.ok(root >= 0);
+	function entryIndex(path: string, key: string) {
+		const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === key)!;
+		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
+		assert.ok(index >= 0);
+		return index;
+	}
+	const root = entryIndex(ROOTS, 'trace_root_banks');
+	const readByte = entryIndex(PORT, 'read_byte'), writeWord = entryIndex(PORT, 'write_word');
 	const entry = linked.image.functions[root].address;
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [root]);
+	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [root, readByte, writeWord]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
 	const cart = (entrySource: string) => linkTestBlua32Pair(compiled,
 		compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel })).cartRomBytes;
@@ -97,11 +117,8 @@ function fixture(optLevel: 0 | 3) {
 	const unreadTable = equal(target => target.createTable(0, 0));
 	const concat = [valueString(consumed), valueTable(unreadTable), valueString(unread), valueInteger(5)];
 
-	// Test-only publication of the native-owned spans. Globals already have
-	// a physical backing and the descriptors simply refer to the live lanes.
-	const locations = equal(target => {
-		const descriptor = target.heapAllocator.allocate(DESCRIPTOR_BYTES, true);
-		assert.ok(descriptor);
+	const descriptor = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	equal(target => {
 		const ram = target.memory;
 		target.activeThread = target.bindThread(active);
 		target['completionThread'] = completionThread;
@@ -113,49 +130,24 @@ function fixture(optLevel: 0 | 3) {
 			nextRegister: 0, registersLeft: 0, length: 3, instructionPc: 0, destination: 0, source: 1, offset: 0,
 			hash: 0, values: concat, lengths: [1, 1, 1, 1], bytes: new Uint8Array(1),
 		});
-		for (const [slot, address] of [target.rootThread.address, active, completionThread, halted].entries())
-			ram.writeRamRecordWord(descriptor + 4 * slot, address);
-
-		function bind(kind: GcRootBank, count: number, words: number, tags: number, names: number) {
-			const address = descriptor + THREAD_BYTES + (kind - GcRootBank.SystemGlobals) * BANK_BYTES;
-			assert.equal(count, target.rootBankSlots(kind));
-			for (const [i, value] of [count, words, tags, names].entries()) ram.writeRamRecordWord(address + 4 * i, value);
-		}
-		function publish(kind: GcRootBank, values: readonly Value[], first: number) {
-			const base = target.heapAllocator.allocate(values.length * 5, true);
-			assert.ok(base);
-			const tags = base + 4 * values.length;
-			for (const [slot, value] of values.entries()) {
-				ram.writeRamRecordWord(base + 4 * slot, valuePayload(value));
-				ram.writeRamRecordByte(tags + slot, valueTag(value));
-			}
-			bind(kind, values.length - first, base + 4 * first, tags + first, 0);
-		}
-		for (const [kind, bank] of [[GcRootBank.SystemGlobals, target['systemGlobalBank']],
-			[GcRootBank.Globals, target['globalBank']]] as const) {
-			const { base, capacity, count } = bank.captureState();
-			bind(kind, count, base + 12 * capacity, base + 16 * capacity, base);
-		}
-		bind(GcRootBank.SystemConstants, 0, 0, 0, 0);
-		for (const slot of [0, 1] as const) {
-			const roots = target['executionImageForDomain'](slot)!.constantStringRoots;
-			const base = target.heapAllocator.allocate(4 * roots.length, true);
-			assert.ok(base);
-			for (const [index, id] of roots.entries()) ram.writeRamRecordWord(base + 4 * index, id);
-			bind(GcRootBank.Cart0Constants + slot, roots.length, base, 0, 0);
-		}
-		publish(GcRootBank.Completion, finished, 0);
-		publish(GcRootBank.ConcatOperands, concat, 1);
+		const occupied = target.heapAllocator.occupiedBytes(), charged = target.luaHeap.usedBytes();
+		const descriptorEnd = descriptor + HEAP_SERVICE_ROOT_BANKS_SIZE;
+		const before = ram.ramData().slice(floor, descriptor);
+		const after = ram.ramData().slice(descriptorEnd, last);
+		target.publishHeapRootBanks();
+		assert.equal(target.heapAllocator.occupiedBytes(), occupied);
+		assert.equal(target.luaHeap.usedBytes(), charged);
+		assert.deepEqual(ram.ramData().subarray(floor, descriptor), before);
+		assert.deepEqual(ram.ramData().subarray(descriptorEnd, last), after);
 		target.stringPool.takeMarkWork();
 		target.stringPool.beginReachabilityEpoch();
-		return { descriptor, rootThread: target.rootThread.address };
 	});
 
 	function setCursor(kind: GcRootBank, next = 0) {
 		for (const target of [cpu, oracle]) target.memory.writeRamRecordWord(control + GC_ROOT_CURSOR, (kind << CURSOR_BITS) | next);
 	}
 	function begin(limit: number, work: number, stop: GcRootBank) {
-		assert.ok(cpu.beginHeapService(entry, [control, arena, metadata, locations.descriptor - RAM_BASE, limit, work, stop, 0]));
+		assert.ok(cpu.beginHeapService(entry, [control, arena, metadata, descriptor, limit, work, stop, 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -182,8 +174,12 @@ function fixture(optLevel: 0 | 3) {
 	function marked(id: number) {
 		return (memory.readRamRecordByte(id + 1) & 1) === (memory.readRamRecordWord(metadata + 12) & 1);
 	}
+	function beginPort(operation: 'read_byte' | 'write_word', address: number) {
+		const index = operation === 'read_byte' ? readByte : writeWord;
+		assert.ok(cpu.beginHeapService(linked.image.functions[index].address, [address]));
+	}
 	return { cpu, oracle, memory, cursor, depth, index, marked, name, nameSlot, first, consumed, unread, halted,
-		unreadTable, constants, setCursor, begin, grant, finish, step, compare };
+		unreadTable, constants, setCursor, begin, beginPort, grant, finish, step, compare };
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -231,5 +227,35 @@ for (const optLevel of [0, 3] as const) {
 		restoreCpuCheckpoint(f.cpu, checkpoint);
 		assert.equal(f.finish(), cycles);
 		f.compare('restored name → Value');
+	});
+
+	test(`BLua root-bank rewind reloads the live Concat operand owner at O${optLevel}`, () => {
+		const f = fixture(optLevel);
+		f.setCursor(GcRootBank.ConcatOperands, 1);
+		f.begin(1, 0, GcRootBank.End);
+		f.grant(1);
+		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.equal(f.marked(f.unread), false);
+		const checkpoint = captureCpuCheckpoint(f.cpu);
+		const cycles = f.finish();
+		assert.equal(f.cpu.heapServiceResult(), f.oracle.gc['traceRootBanks'](1, 0, GcRootBank.End));
+		assert.equal(f.marked(f.unread), true);
+		assert.equal(f.marked(f.consumed), false);
+		f.compare('borrowed Concat operand');
+
+		f.cpu['concat'].restore(null);
+		restoreCpuCheckpoint(f.cpu, checkpoint);
+		assert.equal(f.finish(), cycles);
+		f.compare('restored Concat operand');
+	});
+}
+
+for (const operation of ['read_byte', 'write_word'] as const) {
+	test(`CPU-private root port rejects ${operation} on a compact constant word`, () => {
+		const f = fixture(0);
+		const address = HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.Cart0Constants * HEAP_SERVICE_ROOT_PORT_STRIDE;
+		assert.equal(f.memory.isReadableMainMemoryRange(address, 4), false, 'ordinary bus has no root plane');
+		f.beginPort(operation, address);
+		assert.throws(() => f.finish(), operation === 'read_byte' ? /outside its root port/ : /outside its private RAM port/);
 	});
 }

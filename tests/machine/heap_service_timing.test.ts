@@ -166,7 +166,8 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	// is already pinned. Reserve the real frame grant for the next String quantum.
 	const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
-	const fullStages = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear,
+	const fullStages = [HeapServiceGcStage.FullRootHead, HeapServiceGcStage.FullRootBanks,
+		HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear,
 		HeapServiceGcStage.FullObjectSweep, HeapServiceGcStage.FullStringSweep];
 	const seen = new Set<HeapServiceGcStage>();
 	let enteredStrings = false;
@@ -263,7 +264,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native recovery before firmware admission remains stopped');
 	}
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceTrace);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceRootHead);
 	assert.equal(scheduler.nowCycles - before, deferred, 'the accepted issuing prefix settles once before BIOS instructions');
 	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
 	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
@@ -271,7 +272,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.ok(frames.lastTickCpuUsedCycles > deferred, 'the VBlank accounts for both the issuing prefix and the BIOS grant');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceTrace);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceRootHead);
 	assert.equal(cpu.allocationReady(), false);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(caller), issuePc);
@@ -329,7 +330,8 @@ test('production object sweep frees records before debugger callbacks without pu
 		if (address !== null) callbacks.push([address, count(), cursor(),
 			+cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX)]);
 	};
-	const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
+	const beforeSweep = [HeapServiceGcStage.FullRootHead, HeapServiceGcStage.FullRootBanks,
+		HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullRemark, HeapServiceGcStage.FullWeakClear];
 	const seen = new Set<HeapServiceGcStage>();
 	for (let i = 0; i < 64 && gc.serviceStage() !== HeapServiceGcStage.FullObjectSweep; ++i) {
 		const stage = gc.serviceStage();
