@@ -6,6 +6,7 @@ import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
 	BLUA32_STRING_RECORD_ALIGNMENT, BLUA32_STRING_RECORD_HEADER_SIZE,
 	BLUA32_STRING_RECORD_KIND, BLUA32_STRING_RECORD_ROM_FLAG,
+	BLUA32_STRING_ROM_ADDRESS_MASK, BLUA32_STRING_ROM_SOCKET_SHIFT,
 } from '../../spec/blua32/image_format';
 import { CART_ROM_BASE, CART_ROM_SIZE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { Memory, MemoryByteView } from '../memory/memory';
@@ -29,16 +30,14 @@ const MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
 const RAM_BUCKET_EXTENT_MASK = 2 * MAX_RAM_RECORDS - 1;
 const RAM_BUCKET_REHASH = 0x80000000;
 const RAM_BUCKET_SHRINK = 0x40000000;
-const SLOT_BIT = 0x80000000;
-
 export function isRamStringId(address: StringId): boolean { return address >= RAM_BASE && address < CART_ROM_BASE; }
 function storageOffset(address: number): number {
 	if (address < RAM_BASE) return address;
 	if (address < CART_ROM_BASE) return address & (MAIN_RAM_SIZE - 1);
-	return (address & (SLOT_BIT - 1)) - CART_ROM_BASE;
+	return (address & BLUA32_STRING_ROM_ADDRESS_MASK) - CART_ROM_BASE;
 }
 function romStringId(address: number, cartridgeSlot: number): number {
-	return address >= CART_ROM_BASE ? (address | (cartridgeSlot << 31)) >>> 0 : address;
+	return address >= CART_ROM_BASE ? (address | (cartridgeSlot << BLUA32_STRING_ROM_SOCKET_SHIFT)) >>> 0 : address;
 }
 
 type InternSource = string | Uint8Array;
@@ -75,7 +74,7 @@ export class StringPool {
 	private storage(address: number): Uint8Array {
 		if (address < RAM_BASE) return this.memory.systemRomStorage().bytes;
 		if (address < CART_ROM_BASE) return this.memory.ramData();
-		return this.memory.cartridgeController.romStorage(address >>> 31)!.bytes;
+		return this.memory.cartridgeController.romStorage(address >>> BLUA32_STRING_ROM_SOCKET_SHIFT)!.bytes;
 	}
 	private readWord(base: number, displacement = 0): number {
 		if (isRamStringId(base)) return this.memory.readRamRecordWord(base + displacement);
@@ -261,7 +260,7 @@ export class StringPool {
 	public shadowsResidentRomString(domain: ExecutionDomainId, value: string): boolean {
 		const id = this.find(value);
 		if (id === undefined || id < CART_ROM_BASE) return false;
-		return domain === -1 || (domain + 1 === this.metadata(FIRST_CART) && (id >>> 31) !== domain);
+		return domain === -1 || (domain + 1 === this.metadata(FIRST_CART) && (id >>> BLUA32_STRING_ROM_SOCKET_SHIFT) !== domain);
 	}
 
 	private rehashStep(oldCount: number, nextBase: number, allowance: number): number {

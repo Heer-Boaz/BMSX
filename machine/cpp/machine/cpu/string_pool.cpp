@@ -30,13 +30,12 @@ constexpr u32 MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE
 constexpr u32 RAM_BUCKET_EXTENT_MASK = 2u * MAX_RAM_RECORDS - 1u;
 constexpr u32 RAM_BUCKET_REHASH = 0x80000000u;
 constexpr u32 RAM_BUCKET_SHRINK = 0x40000000u;
-constexpr u32 SLOT_BIT = 0x80000000u;
 constexpr u32 romOffset(u32 address) {
 	return address < RAM_BASE ? address
-		: (address & (SLOT_BIT - 1u)) - CART_ROM_BASE;
+		: (address & BLUA32_STRING_ROM_ADDRESS_MASK) - CART_ROM_BASE;
 }
 constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
-	return address >= CART_ROM_BASE ? address | (cartridgeSlot << 31u) : address;
+	return address >= CART_ROM_BASE ? address | (cartridgeSlot << BLUA32_STRING_ROM_SOCKET_SHIFT) : address;
 }
 }
 
@@ -48,7 +47,7 @@ void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWor
 
 Span<const u8> StringPool::romStorage(u32 address) const {
 	if (address < RAM_BASE) return m_memory.systemRomStorage();
-	return *m_memory.cartridgeController().romStorage(address >> 31);
+	return *m_memory.cartridgeController().romStorage(address >> BLUA32_STRING_ROM_SOCKET_SHIFT);
 }
 
 u32 StringPool::readWord(u32 base, u32 displacement) const {

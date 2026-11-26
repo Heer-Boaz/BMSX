@@ -65,6 +65,9 @@ constexpr uint32_t BLUA32_STRING_RECORD_ROM_FLAG = 0x00010000u;
 constexpr uint32_t BLUA32_STRING_HASH_OFFSET = 4u;
 constexpr uint32_t BLUA32_STRING_LENGTH_OFFSET = 8u;
 constexpr uint32_t BLUA32_STRING_NEXT_OFFSET = 12u;
+// Cartridge String payloads carry the socket outside the bus address.
+constexpr uint32_t BLUA32_STRING_ROM_SOCKET_SHIFT = 31u;
+constexpr uint32_t BLUA32_STRING_ROM_ADDRESS_MASK = 0x7fffffffu;
 
 enum class Blua32ConstantTag : uint32_t {
 	Nil = 0u,

@@ -89,22 +89,35 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 }
 
 void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {
-	const u32 end = RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
-	if (address < m_memory.ramBusEnd() || address >= end
-		|| (kind != MemoryAccessKind::U8 && kind != MemoryAccessKind::Word && kind != MemoryAccessKind::U32LE)
+	if ((kind != MemoryAccessKind::U8 && kind != MemoryAccessKind::Word && kind != MemoryAccessKind::U32LE)
 		|| (kind != MemoryAccessKind::U8 && (address & 3u) != 0u))
-		throw BMSX_RUNTIME_ERROR("Heap service access is outside its private RAM port.");
+		throw BMSX_RUNTIME_ERROR("Heap service access requires an aligned byte or word.");
 }
 
 void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
 	admitHeapServiceAccess(kind, address);
-	const u32 word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
+	u32 word;
+	if (address - RAM_BASE < m_memory.ramByteCount()) {
+		// Raw records may project into the bus-visible part or beneath MMIO.
+		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
+	} else {
+		const u32 slot = address >> BLUA32_STRING_ROM_SOCKET_SHIFT;
+		const u32 busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
+		Span<const u8> view;
+		if ((slot != 0u && busAddress < CART_ROM_BASE)
+			|| !m_memory.bindRomByteView(busAddress, kind == MemoryAccessKind::U8 ? 1u : 4u, slot, view))
+			throw BMSX_RUNTIME_ERROR("Heap service read is outside installed RAM and ROM.");
+		word = kind == MemoryAccessKind::U8 ? view.data()[0] : readLE32(view.data());
+	}
 	frame.registers.set(destination, valueInteger(static_cast<i32>(word)));
 	frame.extendTop(destination + 1);
 }
 
 void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
 	admitHeapServiceAccess(kind, address);
+	const u32 end = RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
+	if (address < m_memory.ramBusEnd() || address >= end)
+		throw BMSX_RUNTIME_ERROR("Heap service write is outside its private RAM port.");
 	const u32 word = wordOperand(frame.registers.get(source));
 	if (kind == MemoryAccessKind::U8) m_memory.writeRamRecordByte(address, static_cast<u8>(word));
 	else m_memory.writeRamRecordWord(address, word);

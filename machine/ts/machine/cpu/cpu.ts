@@ -94,6 +94,8 @@ import {
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
+	BLUA32_STRING_ROM_ADDRESS_MASK,
+	BLUA32_STRING_ROM_SOCKET_SHIFT,
 	BLUA32_UPVALUE_INDEX_MASK,
 	BLUA32_UPVALUE_IN_STACK_MASK,
 	BLUA32_UPVALUE_RECORD_SIZE,
@@ -3844,15 +3846,29 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeHeapServiceAccess(frame: CallFrame, register: number, kind: MemoryAccessKind, address: number, load: boolean): void {
 		const memory = this.memory;
-		if (address < memory.ramBusEnd() || address >= this.heapService.thread.address
-			|| (kind !== MemoryAccessKind.Word && kind !== MemoryAccessKind.U32LE && kind !== MemoryAccessKind.U8)
+		if ((kind !== MemoryAccessKind.Word && kind !== MemoryAccessKind.U32LE && kind !== MemoryAccessKind.U8)
 			|| (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
-			throw new Error('Heap service access is outside its private RAM port.');
+			throw new Error('Heap service access requires an aligned byte or word.');
 		}
 		if (load) {
-			const word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
+			let word: number;
+			if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
+				// Raw records may project into the bus-visible part or beneath MMIO.
+				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
+			} else {
+				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
+				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
+				const view = this.executionReadView;
+				if ((slot !== 0 && busAddress < CART_ROM_BASE)
+					|| !memory.bindRomByteView(busAddress, kind === MemoryAccessKind.U8 ? 1 : 4, slot, view)) {
+					throw new Error('Heap service read is outside installed RAM and ROM.');
+				}
+				word = kind === MemoryAccessKind.U8 ? view.bytes[view.byteOffset] : readLE32(view.bytes, view.byteOffset);
+			}
 			this.setRegisterIntegerFast(frame, frame.registers, register, word);
 		} else {
+			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address)
+				throw new Error('Heap service write is outside its private RAM port.');
 			const word = wordOperand(frame.registers.get(register));
 			if (kind === MemoryAccessKind.U8) memory.writeRamRecordByte(address, word);
 			else memory.writeRamRecordWord(address, word);

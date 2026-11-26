@@ -59,6 +59,9 @@ export const BLUA32_STRING_RECORD_ROM_FLAG = 0x00010000;
 export const BLUA32_STRING_HASH_OFFSET = 4;
 export const BLUA32_STRING_LENGTH_OFFSET = 8;
 export const BLUA32_STRING_NEXT_OFFSET = 12;
+// Cartridge String payloads carry the socket outside the bus address.
+export const BLUA32_STRING_ROM_SOCKET_SHIFT = 31;
+export const BLUA32_STRING_ROM_ADDRESS_MASK = 0x7fffffff;
 
 export const enum Blua32ConstantTag {
 	Nil = 0,

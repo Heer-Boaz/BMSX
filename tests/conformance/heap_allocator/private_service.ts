@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -11,8 +11,10 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { BLUA32_STRING_ROM_ADDRESS_MASK } from '../../../machine/ts/spec/blua32/image_format';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
-import { MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
+import { CART_MMIO_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -25,7 +27,23 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const FLOOR = 0x80000, LIMIT = 0x90000, STATE = LIMIT + 0x400, END = STATE + 0x200;
 const path = 'kernel/dlmalloc';
 const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-const entrySource = `local allocator<const> = require('${path}')\nhalt_until_irq`;
+const probePath = 'test/private_storage';
+const probeSource = `module<const>
+local peek_word<const> = function(address)
+	local word<const>: *u32 = address
+	return *word
+end
+local peek_byte<const> = function(address)
+	local byte<const>: *u8 = address
+	return *byte
+end
+local poke_word<const> = function(address, value)
+	local word<const>: *u32 = address
+	*word = value
+end
+return { peek_word = peek_word, peek_byte = peek_byte, poke_word = poke_word }
+`;
+const entrySource = `local allocator<const> = require('${path}')\nlocal probe<const> = require('${probePath}')\nhalt_until_irq`;
 
 mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-heap-service-'));
@@ -33,7 +51,8 @@ try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { parallel: '4' });
 	for (const optLevel of [0, 3] as const) {
 		const { romBytes, image, symbols } = linkTestSystemBlua32(compileLuaChunkToProgram(
-			parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
+			parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) },
+				{ path: probePath, source: probeSource, chunk: parseLuaChunk(probeSource, probePath) }],
 			{ entrySource, programDomain: 'system', optLevel },
 		));
 		const entries = new Map<string, number>();
@@ -42,6 +61,12 @@ try {
 				entries.set(id.slice(id.lastIndexOf('|') + '|bmsx_dlmalloc_'.length), index);
 		});
 		assert.equal(entries.size, 11);
+		for (const name of ['peek_word', 'peek_byte', 'poke_word']) {
+			const index = symbols.metadata.functionIds.findIndex(id =>
+				id.startsWith(`module:${probePath}/`) && id.endsWith(`|constant|${name}`));
+			assert.ok(index >= 0);
+			entries.set(name, index);
+		}
 		const stack = deriveBlua32FixedStack(image, [...entries.values()]);
 		assert.ok(stack.frames <= HEAP_SERVICE_FRAME_COUNT);
 		assert.ok(stack.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
@@ -102,6 +127,24 @@ try {
 
 		const depth = cpu.getFrameDepth(), callerPc = cpu.readFramePc(depth - 1);
 		observe('P', `${depth} ${callerPc}`);
+		// A raw record read can project beneath MMIO without touching
+		// its device, and can reach installed RAM beyond the write port.
+		const lastWord = RAM_BASE + MAIN_RAM_SIZE - 4;
+		const ioFlags = memory.readMappedU32LE(IO_IRQ_FLAGS);
+		for (const [address, word] of [[IO_IRQ_FLAGS, 0x9371524a], [lastWord, 0x91348127]]) {
+			memory.writeRamRecordWord(address, word);
+			trace.push(`W ${address} ${word}`);
+			begin('peek_word', [address]);
+			finish(word);
+			begin('peek_byte', [address + 1]);
+			finish((word >>> 8) & 0xff);
+		}
+		assert.equal(memory.readMappedU32LE(IO_IRQ_FLAGS), ioFlags);
+		observe(`M ${IO_IRQ_FLAGS}`, `${ioFlags} 0`);
+		const sequence = memory.readBusFaultSequence();
+		assert.equal(memory.readMappedU32LE(lastWord), 0);
+		assert.notEqual(memory.readBusFaultSequence(), sequence);
+		observe(`M ${lastWord}`, '0 1');
 		begin('reset', [STATE, FLOOR, LIMIT]);
 		arena.reset(FLOOR, LIMIT);
 		finish(0);
@@ -183,6 +226,25 @@ try {
 		writeFileSync(commands, trace.join('\n'));
 		const output = execFileSync(native, [rom, commands, checkpointPath], { encoding: 'utf8' }).trimEnd().split('\n');
 		assert.deepEqual(output, expected, `native O${optLevel} grants, arena, native restore and TS-to-native restore`);
+		const badTrace = join(directory, `refused-O${optLevel}.txt`);
+		const restore = captureRuntimeSaveState(runtime);
+		for (const [op, args, reason] of [
+			['poke_word', [IO_IRQ_FLAGS, 0], /outside its private RAM port/],
+			['poke_word', [lastWord, 0], /outside its private RAM port/],
+			['poke_word', [SYSTEM_ROM_BASE, 0], /outside its private RAM port/],
+			['peek_word', [CART_MMIO_BASE], /outside installed RAM and ROM/],
+			['peek_word', [BLUA32_STRING_ROM_ADDRESS_MASK + 1], /outside installed RAM and ROM/],
+			['peek_word', [IO_IRQ_FLAGS + 1], /requires an aligned byte or word/],
+		] as const) {
+			const address = image.functions[entries.get(op)!].address;
+			assert.ok(cpu.beginHeapService(address, args));
+			assert.throws(() => cpu.runUntilDepth(0, 100), reason);
+			applyRuntimeSaveState(runtime, restore);
+			writeFileSync(badTrace, `B ${address} ${args.length} ${args.join(' ')}\nG 100\n`);
+			const refused = spawnSync(native, [rom, badTrace, checkpointPath], { encoding: 'utf8' });
+			assert.equal(refused.status, 1);
+			assert.match(refused.stderr, reason);
+		}
 		console.log(`BIOS-HEAP-SERVICE:PASS O${optLevel} (${expected.length} observations; TS and C++)`);
 	}
 	rmSync(directory, { recursive: true });
