@@ -1152,6 +1152,14 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	const scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.bool(scan.skipLess); writer.bool(scan.skipTie);
+	const concat = state.concat;
+	writer.u32(concat === null ? 0 : concat.length);
+	if (concat !== null) {
+		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
+		writer.u32(concat.values.length);
+		for (let i = 0; i < concat.values.length; ++i) { writer.u64(concat.values[i]); writer.u32(concat.lengths[i]); }
+		writer.u32(concat.bytes.length); writer.bytes(concat.bytes);
+	}
 	const pending = state.pendingAllocation;
 	writer.u32(pending === null ? AllocationRecovery.None : pending.recovery);
 	if (pending !== null) {
@@ -1201,6 +1209,15 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 	}
 }
 
+function readConcatAssembly(reader: BinaryReader): CpuRuntimeState['concat'] {
+	const length = reader.u32();
+	if (!length) return null;
+	const instructionPc = reader.u32(), destination = reader.u32(), source = reader.u32(), offset = reader.u32(), hash = reader.u32();
+	const count = reader.u32(), values: Value[] = [], lengths: number[] = [];
+	for (let i = 0; i < count; ++i) { values.push(reader.u64() as Value); lengths.push(reader.u32()); }
+	return { length, instructionPc, destination, source, offset, hash, values, lengths, bytes: reader.bytes(reader.u32()) };
+}
+
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 	return {
 		executionCartridgeSlot: reader.i32() as ExecutionDomainId,
@@ -1233,6 +1250,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			left: reader.u32(), right: reader.u32(), offset: reader.u32(), remaining: reader.u32(),
 			order: reader.i32(), skipLess: reader.bool(), skipTie: reader.bool(),
 		},
+		concat: readConcatAssembly(reader),
 		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),

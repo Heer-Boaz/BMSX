@@ -26,6 +26,7 @@ class StringPool {
 public:
 	StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena);
 	StringId intern(std::string_view value);
+	StringId intern(std::string_view value, u32 hash);
 	// Concatenation supplies the two lengths it admitted against the result limit.
 	StringId internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes);
 	// Intern the admitted byte range while rooting its source during allocation.
@@ -34,6 +35,7 @@ public:
 	int byteLength(StringId id) const;
 	u32 byteAt(StringId id, size_t index) const;
 	void appendBytes(std::string& target, StringId id) const;
+	void appendBytes(std::string& target, StringId id, size_t offset, size_t count) const;
 	std::string toString(StringId id) const;
 	int compareBytes(StringId left, StringId right, size_t offset, size_t count) const;
 
@@ -68,7 +70,6 @@ private:
 	};
 	Span<const u8> romStorage(u32 address) const;
 	u32 readWord(u32 base, u32 displacement = 0) const;
-	ByteSpan readBytes(StringId id) const;
 	ByteSpan readBytes(StringId id, size_t offset, size_t count) const;
 	u32 metadata(u32 field) const;
 	void writeMetadata(u32 field, u32 word);

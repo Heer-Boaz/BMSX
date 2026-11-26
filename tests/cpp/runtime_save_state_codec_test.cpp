@@ -3,19 +3,20 @@
 #include "spec/bmsx/model.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <new>
 #include <stdexcept>
 
 namespace {
-size_t allocations = 0;
+std::atomic<size_t> allocations{0};
 void require(bool condition, const char* message) {
 	if (!condition) throw std::runtime_error(message);
 }
 }
 
 void* operator new(std::size_t size) {
-	++allocations;
+	allocations.fetch_add(1, std::memory_order_relaxed);
 	if (void* memory = std::malloc(size)) return memory;
 	throw std::bad_alloc();
 }
@@ -65,6 +66,7 @@ int main() {
 	machine.geometry.pendingCycles = 17;
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
+	state.cpuState.concat = {600, 0x1014, 31, 0, 3, 0xfaced00d, {{valueInteger(-7), 600}}, std::string("\0\xff\x80", 3)};
 	state.cpuState.stringComparison = {0x80000100u, 0x1000u, 129, 199, -1, true, false};
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.rootThreadAddress = 0x083fa000u;
@@ -87,6 +89,7 @@ int main() {
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
+	require(decoded.cpuState.concat == state.cpuState.concat, "concat prefix and hash survive the binary CPU codec");
 	require(decoded.cpuState.stringComparison == state.cpuState.stringComparison, "String comparison restores both ROM socket identity and scan progress");
 	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation, "a parked creation stores its exact WIDE instruction and capacities");
 	state.cpuState.pendingAllocation.operands = PendingTableAssignment{0x12345678u, 9u, valueString(0x298u), valueFloatBits(0xffc12345u)};

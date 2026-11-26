@@ -216,6 +216,10 @@ void concatRange(int count) {
 				: i == 1 ? valueBool(false) : valueInteger(i % 10));
 		}
 		require(native.cpu.runUntilDepth(0, 5) == scalar.cpu.runUntilDepth(0, 5), "WIDE ranges consume the same grant"); requireParity(native, scalar);
+		if (count == 513) {
+			require(native.cpu.readFrameRegister(0, 513) == valueBool(false), "destination remains live during assembly");
+			native.cpu.runUntilDepth(0, expected.size()); scalar.cpu.runUntilDepth(0, expected.size()); requireParity(native, scalar);
+		}
 		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -399,13 +403,17 @@ void concatAllocationFault(bool range, int bytes) {
 	const auto lastWorkAt = native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
 	const int beforeWork = native.memory.readRamRecordWord(lastWorkAt);
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
+	if (2 * bytes < MAIN_RAM_SIZE) {
+		require(native.cpu.instructionBudgetRemaining == -(range ? 2 : 0), "the issue grant did not assemble payload bytes");
+		native.cpu.runUntilDepth(0, 2 * bytes); scalar.cpu.runUntilDepth(0, 2 * bytes); requireParity(native, scalar);
+	}
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
 	const int afterWork = native.memory.readRamRecordWord(lastWorkAt);
 	const bool fitsArena = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= native.cpu.luaHeap().capacity();
 	const int work = fitsArena ? afterWork : 0;
 	require(fitsArena ? work > 0 : afterWork == beforeWork, "only a record that could fit attempts recovery");
-	require(native.cpu.instructionBudgetRemaining == -std::min(2 * bytes, static_cast<int>(MAIN_RAM_SIZE)) - (range ? 2 : 0) - 3 * work,
+	require(native.cpu.instructionBudgetRemaining == (2 * bytes < MAIN_RAM_SIZE ? 0 : -static_cast<int>(MAIN_RAM_SIZE) - (range ? 2 : 0)) - 3 * work,
 		"oversized result saturates the byte debit; an ordinary allocation fault retains recovery work");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
 }
@@ -423,8 +431,9 @@ void concatRangeAtMixedLengthBoundary(bool over) {
 	for (int i = 1; i <= 31; ++i) frame.registers.set(i, repeated);
 	frame.registers.set(32, over ? valueBool(false) : valueNil());
 	m.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)]);
+	if (!over) { require(m.cpu.instructionBudgetRemaining == -32, "only the source count is charged at issue"); m.cpu.runUntilDepth(0, MAIN_RAM_SIZE - 1); }
 	require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-		&& m.cpu.instructionBudgetRemaining == -static_cast<int>(over ? MAIN_RAM_SIZE : MAIN_RAM_SIZE - 1) - 32
+		&& m.cpu.instructionBudgetRemaining == (over ? -static_cast<int>(MAIN_RAM_SIZE) - 32 : 0)
 		&& isNil(frame.registers.get(0)), "converted non-String bytes participate in the saturated size fault");
 }
 } // namespace

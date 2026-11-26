@@ -24,9 +24,11 @@ export function signed8FromHash(h: number): number {
 	return ((h >>> 24) & 0xff) - 128;
 }
 
+export const FNV1A32_OFFSET_BASIS = 2166136261;
+
 // FNV-1a over code units. For machine byte strings each unit is one octet.
 export function hashText(text: string): number {
-	let hash = 2166136261;
+	let hash = FNV1A32_OFFSET_BASIS;
 	for (let index = 0; index < text.length; ++index) {
 		hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
 	}
@@ -34,8 +36,7 @@ export function hashText(text: string): number {
 }
 
 // FNV-1a over a complete byte range, optionally split at a storage seam.
-export function hashBytes(bytes: Uint8Array, offset: number, count: number, wrapped = 0): number {
-	let hash = 2166136261;
+export function hashBytes(bytes: Uint8Array, offset: number, count: number, wrapped = 0, hash = FNV1A32_OFFSET_BASIS): number {
 	const end = offset + count - wrapped;
 	for (; offset < end; ++offset) {
 		hash = Math.imul(hash ^ bytes[offset], 16777619);

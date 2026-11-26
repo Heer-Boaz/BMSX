@@ -1182,6 +1182,14 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	const auto& scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.boolean(scan.skipLess); writer.boolean(scan.skipTie);
+	const auto& concat = state.concat;
+	writer.u32(concat.length);
+	if (concat.length) {
+		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
+		writer.u32(static_cast<u32>(concat.sources.size()));
+		for (const auto& part : concat.sources) { writer.u64(part.value); writer.u32(part.bytes); }
+		writer.string(concat.bytes);
+	}
 	const auto& pending = state.pendingAllocation;
 	writer.u32(static_cast<u32>(pending.recovery));
 	if (pending.recovery != AllocationRecovery::None) {
@@ -1247,6 +1255,14 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
 	state.stringComparison = {reader.u32(), reader.u32(), reader.u32(), reader.u32(), reader.i32(), reader.boolean(), reader.boolean()};
+	auto& concat = state.concat;
+	concat.length = reader.u32();
+	if (concat.length) {
+		concat.instructionPc = reader.u32(); concat.destination = reader.u32(); concat.source = reader.u32(); concat.offset = reader.u32(); concat.hash = reader.u32();
+		concat.sources.resize(reader.u32());
+		for (auto& part : concat.sources) { part.value = reader.u64(); part.bytes = reader.u32(); }
+		concat.bytes = reader.string();
+	}
 	auto& pending = state.pendingAllocation;
 	pending.recovery = static_cast<AllocationRecovery>(reader.u32());
 	if (pending.recovery != AllocationRecovery::None) {

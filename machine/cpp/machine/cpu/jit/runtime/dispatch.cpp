@@ -30,7 +30,6 @@ enum class NativeBlockTransition : u8 {
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
-#include "machine/cpu/cpu_strings.inl"
 
 u32 CPU::readNativeLength(GcHeap* heap, const StringPool* strings, Value* operand) noexcept {
 	if (valueIsTable(*operand) && TableRecord(*heap, valuePayload(*operand)).metatableAddress() != 0u) return 0;

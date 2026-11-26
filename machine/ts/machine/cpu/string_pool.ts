@@ -331,6 +331,18 @@ export class StringPool {
 		return this.internSource(hashText(value), value, 0, value.length);
 	}
 
+	public copyBytes(id: StringId, first: number, count: number, target: Uint8Array, offset: number): void {
+		const source = this.storage(id), at = storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + first;
+		const ram = isRamStringId(id), start = ram ? at & RAM_BYTE_MASK : at;
+		const n = ram ? Math.min(count, MAIN_RAM_SIZE - start) : count;
+		for (let i = 0; i < n; ++i) target[offset + i] = source[start + i];
+		for (let i = n; i < count; ++i) target[offset + i] = source[i - n];
+	}
+
+	public internHashedBytes(bytes: Uint8Array, length: number, hash: number): StringId {
+		return this.internSource(hash, bytes, 0, length);
+	}
+
 	public internBytes({ bytes, byteOffset, byteLength }: MemoryByteView): StringId {
 		return this.internSource(hashBytes(bytes, byteOffset, byteLength), bytes, byteOffset, byteLength);
 	}
@@ -406,7 +418,7 @@ export class StringPool {
 				ram.copyWithin(offset, start, start + first);
 				if (wrapped !== 0) ram.copyWithin(offset + first, 0, wrapped);
 			} else {
-				for (let index = 0; index < length; ++index) ram[offset + index] = source[start + index];
+				ram.set(start === 0 && length === source.length ? source : source.subarray(start, start + length), offset);
 			}
 			memory.invalidateRamWrite(offset, length);
 		}

@@ -69,10 +69,6 @@ u32 StringPool::byteAt(StringId id, size_t index) const {
 	return rom[offset];
 }
 
-StringPool::ByteSpan StringPool::readBytes(StringId id) const {
-	return readBytes(id, 0, static_cast<u32>(byteLength(id)));
-}
-
 StringPool::ByteSpan StringPool::readBytes(StringId id, size_t start, size_t length) const {
 	if (isRamStringId(id)) {
 		const size_t offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE + start) & (MAIN_RAM_SIZE - 1u);
@@ -106,7 +102,11 @@ bool StringPool::InternKey::matches(ByteSpan candidate) const {
 }
 
 void StringPool::appendBytes(std::string& target, StringId id) const {
-	const auto bytes = readBytes(id);
+	appendBytes(target, id, 0, byteLength(id));
+}
+
+void StringPool::appendBytes(std::string& target, StringId id, size_t offset, size_t count) const {
+	const auto bytes = readBytes(id, offset, count);
 	target.append(bytes.first);
 	target.append(bytes.wrapped);
 }
@@ -321,7 +321,10 @@ size_t StringPool::shrinkStep(u32 oldCount, size_t allowance) {
 }
 
 StringId StringPool::intern(std::string_view value) {
-	const u32 hash = fnv1a32(value);
+	return intern(value, fnv1a32(value));
+}
+
+StringId StringPool::intern(std::string_view value, u32 hash) {
 	if (const auto match = lookup(hash, {value, {}, value.size()})) return retain(match);
 	return insert({value, {}}, hash, 0u);
 }

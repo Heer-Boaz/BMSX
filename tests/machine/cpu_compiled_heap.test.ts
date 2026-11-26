@@ -101,6 +101,10 @@ for (const count of [0, 3, 513]) test(`compiled WIDE CONCATN reads exactly its r
 			}
 		}
 		assert.equal(js.runUntilDepth(0, 5), ref.runUntilDepth(0, 5)); assertParity(js, ref);
+		if (count === 513) {
+			assert.equal(js.rootThread.frameAtDepth(0).registers.get(513), valueBool(false));
+			js.runUntilDepth(0, expected.length); ref.runUntilDepth(0, expected.length); assertParity(js, ref);
+		}
 		assert.equal(js.stringPool.toString(js.rootThread.frameAtDepth(0).registers.getStringId(513)), expected);
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -253,16 +257,20 @@ test(`compiled concatenation retains the exact fault prefix (range=${range}, ope
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
 	const lastWorkAt = js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
 	const beforeWork = js.memory.readRamRecordWord(lastWorkAt);
-	const reads = 2 * bytes >= MAIN_RAM_SIZE ? t.mock.method(js.stringPool, 'bytes') : null;
+	const reads = 2 * bytes >= MAIN_RAM_SIZE ? t.mock.method(js.stringPool, 'copyBytes') : null;
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	if (reads !== null) assert.equal(reads.mock.callCount(), 0, 'no payload reads before the size fault');
+	else {
+		assert.equal(js.instructionBudgetRemaining, range ? -2 : 0);
+		js.runUntilDepth(0, 2 * bytes); ref.runUntilDepth(0, 2 * bytes); assertParity(js, ref);
+	}
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	const afterWork = js.memory.readRamRecordWord(lastWorkAt);
 	const recoverableSize = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= js.luaHeap.capacity();
 	const work = recoverableSize ? afterWork : 0;
 	if (recoverableSize) assert.ok(work > 0);
 	else assert.equal(afterWork, beforeWork, 'size fault does not run a recovery epoch');
-	assert.equal(js.instructionBudgetRemaining, -Math.min(2 * bytes, MAIN_RAM_SIZE) - (range ? 2 : 0) - 3 * work);
+	assert.equal(js.instructionBudgetRemaining, (2 * bytes < MAIN_RAM_SIZE ? 0 : -MAIN_RAM_SIZE - (range ? 2 : 0)) - 3 * work);
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
 });
 
@@ -277,10 +285,11 @@ for (const over of [false, true]) test(`CONCATN admits the exact mixed byte leng
 	for (let i = 1; i <= 31; ++i) frame.registers.setString(i, id);
 	// Four bytes remain: nil fits, false does not.
 	frame.registers.set(32, over ? valueBool(false) : valueNil());
-	const reads = t.mock.method(cpu.stringPool, 'bytes');
+	const reads = t.mock.method(cpu.stringPool, 'copyBytes');
 	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN]);
+	if (!over) { assert.equal(cpu.instructionBudgetRemaining, -32); cpu.runUntilDepth(0, MAIN_RAM_SIZE - 1); }
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(cpu.instructionBudgetRemaining, -(over ? MAIN_RAM_SIZE : MAIN_RAM_SIZE - 1) - 32);
+	assert.equal(cpu.instructionBudgetRemaining, over ? -MAIN_RAM_SIZE - 32 : 0);
 	if (over) assert.equal(reads.mock.callCount(), 0);
 	assert.equal(frame.registers.get(0), valueNil());
 });

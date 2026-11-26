@@ -172,6 +172,7 @@ void CPU::reset() {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
 	m_stringComparison = {};
+	m_concat = {};
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
 	m_cop0Words[COP0_CAUSE] = 0u;
@@ -865,6 +866,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
 	m_stringComparison = {};
+	m_concat = {};
 	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
 	pushFrame(closure, {}, {});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -876,7 +878,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
-	if (allocationParked() || m_stringComparison.remaining || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || m_concat.length || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -898,7 +900,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
-	if (allocationParked() || m_stringComparison.remaining || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || m_concat.length || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
@@ -938,6 +940,7 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.pendingMemory = m_pendingMemory;
 	state.stringComparison = m_stringComparison;
+	if (m_concat.length) state.concat = m_concat;
 	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
@@ -1015,6 +1018,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_pendingMemory = state.pendingMemory;
 	m_stringComparison = state.stringComparison;
+	m_concat = state.concat;
+	m_concat.bytes.reserve(m_concat.length);
 	m_pendingAllocation = state.pendingAllocation;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
 	m_cop0Words[COP0_CAUSE] = state.causeWord;
@@ -1602,7 +1607,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_heap.fullEpochs()) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.length || m_heap.fullEpochs()) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -1820,6 +1825,10 @@ RunResult CPU::runLoop(
 			}
 			if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
 				advanceStringComparison(*thread.currentFrame);
+				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+			}
+			if (admission == GrantAdmission::Admitted && m_concat.length) {
+				advanceConcat(*thread.currentFrame);
 				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
 			}
 			switch (admission) {
@@ -2400,7 +2409,7 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc
 		&& cpu.admitGrant(*cpu.m_activeThread, targetDepth, instructionBudget) == GrantAdmission::Admitted
 		&& cpu.m_activeThread->currentFrame->executionImage == image
-		&& !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
+		&& !cpu.m_concat.length && !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
 		&& cpu.peekPendingInterrupt() == AcceptedInterruptKind::None) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		// Preserve the request until no worker snapshot can overlap it.
@@ -2613,7 +2622,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (allocationParked() || m_stringComparison.remaining || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || m_concat.length || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
 	if (!image.admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))
@@ -2930,6 +2939,10 @@ void CPU::markRootHead(GcHeap& heap) {
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
+	if (m_concat.length) for (size_t i = m_concat.source; i < m_concat.sources.size(); ++i) {
+		const Value v = m_concat.sources[i].value;
+		if (valueIsString(v)) heap.markString(asStringId(v));
+	}
 	if (allocationParked()) markPendingAllocationRoots(heap);
 }
 

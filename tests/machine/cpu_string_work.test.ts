@@ -314,6 +314,34 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`concat restores sampled bytes, operand identity and hash (${backend})`, () => {
+	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.CONCATN, 1, 1, 3); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
+	const { cpu, memory } = createTestSystemCpu(image, backend); const frame = cpu.rootThread.currentFrame!, pool = cpu.stringPool;
+	const source = 'g'.repeat(127) + '\xff\x00' + 'g'.repeat(384);
+	const a = pool.intern(source), tail = pool.intern('tail');
+	const existing = pool.intern(source.slice(0, 200) + '!' + source.slice(201) + '-12345tail');
+	frame.registers.setString(1, a); frame.registers.setInteger(2, -12345); frame.registers.setString(3, tail);
+	frame.registers.setString(4, existing); frame.top = 5;
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + 3 + 129);
+	const anchor = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+	assert.equal(anchor.concat.bytes.length, 129); assert.equal(anchor.concat.hash, hashText(source.slice(0, 129)));
+	for (const grant of [1, 173]) {
+		memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
+		const live = cpu.activeThread.currentFrame!;
+		memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 5, 122);
+		memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 200, 33);
+		live.registers.setBoolean(3, true); cpu.requestNonMaskableInterrupt(); assert.equal(cpu.enterPendingInterrupt(), false);
+		for (let left = source.length + 10 - 129; left;) {
+			const n = Math.min(grant, left); cpu.runUntilDepth(0, n); left -= n;
+			assert.equal(cpu.instructionBudgetRemaining, 0);
+			assert.equal(live.registers.getStringId(1), left ? a : existing);
+		}
+		assert.equal(cpu.captureRuntimeState().concat, null);
+	}
+});
+
 const portCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);
 const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });

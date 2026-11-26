@@ -132,6 +132,19 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
+struct ConcatSource {
+	Value value;
+	u32 bytes;
+	bool operator==(const ConcatSource&) const = default;
+};
+
+struct ConcatAssembly {
+	u32 length = 0, instructionPc = 0, destination = 0, source = 0, offset = 0, hash = 0;
+	std::vector<ConcatSource> sources;
+	std::string bytes;
+	bool operator==(const ConcatAssembly&) const = default;
+};
+
 struct StringComparisonLatch {
 	StringId left = 0, right = 0;
 	u32 offset = 0, remaining = 0;
@@ -163,6 +176,7 @@ struct CpuRuntimeState {
 	uint32_t memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation pendingMemory;
 	StringComparisonLatch stringComparison;
+	ConcatAssembly concat;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
@@ -447,6 +461,8 @@ private:
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
+	template<class Operand> void concatenateValues(CallFrame& frame, int destination, int count, Operand operand);
+	void advanceConcat(CallFrame& frame);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
@@ -589,6 +605,7 @@ private:
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
 	StringComparisonLatch m_stringComparison;
+	ConcatAssembly m_concat;
 	PendingAllocation m_pendingAllocation;
 	CpuRunKind m_runKind = CpuRunKind::Idle;
 	u32 m_currentInstructionPc = 0;

@@ -1,3 +1,4 @@
+export const INLINE_CONCAT_BYTES = 256;
 export const INLINE_STRING_COMPARE_BYTES = 64;
 
 export const enum OpCode {

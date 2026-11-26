@@ -129,6 +129,43 @@ void grantedStringOrder(bool scalar, bool inclusive) {
 		"a saved first difference survives a change to consumed bytes and controls retirement");
 }
 
+void grantedConcat(bool scalar) {
+	test::Blua32TestImage image;
+	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CONCATN), 1, 1, 3);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 8}};
+	CpuMachine m(image, scalar); auto& cpu = m.cpu;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+	auto& frame = m.restart(); auto& pool = cpu.stringPool();
+	std::string source(513, 'g'); source[128] = '\0'; source[127] = static_cast<char>(0xff);
+	const auto left = pool.intern(source), right = pool.intern("tail");
+	frame.registers.set(1, valueString(left)); frame.registers.set(2, valueInteger(-12345)); frame.registers.set(3, valueString(right));
+	std::string sampled = source; sampled[200] = '!';
+	const auto existing = pool.intern(sampled + "-12345tail"); frame.registers.set(4, valueString(existing)); frame.setTop(5);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)] + 3 + 129);
+	const auto saved = cpu.captureRuntimeState(); const auto ram = m.memory.captureSaveState();
+	require(saved.concat.bytes == source.substr(0, 129) && saved.concat.hash == fnv1a32(saved.concat.bytes),
+		"checkpoint contains exactly the sampled prefix and its FNV state");
+	for (int grant : {1, 173}) {
+		m.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
+		auto& live = *cpu.activeThread()->currentFrame;
+		m.memory.writeRamRecordByte(left + BLUA32_STRING_RECORD_HEADER_SIZE + 5, 'z');
+		m.memory.writeRamRecordByte(left + BLUA32_STRING_RECORD_HEADER_SIZE + 200, '!');
+		live.registers.set(3, valueBool(true));
+		cpu.requestNonMaskableInterrupt(); require(!cpu.enterPendingInterrupt(), "NMI waits for concat retirement");
+		for (int leftBytes = 513 + 6 + 4 - 129; leftBytes;) {
+			const int n = std::min(grant, leftBytes);
+			cpu.runUntilDepth(0, n); leftBytes -= n;
+			require(!cpu.instructionBudgetRemaining && live.registers.get(1) == valueString(leftBytes ? left : existing),
+				"concat preserves the destination until its final cycle and interns the sampled bytes");
+		}
+		require(!cpu.captureRuntimeState().concat.length, "retired assembly leaves no checkpoint payload");
+	}
+}
+
 // String records and their index use the physical RAM port, even when
 // software writes untrusted words to the language heap via the main bus.
 void ramStringPorts() {
@@ -422,6 +459,7 @@ int main() {
 		mappedStringCopiesStorage();
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::CONCAT, OpCode::CONCATN, OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
+			grantedConcat(scalar);
 			grantedStringOrder(scalar, false); grantedStringOrder(scalar, true);
 			selectAndChar(scalar);
 			openSelectPlacesAliasedResults(scalar);
