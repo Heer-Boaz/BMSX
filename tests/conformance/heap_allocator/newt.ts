@@ -20,10 +20,11 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_CONTROL_OFFSET, HEAP_SERVICE_RECORD_OFFSET,
+	HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_CONTROL_OFFSET, HEAP_SERVICE_RECORD_OFFSET,
 	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceRecordControlField, HeapServiceRecordField,
 	HeapServiceRecordKind, HeapServiceRecordStage, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
+import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -215,7 +216,7 @@ try {
 						observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
 					};
 				} else {
-					const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
+					const irqFlags = () => memory.readIoU32(IO_IRQ_FLAGS);
 					const schedulerStep = (step: 'a' | 'd') => {
 						const admitted = cpu.gc.serviceStage();
 						const mark = admitted === HeapServiceGcStage.MaintenanceTrace || admitted === HeapServiceGcStage.MaintenanceRemark
@@ -233,7 +234,7 @@ try {
 							assert.notEqual(cpu.gc.serviceStage(), admitted);
 							assert.ok(scheduler.nowCycles > cycle);
 						}
-						observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+						observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${irqFlags()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 						return result;
 					};
 					for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
@@ -276,12 +277,12 @@ try {
 					assert.equal(budget.usedBytes(), partialLogicalBytes);
 					assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
 					assert.ok(scheduler.nowCycles >= edge);
-					assert.equal(pressure(), 1);
+					assert.equal(irqFlags() & IRQ_VBLANK, IRQ_VBLANK);
 					const checkpointCycles = scheduler.nowCycles;
 					const finishSweep = () => {
 						for (let i = 0; i < 65536 && !cpu.allocationReady(); ++i) {
 							recoverySlice();
-							assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
+							assert.equal(irqFlags() & IRQ_VBLANK, IRQ_VBLANK, 'the parked request leaves the masked physical IRQ untouched');
 						}
 						assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
 						assert.ok(cpu.allocationReady());
@@ -317,7 +318,7 @@ try {
 							for (let i = 0; i < 1024 && cpu.getFrameDepth() !== 0; ++i) schedulerStep('d');
 							assert.equal(cpu.getFrameDepth(), 0);
 							assert.equal(runtime.readCompletionValues()[0], valueInteger(183));
-							assert.equal(pressure(), 0, 'deferred pressure is served after the request retires');
+							assert.equal(irqFlags() & IRQ_VBLANK, IRQ_VBLANK, 'no maintenance or IRQ acknowledgement occurs behind the mask');
 							observe('C', 183);
 						}
 						observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));

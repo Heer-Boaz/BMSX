@@ -1,11 +1,11 @@
 local interrupts<const> = require('kernel/interrupts')
+local irq<const> = require('kernel/vblank_irq')
 
 local vblank<const> = {}
-local irq_vblank<const> = 0x0004
 
 bss bios_vblank_count: word
 
-interrupts.on(irq_vblank, function()
+interrupts.on(irq.source, function()
 	*bios_vblank_count = *bios_vblank_count + 1
 end)
 

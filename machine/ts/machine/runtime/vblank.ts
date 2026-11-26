@@ -1,5 +1,4 @@
 import { IRQ_VBLANK } from '../../spec/bmsx/io';
-import { HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET } from '../../spec/bmsx/heap_service';
 import {
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
@@ -19,25 +18,6 @@ export class VblankState {
 		return this.activeTickCompleted;
 	}
 
-	private get deferredPressureAddress(): number {
-		return this.runtime.machine.cpu.heapAllocator.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET;
-	}
-
-	public hasDeferredPressure(): boolean {
-		return this.runtime.machine.memory.readRamRecordWord(this.deferredPressureAddress) !== 0;
-	}
-
-	/** Transfer one edge opportunity after the accepted clock grant settles. */
-	public admitDeferredPressure(): boolean {
-		const { cpu, memory } = this.runtime.machine;
-		const address = this.deferredPressureAddress;
-		const pending = memory.readRamRecordWord(address);
-		if (pending === 0) return false;
-		memory.writeRamRecordWord(address, pending - 1);
-		cpu.admitPhysicalPressureAtTick();
-		return true;
-	}
-
 	public reset(): void {
 		const runtime = this.runtime;
 		this.vblankSequence = 0;
@@ -45,7 +25,6 @@ export class VblankState {
 		this.activeTickCompleted = false;
 		runtime.machine.inputController.cancelSampleArm();
 		runtime.machine.irqController.postLoad();
-		runtime.machine.memory.writeRamRecordWord(this.deferredPressureAddress, 0);
 	}
 
 	public prepareRestore(): void {
@@ -91,14 +70,5 @@ export class VblankState {
 		const runtime = this.runtime;
 		runtime.frameScheduler.enqueueTickCompletion(frameState);
 		this.lastCompletedVblankSequence = vblankSequence;
-		const { cpu, memory } = runtime.machine;
-		const address = this.deferredPressureAddress;
-		const pending = memory.readRamRecordWord(address);
-		// A service can stop between allocator writes. Keep one
-		// pressure opportunity per tick, not a sample of the torn arena.
-		if (cpu.heapServiceActive() || cpu.allocationParked() || pending !== 0) {
-			// As at the immediate assist, an explicit full epoch owns this edge.
-			if (cpu.gc.fullEpochs() === 0) memory.writeRamRecordWord(address, pending + 1);
-		} else cpu.admitPhysicalPressureAtTick();
 	}
 }

@@ -818,7 +818,7 @@ void testFinalCollectionRetainsTheMachineGrant() {
 	require(resume() == resumed, "restoring just after final mark retains the same real-time frontier");
 }
 
-void testPhysicalCollectionUsesCompletedVblank() {
+void testDeviceVblankDoesNotStartPhysicalCollection() {
 	using namespace bmsx;
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -840,22 +840,23 @@ void testPhysicalCollectionUsesCompletedVblank() {
 		require(!heap.active() && runtime.machine.scheduler.nowCycles() == now,
 			"host polling with no VBlank does not start a physical assist");
 		require(scheduler.runDevicesToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame)
-			&& scheduler.lastTickSequence == 1 && heap.phase() == GcPhase::Mark,
-			"one real display tick completes and also starts ordinary marking");
-		const auto work = runtime.machine.memory.readRamRecordWord(workAddress);
-		require(work > 0u && work <= GC_STEP_WORDS, "the display tick carries one collector quantum, not a synchronous recovery");
+			&& scheduler.lastTickSequence == 1 && heap.phase() == GcPhase::Pause,
+			"device time reaches VBlank without a CPU IRQ or any marking");
+		require((runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) != 0u
+			&& runtime.machine.memory.readRamRecordWord(workAddress) == 0u && !cpu.heapServiceActive(),
+			"VBlank leaves only a hardware request without a hidden pressure opportunity");
 		const auto clock = runtime.machine.scheduler.nowCycles();
 		scheduler.clearQueuedTime();
 		scheduler.run(runtime, 0.0);
 		require(runtime.machine.scheduler.nowCycles() == clock
-			&& runtime.machine.memory.readRamRecordWord(workAddress) == work,
-			"extra host polling does not advance an engaged physical assist");
+			&& runtime.machine.memory.readRamRecordWord(workAddress) == 0u,
+			"extra host polling does not start any work behind a masked IRQ");
 		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	};
 	applyRuntimeSaveState(runtime, checkpoint);
 	const auto expected = pulse();
 	applyRuntimeSaveState(runtime, checkpoint);
-	require(pulse() == expected, "the allocator pressure and paced frontier replay from the same checkpoint");
+	require(pulse() == expected, "the hardware VBlank request replays independently of the unchanged heap");
 }
 
 void testRuntimeRestoreRearmsCpuGp0Wait() {
@@ -2218,7 +2219,7 @@ int main() {
 #endif
 	testParkedWriteRootsEnterAfterTheAtomicQueueTransfer();
 	testFinalCollectionRetainsTheMachineGrant();
-	testPhysicalCollectionUsesCompletedVblank();
+	testDeviceVblankDoesNotStartPhysicalCollection();
 	testRuntimeRestoreRearmsCpuGp0Wait();
 	testGpuRawExtensionWordCodec();
 	testSupervisorGpuServiceAtDeviceBoundaries();

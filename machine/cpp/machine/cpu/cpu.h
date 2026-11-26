@@ -300,7 +300,6 @@ public:
 	}
 	bool advanceAllocationRecovery();
 	void advanceFinalMark();
-	void admitPhysicalPressureAtTick();
 	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void chargeCollectionWork(size_t work);
@@ -612,6 +611,8 @@ private:
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
+	void latchExceptionEntry(u32 causeWord, u32 epcWord);
+	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);

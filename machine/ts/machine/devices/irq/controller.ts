@@ -69,9 +69,8 @@ export class IrqController {
 		this.postLoad();
 	}
 
-	public hasAssertedMaskableInterruptLine(): boolean {
-		return (this.pendingFlags & this.mask) !== 0;
-	}
+	public enabledPendingFlags(): number { return (this.pendingFlags & this.mask) >>> 0; }
+	public hasAssertedMaskableInterruptLine(): boolean { return this.enabledPendingFlags() !== 0; }
 
 	public raise(mask: number): void {
 		const next = (this.pendingFlags | (mask >>> 0)) >>> 0;

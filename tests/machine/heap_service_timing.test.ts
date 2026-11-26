@@ -13,7 +13,7 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_OFFSET,
+	HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_OFFSET,
 	HeapServiceGcField, HeapServiceGcStage, HeapServiceRecordStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
@@ -24,7 +24,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
-test('a real VBlank separates allocator service grants and defers pressure across restore', () => {
+test('a real VBlank latches its IRQ across allocator service grants and restore', () => {
 	const path = 'kernel/dlmalloc';
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	const entrySource = `local allocator<const> = require('${path}')\nhalt_until_irq`;
@@ -56,7 +56,6 @@ test('a real VBlank separates allocator service grants and defers pressure acros
 	const limit = floor + 0x10000;
 	const control = limit + 0x400;
 	const end = control + 0x200;
-	const pending = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET;
 	const reference = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
 	const arena = reference.bindDlmalloc(control);
 	for (let address = control; address < end; address += 4) {
@@ -72,7 +71,7 @@ test('a real VBlank separates allocator service grants and defers pressure acros
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.gc.phase(), GcPhase.Atomic);
-	assert.equal(memory.readRamRecordWord(pending), 1);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.notDeepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end), 'arena reset is incomplete at the edge');
 	const partial = captureRuntimeSaveState(runtime);
 	const start = scheduler.nowCycles;
@@ -83,13 +82,13 @@ test('a real VBlank separates allocator service grants and defers pressure acros
 		assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), callerPc);
 		assert.equal(cpu.gc.phase(), GcPhase.Atomic, 'the stopped collector did not run inside a service grant');
 		assert.deepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end));
-		assert.equal(memory.readRamRecordWord(pending), 1, 'a safe retirement leaves the deferred edge for scheduler admission');
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK, 'service retirement leaves hardware pending state intact');
 		if (attempt === 0) finish = scheduler.nowCycles;
 		else assert.equal(scheduler.nowCycles, finish);
 		assert.ok(finish > start);
 		assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Maintenance);
-		assert.equal(scheduler.nowCycles, finish, 'the legacy pressure assist did not receive an extra service grant');
-		assert.equal(memory.readRamRecordWord(pending), 0);
+		assert.equal(scheduler.nowCycles, finish, 'independent stopped final mark does not get a timed grant in this synthetic ROM');
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 		if (attempt === 0) applyRuntimeSaveState(runtime, partial);
 	}
 });
@@ -127,21 +126,19 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Scheduled);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(runtime.vblank.hasDeferredPressure(), true);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	const caller = cpu.getFrameDepth() - 1;
 	const issuePc = cpu.readFramePc(caller);
 	const beforeRetirement = scheduler.nowCycles;
 
-	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
+	for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
 	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Idle);
 	assert.ok(cpu.readFramePc(caller) > issuePc);
-	assert.deepEqual(runtime.readCompletionValues(), [], 'the scheduler has not yet admitted the caller again');
+	assert.deepEqual(runtime.readCompletionValues(), [], 'the request retires before the caller can run again');
 	assert.ok(scheduler.nowCycles > beforeRetirement);
-	assert.equal(runtime.vblank.hasDeferredPressure(), true);
-	assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Maintenance);
-	assert.equal(runtime.vblank.hasDeferredPressure(), false);
-	frames.runCyclesToNextLogicalTick(30_000);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 });
 
@@ -196,13 +193,13 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	assert.equal(memory.readRamRecordWord(control + HeapServiceGcField.PrefixWork), 0);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(depth - 1), callerPc);
-	assert.equal(runtime.vblank.hasDeferredPressure(), false, 'an explicit epoch suppresses VBlank pressure rather than postponing it');
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 
 	assert.equal(frames.stepInstruction(0), InstructionStepResult.Advanced, 'String GC instruction grants do not retire a caller instruction');
 	assert.equal(cpu.readFramePc(depth - 1), callerPc);
 	assert.equal(frames.runCyclesToNextLogicalTick(100_000), false);
 	assert.equal(cpu.heapServiceActive(), false);
-	assert.equal(runtime.vblank.hasDeferredPressure(), false);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.gc.fullEpochs(), 0);
 	assert.equal(cpu.stringPool.find('dead-vblank-string-23'), undefined);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
@@ -279,7 +276,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(caller), issuePc);
 	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
-	assert.equal(runtime.vblank.hasDeferredPressure(), true);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	const checkpoint = captureRuntimeSaveState(runtime);
 
 	function finish() {

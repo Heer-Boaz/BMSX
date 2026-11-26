@@ -84,7 +84,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 			|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		const auto& cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive() && !cpu.allocationParked()
-			&& (cpu.gcHeap().stoppedFinalMarkPending() || runtime.vblank.hasDeferredPressure(runtime))) return false;
+			&& cpu.gcHeap().stoppedFinalMarkPending()) return false;
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) {
 		const bool executionStopped = runUpdatePhase(runtime);

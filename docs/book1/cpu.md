@@ -1473,21 +1473,22 @@ collection is the estimate, priced against half of the unoccupied space. The
 other half remains for growth until the final remark and for reclamation.
 After the final remark, the outstanding reclamation work is priced against
 the space that is then unoccupied. Work done by any assist, including a
-display-tick assist, counts toward this pace. Reservations made while the
+VBlank IRQ assist, counts toward this pace. Reservations made while the
 final remark is pending do not advance the collection. A logical charge
 without a physical reservation does not by itself advance the collection.
 Logical capacity still applies throughout the collection.
 
 The collector also compares unoccupied physical heap space with recent
-growth in physical occupancy and the remaining collection work. At a
-completed display tick, physical pressure can admit one additional quantum
-of marking or reclamation. If the CPU is waiting for an interrupt and marking
-is already in progress, the allowance is four quanta instead. Work can stop
-earlier at a phase boundary. The interrupt wait alone does not start collection
-or advance the final remark. The display tick admits the work; the memory
-routine then uses ordinary CPU cycles while devices continue to advance.
-Interrupt entry waits for the routine to return. A collection started by
-physical pressure can finish over later ticks without further allocation.
+growth in physical occupancy and the remaining collection work. When the CPU
+accepts a cartridge IRQ with VBlank pending and enabled, physical pressure
+can admit one extra quantum of marking or reclamation. If the IRQ wakes the
+CPU from HALT and marking is already in progress, the allowance is four
+quanta instead. A display edge or a masked pending VBlank does not admit
+work by itself. Accepted maintenance uses ordinary CPU cycles while devices
+continue to advance. If it reaches the stopped final remark, the BIOS finishes
+that remark before entering the cartridge's IRQ routine. A collection started
+by physical pressure can finish over later accepted VBlank IRQs without
+further allocation.
 When scheduled execution resumes with a final remark pending, revisiting
 threads and weak tables, scanning roots, tracing, and weak-entry removal also
 run on ordinary CPU grants. Free space may be separated by retained
@@ -1559,11 +1560,11 @@ CPU cycles of the resident routine during a full collection. This also applies w
 program replacement requests a collection to free its static region.
 In emergency recovery, the issuing instruction pays the same price for any
 collector work it performs itself, even if the retry fails. Resident work
-run on ordinary grants is not charged a second time. The display-tick assist
-also uses its own CPU grants and is not charged to the issuing instruction.
-A physical pressure opportunity during timed recovery is deferred until the
-pending allocation retires, so it cannot change the
-collection-and-retry order.
+run on ordinary grants is not charged a second time. A VBlank IRQ assist
+also uses its own CPU grants and is not charged to the interrupted
+instruction. During timed allocation recovery, a display edge can latch
+VBlank, but that IRQ cannot interrupt the collection-and-retry sequence.
+Pending requests retain the controller's normal one-bit coalescing behavior.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 

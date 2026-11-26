@@ -11,6 +11,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/heap_service.h"
+#include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 
 namespace {
@@ -274,7 +275,7 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
 						<< ' ' << static_cast<u32>(cpu.gcHeap().serviceStage())
 						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_RECORD_OFFSET)
-						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET)
+						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -385,6 +386,13 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'N': cpu.requestNonMaskableInterrupt(); break;
+				case 'h': cpu.clearHaltUntilIrq(); break;
+				case 'i': {
+					u32 flags;
+					trace >> flags;
+					runtime.machine.irqController.raise(flags);
+					break;
+				}
 				case 'I': std::cout << cpu.enterPendingInterrupt() << '\n'; break;
 				case 'R': {
 					const auto before = scheduler.nowCycles();

@@ -80,6 +80,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_CLOSURE_MODULE_PATH, 'create_closure'],
 		[HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, 'reserve_table_growth'],
 		[HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'execute_table_resize'],
+		['kernel/vblank_irq', 'before_cart_irq'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {

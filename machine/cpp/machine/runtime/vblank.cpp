@@ -1,35 +1,10 @@
 #include "machine/runtime/vblank.h"
 
 #include "spec/bmsx/io.h"
-#include "spec/bmsx/heap_service.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/runtime/runtime.h"
 
 namespace bmsx {
-
-static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
-static_assert(HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
-
-namespace {
-u32 deferredPressureAddress(const Runtime& runtime) {
-	return runtime.machine.cpu.heapAllocator().managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET;
-}
-}
-
-bool VblankState::hasDeferredPressure(const Runtime& runtime) const {
-	return runtime.machine.memory.readRamRecordWord(deferredPressureAddress(runtime)) != 0u;
-}
-
-bool VblankState::admitDeferredPressure(Runtime& runtime) {
-	auto& cpu = runtime.machine.cpu;
-	auto& memory = runtime.machine.memory;
-	const u32 address = deferredPressureAddress(runtime);
-	const u32 pending = memory.readRamRecordWord(address);
-	if (pending == 0u) return false;
-	memory.writeRamRecordWord(address, pending - 1u);
-	cpu.admitPhysicalPressureAtTick();
-	return true;
-}
 
 void VblankState::reset(Runtime& runtime) {
 	m_vblankSequence = 0;
@@ -37,7 +12,6 @@ void VblankState::reset(Runtime& runtime) {
 	m_activeTickCompleted = false;
 	runtime.machine.inputController.cancelSampleArm();
 	runtime.machine.irqController.postLoad();
-	runtime.machine.memory.writeRamRecordWord(deferredPressureAddress(runtime), 0u);
 }
 
 void VblankState::prepareRestore() {
@@ -79,16 +53,6 @@ void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState
 	m_activeTickCompleted = true;
 	runtime.frameScheduler.enqueueTickCompletion(runtime, frameState);
 	m_lastCompletedVblankSequence = vblankSequence;
-	auto& cpu = runtime.machine.cpu;
-	auto& memory = runtime.machine.memory;
-	const u32 address = deferredPressureAddress(runtime);
-	const u32 pending = memory.readRamRecordWord(address);
-	// A service can stop between allocator writes. Keep one
-	// pressure opportunity per tick, not a sample of the torn arena.
-	if (cpu.heapServiceActive() || cpu.allocationParked() || pending != 0u) {
-		// An explicit collection skips this edge instead of deferring an assist.
-		if (cpu.gcHeap().fullEpochs() == 0u) memory.writeRamRecordWord(address, pending + 1u);
-	} else cpu.admitPhysicalPressureAtTick();
 }
 
 } // namespace bmsx

@@ -184,6 +184,7 @@ import {
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
+	HeapServiceIrqForwardField,
 	HeapServiceRecordControlField, HeapServiceRecordKind,
 	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
@@ -312,6 +313,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
 	private readonly newTableArgs: number[];
+	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
 	private readonly tableResizeArgs: number[];
@@ -466,6 +468,7 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
 		// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
 		const management = this.heapAllocator.managementOffset();
+		this.irqPreludeArgs = [management, 0, 0];
 		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
 		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, this.modeKey);
 		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Index, this.indexKey, newIndexKey);
@@ -1025,10 +1028,6 @@ export class CPU implements MappedPageInvalidator {
 
 	public advanceFinalMark(): void {
 		this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
-	}
-
-	public admitPhysicalPressureAtTick(): void {
-		this.gc.assistPhysicalPressureAtTick(this.systemImage.heapServiceFunctions);
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2363,15 +2362,26 @@ export class CPU implements MappedPageInvalidator {
 			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
 		}
-		if (this.canAcceptMaskableInterruptLine()) {
-			const image = this.isUserMode() ? this.executionImageForDomain(this.programExecutionDomainId)! : this.systemImage;
+		const enabledFlags = (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+			? this.irqController.enabledPendingFlags() : 0;
+		if (enabledFlags !== 0) {
+			const domain = this.isUserMode() ? this.programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
+			const image = this.executionImageForDomain(domain)!;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
-			this.enterException(
-				image,
-				image.irqFunctionAddress,
-				CPU_CAUSE_IRQ,
-				this.activeThread.currentFrame!.pc,
-			);
+			const epc = this.activeThread.currentFrame!.pc;
+			const prelude = domain === SYSTEM_EXECUTION_DOMAIN_ID ? undefined
+				: this.systemImage.heapServiceFunctions?.[HeapServiceOperation.InterruptPrelude];
+			if (prelude === undefined) {
+				this.enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
+			} else {
+				const args = this.irqPreludeArgs;
+				args[1] = enabledFlags;
+				args[2] = +this.isHaltedUntilIrq();
+				this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+				this.memory.writeRamRecordPair(this.heapService.irqForwardAddress + HeapServiceIrqForwardField.CartLane,
+					domain + 1, image.irqFunctionAddress);
+				this.beginHeapService(prelude, args);
+			}
 			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
 		}
@@ -2442,12 +2452,20 @@ export class CPU implements MappedPageInvalidator {
 		causeWord: number,
 		epcWord: number,
 	): CallFrame | null {
+		this.latchExceptionEntry(causeWord, epcWord);
+		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord);
+	}
+
+	private latchExceptionEntry(causeWord: number, epcWord: number): void {
 		this.exceptionDomainWord = this.activeExecutionDomainId >>> 0;
 		this.cop0Words[COP0_EPC] = epcWord >>> 0;
 		this.cop0Words[COP0_CAUSE] = causeWord >>> 0;
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 			| ((this.cop0Words[COP0_STATUS] << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
 		this.clearHaltAfterAcceptedInterrupt();
+	}
+
+	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number): CallFrame | null {
 		if (!this.readFunctionRecordOnBus(vectorImage, functionAddress, CPU.executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 			this.hardHalt();
 			return null;
@@ -2456,7 +2474,7 @@ export class CPU implements MappedPageInvalidator {
 			const closure = this.staticClosureFromLatch();
 			const frame = this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false, true);
 			frame.callSitePc = epcWord;
-			frame.enterException(causeWord === CPU_CAUSE_NMI);
+			frame.enterException(nmi);
 			return frame;
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
@@ -2497,7 +2515,9 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
-			const gcStage = this.gc.serviceStage();
+			const irq = this.heapService.irqForwardAddress;
+			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
+			const gcStage = cartLane === 0 ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
@@ -2534,22 +2554,27 @@ export class CPU implements MappedPageInvalidator {
 								this.gc.finishWeakQuantum();
 								break;
 							case HeapServiceGcStage.FullObjectSweep:
-							case HeapServiceGcStage.PressureObjectSweep:
 							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
 								const services = this.systemImage.heapServiceFunctions!;
 								this.gc.finishObjectSweep(gcStage, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
 								break;
 							}
 							case HeapServiceGcStage.FullStringSweep:
-							case HeapServiceGcStage.PressureStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
 								this.gc.finishStringSweep(gcStage);
 								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !recordCollection) this.finishAllocationRecovery();
 								break;
 							case HeapServiceGcStage.Idle:
-								this.finishExecFloorService();
-								this.finishRecordReservation();
-								this.finishTableGrowthReservation();
+								if (cartLane !== 0) {
+									const vector = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.Vector);
+									this.memory.writeRamRecordWord(irq + HeapServiceIrqForwardField.CartLane, 0);
+									this.placeExceptionVector(this.executionImageForDomain((cartLane - 1) as ExecutionDomainId)!,
+										vector, false, this.cop0Words[COP0_EPC]);
+								} else {
+									this.finishExecFloorService();
+									this.finishRecordReservation();
+									this.finishTableGrowthReservation();
+								}
 								break;
 						}
 						if (recordCollection && !this.heapServiceActive()) this.finishRecordCollection(recordStage);
@@ -2558,7 +2583,8 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return gcStage !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
+				return (cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
+					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 			}
@@ -2634,6 +2660,7 @@ export class CPU implements MappedPageInvalidator {
 						) {
 								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.enterPendingInterrupt();
+							if (this.heapServiceActive()) return RunResult.CollectionProgress;
 							continue;
 						}
 						let pc = scalarFrame === null ? frame.pc : nextPc;
@@ -2755,6 +2782,7 @@ export class CPU implements MappedPageInvalidator {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
+						if (this.heapServiceActive()) return RunResult.CollectionProgress;
 						continue;
 					}
 					const pc = frame.pc;

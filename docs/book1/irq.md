@@ -103,6 +103,12 @@ the selected ROM header. It supplies no function arguments. That entry routine
 runs as the exception frame and is responsible for reading source state and
 executing RFE when service is complete.
 
+For a cartridge IRQ, the BIOS uses the enabled pending bits sampled at
+acceptance. If they include VBlank, the BIOS can run memory maintenance
+before the cartridge's IRQ entry. This uses ordinary CPU cycles, does not
+acknowledge the request, and does not enter a second exception. A masked
+VBlank does not admit this work, even when another source takes the IRQ.
+
 The standard BLua IRQ entry reads the **complete `IO_IRQ_FLAGS` word** and, when
 it is nonzero, calls `irq(flags)`. This argument reflects the later FLAGS read;
 it can include masked pending bits as well as the bit that enabled delivery.
@@ -171,7 +177,8 @@ latency is specified.
 Interrupt service instructions use the 33.8688 MHz system timebase:
 33,868,800 cycles per second, approximately 29.525699 ns per cycle. A service
 interval includes time pending, exception entry, source dispatch, handler work
-and exception return.
+and exception return. An admitted BIOS maintenance interval also precedes
+cartridge dispatch.
 
 There is no delayed-enable instruction after a MASK write. An already-pending
 request is eligible at the next CPU execution boundary that satisfies both

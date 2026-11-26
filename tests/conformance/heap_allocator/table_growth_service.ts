@@ -12,9 +12,10 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET, HeapServiceTableGrowthField,
+	HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET, HeapServiceTableGrowthField,
 	HeapServiceGcStage, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage,
 } from '../../../machine/ts/spec/bmsx/heap_service';
+import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -83,8 +84,8 @@ try {
 			function step() {
 				const time = scheduler.nowCycles, tick = frames.lastTickSequence;
 				const result = frames.stepInstruction(1), paid = scheduler.nowCycles - time;
-				const pressure = memory.readRamRecordWord(management + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
-				observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${gc.serviceStage()} 0 ${pressure} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+				const irqFlags = memory.readIoU32(IO_IRQ_FLAGS);
+				observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${gc.serviceStage()} 0 ${irqFlags} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				return paid;
 			}
 			const history = new RamHistory();

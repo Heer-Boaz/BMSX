@@ -926,7 +926,7 @@ size_t GcHeap::accountEpochWork(size_t work) {
 
 bool GcHeap::stoppedFinalMarkPending() const { return finalMarkPending() && !m_cpu.tableRebuild.record && !fullEpochs(); }
 
-void GcHeap::assistPhysicalPressureAtTick(const HeapServiceFunctions* services) {
+void GcHeap::assistPhysicalPressureAtTick() {
 	if (m_cpu.tableRebuild.record) return;
 	if (fullEpochs()) return;
 	const u32 occupied = arena.occupiedBytes();
@@ -949,8 +949,7 @@ void GcHeap::assistPhysicalPressureAtTick(const HeapServiceFunctions* services) 
 	}
 	// The interrupt wait lends bandwidth to an existing mark pass, not a new cycle.
 	const bool idleMark = (current == GcPhase::Mark || current == GcPhase::MarkAgain) && m_cpu.isHaltedUntilIrq();
-	step(valueNil(), valueNil(), valueNil(), 0u, false, idleMark ? 4u * GC_STEP_WORDS : GC_STEP_WORDS,
-		HeapServiceGcStage::PressureStringSweep, services);
+	step(valueNil(), valueNil(), valueNil(), 0u, false, idleMark ? 4u * GC_STEP_WORDS : GC_STEP_WORDS);
 }
 
 void GcHeap::beginPaceCredit(u32 estimate, u32 runwayShift) {
@@ -1020,8 +1019,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 		if (objectSweepFunction != 0u && sweepPhase == GcPhase::Sweep) {
 			const bool full = stringSweepStage == HeapServiceGcStage::FullStringSweep;
 			const auto stage = full ? HeapServiceGcStage::FullObjectSweep
-				: stringSweepStage == HeapServiceGcStage::PressureStringSweep ? HeapServiceGcStage::PressureObjectSweep
-					: HeapServiceGcStage::AllocationRecoveryObjectSweep;
+				: HeapServiceGcStage::AllocationRecoveryObjectSweep;
 			saveSweepQuantum(stage, occupied, work, limit);
 			const u32 objectState = arena.managementOffset() + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Link),
@@ -1442,8 +1440,7 @@ void GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction
 	if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) {
 		beginStrings();
 		const auto stringStage = compactThreads ? HeapServiceGcStage::FullStringSweep
-			: stage == HeapServiceGcStage::PressureObjectSweep ? HeapServiceGcStage::PressureStringSweep
-				: HeapServiceGcStage::AllocationRecoveryStringSweep;
+			: HeapServiceGcStage::AllocationRecoveryStringSweep;
 		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
 		memory.writeRamRecordWord(stageAddress, static_cast<u32>(stringStage));
 		startStringSweep(stringSweepFunction, limit - work,

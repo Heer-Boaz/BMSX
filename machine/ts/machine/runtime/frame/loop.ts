@@ -185,7 +185,7 @@ export class FrameLoopState {
 				|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 			const cpu = runtime.machine.cpu;
 			if (!cpu.heapServiceActive() && !cpu.allocationParked()
-				&& (cpu.gc.stoppedFinalMarkPending() || runtime.vblank.hasDeferredPressure())) return false;
+				&& cpu.gc.stoppedFinalMarkPending()) return false;
 		}
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) {

@@ -8,7 +8,7 @@ import { GcPhase, GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_hea
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceGcStage } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -76,7 +76,6 @@ for (const opt of [0, 3] as const) {
 		let allowance = 0;
 		const nativeStep = t.mock.method(oracle.gc, 'step', (...args: Parameters<CPU['gc']['step']>) => {
 			assert.deepEqual(args.slice(0, 5), [valueNil(), valueNil(), valueNil(), 0, false]);
-			assert.equal(args[6], HeapServiceGcStage.PressureStringSweep);
 			allowance = args[5]!;
 			return 0;
 		});

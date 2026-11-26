@@ -114,7 +114,8 @@ public:
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
 		size_t limit = GC_STEP_WORDS, HeapServiceGcStage stringSweepStage = HeapServiceGcStage::Idle,
 		const HeapServiceFunctions* services = nullptr);
-	void assistPhysicalPressureAtTick(const HeapServiceFunctions* services = nullptr);
+	// Native reference for differential collector tests.
+	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	std::optional<size_t> reservationAssistAllowance(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u,

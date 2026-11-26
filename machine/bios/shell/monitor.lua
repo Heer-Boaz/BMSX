@@ -9,6 +9,7 @@ local monitor_commands<const> = require('shell/commands')
 local repl<const> = require('shell/repl')
 local source_location<const> = require('shell/source_location')
 local vblank<const> = require('kernel/vblank')
+local vblank_irq<const> = require('kernel/vblank_irq')
 local dma_transfer<const> = require('kernel/dma')
 local gx_gpu<const> = require('gpu/gpu')
 local assets<const> = require('bmsx/system_assets')
@@ -24,7 +25,7 @@ local system_status<const>: *word = 0x08010350
 local cart_select<const>: *word = 0x08010420
 local supervisor_fault_domain<const>: *word = 0x0801043c
 
-local irq_vblank<const> = 0x0004
+local irq_vblank<const> = vblank_irq.source
 local irq_dma_done<const> = 0x0001
 local input_arm<const> = 0x00000001
 local system_supervisor_enter<const> = 0x00000002

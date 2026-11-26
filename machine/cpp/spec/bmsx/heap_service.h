@@ -14,7 +14,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, Count,
+	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
 };
 using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
 
@@ -28,12 +28,15 @@ constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTI
 // offsets are relative to its start; ordinary bus masters cannot see them.
 constexpr uint32_t HEAP_SERVICE_THREAD_OFFSET = 0x800;
 constexpr uint32_t HEAP_SERVICE_RESULT_OFFSET = 0x850;
-constexpr uint32_t HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET = 0x854;
 constexpr uint32_t HEAP_SERVICE_EXEC_TARGET_OFFSET = 0x858;
 constexpr uint32_t HEAP_SERVICE_EXEC_FLOOR_OFFSET = 0x85c;
 constexpr uint32_t HEAP_SERVICE_EXEC_STAGE_OFFSET = 0x860;
 constexpr uint32_t HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
 constexpr uint32_t HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
+constexpr uint32_t HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
+// Cart lane (socket + 1) is the presence word. The vector word itself can
+// fault and is not a sentinel.
+enum class HeapServiceIrqForwardField : uint32_t { CartLane = 0, Vector = 4 };
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
 constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0x1000;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 16;
@@ -70,7 +73,6 @@ enum class HeapServiceGcStage : uint32_t {
 	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
 	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
 	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
-	PressureStringSweep, PressureObjectSweep,
 };
 
 // Four Thread addresses followed by the seven root-bank descriptors.

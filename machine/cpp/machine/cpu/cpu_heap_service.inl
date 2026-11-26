@@ -2,6 +2,8 @@
 // enter the managed allocator. RAM owns their depth, windows and result.
 static_assert(HEAP_SERVICE_THREAD_OFFSET + THREAD_HEAP_BYTES <= HEAP_SERVICE_RESULT_OFFSET);
 static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
+static_assert(HEAP_SERVICE_EXEC_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_IRQ_FORWARD_OFFSET);
+static_assert(HEAP_SERVICE_IRQ_FORWARD_OFFSET + static_cast<u32>(HeapServiceIrqForwardField::Vector) + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::DirectRecovery) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);

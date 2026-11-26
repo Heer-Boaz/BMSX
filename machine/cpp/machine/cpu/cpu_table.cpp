@@ -262,11 +262,6 @@ void CPU::advanceFinalMark() {
 		services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
 }
 
-void CPU::admitPhysicalPressureAtTick() {
-	const auto& services = m_systemImage->heapServiceFunctions;
-	m_heap.assistPhysicalPressureAtTick(services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
-}
-
 void CPU::finishAllocationRecovery() {
 	if (!m_heap.active()) {
 		auto& recovery = m_pendingAllocation.recovery;

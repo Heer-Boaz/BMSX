@@ -15,9 +15,10 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET,
+	HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET,
 	HeapServiceGcStage, HeapServiceTableGrowthField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
+import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -100,8 +101,8 @@ try {
 		function step() {
 			const frames = runtime.frameScheduler, time = scheduler.nowCycles, tick = frames.lastTickSequence;
 			const result = frames.stepInstruction(1), paid = scheduler.nowCycles - time;
-			const pressure = memory.readRamRecordWord(management + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
-			observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${gc.serviceStage()} 0 ${pressure} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+			const irqFlags = memory.readIoU32(IO_IRQ_FLAGS);
+			observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${gc.serviceStage()} 0 ${irqFlags} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 			return paid;
 		}
 

@@ -22,6 +22,7 @@ local terminal<const> = require('tty/terminal')
 local console<const> = require('tty/console')
 local terminal_layout<const> = require('tty/layout')
 local vblank<const> = require('kernel/vblank')
+local vblank_irq<const> = require('kernel/vblank_irq')
 
 local irq_mask<const>: *word = 0x08000008
 local input_control<const>: *word = 0x08000064
@@ -36,7 +37,7 @@ local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
 local cart_rom_byte_count<const>: *word = 0x08010440
 local cart_rom<const>: *word = 0x10000000
-local irq_vblank<const> = 0x0004
+local irq_vblank<const> = vblank_irq.source
 local irq_dma_done<const> = 0x0001
 local input_arm<const> = 0x00000001
 local cart_state_missing<const> = 1

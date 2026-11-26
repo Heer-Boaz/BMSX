@@ -77,7 +77,7 @@ export class FrameSchedulerState {
 		const cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive()) {
 			if (cpu.allocationParked()) return cpu.allocationReady();
-			if (runtime.vblank.hasDeferredPressure() || cpu.gc.stoppedFinalMarkPending()) return false;
+			if (cpu.gc.stoppedFinalMarkPending()) return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
@@ -107,8 +107,6 @@ export class FrameSchedulerState {
 			// A parked instruction owns its recovery and retry even when a
 			// device edge occurred during the timed part of that recovery.
 			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
-		} else if (runtime.vblank.admitDeferredPressure()) {
-			if (!cpu.heapServiceActive()) return Pulse.Maintenance;
 		} else if (heap.stoppedFinalMarkPending()) {
 			cpu.advanceFinalMark();
 			if (!cpu.heapServiceActive()) return Pulse.Maintenance;

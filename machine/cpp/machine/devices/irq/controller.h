@@ -16,7 +16,8 @@ public:
 	void postLoad();
 	IrqControllerState captureState() const;
 	void restoreState(const IrqControllerState& state);
-	bool hasAssertedMaskableInterruptLine() const { return (m_pendingFlags & m_mask) != 0u; }
+	u32 enabledPendingFlags() const { return m_pendingFlags & m_mask; }
+	bool hasAssertedMaskableInterruptLine() const { return enabledPendingFlags() != 0u; }
 	void raise(uint32_t mask);
 	void raiseUser(uint32_t mask);
 	void acknowledge(uint32_t mask);

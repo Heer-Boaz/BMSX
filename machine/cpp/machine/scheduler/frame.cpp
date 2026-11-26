@@ -25,7 +25,7 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	const auto& cpu = runtime.machine.cpu;
 	if (!cpu.heapServiceActive()) {
 		if (cpu.allocationParked()) return cpu.allocationReady();
-		if (runtime.vblank.hasDeferredPressure(runtime) || cpu.gcHeap().stoppedFinalMarkPending()) return false;
+		if (cpu.gcHeap().stoppedFinalMarkPending()) return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
@@ -53,11 +53,6 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	if (cpu.allocationParked()) {
 		// Device edges during timed recovery must not displace its retry.
 		if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) {
-			++m_maintenancePulseSequence;
-			return Pulse::Maintenance;
-		}
-	} else if (runtime.vblank.admitDeferredPressure(runtime)) {
-		if (!cpu.heapServiceActive()) {
 			++m_maintenancePulseSequence;
 			return Pulse::Maintenance;
 		}

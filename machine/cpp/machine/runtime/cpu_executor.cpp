@@ -87,7 +87,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	bool running = true;
 	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive()
 		|| (cpu.allocationParked() ? cpu.allocationReady()
-			: !cpu.gcHeap().stoppedFinalMarkPending() && !runtime.vblank.hasDeferredPressure(runtime)))) {
+			: !cpu.gcHeap().stoppedFinalMarkPending()))) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
@@ -148,7 +148,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
-	if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure(runtime))) return CpuSuspendedRunResult::Halted;
+	if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
@@ -202,7 +202,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 		if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}
-		if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure(runtime))) return CpuSuspendedRunResult::Halted;
+		if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
 		}
@@ -214,7 +214,6 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 			bool advancedDeadline = false;
-			// A coherent VBlank can make the BIOS runnable without waking the caller.
 			while (cpu.isHaltedUntilIrq() && !cpu.heapServiceActive()) {
 				if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 				if (machine.gxGpu.backendServiceBlocksMachine()) {

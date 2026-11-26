@@ -1761,10 +1761,25 @@ bool CPU::enterPendingInterrupt() {
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
-	if (canAcceptMaskableInterruptLine()) {
-		Blua32ExecutionImage& image = isUserMode() ? *executionImageForDomain(m_programExecutionDomainId) : *m_systemImage;
+	const u32 enabledFlags = (m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
+		? m_irqController.enabledPendingFlags() : 0u;
+	if (enabledFlags != 0u) {
+		const auto domain = isUserMode() ? m_programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
+		auto& image = *executionImageForDomain(domain);
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->currentFrame->readControl(FrameField::Pc));
+		const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
+		const u32 prelude = domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u
+			: m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::InterruptPrelude)];
+		if (prelude == 0u) {
+			enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
+		} else {
+			const u32 management = m_heapAllocator.managementOffset();
+			const std::array args{management, enabledFlags, static_cast<u32>(isHaltedUntilIrq())};
+			latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+			m_memory.writeRamRecordPair(management + HEAP_SERVICE_IRQ_FORWARD_OFFSET + static_cast<u32>(HeapServiceIrqForwardField::CartLane),
+				static_cast<u32>(domain) + 1u, image.irqFunctionAddress);
+			beginHeapService(prelude, args);
+		}
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -1836,19 +1851,27 @@ CallFrame* CPU::enterException(
 	u32 causeWord,
 	u32 epcWord
 ) {
+	latchExceptionEntry(causeWord, epcWord);
+	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord);
+}
+
+void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
 	m_exceptionDomainWord = static_cast<u32>(m_activeExecutionDomainId);
 	m_cop0Words[COP0_EPC] = epcWord;
 	m_cop0Words[COP0_CAUSE] = causeWord;
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_cop0Words[COP0_STATUS] << 2u) & CPU_STATUS_MODE_STACK_MASK);
 	clearHaltAfterAcceptedInterrupt();
+}
+
+CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord) {
 	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 		hardHalt();
 		return nullptr;
 	}
 	try {
 		u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-		return pushFrame(closure, {}, {}, FRAME_EXCEPTION | (causeWord == CPU_CAUSE_NMI ? FRAME_NMI : 0), epcWord);
+		return pushFrame(closure, {}, {}, FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
@@ -2010,6 +2033,7 @@ RunResult CPU::runLoop(
 						return RunResult::ExecutionStopped;
 					}
 					enterPendingInterrupt();
+					if (heapServiceActive()) return RunResult::CollectionProgress;
 					continue;
 				}
 			} else if constexpr (!HeapService) {
@@ -2023,6 +2047,7 @@ RunResult CPU::runLoop(
 					nativeState.hotSidePc.reset();
 #endif
 					enterPendingInterrupt();
+					if (heapServiceActive()) return RunResult::CollectionProgress;
 					continue;
 				}
 			}
@@ -2525,7 +2550,9 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
 	if (heapServiceActive()) {
-		const auto gcStage = m_heap.serviceStage();
+		const u32 irq = m_heapAllocator.managementOffset() + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
+		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
+		const auto gcStage = cartLane == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
@@ -2563,7 +2590,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 						m_heap.finishWeakQuantum();
 						break;
 					case HeapServiceGcStage::FullObjectSweep:
-					case HeapServiceGcStage::PressureObjectSweep:
 					case HeapServiceGcStage::AllocationRecoveryObjectSweep: {
 						const auto& services = m_systemImage->heapServiceFunctions;
 						m_heap.finishObjectSweep(gcStage,
@@ -2572,15 +2598,21 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 						break;
 					}
 					case HeapServiceGcStage::FullStringSweep:
-					case HeapServiceGcStage::PressureStringSweep:
 					case HeapServiceGcStage::AllocationRecoveryStringSweep:
 						m_heap.finishStringSweep(gcStage);
 						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep && !recordCollection) finishAllocationRecovery();
 						break;
 					case HeapServiceGcStage::Idle:
-						finishExecutionFloor();
-						finishRecordReservation();
+						if (cartLane != 0u) {
+							const u32 vector = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::Vector));
+							m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
+							placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
+								vector, false, m_cop0Words[COP0_EPC]);
+						} else {
+							finishExecutionFloor();
+							finishRecordReservation();
 							finishTableGrowthReservation();
+						}
 						break;
 				}
 				if (recordCollection && !heapServiceActive()) finishRecordCollection(recordStage);
@@ -2595,7 +2627,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return gcStage != HeapServiceGcStage::Idle && kind == CpuRunKind::Scheduled
+		return (cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

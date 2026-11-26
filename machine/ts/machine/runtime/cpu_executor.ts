@@ -98,7 +98,7 @@ export class CpuExecutionState {
 		const { machine: { cpu }, vblank } = this.runtime;
 		let running = true;
 		while (running && !vblank.tickCompleted && (cpu.heapServiceActive()
-			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.gc.stoppedFinalMarkPending() && !vblank.hasDeferredPressure()))) {
+			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.gc.stoppedFinalMarkPending()))) {
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;
@@ -152,7 +152,7 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
-		if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure())) return CpuSuspendedRunResult.Halted;
+		if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
@@ -204,7 +204,7 @@ export class CpuExecutionState {
 			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
-			if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure())) return CpuSuspendedRunResult.Halted;
+			if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
 			}
@@ -216,7 +216,6 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 				let advancedDeadline = false;
-				// A coherent VBlank can make the BIOS runnable without waking the caller.
 				while (cpu.isHaltedUntilIrq() && !cpu.heapServiceActive()) {
 					if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 					if (machine.gxGpu.backendServiceBlocksMachine()) {
