@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, Count,
+	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -50,9 +50,8 @@ export const enum HeapServiceRecordKind { Table, CanonicalClosure }
 
 export const HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50;
 export const enum HeapServiceTableGrowthField {
-	Stage = 0, Receiver = 4, KeyTag = 8, KeyWord = 12, ValueTag = 16, ValueWord = 20,
-	ArraySlots = 24, HashSlots = 28, KeepHash = 32, ExtraSlots = 36, ParkExtraSlots = 40,
-	InstructionPc = 44, LastPc = 48, NextPc = 52, Budget = 56,
+	Stage = 0, Receiver = 4, ArraySlots = 8, HashSlots = 12, ExtraSlots = 16, ParkExtraSlots = 20,
+	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
 }
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 
@@ -110,3 +109,7 @@ export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, Pendi
 
 export const HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET = 0x760;
 export const enum HeapServiceTableGrowthResultField { HashStorage = 0, ArrayStorage = 4 }
+export const HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
+export const enum HeapServiceTableResizeContextField {
+	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
+}

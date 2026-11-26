@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
@@ -19,27 +19,29 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execu
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 
-const REINSERT = 'kernel/table_reinsert', FINISH = 'kernel/table_finish_resize', entrySource = 'halt_until_irq';
+const REINSERT = 'kernel/table_reinsert', FINISH = 'kernel/table_finish_resize', RESIZE = 'kernel/table_resize', entrySource = 'halt_until_irq';
 const basis = 'c36fafd44eea29507af392041fda24f433709f18';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark',
-	'kernel/gc_barrier', 'kernel/table_create', 'kernel/table_reserve_growth', 'kernel/table_publish_growth', REINSERT, FINISH].map(path => {
+	'kernel/gc_barrier', 'kernel/table_create', 'kernel/table_reserve_growth', 'kernel/table_publish_growth', REINSERT, FINISH, RESIZE].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
+const untouchedReservation = [0x168151d7, 0xf10b4a91] as const;
 
 function fixture(optLevel: 0 | 3) {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const roots = ['reserve_table_growth', 'publish_table_growth', 'finish_table_resize'].map(name => {
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.exportPathKey === name);
+	function functionIndex(path: string, name: string) {
+		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === name);
 		assert.ok(symbol);
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 		assert.ok(index >= 0);
 		return index;
-	});
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, roots);
+	}
+	const root = functionIndex(RESIZE, 'execute_table_resize');
+	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
-	const [reserve, publish, finish] = roots.map(index => linked.image.functions[index].address);
+	const entry = linked.image.functions[root].address;
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
 	for (const target of [cpu, oracle]) assert.equal(target.runUntilDepth(0, 1024), RunResult.Halted);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
@@ -49,8 +51,9 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), result);
 		return result;
 	}
-	const scratch = same(target => target.heapAllocator.allocate(36, true) - RAM_BASE);
+	const scratch = same(target => target.heapAllocator.allocate(40, true) - RAM_BASE);
 	assert.ok(scratch > 0);
+	const reserved = () => [memory.readRamRecordWord(scratch), memory.readRamRecordWord(scratch + 4)];
 	function compare() {
 		const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
 		// Only the protocol's reservation-result lanes differ from the native caller's locals.
@@ -73,30 +76,42 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(cpu.heapServiceActive(), false);
 		return cycles;
 	}
-	function begin(record: number, array: number, hash: number, keepHash: boolean, key: Value, value: Value, cppMirror = false) {
+	function begin(record: number, array: number, hash: number, keepHash: boolean, key: Value, value: Value, cppMirror = true) {
 		const tables = oracle.gc.tables;
-		const oldArray = tables.arrayCapacity(record), oldHash = tables.hashSize(record), oldStorage = tables.hashAddress(record);
+		const oldArray = tables.arrayCapacity(record), oldHash = tables.hashSize(record);
+		const oldStorage = tables.hashAddress(record);
 		const previous = TableRecords.allocationCharge(oldArray, oldHash), requested = TableRecords.allocationCharge(array, hash);
-		for (const [index, word] of [valueTag(key), valuePayload(key), valueTag(value), valuePayload(value), previous, requested, +keepHash].entries())
-			same(target => target.memory.writeRamRecordWord(scratch + 8 + index * 4, word));
+		const hashBytes = TableRecords.hashStorageBytes(hash);
+		const request = [...untouchedReservation, valueTag(key), valuePayload(key), valueTag(value), valuePayload(value), previous, requested, +keepHash, hashBytes];
+		same(target => {
+			for (const [index, word] of request.entries()) target.memory.writeRamRecordWord(scratch + index * 4, word);
+		});
 		const plan = tables['resizePlan'];
 		plan.array = array; plan.hash = hash; plan.keepHash = keepHash;
 		const expected = tables['resize'](record, key, value, previous, requested);
-		const hashBytes = TableRecords.hashStorageBytes(hash);
-		assert.ok(cpu.beginHeapService(reserve, [state, record, array, hash, hashBytes, +keepHash, 0, scratch]));
-		drain();
-		assert.equal(cpu.heapServiceResult(), 1);
-		const base = memory.readRamRecordWord(scratch + 4);
-		assert.ok(cpu.beginHeapService(publish, [control, record, array, hash, hashBytes, +keepHash, scratch, +cppMirror]));
-		drain();
-		assert.ok(cpu.beginHeapService(finish, [state, occupied, record, oldArray, oldHash, oldStorage, scratch + 8, +cppMirror]));
-		return { expected, base };
+		if (cppMirror) assert.ok(cpu.beginHeapService(entry, [state, control, occupied, record, array, hash, scratch]));
+		else {
+			// Exercise the original TS cursor order through the same port
+			// leaves, separately from the one production entry policy.
+			const functions = linked.image.functions;
+			assert.ok(cpu.beginHeapService(functions[functionIndex('kernel/table_reserve_growth', 'reserve_table_growth')].address,
+				[state, record, array, hash, hashBytes, +keepHash, 0, scratch]));
+			drain();
+			assert.equal(cpu.heapServiceResult(), 1);
+			assert.ok(cpu.beginHeapService(functions[functionIndex('kernel/table_publish_growth', 'publish_table_growth')].address,
+				[control, record, array, hash, hashBytes, +keepHash, scratch, 0]));
+			drain();
+			assert.ok(cpu.beginHeapService(functions[functionIndex(FINISH, 'finish_table_resize')].address,
+				[state, occupied, record, oldArray, oldHash, oldStorage, scratch + 8, 0]));
+		}
+		return expected;
 	}
-	function verify(expected: number) {
-		assert.equal(cpu.heapServiceResult() | 0, expected);
+	function verify(expected: number, cppMirror = true) {
+		assert.equal(cpu.heapServiceResult(), cppMirror ? +(expected !== HASH_STORE_DECLINED) : expected >>> 0);
+		if (expected === HASH_STORE_DECLINED) assert.deepEqual(reserved(), untouchedReservation);
 		compare();
 	}
-	return { cpu, oracle, memory, same, begin, grant, drain, verify };
+	return { cpu, memory, same, begin, grant, drain, reserved, verify };
 }
 
 function integerWithHome(home: number): Value {
@@ -131,11 +146,21 @@ for (const opt of [0, 3] as const) {
 				for (const [k, v] of next) store.set(record, k, v);
 				return next;
 			});
-			const { expected, base } = f.begin(record, array, hash, keepHash, key, value);
+			const oldBase = f.cpu.gc.tables.arrayAddress(record), charged = f.cpu.luaHeap.usedBytes();
+			const expected = f.begin(record, array, hash, keepHash, key, value);
+			let publication: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			if (keepHash) {
+				for (let n = 0; n < 4096 && f.cpu.gc.tables.arrayCapacity(record) !== array; ++n) f.grant(1);
+				assert.ok(f.cpu.heapServiceActive());
+				assert.equal(f.cpu.gc.tables.arrayCapacity(record), array);
+				assert.equal(f.cpu.gc.tables.arrayAddress(record), oldBase, 'header count changed before its backing lane');
+				assert.equal(f.cpu.luaHeap.usedBytes(), charged);
+				publication = captureCpuCheckpoint(f.cpu);
 				// 31→32 starts with backwards overlapping tag copy. The top byte
 				// moves first while the first destination byte still aliases the source.
+				const [, base] = f.reserved();
+				assert.ok(base >= RAM_BASE);
 				const mux = base + 4 * array, last = mux + oldArray - 1, prior = f.memory.readRamRecordByte(last);
 				for (let n = 0; n < 4096 && f.memory.readRamRecordByte(last) === prior; ++n) f.grant(1);
 				assert.ok(f.cpu.heapServiceActive());
@@ -148,6 +173,11 @@ for (const opt of [0, 3] as const) {
 			if (checkpoint) {
 				restoreCpuCheckpoint(f.cpu, checkpoint);
 				assert.equal(f.drain(), cycles);
+				f.verify(expected);
+			}
+			if (publication) {
+				restoreCpuCheckpoint(f.cpu, publication);
+				assert.ok(f.drain() > cycles);
 				f.verify(expected);
 			}
 			for (const [k, v] of [...mappings, [key, value]] as const) assert.equal(f.cpu.gc.tables.get(record, k), v);
@@ -167,14 +197,19 @@ for (const opt of [0, 3] as const) {
 				target.gc.tables.set(record, a, first);
 				target.gc.tables.set(record, b, second);
 			});
-			const { expected } = f.begin(record, 0, 8, false, c, third, cppMirror);
+			const expected = f.begin(record, 0, 8, false, c, third, cppMirror);
+			for (let n = 0; n < 4096 && f.cpu.gc.tables.hashSize(record) !== 8; ++n) f.grant(1);
+			assert.equal(f.cpu.gc.tables.hashSize(record), 8);
 			const storage = f.cpu.gc.tables.hashAddress(record), links = storage + 80;
+			// Wait for the new link lane to be initialized before observing the collision.
+			for (let n = 0; n < 4096 && f.memory.readRamRecordByte(links + 2) !== 0xff; ++n) f.grant(1);
+			assert.equal(f.memory.readRamRecordByte(links + 2), 0xff);
 			for (let n = 0; n < 4096 && f.memory.readRamRecordByte(links + 2) === 0xff; ++n) f.grant(1);
 			assert.equal(f.memory.readRamRecordByte(links + 2), 7, 'the first collision uses the highest free slot');
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Free), cppMirror ? 7 : 6);
 			const checkpoint = captureCpuCheckpoint(f.cpu);
 			const cycles = f.drain();
-			f.verify(expected);
+			f.verify(expected, cppMirror);
 			assert.equal(expected, 7);
 			assert.equal(f.memory.readRamRecordByte(links + 2), 6, 'trigger owns home 7 after moving the prior collision');
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Free), 5);
@@ -183,14 +218,38 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.cpu.gc.tables.get(record, c), third);
 			restoreCpuCheckpoint(f.cpu, checkpoint);
 			assert.equal(f.drain(), cycles);
-			f.verify(expected);
+			f.verify(expected, cppMirror);
 		}
+	});
+
+	test(`combined immediate resize retires a refused hash without entering publication at O${opt}`, () => {
+		const f = fixture(opt), hash = 16;
+		const record = f.same(target => target.createTable(32, 8));
+		f.same(target => {
+			const arena = target.heapAllocator;
+			target.gc.tables.set(record, valueInteger(32), valueInteger(17));
+			while (arena.allocate(4088, true)) { /* exhaust page supply */ }
+			while (arena.allocate(TableRecords.hashStorageBytes(hash), true)) { /* exhaust hash fits */ }
+		});
+		const before = f.cpu.heapAllocator.occupiedBytes(), charged = f.cpu.luaHeap.usedBytes();
+		const oldHash = f.cpu.gc.tables.hashAddress(record);
+		const expected = f.begin(record, 31, hash, false, valueInteger(-1), valueBool(true));
+		assert.equal(expected, HASH_STORE_DECLINED);
+		for (let n = 0; n < 8192 && f.cpu.heapServiceActive(); ++n) {
+			f.grant(1);
+			assert.equal(f.cpu.gc.tables.arrayCapacity(record), 32);
+			assert.equal(f.cpu.gc.tables.hashAddress(record), oldHash);
+		}
+		assert.equal(f.cpu.heapServiceActive(), false);
+		assert.equal(f.cpu.heapAllocator.occupiedBytes(), before);
+		assert.equal(f.cpu.luaHeap.usedBytes(), charged);
+		f.verify(expected);
 	});
 }
 
 const pins = [
-	['T', 'machine/ts/machine/cpu/table.ts', '39610ec36786e68a5712461b3eebd017816fba9758f1a1644b024871213e05e7', [[588, 605], [607, 629], [632, 643], [840, 869]]],
-	['C', 'machine/cpp/machine/cpu/table.cpp', '2b8976327da44c9c7fd5f6d5df7b01b6d2593387024fdb9e3cae19ac04403d3e', [[143, 150], [396, 424], [523, 562], [584, 598]]],
+	['T', 'machine/ts/machine/cpu/table.ts', '39610ec36786e68a5712461b3eebd017816fba9758f1a1644b024871213e05e7', [[588, 605], [607, 629], [632, 643], [801, 804], [806, 817], [830, 834], [840, 869]]],
+	['C', 'machine/cpp/machine/cpu/table.cpp', '2b8976327da44c9c7fd5f6d5df7b01b6d2593387024fdb9e3cae19ac04403d3e', [[143, 150], [255, 268], [383, 383], [387, 390], [396, 424], [523, 562], [584, 598]]],
 	['H', 'machine/cpp/machine/cpu/table.h', 'f0f5b4a879cb6cbd33612aa64d53339a6cbb85bac8d2edb03e3d74f445b88932', [[27, 27], [44, 47], [246, 255], [262, 282], [305, 306]]],
 	['V', 'machine/ts/machine/cpu/value.ts', 'bdafe30a070405b98b673dfe76e0daad1384ccd87ee7ca26584eba734204c641', [[90, 103]]],
 	['W', 'machine/cpp/machine/cpu/value.h', 'cb211876c00637f49334db80b281d4af8a17f978bdceb736b6c9a177b9abe94e', [[109, 125]]],
@@ -203,8 +262,8 @@ const pins = [
 	['M', 'machine/ts/spec/bmsx/memory_map.ts', '00dbd23e01f06a9aaf126c55fa7ba6c3306b5ac86caa3adfa695b6b9360fe1f0', [[6, 7], [9, 9]]],
 ] as const;
 
-test('Table resize body pins both native mappings, including the distinct free cursor publication', () => {
-	const ports = [REINSERT, FINISH].map(name => `machine/bios/${name}.lua`);
+test('combined Table resize pins both native mappings, including allocation refusal and cursor publication', () => {
+	const ports = [REINSERT, FINISH, RESIZE].map(name => `machine/bios/${name}.lua`);
 	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
 	for (const [key, file, digest] of pins) {
 		const pinned = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
@@ -236,19 +295,31 @@ test('Table resize body pins both native mappings, including the distinct free c
 			}
 		}
 	}
-	const { chunk } = modules.find(module => module.path === FINISH)!;
-	const span = chunk.body.get(chunk.body.length - 1).span;
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
-	const header = types.resolve(ports[1], { name: 'immediate_resize_table', arrayLengths: [], span }).struct!;
+	const tail = modules.find(module => module.path === FINISH)!.chunk.body;
+	const tailSpan = tail.get(tail.length - 1).span;
+	const header = types.resolve(ports[1], { name: 'immediate_resize_table', arrayLengths: [], span: tailSpan }).struct!;
 	assert.equal(header.size, TableRecords.HEADER_BYTES);
 	for (const [name, offset] of [
 		['hash_storage', TableHeader.HashStorage], ['array_slots', TableHeader.Array], ['hash_slots', TableHeader.Hash],
 		['free', TableHeader.Free], ['array_storage', TableHeader.ArrayStorage],
 	] as const) assert.equal(header.fields.get(name)!.offset, offset);
-	const context = types.resolve(ports[1], { name: 'immediate_resize_context', arrayLengths: [], span }).struct!;
+	const context = types.resolve(ports[1], { name: 'immediate_resize_context', arrayLengths: [], span: tailSpan }).struct!;
 	assert.equal(context.size, 28);
 	for (const [i, name] of ['key_tag', 'key_word', 'value_tag', 'value_word', 'previous_charge', 'requested_charge', 'keep_hash'].entries())
 		assert.equal(context.fields.get(name)!.offset, 4 * i);
+	const combined = modules.find(module => module.path === RESIZE)!.chunk.body;
+	const span = combined.get(combined.length - 1).span;
+	const old = types.resolve(ports[2], { name: 'resize_source_layout', arrayLengths: [], span }).struct!;
+	for (const [name, offset] of [['hash_storage', TableHeader.HashStorage], ['array_slots', TableHeader.Array], ['hash_slots', TableHeader.Hash]] as const)
+		assert.equal(old.fields.get(name)!.offset, offset);
+	const request = types.resolve(ports[2], { name: 'resize_request', arrayLengths: [], span }).struct!;
+	assert.equal(request.size, 40);
+	assert.equal(request.fields.get('hash_storage')!.offset, 0);
+	assert.equal(request.fields.get('array_storage')!.offset, 4);
+	for (const [field, properties] of context.fields)
+		assert.equal(request.fields.get(field)!.offset, 8 + properties.offset);
+	assert.equal(request.fields.get('hash_bytes')!.offset, 36);
 	for (const [key, , , ranges] of pins) {
 		const native = sources.get(key)!;
 		for (const [first, last] of ranges) for (let line = first; line <= last; ++line) {

@@ -222,7 +222,8 @@ private:
 	struct ResizePlan { size_t array, hash; bool keepHash; };
 	friend class CPU;
 	void installStagedGrowth(CPU&, const ResizePlan&, u32 base, u32 storage, Value key, Value value);
-	int retryStagedGrowth(CPU&, HeapServiceTableGrowthStage, Value key, Value value, u8 parkExtraSlots, int sourceBudget);
+	int retryGrowth(CPU&, HeapServiceTableGrowthStage, Value key, Value value, u8 parkExtraSlots, int sourceBudget);
+	void finishHashInsertion(Value key, Value value);
 	void countArrayRange(ArrayDensity&, u32 end) const;
 	void spendCensusGrant(ArrayDensity&, u32 capacity, int& cycles) const;
 	ResizePlan planRehash(Value key, u8 extraHashSlots, const ArrayDensity* counted) const;

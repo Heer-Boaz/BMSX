@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HeapServiceRecordKind, HeapServiceRecordStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceRecordKind, HeapServiceRecordStage, HeapServiceTableGrowthStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -41,6 +41,33 @@ try {
 			assert.equal(lines[lines.length - 1], '183');
 			console.log(`BIOS-${name}-NATIVE-GATE:PASS O${optLevel} (one generated allocation exit, ${spent} firmware cycles)`);
 		}
+		// Escape the empty table before the first SETFIELD, so it is an
+		// ordinary guest store rather than part of a fused constructor.
+		const growth = linkTestSystemBlua32(compileHeapServiceSystem(`
+native_growth_fixture = {}
+native_growth_fixture.grow = 183
+local first = native_growth_fixture.grow
+native_growth_fixture.grow = 14
+return first + native_growth_fixture.grow, native_growth_fixture
+`, optLevel));
+		const growthRom = join(directory, `generated-setfield-O${optLevel}.rom`);
+		const growthTrace = join(directory, `trace-O${optLevel}-SETFIELD.txt`);
+		writeFileSync(growthRom, growth.romBytes);
+		writeFileSync(growthTrace, 'K F\nJ 65536 1\nJ 65536 1\nC\n');
+		const lines = execFileSync(runner, [growthRom, growthTrace, join(directory, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n');
+		assert.equal(lines.length, 4);
+		const [entries, stage, immediate, physicalBefore, logicalBefore] = lines[0].split(' ').map(Number);
+		assert.deepEqual([entries, stage, immediate], [1, HeapServiceTableGrowthStage.Scheduled, 1]);
+		const [serviceResult, spent, active, , physicalAfter, logicalAfter] = lines[1].split(' ').map(Number);
+		assert.equal(serviceResult, RunResult.Yielded);
+		assert.ok(spent > 0);
+		assert.equal(active, 0);
+		assert.ok(physicalAfter > physicalBefore && logicalAfter > logicalBefore, 'the isolated BIOS grant reserved and charged backing');
+		const [overwriteResult, , overwriteActive, , physicalOverwrite, logicalOverwrite] = lines[2].split(' ').map(Number);
+		assert.deepEqual([overwriteResult, overwriteActive, physicalOverwrite, logicalOverwrite],
+			[RunResult.Halted, 0, physicalAfter, logicalAfter], 'the overwrite needs no new backing or service grant');
+		assert.equal(lines[3], '197');
+		console.log(`BIOS-SETFIELD-NATIVE-GATE:PASS O${optLevel} (one generated growth exit, ${spent} firmware cycles, no allocation on overwrite)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

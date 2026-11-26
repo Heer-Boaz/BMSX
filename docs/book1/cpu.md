@@ -1536,11 +1536,12 @@ replans the insertion using the surviving mappings. No table or new mapping
 is visible until its reservation succeeds. Interrupt entry and the following
 instruction wait until the request completes or raises its error.
 
-For a table-write instruction whose rebuild is spread over several CPU grants,
-the resident memory routine reserves the replacement storage before the rebuild
-begins. Device time advances while it reserves the blocks. The existing table
-still names its original storage during the reservation. A refused reservation
-does not publish a new capacity or mapping.
+When a table-write instruction needs replacement storage, the resident memory
+routine reserves it on ordinary CPU grants. Device time advances while it
+reserves the blocks. A refused reservation publishes no new capacity or
+mapping. When the routine also performs the resize, it publishes the new
+storage and moves the entries before returning. The next instruction cannot
+observe a partly updated table.
 
 Logical and physical assists each request at most one work word per three
 remaining cycles of the issuing grant. Fewer than three cycles defer the

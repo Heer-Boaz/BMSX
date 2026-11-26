@@ -557,18 +557,20 @@ export class TableRecords {
 			if (index >= 0) {
 				this.adjustHashLive(words, hash, 1);
 				this.adjustIntegerBand(words, hash, keyTag, keyWord, 1);
-				if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
-				this.heap.writeTableAssignment(record, tag, word, key);
+				this.publishHashInsertion(record, key, tag, word);
 				return index;
 			}
 		}
 		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots, budget, undefined,
 			LuaAllocationRecovery.CurrentOrFresh, growthStage);
 		if (index === HASH_STORE_DECLINED || index === HASH_STORE_PENDING) return index;
-		if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
-		this.heap.writeTableAssignment(record, tag, word, key);
+		this.publishHashInsertion(record, key, tag, word);
 		return index;
+	}
+	private publishHashInsertion(record: number, key: Value, tag: ValueTag, word: number): void {
+		if (key === this.newIndexKey) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
+		this.heap.writeTableAssignment(record, tag, word, key);
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
 		this.set(record, valueFromTag(keyTag, keyWord), valueFromTag(tag, word));
@@ -810,17 +812,19 @@ export class TableRecords {
 	}
 	// Resume the loop after a refused preferred plan, not the table lookup or
 	// the __newindex dispatch that selected this receiver.
-	public retryStagedGrowth(record: number, key: Value, value: Value, budget: CPU,
+	public retryTableGrowth(record: number, key: Value, value: Value, budget: CPU,
 		stage: HeapServiceTableGrowthStage, parkExtraSlots: number, sourceCycles: number): number {
 		const policy = stage === HeapServiceTableGrowthStage.Scheduled ? HashStore.Scheduled : HashStore.Resume;
 		const slot = this.insertHashWithAdmission(record, key, value, policy, 0, budget, undefined,
 			LuaAllocationRecovery.CurrentOrFresh, stage, parkExtraSlots, sourceCycles);
 		if (slot === HASH_STORE_DECLINED || slot === HASH_STORE_PENDING) return slot;
-		if (key === this.newIndexKey) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
-		this.heap.writeTableAssignment(record, valueTag(value), valuePayload(value), key);
+		this.finishResizedAssignment(record, key, value);
+		return slot;
+	}
+	public finishResizedAssignment(record: number, key: Value, value: Value): void {
+		this.publishHashInsertion(record, key, valueTag(value), valuePayload(value));
 		const index = this.getArrayIndex(key);
 		if (index >= 0) this.updateLengthHint(record, index, true);
-		return slot;
 	}
 	public installTableRebuild(j: TableRebuild, record: number, key: Value, value: Value,
 		array: number, hash: number, keepHash: boolean, storage: number, base: number): void {
@@ -841,8 +845,9 @@ export class TableRecords {
 		const memory = this.heap.memory, arena = this.heap.arena;
 		const oldBase = this.arrayAddress(record), stagedGrowth = oldArray >= 1024 && array > oldArray;
 		const staged = stagedGrowth || (oldArray >= 1024 && array < oldArray) || (oldHash > 64 && (oldArray === array || !oldArray) && !keepHash);
-		if (staged && budget && growthStage !== HeapServiceTableGrowthStage.Idle
-			&& budget.beginStagedTableGrowth(record, key, value, array, hash, keepHash, stagedGrowth, extraHashSlots, parkExtraSlots, growthStage))
+		if (budget && growthStage !== HeapServiceTableGrowthStage.Idle
+			&& budget.beginTableGrowthReservation(record, key, value, array, hash, keepHash, staged, stagedGrowth,
+				previous, requested, extraHashSlots, parkExtraSlots, growthStage))
 			return HASH_STORE_PENDING;
 		const storage = keepHash ? oldWords : hash ? arena.allocate(TableRecords.hashStorageBytes(hash), true) : 0;
 		if (hash && !storage) return HASH_STORE_DECLINED;

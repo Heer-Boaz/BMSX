@@ -16,9 +16,12 @@ static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObj
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_RECORD_CONTROL_OFFSET);
 static_assert(HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Budget) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
+static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
+static_assert(HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage) + sizeof(u32)
+	== HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET);
+static_assert(HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET + static_cast<u32>(HeapServiceTableResizeContextField::HashBytes) + sizeof(u32)
+	<= HEAP_SERVICE_THREAD_OFFSET);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();

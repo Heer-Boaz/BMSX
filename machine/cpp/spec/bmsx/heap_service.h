@@ -14,7 +14,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, Count,
+	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, Count,
 };
 using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
 
@@ -59,9 +59,8 @@ enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
 
 constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50u;
 enum class HeapServiceTableGrowthField : uint32_t {
-	Stage = 0, Receiver = 4, KeyTag = 8, KeyWord = 12, ValueTag = 16, ValueWord = 20,
-	ArraySlots = 24, HashSlots = 28, KeepHash = 32, ExtraSlots = 36, ParkExtraSlots = 40,
-	InstructionPc = 44, LastPc = 48, NextPc = 52, Budget = 56,
+	Stage = 0, Receiver = 4, ArraySlots = 8, HashSlots = 12, ExtraSlots = 16, ParkExtraSlots = 20,
+	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
 };
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
 
@@ -118,5 +117,9 @@ enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, P
 
 constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET = 0x760;
 enum class HeapServiceTableGrowthResultField : uint32_t { HashStorage = 0, ArrayStorage = 4 };
+constexpr uint32_t HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
+enum class HeapServiceTableResizeContextField : uint32_t {
+	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
+};
 
 } // namespace bmsx

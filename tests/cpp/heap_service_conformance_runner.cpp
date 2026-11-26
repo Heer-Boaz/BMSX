@@ -212,11 +212,16 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'N' && opcode != 'C') throw std::runtime_error("Expected generated NEWT or CLOSURE");
+					if (opcode != 'N' && opcode != 'C' && opcode != 'F')
+						throw std::runtime_error("Expected generated NEWT, CLOSURE or SETFIELD");
 					const bool createTable = opcode == 'N';
-					const auto gate = createTable ? NativeBlockExit::AllocateTable : NativeBlockExit::CreateClosure;
-					const auto expectedStage = createTable ? HeapServiceRecordStage::Scheduled : HeapServiceRecordStage::Direct;
-					const auto expectedKind = createTable ? HeapServiceRecordKind::Table : HeapServiceRecordKind::CanonicalClosure;
+					const bool growField = opcode == 'F';
+					const auto gate = growField ? NativeBlockExit::WriteField
+						: createTable ? NativeBlockExit::AllocateTable : NativeBlockExit::CreateClosure;
+					const u32 expectedStage = growField ? static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)
+						: static_cast<u32>(createTable ? HeapServiceRecordStage::Scheduled : HeapServiceRecordStage::Direct);
+					const u32 expectedKind = growField ? 1u
+						: static_cast<u32>(createTable ? HeapServiceRecordKind::Table : HeapServiceRecordKind::CanonicalClosure);
 					cpu.prepareSystemNativeCode();
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
@@ -225,16 +230,22 @@ int main(int argc, char** argv) {
 					for (int grant = 0; grant < 8 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
 						result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
 					const u32 management = cpu.heapAllocator().managementOffset();
-					const auto stage = memory.readRamRecordWord(management + HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage));
-					const auto kind = memory.readRamRecordWord(management + HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind));
+					const auto stage = memory.readRamRecordWord(management + (growField
+						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Stage)
+						: HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage)));
+					const auto kind = memory.readRamRecordWord(management + (growField
+						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate)
+						: HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind)));
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once");
 					if (result != RunResult::Yielded || !cpu.heapServiceActive()
-						|| stage != static_cast<u32>(expectedStage) || kind != static_cast<u32>(expectedKind)
+						|| stage != expectedStage || kind != expectedKind
 						|| cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.readCurrentInstructionPc())
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
-					std::cout << allocation.entries - before.entries << ' ' << stage << ' ' << kind << '\n';
+					std::cout << allocation.entries - before.entries << ' ' << stage << ' ' << kind;
+					if (growField) std::cout << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
+					std::cout << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
 #endif

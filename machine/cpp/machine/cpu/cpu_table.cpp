@@ -127,28 +127,43 @@ bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value,
 	return true;
 }
 
-bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, u32 array, u32 hash, bool keepHash, bool stagedGrowth,
-	u8 extraSlots, u8 parkExtraSlots, HeapServiceTableGrowthStage stage) {
-	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveTableGrowth)];
+bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, const TableRecord::ResizePlan& plan, u32 previous,
+	u32 requested, bool staged, bool stagedGrowth, u8 extraSlots, u8 parkExtraSlots, HeapServiceTableGrowthStage stage) {
+	const auto operation = staged ? HeapServiceOperation::ReserveTableGrowth : HeapServiceOperation::ResizeTable;
+	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(operation)];
 	if (function == 0u) return false;
 	const u32 management = m_heapAllocator.managementOffset();
 	const u32 base = management + HEAP_SERVICE_TABLE_GROWTH_OFFSET;
+	const u32 array = static_cast<u32>(plan.array), hash = static_cast<u32>(plan.hash);
+	const u32 hashBytes = TableRecord::hashStorageBytes(hash), keepHash = static_cast<u32>(plan.keepHash);
+	const u32 keyTag = static_cast<u32>(valueTag(key)), keyWord = valuePayload(key);
+	const u32 valueTagWord = static_cast<u32>(valueTag(value)), valueWord = valuePayload(value);
+	const u32 context = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
 	CallFrame& frame = *m_activeThread->currentFrame;
 	const u32 nextPc = allocationParked() ? m_pendingAllocation.nextPc : frame.readControl(FrameField::Pc);
-	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Receiver), receiver);
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::KeyTag), static_cast<u32>(valueTag(key)), valuePayload(key));
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ValueTag), static_cast<u32>(valueTag(value)), valuePayload(value));
+	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::Stage), static_cast<u32>(stage), receiver);
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ArraySlots), array, hash);
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::KeepHash), static_cast<u32>(keepHash), extraSlots);
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ParkExtraSlots), parkExtraSlots, m_currentInstructionPc);
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::LastPc), lastPc, nextPc);
-	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Budget),
+	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ExtraSlots), extraSlots, parkExtraSlots);
+	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::InstructionPc), m_currentInstructionPc, lastPc);
+	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::NextPc), nextPc,
 		extraSlots != 0u ? static_cast<u32>(std::max(instructionBudgetRemaining, 0)) : 0u);
-	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Stage), static_cast<u32>(stage));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate), static_cast<u32>(!staged));
+	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyTag), keyTag, keyWord);
+	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag), valueTagWord, valueWord);
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
-	const std::array args{m_heapAllocator.stateOffset(), receiver, array, hash, TableRecord::hashStorageBytes(hash),
-		static_cast<u32>(keepHash), static_cast<u32>(stagedGrowth), management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET};
-	beginHeapService(function, args);
+	const u32 result = management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET;
+	if (staged) {
+		m_memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash);
+		const std::array args{m_heapAllocator.stateOffset(), receiver, array, hash, hashBytes, keepHash,
+			static_cast<u32>(stagedGrowth), result};
+		beginHeapService(function, args);
+	} else {
+		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::Previous), previous, requested);
+		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash, hashBytes);
+		const std::array args{m_heapAllocator.stateOffset(), management + HEAP_GC_CONTROL_OFFSET, management + HEAP_LOGICAL_OCCUPIED_OFFSET,
+			receiver, array, hash, result};
+		beginHeapService(function, args);
+	}
 	return true;
 }
 
@@ -159,10 +174,11 @@ void CPU::finishTableGrowthReservation() {
 	const auto stage = static_cast<HeapServiceTableGrowthStage>(m_memory.readRamRecordWord(stageAddress));
 	if (stage == HeapServiceTableGrowthStage::Idle) return;
 	const u32 receiver = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Receiver));
-	const Value key = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::KeyTag))),
-		m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::KeyWord)));
-	const Value value = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ValueTag))),
-		m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ValueWord)));
+	const u32 context = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
+	const Value key = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyTag))),
+		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyWord)));
+	const Value value = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag))),
+		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueWord)));
 	m_currentInstructionPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::InstructionPc));
 	lastPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::LastPc));
 	m_lastExecutionDomainId = m_activeExecutionDomainId;
@@ -171,10 +187,15 @@ void CPU::finishTableGrowthReservation() {
 	m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceTableGrowthStage::Idle));
 	TableRecord table(m_heap, receiver);
 	if (heapServiceResult() != 0u) {
+		if (m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate)) != 0u) {
+			table.finishHashInsertion(key, value);
+			frame.writeControl(FrameField::Pc, nextPc);
+			return;
+		}
 		const TableRecord::ResizePlan plan{
 			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ArraySlots)),
 			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::HashSlots)),
-			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::KeepHash)) != 0u,
+			m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash)) != 0u,
 		};
 		const u32 result = management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET;
 		table.installStagedGrowth(*this, plan,
@@ -189,7 +210,7 @@ void CPU::finishTableGrowthReservation() {
 	frame.writeControl(FrameField::Pc, nextPc);
 	if (m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ExtraSlots)) != 0u) {
 		const int budget = static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Budget)));
-		if (table.retryStagedGrowth(*this, stage, key, value, parkExtra, budget) != TableRecord::HASH_STORE_DECLINED) return;
+		if (table.retryGrowth(*this, stage, key, value, parkExtra, budget) != TableRecord::HASH_STORE_DECLINED) return;
 	}
 	if (stage == HeapServiceTableGrowthStage::Scheduled) {
 		parkTableWrite(frame, receiver, key, value, parkExtra);

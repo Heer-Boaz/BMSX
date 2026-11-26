@@ -224,6 +224,7 @@ private:
 	void beginPaceCredit(u32 estimate, u32 runwayShift);
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);
+	friend class TableRecord;
 	CPU& m_cpu;
 	void setPhase(GcPhase phase) { memory.writeRamRecordByte(m_controlOffset, static_cast<u8>(phase)); }
 	StringPool& m_stringPool;
