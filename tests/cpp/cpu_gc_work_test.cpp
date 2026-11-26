@@ -958,6 +958,25 @@ void weakKeysTraceStrongValues() {
 	require(heap.tableRecordAddress(value.address()) == 0u, "the dropped entry cannot retain its value in the next cycle");
 }
 
+void weakHashClearingOnlyMarksSurvivingStrings() {
+	Machine machine(image(), true);
+	auto& cpu = machine.cpu;
+	auto& strings = cpu.stringPool();
+	auto weak = cpu.createTable(0, 8), meta = cpu.createTable(0, 1);
+	auto& frame = *cpu.rootThread()->currentFrame;
+	frame.registers.set(0, valueTable(weak.address())); frame.setTop(1);
+	meta.setStringKey(strings.intern("__mode"), valueString(strings.intern("kv")));
+	weak.setMetatableAddress(meta.address());
+	weak.setStringKey(strings.intern("orphan key"), valueTable(cpu.createTable().address()));
+	weak.set(valueTable(cpu.createTable().address()), valueString(strings.intern("orphan value")));
+	const auto key = strings.intern("retained key"), value = strings.intern("retained value");
+	weak.setStringKey(key, valueString(value));
+	cpu.collectHeap();
+	require(!strings.find("orphan key") && !strings.find("orphan value"), "dead pairs do not retain either string");
+	require(strings.find("retained key") == key && strings.find("retained value") == value
+		&& weak.getStringKey(key) == valueString(value), "surviving weak pairs retain both strings");
+}
+
 void weakValuesSkipMarkingStorageWithoutStrongEdges() {
 	for (bool bothWeak : {false, true}) {
 		Machine machine(image(), true);
@@ -1800,7 +1819,7 @@ int main(int argc, char** argv) {
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();
-		weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
+		weakHashClearingOnlyMarksSurvivingStrings(); weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); strongWritesLeaveLargeTablesOutOfFinalRemark(false); strongWritesLeaveLargeTablesOutOfFinalRemark(true);
 		automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();

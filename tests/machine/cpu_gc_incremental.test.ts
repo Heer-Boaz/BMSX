@@ -524,6 +524,25 @@ test('weak keys still trace strong values while weak keys and values release a c
 	assert.equal(gc.tableRecordAddress(value), 0);
 });
 
+test('weak hash clearing marks strings only when their whole entry survives', () => {
+	const cpu = machine(), { gc, stringPool } = cpu, tables = gc.tables;
+	const weak = cpu.createTable(0, 8), meta = cpu.createTable(0, 1);
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setTable(0, weak); frame.top = 1;
+	tables.setStringKey(meta, stringPool.intern('__mode'), valueString(stringPool.intern('kv')));
+	tables.setMetatableAddress(weak, meta);
+	tables.setStringKey(weak, stringPool.intern('orphan key'), valueTable(cpu.createTable()));
+	tables.set(weak, valueTable(cpu.createTable()), valueString(stringPool.intern('orphan value')));
+	const key = stringPool.intern('retained key'), value = stringPool.intern('retained value');
+	tables.setStringKey(weak, key, valueString(value));
+	gc.collect();
+	assert.equal(stringPool.find('orphan key'), undefined);
+	assert.equal(stringPool.find('orphan value'), undefined);
+	assert.equal(stringPool.find('retained key'), key);
+	assert.equal(stringPool.find('retained value'), value);
+	assert.equal(tables.getStringKey(weak, key), valueString(value));
+});
+
 test('weak values skip marking storage that has no strong edges', () => {
 	for (const bothWeak of [false, true]) {
 		const cpu = machine(), { gc, stringPool } = cpu, tables = gc.tables;

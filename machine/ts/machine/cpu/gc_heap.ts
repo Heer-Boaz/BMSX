@@ -106,10 +106,6 @@ export class GcHeap {
 			default: return true;
 		}
 	};
-	private readonly weakStrings = (key: Value, value: Value): void => {
-		if (valueTag(key) === ValueTag.String) this.markString(valuePayload(key));
-		if (valueTag(value) === ValueTag.String) this.markString(valuePayload(value));
-	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory,
 		public readonly arena: HeapAllocator, private readonly modeKey: StringId, newIndexKey: StringId) {
 		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
@@ -692,10 +688,6 @@ export class GcHeap {
 		this.setPhase(GcPhase.Sweep);
 		return work;
 	}
-	private clearWeakRange(table: number, mode: number, first: number, end: number): void {
-		this.tables.clearWeakEntries(table, (mode & 1) !== 0, (mode & 2) !== 0, this.alive, first, end);
-		this.tables.forEachStoredEntry(table, this.weakStrings, first, end);
-	}
 	private clearWeakQuantum(limit: number): number {
 		this.diagnostics?.phase('weakNanoseconds');
 		let work = 0;
@@ -720,7 +712,7 @@ export class GcHeap {
 			while (next < end && work < limit) {
 				const entryWords = next < array ? 1 : 2;
 				const stop = Math.min(next < array ? array : end, next + Math.max(1, ((limit - work) / (2 * entryWords)) | 0));
-				this.clearWeakRange(record, mode, next, stop);
+				this.tables.clearWeakEntries(record, (mode & 1) !== 0, (mode & 2) !== 0, this.alive, next, stop);
 				work += (stop - next) * entryWords + this.cpu.stringPool.takeMarkWork();
 				next = stop;
 			}

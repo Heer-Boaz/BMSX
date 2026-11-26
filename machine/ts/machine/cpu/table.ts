@@ -807,18 +807,29 @@ export class TableRecords {
 	}
 	public clearWeakEntries(record: number, weakKeys: boolean, weakValues: boolean, isAlive: StoredValuePredicate,
 		first = 0, end = this.storedSlotCount(record)): void {
+		const memory = this.heap.memory;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
-		if (weakValues) {
-			const base = this.arrayAddress(record);
-			for (let slot = first; slot < Math.min(array, end); ++slot) {
-				const element = this.arrayValue(record, slot);
-				if (!isNil(element) && !isAlive(element)) this.writeSlot(base, base + array * 4, slot, ValueTag.Nil, 0);
-			}
+		const base = this.arrayAddress(record), arrayTags = base + array * 4;
+		for (let slot = first; slot < Math.min(array, end); ++slot) {
+			const tag = memory.readRamRecordByte(arrayTags + slot);
+			if (tag === ValueTag.Nil) continue;
+			const word = memory.readRamRecordWord(base + slot * 4);
+			if (weakValues && !isAlive(valueFromTag(tag, word))) {
+				this.writeSlot(base, arrayTags, slot, ValueTag.Nil, 0);
+			} else if (tag === ValueTag.String) this.heap.markString(word);
 		}
+		const words = this.hashAddress(record), tags = words + 8 * hash;
 		for (let key = Math.max(first - array, 0); key < Math.min(hash, end - array); ++key) {
 			const value = key + hash;
-			if (this.tagAt(record, key) === ValueTag.Nil || this.tagAt(record, value) === ValueTag.Nil) continue;
-			if ((weakKeys && !isAlive(this.valueAt(record, key))) || (weakValues && !isAlive(this.valueAt(record, value)))) this.markHashNodeDead(record, key);
+			const kt = memory.readRamRecordByte(tags + key), vt = memory.readRamRecordByte(tags + value);
+			if (kt === ValueTag.Nil || vt === ValueTag.Nil) continue;
+			const kw = memory.readRamRecordWord(words + key * 4), vw = memory.readRamRecordWord(words + value * 4);
+			if ((weakKeys && !isAlive(valueFromTag(kt, kw))) || (weakValues && !isAlive(valueFromTag(vt, vw)))) {
+				this.markHashNodeDead(record, key);
+			} else {
+				if (kt === ValueTag.String) this.heap.markString(kw);
+				if (vt === ValueTag.String) this.heap.markString(vw);
+			}
 		}
 	}
 	public next(record: number, rawAfter: Value, target: ValueWriteTarget, destination: number): void {

@@ -157,11 +157,11 @@ public:
 		u32 first = 0u, u32 end = UINT32_MAX) {
 		const u32 array = arrayCapacity(), hash = hashSlots();
 		const auto slots = values();
-		if (weakValues) {
-			for (u32 slot = first; slot < std::min(array, end); ++slot) {
-				const Value value = slots.get(slot);
-				if (!isNil(value) && !valueIsAlive(value)) slots.set(slot, valueNil());
-			}
+		for (u32 slot = first; slot < std::min(array, end); ++slot) {
+			const Value value = slots.get(slot);
+			if (isNil(value)) continue;
+			if (weakValues && !valueIsAlive(value)) slots.set(slot, valueNil());
+			else if (valueIsString(value)) m_heap->markString(asStringId(value));
 		}
 		const auto nodes = hashBody(hash).slots;
 		for (u32 slot = std::max(first, array); slot < std::min(array + hash, end); ++slot) {
@@ -170,12 +170,12 @@ public:
 			if (isNil(key) || isNil(value)) {
 				continue;
 			}
-			const bool keyIsAlive = !weakKeys || valueIsAlive(key);
-			const bool valueIsStillAlive = !weakValues || valueIsAlive(value);
-			if (keyIsAlive && valueIsStillAlive) {
-				continue;
+			if ((weakKeys && !valueIsAlive(key)) || (weakValues && !valueIsAlive(value))) {
+				markHashNodeDead(slot - array);
+			} else {
+				if (valueIsString(key)) m_heap->markString(asStringId(key));
+				if (valueIsString(value)) m_heap->markString(asStringId(value));
 			}
-			markHashNodeDead(slot - array);
 		}
 	}
 	// Returns inspected Value slots; a nil output key denotes exhaustion.

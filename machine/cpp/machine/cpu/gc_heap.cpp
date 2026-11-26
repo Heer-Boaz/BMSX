@@ -750,15 +750,6 @@ size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedR
 	return work;
 }
 
-void GcHeap::clearWeakRange(TableRecord& table, u8 mode, u32 first, u32 end) {
-	table.clearWeakEntries((mode & kTableWeakKeys) != 0u, (mode & kTableWeakValues) != 0u,
-		[this](Value value) { return valueIsAlive(value); }, first, end);
-	table.forEachEntry([this](Value key, Value value) {
-		if (valueIsString(key)) markString(asStringId(key));
-		if (valueIsString(value)) markString(asStringId(value));
-	}, first, end);
-}
-
 size_t GcHeap::clearWeakQuantum(size_t limit) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	GcPhaseMeasurement weakTime(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
@@ -789,7 +780,8 @@ size_t GcHeap::clearWeakQuantum(size_t limit) {
 			const u32 entryWords = next < array ? 1u : 2u;
 			const u32 stop = std::min(next < array ? array : end,
 				next + static_cast<u32>(std::max(size_t{1}, (limit - work) / (2u * entryWords))));
-			clearWeakRange(table, mode, next, stop);
+			table.clearWeakEntries((mode & kTableWeakKeys) != 0u, (mode & kTableWeakValues) != 0u,
+				[this](Value value) { return valueIsAlive(value); }, next, stop);
 			work += (stop - next) * entryWords + m_stringPool.takeMarkWork();
 			next = stop;
 		}

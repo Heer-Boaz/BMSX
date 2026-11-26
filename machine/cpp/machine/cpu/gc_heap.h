@@ -176,7 +176,6 @@ private:
 	void setRemarkStage(RemarkStage stage) {
 		memory.writeRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE, static_cast<u32>(stage) << GC_GRAY_INDEX_BITS);
 	}
-	void clearWeakRange(TableRecord& table, u8 mode, u32 first, u32 end);
 	size_t clearWeakQuantum(size_t limit);
 	u32 objectRecordAddress(u32 address, u8 kind) const;
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
