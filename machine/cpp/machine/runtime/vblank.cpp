@@ -20,14 +20,14 @@ bool VblankState::hasDeferredPressure(const Runtime& runtime) const {
 	return runtime.machine.memory.readRamRecordWord(deferredPressureAddress(runtime)) != 0u;
 }
 
-bool VblankState::stepDeferredPressure(Runtime& runtime) {
+bool VblankState::admitDeferredPressure(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	auto& memory = runtime.machine.memory;
 	const u32 address = deferredPressureAddress(runtime);
 	const u32 pending = memory.readRamRecordWord(address);
 	if (pending == 0u) return false;
-	cpu.gcHeap().assistPhysicalPressureAtTick();
 	memory.writeRamRecordWord(address, pending - 1u);
+	cpu.admitPhysicalPressureAtTick();
 	return true;
 }
 
@@ -83,12 +83,12 @@ void VblankState::completeTickIfPending(Runtime& runtime, FrameState& frameState
 	auto& memory = runtime.machine.memory;
 	const u32 address = deferredPressureAddress(runtime);
 	const u32 pending = memory.readRamRecordWord(address);
-	// A service can stop between allocator writes. Keep one legacy
+	// A service can stop between allocator writes. Keep one
 	// pressure opportunity per tick, not a sample of the torn arena.
 	if (cpu.heapServiceActive() || cpu.allocationParked() || pending != 0u) {
 		// An explicit collection skips this edge instead of deferring an assist.
 		if (cpu.gcHeap().fullEpochs() == 0u) memory.writeRamRecordWord(address, pending + 1u);
-	} else cpu.gcHeap().assistPhysicalPressureAtTick();
+	} else cpu.admitPhysicalPressureAtTick();
 }
 
 } // namespace bmsx

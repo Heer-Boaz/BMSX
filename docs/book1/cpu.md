@@ -1476,17 +1476,19 @@ Logical capacity still applies throughout the collection.
 
 The collector also compares unoccupied physical heap space with recent
 growth in physical occupancy and the remaining collection work. At a
-completed display tick, physical pressure can advance marking or reclamation
-by one additional quantum. If the CPU is waiting for an interrupt and marking
-is already in progress, the marker receives a grant of four quanta instead.
-It can yield earlier at a phase boundary. The interrupt wait alone does not
-start collection or advance the final remark. A collection started by physical
-pressure can finish over later ticks without further allocation. The
-display-tick assist does not advance the console clock. When scheduled
-execution resumes with a final remark pending, revisiting threads and weak
-tables, scanning roots, tracing, and weak-entry removal run on ordinary CPU
-grants. Free space may be separated by retained allocations, so enough
-unoccupied bytes does not guarantee that an allocation of that size will fit.
+completed display tick, physical pressure can admit one additional quantum
+of marking or reclamation. If the CPU is waiting for an interrupt and marking
+is already in progress, the allowance is four quanta instead. Work can stop
+earlier at a phase boundary. The interrupt wait alone does not start collection
+or advance the final remark. The display tick admits the work; the memory
+routine then uses ordinary CPU cycles while devices continue to advance.
+Interrupt entry waits for the routine to return. A collection started by
+physical pressure can finish over later ticks without further allocation.
+When scheduled execution resumes with a final remark pending, revisiting
+threads and weak tables, scanning roots, tracing, and weak-entry removal also
+run on ordinary CPU grants. Free space may be separated by retained
+allocations, so enough unoccupied bytes does not guarantee that an allocation
+of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
@@ -1542,9 +1544,9 @@ CPU cycles of the resident routine during a full collection. This also applies w
 program replacement requests a collection to free its static region.
 If an allocation fails and the issuing instruction performs emergency
 collection before retrying, it pays the same price for that work, even if
-the retry fails. Vertical blanking maintenance and stopped-clock recovery do
-not debit its grant. A physical pressure opportunity during timed recovery
-is deferred until the pending allocation retires, so it cannot change the
+the retry fails. The display-tick assist uses its own CPU grants and is not
+charged to the issuing instruction. A physical pressure opportunity during
+timed recovery is deferred until the pending allocation retires, so it cannot change the
 collection-and-retry order.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}

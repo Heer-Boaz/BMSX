@@ -235,6 +235,18 @@ int main(int argc, char** argv) {
 					std::cout << scheduler.nowCycles() << '\n';
 					break;
 				}
+				case 'p': {
+					i64 cycles;
+					trace >> cycles;
+					auto& frames = runtime.frameScheduler;
+					const auto before = scheduler.nowCycles();
+					const auto tick = frames.lastTickSequence;
+					const bool completed = frames.runCyclesToNextLogicalTick(runtime, cycles);
+					std::cout << completed << ' ' << scheduler.nowCycles() - before << ' '
+						<< frames.lastTickSequence - tick << ' ' << cpu.heapServiceActive() << ' '
+						<< static_cast<u32>(cpu.gcHeap().serviceStage()) << ' ' << cpu.isHaltedUntilIrq() << '\n';
+					break;
+				}
 				case 'A': {
 					u32 bytes;
 					trace >> bytes;

@@ -886,7 +886,7 @@ export class GcHeap {
 		return work;
 	}
 
-	public assistPhysicalPressureAtTick(): void {
+	public assistPhysicalPressureAtTick(services: Uint32Array | null = null): void {
 		if (this.cpu.tableRebuild.record) return;
 		if (this.fullEpochs()) return;
 		const occupied = this.arena.occupiedBytes();
@@ -906,7 +906,8 @@ export class GcHeap {
 			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 1);
 		}
 		const idleMark = (current === GcPhase.Mark || current === GcPhase.MarkAgain) && this.cpu.isHaltedUntilIrq();
-		this.step(valueNil(), valueNil(), valueNil(), 0, false, idleMark ? 4 * GC_STEP_WORDS : GC_STEP_WORDS);
+		this.step(valueNil(), valueNil(), valueNil(), 0, false, idleMark ? 4 * GC_STEP_WORDS : GC_STEP_WORDS,
+			HeapServiceGcStage.PressureStringSweep, services);
 	}
 
 	private beginPaceCredit(estimate: number, runwayShift: number): void {
@@ -965,8 +966,9 @@ export class GcHeap {
 			if (work < limit && (stopBeforeStrings || stopBeforeObjects)) {
 				const phase = this.phase();
 				if (stopBeforeObjects && phase === GcPhase.Sweep) {
-					const stage = stringSweepStage === HeapServiceGcStage.FullStringSweep
-						? HeapServiceGcStage.FullObjectSweep : HeapServiceGcStage.AllocationRecoveryObjectSweep;
+					const stage = stringSweepStage === HeapServiceGcStage.FullStringSweep ? HeapServiceGcStage.FullObjectSweep
+						: stringSweepStage === HeapServiceGcStage.PressureStringSweep ? HeapServiceGcStage.PressureObjectSweep
+							: HeapServiceGcStage.AllocationRecoveryObjectSweep;
 					this.beginObjectSweep(objectSweepFunction, stage, occupied, work, limit);
 					return work;
 				}
@@ -1346,7 +1348,9 @@ export class GcHeap {
 		const limit = memory.readRamRecordWord(base + HeapServiceGcField.QuantumLimit);
 		if (work < limit && memory.readRamRecordWord(this.controlOffset + GC_SWEEP_LINK) === 0) {
 			this.beginStrings();
-			const stringStage = full ? HeapServiceGcStage.FullStringSweep : HeapServiceGcStage.AllocationRecoveryStringSweep;
+			const stringStage = full ? HeapServiceGcStage.FullStringSweep
+				: stage === HeapServiceGcStage.PressureObjectSweep ? HeapServiceGcStage.PressureStringSweep
+					: HeapServiceGcStage.AllocationRecoveryStringSweep;
 			memory.writeRamRecordWord(base + HeapServiceGcField.PrefixWork, work);
 			memory.writeRamRecordWord(base + HeapServiceGcField.Stage, stringStage);
 			this.runStringSweep(stringFunction, limit - work, memory.readRamRecordWord(context + HeapServiceObjectSweepField.MirrorPolicy));

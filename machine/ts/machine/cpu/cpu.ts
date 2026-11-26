@@ -813,6 +813,10 @@ export class CPU implements MappedPageInvalidator {
 		this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
 	}
 
+	public admitPhysicalPressureAtTick(): void {
+		this.gc.assistPhysicalPressureAtTick(this.systemImage.heapServiceFunctions);
+	}
+
 	private finishAllocationRecovery(): void {
 		if (this.gc.active()) return;
 		const write = this.pendingAllocation!;
@@ -2298,12 +2302,14 @@ export class CPU implements MappedPageInvalidator {
 								this.gc.finishWeakQuantum();
 								break;
 							case HeapServiceGcStage.FullObjectSweep:
+							case HeapServiceGcStage.PressureObjectSweep:
 							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
 								const services = this.systemImage.heapServiceFunctions!;
 								this.gc.finishObjectSweep(gcStage, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
 								break;
 							}
 							case HeapServiceGcStage.FullStringSweep:
+							case HeapServiceGcStage.PressureStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
 								this.gc.finishStringSweep(gcStage);
 								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();

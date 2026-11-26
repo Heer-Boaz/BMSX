@@ -214,7 +214,8 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 			bool advancedDeadline = false;
-			while (cpu.isHaltedUntilIrq()) {
+			// A coherent VBlank can make the BIOS runnable without waking the caller.
+			while (cpu.isHaltedUntilIrq() && !cpu.heapServiceActive()) {
 				if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 				if (machine.gxGpu.backendServiceBlocksMachine()) {
 					return CpuSuspendedRunResult::Halted;
@@ -232,7 +233,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				}
 				const i64 cyclesToDeadline = std::min(haltedDeadline, endCycle) - scheduler.nowCycles();
 				if (cyclesToDeadline <= 0) {
-					if (runDueRuntimeTimers(runtime)) {
+					if (runDueRuntimeTimers(runtime) && !cpu.heapServiceActive()) {
 						return CpuSuspendedRunResult::Halted;
 					}
 					continue;

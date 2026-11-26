@@ -94,6 +94,7 @@
 		"test:bios-gc-mark-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_mark_service.ts",
 		"test:bios-gc-remark-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_remark_service.ts",
 		"test:bios-gc-root-banks-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_root_banks_service.ts",
+		"test:bios-gc-pressure-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_pressure_service.ts",
 		"test:bios-gc-capture-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_capture_trace.ts",
 		"test:bios-gc-thread-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_thread_trace.ts",
 		"test:bios-gc-object-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_object_service.ts",

@@ -107,8 +107,9 @@ export class FrameSchedulerState {
 			// A parked instruction owns its recovery and retry even when a
 			// device edge occurred during the timed part of that recovery.
 			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
-		} else if (runtime.vblank.stepDeferredPressure()) return Pulse.Maintenance;
-		else if (heap.stoppedFinalMarkPending()) {
+		} else if (runtime.vblank.admitDeferredPressure()) {
+			if (!cpu.heapServiceActive()) return Pulse.Maintenance;
+		} else if (heap.stoppedFinalMarkPending()) {
 			cpu.advanceFinalMark();
 			if (!cpu.heapServiceActive()) return Pulse.Maintenance;
 		}

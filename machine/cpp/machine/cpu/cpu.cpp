@@ -2550,6 +2550,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 						m_heap.finishWeakQuantum();
 						break;
 					case HeapServiceGcStage::FullObjectSweep:
+					case HeapServiceGcStage::PressureObjectSweep:
 					case HeapServiceGcStage::AllocationRecoveryObjectSweep: {
 						const auto& services = m_systemImage->heapServiceFunctions;
 						m_heap.finishObjectSweep(gcStage,
@@ -2558,6 +2559,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 						break;
 					}
 					case HeapServiceGcStage::FullStringSweep:
+					case HeapServiceGcStage::PressureStringSweep:
 					case HeapServiceGcStage::AllocationRecoveryStringSweep:
 						m_heap.finishStringSweep(gcStage);
 						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();

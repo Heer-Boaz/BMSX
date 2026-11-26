@@ -54,6 +54,7 @@ enum class HeapServiceGcStage : uint32_t {
 	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
 	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
 	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
+	PressureStringSweep, PressureObjectSweep,
 };
 
 // Four Thread addresses followed by the seven root-bank descriptors.

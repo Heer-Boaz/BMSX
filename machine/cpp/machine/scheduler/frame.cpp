@@ -56,9 +56,11 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 			++m_maintenancePulseSequence;
 			return Pulse::Maintenance;
 		}
-	} else if (runtime.vblank.stepDeferredPressure(runtime)) {
-		++m_maintenancePulseSequence;
-		return Pulse::Maintenance;
+	} else if (runtime.vblank.admitDeferredPressure(runtime)) {
+		if (!cpu.heapServiceActive()) {
+			++m_maintenancePulseSequence;
+			return Pulse::Maintenance;
+		}
 	} else if (heap.stoppedFinalMarkPending()) {
 		cpu.advanceFinalMark();
 		if (!cpu.heapServiceActive()) {

@@ -27,14 +27,14 @@ export class VblankState {
 		return this.runtime.machine.memory.readRamRecordWord(this.deferredPressureAddress) !== 0;
 	}
 
-	/** Scheduler admission after a settled clock grant and a coherent heap. */
-	public stepDeferredPressure(): boolean {
+	/** Transfer one edge opportunity after the accepted clock grant settles. */
+	public admitDeferredPressure(): boolean {
 		const { cpu, memory } = this.runtime.machine;
 		const address = this.deferredPressureAddress;
 		const pending = memory.readRamRecordWord(address);
 		if (pending === 0) return false;
-		cpu.gc.assistPhysicalPressureAtTick();
 		memory.writeRamRecordWord(address, pending - 1);
+		cpu.admitPhysicalPressureAtTick();
 		return true;
 	}
 
@@ -94,11 +94,11 @@ export class VblankState {
 		const { cpu, memory } = runtime.machine;
 		const address = this.deferredPressureAddress;
 		const pending = memory.readRamRecordWord(address);
-		// A service can stop between allocator writes. Keep one legacy
+		// A service can stop between allocator writes. Keep one
 		// pressure opportunity per tick, not a sample of the torn arena.
 		if (cpu.heapServiceActive() || cpu.allocationParked() || pending !== 0) {
 			// As at the immediate assist, an explicit full epoch owns this edge.
 			if (cpu.gc.fullEpochs() === 0) memory.writeRamRecordWord(address, pending + 1);
-		} else cpu.gc.assistPhysicalPressureAtTick();
+		} else cpu.admitPhysicalPressureAtTick();
 	}
 }

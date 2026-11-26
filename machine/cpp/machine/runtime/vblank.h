@@ -11,7 +11,7 @@ class VblankState {
 public:
 	bool tickCompleted() const { return m_activeTickCompleted; }
 	bool hasDeferredPressure(const Runtime& runtime) const;
-	bool stepDeferredPressure(Runtime& runtime);
+	bool admitDeferredPressure(Runtime& runtime);
 	void reset(Runtime& runtime);
 	void prepareRestore();
 	void beginTick();
