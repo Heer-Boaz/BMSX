@@ -24,9 +24,11 @@ inline u32 testValueComparison(const Value (&operands)[2], const StringPool& str
 		}
 		if (valueIsString(left) && valueIsString(right)) {
 			const StringId a = asStringId(left), b = asStringId(right);
-			remainingCycles -= std::min(strings.byteLength(a), strings.byteLength(b));
-			const int order = strings.compare(a, b);
-			return op == OpCode::LT ? order < 0 : order <= 0;
+			const int an = strings.byteLength(a), bn = strings.byteLength(b), shared = std::min(an, bn);
+			remainingCycles -= shared;
+			const int order = strings.compareBytes(a, b, 0, shared);
+			if (order == 0) return op == OpCode::LT ? an < bn : an <= bn;
+			return order < 0;
 		}
 		return false;
 	}

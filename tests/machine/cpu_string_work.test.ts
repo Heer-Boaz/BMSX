@@ -296,8 +296,10 @@ test('RAM String reads and intern probes wrap at the physical seam', () => {
 	assert.equal(pool.bytes(mirror), bytes);
 	assert.equal(pool.byteAt(mirror, 8), 0);
 	assert.equal(pool.byteAt(mirror, 9), 0xf7);
-	assert.equal(pool.compare(mirror, straight), 0);
-	assert.ok(pool.compare(mirror, after) < 0);
+	assert.equal(pool.compareBytes(mirror, after, 6, 3), 0);
+	assert.equal(pool.compareBytes(mirror, after, 10, 3), 0);
+	assert.equal(pool.compareBytes(mirror, straight, 0, 13), 0);
+	assert.ok(pool.compareBytes(mirror, after, 6, 4) < 0);
 	for (const start of [6, 9]) {
 		const slice = pool.internSlice(mirror, start, 4), expected = bytes.slice(start, start + 4);
 		assert.equal(pool.bytes(slice), expected);
@@ -310,4 +312,9 @@ test('RAM String reads and intern probes wrap at the physical seam', () => {
 	memory.writeRamRecordWord(mirror + BLUA32_STRING_NEXT_OFFSET, memory.readRamRecordWord(bucket));
 	memory.writeRamRecordWord(bucket, mirror);
 	assert.equal(pool.find(bytes), mirror);
+	const second = mirror - 4;
+	for (let i = 0; i < 18; ++i) memory.writeRamRecordByte(second + BLUA32_STRING_RECORD_HEADER_SIZE + i, 0x80);
+	memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + 13, 0xff);
+	assert.equal(pool.compareBytes(mirror, second, 1, 12), 0);
+	assert.ok(pool.compareBytes(mirror, second, 1, 13) > 0);
 });

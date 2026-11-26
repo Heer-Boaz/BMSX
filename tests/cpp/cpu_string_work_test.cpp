@@ -94,7 +94,8 @@ void ramStringPorts() {
 		for (u32 i = 0; i < bytes.size(); ++i) memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + i, static_cast<u8>(bytes[i]));
 		require(pool.byteLength(mirror) == 13 && pool.toString(mirror) == bytes, "String length and data use the mirrored RAM port");
 		require(pool.byteAt(mirror, 8) == 0 && pool.byteAt(mirror, 9) == 0xf7, "byte reads cross the physical seam");
-		require(pool.compare(mirror, straight) == 0 && pool.compare(mirror, after) < 0, "String comparison visits mirrored bytes in order");
+		require(pool.compareBytes(mirror, after, 6, 3) == 0 && pool.compareBytes(mirror, after, 10, 3) == 0, "comparison only visits the supplied byte interval");
+		require(pool.compareBytes(mirror, straight, 0, 13) == 0 && pool.compareBytes(mirror, after, 6, 4) < 0, "String comparison visits mirrored bytes in order");
 		const auto slice = pool.internSlice(mirror, 6, 6);
 		require(pool.toString(slice) == bytes.substr(6, 6) && pool.intern(bytes.substr(6, 6)) == slice,
 			"a byte slice crossing the physical seam interns the same result as ordinary bytes");
@@ -113,6 +114,12 @@ void ramStringPorts() {
 		memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + 12u, '!');
 		require(pool.internConcat(prefix, 5, suffix, bytes.size() - 5) == straight,
 			"a matching stored hash cannot hide a mismatch in the wrapped suffix");
+		// The two payloads wrap after bytes 8 and 12 respectively.
+		const u32 second = mirror - 4;
+		for (u32 i = 0; i < 18; ++i) memory.writeRamRecordByte(second + BLUA32_STRING_RECORD_HEADER_SIZE + i, 0x80);
+		memory.writeRamRecordByte(mirror + BLUA32_STRING_RECORD_HEADER_SIZE + 13, 0xff);
+		require(pool.compareBytes(mirror, second, 1, 12) == 0 && pool.compareBytes(mirror, second, 1, 13) > 0,
+			"both independent RAM seams precede the unsigned mismatch");
 	}
 }
 

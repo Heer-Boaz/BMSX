@@ -117,20 +117,20 @@ std::string StringPool::toString(StringId id) const {
 	return text;
 }
 
-int StringPool::compare(StringId left, StringId right) const {
+int StringPool::compareBytes(StringId left, StringId right, size_t offset, size_t count) const {
 	if (left == right) return 0;
-	const auto a = readBytes(left), b = readBytes(right);
-	const size_t limit = std::min(a.size(), b.size());
-	const size_t shared = std::min({limit, a.first.size(), b.first.size()});
-	if (shared != 0) {
-		const int order = std::memcmp(a.first.data(), b.first.data(), shared);
+	auto a = readBytes(left, offset, count), b = readBytes(right, offset, count);
+	while (count != 0) {
+		const size_t n = std::min(a.first.size(), b.first.size());
+		const int order = std::memcmp(a.first.data(), b.first.data(), n);
 		if (order != 0) return order;
+		count -= n;
+		a.first.remove_prefix(n);
+		b.first.remove_prefix(n);
+		if (a.first.empty()) a.first = a.wrapped;
+		if (b.first.empty()) b.first = b.wrapped;
 	}
-	for (size_t i = shared; i < limit; ++i) {
-		const int delta = static_cast<int>(a.byteAt(i)) - static_cast<int>(b.byteAt(i));
-		if (delta != 0) return delta;
-	}
-	return (a.size() > b.size()) - (a.size() < b.size());
+	return 0;
 }
 
 void StringPool::clearRomTables() {

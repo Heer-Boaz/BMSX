@@ -3274,8 +3274,9 @@ export class CPU implements MappedPageInvalidator {
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) === NumericOrder.Less;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
-						this.charge(Math.min(this.stringPool.byteLength(l), this.stringPool.byteLength(r)));
-						ok = this.stringPool.compare(l, r) < 0;
+						const ln = this.stringPool.byteLength(l), rn = this.stringPool.byteLength(r), shared = Math.min(ln, rn);
+						this.charge(shared);
+						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) < 0;
 					}
 					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}
@@ -3334,8 +3335,9 @@ export class CPU implements MappedPageInvalidator {
 					if (valueIsNumber(left) && valueIsNumber(right)) ok = compareNumbers(left, right) <= NumericOrder.Equal;
 					else if (valueTag(left) === ValueTag.String && valueTag(right) === ValueTag.String) {
 						const l = valuePayload(left), r = valuePayload(right);
-						this.charge(Math.min(this.stringPool.byteLength(l), this.stringPool.byteLength(r)));
-						ok = this.stringPool.compare(l, r) <= 0;
+						const ln = this.stringPool.byteLength(l), rn = this.stringPool.byteLength(r), shared = Math.min(ln, rn);
+						this.charge(shared);
+						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) <= 0;
 					}
 					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}

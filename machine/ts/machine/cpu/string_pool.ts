@@ -103,24 +103,23 @@ export class StringPool {
 	}
 	public toString(id: StringId): string { return byteStringToText(this.bytes(id)); }
 
-	public compare(left: StringId, right: StringId): number {
+	public compareBytes(left: StringId, right: StringId, offset: number, count: number): number {
 		if (left === right) return 0;
 		const a = this.storage(left), b = this.storage(right);
 		const aMask = isRamStringId(left) ? RAM_BYTE_MASK : -1, bMask = isRamStringId(right) ? RAM_BYTE_MASK : -1;
-		const aOffset = (storageOffset(left) + BLUA32_STRING_RECORD_HEADER_SIZE) & aMask;
-		const bOffset = (storageOffset(right) + BLUA32_STRING_RECORD_HEADER_SIZE) & bMask;
-		const aLength = this.byteLength(left) >>> 0, bLength = this.byteLength(right) >>> 0;
-		const limit = Math.min(aLength, bLength);
-		const straight = Math.min(limit, (aMask >>> 0) + 1 - aOffset, (bMask >>> 0) + 1 - bOffset);
-		for (let i = 0; i < straight; ++i) {
-			const delta = a[aOffset + i] - b[bOffset + i];
-			if (delta !== 0) return delta;
+		let ai = (storageOffset(left) + BLUA32_STRING_RECORD_HEADER_SIZE + offset) & aMask;
+		let bi = (storageOffset(right) + BLUA32_STRING_RECORD_HEADER_SIZE + offset) & bMask;
+		while (count !== 0) {
+			const n = Math.min(count, (aMask >>> 0) + 1 - ai, (bMask >>> 0) + 1 - bi);
+			for (let i = 0; i < n; ++i) {
+				const delta = a[ai + i] - b[bi + i];
+				if (delta !== 0) return delta;
+			}
+			count -= n;
+			ai = (ai + n) & aMask;
+			bi = (bi + n) & bMask;
 		}
-		for (let i = straight; i < limit; ++i) {
-			const delta = a[(aOffset + i) & aMask] - b[(bOffset + i) & bMask];
-			if (delta !== 0) return delta;
-		}
-		return aLength - bLength;
+		return 0;
 	}
 
 	public clearRomTables(): void {

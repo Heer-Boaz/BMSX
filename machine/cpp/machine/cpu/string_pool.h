@@ -35,7 +35,7 @@ public:
 	u32 byteAt(StringId id, size_t index) const;
 	void appendBytes(std::string& target, StringId id) const;
 	std::string toString(StringId id) const;
-	int compare(StringId left, StringId right) const;
+	int compareBytes(StringId left, StringId right, size_t offset, size_t count) const;
 
 	void clearRomTables();
 	void activateRomTable(ExecutionDomainId domain, u32 address, u32 count);
@@ -59,10 +59,6 @@ private:
 		size_t size() const { return first.size() + wrapped.size(); }
 		// Compare and advance over a prefix of this two-extent payload.
 		bool consumeEqual(std::string_view prefix);
-		u8 byteAt(size_t index) const {
-			if (index < first.size()) return static_cast<u8>(first[index]);
-			return static_cast<u8>(wrapped[index - first.size()]);
-		}
 	};
 	struct InternKey {
 		std::string_view head;
