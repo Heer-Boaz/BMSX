@@ -1448,7 +1448,10 @@ was active, or the retry still does not fit, the CPU runs one fresh cycle and
 tries the request again. A fresh cycle can remove garbage retained only by an
 earlier scan of the interrupted cycle. A request that still cannot fit raises
 the out-of-memory error without admitting its bytes. Explicit full collection
-always performs the fresh cycle.
+always performs the fresh cycle. For a full collection requested through the BIOS,
+the CPU admits marking, final remark and reclamation work against successive
+cycle grants. Device time advances for that work, while interrupt entry and
+execution of the following instruction wait until the fresh cycle completes.
 
 Recovery for `NEWT` or for a table insertion can pause execution with the
 console clock stopped. No table or new mapping is visible until the reservation

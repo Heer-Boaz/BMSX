@@ -76,7 +76,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running && !cpu.gcHeap().finalMarkPending()) {
+	while (running && !cpu.gcHeap().stoppedFinalMarkPending()) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
@@ -139,7 +139,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
-	cpu.gcHeap().finishFinalMark();
+	if (cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
 	while (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
@@ -185,7 +185,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		cpu.gcHeap().finishFinalMark();
+		if (cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
 		if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}
@@ -325,6 +325,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
 			}
 		}
+		if (result == RunResult::CollectionProgress) return CpuSliceResult::Advanced;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSliceResult::ExecutionStopped;
 		}

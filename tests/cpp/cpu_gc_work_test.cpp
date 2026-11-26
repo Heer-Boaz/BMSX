@@ -394,11 +394,15 @@ void explicitCollectionAndNoReplay() {
 		}
 		const auto doomed = generated.cpu.createTable(16384, 0).address();
 		require(scalar.cpu.createTable(16384, 0).address() == doomed, "both backends start with the same garbage");
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 64) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining < 0,
-			"collector work exhausts a grant that would cover CALL, primitive and successor");
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 36) == RunResult::Yielded
+			&& generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.gcHeap().fullEpochs() == 1,
+			"issue retires before collection starts");
+		for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
+			require(grants < 64 && test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
+				&& isNil(generated.cpu.readFrameRegister(0, 7)), "the collector holds the successor across grants");
+		}
 		require(generated.cpu.gcHeap().tableRecordAddress(doomed) == 0u,
-			"explicit collection completes before the instruction retires");
+			"explicit collection reclaims its unreachable record before the next instruction");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
 			&& isNil(generated.cpu.readFrameRegister(0, 7)), "collection completes but cannot execute its successor");
 		test::runCpuParity(generated.cpu, scalar.cpu, 0);
@@ -453,13 +457,20 @@ void collectionPrimitivePaysActualWork() {
 				frame.registers.set(1, valueInteger(static_cast<i32>(operation)));
 				frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
 				frame.setTop(6);
+				cpu.setGlobalByKey(cpu.stringPool().intern("kept across CALL"), frame.registers.get(5));
 			}
 			const bool step = operation == GarbageCollectionOperation::Step;
+			if (!step) inspected.cpu.runUntilDepth(0, 1); // Full collection starts after CALL places its results.
 			const size_t work = step ? inspected.cpu.stepHeap(valueNil(), valueNil(), valueNil()) : inspected.cpu.collectHeap();
 			require(work > previousWork, "the same guest instruction causes different physical work");
 			previousWork = work;
-			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-				&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - 1 - 3 * static_cast<int>(work)
+			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "the primitive is issued once");
+			int cycles = 1 - generated.cpu.instructionBudgetRemaining;
+			for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
+				require(grants < 100 && test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "full collection advances");
+				cycles += 1 - generated.cpu.instructionBudgetRemaining;
+			}
+			require(cycles == 32 + 4 + 1 + 3 * static_cast<int>(work)
 				&& generated.cpu.readFrameRegister(0, 0) == (step ? valueBool(false) : valueNil())
 				&& generated.cpu.collecting() == step,
 				"both execution routes pay CALL, primitive, placement and the measured collector work");

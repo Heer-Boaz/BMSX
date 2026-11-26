@@ -22,7 +22,7 @@ i64 FrameSchedulerState::remainingCycleBudget(const Runtime& runtime) const {
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.history.executionPaused() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
-	if (runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
+	if (runtime.machine.cpu.gcHeap().stoppedFinalMarkPending()) return false;
 	if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
@@ -47,7 +47,7 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
-	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.finalMarkPending()) {
+	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.stoppedFinalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
 		if (!cpu.allocationParked()) heap.stepFinalMark();
 		++m_maintenancePulseSequence;

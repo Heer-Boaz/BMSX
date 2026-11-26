@@ -96,7 +96,7 @@ export class CpuExecutionState {
 		let result = CpuExecutionResult.Yielded;
 		const cpu = this.runtime.machine.cpu;
 		let running = true;
-		while (running && !cpu.gc.finalMarkPending()) {
+		while (running && !cpu.gc.stoppedFinalMarkPending()) {
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;
@@ -153,7 +153,7 @@ export class CpuExecutionState {
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
-		cpu.gc.finishFinalMark();
+		if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
 		while (cpu.readThreadFrameDepth(targetThread) > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
@@ -197,7 +197,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			cpu.gc.finishFinalMark();
+			if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
 			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
@@ -331,6 +331,7 @@ export class CpuExecutionState {
 					tickCompleted = advanceRuntimeTime(runtime, consumed);
 				}
 			}
+			if (result === RunResult.CollectionProgress) return CpuSliceResult.Advanced;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
 			}

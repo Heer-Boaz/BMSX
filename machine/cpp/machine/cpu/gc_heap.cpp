@@ -876,6 +876,7 @@ size_t GcHeap::accountEpochWork(size_t work) {
 }
 
 void GcHeap::assistPhysicalPressureAtTick() {
+	if (fullEpochs()) return;
 	const u32 occupied = arena.occupiedBytes();
 	const u32 previousOccupied = memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
 	if (occupied != previousOccupied) memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
@@ -1065,6 +1066,20 @@ LuaAllocationRecovery GcHeap::recoverAllocation(LuaAllocationRecovery next, Valu
 	// Recovery finishes just this epoch, without allocating to shrink live stacks.
 	do { step(root0, root1, root2, growingThread); } while (active());
 	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
+}
+
+void GcHeap::requestFullCollection() {
+#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
+	++m_cpu.m_diagnosticGcProfile.fullCollections;
+#endif
+	memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, active() ? 2u : 1u);
+	m_cpu.requestYield();
+}
+
+size_t GcHeap::stepFullCollection(u32 epochs) {
+	const size_t work = finalMarkPending() ? stepFinalMark() : step(valueNil(), valueNil(), valueNil(), 0u, true);
+	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
+	return work;
 }
 
 size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread) {

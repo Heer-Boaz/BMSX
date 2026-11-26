@@ -51,7 +51,8 @@ inline constexpr u32 GC_PACE_ESTIMATE = GC_PACE_BASIS + sizeof(u32);
 inline constexpr u32 GC_PACE_RUNWAY = GC_PACE_ESTIMATE + sizeof(u32);
 inline constexpr u32 GC_PACE_PAID = GC_PACE_RUNWAY + sizeof(u32);
 inline constexpr u32 GC_PACE_PAY_AT = GC_PACE_PAID + sizeof(u32);
-static_assert(HEAP_GC_CONTROL_OFFSET + GC_PACE_PAY_AT + sizeof(u32) <= HEAP_LOGICAL_OCCUPIED_OFFSET);
+inline constexpr u32 GC_FULL_EPOCHS = GC_PACE_PAY_AT + sizeof(u32);
+static_assert(HEAP_GC_CONTROL_OFFSET + GC_FULL_EPOCHS + sizeof(u32) <= HEAP_LOGICAL_OCCUPIED_OFFSET);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_THREAD_TRACE_OPEN) % (2 * sizeof(u32)) == 0u);
 static_assert((HEAP_GC_CONTROL_OFFSET + GC_REMARK_VISIT_INDEX) % (2 * sizeof(u32)) == 0u);
@@ -89,6 +90,10 @@ public:
 	u8 white() const { return memory.readRamRecordByte(m_controlOffset + 1u) & 1u; }
 	bool active() const { return phase() != GcPhase::Pause; }
 	bool finalMarkPending() const { return phase() == GcPhase::Atomic; }
+	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
+	bool stoppedFinalMarkPending() const { return finalMarkPending() && !fullEpochs(); }
+	void requestFullCollection();
+	size_t stepFullCollection(u32 epochs);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}

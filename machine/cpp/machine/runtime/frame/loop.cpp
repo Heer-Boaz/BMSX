@@ -75,7 +75,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 		const bool tickCompleted = settleAcceptedCpuTime(runtime);
 		finalizeUpdateSlice(runtime);
 		if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles() != 0
-			|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gcHeap().finalMarkPending()) return false;
+			|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gcHeap().stoppedFinalMarkPending()) return false;
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		const bool executionStopped = runUpdatePhase(runtime);

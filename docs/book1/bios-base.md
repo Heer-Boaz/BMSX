@@ -103,8 +103,10 @@ local cycle_finished = collectgarbage('step')
 ```
 
 A step does not wait for a display frame and does not guarantee a maximum
-pause. Full collection is synchronous; use it at a suitable point, such as
-a loading screen. Each underlying collection-control primitive call adds
+pause. A full collection does not return control to the program until the fresh
+cycle finishes. It draws from successive CPU grants: display and timer events
+continue, but no interrupt handler or following instruction runs during the
+collection. Use it at a suitable point, such as a loading screen. Each underlying collection-control primitive call adds
 4 base cycles beyond `CALL`, with ordinary result placement. A collection or
 step also costs 3 cycles per collector work word actually performed. Reading
 counts does not incur this charge.

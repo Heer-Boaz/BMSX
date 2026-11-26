@@ -874,7 +874,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
-	if (allocationParked()) throw BMSX_RUNTIME_ERROR("A parked allocation must retire before replacing code execution.");
+	if (allocationParked() || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Memory maintenance must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -896,7 +896,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
-	if (allocationParked()) throw BMSX_RUNTIME_ERROR("A parked allocation must retire before replacing code execution.");
+	if (allocationParked() || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Memory maintenance must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
@@ -1180,7 +1180,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CollectGarbage: {
 			if (!args.empty() && !valueIsNumber(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const i32 operation = args.empty() ? 0 : integerOperand(args[0]);
-			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) m_luaHeap.collectRuntime();
+			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) m_heap.requestFullCollection();
 			else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
 				out.push_back(valueInteger(m_luaHeap.usedBytes()));
 				out.push_back(valueInteger(m_luaHeap.capacity()));
@@ -1598,7 +1598,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked()) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_heap.fullEpochs()) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -2359,8 +2359,21 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	if (target == 0u) target = m_rootView.address;
 	for (;;) {
+		if (const u32 epochs = m_heap.fullEpochs()) {
+			instructionBudgetRemaining = instructionBudget;
+			if (instructionBudget <= 0) return RunResult::Yielded;
+			chargeCollectionWork(m_heap.stepFullCollection(epochs));
+			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
+			instructionBudget = instructionBudgetRemaining;
+			if (instructionBudget <= 0) return RunResult::Yielded;
+			continue;
+		}
 		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread->address == target ? targetDepth : 0, instructionBudget);
-		if ((m_runSignals & RunThreadSwitch) == 0u) return result;
+		if ((m_runSignals & RunThreadSwitch) == 0u) {
+			if (kind != CpuRunKind::Direct || result != RunResult::Yielded || instructionBudgetRemaining <= 0 || !m_heap.fullEpochs()) return result;
+			instructionBudget = instructionBudgetRemaining;
+			continue;
+		}
 		m_runSignals &= ~(RunThreadSwitch | RunYield);
 		instructionBudget = instructionBudgetRemaining;
 		if (instructionBudget <= 0) return RunResult::Yielded;
@@ -2591,7 +2604,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (allocationParked()) throw BMSX_RUNTIME_ERROR("A parked allocation must retire before replacing code execution.");
+	if (allocationParked() || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Memory maintenance must retire before replacing code execution.");
 	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
 	if (!image.admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))

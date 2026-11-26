@@ -229,6 +229,7 @@ export const enum RunResult {
 	Yielded,
 	ExecutionStopped,
 	ParkedAllocation,
+	CollectionProgress,
 }
 
 export const enum CpuRunKind { Idle, Direct, Scheduled }
@@ -1694,7 +1695,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		if (this.pendingAllocation !== null) throw new Error('A parked allocation must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1717,7 +1718,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.pendingAllocation !== null) throw new Error('A parked allocation must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -1841,7 +1842,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.gc.fullEpochs()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -1985,8 +1986,22 @@ export class CPU implements MappedPageInvalidator {
 		this.runKind = kind;
 		try {
 			for (;;) {
+				const epochs = this.gc.fullEpochs();
+				if (epochs !== 0) {
+					this.instructionBudgetRemaining = instructionBudget;
+					if (instructionBudget <= 0) return RunResult.Yielded;
+					this.chargeCollectionWork(this.gc.stepFullCollection(epochs));
+					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
+					instructionBudget = this.instructionBudgetRemaining;
+					if (instructionBudget <= 0) return RunResult.Yielded;
+					continue;
+				}
 				const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
-				if (!this.threadSwitchRequested) return result;
+				if (!this.threadSwitchRequested) {
+					if (kind !== CpuRunKind.Direct || result !== RunResult.Yielded || this.instructionBudgetRemaining <= 0 || !this.gc.fullEpochs()) return result;
+					instructionBudget = this.instructionBudgetRemaining;
+					continue;
+				}
 				this.threadSwitchRequested = false;
 				this.yieldRequested = false;
 				instructionBudget = this.instructionBudgetRemaining;
@@ -2355,7 +2370,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.pendingAllocation !== null) throw new Error('A parked allocation must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.gc.fullEpochs() !== 0) throw new Error('Memory maintenance must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -3747,7 +3762,7 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CollectGarbage: {
 				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : integerOperand(args.registers.get(args.base));
 				switch (operation) {
-					case GarbageCollectionOperation.Collect: this.luaHeap.collectRuntime(); break;
+					case GarbageCollectionOperation.Collect: this.gc.requestFullCollection(); break;
 					case GarbageCollectionOperation.Count:
 						out.push(valueInteger(this.luaHeap.usedBytes()));
 						out.push(valueInteger(this.luaHeap.capacity()));

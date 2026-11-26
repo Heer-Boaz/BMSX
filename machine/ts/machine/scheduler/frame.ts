@@ -74,7 +74,7 @@ export class FrameSchedulerState {
 		const runtime = this.runtime;
 		if (runtime.history.executionPaused || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
-		if (runtime.machine.cpu.gc.finalMarkPending()) return false;
+		if (runtime.machine.cpu.gc.stoppedFinalMarkPending()) return false;
 		if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
@@ -100,7 +100,7 @@ export class FrameSchedulerState {
 		const cpu = runtime.machine.cpu;
 		const heap = cpu.gc;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
-		if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.finalMarkPending()) {
+		if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.stoppedFinalMarkPending()) {
 			// Keep the host grant queued while the guest clock is stopped.
 			if (!cpu.allocationParked()) heap.stepFinalMark();
 			return Pulse.Maintenance;

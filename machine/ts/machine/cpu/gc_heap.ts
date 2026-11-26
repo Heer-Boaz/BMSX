@@ -48,6 +48,7 @@ const GC_PACE_ESTIMATE = GC_PACE_BASIS + 4;
 const GC_PACE_RUNWAY = GC_PACE_ESTIMATE + 4;
 export const GC_PACE_PAID = GC_PACE_RUNWAY + 4;
 const GC_PACE_PAY_AT = GC_PACE_PAID + 4;
+const GC_FULL_EPOCHS = GC_PACE_PAY_AT + 4;
 // Capture lanes use four bytes each and Table entries require a separate tag.
 const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
@@ -809,6 +810,7 @@ export class GcHeap {
 	}
 
 	public assistPhysicalPressureAtTick(): void {
+		if (this.fullEpochs()) return;
 		const occupied = this.arena.occupiedBytes();
 		const previousOccupied = this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
 		if (occupied !== previousOccupied) this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
@@ -966,6 +968,18 @@ export class GcHeap {
 		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
 	}
 
+	public fullEpochs(): number { return this.memory.readRamRecordByte(this.controlOffset + GC_FULL_EPOCHS); }
+	public stoppedFinalMarkPending(): boolean { return this.finalMarkPending() && !this.fullEpochs(); }
+	public requestFullCollection(): void {
+		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
+		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
+		this.cpu.requestYield();
+	}
+	public stepFullCollection(epochs: number): number {
+		const work = this.finalMarkPending() ? this.stepFinalMark() : this.step(valueNil(), valueNil(), valueNil(), 0, true);
+		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, epochs - 1);
+		return work;
+	}
 	public collect(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0): number {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		let work = 0;

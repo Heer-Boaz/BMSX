@@ -179,7 +179,7 @@ export class FrameLoopState {
 			const tickCompleted = settleAcceptedCpuTime(runtime);
 			this.finalizeUpdateSlice();
 			if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles !== 0
-				|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gc.finalMarkPending()) return false;
+				|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gc.stoppedFinalMarkPending()) return false;
 		}
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry') {

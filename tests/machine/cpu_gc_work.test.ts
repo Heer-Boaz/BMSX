@@ -327,21 +327,28 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
-	test(`explicit collection exhausts a grant that would otherwise reach the successor (${backend}, WIDE=${wide})`, () => {
+	test(`explicit collection issues once and holds its successor across grants (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			while (cpu.gc.fullEpochs()) cpu.runUntilDepth(0, 1);
 		}
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.registers.setNil(7); frame.top = 1;
 		const doomed = cpu.createTable(16384, 0);
-		assert.equal(cpu.runUntilDepth(0, 64), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < 0);
-		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'explicit collection finishes before the instruction retires');
+		assert.equal(cpu.runUntilDepth(0, 36), RunResult.Yielded);
+		assert.equal(cpu.instructionBudgetRemaining, 0);
+		assert.equal(cpu.gc.fullEpochs(), 1);
+		for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
+			assert.ok(grants < 64);
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(frame.registers.get(7), valueNil());
+		}
+		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'the successor cannot observe uncollected garbage');
 		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), valueNil());
@@ -397,12 +404,20 @@ test('collect and step charge CALL, placement and actual collector work across h
 				frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
 				frame.registers.setInteger(1, operation);
 				frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
+				cpu.setGlobalByKey(cpu.stringPool.intern('kept across CALL'), frame.registers.get(5));
 				const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+				if (operation === GarbageCollectionOperation.Collect) cpu.runUntilDepth(0, 1);
 				const work = operation === GarbageCollectionOperation.Collect ? cpu.gc.collect() : cpu.gc.step();
 				physicalWork.push(work);
 				memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-				assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4 - 1 - 3 * work);
+				let cycles = 1 - cpu.instructionBudgetRemaining;
+				for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
+					assert.ok(grants < 100);
+					assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+					cycles += 1 - cpu.instructionBudgetRemaining;
+				}
+				assert.equal(cycles, 32 + 4 + 1 + 3 * work);
 				assert.equal(cpu.readFrameRegister(0, 0),
 					operation === GarbageCollectionOperation.Step ? valueBool(false) : valueNil());
 				assert.equal(cpu.gc.active(), operation === GarbageCollectionOperation.Step);

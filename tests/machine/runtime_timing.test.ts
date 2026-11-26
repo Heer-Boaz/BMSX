@@ -455,6 +455,64 @@ test('a WIDE NEWT with refused backing retires once before VBlank, including aft
 	}
 });
 
+test('a full collection spans CPU grants and resumes its outstanding fresh epoch after restore', () => {
+	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.CALL, 0, 1, 1);
+	writeInstruction(code, 1, OpCode.K1, 1, 0, 0);
+	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 3, maxStack: 3 }],
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+	});
+	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(),
+		machineModel: PSX_MACHINE_SPEC }, new TimingInputSource());
+	runtime.boot();
+	const { cpu } = runtime.machine, { gc } = cpu;
+	const frame = cpu.rootThread.currentFrame!;
+	const live = cpu.createTable(16 * GC_STEP_WORDS, 0);
+	cpu.setGlobalByKey(cpu.stringPool.intern('retained across both epochs'), valueTable(live));
+	const floating = cpu.createTable();
+	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
+	frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
+	runtime.frameLoop.beginFrameState(16_000_000, 0);
+	const step = () => runtime.frameScheduler.stepInstruction(0);
+	assert.equal(step(), InstructionStepResult.Executed);
+	const pc = cpu.readFramePc(0);
+	assert.equal(gc.fullEpochs(), 2);
+	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0]), /maintenance must retire/);
+	assert.equal(step(), InstructionStepResult.Advanced, 'a tracing grant is not an executed guest instruction');
+	assert.equal(cpu.readFramePc(0), pc);
+	const snapshot = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	const finish = () => {
+		const costs: number[] = [];
+		let reachedFresh = false;
+		while (gc.fullEpochs()) {
+			assert.ok(costs.length < 500);
+			const before = runtime.machine.scheduler.nowCycles;
+			// A display edge may close the frame; reoffer budget independently of the collector.
+			if (!runtime.frameLoop.frameActive) runtime.frameLoop.beginFrameState(16_000_000, 0);
+			assert.equal(step(), InstructionStepResult.Advanced);
+			costs.push(runtime.machine.scheduler.nowCycles - before);
+			if (gc.fullEpochs() === 1 && !reachedFresh) {
+				assert.notEqual(gc.tableRecordAddress(floating), 0, 'floating garbage survived the first epoch');
+				reachedFresh = true;
+			}
+			assert.equal(cpu.readFramePc(0), pc);
+		}
+		assert.ok(reachedFresh && costs.filter(cost => cost > 0).length > 4);
+		assert.equal(gc.tableRecordAddress(floating), 0);
+		assert.equal(gc.tableRecordAddress(live), live);
+		if (!runtime.frameLoop.frameActive) runtime.frameLoop.beginFrameState(16_000_000, 0);
+		assert.equal(step(), InstructionStepResult.Executed);
+		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(1));
+		return costs;
+	};
+	const expected = finish();
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(snapshot, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	assert.deepEqual(finish(), expected);
+});
+
 test('a physically refused WIDE SETT retires before queued VBlank, even after a checkpoint', () => {
 	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
