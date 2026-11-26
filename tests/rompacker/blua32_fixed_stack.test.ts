@@ -92,6 +92,7 @@ test('fixed stack checks the linked constant kind for LOADK and both signed RK l
 		[OpCode.LOADK, 0, 0, 0],
 		[OpCode.ADD, rk & MAX_LOW_OPERAND, 0, (rk >>> MAX_OPERAND_BITS) << 3],
 		[OpCode.ADD, 0, rk & MAX_LOW_OPERAND, rk >>> MAX_OPERAND_BITS],
+		[OpCode.FLOORDIV, 0, rk & MAX_LOW_OPERAND, rk >>> MAX_OPERAND_BITS],
 	] as const;
 	for (const [op, b, c, ext] of uses) {
 		for (const constant of [null, false, true, integerConstant(-1)])

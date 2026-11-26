@@ -167,6 +167,7 @@ export function deriveBlua32FixedStack(
 				case OpCode.ADD:
 				case OpCode.SUB:
 				case OpCode.MUL:
+				case OpCode.FLOORDIV:
 				case OpCode.BAND:
 				case OpCode.BOR:
 				case OpCode.BXOR:
