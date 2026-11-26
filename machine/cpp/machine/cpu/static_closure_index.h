@@ -18,8 +18,12 @@ public:
 
 	void insert(u32 prototype, u32 address) {
 		auto& addresses = m_groups[prototype];
-		if (addresses.size() == 1u) m_positions.emplace(addresses.front(), 0u);
-		if (!addresses.empty()) m_positions.emplace(address, addresses.size());
+		// Restore can find a Closure that firmware linked before its suspended RET.
+		if (addresses.size() == 1u) {
+			if (addresses.front() == address) return;
+			m_positions.emplace(addresses.front(), 0u);
+		}
+		if (!addresses.empty() && !m_positions.emplace(address, addresses.size()).second) return;
 		addresses.push_back(address);
 	}
 

@@ -14,7 +14,11 @@ export class StaticClosureIndex {
 			this.groups.set(prototype, [address]);
 			return;
 		}
-		if (entries.length === 1) this.positions.set(entries[0], 0);
+		// Restore can rebuild the inventory between publication and the caller's RET.
+		if (entries.length === 1) {
+			if (entries[0] === address) return;
+			this.positions.set(entries[0], 0);
+		} else if (this.positions.has(address)) return;
 		this.positions.set(address, entries.length);
 		entries.push(address);
 	}

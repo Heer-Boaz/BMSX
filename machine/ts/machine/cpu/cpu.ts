@@ -180,8 +180,8 @@ import {
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
-	HeapServiceNewtAssistField,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage, HeapServiceOperation,
+	HeapServiceRecordControlField, HeapServiceRecordKind,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE, HeapServiceRootBankField, HeapServiceRootPlane,
@@ -308,6 +308,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
 	private readonly newTableArgs: number[];
+	private readonly closureArgs: number[];
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private lengthKey!: StringId;
@@ -430,6 +431,8 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap = new LuaHeap(this);
 		this.newTableArgs = [this.heapAllocator.allocatorStateOffset(), this.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET,
 			this.luaHeap.occupiedOffset, 0, 0, 0, 0, 0];
+		this.closureArgs = [this.heapAllocator.allocatorStateOffset(), this.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET,
+			this.luaHeap.occupiedOffset, 0, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		const newIndexKey = this.stringPool.intern('__newindex');
@@ -676,8 +679,8 @@ export class CPU implements MappedPageInvalidator {
 	private executeNewTable(frame: CallFrame, destination: number, arraySize: number, hashSize: number): boolean {
 		const scheduled = this.runKind === CpuRunKind.Scheduled;
 		if (this.systemImage.heapServiceFunctions !== null) {
-			const stage = scheduled ? HeapServiceNewtStage.Scheduled : HeapServiceNewtStage.Direct;
-			if (this.beginNewTableReservation(frame, destination, arraySize, hashSize, stage, frame.pc)) {
+			const stage = scheduled ? HeapServiceRecordStage.Scheduled : HeapServiceRecordStage.Direct;
+			if (this.beginRecordReservation(frame, destination, HeapServiceRecordKind.Table, arraySize, hashSize, stage, frame.pc)) {
 				this.requestYield();
 				return true;
 			}
@@ -692,107 +695,120 @@ export class CPU implements MappedPageInvalidator {
 		return false;
 	}
 
-	private beginNewTableReservation(frame: CallFrame, destination: number, arraySize: number, hashSize: number,
-		stage: HeapServiceNewtStage, nextPc: number): boolean {
-		const retry = stage === HeapServiceNewtStage.RetryCurrent || stage === HeapServiceNewtStage.RetryFresh;
-		const hashCapacity = TableRecords.hashCapacity(hashSize);
-		const arrayBytes = 5 * arraySize, hashBytes = TableRecords.hashStorageBytes(hashCapacity);
-		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity);
+	private beginRecordReservation(frame: CallFrame, destination: number, kind: HeapServiceRecordKind,
+		first: number, second: number, stage: HeapServiceRecordStage, nextPc: number): boolean {
+		const retry = stage === HeapServiceRecordStage.RetryCurrent || stage === HeapServiceRecordStage.RetryFresh;
+		const table = kind === HeapServiceRecordKind.Table;
+		const hash = table ? TableRecords.hashCapacity(second) : 0;
+		const charged = table ? TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(first, hash) : Closure.closureRecordBytes(0);
 		const debt = retry ? 0 : this.luaHeap.allocationDebt(charged);
 		if (retry) {
 			if (this.luaHeap.usedBytes() + charged > this.luaHeap.capacity()) return false;
 		} else if (debt < 0) {
 			if (charged > this.luaHeap.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
-			if (stage === HeapServiceNewtStage.Scheduled) return false;
+			if (stage === HeapServiceRecordStage.Scheduled) return false;
 		}
-		const base = this.heapService.newTableAddress, memory = this.memory;
-		memory.writeRamRecordWord(base + HeapServiceNewtField.Destination, destination);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.ArraySize, arraySize);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.HashSize, hashSize);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.InstructionPc, this.currentInstructionPc);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.LastPc, this.lastPc);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.NextPc, nextPc);
-		memory.writeRamRecordWord(base + HeapServiceNewtField.DirectRecovery, LuaAllocationRecovery.CurrentOrFresh);
+		const base = this.heapService.recordAddress, memory = this.memory;
+		memory.writeRamRecordWord(base + HeapServiceRecordField.Destination, destination);
+		memory.writeRamRecordPair(base + (table ? HeapServiceRecordField.ArraySize : HeapServiceRecordField.Prototype), first, second);
+		memory.writeRamRecordWord(base + HeapServiceRecordField.InstructionPc, this.currentInstructionPc);
+		memory.writeRamRecordWord(base + HeapServiceRecordField.LastPc, this.lastPc);
+		memory.writeRamRecordWord(base + HeapServiceRecordField.NextPc, nextPc);
+		memory.writeRamRecordWord(base + HeapServiceRecordField.DirectRecovery, LuaAllocationRecovery.CurrentOrFresh);
 		frame.pc = this.currentInstructionPc;
 		const budget = retry ? 0 : Math.max(this.instructionBudgetRemaining, 0);
-		const assist = this.heapService.newTableAssistAddress;
+		const assist = this.heapService.recordControlAddress;
+		memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Kind, kind);
 		if (debt < 0) {
-			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
-			this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectLogicalRecovery);
+			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
+			this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectLogicalRecovery);
 		} else if (debt > 0 && budget >= GC_WORK_WORD_CYCLES) {
 			const pressure = this.luaHeap.logicalAssistPressure(charged);
-			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
-			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.EpochBefore, this.gc.epochWork());
-			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Debt, debt);
-			memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Pressure, +pressure);
+			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
+			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.EpochBefore, this.gc.epochWork());
+			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Debt, debt);
+			memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Pressure, +pressure);
 			const words = Math.min(this.luaHeap.logicalAssistAllowance(debt, pressure), Math.trunc(budget / GC_WORK_WORD_CYCLES));
-			this.runNewTableAssist(HeapServiceNewtStage.LogicalAssist, stage, words);
+			this.runRecordAssist(HeapServiceRecordStage.LogicalAssist, stage, words);
 		} else {
-			this.reserveNewTableAfterAdmission(stage, arraySize, hashCapacity, arrayBytes, hashBytes, charged, budget);
+			this.reserveRecordAfterAdmission(stage, kind, first, table ? hash : second, charged, budget);
 		}
 		return true;
 	}
 
-	private reserveNewTableAfterAdmission(stage: HeapServiceNewtStage, array: number, hash: number,
-		arrayBytes: number, hashBytes: number, charged: number, budget: number): void {
+	private reserveRecordAfterAdmission(stage: HeapServiceRecordStage, kind: HeapServiceRecordKind,
+		first: number, second: number, charged: number, budget: number): void {
+		const table = kind === HeapServiceRecordKind.Table;
+		const arrayBytes = table ? 5 * first : 0, hashBytes = table ? TableRecords.hashStorageBytes(second) : 0;
 		if (budget >= GC_WORK_WORD_CYCLES && gcPacedPhase(this.gc.phase())) {
-			const allowance = this.gc.reservationAssistAllowance(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX + arrayBytes + hashBytes);
+			const bytes = table ? TableRecords.HEADER_BYTES + arrayBytes + hashBytes : charged;
+			const allowance = this.gc.reservationAssistAllowance(bytes + GC_OBJECT_PREFIX);
 			if (allowance !== null) {
-				this.runNewTableAssist(HeapServiceNewtStage.PhysicalAssist, stage, Math.min(allowance, Math.trunc(budget / GC_WORK_WORD_CYCLES)));
+				this.runRecordAssist(HeapServiceRecordStage.PhysicalAssist, stage, Math.min(allowance, Math.trunc(budget / GC_WORK_WORD_CYCLES)));
 				return;
 			}
 		}
-		this.memory.writeRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage, stage);
-		this.startNewTableReservation(array, hash, arrayBytes, hashBytes, charged);
+		this.memory.writeRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage, stage);
+		const services = this.systemImage.heapServiceFunctions!;
+		if (table) {
+			const args = this.newTableArgs;
+			args[3] = first;
+			args[4] = second;
+			args[5] = arrayBytes;
+			args[6] = hashBytes;
+			args[7] = charged;
+			this.beginHeapService(services[HeapServiceOperation.CreateTable], args);
+		} else {
+			const args = this.closureArgs;
+			args[3] = first;
+			args[4] = second;
+			this.beginHeapService(services[HeapServiceOperation.CreateClosure], args);
+		}
 	}
 
-	private runNewTableAssist(stage: HeapServiceNewtStage, reservation: HeapServiceNewtStage, words: number): void {
-		this.memory.writeRamRecordWord(this.heapService.newTableAssistAddress + HeapServiceNewtAssistField.ReservationStage, reservation);
-		this.memory.writeRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage, stage);
+	private runRecordAssist(stage: HeapServiceRecordStage, reservation: HeapServiceRecordStage, words: number): void {
+		this.memory.writeRamRecordWord(this.heapService.recordControlAddress + HeapServiceRecordControlField.ReservationStage, reservation);
+		this.memory.writeRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage, stage);
 		this.chargeCollectionWork(this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, words,
 			HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions!));
-		if (!this.heapServiceActive()) this.finishNewTableCollection(stage);
+		if (!this.heapServiceActive()) this.finishRecordCollection(stage);
 	}
 
-	private startNewTableReservation(array: number, hash: number, arrayBytes: number, hashBytes: number, charged: number): void {
-		const args = this.newTableArgs;
-		args[3] = array;
-		args[4] = hash;
-		args[5] = arrayBytes;
-		args[6] = hashBytes;
-		args[7] = charged;
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CreateTable], args);
-	}
-
-	private finishNewTableReservation(): void {
-		const base = this.heapService.newTableAddress, memory = this.memory;
-		const stage = memory.readRamRecordWord(base + HeapServiceNewtField.Stage);
-		if (stage === HeapServiceNewtStage.Idle) return;
-		const destination = memory.readRamRecordWord(base + HeapServiceNewtField.Destination);
-		const nextPc = memory.readRamRecordWord(base + HeapServiceNewtField.NextPc);
-		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceNewtField.InstructionPc);
-		this.lastPc = memory.readRamRecordWord(base + HeapServiceNewtField.LastPc);
+	private finishRecordReservation(): void {
+		const base = this.heapService.recordAddress, memory = this.memory;
+		const stage = memory.readRamRecordWord(base + HeapServiceRecordField.Stage);
+		if (stage === HeapServiceRecordStage.Idle) return;
+		const destination = memory.readRamRecordWord(base + HeapServiceRecordField.Destination);
+		const nextPc = memory.readRamRecordWord(base + HeapServiceRecordField.NextPc);
+		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceRecordField.InstructionPc);
+		this.lastPc = memory.readRamRecordWord(base + HeapServiceRecordField.LastPc);
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		const frame = this.activeThread.currentFrame!;
-		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, HeapServiceNewtStage.Idle);
+		memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, HeapServiceRecordStage.Idle);
 		const offset = this.heapServiceResult();
 		if (offset !== 0) {
 			const address = RAM_BASE + offset;
-			if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
-			this.retireNewTable(frame, destination, address);
+			const kind = memory.readRamRecordWord(this.heapService.recordControlAddress + HeapServiceRecordControlField.Kind);
+			if (kind === HeapServiceRecordKind.Table) {
+				if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
+				this.retireNewTable(frame, destination, address);
+			} else {
+				this.staticClosures.insert(memory.readRamRecordWord(base + HeapServiceRecordField.Prototype), address);
+				this.setRegisterClosureFast(frame, frame.registers, destination, address);
+			}
 			frame.pc = nextPc;
 			return;
 		}
-		if (stage === HeapServiceNewtStage.Direct) {
+		if (stage === HeapServiceRecordStage.Direct) {
 			// Every partial reservation was released. Publish the original
 			// one-epoch recovery policy before the next BIOS instruction.
-			this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectRecovery);
+			this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectRecovery);
 			return;
 		}
-		if (stage === HeapServiceNewtStage.RetryFresh) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		const arraySize = memory.readRamRecordWord(base + HeapServiceNewtField.ArraySize);
-		const hashSize = memory.readRamRecordWord(base + HeapServiceNewtField.HashSize);
-		if (stage === HeapServiceNewtStage.RetryCurrent) {
+		if (stage === HeapServiceRecordStage.RetryFresh) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		const arraySize = memory.readRamRecordWord(base + HeapServiceRecordField.ArraySize);
+		const hashSize = memory.readRamRecordWord(base + HeapServiceRecordField.HashSize);
+		if (stage === HeapServiceRecordStage.RetryCurrent) {
 			this.pendingAllocation = {
 				recovery: AllocationRecovery.Fresh, instructionPc: this.currentInstructionPc, lastPc: this.lastPc, nextPc,
 				kind: PendingAllocationKind.TableCreation, destination, arraySize, hashSize,
@@ -803,25 +819,25 @@ export class CPU implements MappedPageInvalidator {
 		this.parkAllocation(frame, { kind: PendingAllocationKind.TableCreation, destination, arraySize, hashSize });
 	}
 
-	private beginDirectNewTableEpoch(stage: HeapServiceNewtStage): void {
-		const memory = this.memory, base = this.heapService.newTableAddress;
-		const recoveryAddress = base + HeapServiceNewtField.DirectRecovery;
+	private beginDirectRecordEpoch(stage: HeapServiceRecordStage): void {
+		const memory = this.memory, base = this.heapService.recordAddress;
+		const recoveryAddress = base + HeapServiceRecordField.DirectRecovery;
 		const next = memory.readRamRecordWord(recoveryAddress) as LuaAllocationRecovery;
-		if (stage === HeapServiceNewtStage.DirectLogicalRecovery && next === LuaAllocationRecovery.Exhausted) {
-			this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceNewtField.InstructionPc);
-			this.lastPc = memory.readRamRecordWord(base + HeapServiceNewtField.LastPc);
+		if (stage === HeapServiceRecordStage.DirectLogicalRecovery && next === LuaAllocationRecovery.Exhausted) {
+			this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceRecordField.InstructionPc);
+			this.lastPc = memory.readRamRecordWord(base + HeapServiceRecordField.LastPc);
 			this.lastExecutionDomainId = this.activeExecutionDomainId;
-			memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, HeapServiceNewtStage.Idle);
+			memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, HeapServiceRecordStage.Idle);
 		}
 		const recovery = this.gc.beginAllocationRecovery(next);
 		memory.writeRamRecordWord(recoveryAddress, recovery);
-		if (stage === HeapServiceNewtStage.DirectLogicalRecovery)
-			memory.writeRamRecordWord(this.heapService.newTableAssistAddress + HeapServiceNewtAssistField.EpochBefore, this.gc.epochWork());
-		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, stage);
-		this.advanceDirectNewTableRecovery();
+		if (stage === HeapServiceRecordStage.DirectLogicalRecovery)
+			memory.writeRamRecordWord(this.heapService.recordControlAddress + HeapServiceRecordControlField.EpochBefore, this.gc.epochWork());
+		memory.writeRamRecordWord(base + HeapServiceRecordField.Stage, stage);
+		this.advanceDirectRecordRecovery();
 	}
 
-	private advanceDirectNewTableRecovery(): void {
+	private advanceDirectRecordRecovery(): void {
 		const services = this.systemImage.heapServiceFunctions!;
 		do {
 			const work = this.gc.finalMarkPending()
@@ -833,35 +849,37 @@ export class CPU implements MappedPageInvalidator {
 		} while (!this.heapServiceActive() && this.gc.active());
 	}
 
-	private finishNewTableCollection(stage: HeapServiceNewtStage): void {
-		const directEpoch = stage === HeapServiceNewtStage.DirectRecovery || stage === HeapServiceNewtStage.DirectLogicalRecovery;
+	private finishRecordCollection(stage: HeapServiceRecordStage): void {
+		const directEpoch = stage === HeapServiceRecordStage.DirectRecovery || stage === HeapServiceRecordStage.DirectLogicalRecovery;
 		if (directEpoch && this.gc.active()) {
-			this.advanceDirectNewTableRecovery();
+			this.advanceDirectRecordRecovery();
 			return;
 		}
-		const base = this.heapService.newTableAddress, assist = this.heapService.newTableAssistAddress, memory = this.memory;
-		const arraySize = memory.readRamRecordWord(base + HeapServiceNewtField.ArraySize);
-		const hashCapacity = TableRecords.hashCapacity(memory.readRamRecordWord(base + HeapServiceNewtField.HashSize));
-		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity);
-		const reservation = directEpoch ? HeapServiceNewtStage.Direct
-			: memory.readRamRecordWord(assist + HeapServiceNewtAssistField.ReservationStage) as HeapServiceNewtStage;
+		const base = this.heapService.recordAddress, assist = this.heapService.recordControlAddress, memory = this.memory;
+		const kind = memory.readRamRecordWord(assist + HeapServiceRecordControlField.Kind) as HeapServiceRecordKind;
+		const table = kind === HeapServiceRecordKind.Table;
+		const first = memory.readRamRecordWord(base + (table ? HeapServiceRecordField.ArraySize : HeapServiceRecordField.Prototype));
+		const second = table ? TableRecords.hashCapacity(memory.readRamRecordWord(base + HeapServiceRecordField.HashSize))
+			: memory.readRamRecordWord(base + HeapServiceRecordField.ExecutionDomain) | 0;
+		const charged = table ? TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(first, second) : Closure.closureRecordBytes(0);
+		const reservation = directEpoch ? HeapServiceRecordStage.Direct
+			: memory.readRamRecordWord(assist + HeapServiceRecordControlField.ReservationStage) as HeapServiceRecordStage;
 		let budget = 0;
-		if (stage === HeapServiceNewtStage.LogicalAssist || stage === HeapServiceNewtStage.DirectLogicalRecovery) {
-			const work = this.gc.workSinceEpoch(memory.readRamRecordWord(assist + HeapServiceNewtAssistField.EpochBefore));
+		if (stage === HeapServiceRecordStage.LogicalAssist || stage === HeapServiceRecordStage.DirectLogicalRecovery) {
+			const work = this.gc.workSinceEpoch(memory.readRamRecordWord(assist + HeapServiceRecordControlField.EpochBefore));
 			// The original grant still sizes the later physical assist. This
 			// updates only that policy allowance, not the actual CPU clock.
-			budget = Math.max(0, memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Budget) - GC_WORK_WORD_CYCLES * work);
-			if (stage === HeapServiceNewtStage.LogicalAssist) {
-				this.luaHeap.creditLogicalAssist(charged, memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Debt),
-					memory.readRamRecordWord(assist + HeapServiceNewtAssistField.Pressure) !== 0, work);
+			budget = Math.max(0, memory.readRamRecordWord(assist + HeapServiceRecordControlField.Budget) - GC_WORK_WORD_CYCLES * work);
+			if (stage === HeapServiceRecordStage.LogicalAssist) {
+				this.luaHeap.creditLogicalAssist(charged, memory.readRamRecordWord(assist + HeapServiceRecordControlField.Debt),
+					memory.readRamRecordWord(assist + HeapServiceRecordControlField.Pressure) !== 0, work);
 			} else if (this.luaHeap.usedBytes() + charged > this.luaHeap.capacity()) {
-				memory.writeRamRecordWord(assist + HeapServiceNewtAssistField.Budget, budget);
-				this.beginDirectNewTableEpoch(HeapServiceNewtStage.DirectLogicalRecovery);
+				memory.writeRamRecordWord(assist + HeapServiceRecordControlField.Budget, budget);
+				this.beginDirectRecordEpoch(HeapServiceRecordStage.DirectLogicalRecovery);
 				return;
 			}
 		}
-		this.reserveNewTableAfterAdmission(reservation, arraySize, hashCapacity, 5 * arraySize,
-			TableRecords.hashStorageBytes(hashCapacity), charged, budget);
+		this.reserveRecordAfterAdmission(reservation, kind, first, second, charged, budget);
 	}
 
 	private markPendingAllocationRoots(heap: GcHeap, pending: PendingAllocation): void {
@@ -932,8 +950,8 @@ export class CPU implements MappedPageInvalidator {
 				this.tableRebuild.census = TableCensus.RetryFresh;
 		} else {
 			if (this.systemImage.heapServiceFunctions !== null) {
-				const stage = pending.recovery === AllocationRecovery.RetryCurrent ? HeapServiceNewtStage.RetryCurrent : HeapServiceNewtStage.RetryFresh;
-				if (this.beginNewTableReservation(frame, pending.destination, pending.arraySize, pending.hashSize, stage, pending.nextPc)) {
+				const stage = pending.recovery === AllocationRecovery.RetryCurrent ? HeapServiceRecordStage.RetryCurrent : HeapServiceRecordStage.RetryFresh;
+				if (this.beginRecordReservation(frame, pending.destination, HeapServiceRecordKind.Table, pending.arraySize, pending.hashSize, stage, pending.nextPc)) {
 					this.pendingAllocation = null;
 					return;
 				}
@@ -1361,17 +1379,24 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private staticClosureFromLatch(): number {
+		return this.findStaticClosureFromLatch() || this.allocateStaticClosureFromLatch();
+	}
+
+	private findStaticClosureFromLatch(): number {
 		const record = this.functionRecordLatch;
 		const closures = this.staticClosures.find(record.functionAddress);
-		if (closures !== undefined) {
-			let match = 0;
-			for (const address of closures) {
-				if ((match !== 0 && address >= match) || this.gc.sweepGarbage(address)) continue;
-				this.readClosureBinding(address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), this.canonicalBinding);
-				if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
-			}
-			if (match !== 0) return match;
+		if (closures === undefined) return 0;
+		let match = 0;
+		for (const address of closures) {
+			if ((match !== 0 && address >= match) || this.gc.sweepGarbage(address)) continue;
+			this.readClosureBinding(address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), this.canonicalBinding);
+			if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
 		}
+		return match;
+	}
+
+	private allocateStaticClosureFromLatch(): number {
+		const record = this.functionRecordLatch;
 		const latched = !record.romBacked;
 		const address = this.luaHeap.allocateClosureRecord(0, latched);
 		Closure.initializeRecord(this.memory, address, record, true, this.gc.white(), 0, latched);
@@ -2369,26 +2394,26 @@ export class CPU implements MappedPageInvalidator {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						const newtStage = gcStage === HeapServiceGcStage.Idle ? HeapServiceNewtStage.Idle
-							: this.memory.readRamRecordWord(this.heapService.newTableAddress + HeapServiceNewtField.Stage) as HeapServiceNewtStage;
-						const newtCollection = newtStage >= HeapServiceNewtStage.DirectRecovery;
+						const recordStage = gcStage === HeapServiceGcStage.Idle ? HeapServiceRecordStage.Idle
+							: this.memory.readRamRecordWord(this.heapService.recordAddress + HeapServiceRecordField.Stage) as HeapServiceRecordStage;
+						const recordCollection = recordStage >= HeapServiceRecordStage.DirectRecovery;
 						switch (gcStage) {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
 								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullTrace || newtCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullTrace || recordCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRemark:
 							case HeapServiceGcStage.MaintenanceRemark: {
 								const work = this.gc.finishRemarkQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRemark || newtCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRemark || recordCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootHead:
 							case HeapServiceGcStage.MaintenanceRootHead: {
 								const work = this.gc.finishRootHead(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRootHead || newtCollection) this.chargeCollectionWork(work);
+								if (gcStage === HeapServiceGcStage.FullRootHead || recordCollection) this.chargeCollectionWork(work);
 								break;
 							}
 							case HeapServiceGcStage.FullRootBanks:
@@ -2410,14 +2435,14 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.PressureStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
 								this.gc.finishStringSweep(gcStage);
-								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !newtCollection) this.finishAllocationRecovery();
+								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep && !recordCollection) this.finishAllocationRecovery();
 								break;
 							case HeapServiceGcStage.Idle:
 								this.finishExecFloorService();
-								this.finishNewTableReservation();
+								this.finishRecordReservation();
 								break;
 						}
-						if (newtCollection && !this.heapServiceActive()) this.finishNewTableCollection(newtStage);
+						if (recordCollection && !this.heapServiceActive()) this.finishRecordCollection(recordStage);
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
@@ -3033,12 +3058,23 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return;
 		}
-		const closure = this.createClosure(frame);
-		if (closure === 0) {
-			return;
+		const record = this.functionRecordLatch;
+		if ((record.flags & BLUA32_FUNCTION_STATIC) !== 0 && record.recordUpvalueCount === 0) {
+			let closure = this.findStaticClosureFromLatch();
+			if (closure === 0) {
+				if (record.romBacked && this.systemImage.heapServiceFunctions !== null) {
+					this.beginRecordReservation(frame, a, HeapServiceRecordKind.CanonicalClosure,
+						record.functionAddress, record.executionDomainId, HeapServiceRecordStage.Direct, frame.pc);
+					this.requestYield();
+					return;
+				}
+				closure = this.allocateStaticClosureFromLatch();
+			}
+			this.setRegisterClosureFast(frame, registers, a, closure);
+		} else {
+			const closure = this.createClosure(frame);
+			if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
 		}
-		this.setRegisterClosureFast(frame, registers, a, closure);
-		return;
 	}
 
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
@@ -4076,10 +4112,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private createClosure(frame: CallFrame): number {
 		const functionRecord = this.functionRecordLatch;
-		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) !== 0
-			&& functionRecord.recordUpvalueCount === 0) {
-			return this.staticClosureFromLatch();
-		}
 		const count = functionRecord.recordUpvalueCount;
 		const latched = !functionRecord.romBacked;
 		if (Closure.closureRecordBytes(count, latched) > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;

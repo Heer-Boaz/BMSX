@@ -1088,7 +1088,11 @@ operand in either case.
 
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
-execution context. An ordinary call uses that value; a numeric
+execution context. When a STATIC prototype in ROM needs a new captureless
+closure, the resident memory routine reserves and initializes it on ordinary
+CPU cycles. Device time continues while it runs. Interrupt entry and the next
+instruction wait for the destination to be written or the request to fail.
+An ordinary call uses the closure value; a numeric
 function-record address is supplied to CLOSURE or EXEC under their separate
 operand rules.
 
@@ -1520,8 +1524,9 @@ until the fresh cycle completes.
 
 If a physical reservation for `NEWT` fails, the allocator frees its partial
 reservation before collection. It retries the same request after the permitted
-collection cycle. For `NEWT` or a table insertion suspended between attempts,
-resident root scanning, tracing, remark visits, weak-entry removal and sweeping
+collection cycle. For `NEWT`, a new captureless closure from a STATIC ROM
+prototype, or a table insertion suspended between attempts, resident root
+scanning, tracing, remark visits, weak-entry removal and sweeping
 run on ordinary CPU grants: devices continue to advance. The CPU settles any
 unpaid cycles already accepted for the issuing instruction before the
 routine runs, and does not charge them again on retry. A table insertion
@@ -1534,8 +1539,9 @@ instruction wait until the request completes or raises its error.
 Logical and physical assists each request at most one work word per three
 remaining cycles of the issuing grant. Fewer than three cycles defer the
 assist, not the reservation. An indivisible scan such as a record header may
-exceed the requested work. For `NEWT`, the resident memory routine performs
-these assists on ordinary CPU grants before attempting the reservation.
+exceed the requested work. For `NEWT` and new captureless closures from STATIC
+ROM prototypes, the resident memory routine performs these assists on
+ordinary CPU grants before attempting the reservation.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.

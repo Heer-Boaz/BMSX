@@ -13,8 +13,8 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET,
-	HeapServiceGcField, HeapServiceGcStage, HeapServiceNewtStage,
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_OFFSET,
+	HeapServiceGcField, HeapServiceGcStage, HeapServiceRecordStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -107,10 +107,11 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
-	// Measure the ordinary boot prefix independently of the device clock,
+	const stageAddress = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_RECORD_OFFSET;
+	// Measure the whole boot prefix, including its initial Closure service,
 	// then place the physical edge shortly after NEWT starts its BIOS entry.
 	let bootCycles = 0;
-	for (let step = 0; step < 256 && !cpu.heapServiceActive(); ++step) {
+	for (let step = 0; step < 2048 && memory.readRamRecordWord(stageAddress) !== HeapServiceRecordStage.Scheduled; ++step) {
 		scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		bootCycles += 1 - cpu.instructionBudgetRemaining;
 	}
@@ -118,13 +119,12 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 	applyRuntimeSaveState(runtime, boot);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - bootCycles - 32);
 
-	const stageAddress = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Idle);
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Idle);
 	assert.equal(frames.runCyclesToNextLogicalTick(bootCycles + 64), true);
 	assert.ok(scheduler.nowCycles >= edge);
 	assert.ok(frames.lastTickCpuUsedCycles > 0);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Scheduled);
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Scheduled);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(runtime.vblank.hasDeferredPressure(), true);
@@ -134,7 +134,7 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 
 	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
 	assert.equal(cpu.heapServiceActive(), false);
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Idle);
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Idle);
 	assert.ok(cpu.readFramePc(caller) > issuePc);
 	assert.deepEqual(runtime.readCompletionValues(), [], 'the scheduler has not yet admitted the caller again');
 	assert.ok(scheduler.nowCycles > beforeRetirement);
@@ -222,7 +222,9 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
-	assert.equal(cpu.runUntilDepth(0, 60_000), RunResult.Halted);
+	let result = cpu.runUntilDepth(0, 60_000);
+	for (let grant = 0; grant < 8 && result === RunResult.Yielded; ++grant) result = cpu.runUntilDepth(0, 60_000);
+	assert.equal(result, RunResult.Halted);
 	const [setter] = runtime.readCompletionValues();
 	assert.equal(valueTag(setter), ValueTag.Closure);
 

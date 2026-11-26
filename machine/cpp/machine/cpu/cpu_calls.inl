@@ -11,7 +11,7 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 		hardHalt();
 		return;
 	}
-	const u32 closure = createClosure(frame);
+	const u32 closure = createClosure(frame, destination);
 	if (!closure) return;
 	frame.registers.set(destination, valueClosure(closure));
 	frame.extendTop(destination + 1);

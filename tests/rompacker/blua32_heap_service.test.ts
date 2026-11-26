@@ -18,7 +18,7 @@ import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_
 import {
 	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_TABLE_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
 	HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TRACE_MODULE_PATH, HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH,
-	HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,
+	HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, HEAP_SERVICE_CLOSURE_MODULE_PATH,
 } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
@@ -77,6 +77,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_REMARK_MODULE_PATH, 'remark_visits'],
 		[HEAP_SERVICE_REMARK_MODULE_PATH, 'mark_root_head'],
 		[HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, 'trace_root_banks'],
+		[HEAP_SERVICE_CLOSURE_MODULE_PATH, 'create_closure'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {

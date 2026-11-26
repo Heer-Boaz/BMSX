@@ -574,14 +574,22 @@ FunctionPrototype CPU::readClosureBinding(u32 closure) {
 	return ClosureRecord::readBinding(m_memory, closure, binding, executionImageForDomain(binding.domain())->romFunctions);
 }
 
-u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
+u32 CPU::findStaticClosure(const FunctionPrototype& record) {
 	u32 first = 0u;
 	for (const u32 closure : m_staticClosuresByAddress.find(record.functionAddress)) {
 		if ((first == 0u || closure < first) && !m_heap.sweepGarbage(closure)
 			&& readClosureBinding(closure) == record)
 			first = closure;
 	}
-	if (first != 0u) return first;
+	return first;
+}
+
+u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
+	if (const u32 first = findStaticClosure(record)) return first;
+	return allocateStaticClosure(record);
+}
+
+u32 CPU::allocateStaticClosure(const FunctionPrototype& record) {
 	const u32 closure = allocateClosure(record, 0, true);
 	m_staticClosuresByAddress.insert(record.functionAddress, closure);
 	return closure;
@@ -1869,6 +1877,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_heap_service.inl"
+#include "machine/cpu/cpu_heap_record.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
@@ -2522,27 +2531,27 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				const u32 newTable = m_heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
-				const auto newTableStage = gcStage == HeapServiceGcStage::Idle ? HeapServiceNewtStage::Idle
-					: static_cast<HeapServiceNewtStage>(m_memory.readRamRecordWord(newTable + static_cast<u32>(HeapServiceNewtField::Stage)));
-				const bool newTableCollection = newTableStage >= HeapServiceNewtStage::DirectRecovery;
+				const u32 record = m_heapAllocator.managementOffset() + HEAP_SERVICE_RECORD_OFFSET;
+				const auto recordStage = gcStage == HeapServiceGcStage::Idle ? HeapServiceRecordStage::Idle
+					: static_cast<HeapServiceRecordStage>(m_memory.readRamRecordWord(record + static_cast<u32>(HeapServiceRecordField::Stage)));
+				const bool recordCollection = recordStage >= HeapServiceRecordStage::DirectRecovery;
 				switch (gcStage) {
 					case HeapServiceGcStage::FullTrace:
 					case HeapServiceGcStage::MaintenanceTrace: {
 						const auto work = m_heap.finishTraceQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullTrace || newTableCollection) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullTrace || recordCollection) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRemark:
 					case HeapServiceGcStage::MaintenanceRemark: {
 						const auto work = m_heap.finishRemarkQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRemark || newTableCollection) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullRemark || recordCollection) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRootHead:
 					case HeapServiceGcStage::MaintenanceRootHead: {
 						const auto work = m_heap.finishRootHead(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRootHead || newTableCollection) chargeCollectionWork(work);
+						if (gcStage == HeapServiceGcStage::FullRootHead || recordCollection) chargeCollectionWork(work);
 						break;
 					}
 					case HeapServiceGcStage::FullRootBanks:
@@ -2566,14 +2575,14 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					case HeapServiceGcStage::PressureStringSweep:
 					case HeapServiceGcStage::AllocationRecoveryStringSweep:
 						m_heap.finishStringSweep(gcStage);
-						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep && !newTableCollection) finishAllocationRecovery();
+						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep && !recordCollection) finishAllocationRecovery();
 						break;
 					case HeapServiceGcStage::Idle:
 						finishExecutionFloor();
-						finishNewTableReservation();
+						finishRecordReservation();
 						break;
 				}
-				if (newTableCollection && !heapServiceActive()) finishNewTableCollection(newTableStage);
+				if (recordCollection && !heapServiceActive()) finishRecordCollection(recordStage);
 			} catch (const LuaOutOfMemorySignal&) {
 				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
 				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
@@ -2918,11 +2927,20 @@ void CPU::linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot) {
 	else frame.writeControl(FrameField::OpenHead, cell);
 }
 
-u32 CPU::createClosure(CallFrame& frame) {
+u32 CPU::createClosure(CallFrame& frame, int destination) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
 		&& functionRecord.upvalueCount == 0u) {
-		return staticClosureForRecord(decodePrototype(functionRecord));
+		const auto prototype = decodePrototype(functionRecord);
+		if (const u32 first = findStaticClosure(prototype)) return first;
+		if (functionRecord.romBacked
+			&& m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CreateClosure)] != 0u) {
+			beginRecordReservation(frame, HeapServiceRecordKind::CanonicalClosure, destination, prototype.functionAddress,
+				static_cast<u32>(prototype.executionDomainId), HeapServiceRecordStage::Direct, frame.readControl(FrameField::Pc));
+			requestYield();
+			return 0u;
+		}
+		return allocateStaticClosure(prototype);
 	}
 	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
 	m_closureCellScratch.resize(functionRecord.upvalueCount);

@@ -14,7 +14,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, Count,
+	RootHead, RootBanks, CreateClosure, Count,
 };
 using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
 
@@ -41,19 +41,21 @@ constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 152;
 
 enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 
-constexpr uint32_t HEAP_SERVICE_NEWT_OFFSET = 0xf00;
-enum class HeapServiceNewtField : uint32_t {
-	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12,
+constexpr uint32_t HEAP_SERVICE_RECORD_OFFSET = 0xf00;
+enum class HeapServiceRecordField : uint32_t {
+	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12, Prototype = 8, ExecutionDomain = 12,
 	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
 };
-enum class HeapServiceNewtStage : uint32_t {
+enum class HeapServiceRecordStage : uint32_t {
 	Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery, LogicalAssist, PhysicalAssist, DirectLogicalRecovery,
 };
 
-constexpr uint32_t HEAP_SERVICE_NEWT_ASSIST_OFFSET = 0xf30;
-enum class HeapServiceNewtAssistField : uint32_t {
-	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16,
+constexpr uint32_t HEAP_SERVICE_RECORD_CONTROL_OFFSET = 0xf30;
+enum class HeapServiceRecordControlField : uint32_t {
+	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16, Kind = 20,
 };
+
+enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };

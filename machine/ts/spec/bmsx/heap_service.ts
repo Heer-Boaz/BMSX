@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, Count,
+	RootHead, RootBanks, CreateClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -32,19 +32,21 @@ export const HEAP_SERVICE_VALUE_COUNT = 152;
 
 export const enum HeapServiceExecStage { Idle, First, Retry }
 
-export const HEAP_SERVICE_NEWT_OFFSET = 0xf00;
-export const enum HeapServiceNewtField {
-	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12,
+export const HEAP_SERVICE_RECORD_OFFSET = 0xf00;
+export const enum HeapServiceRecordField {
+	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12, Prototype = 8, ExecutionDomain = 12,
 	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
 }
-export const enum HeapServiceNewtStage {
+export const enum HeapServiceRecordStage {
 	Idle, Direct, Scheduled, RetryCurrent, RetryFresh, DirectRecovery, LogicalAssist, PhysicalAssist, DirectLogicalRecovery,
 }
 
-export const HEAP_SERVICE_NEWT_ASSIST_OFFSET = 0xf30;
-export const enum HeapServiceNewtAssistField {
-	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16,
+export const HEAP_SERVICE_RECORD_CONTROL_OFFSET = 0xf30;
+export const enum HeapServiceRecordControlField {
+	Budget = 0, EpochBefore = 4, Debt = 8, Pressure = 12, ReservationStage = 16, Kind = 20,
 }
+
+export const enum HeapServiceRecordKind { Table, CanonicalClosure }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }

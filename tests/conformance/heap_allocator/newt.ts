@@ -20,9 +20,9 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_ASSIST_OFFSET, HEAP_SERVICE_NEWT_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceNewtAssistField, HeapServiceNewtField,
-	HeapServiceNewtStage, HeapServiceTraceField,
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_CONTROL_OFFSET, HEAP_SERVICE_RECORD_OFFSET,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceRecordControlField, HeapServiceRecordField,
+	HeapServiceRecordKind, HeapServiceRecordStage, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -60,8 +60,10 @@ try {
 			const history = new RamHistory();
 			history.start(memory);
 			const baseline = history.capture(memory, null);
-			const stageAddress = arena.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+			const stageAddress = arena.managementOffset() + HEAP_SERVICE_RECORD_OFFSET;
 			const stage = () => memory.readRamRecordWord(stageAddress);
+			const tableReservation = () => cpu.heapServiceActive() && memory.readRamRecordWord(
+				arena.managementOffset() + HEAP_SERVICE_RECORD_CONTROL_OFFSET + HeapServiceRecordControlField.Kind) === HeapServiceRecordKind.Table;
 			const trace: string[] = [], expected: string[] = [];
 			let directRecoveryOutput = -1;
 			const observe = (command: string, value: string | number) => {
@@ -84,7 +86,7 @@ try {
 			const checkpointPath = join(directory, `newt-${label}.state`);
 			const nativeCheckpointPath = join(directory, `newt-${label}-native.state`);
 			if (scenario === 'oom' || scenario === 'recovered' || directOom) {
-				for (let i = 0; i < 256 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i) step(1);
+				for (let i = 0; i < 2048 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i) step(1);
 				assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), newtPc);
 				const allocate = (bytes: number) => {
 					const address = arena.allocate(bytes, true);
@@ -147,7 +149,7 @@ try {
 					observe(`v ${wait}`, scheduler.nowCycles);
 				}
 				step(1);
-				const reservation = scheduled ? HeapServiceNewtStage.Scheduled : HeapServiceNewtStage.Direct;
+				const reservation = scheduled ? HeapServiceRecordStage.Scheduled : HeapServiceRecordStage.Direct;
 				assert.equal(stage(), reservation);
 				const partial = physical + physicalRecord + physicalArray;
 				for (let i = 0; i < 2048 && arena.occupiedBytes() < partial; ++i) step(1);
@@ -163,7 +165,7 @@ try {
 				assert.equal(cpu.readFramePc(caller), newtPc);
 				if (directOom) {
 					assert.ok(cpu.heapServiceActive());
-					assert.equal(stage(), HeapServiceNewtStage.DirectRecovery);
+					assert.equal(stage(), HeapServiceRecordStage.DirectRecovery);
 					assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceRootHead);
 					assert.equal(cpu.captureRuntimeState().pendingAllocation, null);
 					assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -173,7 +175,7 @@ try {
 					guard.machine.cpu.requestNonMaskableInterrupt();
 					assert.equal(guard.machine.cpu.enterPendingInterrupt(), false, 'the Direct continuation alone excludes NMI');
 					trace.push('S', 'N'); observe('I', 0); trace.push('U');
-					const runDirectTo = (stop: HeapServiceNewtStage) => {
+					const runDirectTo = (stop: HeapServiceRecordStage) => {
 						const before = scheduler.nowCycles;
 						let visited = 0;
 						for (let grant = 0; grant < 65536; ++grant) {
@@ -191,7 +193,7 @@ try {
 						assert.fail(`Direct NEWT did not reach stage ${stop}`);
 					};
 					directRecoveryOutput = expected.length;
-					const recovered = runDirectTo(HeapServiceNewtStage.Direct);
+					const recovered = runDirectTo(HeapServiceRecordStage.Direct);
 					const stages = [HeapServiceGcStage.MaintenanceRootHead, HeapServiceGcStage.MaintenanceRootBanks,
 						HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceRemark, HeapServiceGcStage.MaintenanceWeakClear,
 						HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep];
@@ -201,8 +203,8 @@ try {
 					assert.equal(cpu.readLuaFaultReasonWord(), 0);
 					assert.equal(cpu.stringPool.find('dead'), undefined, 'Direct ran reclamation before retrying');
 					body = () => {
-						assert.equal(stage(), HeapServiceNewtStage.Direct);
-						assert.equal(runDirectTo(HeapServiceNewtStage.Idle), 1 << HeapServiceGcStage.Idle, 'the fresh epoch is not repeated');
+						assert.equal(stage(), HeapServiceRecordStage.Direct);
+						assert.equal(runDirectTo(HeapServiceRecordStage.Idle), 1 << HeapServiceGcStage.Idle, 'the fresh epoch is not repeated');
 						assert.equal(cpu.heapServiceActive(), false);
 						assert.equal(cpu.captureRuntimeState().pendingAllocation, null);
 						assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
@@ -286,23 +288,23 @@ try {
 						assert.ok(scheduler.nowCycles > checkpointCycles);
 						assert.equal(cpu.readFramePc(caller), newtPc);
 					};
-					const tryReservation = (expectedStage: HeapServiceNewtStage) => {
+					const tryReservation = (expectedStage: HeapServiceRecordStage) => {
 						schedulerStep('d');
 						assert.equal(stage(), expectedStage);
 						for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) schedulerStep('d');
-						assert.equal(stage(), HeapServiceNewtStage.Idle);
+						assert.equal(stage(), HeapServiceRecordStage.Idle);
 					};
 					body = () => {
 						finishSweep();
 						assert.equal(cpu.stringPool.find('dead'), undefined);
 						if (discarded) {
 							assert.equal(cpu.stringPool.find(longString), discarded);
-							tryReservation(HeapServiceNewtStage.RetryCurrent);
+							tryReservation(HeapServiceRecordStage.RetryCurrent);
 							assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
 							finishSweep();
 							assert.equal(cpu.stringPool.find(longString), undefined);
 						}
-						tryReservation(HeapServiceNewtStage.RetryFresh);
+						tryReservation(HeapServiceRecordStage.RetryFresh);
 						assert.equal(cpu.allocationParked(), false);
 						if (scenario === 'oom') {
 							assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
@@ -322,16 +324,16 @@ try {
 					};
 				}
 			} else {
-				for (let i = 0; i < 256 && !cpu.heapServiceActive(); ++i) step(1);
-				assert.ok(cpu.heapServiceActive(), 'executing NEWT enters actual System BIOS instructions');
-				assert.equal(stage(), scheduled ? HeapServiceNewtStage.Scheduled : HeapServiceNewtStage.Direct);
+				for (let i = 0; i < 2048 && !tableReservation(); ++i) step(1);
+				assert.ok(tableReservation(), 'executing NEWT enters actual System BIOS instructions');
+				assert.equal(stage(), scheduled ? HeapServiceRecordStage.Scheduled : HeapServiceRecordStage.Direct);
 				const before = arena.occupiedBytes(), logical = budget.usedBytes();
 				const caller = cpu.getFrameDepth() - 1;
 				const issuePc = cpu.readFramePc(caller);
-				const destination = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.Destination);
+				const destination = memory.readRamRecordWord(stageAddress + HeapServiceRecordField.Destination);
 				const parkedValue = cpu.readFrameRegister(caller, destination);
-				const arrayCount = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.ArraySize);
-				const hashRequest = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.HashSize);
+				const arrayCount = memory.readRamRecordWord(stageAddress + HeapServiceRecordField.ArraySize);
+				const hashRequest = memory.readRamRecordWord(stageAddress + HeapServiceRecordField.HashSize);
 				const oracle = new Runtime(configuration, runtimeInput);
 				oracle.boot();
 				applyRuntimeSaveState(oracle, captureRuntimeSaveState(runtime));
@@ -381,7 +383,7 @@ try {
 					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) paid += step(1);
 					assert.ok(paid > 0, 'normal guest grants are consumed to finish initialization');
 					assert.equal(cpu.heapServiceActive(), false);
-					assert.equal(stage(), HeapServiceNewtStage.Idle);
+					assert.equal(stage(), HeapServiceRecordStage.Idle);
 					assert.ok(budget.usedBytes() > logical);
 					assert.ok(cpu.readFramePc(caller) > issuePc, 'NEWT retires before the next guest instruction');
 					assert.equal(published(), true);
@@ -453,7 +455,7 @@ try {
 		oracle.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		const { gc, heapAllocator: arena, luaHeap: budget } = cpu;
-		for (let i = 0; i < 256 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i)
+		for (let i = 0; i < 2048 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i)
 			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		const caller = cpu.getFrameDepth() - 1;
 		assert.equal(cpu.readFramePc(caller), newtPc);
@@ -465,8 +467,8 @@ try {
 		gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(gc.phase(), GcPhase.Mark);
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-		const state = arena.allocatorStateOffset(), stageAddress = management + HEAP_SERVICE_NEWT_OFFSET;
-		const stage = () => memory.readRamRecordWord(stageAddress + HeapServiceNewtField.Stage);
+		const state = arena.allocatorStateOffset(), stageAddress = management + HEAP_SERVICE_RECORD_OFFSET;
+		const stage = () => memory.readRamRecordWord(stageAddress + HeapServiceRecordField.Stage);
 		const occupied = arena.occupiedBytes(), logical = budget.usedBytes();
 		// Preserve the source pacer relation: with unit slope, pay-at is
 		// basis + 512 at paid = 0. The first 512 logical words cannot
@@ -525,22 +527,22 @@ try {
 		}
 		const initialPolicy = [logical - 128, ...[epoch, paid, payAt].map(offset => memory.readRamRecordWord(offset))];
 		const issued = grant(bulk);
-		assert.equal(stage(), HeapServiceNewtStage.LogicalAssist);
+		assert.equal(stage(), HeapServiceRecordStage.LogicalAssist);
 		checkBeforeReservation(initialPolicy);
-		const assist = management + HEAP_SERVICE_NEWT_ASSIST_OFFSET;
+		const assist = management + HEAP_SERVICE_RECORD_CONTROL_OFFSET;
 		const limit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
-		assert.deepEqual([HeapServiceNewtAssistField.Budget, HeapServiceNewtAssistField.EpochBefore, HeapServiceNewtAssistField.Debt,
-			HeapServiceNewtAssistField.Pressure, HeapServiceNewtAssistField.ReservationStage].map(field => memory.readRamRecordWord(assist + field)),
-			[bulk - issued, initialPolicy[1], charge + 128, 0, HeapServiceNewtStage.Scheduled]);
+		assert.deepEqual([HeapServiceRecordControlField.Budget, HeapServiceRecordControlField.EpochBefore, HeapServiceRecordControlField.Debt,
+			HeapServiceRecordControlField.Pressure, HeapServiceRecordControlField.ReservationStage].map(field => memory.readRamRecordWord(assist + field)),
+			[bulk - issued, initialPolicy[1], charge + 128, 0, HeapServiceRecordStage.Scheduled]);
 		assert.equal(memory.readRamRecordWord(limit), logicalPolicy[2]);
 		observe(`H ${assist} ${assist + 20}`, hashBytes(memory.ramData(), assist, 20));
 		observe(`H ${limit} ${limit + 4}`, hashBytes(memory.ramData(), limit, 4));
 		const logicalEntry = captureRuntimeSaveState(runtime);
 		assert.ok(grant(1) > 0, 'ordinary BIOS instructions execute before any allocation');
 		let paidCycles = 0;
-		for (let i = 0; i < 16 && stage() === HeapServiceNewtStage.LogicalAssist; ++i) paidCycles += grant(bulk, true);
+		for (let i = 0; i < 16 && stage() === HeapServiceRecordStage.LogicalAssist; ++i) paidCycles += grant(bulk, true);
 		assert.ok(paidCycles > 0);
-		assert.equal(stage(), HeapServiceNewtStage.PhysicalAssist);
+		assert.equal(stage(), HeapServiceRecordStage.PhysicalAssist);
 		checkBeforeReservation(logicalPolicy);
 		const physicalAllowance = physicalPolicy[2] - logicalPolicy[2];
 		assert.equal(memory.readRamRecordWord(limit), physicalAllowance);
@@ -549,18 +551,18 @@ try {
 		writeFileSync(checkpointPath, encodeRuntimeSaveState(checkpoint));
 		const prefix = observations.splice(0);
 		applyRuntimeSaveState(runtime, logicalEntry);
-		for (let i = 0; i < 16384 && stage() === HeapServiceNewtStage.LogicalAssist; ++i)
+		for (let i = 0; i < 16384 && stage() === HeapServiceRecordStage.LogicalAssist; ++i)
 			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-		assert.equal(stage(), HeapServiceNewtStage.PhysicalAssist, 'retirement on a one-cycle grant still inherits NEWT’s original allowance');
+		assert.equal(stage(), HeapServiceRecordStage.PhysicalAssist, 'retirement on a one-cycle grant still inherits NEWT’s original allowance');
 		assert.equal(memory.readRamRecordWord(limit), physicalAllowance);
 		assert.equal(arena.occupiedBytes(), occupied);
 		applyRuntimeSaveState(runtime, checkpoint);
 
 		function complete() {
 			let paidCycles = 0;
-			for (let i = 0; i < 16 && stage() === HeapServiceNewtStage.PhysicalAssist; ++i) paidCycles += grant(bulk, true);
+			for (let i = 0; i < 16 && stage() === HeapServiceRecordStage.PhysicalAssist; ++i) paidCycles += grant(bulk, true);
 			assert.ok(paidCycles > 0);
-			assert.equal(stage(), HeapServiceNewtStage.Scheduled);
+			assert.equal(stage(), HeapServiceRecordStage.Scheduled);
 			checkBeforeReservation(physicalPolicy);
 			for (let i = 0; i < 16 && cpu.getFrameDepth() !== 0; ++i) grant(bulk);
 			assert.equal(cpu.getFrameDepth(), 0);
@@ -610,7 +612,7 @@ try {
 		const physicalBeforeQuota = arena.occupiedBytes(), now = scheduler.nowCycles;
 		const issuedQuota = runtime.cpuExecution.runSuspendedUntilDepth(0, 1);
 		const quotaIssue = `${issuedQuota} ${scheduler.nowCycles - now} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()}`;
-		assert.equal(stage(), HeapServiceNewtStage.DirectLogicalRecovery);
+		assert.equal(stage(), HeapServiceRecordStage.DirectLogicalRecovery);
 		assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceRootHead);
 		assert.ok(cpu.heapServiceActive());
 		assert.equal(cpu.allocationParked(), false);
@@ -621,7 +623,7 @@ try {
 		assert.equal(hashBytes(memory.ramData(), state, 0x200), quotaArena, 'logical refusal is not a physical reservation');
 		const reclaimAt = scheduler.nowCycles;
 		let visited = 0, lastResult = issuedQuota;
-		for (let i = 0; i < 65536 && stage() === HeapServiceNewtStage.DirectLogicalRecovery; ++i) {
+		for (let i = 0; i < 65536 && stage() === HeapServiceRecordStage.DirectLogicalRecovery; ++i) {
 			assert.equal(cpu.readFramePc(caller), newtPc);
 			visited |= 1 << cpu.gc.serviceStage();
 			lastResult = runtime.cpuExecution.runSuspendedUntilDepth(0, 1);
@@ -629,16 +631,16 @@ try {
 		assert.ok(visited & (1 << HeapServiceGcStage.AllocationRecoveryStringSweep), 'the admitted fresh epoch reached reclamation');
 		assert.ok(scheduler.nowCycles > reclaimAt);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(stage(), HeapServiceNewtStage.Idle);
+		assert.equal(stage(), HeapServiceRecordStage.Idle);
 		assert.equal(cpu.gc.phase(), GcPhase.Pause);
 		assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
 		assert.equal(cpu.readEpcWord(), newtPc);
-		const quotaOutput = run('logical-quota', ['X', 'D 1', `H ${state} ${state + 0x200}`, 'P', `q ${HeapServiceNewtStage.Idle} 65536`, 'Z'], quotaSeed);
+		const quotaOutput = run('logical-quota', ['X', 'D 1', `H ${state} ${state + 0x200}`, 'P', `q ${HeapServiceRecordStage.Idle} 65536`, 'Z'], quotaSeed);
 		assert.deepEqual(quotaOutput.slice(0, 3), [quotaIssue, String(quotaArena), `${caller + 1} ${newtPc}`]);
 		const [returned, elapsed, active, retiredStage, physical, used, mask] = quotaOutput[3].split(' ').map(Number);
 		assert.ok(elapsed > 0);
-		assert.deepEqual([returned, active, retiredStage, physical, used, mask], [lastResult, 0, HeapServiceNewtStage.Idle, arena.occupiedBytes(), budget.usedBytes(), visited]);
+		assert.deepEqual([returned, active, retiredStage, physical, used, mask], [lastResult, 0, HeapServiceRecordStage.Idle, arena.occupiedBytes(), budget.usedBytes(), visited]);
 		assert.equal(quotaOutput[4], `${cpu.readCauseWord()} ${LUA_FAULT_REASON_OUT_OF_MEMORY} ${newtPc}`);
 		console.log(`BIOS-NEWT-HEAP-SERVICE:PASS O${optLevel}-direct-logical-quota (an admitted epoch before original-PC OOM, no premature reservation)`);
 	}

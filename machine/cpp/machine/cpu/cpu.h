@@ -454,6 +454,8 @@ private:
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested = nullptr);
 #endif
+	u32 findStaticClosure(const FunctionPrototype& record);
+	u32 allocateStaticClosure(const FunctionPrototype& record);
 	u32 staticClosureForRecord(const FunctionPrototype& record);
 	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
@@ -479,7 +481,7 @@ private:
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
-	u32 createClosure(CallFrame& frame);
+	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
@@ -520,14 +522,15 @@ private:
 	void finishAllocationRecovery();
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
-	bool beginNewTableReservation(CallFrame&, PendingTableCreation, HeapServiceNewtStage, u32 nextPc);
-	void startNewTableReservation(u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
-	void startNewTablePhysicalAssist(HeapServiceNewtStage stage, int budget, u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
-	void finishNewTableReservation();
-	void stepNewTableCollection(size_t words);
-	void startDirectNewTableLogicalEpoch();
-	void advanceDirectNewTableRecovery();
-	void finishNewTableCollection(HeapServiceNewtStage stage);
+	bool beginRecordReservation(CallFrame&, HeapServiceRecordKind, int destination, u32 operand0, u32 operand1,
+		HeapServiceRecordStage, u32 nextPc);
+	void startRecordReservation(HeapServiceRecordStage, HeapServiceRecordKind, u32 operand0, u32 operand1, u32 charged);
+	void startRecordPhysicalAssist(HeapServiceRecordStage, HeapServiceRecordKind, int budget, u32 operand0, u32 operand1, u32 charged);
+	void finishRecordReservation();
+	void stepRecordCollection(size_t words);
+	void startDirectRecordLogicalEpoch();
+	void advanceDirectRecordRecovery();
+	void finishRecordCollection(HeapServiceRecordStage stage);
 	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
