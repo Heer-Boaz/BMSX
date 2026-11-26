@@ -24,8 +24,8 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
 	const auto& cpu = runtime.machine.cpu;
 	if (!cpu.heapServiceActive()) {
-		if (runtime.vblank.hasDeferredPressure(runtime) || cpu.gcHeap().stoppedFinalMarkPending()) return false;
 		if (cpu.allocationParked()) return cpu.allocationReady();
+		if (runtime.vblank.hasDeferredPressure(runtime) || cpu.gcHeap().stoppedFinalMarkPending()) return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
@@ -50,13 +50,18 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || cpu.heapServiceActive()) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
-	if (runtime.vblank.stepDeferredPressure(runtime)) {
+	if (cpu.allocationParked()) {
+		// Device edges during timed recovery must not displace its retry.
+		if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) {
+			++m_maintenancePulseSequence;
+			return Pulse::Maintenance;
+		}
+	} else if (runtime.vblank.stepDeferredPressure(runtime)) {
 		++m_maintenancePulseSequence;
 		return Pulse::Maintenance;
-	}
-	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.stoppedFinalMarkPending()) {
+	} else if (heap.stoppedFinalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
-		if (!cpu.allocationParked()) heap.stepFinalMark();
+		heap.stepFinalMark();
 		++m_maintenancePulseSequence;
 		return Pulse::Maintenance;
 	}

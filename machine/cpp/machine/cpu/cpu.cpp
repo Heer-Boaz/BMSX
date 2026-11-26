@@ -2506,14 +2506,16 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
 	if (heapServiceActive()) {
-		const bool fullStringSweep = m_heap.fullStringSweepActive();
+		const auto stringSweep = m_heap.stringSweepStage();
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				if (fullStringSweep) m_heap.finishFullStringSweep();
-				else {
+				if (stringSweep != HeapServiceGcStage::Idle) {
+					m_heap.finishStringSweep(stringSweep);
+					if (stringSweep == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();
+				} else {
 					finishExecutionFloor();
 					finishNewTableReservation();
 				}
@@ -2528,7 +2530,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return fullStringSweep && kind == CpuRunKind::Scheduled ? RunResult::CollectionProgress : RunResult::Yielded;
+		return stringSweep != HeapServiceGcStage::Idle && kind == CpuRunKind::Scheduled
+			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {
 		instructionBudgetRemaining = instructionBudget;

@@ -514,6 +514,7 @@ private:
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);
+	void finishAllocationRecovery();
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
 	void publishNewTable(u32 address, int arraySize, size_t hashCapacity);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);

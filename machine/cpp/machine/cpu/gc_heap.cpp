@@ -5,7 +5,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/image_format.h"
-#include "spec/bmsx/heap_service.h"
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -951,7 +950,7 @@ void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1,
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
-	size_t limit, u32 stringSweepFunction) {
+	size_t limit, u32 stringSweepFunction, HeapServiceGcStage stringSweepStage) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 	const u32 occupied = arena.occupiedBytes();
@@ -961,7 +960,7 @@ size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bo
 		const u32 state = management + HEAP_SERVICE_GC_OFFSET;
 		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
 		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore), occupied);
-		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(HeapServiceGcStage::FullStringSweep));
+		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stringSweepStage));
 		const std::array arguments{management + HEAP_STRING_METADATA_OFFSET, arena.stateOffset(),
 			management + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(limit - work), 1u};
 		m_cpu.beginHeapService(stringSweepFunction, arguments);
@@ -1102,18 +1101,17 @@ void GcHeap::requestFullCollection() {
 
 size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction) {
 	const size_t work = finalMarkPending() ? stepFinalMark(words)
-		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction);
+		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction, HeapServiceGcStage::FullStringSweep);
 	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
 	return work;
 }
 
-bool GcHeap::fullStringSweepActive() const {
+HeapServiceGcStage GcHeap::stringSweepStage() const {
 	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
-	return memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage))
-		== static_cast<u32>(HeapServiceGcStage::FullStringSweep);
+	return static_cast<HeapServiceGcStage>(memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage)));
 }
 
-void GcHeap::finishFullStringSweep() {
+void GcHeap::finishStringSweep(HeapServiceGcStage stage) {
 	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
 	const u32 prefixWork = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork));
 	const u32 occupiedBefore = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore));
@@ -1121,7 +1119,8 @@ void GcHeap::finishFullStringSweep() {
 	// The returned words price the collector, not CPU time: BLua32 already ran
 	// those instructions under the ordinary cycle counter.
 	finishStepWork(occupiedBefore, prefixWork + m_cpu.heapServiceResult());
-	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, fullEpochs() - 1u);
+	if (stage == HeapServiceGcStage::FullStringSweep && !active())
+		memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, fullEpochs() - 1u);
 	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(HeapServiceGcStage::Idle));
 }
 

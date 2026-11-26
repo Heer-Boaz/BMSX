@@ -7,6 +7,7 @@
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/lua_heap.h"
+#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 class CPU;
@@ -95,15 +96,15 @@ public:
 	bool stoppedFinalMarkPending() const;
 	void requestFullCollection();
 	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction);
-	bool fullStringSweepActive() const;
-	void finishFullStringSweep();
+	HeapServiceGcStage stringSweepStage() const;
+	void finishStringSweep(HeapServiceGcStage stage);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
-		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u);
+		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u, HeapServiceGcStage stringSweepStage = HeapServiceGcStage::Idle);
 	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);

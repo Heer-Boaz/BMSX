@@ -144,14 +144,26 @@ int main(int argc, char** argv) {
 #endif
 					break;
 				}
-				case 'Q': {
-					cpu.instructionBudgetRemaining = 0;
-					if (cpu.allocationReady()) cpu.resumeAllocation();
-					else cpu.advanceAllocationRecovery();
-					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::Stage));
-					std::cout << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
-						<< ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+				case 'a':
+				case 'd': {
+					auto& frames = runtime.frameScheduler;
+					const auto before = frames.lastTickSequence;
+					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
+						: static_cast<int>(frames.stepInstruction(runtime, 1));
+					const u32 management = cpu.heapAllocator().managementOffset();
+					std::cout << result << ' ' << scheduler.nowCycles() << ' ' << (frames.lastTickSequence != before)
+						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
+						<< ' ' << static_cast<u32>(cpu.gcHeap().stringSweepStage())
+						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_NEWT_OFFSET)
+						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET)
+						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
+				case 'v': {
+					int cycles;
+					trace >> cycles;
+					advanceRuntimeTime(runtime, cycles);
+					std::cout << scheduler.nowCycles() << '\n';
 					break;
 				}
 				case 'A': {
@@ -175,6 +187,12 @@ int main(int argc, char** argv) {
 					int array, hash;
 					trace >> array >> hash;
 					std::cout << cpu.createTable(array, hash).address() << '\n';
+					break;
+				}
+				case 'z': {
+					u32 table;
+					trace >> table;
+					std::cout << cpu.gcHeap().step(valueTable(table), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;

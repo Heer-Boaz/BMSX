@@ -1511,11 +1511,15 @@ for both, while interrupt entry and execution of the following instruction
 wait until the fresh cycle completes.
 
 Collection between reservation attempts for `NEWT` or a table insertion can
-pause execution with the console clock stopped. For a table insertion this
-applies both when its proposed capacity exceeds the remaining logical budget
-and when its backing storage does not fit. After collection, the CPU replans
-the insertion using the surviving mappings. No table or new mapping is
-visible until its reservation succeeds. Interrupt entry and the following
+pause execution with the console clock stopped. For an instruction suspended
+between attempts, the resident String reclamation routine runs on ordinary
+CPU grants: devices continue to advance while it runs. The CPU settles any
+unpaid cycles already accepted for the issuing instruction before the
+routine runs, and does not charge them again on retry. A table insertion
+can pause both when its proposed capacity exceeds the remaining logical
+budget and when its backing storage does not fit. After collection, the CPU
+replans the insertion using the surviving mappings. No table or new mapping
+is visible until its reservation succeeds. Interrupt entry and the following
 instruction wait until the request completes or raises its error.
 
 When an instruction assists incremental collection to admit a logical charge
@@ -1531,8 +1535,10 @@ executed by the resident routine during a full collection. This also applies whe
 program replacement requests a collection to free its static region.
 If an allocation fails and the issuing instruction performs emergency
 collection before retrying, it pays the same price for that work, even if
-the retry fails. Vertical blanking maintenance and recovery steps performed
-while the issuing instruction is parked do not debit its grant.
+the retry fails. Vertical blanking maintenance and stopped-clock recovery do
+not debit its grant. A physical pressure opportunity during timed recovery
+is deferred until the pending allocation retires, so it cannot change the
+collection-and-retry order.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 

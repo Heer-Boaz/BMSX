@@ -95,10 +95,10 @@ export class CpuExecutionState {
 
 	public runWithBudget(state: FrameState): CpuExecutionResult {
 		let result = CpuExecutionResult.Yielded;
-		const cpu = this.runtime.machine.cpu;
+		const { machine: { cpu }, vblank } = this.runtime;
 		let running = true;
-		while (running && (cpu.heapServiceActive()
-			|| (!cpu.gc.stoppedFinalMarkPending() && !this.runtime.vblank.hasDeferredPressure()))) {
+		while (running && !vblank.tickCompleted && (cpu.heapServiceActive()
+			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.gc.stoppedFinalMarkPending() && !vblank.hasDeferredPressure()))) {
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;
@@ -262,6 +262,14 @@ export class CpuExecutionState {
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
 		const service = cpu.heapServiceActive();
+		if (service && cpu.allocationParked() && state.deferredAllocationCycles !== 0) {
+			// Charge the issuing instruction's accepted prefix before its
+			// first timed recovery grant, not again when it retries.
+			const deferred = state.deferredAllocationCycles;
+			state.deferredAllocationCycles = 0;
+			settleRetiredCpuGrant(runtime, state, deferred);
+			return CpuSliceResult.Advanced;
+		}
 		if (!service && cpu.allocationParked()) {
 			if (!cpu.allocationReady()) return CpuSliceResult.ParkedAllocation;
 			const deferred = state.deferredAllocationCycles;
@@ -278,10 +286,7 @@ export class CpuExecutionState {
 				return CpuSliceResult.ParkedAllocation;
 			}
 			state.deferredAllocationCycles = 0;
-			state.cycleBudgetRemaining -= consumed;
-			state.activeCpuUsedCycles += consumed;
-			scheduler.acceptedCpuCycles = consumed;
-			settleTime(runtime, scheduler.nowCycles + consumed, ClockRun.RetiredCpu);
+			settleRetiredCpuGrant(runtime, state, consumed);
 			return cpu.getFrameDepth() !== 0 ? CpuSliceResult.InstructionYielded : CpuSliceResult.InstructionHalted;
 		}
 		let advanced = scheduler.hasDueTimer();
@@ -329,13 +334,12 @@ export class CpuExecutionState {
 			}
 			if (consumed > 0) {
 				// Device timers publish this frame's remainder at the VBlank edge.
-				state.cycleBudgetRemaining -= consumed;
-				state.activeCpuUsedCycles += consumed;
 				advanced = true;
 				if (consumed > sliceBudget) {
-					scheduler.acceptedCpuCycles = consumed;
-					tickCompleted = settleTime(runtime, scheduler.nowCycles + consumed, ClockRun.RetiredCpu);
+					tickCompleted = settleRetiredCpuGrant(runtime, state, consumed);
 				} else {
+					state.cycleBudgetRemaining -= consumed;
+					state.activeCpuUsedCycles += consumed;
 					tickCompleted = advanceRuntimeTime(runtime, consumed);
 				}
 			}
@@ -364,6 +368,14 @@ export class CpuExecutionState {
 		}
 		return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
 	}
+}
+
+function settleRetiredCpuGrant(runtime: Runtime, state: FrameState, cycles: number): boolean {
+	const scheduler = runtime.machine.scheduler;
+	state.cycleBudgetRemaining -= cycles;
+	state.activeCpuUsedCycles += cycles;
+	scheduler.acceptedCpuCycles = cycles;
+	return settleTime(runtime, scheduler.nowCycles + cycles, ClockRun.RetiredCpu);
 }
 
 function settleTime(runtime: Runtime, targetCycle: number, run: ClockRun): boolean {

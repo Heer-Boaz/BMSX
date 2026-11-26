@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { AllocationRecovery, CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
-import { valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
@@ -190,4 +190,96 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	assert.equal(cpu.gc.fullEpochs(), 0);
 	assert.equal(cpu.stringPool.find('dead-vblank-string-23'), undefined);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
+});
+
+test('a parked SETT retains its roots across a timed recovery VBlank and restore', () => {
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('return function(owner, key, value)\nowner[key] = value\nreturn 42\nend', 0));
+	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine;
+	const { gc, luaHeap: budget } = cpu, tables = gc.tables;
+	const frames = runtime.frameScheduler;
+	const boot = captureRuntimeSaveState(runtime);
+	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	const edge = scheduler.nowCycles;
+	applyRuntimeSaveState(runtime, boot);
+	assert.equal(cpu.runUntilDepth(0, 60_000), RunResult.Halted);
+	const [setter] = runtime.readCompletionValues();
+	assert.equal(valueTag(setter), ValueTag.Closure);
+
+	budget.setCollectionTarget(budget.capacity());
+	const slots = 8192, owner = cpu.createTable(slots, 0);
+	for (let i = 1; i <= slots; ++i) tables.setInteger(owner, i, valueInteger(i));
+	const payload = valueString(cpu.stringPool.intern('live-only-through-parked-sett'));
+	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-sett-string-${i}`);
+	cpu.beginCompletionCall(valuePayload(setter), [valueTable(owner), valueInteger(slots + 1), payload]);
+	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
+	assert.ok(budget.usedBytes() + 5 * slots > budget.capacity());
+
+	assert.equal(frames.runCyclesToNextLogicalTick(4096), false);
+	assert.equal(cpu.allocationParked(), true);
+	const pending = cpu.captureRuntimeState().pendingAllocation;
+	assert.equal(pending?.kind, PendingAllocationKind.TableAssignment);
+	assert.equal(pending.recovery, AllocationRecovery.Fresh);
+	assert.equal(pending.receiver, owner);
+	assert.equal(pending.value, payload);
+	const caller = cpu.getFrameDepth() - 1;
+	const issuePc = cpu.readFramePc(caller);
+	assert.equal(issuePc, pending.instructionPc);
+	const deferred = runtime.frameLoop.frameState.deferredAllocationCycles;
+	assert.ok(deferred > 0);
+	assert.equal(gc.phase(), GcPhase.Pause);
+	// The successor returns a constant, so clear the dead argument slots.
+	// Only the pending store now keeps the receiver and its String value alive.
+	const frame = cpu.activeThread.currentFrame!;
+	frame.registers.clear(frame.top);
+	frame.top = 0;
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - deferred - 32);
+	const before = scheduler.nowCycles;
+	const service = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	for (let i = 0; i < 64 && !cpu.heapServiceActive(); ++i) {
+		const outcome = frames.stepInstruction(0);
+		assert.equal(outcome, cpu.heapServiceActive() ? InstructionStepResult.Advanced : InstructionStepResult.Blocked);
+		assert.equal(cpu.allocationReady(), false);
+		assert.equal(cpu.readFramePc(caller), issuePc);
+		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native prefix and final-mark work remain stopped');
+	}
+	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryStringSweep);
+	assert.equal(scheduler.nowCycles - before, deferred, 'the accepted issuing prefix settles once before BIOS instructions');
+	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
+	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
+	assert.ok(scheduler.nowCycles >= edge);
+	assert.ok(frames.lastTickCpuUsedCycles > deferred, 'the VBlank accounts for both the issuing prefix and the BIOS grant');
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(cpu.allocationReady(), false);
+	assert.equal(cpu.enterPendingInterrupt(), false);
+	assert.equal(cpu.readFramePc(caller), issuePc);
+	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
+	assert.equal(runtime.vblank.hasDeferredPressure(), true);
+	const checkpoint = captureRuntimeSaveState(runtime);
+
+	function finish() {
+		assert.equal(tables.getInteger(owner, slots + 1), valueNil());
+		for (let i = 0; i < 12 && cpu.getFrameDepth() !== 0; ++i) frames.runCyclesToNextLogicalTick(100_000);
+		assert.equal(cpu.allocationParked(), false);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
+		assert.equal(gc.tableRecordAddress(garbage), 0);
+		assert.equal(gc.tableRecordAddress(owner), owner);
+		assert.equal(tables.getInteger(owner, slots + 1), payload);
+		assert.equal(cpu.stringPool.find('live-only-through-parked-sett'), valuePayload(payload));
+		assert.equal(cpu.stringPool.find('dead-sett-string-23'), undefined);
+		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
+		return scheduler.nowCycles;
+	}
+	const completedAt = finish();
+	applyRuntimeSaveState(runtime, checkpoint);
+	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
+	assert.equal(cpu.allocationReady(), false);
+	assert.equal(finish(), completedAt);
 });

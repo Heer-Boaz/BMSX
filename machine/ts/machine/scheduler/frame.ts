@@ -76,8 +76,8 @@ export class FrameSchedulerState {
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
 		const cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive()) {
-			if (runtime.vblank.hasDeferredPressure() || cpu.gc.stoppedFinalMarkPending()) return false;
 			if (cpu.allocationParked()) return cpu.allocationReady();
+			if (runtime.vblank.hasDeferredPressure() || cpu.gc.stoppedFinalMarkPending()) return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
@@ -103,10 +103,14 @@ export class FrameSchedulerState {
 		const cpu = runtime.machine.cpu;
 		const heap = cpu.gc;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0 || cpu.heapServiceActive()) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
-		if (runtime.vblank.stepDeferredPressure()) return Pulse.Maintenance;
-		if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.stoppedFinalMarkPending()) {
+		if (cpu.allocationParked()) {
+			// A parked instruction owns its recovery and retry even when a
+			// device edge occurred during the timed part of that recovery.
+			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
+		} else if (runtime.vblank.stepDeferredPressure()) return Pulse.Maintenance;
+		else if (heap.stoppedFinalMarkPending()) {
 			// Keep the host grant queued while the guest clock is stopped.
-			if (!cpu.allocationParked()) heap.stepFinalMark();
+			heap.stepFinalMark();
 			return Pulse.Maintenance;
 		}
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;

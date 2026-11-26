@@ -3,17 +3,23 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
+import { AllocationRecovery, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { LuaAllocationMode } from '../../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { ValueTag, valueInteger, valueNil, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
+import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { LogicalTickResult } from '../../../machine/ts/machine/scheduler/frame';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET, HeapServiceNewtStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
+import {
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET, HeapServiceGcStage, HeapServiceNewtStage,
+} from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -83,10 +89,13 @@ try {
 				};
 				const recordBytes = TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX;
 				const arrayBytes = 5, hashBackingBytes = TableRecords.hashStorageBytes(8);
+				const deadString = cpu.stringPool.intern('dead');
+				observe('b dead', deadString);
+				assert.ok(allocate(32), 'prevent the dead String from coalescing with a reservation slot');
+				const discarded = scenario === 'recovered' ? cpu.createTable(256, 0) : 0;
 				if (scenario === 'recovered') {
-					const discarded = cpu.createTable(256, 0);
-					observe('Y 256 0', discarded);
 					assert.ok(discarded);
+					observe('Y 256 0', discarded);
 				}
 				const beforeRecord = arena.occupiedBytes();
 				const record = allocate(recordBytes);
@@ -100,6 +109,12 @@ try {
 				while (allocate(hashBackingBytes)) {}
 				free(array);
 				free(record);
+				if (discarded) {
+					// Keep the backing alive for the interrupted epoch only.
+					// The first retry must fail; a fresh epoch can reclaim it.
+					observe(`z ${discarded}`, cpu.gc.step(valueTable(discarded), valueNil(), valueNil(), 0, false, 1));
+					assert.ok(cpu.gc.active());
+				}
 
 				const physical = arena.occupiedBytes(), logical = budget.usedBytes(), caller = cpu.getFrameDepth() - 1;
 				const referenceStart = captureRuntimeSaveState(runtime);
@@ -111,6 +126,14 @@ try {
 				const state = arena.allocatorStateOffset();
 				const refusedArena = hashBytes(memory.ramData(), state, 0x200);
 				applyRuntimeSaveState(runtime, referenceStart);
+				const frames = runtime.frameScheduler;
+				assert.ok(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame));
+				const edge = scheduler.nowCycles;
+				applyRuntimeSaveState(runtime, referenceStart);
+				const wait = edge - scheduler.nowCycles - 96;
+				assert.ok(wait > 0);
+				advanceRuntimeTime(runtime, wait);
+				observe(`v ${wait}`, scheduler.nowCycles);
 				step(1);
 				assert.equal(stage(), HeapServiceNewtStage.Scheduled);
 				const partial = physical + physicalRecord + physicalArray;
@@ -118,23 +141,69 @@ try {
 				assert.ok(cpu.heapServiceActive());
 				assert.equal(arena.occupiedBytes(), partial, 'both the record and array block are reserved before the hash refusal');
 				assert.equal(budget.usedBytes(), logical);
-				body = () => {
-					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) step(1);
-					assert.ok(cpu.allocationParked());
-					assert.equal(arena.occupiedBytes(), physical, 'refused hash returns both partial reservations');
-					assert.equal(budget.usedBytes(), logical);
-					observe(`H ${state} ${state + 0x200}`, refusedArena);
-					assert.equal(hashBytes(memory.ramData(), state, 0x200), refusedArena, 'allocation bookkeeping equals the WASM reference');
+				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) step(1);
+				assert.ok(cpu.allocationParked());
+				assert.equal(arena.occupiedBytes(), physical, 'refused hash returns both partial reservations');
+				assert.equal(budget.usedBytes(), logical);
+				observe(`H ${state} ${state + 0x200}`, refusedArena);
+				assert.equal(hashBytes(memory.ramData(), state, 0x200), refusedArena, 'allocation bookkeeping equals the WASM reference');
+				assert.equal(cpu.readFramePc(caller), newtPc);
+				const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
+				const schedulerStep = (op: 'a' | 'd') => {
+					const before = frames.lastTickSequence;
+					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
+					observe(op, `${result} ${scheduler.nowCycles} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.stringSweepStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+					return result;
+				};
+				for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
+					const result = schedulerStep('a');
+					assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
+					assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
+				}
+				assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+				assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
+				let partialLogicalBytes = 0;
+				for (let i = 0; i < 65536 && memory.readRamRecordByte(deadString) !== 0; ++i) {
+					partialLogicalBytes = budget.usedBytes();
+					assert.equal(schedulerStep('d'), InstructionStepResult.Advanced);
+					assert.ok(cpu.heapServiceActive() && cpu.allocationParked() && !cpu.allocationReady());
 					assert.equal(cpu.readFramePc(caller), newtPc);
-					for (let i = 0; i < 4096 && cpu.allocationParked(); ++i) {
-						cpu.instructionBudgetRemaining = 0;
-						if (cpu.allocationReady()) cpu.resumeAllocation();
-						else cpu.advanceAllocationRecovery();
-						observe('Q', `${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${stage()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+				}
+				assert.equal(memory.readRamRecordByte(deadString), 0, 'checkpoint after unlinking but before charging the reclaimed String');
+				assert.equal(budget.usedBytes(), partialLogicalBytes);
+				assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
+				assert.ok(scheduler.nowCycles >= edge);
+				assert.equal(pressure(), 1);
+				const checkpointCycles = scheduler.nowCycles;
+				const finishSweep = () => {
+					for (let i = 0; i < 65536 && !cpu.allocationReady(); ++i) {
+						assert.equal(schedulerStep('d'), InstructionStepResult.Advanced);
+						assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
 					}
-					assert.equal(stage(), HeapServiceNewtStage.RetryFresh);
-					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) step(1);
+					assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.Idle);
+					assert.ok(cpu.allocationReady());
+					assert.ok(scheduler.nowCycles > checkpointCycles);
+					assert.equal(cpu.readFramePc(caller), newtPc);
+				};
+				const tryReservation = (expectedStage: HeapServiceNewtStage) => {
+					schedulerStep('d');
+					assert.equal(stage(), expectedStage);
+					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) schedulerStep('d');
 					assert.equal(stage(), HeapServiceNewtStage.Idle);
+				};
+				body = () => {
+					finishSweep();
+					assert.equal(cpu.stringPool.find('dead'), undefined);
+					if (discarded) {
+						assert.equal(cpu.gc.tableRecordAddress(discarded), discarded);
+						tryReservation(HeapServiceNewtStage.RetryCurrent);
+						assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
+						for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) schedulerStep('d');
+						assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+						finishSweep();
+						assert.equal(cpu.gc.tableRecordAddress(discarded), 0);
+					}
+					tryReservation(HeapServiceNewtStage.RetryFresh);
 					assert.equal(cpu.allocationParked(), false);
 					if (scenario === 'oom') {
 						assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
@@ -144,11 +213,13 @@ try {
 					} else {
 						assert.ok(cpu.readFramePc(caller) > newtPc);
 						assert.ok(arena.occupiedBytes() < physical, 'collecting the dead table freed room for the hash');
-						for (let i = 0; i < 16 && cpu.getFrameDepth() !== 0; ++i) step(65536);
+						for (let i = 0; i < 1024 && cpu.getFrameDepth() !== 0; ++i) schedulerStep('d');
 						assert.equal(cpu.getFrameDepth(), 0);
 						assert.equal(runtime.readCompletionValues()[0], valueInteger(183));
+						assert.equal(pressure(), 0, 'deferred pressure is served after the request retires');
 						observe('C', 183);
 					}
+					observe(`H ${state} ${state + 0x200}`, hashBytes(memory.ramData(), state, 0x200));
 				};
 			} else {
 				for (let i = 0; i < 256 && !cpu.heapServiceActive(); ++i) step(1);
@@ -207,11 +278,13 @@ try {
 			}
 			const tracePath = join(directory, `newt-${label}.txt`);
 			writeFileSync(tracePath, trace.join('\n'));
-			const output = execFileSync(native, [romPath, tracePath, checkpointPath], { encoding: 'utf8' }).trimEnd().split('\n');
+			const output = execFileSync(native, [romPath, tracePath, checkpointPath], {
+				encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+			}).trimEnd().split('\n');
 			assert.equal(output.length, expected.length);
 			const mismatch = output.findIndex((line, i) => line !== expected[i]);
 			assert.equal(mismatch, -1, `first differing NEWT observation ${mismatch}: native=${output[mismatch]}, TS=${expected[mismatch]}`);
-			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${expected.length} observations, mid-reservation rewind and restore)`);
+			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${expected.length} observations, ${scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-reservation'} rewind and restore)`);
 		}
 	}
 	rmSync(directory, { recursive: true });

@@ -49,6 +49,6 @@ enum class HeapServiceNewtStage : uint32_t { Idle, Direct, Scheduled, RetryCurre
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8 };
-enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep };
+enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationRecoveryStringSweep };
 
 } // namespace bmsx

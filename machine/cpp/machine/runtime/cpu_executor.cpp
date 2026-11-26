@@ -16,6 +16,14 @@ namespace {
 enum class ClockRun { Devices, RetiredCpu, RetainedCpu };
 template<ClockRun Run>
 bool settleTime(Runtime& runtime, i64 targetCycle);
+
+bool settleRetiredCpuGrant(Runtime& runtime, FrameState& state, int cycles) {
+	auto& scheduler = runtime.machine.scheduler;
+	state.cycleBudgetRemaining -= cycles;
+	state.activeCpuUsedCycles += cycles;
+	scheduler.setAcceptedCpuCycles(cycles);
+	return settleTime<ClockRun::RetiredCpu>(runtime, scheduler.nowCycles() + cycles);
+}
 }
 
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
@@ -77,8 +85,9 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running && (cpu.heapServiceActive()
-		|| (!cpu.gcHeap().stoppedFinalMarkPending() && !runtime.vblank.hasDeferredPressure(runtime)))) {
+	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive()
+		|| (cpu.allocationParked() ? cpu.allocationReady()
+			: !cpu.gcHeap().stoppedFinalMarkPending() && !runtime.vblank.hasDeferredPressure(runtime)))) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
@@ -254,6 +263,13 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
 	const bool service = cpu.heapServiceActive();
+	if (service && cpu.allocationParked() && frameState.deferredAllocationCycles != 0) {
+		// Settle the caller's accepted prefix before granting timed recovery.
+		const int deferred = frameState.deferredAllocationCycles;
+		frameState.deferredAllocationCycles = 0;
+		settleRetiredCpuGrant(runtime, frameState, deferred);
+		return CpuSliceResult::Advanced;
+	}
 	if (!service && cpu.allocationParked()) {
 		if (!cpu.allocationReady()) return CpuSliceResult::ParkedAllocation;
 		// Late fault handling observes the same effective clock as the original slice.
@@ -270,10 +286,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			return CpuSliceResult::ParkedAllocation;
 		}
 		frameState.deferredAllocationCycles = 0;
-		frameState.cycleBudgetRemaining -= consumed;
-		frameState.activeCpuUsedCycles += consumed;
-		scheduler.setAcceptedCpuCycles(consumed);
-		settleTime<ClockRun::RetiredCpu>(runtime, scheduler.nowCycles() + consumed);
+		settleRetiredCpuGrant(runtime, frameState, consumed);
 		return cpu.getFrameDepth() != 0 ? CpuSliceResult::InstructionYielded : CpuSliceResult::InstructionHalted;
 	}
 	bool advanced = scheduler.hasDueTimer();
@@ -324,13 +337,12 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		}
 		if (consumed > 0) {
 			// Device timers publish this frame's remainder at the VBlank edge.
-			frameState.cycleBudgetRemaining -= consumed;
-			frameState.activeCpuUsedCycles += consumed;
 			advanced = true;
 			if (consumed > sliceBudget) {
-				scheduler.setAcceptedCpuCycles(consumed);
-				tickCompleted = settleTime<ClockRun::RetiredCpu>(runtime, scheduler.nowCycles() + consumed);
+				tickCompleted = settleRetiredCpuGrant(runtime, frameState, consumed);
 			} else {
+				frameState.cycleBudgetRemaining -= consumed;
+				frameState.activeCpuUsedCycles += consumed;
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
 			}
 		}

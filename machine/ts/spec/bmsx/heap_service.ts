@@ -42,4 +42,4 @@ export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, 
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8 }
-export const enum HeapServiceGcStage { Idle, FullStringSweep }
+export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecoveryStringSweep }

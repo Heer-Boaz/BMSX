@@ -178,7 +178,7 @@ import {
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage, HeapServiceOperation,
 } from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -784,13 +784,23 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public advanceAllocationRecovery(): boolean {
-		const write = this.pendingAllocation!;
-		if (write.recovery === AllocationRecovery.RetryCurrent || write.recovery === AllocationRecovery.RetryFresh) return false;
+		const recovery = this.pendingAllocation!.recovery;
+		if (recovery === AllocationRecovery.RetryCurrent || recovery === AllocationRecovery.RetryFresh) return false;
 		if (this.gc.finalMarkPending()) this.gc.stepFinalMark();
-		else this.gc.step(valueNil(), valueNil(), valueNil());
-		if (!this.gc.active()) write.recovery = write.recovery === AllocationRecovery.Current
-			? AllocationRecovery.RetryCurrent : AllocationRecovery.RetryFresh;
+		else {
+			const services = this.systemImage.heapServiceFunctions;
+			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
+				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep);
+		}
+		this.finishAllocationRecovery();
 		return true;
+	}
+
+	private finishAllocationRecovery(): void {
+		if (this.gc.active()) return;
+		const write = this.pendingAllocation!;
+		write.recovery = write.recovery === AllocationRecovery.Current
+			? AllocationRecovery.RetryCurrent : AllocationRecovery.RetryFresh;
 	}
 
 	public resumeAllocation(): void {
@@ -798,6 +808,7 @@ export class CPU implements MappedPageInvalidator {
 		const frame = this.activeThread.currentFrame!;
 		this.currentInstructionPc = pending.instructionPc;
 		this.lastPc = pending.lastPc;
+		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		let retired: boolean;
 		if (pending.kind === PendingAllocationKind.TableAssignment) {
 			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots, this);
@@ -2237,14 +2248,16 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
-			const fullStringSweep = this.gc.fullStringSweepActive();
+			const stringSweep = this.gc.stringSweepStage();
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						if (fullStringSweep) this.gc.finishFullStringSweep();
-						else {
+						if (stringSweep !== HeapServiceGcStage.Idle) {
+							this.gc.finishStringSweep(stringSweep);
+							if (stringSweep === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
+						} else {
 							this.finishExecFloorService();
 							this.finishNewTableReservation();
 						}
@@ -2253,7 +2266,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return fullStringSweep && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
+				return stringSweep !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 			}

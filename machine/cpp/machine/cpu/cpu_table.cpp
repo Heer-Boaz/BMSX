@@ -229,20 +229,29 @@ void CPU::parkAllocation(CallFrame& frame, PendingAllocation::Operands operands)
 }
 
 bool CPU::advanceAllocationRecovery() {
-	auto& write = m_pendingAllocation;
-	switch (write.recovery) {
+	switch (m_pendingAllocation.recovery) {
 		case AllocationRecovery::RetryCurrent:
 		case AllocationRecovery::RetryFresh: return false;
 		case AllocationRecovery::Current:
 		case AllocationRecovery::Fresh:
+			// This native prefix still belongs to stopped maintenance. Only the
+			// String service draws a timed grant, with the quantum's remainder.
 			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
-			else m_heap.step(valueNil(), valueNil(), valueNil());
-			if (!m_heap.active()) write.recovery = write.recovery == AllocationRecovery::Current
-				? AllocationRecovery::RetryCurrent : AllocationRecovery::RetryFresh;
+			else m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS,
+				m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StringSweep)],
+				HeapServiceGcStage::AllocationRecoveryStringSweep);
+			finishAllocationRecovery();
 			return true;
 		case AllocationRecovery::None: BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();
+}
+
+void CPU::finishAllocationRecovery() {
+	if (!m_heap.active()) {
+		auto& recovery = m_pendingAllocation.recovery;
+		recovery = recovery == AllocationRecovery::Current ? AllocationRecovery::RetryCurrent : AllocationRecovery::RetryFresh;
+	}
 }
 
 void CPU::resumeAllocation() {
@@ -250,6 +259,7 @@ void CPU::resumeAllocation() {
 	auto& frame = *m_activeThread->currentFrame;
 	m_currentInstructionPc = pending.instructionPc;
 	lastPc = pending.lastPc;
+	m_lastExecutionDomainId = m_activeExecutionDomainId;
 	bool retired;
 	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
 		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(
