@@ -174,6 +174,71 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ test(`collision placement resumes from the same grant and RAM checkpoint (${backend})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETFIELD, 0, 0, 1);
+  writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+  const image = linkRawTestSystemBlua32({ text, constants: ['new'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }] });
+  const { cpu } = createTestSystemCpu(image, backend);
+  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, field = cpu.stringPool.intern('new');
+  for (let i = 1; i <= 256; ++i) tables.setInteger(t, -i, valueInteger(i));
+  const r = cpu.rootThread.currentFrame!.registers;
+  r.setTable(0, t); r.setInteger(1, 73);
+  const grant = () => cpu.runUntilDepth(0, 8, cpu.rootThread.address, CpuRunKind.Scheduled);
+  cpu.runUntilDepth(0, 16, cpu.rootThread.address, CpuRunKind.Scheduled);
+  for (let i = 0; !cpu.tableRebuild.cursor; ++i) {
+   assert.ok(i < 1024); assert.equal(grant(), RunResult.Yielded);
+  }
+  cpu.requestNonMaskableInterrupt();
+  assert.equal(cpu.enterPendingInterrupt(), false);
+  cpu.cancelNonMaskableInterrupt();
+  const anchor = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  assert.ok(cpu.tableRebuild.collisions);
+  assert.equal(tables.getStringKey(t, field), valueNil());
+  assert.equal(tables.hashSize(t), 256);
+  const finish = () => {
+   let n = 0;
+   while (cpu.tableRebuild.record) {
+    assert.ok(++n < 1024); assert.equal(grant(), RunResult.Yielded);
+   }
+   assert.equal(tables.getStringKey(t, field), valueInteger(73));
+   assert.equal(grant(), RunResult.Halted);
+   return n;
+  };
+  const n = finish(), expected = cpu.memory.captureSaveState();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
+  assert.equal(finish(), n);
+  assert.deepEqual(cpu.memory.captureSaveState().ram, expected.ram);
+ });
+
+ for (const protect of [false, true]) test(`rawset publishes before growing its result window (${backend}, protected=${protect})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.CALL, 0, protect ? 5 : 4, 17);
+  writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
+  const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
+  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, key = cpu.stringPool.intern('new');
+  for (let i=1; i<=256; ++i) tables.setInteger(t, -i, valueInteger(i));
+  const a = protect ? 1 : 0;
+  if (protect) r.setBuiltinFunction(0, BuiltinFunctionId.PCall);
+  r.setBuiltinFunction(a, BuiltinFunctionId.RawSet);
+  r.setTable(a+1, t); r.setString(a+2, key); r.setInteger(a+3, 9);
+  const original = r.get(0);
+  cpu.runUntilDepth(0, 40, cpu.rootThread.address, CpuRunKind.Scheduled);
+  assert.equal(r.get(0), original); assert.ok(cpu.tableRebuild.record); assert.equal(tables.getStringKey(t, key), valueNil());
+  const anchor = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  for (const restored of [false, true]) {
+   if (restored) { cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor); }
+   for (let n=0; cpu.tableRebuild.record; ++n) {
+    assert.ok(n<1024); assert.equal(cpu.runUntilDepth(0,8,cpu.rootThread.address,CpuRunKind.Scheduled), RunResult.Yielded);
+   }
+   assert.equal(tables.getStringKey(t, key), valueInteger(9));
+   assert.equal(cpu.rootThread.currentFrame!.registers.get(a), valueTable(t));
+   if (protect) assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueBool(true));
+   assert.equal(cpu.rootThread.currentFrame!.registers.get(15), valueNil());
+  }
+ });
+
  for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.CALL]) {
   test(`table-write routes charge large scans but not overwrites (${backend}, ${op})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -215,6 +280,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
      assert.equal(cpu.runUntilDepth(0, base, cpu.rootThread.address, kind), RunResult.Yielded);
      assert.equal(cpu.instructionBudgetRemaining, overwrite || hash === 64 ? 0 : -(hash - 64) / 2);
      assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
+     if (!integer && !overwrite && hash > 64) {
+      assert.equal(cpu.tableRebuild.record, full);
+      assert.equal(cpu.gc.tables.get(full, key), valueNil());
+      for (let steps = 0; cpu.tableRebuild.record; ++steps) {
+       assert.ok(steps < 5 * hash);
+       assert.equal(cpu.runUntilDepth(0, 8, cpu.rootThread.address, kind), RunResult.Yielded);
+       assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
+      }
+      for (let i = 1; i <= hash; ++i) assert.equal(cpu.gc.tables.getInteger(full, -i), valueInteger(i));
+     }
      assert.equal(cpu.gc.tables.get(full, key), valueInteger(73));
     }
    }

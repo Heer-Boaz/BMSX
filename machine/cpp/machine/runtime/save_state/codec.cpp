@@ -1182,6 +1182,15 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	const auto& scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.boolean(scan.skipLess); writer.boolean(scan.skipTie);
+	const auto& j = state.rebuild;
+	writer.u32(j.record);
+	if (j.record) {
+		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
+		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
+		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
+		writer.u64(j.key); writer.u64(j.value);
+		writer.u32(static_cast<u32>(j.result)); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
+	}
 	const auto& concat = state.concat;
 	writer.boolean(concat.active());
 	if (concat.active()) {
@@ -1256,6 +1265,15 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
 	state.stringComparison = {reader.u32(), reader.u32(), reader.u32(), reader.u32(), reader.i32(), reader.boolean(), reader.boolean()};
+	auto& j = state.rebuild;
+	j.record = reader.u32();
+	if (j.record) {
+		j.source = reader.u32(); j.count = reader.u32(); j.storage = reader.u32();
+		j.capacity = reader.u32(); j.cleared = reader.u32(); j.homes = reader.u32();
+		j.cursor = reader.u32(); j.free = reader.u32(); j.collisions = reader.u32();
+		j.key = reader.u64(); j.value = reader.u64();
+		j.result = static_cast<TableStoreReturn>(reader.u32()); j.destination = reader.u32(); j.wanted = reader.u32(); j.instructionPc = reader.u32();
+	}
 	auto& concat = state.concat;
 	if (reader.boolean()) {
 		concat.length = reader.u32(); concat.registersLeft = reader.u32(); concat.nextRegister = reader.u32();

@@ -807,6 +807,7 @@ export class GcHeap {
 	}
 
 	public assistPhysicalPressureAtTick(): void {
+		if (this.cpu.tableRebuild.record) return;
 		if (this.fullEpochs()) return;
 		const occupied = this.arena.occupiedBytes();
 		const previousOccupied = this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
@@ -966,7 +967,7 @@ export class GcHeap {
 	}
 
 	public fullEpochs(): number { return this.memory.readRamRecordByte(this.controlOffset + GC_FULL_EPOCHS); }
-	public stoppedFinalMarkPending(): boolean { return this.finalMarkPending() && !this.fullEpochs(); }
+	public stoppedFinalMarkPending(): boolean { return this.finalMarkPending() && !this.cpu.tableRebuild.record && !this.fullEpochs(); }
 	public requestFullCollection(): void {
 		if (this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);

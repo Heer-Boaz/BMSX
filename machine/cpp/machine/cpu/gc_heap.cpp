@@ -873,7 +873,10 @@ size_t GcHeap::accountEpochWork(size_t work) {
 	return work;
 }
 
+bool GcHeap::stoppedFinalMarkPending() const { return finalMarkPending() && !m_cpu.tableRebuild.record && !fullEpochs(); }
+
 void GcHeap::assistPhysicalPressureAtTick() {
+	if (m_cpu.tableRebuild.record) return;
 	if (fullEpochs()) return;
 	const u32 occupied = arena.occupiedBytes();
 	const u32 previousOccupied = memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);

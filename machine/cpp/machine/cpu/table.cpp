@@ -1,4 +1,5 @@
 #include "machine/cpu/table.h"
+#include "machine/cpu/cpu.h"
 
 #include <algorithm>
 #include <array>
@@ -222,7 +223,7 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested)
+int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 bytes = storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash);
 	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
@@ -230,11 +231,19 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	}
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
+	if constexpr (Policy != HashStore::ReturningIndex && Policy != HashStore::ReturningField) {
+		if (cpu && hashSlots() > 64 && plan.array == arrayCapacity() && !plan.keepHash) {
+			cpu->tableRebuild = {.record=m_address, .source=hashAddress(), .count=hashSlots(), .storage=storage,
+				.capacity=static_cast<u32>(plan.hash), .free=static_cast<u32>(plan.hash - 1), .key=key, .value=value};
+			advanceRebuild(*cpu);
+			return HASH_STORE_PENDING;
+		}
+	}
 	return resize(plan, storage, key, value, previous, requested);
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, int* cycles)
+int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	auto& budget = m_heap->budget;
 	const u32 array = arrayCapacity(), hash = hashSlots();
@@ -252,7 +261,7 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	}
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	for (;;) {
-		if (cycles) *cycles -= scanCycles;
+		if (cpu) cpu->instructionBudgetRemaining -= scanCycles;
 		const auto plan = planRehash(key, extraHashSlots);
 		const u32 requested = allocationCharge(plan.array, plan.hash);
 		bool admitted = true;
@@ -272,7 +281,7 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 				: budget.prepareAllocation(requested - previous, owner, key, value);
 		}
 		if (admitted) {
-			const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested);
+			const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested, cpu);
 			if (slot != HASH_STORE_DECLINED) return slot;
 		}
 		if (extraHashSlots) {
@@ -602,20 +611,20 @@ Value TableRecord::getHash(const Value& key) const {
 	return index < 0 ? valueNil() : body.slots.get(count + static_cast<u32>(index));
 }
 
-void TableRecord::set(const Value& key, const Value& value, int* cycles) {
-	setOwn<HashStore::General>(key, value, TABLE_HASH_UNPROBED, 0, cycles);
+void TableRecord::set(const Value& key, const Value& value, CPU* cpu) {
+	setOwn<HashStore::General>(key, value, TABLE_HASH_UNPROBED, 0, cpu);
 }
 
-int TableRecord::assignScheduled(Value key, Value value, int& cycles, int slot, u8 extraHashSlots) {
-	return setOwn<HashStore::Scheduled>(key, value, slot, extraHashSlots, &cycles);
+int TableRecord::assignScheduled(Value key, Value value, CPU& cpu, int slot, u8 extraHashSlots) {
+	return setOwn<HashStore::Scheduled>(key, value, slot, extraHashSlots, &cpu);
 }
 
-bool TableRecord::resumeAssignment(Value key, Value value, u8 extraHashSlots, int* cycles) {
-	return setOwn<HashStore::Resume>(key, value, TABLE_HASH_UNPROBED, extraHashSlots, cycles) != HASH_STORE_DECLINED;
+bool TableRecord::resumeAssignment(Value key, Value value, u8 extraHashSlots, CPU* cpu) {
+	return setOwn<HashStore::Resume>(key, value, TABLE_HASH_UNPROBED, extraHashSlots, cpu) != HASH_STORE_DECLINED;
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::setOwn(Value rawKey, Value value, int slot, u8 extraHashSlots, int* cycles) {
+int TableRecord::setOwn(Value rawKey, Value value, int slot, u8 extraHashSlots, CPU* cpu) {
 	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
@@ -630,20 +639,19 @@ int TableRecord::setOwn(Value rawKey, Value value, int slot, u8 extraHashSlots, 
 		removeFromHash(key, slot);
 		slot = -1;
 	} else {
-		slot = assignHash<Policy>(key, value, slot, extraHashSlots, cycles);
-		if constexpr (Policy != HashStore::General)
-			if (slot == HASH_STORE_DECLINED) return slot;
+		slot = assignHash<Policy>(key, value, slot, extraHashSlots, cpu);
+		if (slot == HASH_STORE_DECLINED || slot == HASH_STORE_PENDING) return slot;
 	}
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 	return slot;
 }
 
-int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots, int* cycles) {
+int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots, CPU* cpu) {
 	if (isNil(value)) {
 		removeFromHash(key, slot);
 		return -1;
 	}
-	return assignHash<HashStore::General>(key, value, slot, extraHashSlots, cycles);
+	return assignHash<HashStore::General>(key, value, slot, extraHashSlots, cpu);
 }
 
 void TableRecord::publishHashInsertion(Value key, Value value) {
@@ -652,7 +660,7 @@ void TableRecord::publishHashInsertion(Value key, Value value) {
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashSlots, int* cycles)
+int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashSlots, CPU* cpu)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
@@ -665,11 +673,11 @@ int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashS
 			else nodeIndex = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
 		}
 	}
-	return assignProbedHash<Policy>(body, home, nodeIndex, key, value, extraHashSlots, cycles);
+	return assignProbedHash<Policy>(body, home, nodeIndex, key, value, extraHashSlots, cpu);
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, int* cycles)
+int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, CPU* cpu)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	constexpr bool returning = Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField;
 	const auto tag = valueTag(value);
@@ -706,9 +714,8 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 			return nodeIndex;
 		}
 	}
-	nodeIndex = insertHashWithAdmission<Policy>(key, value, extraHashSlots, cycles);
-	if constexpr (Policy != HashStore::General)
-		if (nodeIndex == HASH_STORE_DECLINED) return nodeIndex;
+	nodeIndex = insertHashWithAdmission<Policy>(key, value, extraHashSlots, cpu);
+	if (nodeIndex == HASH_STORE_DECLINED || nodeIndex == HASH_STORE_PENDING) return nodeIndex;
 	// Relocation invalidates a suspended collector cursor in resize().
 	// Already visited edges retain their colors; only the insertion is new.
 	publishHashInsertion(key, value);
@@ -957,8 +964,8 @@ void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& resul
 	});
 }
 
-int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots, int* cycles) {
-	return setHash(valueString(key), value, slot, extraHashSlots, cycles);
+int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 extraHashSlots, CPU* cpu) {
+	return setHash(valueString(key), value, slot, extraHashSlots, cpu);
 }
 
 bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {

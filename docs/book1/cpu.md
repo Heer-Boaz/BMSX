@@ -1633,6 +1633,21 @@ of the reserved array size. An overwrite or an insertion that fits an
 existing slot performs neither scan. A store through `rawset` pays the same
 scan charges. A failed reservation does not refund a completed
 scan; a recovery attempt that scans again pays for its own work.
+When an insertion replaces a hash with more than 64 **old** slots and
+leaves array capacity unchanged, the store continues across cycle grants.
+It initializes 16 replacement bytes per cycle (rounding the final group up)
+and visits each source slot at eight cycles per visit to establish the home
+positions. If any entries collide, it visits the source again until the last
+collision is placed. Each such visit costs eight cycles, including a repeated
+visit when the next free-slot candidate is occupied. A started visit finishes
+even if fewer than eight cycles remain.
+
+The old hash remains attached until the replacement is complete. The processor
+then publishes the insertion before issuing another instruction or accepting
+an interrupt. Guest time advances during the replacement; this is not an
+allocation park. Collection at tick boundaries and stopped final remark wait
+until publication. These charges also apply to a raw store.
+
 Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
 An incremental allocation assist adds its work charge as specified above. An insertion that
 fails to reserve storage leaves the requested mapping unmodified.

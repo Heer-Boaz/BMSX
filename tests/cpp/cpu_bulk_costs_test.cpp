@@ -85,10 +85,95 @@ void writeRoutes(bool scalar) {
     machine.restart();
     if (cpu.runUntilDepth(0, base, 0u, kind) != RunResult::Yielded
      || cpu.instructionBudgetRemaining != (overwrite ? 0 : -(hash - 64) / 2)
-     || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || full.get(key) != valueInteger(73))
+     || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES)
      throw std::runtime_error("a hash census debits the issuing store exactly once, including rawset");
+    if (!integer && !overwrite && hash > 64) {
+     if (cpu.tableRebuild.record != full.address() || !isNil(full.get(key))) throw std::runtime_error("store must be pending");
+     for (int steps = 0; cpu.tableRebuild.record; ++steps) {
+      if (steps >= 5 * hash || cpu.runUntilDepth(0, 8, 0u, kind) != RunResult::Yielded
+       || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES)
+       throw std::runtime_error("short grant must advance the store before the next opcode");
+     }
+     for (int i = 1; i <= hash; ++i) if (full.getInteger(-i) != valueInteger(i)) throw std::runtime_error("lost hash entry");
+    }
+    if (full.get(key) != valueInteger(73)) throw std::runtime_error("lost triggering assignment");
    }
   }
+ }
+}
+
+void replayInFlightHash(bool scalar) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+ image.constants = {std::string{"new"}};
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=2}};
+ CpuMachine m(image, scalar);
+ auto& cpu = m.cpu;
+ auto table = cpu.createTable(0, 256);
+ for (int i = 1; i <= 256; ++i) table.setInteger(-i, valueInteger(i));
+ auto r = cpu.activeThread()->currentFrame->registers;
+ r.set(0, valueTable(table.address())); r.set(1, valueInteger(73));
+ const auto field = valueString(cpu.stringPool().intern("new"));
+ const auto grant = [&] { return cpu.runUntilDepth(0, 8, 0, CpuRunKind::Scheduled); };
+ cpu.runUntilDepth(0, 16, 0, CpuRunKind::Scheduled);
+ for (int i = 0; !cpu.tableRebuild.cursor; ++i) {
+  if (i >= 1024 || grant() != RunResult::Yielded) throw std::runtime_error("never entered collision placement");
+ }
+ cpu.requestNonMaskableInterrupt();
+ if (cpu.enterPendingInterrupt()) throw std::runtime_error("NMI split the store before publication");
+ cpu.cancelNonMaskableInterrupt();
+ const auto anchor = cpu.captureRuntimeState();
+ const auto ram = m.memory.captureSaveState();
+ if (!anchor.rebuild.collisions || !isNil(table.get(field)) || table.hashSlots() != 256)
+  throw std::runtime_error("the old mapping must remain published");
+ const auto finish = [&] {
+  int n = 0;
+  while (cpu.tableRebuild.record) if (++n > 1024 || grant() != RunResult::Yielded)
+   throw std::runtime_error("rebuild did not retire in bounded grants");
+  if (table.get(field) != valueInteger(73) || grant() != RunResult::Halted)
+   throw std::runtime_error("HALT must follow publication");
+  return n;
+ };
+ const int n = finish();
+ const auto expected = m.memory.captureSaveState();
+ m.memory.restoreSaveState(ram);
+ cpu.restoreRuntimeState(anchor);
+ if (finish() != n || m.memory.captureSaveState().ram != expected.ram)
+  throw std::runtime_error("collision replay must reproduce the remaining grants and identical RAM");
+}
+
+void publishRawStoreBeforeReturning(bool protectedCall) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, protectedCall ? 5 : 4, 17);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
+ CpuMachine m(image, true);
+ auto& cpu = m.cpu;
+ auto table = cpu.createTable(0, 256);
+ const auto key = valueString(cpu.stringPool().intern("new"));
+ for (int i = 1; i <= 256; ++i) table.setInteger(-i, valueInteger(i));
+ auto* frame = cpu.activeThread()->currentFrame;
+ const int a = protectedCall ? 1 : 0;
+ if (protectedCall) frame->registers.set(0, valueBuiltinFunction(BuiltinFunctionId::PCall));
+ frame->registers.set(a, valueBuiltinFunction(BuiltinFunctionId::RawSet));
+ frame->registers.set(a+1, valueTable(table.address()));
+ frame->registers.set(a+2, key); frame->registers.set(a+3, valueInteger(9));
+ cpu.runUntilDepth(0, 40, 0, CpuRunKind::Scheduled);
+ if (!valueIsBuiltinFunction(frame->registers.get(0)) || !cpu.tableRebuild.record || !isNil(table.get(key)))
+  throw std::runtime_error("rawset must not publish results before the mapping");
+ const auto anchor = cpu.captureRuntimeState();
+ const auto ram = m.memory.captureSaveState();
+ for (bool restored : {false, true}) {
+  if (restored) { m.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor); frame = cpu.activeThread()->currentFrame; }
+  for (int n=0; cpu.tableRebuild.record; ++n) {
+   if (n>1024 || cpu.runUntilDepth(0,8,0,CpuRunKind::Scheduled) != RunResult::Yielded) throw std::runtime_error("unexpected rawset grant");
+  }
+  if (table.get(key) != valueInteger(9) || frame->registers.get(a) != valueTable(table.address())
+   || (protectedCall && frame->registers.get(0) != valueBool(true)) || !isNil(frame->registers.get(15)))
+   throw std::runtime_error("rawset must finish its saved return placement");
  }
 }
 
@@ -278,7 +363,9 @@ int main() {
    runNext(falseKey, valueNil(), {valueBool(false), valueBool(false)});
    runNext(falseKey, valueBool(false), {valueNil()});
   }
+  if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
   writeRoutes(scalar);
+  replayInFlightHash(scalar);
   rebuildWork(scalar);
   hostGrantScratch(scalar);
   for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {

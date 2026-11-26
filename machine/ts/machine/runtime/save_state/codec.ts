@@ -1152,6 +1152,15 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	const scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.bool(scan.skipLess); writer.bool(scan.skipTie);
+	const j = state.rebuild;
+	writer.u32(j === null ? 0 : j.record);
+	if (j !== null) {
+		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
+		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
+		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
+		writer.u64(j.key); writer.u64(j.value);
+		writer.u32(j.result); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
+	}
 	const concat = state.concat;
 	writer.bool(concat !== null);
 	if (concat !== null) {
@@ -1210,6 +1219,15 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 	}
 }
 
+function readTableRebuild(reader: BinaryReader) {
+	const record = reader.u32();
+	if (!record) return null;
+	return { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(), capacity: reader.u32(),
+		cleared: reader.u32(), homes: reader.u32(), cursor: reader.u32(), free: reader.u32(), collisions: reader.u32(),
+		key: reader.u64() as Value, value: reader.u64() as Value,
+		result: reader.u32(), destination: reader.u32(), wanted: reader.u32(), instructionPc: reader.u32() };
+}
+
 function readConcatAssembly(reader: BinaryReader): CpuRuntimeState['concat'] {
 	if (!reader.bool()) return null;
 	const length = reader.u32(), registersLeft = reader.u32(), nextRegister = reader.u32();
@@ -1251,6 +1269,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			left: reader.u32(), right: reader.u32(), offset: reader.u32(), remaining: reader.u32(),
 			order: reader.i32(), skipLess: reader.bool(), skipTie: reader.bool(),
 		},
+		rebuild: readTableRebuild(reader),
 		concat: readConcatAssembly(reader),
 		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),

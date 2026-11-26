@@ -125,7 +125,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
+import { TableRecords, TableRebuild, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { StaticClosureIndex } from './static_closure_index';
@@ -203,6 +203,7 @@ export type CpuRuntimeState = {
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
 	stringComparison: StringComparisonLatch;
+	rebuild: TableRebuild | null;
 	concat: ConcatAssemblyState | null;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
@@ -296,6 +297,7 @@ export class CPU implements MappedPageInvalidator {
 	private pendingAllocation: PendingAllocation | null = null;
 	private runKind = CpuRunKind.Idle;
 	private readonly concat = new ConcatAssembly();
+	public readonly tableRebuild = new TableRebuild();
 	private stringComparison = new StringComparisonLatch();
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
 	private currentInstructionPc = 0;
@@ -796,6 +798,8 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.stringComparison = new StringComparisonLatch();
+		if (this.tableRebuild.record) this.heapAllocator.free(this.tableRebuild.storage);
+		this.tableRebuild.record = 0;
 		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
 		this.hardHalted = false;
@@ -1709,7 +1713,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -1732,7 +1736,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
@@ -1856,7 +1860,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs()) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2039,6 +2043,7 @@ export class CPU implements MappedPageInvalidator {
 						this.resumePendingMemoryOperation();
 						if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
 						if (this.concat.active) this.advanceConcat(thread.currentFrame!);
+						if (this.tableRebuild.record) this.advanceTableStore(thread.currentFrame!);
 					}
 					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
 						if (this.hardHalted
@@ -2153,6 +2158,7 @@ export class CPU implements MappedPageInvalidator {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
 					if (this.concat.active) this.advanceConcat(thread.currentFrame!);
+					if (this.tableRebuild.record) this.advanceTableStore(thread.currentFrame!);
 				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
@@ -2393,7 +2399,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId)!;
 		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -4043,6 +4049,12 @@ export class CPU implements MappedPageInvalidator {
 		try {
 			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
 			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
+			if (id === BuiltinFunctionId.RawSet && this.tableRebuild.record) {
+				const j = this.tableRebuild;
+				j.result = TableStoreReturn.Call; j.destination = callBase; j.wanted = returnCount >>> 0;
+				j.instructionPc = this.currentInstructionPc;
+				return;
+			}
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromRegisters(frame, callBase, returnCount, results.slots, 0, results.length);
 			}
@@ -4118,6 +4130,12 @@ export class CPU implements MappedPageInvalidator {
 				try {
 					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
 					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
+					if (builtinId === BuiltinFunctionId.RawSet && this.tableRebuild.record) {
+						const j = this.tableRebuild;
+						j.result = TableStoreReturn.Protected; j.destination = continuationIndex;
+						j.instructionPc = this.currentInstructionPc;
+						return;
+					}
 					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -4325,6 +4343,20 @@ export class CPU implements MappedPageInvalidator {
 		const address = registers.getPayload(base);
 		this.gc.tables.load(address, registers.getTag(base + 1), registers.getPayload(base + 1), out, 0);
 	}
+	private advanceTableStore(frame: CallFrame): void {
+		const j = this.tableRebuild, receiver = j.record;
+		this.gc.tables.advanceRebuild(this);
+		if (j.record || j.result === TableStoreReturn.None) return;
+		this.currentInstructionPc = j.instructionPc;
+		const results = this.acquireBuiltinResults();
+		try {
+			results.push(valueTable(receiver));
+			if (j.result === TableStoreReturn.Protected) this.finishProtectedCall(j.destination, results.slots, 0, 1);
+			else this.writeReturnValuesFromRegisters(frame, j.destination, j.wanted, results.slots, 0, 1);
+		} finally {
+			this.releaseBuiltinResults(results);
+		}
+	}
 	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers, base = args.base;
 		if (args.length < 3 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -4434,6 +4466,7 @@ export class CPU implements MappedPageInvalidator {
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
 			stringComparison: { ...this.stringComparison },
+			rebuild: this.tableRebuild.record ? { ...this.tableRebuild } : null,
 			concat: this.concat.capture(),
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
@@ -4499,6 +4532,8 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 		Object.assign(this.stringComparison, state.stringComparison);
+		if (state.rebuild) Object.assign(this.tableRebuild, state.rebuild);
+		else this.tableRebuild.record = 0;
 		this.concat.restore(state.concat);
 		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.pendingAllocation = state.pendingAllocation === null ? null : { ...state.pendingAllocation };

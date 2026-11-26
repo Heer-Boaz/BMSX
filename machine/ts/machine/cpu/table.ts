@@ -33,6 +33,14 @@ export interface TableStringProbe extends TableLookupSlot { node: number; remain
 export const enum TableHeader {
 	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
 }
+export const enum TableStoreReturn { None, Call, Protected }
+export class TableRebuild {
+	record = 0; source = 0; count = 0; storage = 0; capacity = 0;
+	cleared = 0; homes = 0; cursor = 0; free = 0; collisions = 0;
+	key = valueNil(); value = valueNil();
+	result = TableStoreReturn.None; destination = 0; wanted = 0; instructionPc = 0;
+}
+const HASH_STORE_PENDING = -4;
 export class TableRecords {
 	private readonly resizePlan = { array: 0, hash: 0, keepHash: false };
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
@@ -489,7 +497,7 @@ export class TableRecords {
 			this.writeSlot(words, words + array * 4, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
 		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots, budget);
-		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
+		if (node !== HASH_STORE_DECLINED && node !== HASH_STORE_PENDING && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return node;
 	}
 	private setHash(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
@@ -526,7 +534,7 @@ export class TableRecords {
 			}
 		}
 		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots, budget);
-		if (index === HASH_STORE_DECLINED) return index;
+		if (index === HASH_STORE_DECLINED || index === HASH_STORE_PENDING) return index;
 		if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
 		this.heap.writeTableAssignment(record, tag, word, key);
@@ -704,7 +712,7 @@ export class TableRecords {
 			if (admitted) {
 				const bytes = TableRecords.storageBytes(plan.array > array ? plan.array : 0, plan.keepHash ? 0 : plan.hash);
 				if (policy !== HashStore.Resume && gcPacedPhase(this.heap.phase())) this.heap.assistBeforeReservation(bytes, owner, key, value);
-				const slot = this.resize(record, key, value, previous, requested);
+				const slot = this.resize(record, key, value, previous, requested, cycleBudget);
 				if (slot !== HASH_STORE_DECLINED) return slot;
 			}
 			if (extraHashSlots) {
@@ -722,13 +730,21 @@ export class TableRecords {
 			}
 		}
 	}
-	private resize(record: number, key: Value, value: Value, previous: number, requested: number): number {
+	private resize(record: number, key: Value, value: Value, previous: number, requested: number, budget?: CPU): number {
 		const { array, hash, keepHash } = this.resizePlan;
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const oldWords = this.hashAddress(record), oldTags = oldWords + oldHash * 8;
 		const memory = this.heap.memory, arena = this.heap.arena;
 		const storage = keepHash ? oldWords : hash ? arena.allocate(TableRecords.hashStorageBytes(hash), true) : 0;
 		if (hash && !storage) return HASH_STORE_DECLINED;
+		if (budget && oldHash > 64 && oldArray === array && !keepHash) {
+			const j = budget.tableRebuild;
+			j.record = record; j.source = oldWords; j.count = oldHash; j.storage = storage; j.capacity = hash;
+			j.cleared = j.homes = j.cursor = j.collisions = 0; j.free = hash - 1; j.key = key; j.value = value;
+			j.result = TableStoreReturn.None; j.destination = j.wanted = j.instructionPc = 0;
+			this.advanceRebuild(budget);
+			return HASH_STORE_PENDING;
+		}
 		let base = this.arrayAddress(record);
 		if (array > oldArray) {
 			base = base ? arena.resizeBacking(base, array * 5) : arena.allocate(array * 5, true);
@@ -775,6 +791,76 @@ export class TableRecords {
 		const slot = this.reinsertMapping(record, key, value, array, hash, storage, tags);
 		this.heap.budget.replaceRecord(keepHash ? 0 : oldWords, previous, requested);
 		return slot;
+	}
+	public advanceRebuild(budget: CPU): void {
+		if (budget.instructionBudgetRemaining <= 0) return;
+		const j = budget.tableRebuild, memory = this.heap.memory;
+		const tags = j.storage + 8 * j.capacity, oldTags = j.source + 8 * j.count;
+		const mask = j.capacity - 1, bytes = TableRecords.hashStorageBytes(j.capacity);
+		if (j.cleared < bytes) {
+			const n = Math.min(bytes - j.cleared, 16 * budget.instructionBudgetRemaining);
+			const end = j.cleared + n, split = Math.max(j.cleared, Math.min(end, 10 * j.capacity));
+			const ram = memory.ramData(), base = j.storage & RAM_RECORD_WORD_MASK;
+			ram.fill(0, base + j.cleared, base + split);
+			ram.fill(0xff, base + split, base + end);
+			memory.invalidateRamWrite(base + j.cleared, n);
+			j.cleared = end;
+			budget.instructionBudgetRemaining -= (n + 15) >>> 4;
+			if (end < bytes) return;
+			const home = hashCanonicalTableKey(j.key) & mask;
+			this.writeSlot(j.storage, tags, home, valueTag(j.key), valuePayload(j.key));
+			this.writeSlot(j.storage, tags, j.capacity + home, valueTag(j.value), valuePayload(j.value));
+		}
+		const array = this.arrayCapacity(j.record), base = this.arrayAddress(j.record);
+		while (j.homes < j.count && budget.instructionBudgetRemaining > 0) {
+			const i = j.homes++;
+			budget.instructionBudgetRemaining -= 8;
+			const kt = memory.readRamRecordByte(oldTags + i), vt = memory.readRamRecordByte(oldTags + j.count + i);
+			if (kt === ValueTag.Nil || vt === ValueTag.Nil) continue;
+			const kw = memory.readRamRecordWord(j.source + 4 * i), vw = memory.readRamRecordWord(j.source + 4 * (j.count + i));
+			const index = (kw - 1) >>> 0;
+			if (kt === ValueTag.Integer && index < array) {
+				this.writeSlot(base, base + 4 * array, index, vt, vw);
+				continue;
+			}
+			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
+			if (memory.readRamRecordByte(tags + home) === ValueTag.Nil) {
+				this.writeSlot(j.storage, tags, home, kt, kw);
+				this.writeSlot(j.storage, tags, j.capacity + home, vt, vw);
+			} else ++j.collisions;
+		}
+		if (j.homes < j.count) return;
+		const links = tags + 2 * j.capacity;
+		while (j.collisions && j.cursor < j.count && budget.instructionBudgetRemaining > 0) {
+			budget.instructionBudgetRemaining -= 8;
+			const i = j.cursor;
+			const kt = memory.readRamRecordByte(oldTags + i), vt = memory.readRamRecordByte(oldTags + j.count + i);
+			const kw = memory.readRamRecordWord(j.source + 4 * i);
+			if (kt !== ValueTag.Nil && vt !== ValueTag.Nil && !(kt === ValueTag.Integer && ((kw - 1) >>> 0) < array)) {
+				const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
+				if (memory.readRamRecordByte(tags + home) !== kt || memory.readRamRecordWord(j.storage + 4 * home) !== kw) {
+					const free = j.free & mask;
+					j.free = (j.free - 1) >>> 0;
+					if (memory.readRamRecordByte(tags + free) !== ValueTag.Nil) continue;
+					this.writeSlot(j.storage, tags, free, kt, kw);
+					this.writeSlot(j.storage, tags, j.capacity + free, vt, memory.readRamRecordWord(j.source + 4 * (j.count + i)));
+					this.setHashNext(links, j.capacity, free, this.hashNext(links, j.capacity, home));
+					this.setHashNext(links, j.capacity, home, free);
+					--j.collisions;
+				}
+			}
+			++j.cursor;
+		}
+		if (j.collisions && j.cursor < j.count) return;
+		this.heap.tableEntriesMoved(j.record);
+		this.bindHash(j.record, j.capacity, j.storage);
+		if (j.free !== mask) this.writeHeader(j.record, TableHeader.Free, j.free);
+		this.heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(array, j.count), TableRecords.allocationCharge(array, j.capacity));
+		if (j.key === this.newIndexKey) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
+		this.heap.writeTableAssignment(j.record, valueTag(j.value), valuePayload(j.value), j.key);
+		const index = this.getArrayIndex(j.key);
+		if (index >= 0) this.updateLengthHint(j.record, index, true);
+		j.record = 0;
 	}
 	private rebuildHashOnly(record: number, oldWords: number, oldHash: number, storage: number, hash: number,
 		key: Value, value: Value): number {

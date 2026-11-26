@@ -37,6 +37,7 @@
 #include "spec/blua32/cop0.h"
 #include "spec/blua32/opcode.h"
 #include "machine/cpu/table.h"
+#include "machine/cpu/table_rebuild.h"
 #include "machine/cpu/value.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
@@ -178,6 +179,7 @@ struct CpuRuntimeState {
 	uint32_t memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation pendingMemory;
 	StringComparisonLatch stringComparison;
+	TableRebuild rebuild;
 	ConcatAssembly concat;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
@@ -358,6 +360,7 @@ public:
 
 	// Current runUntilDepth grant; consumed by the caller, not checkpoint state.
 	int instructionBudgetRemaining = 0;
+	TableRebuild tableRebuild;
 	u32 lastPc = 0;
 
 private:
@@ -465,6 +468,7 @@ private:
 	void advanceStringComparison(CallFrame& frame);
 	template<class Operand> void concatenateValues(CallFrame& frame, int destination, int count, Operand operand);
 	void advanceConcat(CallFrame& frame);
+	void advanceTableStore(CallFrame& frame);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
