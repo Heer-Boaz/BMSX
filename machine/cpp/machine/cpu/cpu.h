@@ -265,6 +265,10 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
+	// Trusted entry to an immutable, link-verified system routine.
+	bool beginHeapService(u32 functionAddress, std::span<const u32> args);
+	bool heapServiceActive() const;
+	u32 heapServiceResult() const;
 	// Move an evicted snapshot here to reuse its storage without copying it.
 	CpuRuntimeState captureRuntimeState(std::vector<Value> completionStorage = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
@@ -373,11 +377,19 @@ private:
 	GrantAdmission admitGrant(const Thread&, int targetDepth, int remainingCycles) const;
 	static RunResult runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget);
 	static RunResult runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instructionBudget);
-	template <bool RootBoundary, bool Instrumented>
+	template <bool RootBoundary, bool Instrumented, bool HeapService = false>
 	RunResult runLoop(
 		int targetDepth,
 		int instructionBudget
 	);
+	void initializeHeapService();
+	CallFrame& prepareHeapServiceFrame(u32 functionAddress, int base, int supplied,
+		CallResultPlacement result, std::optional<u32> callSite);
+	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
+	void executeHeapServiceReturn(CallFrame&, int base, int produced);
+	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
+	void executeHeapServiceStore(CallFrame&, int source, MemoryAccessKind, u32 address);
+	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
 	// Ordinary CALL arguments borrow frame slots by index so backing growth can
 	// rebind them. Detached implicit calls carry complete Values until admission.
 	struct CallValueSource {
@@ -654,6 +666,7 @@ private:
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	Thread m_rootView;
+	Thread m_heapServiceView;
 	std::array<Thread, 2> m_transferViews;
 	std::array<Value, LUA_FAULT_REASON_INDEX_NAN + 1u> m_luaFaultErrorValues;
 	Value m_errorInErrorHandlingValue;

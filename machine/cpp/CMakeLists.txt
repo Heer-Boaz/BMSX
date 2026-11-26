@@ -773,6 +773,9 @@ if(BMSX_BUILD_TESTS)
 	if(BMSX_SNESMINI_TARGET)
 		target_link_options(bmsx_heap_allocator_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
 	endif()
+	add_executable(bmsx_heap_service_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/heap_service_conformance_runner.cpp)
+	target_link_libraries(bmsx_heap_service_conformance_runner PRIVATE bmsx_core)
 	add_executable(bmsx_pow_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/pow_conformance_runner.cpp)
 	target_link_libraries(bmsx_pow_conformance_runner PRIVATE bmsx_core)

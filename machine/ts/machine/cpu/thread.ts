@@ -184,6 +184,16 @@ export class Thread {
 		return frame;
 	}
 
+	/** Reserve the host views of the already fitted private service frame bank. */
+	public reserveFrameViews(count: number): void {
+		let previous: CallFrame | null = null;
+		for (let index = 0; index < count; ++index) {
+			const frame = this.frameNode(previous);
+			frame.bindControl(this.frameControlAddress(index));
+			previous = frame;
+		}
+	}
+
 	private frameNode(previous: CallFrame | null): CallFrame {
 		const attached = previous === null ? this.firstFrame : previous.next;
 		if (attached !== null) return attached;

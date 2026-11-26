@@ -260,6 +260,14 @@ void Thread::bindFrameViews() {
 	bindStack();
 }
 
+void Thread::reserveFixedFrameViews() {
+	CallFrame* previous = nullptr;
+	for (u32 index = 0; index < boundFrameCapacity; ++index) {
+		previous = frameNode(previous);
+		bindFrameControl(*previous, frameControlAddress(index), index);
+	}
+}
+
 void Thread::publishDepth(u32 depth) {
 	const u32 offset = (address + static_cast<u32>(ThreadField::FrameDepth)) & RAM_RECORD_WORD_MASK;
 	writeLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth), depth);

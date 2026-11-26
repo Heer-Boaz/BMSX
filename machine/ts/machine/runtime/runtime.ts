@@ -55,6 +55,7 @@ export class Runtime {
 	}
 
 	public resetForSystemBoot(): void {
+		if (this.machine.cpu.heapServiceActive()) throw new Error('Heap service must retire before system boot.');
 		this.frameLoop.resetFrameState();
 		this.pendingCall = null;
 		this.completionValues.length = 0;
@@ -91,8 +92,9 @@ export class Runtime {
 
 	/** A host call or image change may not consume clock already owned by scheduled ticks. */
 	public admitExternalCpuMutation(): boolean {
-		const { scheduler, gxGpu } = this.machine;
-		return scheduler.acceptedCpuCycles === 0 && !scheduler.isCpuSliceActive() && !gxGpu.backendServiceBlocksMachine();
+		const { scheduler, gxGpu, cpu } = this.machine;
+		return scheduler.acceptedCpuCycles === 0 && !scheduler.isCpuSliceActive()
+			&& !gxGpu.backendServiceBlocksMachine() && !cpu.heapServiceActive();
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

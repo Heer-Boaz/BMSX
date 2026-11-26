@@ -45,6 +45,7 @@ void FrameLoopState::abandonFrameState(Runtime& runtime) {
 }
 
 bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
+	if (runtime.machine.cpu.heapServiceActive()) return false;
 	if (!runtime.machine.systemController.takeResetRequest()) {
 		return false;
 	}

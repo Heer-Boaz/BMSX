@@ -1,0 +1,131 @@
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state.h"
+#include "machine/runtime/save_state/codec.h"
+#include "spec/bmsx/model.h"
+
+namespace {
+using namespace bmsx;
+
+class ProbeInput final : public InputControllerInputSource {
+public:
+	void sampleInputControllerSnapshot(InputControllerSnapshot&, InputControllerSampleContext) override {}
+	bool supervisorRequestLineHigh() const override { return false; }
+	void applyInputControllerVibrationEffect(i32, f64, f64) override {}
+};
+
+std::vector<u8> loadFile(const char* path) {
+	std::ifstream file(path, std::ios::binary);
+	if (!file) throw std::runtime_error(std::string("Cannot open ") + path);
+	return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+}
+
+int main(int argc, char** argv) {
+	try {
+		if (argc != 4) throw std::runtime_error("Expected system ROM, trace and cross-core checkpoint");
+		const auto rom = loadFile(argv[1]);
+		std::ifstream trace(argv[2]);
+		if (!trace) throw std::runtime_error("Cannot open trace");
+		ProbeInput input;
+		Runtime runtime({rom, {}, PSX_MACHINE_SPEC}, input);
+		runtime.boot();
+		auto& cpu = runtime.machine.cpu;
+		auto& memory = runtime.machine.memory;
+		auto& scheduler = runtime.machine.scheduler;
+		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		RuntimeSaveState saved;
+		for (char op; trace >> op;) {
+			switch (op) {
+				case 'B': {
+					u32 function, count, args[3];
+					trace >> function >> count;
+					if (count > 3) throw std::runtime_error("Unexpected fixture arity");
+					for (u32 i = 0; i < count; ++i) trace >> args[i];
+					std::cout << cpu.beginHeapService(function, {args, count}) << '\n';
+					break;
+				}
+				case 'G': {
+					int cycles;
+					trace >> cycles;
+					if (scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled) != RunResult::Yielded)
+						throw std::runtime_error("Heap service did not yield to its caller");
+					if (cpu.heapAllocator().occupiedBytes() != occupied)
+						throw std::runtime_error("Ordinary heap supplied service frames or closures");
+					std::cout << cycles - cpu.instructionBudgetRemaining << ' ' << cpu.heapServiceActive()
+						<< ' ' << cpu.heapServiceResult() << '\n';
+					break;
+				}
+				case 'T': {
+					runtime.frameLoop.beginFrameState(runtime, 1000000, 0);
+					const auto before = scheduler.nowCycles();
+					if (runtime.cpuExecution.runInstruction(runtime, runtime.frameLoop.frameState) != InstructionStepResult::Executed
+						|| !cpu.heapServiceActive())
+						throw std::runtime_error("Heap service did not execute a scheduled instruction");
+					std::cout << scheduler.nowCycles() - before << ' '
+						<< runtime.frameLoop.frameState.activeCpuUsedCycles << '\n';
+					break;
+				}
+				case 'W': {
+					u32 address, word;
+					trace >> address >> word;
+					memory.writeRamRecordWord(address, word);
+					break;
+				}
+				case 'H': {
+					u32 first, end, hash = 0x811c9dc5u;
+					trace >> first >> end;
+					const auto* ram = memory.ramData();
+					for (u32 i = first; i < end; ++i) hash = (hash ^ ram[i]) * 0x01000193u;
+					std::cout << hash << '\n';
+					break;
+				}
+				case 'M': {
+					u32 address;
+					trace >> address;
+					const u32 sequence = memory.readBusFaultSequence();
+					const u32 value = memory.readMappedU32LE(address);
+					std::cout << value << ' ' << (memory.readBusFaultSequence() != sequence) << '\n';
+					break;
+				}
+				case 'P': {
+					const auto depth = cpu.getFrameDepth();
+					std::cout << depth << ' ' << cpu.readFramePc(depth - 1) << '\n';
+					break;
+				}
+				case 'N': cpu.requestNonMaskableInterrupt(); break;
+				case 'I': std::cout << cpu.enterPendingInterrupt() << '\n'; break;
+				case 'R': {
+					const auto before = scheduler.nowCycles();
+					try {
+						runtime.rebootSystem();
+					} catch (const std::runtime_error& error) {
+						if (std::string_view(error.what()) != "Heap service must retire before system boot.") throw;
+						if (scheduler.nowCycles() != before || !cpu.heapServiceActive())
+							throw std::runtime_error("Refused reset changed the suspended service");
+						std::cout << "reset deferred\n";
+						break;
+					}
+					throw std::runtime_error("Reset entered while heap service was suspended");
+				}
+				case 'S': saved = captureRuntimeSaveState(runtime); break;
+				case 'U': applyRuntimeSaveState(runtime, saved); break;
+				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,
+					PSX_MACHINE_SPEC.gxGpuVramBytes)); break;
+				default: throw std::runtime_error("Unknown fixture operation");
+			}
+			if (!trace) throw std::runtime_error("Incomplete fixture operation");
+		}
+		return 0;
+	} catch (const std::exception& error) {
+		std::cerr << error.what() << '\n';
+		return 1;
+	}
+}

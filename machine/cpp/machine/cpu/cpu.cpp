@@ -23,6 +23,7 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"
+#include "spec/bmsx/heap_service.h"
 #include "machine/memory/memory.h"
 #include <algorithm>
 #include <cctype>
@@ -89,6 +90,7 @@ CPU::CPU(
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
 	, m_rootView(m_heap)
+	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
 	, m_systemGlobalBank(memory, m_heap)
@@ -124,6 +126,7 @@ CPU::CPU(
 	m_activeThread = &m_rootView;
 	m_completionThreadAddress = m_rootView.address;
 	m_memory.attachMappedPageInvalidator(*this);
+	initializeHeapService();
 }
 
 CPU::~CPU() {
@@ -153,6 +156,7 @@ u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool can
 }
 
 void CPU::reset() {
+	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before CPU reset.");
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
 #endif
@@ -477,6 +481,7 @@ void CPU::resumeFrameBank() {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
+	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -891,6 +896,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
+	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
 	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
@@ -913,6 +919,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
+	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
 	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
@@ -1016,6 +1023,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	bindPhysicalFrames(m_rootView);
+	bindPhysicalFrames(m_heapServiceView);
 	m_activeThread = &bindThread(state.activeThreadAddress);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThreadAddress = state.completionThreadAddress;
@@ -1636,6 +1644,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
+	if (heapServiceActive()) return false;
 	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record || m_heap.fullEpochs()) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
@@ -1774,6 +1783,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 }
 
 #include "machine/cpu/cpu_calls.inl"
+#include "machine/cpu/cpu_heap_service.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
@@ -1788,13 +1798,13 @@ inline CPU::GrantAdmission CPU::admitGrant(const Thread& thread, int targetDepth
 	return GrantAdmission::Admitted;
 }
 
-template <bool RootBoundary, bool Instrumented>
+template <bool RootBoundary, bool Instrumented, bool HeapService>
 RunResult CPU::runLoop(
 	int targetDepth,
 	int instructionBudget
 ) {
 	instructionBudgetRemaining = instructionBudget;
-	Thread& thread = *m_activeThread;
+	Thread& thread = HeapService ? m_heapServiceView : *m_activeThread;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
 		hookBinding = m_executionHookBinding;
@@ -1833,7 +1843,7 @@ RunResult CPU::runLoop(
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState(*this, targetDepth);
 #define OBSERVE_SCALAR_ARITHMETIC(left, right) do { \
-	if constexpr (!Instrumented) { \
+	if constexpr (!Instrumented && !HeapService) { \
 		if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) { \
 			const auto assumption = *nativeState.replay->arithmetic; \
 			nativeState.replay.reset(); \
@@ -1847,35 +1857,46 @@ RunResult CPU::runLoop(
 #endif
 	for (;;) {
 		try {
-			auto admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-			if (admission == GrantAdmission::Admitted && m_pendingMemory.kind != PendingMemoryKind::None) {
-				resumePendingMemoryOperation();
-				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-			}
-			if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
-				advanceStringComparison(*thread.currentFrame);
-				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-			}
-			if (admission == GrantAdmission::Admitted && m_concat.active()) {
-				advanceConcat(*thread.currentFrame);
-				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-			}
-			if (admission == GrantAdmission::Admitted && tableRebuild.record) {
-				advanceTableStore(*thread.currentFrame);
-				if (allocationParked()) return RunResult::ParkedAllocation;
-				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-			}
-			switch (admission) {
-				case GrantAdmission::Admitted: break;
-				case GrantAdmission::Halted: return RunResult::Halted;
-				case GrantAdmission::RequestedYield:
+			if constexpr (HeapService) {
+				if ((m_runSignals & RunHardHalted) != 0u || thread.frameDepth() == 0) return RunResult::Halted;
+				if ((m_runSignals & RunYield) != 0u) {
 					m_runSignals &= ~RunYield;
 					return RunResult::Yielded;
-				case GrantAdmission::OutOfCycles: return RunResult::Yielded;
+				}
+				if (instructionBudgetRemaining <= 0) return RunResult::Yielded;
+			} else {
+				auto admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+				if (admission == GrantAdmission::Admitted && m_pendingMemory.kind != PendingMemoryKind::None) {
+					resumePendingMemoryOperation();
+					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+				}
+				if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
+					advanceStringComparison(*thread.currentFrame);
+					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+				}
+				if (admission == GrantAdmission::Admitted && m_concat.active()) {
+					advanceConcat(*thread.currentFrame);
+					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+				}
+				if (admission == GrantAdmission::Admitted && tableRebuild.record) {
+					advanceTableStore(*thread.currentFrame);
+					if (allocationParked()) return RunResult::ParkedAllocation;
+					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+				}
+				switch (admission) {
+					case GrantAdmission::Admitted: break;
+					case GrantAdmission::Halted: return RunResult::Halted;
+					case GrantAdmission::RequestedYield:
+						m_runSignals &= ~RunYield;
+						return RunResult::Yielded;
+					case GrantAdmission::OutOfCycles: return RunResult::Yielded;
+				}
 			}
 			frame = thread.currentFrame;
 			image = frame->executionImage;
-			if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
+			if constexpr (!HeapService) {
+				if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
+			}
 
 			if constexpr (Instrumented) {
 				if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
@@ -1897,7 +1918,7 @@ RunResult CPU::runLoop(
 					enterPendingInterrupt();
 					continue;
 				}
-			} else {
+			} else if constexpr (!HeapService) {
 				if ((m_runSignals & RunNonMaskableInterrupt) != 0u
 					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 						&& m_irqController.hasAssertedMaskableInterruptLine())) {
@@ -1936,7 +1957,7 @@ dispatch_fetch:
 			decodedPage = &decodedPageForFrame(*frame, pc);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_bound_page:
-			if constexpr (!Instrumented) {
+			if constexpr (!Instrumented && !HeapService) {
 				if (nativeState.hotSidePc) {
 					const bool atTarget = *nativeState.hotSidePc == pc;
 					nativeState.hotSidePc.reset();
@@ -1962,7 +1983,7 @@ dispatch_decode:
 				rewritten = (refresh & DECODED_REFRESH_DECODE) && decoded->width != 0u;
 #endif
 				PUBLISH_SCALAR_FRONTIER();
-				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) continue;
+				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented && !HeapService)) continue;
 				if constexpr (!Instrumented) {
 					canReuseFrame = !(decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE);
 					publishedTop = registerTop = frame->readWindow(FrameField::Top);
@@ -1975,7 +1996,9 @@ dispatch_decode:
 			m_lastExecutionDomainId = image->executionDomainId;
 			lastPc = nextPc - INSTRUCTION_BYTES;
 			uint8_t dispatchOp;
-			if constexpr (Instrumented) {
+			if constexpr (HeapService) {
+				dispatchOp = decoded->op;
+			} else if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
 			} else {
@@ -2019,7 +2042,7 @@ dispatch_decode:
 // On fallthrough the comparison owns the paired JMP. A separate incoming
 // edge to that same PC still requests an independent native entry.
 #define COMPARISON_FALLTHROUGH() do { \
-	if constexpr (!Instrumented) { \
+	if constexpr (!Instrumented && !HeapService) { \
 		if ((nextPc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) { \
 			const u32 word = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES; \
 			if (!(decodedPage->refreshState[word] & DECODED_REFRESH_DECODE) \
@@ -2081,7 +2104,7 @@ dispatch_instruction:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				// Warmth selects an execution tier for the admitted instruction.
 				// It is not a guest opcode: dispatch the selected operation once.
-				if (isNativeWarmDispatch(dispatchOp)) {
+				if (!HeapService && isNativeWarmDispatch(dispatchOp)) {
 					const bool entry = FRAME.compilationEntry;
 					FRAME.compilationEntry = rewritten || dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeWarmBoundary);
 					dispatchOp = decoded->op;
@@ -2304,18 +2327,22 @@ dispatch_rebind_frame:
 					if (static_cast<int>(thread.frameDepth()) <= targetDepth) return RunResult::Halted;
 				}
 				// A pure frame transition can activate the depth-sensitive HALT latch.
-				if (m_haltedUntilIrqThreadAddress == m_activeThread->address
-					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
+				if constexpr (!HeapService) {
+					if (m_haltedUntilIrqThreadAddress == m_activeThread->address
+						&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
+				}
 				frame = thread.currentFrame;
 				image = frame->executionImage;
 				if (!image) goto dispatch_continue;
-				if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
+				if constexpr (!HeapService) {
+					if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
+				}
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				pc = frame->readControl(FrameField::Pc);
 				// A function record can supply a raw unaligned code address. Leave
 				// its address exception to the ordinary instruction-fetch boundary.
-				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
+				if (!HeapService && (pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
 					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
 					decodedPage = &decodedPageForFrame(FRAME, pc);
 					if (decodedPage->nativeBlocks) {
@@ -2368,6 +2395,7 @@ dispatch_continue:
 			continue;
 		} catch (const LuaOutOfMemorySignal&) {
 			PUBLISH_SCALAR_FRONTIER();
+			if constexpr (HeapService) throw;
 			if (!handleThreadError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
 				enterLuaFaultException(
 					LUA_FAULT_REASON_OUT_OF_MEMORY,
@@ -2376,11 +2404,13 @@ dispatch_continue:
 			}
 		} catch (const LuaThrownValueError& error) {
 			PUBLISH_SCALAR_FRONTIER();
+			if constexpr (HeapService) throw;
 			if (!handleThreadError(error.value)) {
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			}
 		} catch (const LuaExecutionError& error) {
 			PUBLISH_SCALAR_FRONTIER();
+			if constexpr (HeapService) throw;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
@@ -2400,6 +2430,10 @@ dispatch_continue:
 #undef OBSERVE_SCALAR_ARITHMETIC
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
+	if (heapServiceActive()) {
+		runLoop<true, false, true>(0, instructionBudget);
+		return RunResult::Yielded;
+	}
 	if (allocationParked()) {
 		instructionBudgetRemaining = instructionBudget;
 		return RunResult::ParkedAllocation;

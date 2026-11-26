@@ -166,6 +166,8 @@ import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
+import { HeapService } from './heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
@@ -285,6 +287,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly luaHeap: LuaHeap;
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
+	private readonly heapService: HeapService;
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private lengthKey!: StringId;
@@ -411,6 +414,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lengthKey = this.stringPool.intern('__len');
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
+		this.heapService = new HeapService(this.gc);
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -786,6 +790,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public reset(): void {
+		if (this.heapServiceActive()) throw new Error('Heap service must retire before CPU reset.');
 		this.compiledCodeCache.retireAll();
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
@@ -1124,6 +1129,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
 		if (executionBoots.length === 0) return;
+		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
 		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
 		const replacements = new Array<Blua32ExecutionImage['romFunctions'] | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 		for (let i = 0; i < executionBoots.length; ++i)
@@ -1723,6 +1729,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
 		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
@@ -1746,6 +1753,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
+		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
 		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
@@ -1870,7 +1878,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs()) return false;
+		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.gc.fullEpochs() || this.heapServiceActive()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2005,7 +2013,31 @@ export class CPU implements MappedPageInvalidator {
 		return this.activeThread.frameDepth;
 	}
 
+	public heapServiceActive(): boolean {
+		return this.heapService.thread.frameDepth !== 0;
+	}
+
+	public heapServiceResult(): number {
+		return this.memory.readRamRecordWord(this.heapService.resultAddress);
+	}
+
+	/** Internal CPU entry. The host supplies a linked, fixed-stack firmware function. */
+	public beginHeapService(functionAddress: number, args: readonly number[]): boolean {
+		if (this.heapServiceActive()) return false;
+		const frame = this.prepareHeapServiceFrame(functionAddress, 0, 0, 0);
+		const copied = Math.min(frame.top, args.length);
+		for (let index = 0; index < copied; ++index) frame.registers.setInteger(index, args[index]);
+		frame.registers.clear(frame.top - copied, copied);
+		this.memory.writeRamRecordWord(this.heapService.resultAddress, 0);
+		frame.thread.enterFrame(frame);
+		return true;
+	}
+
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
+		if (this.heapServiceActive()) {
+			this.runUntilDepthInstrumented(0, instructionBudget, true);
+			return RunResult.Yielded;
+		}
 		if (this.pendingAllocation !== null) {
 			this.instructionBudgetRemaining = instructionBudget;
 			return RunResult.ParkedAllocation;
@@ -2154,16 +2186,16 @@ export class CPU implements MappedPageInvalidator {
 		this.scalarRegisterTop = -1;
 	}
 
-	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
+	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number, service = false): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		const thread = this.activeThread;
+		const thread = service ? this.heapService.thread : this.activeThread;
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
 			this.preMaskableInterruptExecutionHookDomainMask;
 		while (thread.frameDepth > targetDepth) {
 			try {
-				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
+				if (!service && this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
 					&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
@@ -2172,8 +2204,7 @@ export class CPU implements MappedPageInvalidator {
 				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
-						|| (this.haltedUntilIrqThread === this.activeThread.address && this.haltedUntilIrqFrameDepth === thread.frameDepth)
-						|| this.memoryWriteBlocked) {
+						|| (!service && (this.isHaltedUntilIrq() || this.memoryWriteBlocked))) {
 						return RunResult.Halted;
 					}
 					if (this.yieldRequested) {
@@ -2185,12 +2216,12 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const frame = thread.currentFrame!;
 					const image = frame.executionImage;
-					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
-					if (this.nonMaskableInterruptPending) {
+					if (!service && image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
+					if (!service && this.nonMaskableInterruptPending) {
 						this.enterPendingInterrupt();
 						continue;
 					}
-					if ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
+					if (!service && (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 						&& this.irqController.hasAssertedMaskableInterruptLine()) {
 						const interruptedFrame = thread.currentFrame!;
 						if ((preMaskableInterruptExecutionDomainMask
@@ -2202,7 +2233,7 @@ export class CPU implements MappedPageInvalidator {
 						continue;
 					}
 					const pc = frame.pc;
-					if ((executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
+					if (!service && (executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
 						&& executionHook(this.activeExecutionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
@@ -2223,22 +2254,25 @@ export class CPU implements MappedPageInvalidator {
 						continue;
 					}
 					const width = page.widths[pageOffset];
-					const op = page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
+					const op = !service && page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
 						? DecodedDispatchOp.Observe : page.ops[pageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
+					this.instructionBudgetRemaining -= service ? decodedInstructionBaseCycles(page, pageOffset) : page.dispatchCycles[pageOffset];
 					if (this.executeInstruction(
 						frame,
 						page,
 						pageOffset,
 						op,
 						targetDepth,
+						false,
+						service,
 					) === ALLOCATION_PARKED) return RunResult.ParkedAllocation;
 				}
 			} catch (error) {
+				if (service) throw error;
 				this.handleRunLoopError(error);
 			}
 		}
@@ -3159,6 +3193,7 @@ export class CPU implements MappedPageInvalidator {
 		op: number,
 		targetDepth: number,
 		rewritten = false,
+		service = false,
 	): Value | typeof ALLOCATION_PARKED | undefined {
 		const registers = frame.registers;
 		const image = frame.executionImage;
@@ -3468,7 +3503,9 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.CLOSURE:
-					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]); return;
+					if (service) this.setRegisterIntegerFast(frame, registers, a, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
+					else this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]);
+					return;
 				case OpCode.GETUP: {
 					const index = page.b[pageOffset];
 					if (index >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -3488,10 +3525,27 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.CALL:
-					this.executeCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
+					if (service) {
+						const supplied = page.b[pageOffset] - 1;
+						const callee = this.prepareHeapServiceFrame(registers.getPayload(a), frame.stackBase + a + 1,
+							a, page.c[pageOffset], frame.pc - INSTRUCTION_BYTES);
+						const padding = Math.max(0, callee.top - supplied);
+						callee.registers.clear(padding, callee.top - padding);
+						this.charge(padding);
+						callee.thread.enterFrame(callee);
+					} else this.executeCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
 					return;
 				case OpCode.RET:
-					this.executeReturn(frame, a, page.b[pageOffset]);
+					if (service) {
+						const count = page.b[pageOffset] - 1;
+						const caller = frame.previous;
+						if (caller !== null) this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, count, true);
+						else {
+							this.memory.writeRamRecordWord(this.heapService.resultAddress, count === 0 ? 0 : registers.getPayload(a));
+							this.charge(count);
+						}
+						frame.thread.leaveFrame();
+					} else this.executeReturn(frame, a, page.b[pageOffset]);
 					return;
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
@@ -3503,7 +3557,9 @@ export class CPU implements MappedPageInvalidator {
 					const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D;
 					const addr = displaced ? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
 						: wordOperand(this.readRKValue(frame, b));
-					if (op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM) this.executeMemoryLoad(frame, a, c, addr);
+					const load = op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM;
+					if (service) this.executeHeapServiceAccess(frame, a, c, addr, load);
+					else if (load) this.executeMemoryLoad(frame, a, c, addr);
 					else this.executeMemoryStore(frame, a, c, addr);
 					return;
 				}
@@ -3516,6 +3572,45 @@ export class CPU implements MappedPageInvalidator {
 					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;
 				}
+		}
+	}
+
+	private prepareHeapServiceFrame(functionAddress: number, stackBase: number, returnBase: number, returnCount: number, callSite?: number): CallFrame {
+		const thread = this.heapService.thread;
+		const image = this.systemImage;
+		if ((functionAddress >>> 0) >= SYSTEM_ROM_SIZE || romFunctionVersionLane(image.romFunctions, functionAddress) < 0
+			|| !this.readFunctionRecord(image, functionAddress, MAPPED_BUS_MASTER_CPU)) {
+			throw new Error('Heap service entry must identify a linked System ROM function.');
+		}
+		const { codeAddress, flags, maxStack, numParams, recordUpvalueCount } = this.functionRecordLatch;
+		const capacity = Math.max(1, numParams, maxStack);
+		if (codeAddress >= SYSTEM_ROM_SIZE || recordUpvalueCount !== 0 || (flags & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) !== BLUA32_FUNCTION_STATIC
+			|| thread.frameDepth >= HEAP_SERVICE_FRAME_COUNT || stackBase + capacity > HEAP_SERVICE_VALUE_COUNT) {
+			throw new Error('Function does not fit its fixed heap service activation.');
+		}
+		const frame = thread.acquireFrame();
+		frame.executionImage = image;
+		frame.decodedPage = null;
+		frame.initializeControl(functionAddress, codeAddress, callSite ?? codeAddress, false, SYSTEM_EXECUTION_DOMAIN_ID,
+			stackBase + numParams, 0, returnBase, returnCount, numParams, 0, stackBase, capacity);
+		thread.stackTop = stackBase + capacity;
+		return frame;
+	}
+
+	private executeHeapServiceAccess(frame: CallFrame, register: number, kind: MemoryAccessKind, address: number, load: boolean): void {
+		const memory = this.memory;
+		if (address < memory.ramBusEnd() || address >= this.heapService.thread.address
+			|| (kind !== MemoryAccessKind.Word && kind !== MemoryAccessKind.U32LE && kind !== MemoryAccessKind.U8)
+			|| (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
+			throw new Error('Heap service access is outside its private RAM port.');
+		}
+		if (load) {
+			const word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
+			this.setRegisterIntegerFast(frame, frame.registers, register, word);
+		} else {
+			const word = wordOperand(frame.registers.get(register));
+			if (kind === MemoryAccessKind.U8) memory.writeRamRecordByte(address, word);
+			else memory.writeRamRecordWord(address, word);
 		}
 	}
 
@@ -3657,10 +3752,10 @@ export class CPU implements MappedPageInvalidator {
 		Upvalue.store(this.gc, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
 	}
 
-	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
+	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number, fixedStack = false): void {
 		const targetCount = selectedCallResultCount(count, sourceCount);
 		if (targetCount > 0) {
-			const registers = this.ensureRegisterCapacity(frame, base + targetCount - 1);
+			const registers = fixedStack ? frame.registers : this.ensureRegisterCapacity(frame, base + targetCount - 1);
 			const copiedCount = Math.min(sourceCount, targetCount);
 			registers.copyRangeFrom(source, base, sourceBase, copiedCount, targetCount - copiedCount);
 		}
@@ -4527,6 +4622,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
+		this.bindPhysicalFrames(this.heapService.thread);
 		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1];
 		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
