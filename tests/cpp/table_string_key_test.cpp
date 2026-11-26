@@ -291,6 +291,24 @@ void rebuildFullCollisionChain(CPU& cpu) {
 	}
 }
 
+void compactCopiedWeakHash(CPU& cpu) {
+	auto source = cpu.createTable(0, 128);
+	const auto weak = valueTable(cpu.createTable().address());
+	std::array<int, 129> keys;
+	for (int k = -1, i = 0; i < 129; --k) if ((hashCanonicalTableKey(valueInteger(k)) & 127u) == 0) keys[i++] = k;
+	for (int i = 0; i < 128; ++i) source.setInteger(keys[i], i < 31 ? valueInteger(i) : weak);
+	source.setInteger(keys[1], valueNil());
+	source.setInteger(keys[1], valueNil());
+	source.setInteger(keys[1], valueBool(false));
+	source.setInteger(keys[1], valueBool(true));
+	source.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
+	auto copy = source.copyOwn();
+	copy.setInteger(keys[128], valueBool(false));
+	require(copy.hashSlots() == 32 && source.hashSlots() == 128, "31 live entries plus one fit exactly after weak clearing");
+	require(copy.getInteger(keys[1]) == valueBool(true) && isNil(copy.getInteger(keys[31]))
+		&& copy.getInteger(keys[128]) == valueBool(false), "retain the restored key, not the weakly removed entry");
+}
+
 void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
 	auto table = cpu.createTable(4, 128);
 	for (int k = -1; k >= -128; --k) table.setInteger(k, valueInteger(-k));
@@ -388,6 +406,7 @@ int main() {
 		inheritedAndFullWordKeys(cpu, memory);
 		fullHashGrowsAndRetainsMappings(cpu);
 		rebuildFullCollisionChain(cpu);
+		compactCopiedWeakHash(cpu);
 		rebuildRoutesStoredIntegerByItsCurrentWord(cpu, memory);
 		std::cout << "String-key table tests passed\n";
 		return 0;

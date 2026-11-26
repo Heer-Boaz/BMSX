@@ -155,6 +155,8 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 	const u32 added = valueIsInteger(key) ? arraySlot(asInteger(key)) : NO_ARRAY_SLOT;
 	if (added == NO_ARRAY_SLOT) {
 		// A hash-only addition never repartitions the reserved array.
+		if (body.count > HASH_CENSUS_LIMIT)
+			return {arrayCapacity(), nextPowerOfTwo(body.live() + 1u + extraHashSlots), false};
 		size_t live = 1u + extraHashSlots;
 		for (u32 i = 0; i < body.count; ++i) {
 			if (slots.tag(i) != ValueTag::Nil && slots.tag(i + body.count) != ValueTag::Nil) ++live;
@@ -253,11 +255,11 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	constexpr u32 included = 64;
 	const int arrayCycles = array > included && valueIsInteger(key) && asInteger(key) > 0
 		? static_cast<int>((array - included + 3u) / 4u) : 0;
-	// A hash census visits the key and value lanes, regardless of key type.
-	const int hashCycles = hash > included ? static_cast<int>((hash - included + 1u) / 2u) : 0;
+	// Repartitioning needs the Integer key distribution, not just the live count.
+	const int hashCycles = hash > included && valueIsInteger(key) && asInteger(key) > 0 ? static_cast<int>((hash - included + 1u) / 2u) : 0;
 	const int scanCycles = arrayCycles + hashCycles;
 	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
-		if (scanCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
+		if (hash > HASH_CENSUS_LIMIT || scanCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
 	}
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	for (;;) {
@@ -329,12 +331,13 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	}
 	const int firstFree = static_cast<int>(newHashSize) - 1;
 	int nextFree = firstFree;
+	u32 live = 0;
 	if (oldArraySize != newArraySize) {
 		u8* words = m_memory->ramData() + (base & RAM_RECORD_WORD_MASK);
 		const ValueSlots<false> oldArray{m_memory, words, words + oldArraySize * 4u};
 		for (size_t i = newArraySize; i < oldArraySize; ++i) {
 			const Value prior = oldArray.get(i);
-			if (!isNil(prior)) reinsertMapping(body, nextFree, valueInteger(static_cast<i32>(i + 1)), prior);
+			if (!isNil(prior)) live += reinsertMapping(body, nextFree, valueInteger(static_cast<i32>(i + 1)), prior) >= 0;
 		}
 		const size_t keep = std::min(oldArraySize, newArraySize);
 		std::memmove(words + newArraySize * 4u, oldArray.tags, keep);
@@ -348,9 +351,10 @@ int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value va
 	}
 	for (size_t i = 0, n = keepHash ? 0 : oldHashSize; i < n; ++i) {
 		const Value priorKey = oldValues.get(i), prior = oldValues.get(oldHashSize + i);
-		if (!isNil(priorKey) && !isNil(prior)) reinsertMapping(body, nextFree, priorKey, prior);
+		if (!isNil(priorKey) && !isNil(prior)) live += reinsertMapping(body, nextFree, priorKey, prior) >= 0;
 	}
 	const int slot = reinsertMapping(body, nextFree, key, value);
+	if (!keepHash && newHashSize > HASH_CENSUS_LIMIT) body.setLive(live + (slot >= 0));
 	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
 	m_heap->budget.replaceRecord(keepHash ? 0 : oldStorage, previous, requested);
 	return slot;
@@ -369,7 +373,7 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 	// mappings. Reuse that lane as a compact list of collided source slots.
 	const u32 array = arrayCapacity();
 	const auto arrayValues = values();
-	u32 collisions = 0;
+	u32 collisions = 0, live = 1;
 	for (u32 i = 0; i < source.count; ++i) {
 		const Value k = source.slots.get(i), v = source.slots.get(source.count + i);
 		if (isNil(k) || isNil(v)) continue;
@@ -377,6 +381,7 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 			arrayValues.set(arraySlot(asInteger(k)), v);
 			continue;
 		}
+		++live;
 		const u32 home = hashCanonicalTableKey(k) & mask;
 		if (body.slots.tag(home) == ValueTag::Nil) {
 			body.slots.set(home, k);
@@ -399,6 +404,7 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 		body.setNext(home, dst);
 	}
 	if (nextFree != firstFree) writeHeader(TableHeader::Free, static_cast<u32>(nextFree));
+	if (body.count > HASH_CENSUS_LIMIT) body.setLive(live);
 	return static_cast<int>(trigger);
 }
 
@@ -422,9 +428,10 @@ void TableRecord::initializeHash(u32 address, u32 count) {
 	if (!count) return;
 	const u32 base = address & RAM_RECORD_WORD_MASK;
 	u8* words = m_memory->ramData() + base;
-	const u32 bytes = hashStorageBytes(count);
+	const u32 bytes = hashNodeBytes(count);
 	std::fill(words, words + count * 10u, u8{0});
 	std::fill(words + count * 10u, words + bytes, u8{0xff});
+	if (count > HASH_CENSUS_LIMIT) hashBodyAt(address, count).setLive(0u);
 	m_memory->invalidateRamWrite(base, bytes);
 }
 
@@ -521,12 +528,15 @@ int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value k
 }
 
 int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept {
-	return insertAbsentHashKey(body, home, key, value, [&] {
+	const int slot = insertAbsentHashKey(body, home, key, value, [&] {
+		if (body.count > HASH_CENSUS_LIMIT && body.live() == body.count) return -1;
 		const int available = body.findFreeIndex(hashFree());
 		if (available >= 0) writeHeader(TableHeader::Free, static_cast<u32>(available - 1));
 		return available;
 	},
 		[this] { m_heap->tableEntriesMoved(m_address); });
+	if (slot >= 0 && body.count > HASH_CENSUS_LIMIT) body.setLive(body.live() + 1u);
+	return slot;
 }
 
 TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> keys, u32 present) noexcept {
@@ -580,7 +590,9 @@ void TableRecord::removeFromHash(const Value& key, int slot) {
 }
 
 void TableRecord::markHashNodeDead(size_t index) {
-	const Value key = hashBody(hashSlots()).slots.get(index);
+	const auto body = hashBody(hashSlots());
+	if (body.count > HASH_CENSUS_LIMIT) body.setLive(body.live() - 1u);
+	const Value key = body.slots.get(index);
 	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
 		const uint32_t hashId = valuePayload(key);
 		hashBody(hashSlots()).slots.set(index, valueFromTag(ValueTag::Nil, valueHeader(key)));
@@ -706,6 +718,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 	if (count != 0u) {
 		if (nodeIndex >= 0) {
 			const u32 slot = static_cast<u32>(nodeIndex);
+			if (count > HASH_CENSUS_LIMIT) body.setLive(body.live() + 1u);
 			body.slots.set(slot, key);
 			body.slots.set(slot + count, value);
 		} else nodeIndex = insertHashWithoutGrowth(body, home, key, value);

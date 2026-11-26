@@ -278,7 +278,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
     for (const overwrite of [false, true]) {
      cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
      assert.equal(cpu.runUntilDepth(0, base, cpu.rootThread.address, kind), RunResult.Yielded);
-     assert.equal(cpu.instructionBudgetRemaining, overwrite || hash === 64 ? 0 : -(hash - 64) / 2);
+     assert.equal(cpu.instructionBudgetRemaining, !integer || overwrite || hash === 64 ? 0 : -(hash - 64) / 2);
      assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
      if (!integer && !overwrite && hash > 64) {
       assert.equal(cpu.tableRebuild.record, full);
@@ -362,9 +362,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    const key = r.get(1);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
    assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.SETT]), RunResult.Yielded);
-   const recoveryCost = scenario === 'failed-growth' ? 2 * ((hash - 64) / 2) + GC_WORK_WORD_CYCLES *
+   const recoveryCost = scenario === 'failed-growth' ? GC_WORK_WORD_CYCLES *
     cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK) : 0;
-   assert.equal(cpu.instructionBudgetRemaining + recoveryCost, 0, 'only the two completed scans and the recovered epoch add to the base charge');
+   assert.equal(cpu.instructionBudgetRemaining + recoveryCost, 0, 'a hash-only retry uses the live count again; only recovery work adds to the base charge');
    assert.equal(frame.pc, scenario === 'failed-growth' ? entry : entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.storedSlotCount(table), capacity);
    if (scenario === 'failed-growth') {

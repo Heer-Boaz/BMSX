@@ -87,7 +87,14 @@ export class TableRecords {
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
 	// Two word lanes, two tag lanes and a signed chain cursor per node.
 	// A byte covers -1 and every index of a power-of-two table up to 128.
-	public static hashStorageBytes(hash: number): number { return hash * (hash <= 128 ? 11 : 14); }
+	public static readonly HASH_CENSUS_LIMIT = 64;
+	private static hashNodeBytes(hash: number): number { return hash * (hash <= 128 ? 11 : 14); }
+	public static hashStorageBytes(hash: number): number { return TableRecords.hashNodeBytes(hash) + (hash > TableRecords.HASH_CENSUS_LIMIT ? 4 : 0); }
+	private adjustHashLive(words: number, hash: number, delta: number): void {
+		if (hash <= TableRecords.HASH_CENSUS_LIMIT) return;
+		const memory = this.heap.memory, address = words + TableRecords.hashNodeBytes(hash);
+		memory.writeRamRecordWord(address, memory.readRamRecordWord(address) + delta);
+	}
 	private hashNext(links: number, count: number, node: number): number {
 		return count <= 128 ? (this.heap.memory.readRamRecordByte(links + node) << 24) >> 24
 			: this.heap.memory.readRamRecordWord(links + node * 4) | 0;
@@ -133,7 +140,8 @@ export class TableRecords {
 	private initializeHash(address: number, count: number): void {
 		if (!count) return;
 		const memory = this.heap.memory, ram = memory.ramData(), base = address & RAM_RECORD_WORD_MASK;
-		const bytes = TableRecords.hashStorageBytes(count);
+		const bytes = TableRecords.hashNodeBytes(count);
+		if (count > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(address + bytes, 0);
 		ram.fill(0, base, base + count * 10);
 		ram.fill(0xff, base + count * 10, base + bytes);
 		memory.invalidateRamWrite(base, bytes);
@@ -528,6 +536,7 @@ export class TableRecords {
 				this.writeSlot(words, tags, index + hash, tag, word);
 			} else index = this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, false);
 			if (index >= 0) {
+				this.adjustHashLive(words, hash, 1);
 				if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 				this.heap.writeTableAssignment(record, tag, word, key);
 				return index;
@@ -577,6 +586,7 @@ export class TableRecords {
 			this.writeSlot(words, tags, keySlot, tag, word); this.writeSlot(words, tags, valueSlot, nextTag, nextWord); return main;
 		}
 		const mainWord = memory.readRamRecordWord(words + keySlot * 4);
+		if (!rebuilding && hash > TableRecords.HASH_CENSUS_LIMIT && memory.readRamRecordWord(words + TableRecords.hashNodeBytes(hash)) === hash) return -1;
 		const free = this.findFreeIndex(record, hash, tags);
 		if (free < 0) return -1;
 		this.writeHeader(record, TableHeader.Free, free - 1);
@@ -615,6 +625,7 @@ export class TableRecords {
 		return this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, true);
 	}
 	private markHashNodeDead(record: number, index: number): void {
+		this.adjustHashLive(this.hashAddress(record), this.hashSize(record), -1);
 		const keySlot = index, valueSlot = this.hashValueSlot(record, index), tag = this.tagAt(record, keySlot);
 		if (tag === ValueTag.Table || tag === ValueTag.Thread || tag === ValueTag.Closure) {
 			const hashId = this.wordAt(record, keySlot);
@@ -642,7 +653,8 @@ export class TableRecords {
 		// A hash-only addition never repartitions the reserved array.
 		if (added < 0) {
 			let live = 1 + extraHashSlots;
-			for (let slot = 0; slot < oldHash; ++slot) {
+			if (oldHash > TableRecords.HASH_CENSUS_LIMIT) live += memory.readRamRecordWord(words + TableRecords.hashNodeBytes(oldHash));
+			else for (let slot = 0; slot < oldHash; ++slot) {
 				if (memory.readRamRecordByte(tags + slot) !== ValueTag.Nil
 					&& memory.readRamRecordByte(tags + slot + oldHash) !== ValueTag.Nil) ++live;
 			}
@@ -699,7 +711,7 @@ export class TableRecords {
 		const previous = TableRecords.allocationCharge(array, hash);
 		const arrayCycles = array > 64 && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
 			? (array - 64 + 3) >>> 2 : 0;
-		const hashCycles = hash > 64 ? (hash - 64 + 1) >>> 1 : 0;
+		const hashCycles = hash > TableRecords.HASH_CENSUS_LIMIT && valueTag(key) === ValueTag.Integer && asInteger(key) > 0 ? (hash - 64 + 1) >>> 1 : 0;
 		const scanCycles = arrayCycles + hashCycles;
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
@@ -726,7 +738,7 @@ export class TableRecords {
 				const words = this.hashAddress(record), tags = words + 8 * hash;
 				const home = hashCanonicalTableKey(key) & (hash - 1);
 				const slot = this.insertHashWithoutGrowth(record, home, key, value, hash, words, tags, false);
-				if (slot >= 0) return slot;
+				if (slot >= 0) { this.adjustHashLive(words, hash, 1); return slot; }
 			}
 		}
 	}
@@ -763,12 +775,13 @@ export class TableRecords {
 			this.heap.budget.replaceRecord(oldWords, previous, requested);
 			return slot;
 		}
+		let live = 0;
 		const tags = storage + hash * 8, offset = base & RAM_RECORD_WORD_MASK;
 		if (array < oldArray) {
 			for (let i = array; i < oldArray; ++i) {
 				const tag = memory.readRamRecordByte(base + oldArray * 4 + i);
-				if (tag !== ValueTag.Nil) this.reinsertMapping(record, valueInteger(i + 1),
-					valueFromTag(tag, memory.readRamRecordWord(base + 4 * i)), array, hash, storage, tags);
+				if (tag !== ValueTag.Nil) live += this.reinsertMapping(record, valueInteger(i + 1),
+					valueFromTag(tag, memory.readRamRecordWord(base + 4 * i)), array, hash, storage, tags) >= 0 ? 1 : 0;
 			}
 		}
 		if (array !== oldArray) {
@@ -784,11 +797,12 @@ export class TableRecords {
 		}
 		for (let i = 0, n = keepHash ? 0 : oldHash; i < n; ++i) {
 			const kt = memory.readRamRecordByte(oldTags + i), vt = memory.readRamRecordByte(oldTags + i + oldHash);
-			if (kt !== ValueTag.Nil && vt !== ValueTag.Nil) this.reinsertMapping(record,
+			if (kt !== ValueTag.Nil && vt !== ValueTag.Nil) live += this.reinsertMapping(record,
 				valueFromTag(kt, memory.readRamRecordWord(oldWords + i * 4)),
-				valueFromTag(vt, memory.readRamRecordWord(oldWords + (i + oldHash) * 4)), array, hash, storage, tags);
+				valueFromTag(vt, memory.readRamRecordWord(oldWords + (i + oldHash) * 4)), array, hash, storage, tags) >= 0 ? 1 : 0;
 		}
 		const slot = this.reinsertMapping(record, key, value, array, hash, storage, tags);
+		if (!keepHash && hash > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(storage + TableRecords.hashNodeBytes(hash), live + (slot >= 0 ? 1 : 0));
 		this.heap.budget.replaceRecord(keepHash ? 0 : oldWords, previous, requested);
 		return slot;
 	}
@@ -796,7 +810,7 @@ export class TableRecords {
 		if (budget.instructionBudgetRemaining <= 0) return;
 		const j = budget.tableRebuild, memory = this.heap.memory;
 		const tags = j.storage + 8 * j.capacity, oldTags = j.source + 8 * j.count;
-		const mask = j.capacity - 1, bytes = TableRecords.hashStorageBytes(j.capacity);
+		const mask = j.capacity - 1, bytes = TableRecords.hashNodeBytes(j.capacity);
 		if (j.cleared < bytes) {
 			const n = Math.min(bytes - j.cleared, 16 * budget.instructionBudgetRemaining);
 			const end = j.cleared + n, split = Math.max(j.cleared, Math.min(end, 10 * j.capacity));
@@ -807,6 +821,8 @@ export class TableRecords {
 			j.cleared = end;
 			budget.instructionBudgetRemaining -= (n + 15) >>> 4;
 			if (end < bytes) return;
+			if (j.capacity > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(j.storage + bytes,
+				memory.readRamRecordWord(j.source + TableRecords.hashNodeBytes(j.count)) + 1);
 			const home = hashCanonicalTableKey(j.key) & mask;
 			this.writeSlot(j.storage, tags, home, valueTag(j.key), valuePayload(j.key));
 			this.writeSlot(j.storage, tags, j.capacity + home, valueTag(j.value), valuePayload(j.value));
@@ -821,6 +837,7 @@ export class TableRecords {
 			const index = (kw - 1) >>> 0;
 			if (kt === ValueTag.Integer && index < array) {
 				this.writeSlot(base, base + 4 * array, index, vt, vw);
+				this.adjustHashLive(j.storage, j.capacity, -1);
 				continue;
 			}
 			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
@@ -870,7 +887,7 @@ export class TableRecords {
 		this.writeSlot(storage, tags, hash + trigger, valueTag(value), valuePayload(value));
 		const oldLinks = oldTags + oldHash * 2, links = tags + hash * 2;
 		const array = this.arrayCapacity(record), base = this.arrayAddress(record);
-		let collisions = 0, nextFree = mask;
+		let collisions = 0, nextFree = mask, live = 1;
 		// Reserve each home once. Only colliding source slots need a second
 		// visit; the retired link lane holds their indices until placement.
 		for (let i = 0; i < oldHash; ++i) {
@@ -882,6 +899,7 @@ export class TableRecords {
 				this.writeSlot(base, base + array * 4, index, vt, memory.readRamRecordWord(oldWords + 4 * (oldHash + i)));
 				continue;
 			}
+			++live;
 			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
 			if (memory.readRamRecordByte(tags + home) === ValueTag.Nil) {
 				this.writeSlot(storage, tags, home, kt, kw);
@@ -903,6 +921,7 @@ export class TableRecords {
 			this.setHashNext(links, hash, home, dst);
 		}
 		if (nextFree !== mask) this.writeHeader(record, TableHeader.Free, nextFree);
+		if (hash > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(storage + TableRecords.hashNodeBytes(hash), live);
 		return trigger;
 	}
 	private updateLengthHint(record: number, slot: number, present: boolean): void {

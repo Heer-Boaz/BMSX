@@ -40,7 +40,9 @@ public:
 	TableRecord(GcHeap& heap, u32 address) : m_heap(&heap), m_memory(&heap.memory), m_address(address) {}
 	static constexpr u32 HEADER_BYTES = 36, HEADER_CHARGE = 32;
 	static constexpr u32 BYTE_LINK_CAPACITY = 128;
-	static constexpr u32 hashStorageBytes(size_t hash) { return static_cast<u32>(hash * (hash <= BYTE_LINK_CAPACITY ? 11u : 14u)); }
+	static constexpr u32 HASH_CENSUS_LIMIT = 64;
+	static constexpr u32 hashNodeBytes(size_t hash) { return static_cast<u32>(hash * (hash <= BYTE_LINK_CAPACITY ? 11u : 14u)); }
+	static constexpr u32 hashStorageBytes(size_t hash) { return hashNodeBytes(hash) + (hash > HASH_CENSUS_LIMIT ? 4u : 0u); }
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
 	void initialize(size_t arrayCapacity, size_t hashCapacity);
@@ -250,6 +252,9 @@ private:
 		ValueSlots<BulkWrite> slots;
 		u32 count, links;
 		int findFreeIndex(int first) const;
+		u32 liveAddress() const { return links + count * (count <= BYTE_LINK_CAPACITY ? 1u : 4u); }
+		u32 live() const { return slots.memory->readRamRecordWord(liveAddress()); }
+		void setLive(u32 n) const { slots.memory->writeRamRecordWord(liveAddress(), n); }
 		i32 next(u32 index) const {
 			const u8* lane = slots.tags + 2u * count;
 			if (count <= BYTE_LINK_CAPACITY) return static_cast<i8>(lane[index]);

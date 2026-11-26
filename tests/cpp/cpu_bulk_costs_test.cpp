@@ -84,9 +84,9 @@ void writeRoutes(bool scalar) {
    for (const bool overwrite : {false, true}) {
     machine.restart();
     if (cpu.runUntilDepth(0, base, 0u, kind) != RunResult::Yielded
-     || cpu.instructionBudgetRemaining != (overwrite ? 0 : -(hash - 64) / 2)
+     || cpu.instructionBudgetRemaining != (!integer || overwrite ? 0 : -(hash - 64) / 2)
      || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES)
-     throw std::runtime_error("a hash census debits the issuing store exactly once, including rawset");
+     throw std::runtime_error("only positive Integer repartitioning scans the hash");
     if (!integer && !overwrite && hash > 64) {
      if (cpu.tableRebuild.record != full.address() || !isNil(full.get(key))) throw std::runtime_error("store must be pending");
      for (int steps = 0; cpu.tableRebuild.record; ++steps) {
@@ -235,7 +235,7 @@ void rebuildWork(bool scalar) {
   }
   const Value key = r.get(1); machine.restart();
   const auto result = cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::SETT)]);
-  const int recoveryCost = scenario == "failed-growth" ? 2 * ((hash - 64) / 2) + GC_WORK_WORD_CYCLES * static_cast<int>(
+  const int recoveryCost = scenario == "failed-growth" ? GC_WORK_WORD_CYCLES * static_cast<int>(
    machine.memory.readRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK)) : 0;
   if (result != RunResult::Yielded || cpu.instructionBudgetRemaining != -recoveryCost || table.storedSlotCount() != capacity
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + (scenario == "failed-growth" ? 0u : INSTRUCTION_BYTES))

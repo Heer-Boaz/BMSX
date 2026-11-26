@@ -251,6 +251,27 @@ test('a full collision chain compacts and grows across both link widths', () => 
 	}
 });
 
+test('hash-only growth counts restored keys but not weakly retired mappings in a copy', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, table = cpu.createTable(0, 128), weak = valueTable(cpu.createTable());
+	const keys: number[] = [];
+	for (let k = -1; keys.length < 129; --k) if ((hashCanonicalTableKey(valueInteger(k)) & 127) === 0) keys.push(k);
+	for (let i = 0; i < 128; ++i) tables.setInteger(table, keys[i], i < 31 ? valueInteger(i) : weak);
+	tables.setInteger(table, keys[1], valueNil());
+	tables.setInteger(table, keys[1], valueNil());
+	tables.setInteger(table, keys[1], valueBool(false));
+	tables.setInteger(table, keys[1], valueBool(true));
+	tables.clearWeakEntries(table, false, true, value => value !== weak);
+	const copy = tables.copyOwn(table);
+	tables.setInteger(copy, keys[128], valueBool(false));
+	assert.equal(tables.hashSize(copy), 32);
+	assert.equal(tables.hashSize(table), 128);
+	assert.equal(tables.getInteger(copy, keys[1]), valueBool(true));
+	assert.equal(tables.getInteger(copy, keys[31]), valueNil());
+	assert.equal(tables.getInteger(copy, keys[128]), valueBool(false));
+});
+
 test('hash rebuild routes a stored Integer by its current RAM word', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));

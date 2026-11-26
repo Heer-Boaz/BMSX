@@ -9,7 +9,7 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 	if (cycles <= 0) return;
 	auto& j = cpu.tableRebuild;
 	const auto src = hashBodyAt(j.source, j.count), dst = hashBodyAt(j.storage, j.capacity);
-	const u32 mask = j.capacity - 1u, bytes = hashStorageBytes(j.capacity);
+	const u32 mask = j.capacity - 1u, bytes = hashNodeBytes(j.capacity);
 	if (j.cleared < bytes) {
 		const u32 n = std::min(bytes - j.cleared, 16u * std::min(static_cast<u32>(cycles), (bytes + 15u) / 16u));
 		const u32 end = j.cleared + n;
@@ -21,6 +21,7 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 		cycles -= static_cast<int>((n + 15u) / 16u);
 		if (end < bytes) return;
 		const u32 home = hashCanonicalTableKey(j.key) & mask;
+		if (j.capacity > HASH_CENSUS_LIMIT) dst.setLive(src.live() + 1u);
 		dst.slots.set(home, j.key);
 		dst.slots.set(j.capacity + home, j.value);
 	}
@@ -33,6 +34,7 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 		if (isNil(k) || isNil(v)) continue;
 		if (valueIsInteger(k) && arraySlot(asInteger(k)) < array) {
 			arr.set(arraySlot(asInteger(k)), v);
+			if (j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() - 1u);
 			continue;
 		}
 		const u32 home = hashCanonicalTableKey(k) & mask;
