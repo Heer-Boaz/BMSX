@@ -174,6 +174,47 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ for (const prefix of [0, 256]) test(`sparse shrink migrates the tail across grants (${backend}, prefix=${prefix})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
+  const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['shrinking'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables, old = 2047;
+  const t = cpu.createTable(old, 128), base = tables.arrayAddress(t);
+  cpu.setSystemGlobalByKey(cpu.stringPool.intern('shrinking'), valueTable(t));
+  const value = (i: number) => i % 3 ? valueInteger(-i) : valueBool(false);
+  for (let i = -128; i <= old; ++i) if (i && (i <= prefix || !(i % 16))) tables.setInteger(t, i, value(i));
+  const r = cpu.rootThread.currentFrame!.registers;
+  r.setTable(0, t); r.setInteger(1, old+1); r.setInteger(2, 73);
+  const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
+  grant(16);
+  const j = cpu.tableRebuild;
+  for (let n = 0; j.homes < 128; ++n) { assert.ok(n < 4000); grant(1); }
+  grant(1); assert.equal(j.homes, 132); assert.equal(cpu.instructionBudgetRemaining, 0);
+  grant(3); assert.equal(j.homes, 143); assert.equal(cpu.instructionBudgetRemaining, 0);
+  grant(1); assert.equal(j.homes, 144); assert.equal(cpu.instructionBudgetRemaining, -7);
+  assert.equal(tables.arrayCapacity(t), old); assert.equal(tables.getInteger(t, old+1), valueNil());
+  const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  cpu.reset(); assert.equal(tables.arrayAddress(t), base); assert.equal(tables.arrayCapacity(t), old);
+  assert.equal(tables.getInteger(t, 2032), value(2032)); assert.equal(tables.getInteger(t, old+1), valueNil());
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+  for (let n = 0; j.record; ++n) { assert.ok(n < 1000); grant(63); }
+  const check = () => {
+   assert.equal(tables.arrayCapacity(t), 2 * prefix); assert.equal(tables.arrayAddress(t), prefix ? base : 0);
+   for (let i = -128; i <= old; ++i)
+    assert.equal(tables.getInteger(t, i), i && (i <= prefix || !(i % 16)) ? value(i) : valueNil());
+   assert.equal(tables.getInteger(t, old+1), valueInteger(73));
+  };
+  check(); const end = cpu.memory.captureSaveState();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+  if (prefix) {
+   for (let n = 0; !j.arrayCleared; ++n) { assert.ok(n < 15000); grant(1); }
+   assert.equal(j.arrayCleared, 16); cpu.reset(); check();
+   cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+  }
+  for (let n = 0; j.record; ++n) { assert.ok(n < 1000); grant(79); }
+  check(); assert.equal(Buffer.compare(cpu.memory.captureSaveState().ram, end.ram), 0);
+ });
+
  test(`in-place growth resumes overlapping tag moves and survives reset (${backend})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);

@@ -162,8 +162,11 @@ void CPU::reset() {
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
 	if (tableRebuild.record && tableRebuild.arrayStorage) {
 		TableRecord table(m_heap, tableRebuild.record);
-		if (table.arrayAddress() == tableRebuild.arrayStorage)
-			table.advanceRebuild(tableRebuild, std::numeric_limits<int>::max());
+		if (table.arrayAddress() == tableRebuild.arrayStorage) {
+			if (tableRebuild.arraySlots < table.arrayCapacity() && !tableRebuild.arrayCleared)
+				tableRebuild.arrayStorage = 0; // The old allocation still belongs entirely to the record.
+			else table.advanceRebuild(tableRebuild, std::numeric_limits<int>::max());
+		}
 	}
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();

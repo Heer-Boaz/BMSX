@@ -13,7 +13,9 @@ int TableRecord::advanceRebuild(TableRebuild& j, int cycles) {
 	const u32 trigger = arraySlot(j.key);
 	const u32 oldBase = arrayAddress();
 	const bool inPlace = j.arrayStorage && j.arrayStorage == oldBase;
-	const u32 transfer = 5u * j.arraySlots - (inPlace ? 4u * oldArray : 0u);
+	const bool shrinking = array < oldArray;
+	const u32 sources = j.count + (shrinking ? oldArray - array : 0u);
+	const u32 transfer = shrinking ? 0u : 5u * j.arraySlots - (inPlace ? 4u * oldArray : 0u);
 	if (j.arrayCleared < transfer) {
 		const u32 left = transfer - j.arrayCleared;
 		const u32 n = std::min(left, 16u * std::min(static_cast<u32>(cycles), (left + 15u) / 16u));
@@ -73,17 +75,34 @@ int TableRecord::advanceRebuild(TableRebuild& j, int cycles) {
 			dst.slots.set(j.capacity + home, j.value);
 		}
 	}
-	while (j.homes < j.count && cycles > 0) {
+	// Hash slots precede the vanishing array slice in both placement passes.
+	const ValueSlots<false> oldValues{m_memory, words, words + 4u * oldArray};
+	const auto source = [&](u32 i) -> std::pair<Value, Value> {
+		if (i < j.count) return {src.slots.get(i), src.slots.get(j.count + i)};
+		const u32 slot = array + (i - j.count);
+		return {valueInteger(static_cast<i32>(slot + 1)), oldValues.get(slot)};
+	};
+	const auto skipEmptyTail = [&](u32& i) {
+		const u32 left = sources - i;
+		const u32 limit = std::min(left, 4u * std::min(static_cast<u32>(cycles), (left + 3u) / 4u));
+		const u8* tags = oldValues.tags + (array + i - j.count);
+		u32 n = 0;
+		while (n < limit && !tags[n]) ++n;
+		i += n; cycles -= static_cast<int>((n + 3u) / 4u);
+		return n != 0;
+	};
+	while (j.homes < sources && cycles > 0) {
+		if (j.homes >= j.count && skipEmptyTail(j.homes)) continue;
 		const u32 i = j.homes++;
 		cycles -= 8;
-		const Value k = src.slots.get(i), v = src.slots.get(j.count + i);
+		const auto [k, v] = source(i);
 		if (isNil(k) || isNil(v)) continue;
 		if (valueIsInteger(k) && arraySlot(asInteger(k)) < array) {
 			arr.set(arraySlot(asInteger(k)), v);
 			if (j.count > HASH_CENSUS_LIMIT && j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() - 1u);
 			continue;
 		}
-		if (j.count <= HASH_CENSUS_LIMIT && j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() + 1u);
+		if ((i >= j.count || j.count <= HASH_CENSUS_LIMIT) && j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() + 1u);
 		dst.adjustIntegerBand(k, 1);
 		const u32 home = hashCanonicalTableKey(k) & mask;
 		if (dst.slots.tag(home) == ValueTag::Nil) {
@@ -91,11 +110,12 @@ int TableRecord::advanceRebuild(TableRebuild& j, int cycles) {
 			dst.slots.set(j.capacity + home, v);
 		} else ++j.collisions;
 	}
-	if (j.homes < j.count) return cycles;
-	while (j.collisions && j.cursor < j.count && cycles > 0) {
+	if (j.homes < sources) return cycles;
+	while (j.collisions && j.cursor < sources && cycles > 0) {
+		if (j.cursor >= j.count && skipEmptyTail(j.cursor)) continue;
 		cycles -= 8;
 		const u32 i = j.cursor;
-		const Value k = src.slots.get(i), v = src.slots.get(j.count + i);
+		const auto [k, v] = source(i);
 		if (!isNil(k) && !isNil(v) && !(valueIsInteger(k) && arraySlot(asInteger(k)) < array)) {
 			const u32 home = hashCanonicalTableKey(k) & mask;
 			if (dst.slots.get(home) != k) {
@@ -110,12 +130,24 @@ int TableRecord::advanceRebuild(TableRebuild& j, int cycles) {
 		}
 		++j.cursor;
 	}
-	if (j.collisions && j.cursor < j.count) return cycles;
+	if (j.collisions && j.cursor < sources) return cycles;
+	if (shrinking && j.arrayCleared < array) {
+		if (cycles <= 0) return cycles;
+		const u32 left = array - j.arrayCleared;
+		const u32 n = std::min(left, 16u * std::min(static_cast<u32>(cycles), (left + 15u) / 16u));
+		const u32 dest = 4u * array + j.arrayCleared;
+		std::memmove(words + dest, oldValues.tags + j.arrayCleared, n);
+		m_memory->invalidateRamWrite((oldBase & RAM_RECORD_WORD_MASK) + dest, n);
+		j.arrayCleared += n;
+		cycles -= static_cast<int>((n + 15u) / 16u);
+		if (j.arrayCleared < array) return cycles;
+	}
 	m_heap->tableEntriesMoved(m_address);
 	const u32 oldHash = hashSlots();
 	if (j.arrayStorage) {
-		if (oldArray && !inPlace) m_heap->arena.free(oldBase);
-		writeHeader(TableHeader::ArrayStorage, j.arrayStorage);
+		if (shrinking && array) m_heap->arena.shrinkBacking(oldBase, 5u * array);
+		else if (!array || (oldArray && !inPlace)) m_heap->arena.free(oldBase);
+		writeHeader(TableHeader::ArrayStorage, array ? j.arrayStorage : 0u);
 		writeHeader(TableHeader::Array, array);
 	}
 	if (trigger < array) arr.set(trigger, j.value);

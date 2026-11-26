@@ -790,8 +790,10 @@ export class CPU implements MappedPageInvalidator {
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
 		const systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 		const job = this.tableRebuild;
-		if (job.record && job.arrayStorage && job.arrayStorage === this.gc.tables.arrayAddress(job.record))
-			this.gc.tables.advanceRebuild(job, 0x7fffffff);
+		if (job.record && job.arrayStorage && job.arrayStorage === this.gc.tables.arrayAddress(job.record)) {
+			if (job.arraySlots < this.gc.tables.arrayCapacity(job.record) && !job.arrayCleared) job.arrayStorage = 0;
+			else this.gc.tables.advanceRebuild(job, 0x7fffffff);
+		}
 		this.clearCompletionValues();
 		this.clearCallStack();
 		for (let index = 1; index < this.threadBanks.length; ++index) this.threadBanks[index].bindAddress(0);

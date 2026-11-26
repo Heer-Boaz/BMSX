@@ -1663,6 +1663,16 @@ The processor moves the retained tags and clears the new payloads and tags at
 the same 16 bytes per cycle. A reset during this in-place operation finishes
 the store before entering the reset program.
 
+When an array of at least 1,024 slots shrinks, the store transfers the
+non-nil entries beyond its new end to the replacement hash. Each placement
+pass visits old hash slots first, then the disappearing array slots in
+ascending index order. Each run of nil array slots costs one cycle per
+four slots, rounding the last group up. Other visits use the eight-cycle
+hash placement charge. After placement, the processor moves the retained
+tags at 16 bytes per cycle and releases the unused storage. A reset before
+the first retained tag moves discards the pending shrink; a reset after that
+point finishes it before entering the reset program.
+
 The old hash remains attached until the replacement is complete. The processor
 then publishes the insertion before issuing another instruction or accepting
 an interrupt. Guest time advances during the replacement; this is not an

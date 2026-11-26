@@ -149,6 +149,57 @@ void replayInFlightHash(bool scalar) {
   throw std::runtime_error("replayed placement did not build the new hash integer census");
 }
 
+void shrinkSparseArray(bool scalar, int prefix) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}}; image.systemGlobalNames={"shrinking"};
+ CpuMachine machine(image, scalar);
+ auto& cpu = machine.cpu;
+ constexpr int old = 2047;
+ auto table = cpu.createTable(old,128);
+ const auto base = table.arrayAddress();
+ cpu.setSystemGlobalByKey(cpu.stringPool().intern("shrinking"), valueTable(table.address()));
+ const auto value = [](int i) { return i%3 ? valueInteger(-i) : valueBool(false); };
+ for (int i=-128; i<=old; ++i) if (i && (i<=prefix || !(i%16))) table.setInteger(i,value(i));
+ auto r = cpu.activeThread()->currentFrame->registers;
+ r.set(0,valueTable(table.address())); r.set(1,valueInteger(old+1)); r.set(2,valueInteger(73));
+ const auto grant = [&](int cycles) { cpu.runUntilDepth(0,cycles,0,CpuRunKind::Scheduled); };
+ grant(16);
+ auto& j = cpu.tableRebuild;
+ for (int n=0; j.homes<128; ++n) { if(n==4000) throw std::runtime_error("never visited array tail"); grant(1); }
+ grant(1);
+ if(j.homes!=132 || cpu.instructionBudgetRemaining) throw std::runtime_error("four empty tags per cycle");
+ grant(3);
+ if(j.homes!=143 || cpu.instructionBudgetRemaining) throw std::runtime_error("partial empty group must stop at a live tag");
+ grant(1);
+ if(j.homes!=144 || cpu.instructionBudgetRemaining!=-7) throw std::runtime_error("occupied visit costs eight cycles");
+ if (table.arrayCapacity()!=old || !isNil(table.getInteger(old+1))) throw std::runtime_error("shrink published early");
+ const auto state=cpu.captureRuntimeState(); const auto ram=machine.memory.captureSaveState();
+ cpu.reset();
+ if (table.arrayAddress()!=base || table.arrayCapacity()!=old || table.getInteger(2032)!=value(2032) || !isNil(table.getInteger(old+1)))
+  throw std::runtime_error("reset discarded the attached array");
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+ const auto retire = [&](int cycles) { for (int n=0; j.record; ++n) { if(n==1000) throw std::runtime_error("stalled shrink"); grant(cycles); } };
+ const auto check = [&] {
+  if (table.arrayCapacity()!=2u*prefix || table.arrayAddress()!=(prefix ? base : 0u) || table.getInteger(old+1)!=valueInteger(73))
+   throw std::runtime_error("wrong shrink publication");
+  for(int i=-128;i<=old;++i) if(table.getInteger(i)!=(i && (i<=prefix || !(i%16)) ? value(i) : valueNil()))
+   throw std::runtime_error("sparse shrink lost a mapping");
+ };
+ retire(63); check(); const auto end=machine.memory.captureSaveState();
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+ if (prefix) {
+  for(int n=0; !j.arrayCleared; ++n) { if(n==15000) throw std::runtime_error("never moved retained tags"); grant(1); }
+  if(j.arrayCleared!=16) throw std::runtime_error("unbounded retained tag move");
+  cpu.reset(); check();
+  machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+ }
+ retire(79); check();
+ if (machine.memory.captureSaveState().ram != end.ram) throw std::runtime_error("shrink replay changed RAM");
+}
+
 void publishInPlaceArray(bool scalar) {
  test::Blua32TestImage image;
  image.text.resize(2 * INSTRUCTION_BYTES);
@@ -505,6 +556,7 @@ int main() {
   if (scalar) for (bool census : {false, true}) { publishRawStoreBeforeReturning(false, census); publishRawStoreBeforeReturning(true, census); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
+  shrinkSparseArray(scalar,0); shrinkSparseArray(scalar,256);
   publishInPlaceArray(scalar); publishDisplacedArray(scalar, true); publishDisplacedArray(scalar, false);
   publishFirstArray(scalar, 512); publishFirstArray(scalar, 1024);
   rebuildWork(scalar);
