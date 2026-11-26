@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { AllocationRecovery, CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
@@ -162,15 +163,19 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	// Reach the boundary after the first small String quantum, still in
 	// the explicit collection. Reserve the real frame grant for the next.
 	const slice = () => scheduler.runCpuSlice(0, 3, undefined, CpuRunKind.Scheduled);
-	for (let i = 0; i < 2048 && !cpu.heapServiceActive(); ++i) slice();
-	assert.equal(cpu.heapServiceActive(), true,
-		`phase ${cpu.gc.phase()} epochs ${cpu.gc.fullEpochs()} fault ${cpu.readLuaFaultReasonWord()} depth ${cpu.getFrameDepth()}`);
-	for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) assert.equal(slice(), RunResult.CollectionProgress);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	let enteredStrings = false;
+	for (let i = 0; i < 4096 && (!enteredStrings || cpu.heapServiceActive()); ++i) {
+		const sweep = cpu.gc.sweepStage();
+		const result = slice();
+		if (sweep !== HeapServiceGcStage.Idle) assert.equal(result, RunResult.CollectionProgress);
+		if (memory.readRamRecordWord(control + HeapServiceGcField.Stage) === HeapServiceGcStage.FullStringSweep) enteredStrings = true;
+	}
+	assert.equal(enteredStrings, true);
 	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.gc.phase(), GcPhase.Strings);
 	assert.equal(cpu.gc.fullEpochs(), 1);
 	const depth = cpu.getFrameDepth(), callerPc = cpu.readFramePc(depth - 1);
-	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
 	assert.equal(frames.runCyclesToNextLogicalTick(64), true);
 	assert.ok(scheduler.nowCycles >= edge);
@@ -248,7 +253,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native prefix and final-mark work remain stopped');
 	}
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryStringSweep);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryObjectSweep);
 	assert.equal(scheduler.nowCycles - before, deferred, 'the accepted issuing prefix settles once before BIOS instructions');
 	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
 	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
@@ -256,6 +261,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.ok(frames.lastTickCpuUsedCycles > deferred, 'the VBlank accounts for both the issuing prefix and the BIOS grant');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryObjectSweep);
 	assert.equal(cpu.allocationReady(), false);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(caller), issuePc);
@@ -282,4 +288,57 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
 	assert.equal(cpu.allocationReady(), false);
 	assert.equal(finish(), completedAt);
+});
+
+test('production object sweep retains the published frontier across debugger callbacks and restore', () => {
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
+		[{ path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' }]));
+	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine, { gc } = cpu;
+	const older = cpu.createTable(7, 2), newer = cpu.createTable(9, 3);
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const count = () => memory.readRamRecordWord(control + 0x70);
+	const cursor = () => memory.readRamRecordWord(control + 0x74);
+	const slice = (cycles: number) => {
+		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+		return [result, cycles - cpu.instructionBudgetRemaining];
+	};
+	const callbacks: number[][] = [];
+	gc.onRecordRetirement = address => {
+		if (address !== null) callbacks.push([address, count(), cursor()]);
+	};
+	for (let i = 0; i < 64 && gc.sweepStage() !== HeapServiceGcStage.FullObjectSweep; ++i) slice(12_288);
+	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
+	const frontier = [count(), cursor()];
+	assert.notEqual(frontier[1], 0);
+	for (let i = 0; i < 2048 && !callbacks.some(([address]) => address === newer); ++i)
+		assert.equal(slice(1)[0], RunResult.CollectionProgress);
+	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier]]);
+	assert.equal(callbacks.some(([address]) => address === older), false);
+	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
+	assert.equal(cpu.heapServiceActive(), true, 'the retired Table hands back to the same firmware quantum');
+	assert.deepEqual([count(), cursor()], frontier);
+	const checkpoint = captureRuntimeSaveState(runtime);
+
+	function finish() {
+		callbacks.length = 0;
+		const grants: number[][] = [];
+		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) grants.push(slice(1024));
+		assert.equal(gc.fullEpochs(), 0);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.deepEqual(callbacks.filter(([address]) => address === older || address === newer), [[older, ...frontier]]);
+		for (const [, objectCount, sweepLink] of callbacks) assert.deepEqual([objectCount, sweepLink], frontier);
+		assert.ok(count() <= frontier[0] - 2);
+		assert.equal(cursor(), 0);
+		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
+		return { grants, callbacks: callbacks.slice() };
+	}
+	const completed = finish();
+	applyRuntimeSaveState(runtime, checkpoint);
+	assert.deepEqual([count(), cursor()], frontier);
+	assert.deepEqual(finish(), completed);
 });

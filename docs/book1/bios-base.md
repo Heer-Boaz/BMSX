@@ -109,7 +109,7 @@ continue, but no interrupt handler or following instruction runs during the
 collection. Use it at a suitable point, such as a loading screen. Each
 underlying collection-control primitive call adds 4 base cycles beyond
 `CALL`, with ordinary result placement. During a full collection, the
-resident String reclamation routine uses ordinary CPU cycles instead of
+resident sweep uses ordinary CPU cycles instead of
 the three-cycle charge per work word. Other collector work in this call and
 in a step costs three cycles per work word actually performed. Reading counts
 does not incur a collector work charge.

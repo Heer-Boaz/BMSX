@@ -790,7 +790,8 @@ export class CPU implements MappedPageInvalidator {
 		else {
 			const services = this.systemImage.heapServiceFunctions;
 			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
-				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep);
+				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep,
+				services === null ? 0 : services[HeapServiceOperation.ObjectSweep]);
 		}
 		this.finishAllocationRecovery();
 		return true;
@@ -2248,25 +2249,36 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
-			const stringSweep = this.gc.stringSweepStage();
+			const sweep = this.gc.sweepStage();
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						if (stringSweep !== HeapServiceGcStage.Idle) {
-							this.gc.finishStringSweep(stringSweep);
-							if (stringSweep === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
-						} else {
-							this.finishExecFloorService();
-							this.finishNewTableReservation();
+						switch (sweep) {
+							case HeapServiceGcStage.FullObjectSweep:
+							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
+								const services = this.systemImage.heapServiceFunctions!;
+								const work = this.gc.finishObjectSweep(sweep, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
+								if (sweep === HeapServiceGcStage.FullObjectSweep) this.chargeCollectionWork(work);
+								break;
+							}
+							case HeapServiceGcStage.FullStringSweep:
+							case HeapServiceGcStage.AllocationRecoveryStringSweep:
+								this.gc.finishStringSweep(sweep);
+								if (sweep === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
+								break;
+							case HeapServiceGcStage.Idle:
+								this.finishExecFloorService();
+								this.finishNewTableReservation();
+								break;
 						}
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return stringSweep !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
+				return sweep !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 			}
@@ -2286,7 +2298,7 @@ export class CPU implements MappedPageInvalidator {
 					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
 					const services = this.systemImage.heapServiceFunctions;
 					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words,
-						services === null ? 0 : services[HeapServiceOperation.StringSweep]));
+						services === null ? 0 : services[HeapServiceOperation.StringSweep], services === null ? 0 : services[HeapServiceOperation.ObjectSweep]));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
 					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;

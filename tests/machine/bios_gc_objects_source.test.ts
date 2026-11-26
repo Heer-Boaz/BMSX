@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
 import { numberConstantValue } from '../../toolchain/ts/lua/number';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -22,8 +23,9 @@ const pins = [
 
 test('published GC sweep offsets agree with the compiler layout of the owning struct', () => {
 	const path = 'machine/bios/kernel/gc_control.lua';
-	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path]));
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path, port]));
 	const file = workspace.updateFile(path, readFileSync(path, 'utf8'));
+	const objectFile = workspace.updateFile(port, readFileSync(port, 'utf8'));
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	const statement = file.chunk.body.get(file.chunk.body.length - 1);
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
@@ -38,6 +40,16 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 		const value = types.constants.evaluate(file, field.value);
 		assert.ok(value?.kind === 'number');
 		assert.equal(numberConstantValue(value.value), type.struct!.fields.get(name)!.offset, name);
+	}
+	const returnSpan = objectFile.chunk.body.get(objectFile.chunk.body.length - 1).span;
+	const context = types.resolve(port, { name: 'object_sweep_context', arrayLengths: [], span: returnSpan });
+	assert.equal(context.size, Sweep.Allowance + 4, 'only the five guest-owned context words belong to the firmware struct');
+	for (const [name, offset] of [['link', Sweep.Link], ['work', Sweep.Work], ['removed', Sweep.Removed],
+		['deferred', Sweep.Deferred], ['allowance', Sweep.Allowance]] as const) {
+		const field = context.struct!.fields.get(name);
+		assert.ok(field, name);
+		assert.equal(field.offset, offset, name);
+		assert.equal(field.size, 4, name);
 	}
 });
 

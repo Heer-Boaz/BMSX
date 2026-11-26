@@ -6,10 +6,10 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 3;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 4;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -41,5 +41,12 @@ export const enum HeapServiceNewtField {
 export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
-export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8 }
-export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecoveryStringSweep }
+export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
+export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep }
+
+// Locals of the original objectsweep quantum, retained across a host-only
+// record. Object count and cursor are not committed at such a handoff.
+// The originating mirror's release and shrink policies last through the
+// remainder of this quantum, including an Object-to-String handoff.
+export const HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
+export const enum HeapServiceObjectSweepField { Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20 }

@@ -15,7 +15,7 @@ import {
 } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceGcField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -56,7 +56,7 @@ try {
 		const management = cpu.heapAllocator.managementOffset();
 		const service = management + HEAP_SERVICE_GC_OFFSET;
 		const frontierStart = management + HEAP_STRING_METADATA_OFFSET;
-		const frontierEnd = management + HEAP_SERVICE_THREAD_OFFSET;
+		const frontierEnd = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 		const trace: string[] = [], expected: string[] = [];
 		const observe = (command: string, value: string | number) => {
 			trace.push(command);
@@ -96,9 +96,14 @@ try {
 				assert.equal(consumed, prefix * GC_WORK_WORD_CYCLES, 'the entry grant charges only the native prefix');
 			}
 		}
-		assert.ok(cpu.heapServiceActive(), 'the explicit GC granted the private String sweep from the linked ROM');
+		assert.ok(cpu.heapServiceActive(), 'the explicit GC granted the private objectsweep from the linked ROM');
+		assert.equal(stage(), HeapServiceGcStage.FullObjectSweep);
+		for (let i = 0; i < 128 && stage() === HeapServiceGcStage.FullObjectSweep; ++i) {
+			assert.equal(step(1536), RunResult.CollectionProgress);
+		}
 		assert.equal(stage(), HeapServiceGcStage.FullStringSweep);
 		assert.equal(gc.phase(), GcPhase.Strings);
+		prefix = memory.readRamRecordWord(service + HeapServiceGcField.PrefixWork);
 		assert.ok(prefix > 0 && nativeWork > prefix, 'one quantum includes both the object-sweep prefix and String work');
 		assert.equal(referenceCpu.gc.fullEpochs(), 0, 'one quantum suffices for this small directory');
 		const history = new RamHistory();

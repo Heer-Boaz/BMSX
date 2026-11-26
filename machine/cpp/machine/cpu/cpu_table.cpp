@@ -233,15 +233,19 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::RetryCurrent:
 		case AllocationRecovery::RetryFresh: return false;
 		case AllocationRecovery::Current:
-		case AllocationRecovery::Fresh:
+		case AllocationRecovery::Fresh: {
 			// This native prefix still belongs to stopped maintenance. Only the
-			// String service draws a timed grant, with the quantum's remainder.
+			// firmware sweep draws a timed grant, with the quantum's remainder.
 			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
-			else m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS,
-				m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StringSweep)],
-				HeapServiceGcStage::AllocationRecoveryStringSweep);
+			else {
+				const auto& services = m_systemImage->heapServiceFunctions;
+				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS,
+					services[static_cast<size_t>(HeapServiceOperation::StringSweep)], HeapServiceGcStage::AllocationRecoveryStringSweep,
+					services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)]);
+			}
 			finishAllocationRecovery();
 			return true;
+		}
 		case AllocationRecovery::None: BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();

@@ -806,17 +806,9 @@ size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThr
 	size_t work = 0;
 	u32 removed = 0;
 	while (address != 0u && work < allowance) {
-		// The cursor names the link to the next unvisited object. Unlink
-		// garbage before freeing it, so the cursor always remains live.
-		const u32 nextLink = address - GC_OBJECT_LINK_BEFORE;
-		const u32 next = memory.readRamRecordWord(nextLink);
+		const u32 next = memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE);
 		const u32 header = memory.readRamRecordWord(address);
-		const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (currentWhite ^ 1u);
-		if (garbage) {
-			memory.writeRamRecordWord(link, next);
-			++removed;
-		} else link = nextLink;
-		work += sweepRecord(address, header, garbage, currentWhite, growingThread, compactThreads);
+		work += sweepObject(address, header, next, link, removed, currentWhite, growingThread, compactThreads);
 		address = next;
 	}
 	if (removed != 0u) {
@@ -825,6 +817,18 @@ size_t GcHeap::sweepObjects(size_t allowance, u32 growingThread, bool compactThr
 	}
 	memory.writeRamRecordWord(cursor, address != 0u ? link : 0u);
 	return work;
+}
+
+inline size_t GcHeap::sweepObject(u32 address, u32 header, u32 next, u32& link, u32& removed, u8 currentWhite,
+	u32 growingThread, bool compactThreads) {
+	// Unlink garbage before freeing it, so the link to the next unvisited
+	// record remains live across both native and firmware work.
+	const bool garbage = ((header >> 8u) & GC_COLOR_MASK) == (currentWhite ^ 1u);
+	if (garbage) {
+		memory.writeRamRecordWord(link, next);
+		++removed;
+	} else link = address - GC_OBJECT_LINK_BEFORE;
+	return sweepRecord(address, header, garbage, currentWhite, growingThread, compactThreads);
 }
 
 size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhite, u32 growingThread, bool compactThreads) {
@@ -950,23 +954,60 @@ void GcHeap::assistBeforeReservation(size_t requested, Value root0, Value root1,
 }
 
 size_t GcHeap::step(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
-	size_t limit, u32 stringSweepFunction, HeapServiceGcStage stringSweepStage) {
+	size_t limit, u32 stringSweepFunction, HeapServiceGcStage stringSweepStage, u32 objectSweepFunction) {
 	// Only explicit and space-exhausted collection enters a synchronous final pass.
 	if (finalMarkPending()) return finishFinalMark(root0, root1, root2);
 	const u32 occupied = arena.occupiedBytes();
-	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit, stringSweepFunction != 0u);
-	if (stringSweepFunction != 0u && work < limit && phase() == GcPhase::Strings) {
-		const u32 management = arena.managementOffset();
-		const u32 state = management + HEAP_SERVICE_GC_OFFSET;
-		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
-		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore), occupied);
-		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stringSweepStage));
-		const std::array arguments{management + HEAP_STRING_METADATA_OFFSET, arena.stateOffset(),
-			management + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(limit - work), 1u};
-		m_cpu.beginHeapService(stringSweepFunction, arguments);
-		return work;
+	const size_t work = stepWork(root0, root1, root2, growingThread, compactThreads, limit,
+		stringSweepFunction != 0u, objectSweepFunction != 0u);
+	if (work < limit && (stringSweepFunction != 0u || objectSweepFunction != 0u)) {
+		const auto sweepPhase = phase();
+		if (objectSweepFunction != 0u && sweepPhase == GcPhase::Sweep) {
+			const bool full = stringSweepStage == HeapServiceGcStage::FullStringSweep;
+			const auto stage = full ? HeapServiceGcStage::FullObjectSweep : HeapServiceGcStage::AllocationRecoveryObjectSweep;
+			saveSweepQuantum(stage, occupied, work, limit);
+			const u32 objectState = arena.managementOffset() + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Link),
+				memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK));
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Work), 0u);
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Removed), 0u);
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred), 0u);
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Allowance), static_cast<u32>(limit - work));
+			memory.writeRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::MirrorPolicy), 1u);
+			startObjectSweep(objectSweepFunction, full);
+			return work;
+		}
+		if (stringSweepFunction != 0u && sweepPhase == GcPhase::Strings) {
+			saveSweepQuantum(stringSweepStage, occupied, work, limit);
+			startStringSweep(stringSweepFunction, limit - work, 1u);
+			return work;
+		}
 	}
 	return finishStepWork(occupied, work);
+}
+
+void GcHeap::saveSweepQuantum(HeapServiceGcStage stage, u32 occupiedBefore, size_t work, size_t limit) {
+	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
+	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore), occupiedBefore);
+	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::QuantumLimit), static_cast<u32>(limit));
+	memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage), static_cast<u32>(stage));
+}
+
+void GcHeap::startObjectSweep(u32 objectSweepFunction, bool compactThreads) {
+	const u32 management = arena.managementOffset();
+	const u32 objectState = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+	const u32 hashFirst = memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::MirrorPolicy));
+	const std::array arguments{m_controlOffset, arena.stateOffset(), management + HEAP_LOGICAL_OCCUPIED_OFFSET,
+		objectState, 0u, static_cast<u32>(compactThreads), hashFirst, 0u};
+	m_cpu.beginHeapService(objectSweepFunction, arguments);
+}
+
+void GcHeap::startStringSweep(u32 stringSweepFunction, size_t allowance, u32 exactShrinkBoundary) {
+	const u32 management = arena.managementOffset();
+	const std::array arguments{management + HEAP_STRING_METADATA_OFFSET, arena.stateOffset(),
+		management + HEAP_LOGICAL_OCCUPIED_OFFSET, static_cast<u32>(allowance), exactShrinkBoundary};
+	m_cpu.beginHeapService(stringSweepFunction, arguments);
 }
 
 size_t GcHeap::finishStepWork(u32 occupiedBefore, size_t work) {
@@ -983,7 +1024,7 @@ size_t GcHeap::finishStepWork(u32 occupiedBefore, size_t work) {
 }
 
 size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
-	size_t limit, bool stopBeforeStrings) {
+	size_t limit, bool stopBeforeStrings, bool stopBeforeObjects) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
@@ -1046,15 +1087,12 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 			}
 			case GcPhase::Atomic: return work;
 			case GcPhase::Sweep: {
+				if (stopBeforeObjects) return work;
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
 #endif
 				work += sweepObjects(limit - work, growingThread, compactThreads);
-				if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) {
-					memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
-					setPhase(GcPhase::Strings);
-					m_stringPool.beginSweep();
-				}
+				if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) beginStrings();
 				break;
 			}
 			case GcPhase::Strings: {
@@ -1070,6 +1108,12 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 		}
 	}
 	return work;
+}
+
+void GcHeap::beginStrings() {
+	memory.writeRamRecordWord(m_controlOffset + GC_CHANGED_HEAD, 0u);
+	setPhase(GcPhase::Strings);
+	m_stringPool.beginSweep();
 }
 
 void GcHeap::finishStrings() {
@@ -1099,16 +1143,64 @@ void GcHeap::requestFullCollection() {
 	m_cpu.requestYield();
 }
 
-size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction) {
+size_t GcHeap::stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction) {
 	const size_t work = finalMarkPending() ? stepFinalMark(words)
-		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction, HeapServiceGcStage::FullStringSweep);
+		: step(valueNil(), valueNil(), valueNil(), 0u, true, words, stringSweepFunction, HeapServiceGcStage::FullStringSweep,
+			objectSweepFunction);
 	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
 	return work;
 }
 
-HeapServiceGcStage GcHeap::stringSweepStage() const {
+HeapServiceGcStage GcHeap::sweepStage() const {
 	const u32 state = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
 	return static_cast<HeapServiceGcStage>(memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::Stage)));
+}
+
+size_t GcHeap::finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction) {
+	const u32 management = arena.managementOffset();
+	const u32 objectState = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+	const u32 state = management + HEAP_SERVICE_GC_OFFSET;
+	const bool compactThreads = stage == HeapServiceGcStage::FullObjectSweep;
+	if (const u32 address = memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::Deferred))) {
+		const u32 next = memory.readRamRecordWord(address - GC_OBJECT_LINK_BEFORE);
+		const u32 header = memory.readRamRecordWord(address);
+		if (static_cast<u8>(header) == tableRecordKind) {
+			// A restored debugger callback has no native observer here; the
+			// firmware can retire the Table in the issuing quantum's order.
+			startObjectSweep(objectSweepFunction, compactThreads);
+			return 0u;
+		}
+		const u32 linkAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Link);
+		const u32 workAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Work);
+		const u32 removedAddress = objectState + static_cast<u32>(HeapServiceObjectSweepField::Removed);
+		const u32 objectWork = memory.readRamRecordWord(workAddress);
+		u32 link = memory.readRamRecordWord(linkAddress);
+		u32 removed = memory.readRamRecordWord(removedAddress);
+		const auto callbackWork = sweepObject(address, header, next, link, removed, white(), 0u, compactThreads);
+		memory.writeRamRecordWord(linkAddress, link);
+		memory.writeRamRecordWord(workAddress, static_cast<u32>(objectWork + callbackWork));
+		memory.writeRamRecordWord(removedAddress, removed);
+		// Even at the limit, the firmware must publish the quantum's cursor and count.
+		startObjectSweep(objectSweepFunction, compactThreads);
+		return callbackWork;
+	}
+
+	const size_t work = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork)) + m_cpu.heapServiceResult();
+	const u32 limit = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::QuantumLimit));
+	const u32 stageAddress = state + static_cast<u32>(HeapServiceGcField::Stage);
+	if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) {
+		beginStrings();
+		const auto stringStage = compactThreads ? HeapServiceGcStage::FullStringSweep : HeapServiceGcStage::AllocationRecoveryStringSweep;
+		memory.writeRamRecordWord(state + static_cast<u32>(HeapServiceGcField::PrefixWork), static_cast<u32>(work));
+		memory.writeRamRecordWord(stageAddress, static_cast<u32>(stringStage));
+		startStringSweep(stringSweepFunction, limit - work,
+			memory.readRamRecordWord(objectState + static_cast<u32>(HeapServiceObjectSweepField::MirrorPolicy)));
+	} else {
+		const u32 occupiedBefore = memory.readRamRecordWord(state + static_cast<u32>(HeapServiceGcField::OccupiedBefore));
+		finishStepWork(occupiedBefore, work);
+		memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceGcStage::Idle));
+	}
+	return 0u;
 }
 
 void GcHeap::finishStringSweep(HeapServiceGcStage stage) {

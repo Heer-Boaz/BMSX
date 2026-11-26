@@ -32,6 +32,15 @@ struct table_record
 	array_storage: addr -- A:136,166 D:56
 end
 
+-- Saved loop locals across the private handoff to a native record owner.
+struct object_sweep_context
+	link: addr -- T:741,757 C:803,819
+	work: u32 -- T:745,758 C:807,820
+	removed: u32 -- T:746,756 C:808,818
+	deferred: addr -- T:773-779,783,787-803 C:835-839,846-852,857-862; private continuation reason
+	allowance: u32 -- T:738,747 C:801,809
+end
+
 local free_table<const> = function(arena, occupied, address, hash_first) -- T:782 C:842 A:165,170 B:508,514
 	local table<const>: *table_record = ram_base + (address & ram_word_mask) -- A:120 B:508 D:55-58
 	if hash_first ~= 0 then -- A:166-168 B:509-511; preserve the C++ release order
@@ -48,17 +57,21 @@ local free_table<const> = function(arena, occupied, address, hash_first) -- T:78
 end
 
 -- Decode callback/compaction eligibility before unlinking or recoloring.
--- The deferred record remains first at the committed sweep link, where
--- its owner must handle it before resuming this loop.
-local sweep_objects<const> = function(control, arena, occupied, allowance, growing_thread, compact_threads, hash_first, observe_retirement) -- T:738 C:801
-	local cursor<const>: *u32 = ram_base + control + control_layout.internal.sweep_link_offset -- T:739-740 C:802
-	local link = *cursor -- T:741 C:803
-	if link == 0 then return 0, 0 end -- T:742 C:804
+-- A native record owner acts at the saved link within this quantum;
+-- the collector's count and cursor remain unpublished until it finishes.
+local sweep_objects<const> = function(control, arena, occupied, object_context, growing_thread, compact_threads, hash_first, observe_retirement) -- T:738 C:801
+	local context<const>: *object_sweep_context = ram_base + object_context -- T:741,745-747 C:803,807-809; private handoff of loop locals
+	local link = context.link -- T:741 C:803
+	if link == 0 then -- T:742 C:804
+		context.deferred = 0 -- T:742 C:804; no pending record owner
+		return 0 -- T:742 C:804
+	end
 	local link_word: *u32 = ram_base + (link & ram_word_mask) -- T:743 C:805
 	local address = *link_word -- T:743 C:805
 	local white_byte<const>: *u8 = ram_base + control + control_layout.internal.white_offset -- T:89,744 C:806 H:92
 	local white<const> = *white_byte & 1 -- T:89,744 C:806 H:92
-	local work, removed = 0, 0 -- T:745-746 C:807-808
+	local work, removed = context.work, context.removed -- T:745-746 C:807-808
+	local allowance<const> = context.allowance -- T:738,747 C:801,809
 	local deferred = 0 -- T:773-779,783,787-793,796-803 C:835-839,846-852,857-862; continuation result
 	while address ~= 0 and work < allowance do -- T:747 C:809
 		local next_link<const> = address - object_link_before -- T:750 C:812
@@ -95,12 +108,21 @@ local sweep_objects<const> = function(control, arena, occupied, allowance, growi
 		work = work + 1 -- T:758,773,784,794 C:820,835,843,853
 		address = next_record -- T:759 C:821
 	end
+	if deferred ~= 0 then -- T:758-761 C:820-823; retain the active quantum for the deferred owner
+		context.link = link -- T:741,757 C:803,819
+		context.work = work -- T:745,758 C:807,820
+		context.removed = removed -- T:746,756 C:808,818
+		context.deferred = deferred -- T:773-779,783,787-803 C:835-839,846-852,857-862
+		return work -- T:758,766 C:820,828; cumulative, not an independently committed quantum
+	end
 	if removed ~= 0 then -- T:761 C:823
 		local count<const>: *u32 = ram_base + control + control_layout.internal.object_count_offset -- T:762 C:824
 		*count = *count - removed -- T:763 C:825
 	end
+	local cursor<const>: *u32 = ram_base + control + control_layout.internal.sweep_link_offset -- T:739-740,765 C:802,827
 	if address ~= 0 then *cursor = link else *cursor = 0 end -- T:765 C:827
-	return work, deferred -- T:766 C:828; second result is the deferred host record
+	context.deferred = 0 -- T:765-766 C:827-828; retire the private continuation
+	return work -- T:766 C:828
 end
 
 return {

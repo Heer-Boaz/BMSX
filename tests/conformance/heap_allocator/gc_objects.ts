@@ -7,7 +7,7 @@ import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceObjectSweepField as Sweep } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -20,8 +20,8 @@ const entrySource = 'halt_until_irq', PROBE = 'test/native_gc_objects';
 const probeSource = `module<const>
 local gc<const> = require('kernel/gc_objects')
 local sweep<const> = function(control, arena, occupied)
-	local work, deferred = gc.sweep_objects(control, arena, occupied, 1, 0, 0, 1, 0)
-	if deferred ~= 0 then return -1 end
+	local context<const> = control + ${HEAP_SERVICE_OBJECT_SWEEP_OFFSET - HEAP_GC_CONTROL_OFFSET}
+	local work<const> = gc.sweep_objects(control, arena, occupied, context, 0, 0, 1, 0)
 	return work
 end
 return { sweep = sweep }
@@ -56,12 +56,14 @@ try {
 		const management = cpu.heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
 		const arena = cpu.heapAllocator.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
+		const context = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 		const table = cpu.createTable(3, 8);
 		const colorShift = 8 * GC_COLOR_OFFSET;
 		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((cpu.gc.white() ^ 1) << colorShift);
 		const phase = (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep;
 		const seed = ['E 4096', 'Y 3 8', `W ${table} ${header}`, `W ${control} ${phase}`,
-			`W ${control + SWEEP_LINK} ${control + OBJECT_HEAD}`];
+			`W ${control + SWEEP_LINK} ${control + OBJECT_HEAD}`, `W ${context + Sweep.Link} ${control + OBJECT_HEAD}`,
+			`W ${context + Sweep.Work} 0`, `W ${context + Sweep.Removed} 0`, `W ${context + Sweep.Deferred} 0`, `W ${context + Sweep.Allowance} 1`];
 		const verify = [`H ${floor} ${management}`, `H ${occupied} ${occupied + 4}`,
 			`H ${arena} ${management + HEAP_SERVICE_THREAD_OFFSET}`, `H ${control + OBJECT_HEAD} ${control + SWEEP_LINK + 4}`];
 		function run(name: string, quantum: string[]) {

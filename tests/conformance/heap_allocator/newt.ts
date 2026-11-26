@@ -7,7 +7,7 @@ import { AllocationRecovery, CpuRunKind } from '../../../machine/ts/machine/cpu/
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { LuaAllocationMode } from '../../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { ValueTag, valueInteger, valueNil, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
@@ -92,10 +92,11 @@ try {
 				const deadString = cpu.stringPool.intern('dead');
 				observe('b dead', deadString);
 				assert.ok(allocate(32), 'prevent the dead String from coalescing with a reservation slot');
-				const discarded = scenario === 'recovered' ? cpu.createTable(256, 0) : 0;
+				const longString = 'reclaimed'.repeat(64);
+				const discarded = scenario === 'recovered' ? cpu.stringPool.intern(longString) : 0;
 				if (scenario === 'recovered') {
 					assert.ok(discarded);
-					observe('Y 256 0', discarded);
+					observe(`b ${longString}`, discarded);
 				}
 				const beforeRecord = arena.occupiedBytes();
 				const record = allocate(recordBytes);
@@ -112,7 +113,7 @@ try {
 				if (discarded) {
 					// Keep the backing alive for the interrupted epoch only.
 					// The first retry must fail; a fresh epoch can reclaim it.
-					observe(`z ${discarded}`, cpu.gc.step(valueTable(discarded), valueNil(), valueNil(), 0, false, 1));
+					observe(`y ${discarded}`, cpu.gc.step(valueString(discarded), valueNil(), valueNil(), 0, false, 1));
 					assert.ok(cpu.gc.active());
 				}
 
@@ -152,7 +153,7 @@ try {
 				const schedulerStep = (op: 'a' | 'd') => {
 					const before = frames.lastTickSequence;
 					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
-					observe(op, `${result} ${scheduler.nowCycles} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.stringSweepStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+					observe(op, `${result} ${scheduler.nowCycles} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.sweepStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 					return result;
 				};
 				for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
@@ -160,7 +161,7 @@ try {
 					assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
 					assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
 				}
-				assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+				assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryObjectSweep);
 				assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
 				let partialLogicalBytes = 0;
 				for (let i = 0; i < 65536 && memory.readRamRecordByte(deadString) !== 0; ++i) {
@@ -170,6 +171,7 @@ try {
 					assert.equal(cpu.readFramePc(caller), newtPc);
 				}
 				assert.equal(memory.readRamRecordByte(deadString), 0, 'checkpoint after unlinking but before charging the reclaimed String');
+				assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
 				assert.equal(budget.usedBytes(), partialLogicalBytes);
 				assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
 				assert.ok(scheduler.nowCycles >= edge);
@@ -180,7 +182,7 @@ try {
 						assert.equal(schedulerStep('d'), InstructionStepResult.Advanced);
 						assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
 					}
-					assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.Idle);
+					assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.Idle);
 					assert.ok(cpu.allocationReady());
 					assert.ok(scheduler.nowCycles > checkpointCycles);
 					assert.equal(cpu.readFramePc(caller), newtPc);
@@ -195,13 +197,13 @@ try {
 					finishSweep();
 					assert.equal(cpu.stringPool.find('dead'), undefined);
 					if (discarded) {
-						assert.equal(cpu.gc.tableRecordAddress(discarded), discarded);
+						assert.equal(cpu.stringPool.find(longString), discarded);
 						tryReservation(HeapServiceNewtStage.RetryCurrent);
 						assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
 						for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) schedulerStep('d');
-						assert.equal(cpu.gc.stringSweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+						assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryObjectSweep);
 						finishSweep();
-						assert.equal(cpu.gc.tableRecordAddress(discarded), 0);
+						assert.equal(cpu.stringPool.find(longString), undefined);
 					}
 					tryReservation(HeapServiceNewtStage.RetryFresh);
 					assert.equal(cpu.allocationParked(), false);
@@ -212,7 +214,7 @@ try {
 						observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
 					} else {
 						assert.ok(cpu.readFramePc(caller) > newtPc);
-						assert.ok(arena.occupiedBytes() < physical, 'collecting the dead table freed room for the hash');
+						assert.ok(arena.occupiedBytes() < physical, 'collecting the dead String freed room for the hash');
 						for (let i = 0; i < 1024 && cpu.getFrameDepth() !== 0; ++i) schedulerStep('d');
 						assert.equal(cpu.getFrameDepth(), 0);
 						assert.equal(runtime.readCompletionValues()[0], valueInteger(183));

@@ -95,8 +95,9 @@ public:
 	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
 	bool stoppedFinalMarkPending() const;
 	void requestFullCollection();
-	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction);
-	HeapServiceGcStage stringSweepStage() const;
+	size_t stepFullCollection(u32 epochs, size_t words, u32 stringSweepFunction, u32 objectSweepFunction = 0u);
+	HeapServiceGcStage sweepStage() const;
+	size_t finishObjectSweep(HeapServiceGcStage stage, u32 objectSweepFunction, u32 stringSweepFunction);
 	void finishStringSweep(HeapServiceGcStage stage);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
@@ -104,7 +105,8 @@ public:
 	bool isAlive(u32 address) const { return !unmarked(memory.readRamRecordByte(address + GC_COLOR_OFFSET)); }
 	size_t allocationBytes(u32 threadAddress) const;
 	size_t step(Value root0, Value root1, Value root2, u32 growingThread = 0u, bool compactThreads = false,
-		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u, HeapServiceGcStage stringSweepStage = HeapServiceGcStage::Idle);
+		size_t limit = GC_STEP_WORDS, u32 stringSweepFunction = 0u, HeapServiceGcStage stringSweepStage = HeapServiceGcStage::Idle,
+		u32 objectSweepFunction = 0u);
 	void assistPhysicalPressureAtTick();
 	bool reservationAssistDue(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
@@ -173,7 +175,12 @@ private:
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
 	size_t accountEpochWork(size_t work);
 	size_t finishStepWork(u32 occupiedBefore, size_t work);
-	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit, bool stopBeforeStrings);
+	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit,
+		bool stopBeforeStrings, bool stopBeforeObjects);
+	void saveSweepQuantum(HeapServiceGcStage stage, u32 occupiedBefore, size_t work, size_t limit);
+	void startStringSweep(u32 stringSweepFunction, size_t allowance, u32 exactShrinkBoundary);
+	void startObjectSweep(u32 objectSweepFunction, bool compactThreads);
+	void beginStrings();
 	void finishStrings();
 	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit);
 	RemarkStage remarkStage() const {
@@ -186,6 +193,7 @@ private:
 	u32 objectRecordAddress(u32 address, u8 kind) const;
 	bool markRecord(u32 address, u8 kind, u32 queue);
 	size_t sweepObjects(size_t allowance, u32 growingThread, bool compactThreads);
+	size_t sweepObject(u32 address, u32 header, u32 next, u32& link, u32& removed, u8 white, u32 growingThread, bool compactThreads);
 	void beginPaceCredit(u32 estimate, u32 runwayShift);
 	void updatePaceCredit(u32 basis, u32 paid, u32 estimate, u32 runway);
 	size_t sweepRecord(u32 address, u32 header, bool garbage, u8 white, u32 growingThread, bool compactThreads);

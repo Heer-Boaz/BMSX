@@ -1,5 +1,7 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
-import { HEAP_SERVICE_GC_OFFSET, HeapServiceGcField, HeapServiceGcStage } from '../../spec/bmsx/heap_service';
+import {
+	HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcField, HeapServiceGcStage, HeapServiceObjectSweepField,
+} from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -82,7 +84,9 @@ export class GcHeap {
 	public onRecordRetirement: ((address: number | null) => void) | null = null;
 	private readonly controlOffset: number;
 	private readonly sweepServiceOffset: number;
-	private readonly sweepServiceArgs: number[];
+	private readonly stringSweepArgs: number[];
+	private readonly objectSweepOffset: number;
+	private readonly objectSweepArgs: number[];
 	public phase(): GcPhase {
 		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
@@ -112,9 +116,13 @@ export class GcHeap {
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory,
 		public readonly arena: HeapAllocator, private readonly modeKey: StringId, newIndexKey: StringId) {
-		this.controlOffset = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-		this.sweepServiceOffset = arena.managementOffset() + HEAP_SERVICE_GC_OFFSET;
-		this.sweepServiceArgs = [cpu.stringPool.metadataOffset, arena.allocatorStateOffset(), budget.occupiedOffset, 0, 0];
+		const management = arena.managementOffset();
+		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
+		this.sweepServiceOffset = management + HEAP_SERVICE_GC_OFFSET;
+		this.objectSweepOffset = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+		const allocator = arena.allocatorStateOffset();
+		this.stringSweepArgs = [cpu.stringPool.metadataOffset, allocator, budget.occupiedOffset, 0, 0];
+		this.objectSweepArgs = [this.controlOffset, allocator, budget.occupiedOffset, this.objectSweepOffset, 0, 0, 0, 0];
 		this.threads = new ThreadRecords(memory, arena, budget);
 		this.tables = new TableRecords(this, newIndexKey);
 	}
@@ -875,22 +883,28 @@ export class GcHeap {
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
-		limit = GC_STEP_WORDS, stringSweepFunction = 0, stringSweepStage = HeapServiceGcStage.Idle): number {
+		limit = GC_STEP_WORDS, stringSweepFunction = 0, stringSweepStage = HeapServiceGcStage.Idle, objectSweepFunction = 0): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
 		try {
 			const occupied = this.arena.occupiedBytes();
 			const stopBeforeStrings = stringSweepFunction !== 0;
-			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit, stopBeforeStrings);
-			if (stopBeforeStrings && work < limit && this.phase() === GcPhase.Strings) {
-				const base = this.sweepServiceOffset;
-				this.memory.writeRamRecordWord(base + HeapServiceGcField.PrefixWork, work);
-				this.memory.writeRamRecordWord(base + HeapServiceGcField.OccupiedBefore, occupied);
-				this.memory.writeRamRecordWord(base + HeapServiceGcField.Stage, stringSweepStage);
-				this.sweepServiceArgs[3] = limit - work;
-				this.cpu.beginHeapService(stringSweepFunction, this.sweepServiceArgs);
-				return work; // The caller retains its existing native-prefix timing policy.
+			const stopBeforeObjects = objectSweepFunction !== 0;
+			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit, stopBeforeStrings, stopBeforeObjects);
+			if (work < limit && (stopBeforeStrings || stopBeforeObjects)) {
+				const phase = this.phase();
+				if (stopBeforeObjects && phase === GcPhase.Sweep) {
+					const stage = stringSweepStage === HeapServiceGcStage.FullStringSweep
+						? HeapServiceGcStage.FullObjectSweep : HeapServiceGcStage.AllocationRecoveryObjectSweep;
+					this.beginObjectSweep(objectSweepFunction, stage, occupied, work, limit);
+					return work;
+				}
+				if (stopBeforeStrings && phase === GcPhase.Strings) {
+					this.publishSweepQuantum(stringSweepStage, occupied, work, limit);
+					this.runStringSweep(stringSweepFunction, limit - work, 0);
+					return work; // The caller retains its existing native-prefix timing policy.
+				}
 			}
 			return this.finishStepWork(occupied, work);
 		}
@@ -910,6 +924,12 @@ export class GcHeap {
 		return this.accountEpochWork(work);
 	}
 
+	private beginStrings(): void {
+		this.memory.writeRamRecordWord(this.changedHeadOffset(), 0);
+		this.setPhase(GcPhase.Strings);
+		this.cpu.stringPool.beginSweep();
+	}
+
 	private finishStrings(): void {
 		if (!this.cpu.stringPool.sweeping()) {
 			this.setPhase(GcPhase.Pause);
@@ -917,7 +937,8 @@ export class GcHeap {
 		}
 	}
 
-	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number, stopBeforeStrings: boolean): number {
+	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number,
+		stopBeforeStrings: boolean, stopBeforeObjects: boolean): number {
 		let work = 0;
 		if (this.remarkStage() !== RemarkStage.None) {
 			work += this.remarkVisits(limit);
@@ -965,13 +986,10 @@ export class GcHeap {
 					break;
 				case GcPhase.Atomic: return work;
 				case GcPhase.Sweep:
+					if (stopBeforeObjects) return work;
 					this.diagnostics?.phase('sweepNanoseconds');
 					work += this.sweepObjects(limit - work, growingThread, compactThreads);
-					if (work < limit && this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_LINK) === 0) {
-						this.memory.writeRamRecordWord(this.changedHeadOffset(), 0);
-						this.setPhase(GcPhase.Strings);
-						this.cpu.stringPool.beginSweep();
-					}
+					if (work < limit && this.memory.readRamRecordWord(this.controlOffset + GC_SWEEP_LINK) === 0) this.beginStrings();
 					break;
 				case GcPhase.Strings:
 					if (stopBeforeStrings) return work;
@@ -1002,14 +1020,91 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
 		this.cpu.requestYield();
 	}
-	public stepFullCollection(epochs: number, words: number, stringSweepFunction: number): number {
+	public stepFullCollection(epochs: number, words: number, stringSweepFunction: number, objectSweepFunction = 0): number {
 		const work = this.finalMarkPending() ? this.stepFinalMark(words)
-			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, stringSweepFunction, HeapServiceGcStage.FullStringSweep);
+			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, stringSweepFunction, HeapServiceGcStage.FullStringSweep, objectSweepFunction);
 		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, epochs - 1);
 		return work;
 	}
-	public stringSweepStage(): HeapServiceGcStage {
+	public sweepStage(): HeapServiceGcStage {
 		return this.memory.readRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage);
+	}
+
+	private publishSweepQuantum(stage: HeapServiceGcStage, occupied: number, prefixWork: number, limit: number): void {
+		const base = this.sweepServiceOffset, memory = this.memory;
+		memory.writeRamRecordWord(base + HeapServiceGcField.PrefixWork, prefixWork);
+		memory.writeRamRecordWord(base + HeapServiceGcField.OccupiedBefore, occupied);
+		memory.writeRamRecordWord(base + HeapServiceGcField.QuantumLimit, limit);
+		memory.writeRamRecordWord(base + HeapServiceGcField.Stage, stage);
+	}
+
+	private runStringSweep(functionAddress: number, allowance: number, exactShrinkBoundary: number): void {
+		this.stringSweepArgs[3] = allowance;
+		this.stringSweepArgs[4] = exactShrinkBoundary;
+		this.cpu.beginHeapService(functionAddress, this.stringSweepArgs);
+	}
+
+	private beginObjectSweep(functionAddress: number, stage: HeapServiceGcStage, occupied: number, prefixWork: number, limit: number): void {
+		this.publishSweepQuantum(stage, occupied, prefixWork, limit);
+		const context = this.objectSweepOffset, memory = this.memory;
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Link, memory.readRamRecordWord(this.controlOffset + GC_SWEEP_LINK));
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Work, 0);
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Removed, 0);
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Deferred, 0);
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Allowance, limit - prefixWork);
+		memory.writeRamRecordWord(context + HeapServiceObjectSweepField.MirrorPolicy, 0);
+		this.runObjectSweep(functionAddress, stage === HeapServiceGcStage.FullObjectSweep);
+	}
+
+	private runObjectSweep(functionAddress: number, compactThreads: boolean): void {
+		const hashFirst = this.memory.readRamRecordWord(this.objectSweepOffset + HeapServiceObjectSweepField.MirrorPolicy);
+		this.objectSweepArgs[5] = +compactThreads;
+		this.objectSweepArgs[6] = hashFirst;
+		// A foreign quantum retains its hash-first release order; the local
+		// observer only requests Table retirement through our array-first owner.
+		this.objectSweepArgs[7] = +(hashFirst === 0 && this.onRecordRetirement !== null);
+		this.cpu.beginHeapService(functionAddress, this.objectSweepArgs);
+	}
+
+	public finishObjectSweep(stage: HeapServiceGcStage, objectFunction: number, stringFunction: number): number {
+		const context = this.objectSweepOffset, memory = this.memory;
+		const deferred = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
+		const full = stage === HeapServiceGcStage.FullObjectSweep;
+		if (deferred !== 0) {
+			const nextLink = deferred - GC_OBJECT_LINK_BEFORE;
+			const next = memory.readRamRecordWord(nextLink);
+			const header = memory.readRamRecordWord(deferred);
+			const white = this.white();
+			const garbage = ((header >>> 8) & GC_COLOR_MASK) === (white ^ 1);
+			if (garbage) {
+				const link = memory.readRamRecordWord(context + HeapServiceObjectSweepField.Link);
+				memory.writeRamRecordWord(link, next);
+				const removed = context + HeapServiceObjectSweepField.Removed;
+				memory.writeRamRecordWord(removed, memory.readRamRecordWord(removed) + 1);
+			} else memory.writeRamRecordWord(context + HeapServiceObjectSweepField.Link, nextLink);
+			const work = this.sweepRecord(deferred, header, garbage, white, 0, full);
+			const completed = context + HeapServiceObjectSweepField.Work;
+			memory.writeRamRecordWord(completed, memory.readRamRecordWord(completed) + work);
+			// Even a callback that exhausted the allowance needs the BIOS epilogue.
+			this.runObjectSweep(objectFunction, full);
+			return work;
+		}
+
+		const base = this.sweepServiceOffset;
+		const occupied = memory.readRamRecordWord(base + HeapServiceGcField.OccupiedBefore);
+		const work = memory.readRamRecordWord(base + HeapServiceGcField.PrefixWork) + this.cpu.heapServiceResult();
+		const limit = memory.readRamRecordWord(base + HeapServiceGcField.QuantumLimit);
+		if (work < limit && memory.readRamRecordWord(this.controlOffset + GC_SWEEP_LINK) === 0) {
+			this.beginStrings();
+			const stringStage = full ? HeapServiceGcStage.FullStringSweep : HeapServiceGcStage.AllocationRecoveryStringSweep;
+			memory.writeRamRecordWord(base + HeapServiceGcField.PrefixWork, work);
+			memory.writeRamRecordWord(base + HeapServiceGcField.Stage, stringStage);
+			this.runStringSweep(stringFunction, limit - work, memory.readRamRecordWord(context + HeapServiceObjectSweepField.MirrorPolicy));
+		} else {
+			this.finishStepWork(occupied, work);
+			memory.writeRamRecordWord(base + HeapServiceGcField.Stage, HeapServiceGcStage.Idle);
+		}
+		return 0;
 	}
 
 	public finishStringSweep(stage: HeapServiceGcStage): void {

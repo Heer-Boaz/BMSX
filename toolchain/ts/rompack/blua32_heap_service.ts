@@ -12,7 +12,11 @@ import { blua32FunctionIndexAtAddress, type Blua32ImageLayout } from './blua32_i
 export const HEAP_SERVICE_MODULE_PATH = 'kernel/dlmalloc';
 export const HEAP_SERVICE_RECORD_MODULE_PATH = 'kernel/dlmalloc_record';
 export const HEAP_SERVICE_STRINGS_MODULE_PATH = 'kernel/gc_strings';
-export const HEAP_SERVICE_MODULES = [HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH] as const;
+export const HEAP_SERVICE_OBJECTS_MODULE_PATH = 'kernel/gc_objects';
+export const HEAP_SERVICE_MODULES = [
+	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
+	'kernel/gc_control', HEAP_SERVICE_OBJECTS_MODULE_PATH,
+] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
@@ -29,6 +33,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.IsObject]: ['bmsx_dlmalloc_is_object', 2],
 	[HeapServiceOperation.ReserveRecord]: ['bmsx_dlmalloc_reserve_record', 9, HEAP_SERVICE_RECORD_MODULE_PATH],
 	[HeapServiceOperation.StringSweep]: ['sweep_step', 5, HEAP_SERVICE_STRINGS_MODULE_PATH],
+	[HeapServiceOperation.ObjectSweep]: ['sweep_objects', 8, HEAP_SERVICE_OBJECTS_MODULE_PATH],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */

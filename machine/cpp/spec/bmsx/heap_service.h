@@ -12,10 +12,10 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, StringSweep, ObjectSweep, Count,
 };
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 3u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -48,7 +48,14 @@ enum class HeapServiceNewtField : uint32_t {
 enum class HeapServiceNewtStage : uint32_t { Idle, Direct, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
-enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8 };
-enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationRecoveryStringSweep };
+enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
+enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep };
+
+// Locals of the original objectsweep quantum, retained across a host-only
+// record. Object count and cursor are not committed at such a handoff.
+// The originating mirror's release and shrink policies last through the
+// remainder of this quantum, including an Object-to-String handoff.
+constexpr uint32_t HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
+enum class HeapServiceObjectSweepField : uint32_t { Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20 };
 
 } // namespace bmsx

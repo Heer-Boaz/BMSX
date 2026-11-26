@@ -105,6 +105,26 @@ int main(int argc, char** argv) {
 						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'g': {
+					int cycles;
+					trace >> cycles;
+					const u32 epochs = cpu.gcHeap().fullEpochs();
+					i64 spent = 0;
+					for (int grant = 0; grant < 4096 && cpu.gcHeap().fullEpochs() == epochs; ++grant) {
+						scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
+						spent += cycles - cpu.instructionBudgetRemaining;
+					}
+					if (cpu.gcHeap().fullEpochs() == epochs || cpu.heapServiceActive())
+						throw std::runtime_error("Timed collection did not complete its epoch");
+					std::cout << spent << ' ' << cpu.gcHeap().fullEpochs() << '\n';
+					break;
+				}
+				case 'w': {
+					u32 words;
+					trace >> words;
+					std::cout << cpu.gcHeap().stepFullCollection(cpu.gcHeap().fullEpochs(), words, 0u, 0u) << '\n';
+					break;
+				}
 				case 'b': {
 					std::string seed;
 					trace >> seed;
@@ -153,7 +173,7 @@ int main(int argc, char** argv) {
 					const u32 management = cpu.heapAllocator().managementOffset();
 					std::cout << result << ' ' << scheduler.nowCycles() << ' ' << (frames.lastTickSequence != before)
 						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
-						<< ' ' << static_cast<u32>(cpu.gcHeap().stringSweepStage())
+						<< ' ' << static_cast<u32>(cpu.gcHeap().sweepStage())
 						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_NEWT_OFFSET)
 						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
@@ -193,6 +213,12 @@ int main(int argc, char** argv) {
 					u32 table;
 					trace >> table;
 					std::cout << cpu.gcHeap().step(valueTable(table), valueNil(), valueNil(), 0u, false, 1) << '\n';
+					break;
+				}
+				case 'y': {
+					u32 string;
+					trace >> string;
+					std::cout << cpu.gcHeap().step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;
@@ -269,6 +295,15 @@ int main(int argc, char** argv) {
 					break;
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,
 					PSX_MACHINE_SPEC.gxGpuVramBytes)); break;
+				case 'x': {
+					std::string path;
+					trace >> path;
+					const auto bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+					std::ofstream file(path, std::ios::binary);
+					if (!file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
+						throw std::runtime_error("Could not export C++ checkpoint");
+					break;
+				}
 				default: throw std::runtime_error("Unknown fixture operation");
 			}
 			if (!trace) throw std::runtime_error("Incomplete fixture operation");
