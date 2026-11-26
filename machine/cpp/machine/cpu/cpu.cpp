@@ -2580,6 +2580,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					case HeapServiceGcStage::Idle:
 						finishExecutionFloor();
 						finishRecordReservation();
+							finishTableGrowthReservation();
 						break;
 				}
 				if (recordCollection && !heapServiceActive()) finishRecordCollection(recordStage);
@@ -2721,10 +2722,11 @@ void CPU::chargeCollectionWork(size_t work) {
 	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= GC_WORK_WORD_CYCLES * static_cast<int>(work);
 }
 
-size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words) {
-	if (m_runKind != CpuRunKind::Idle) {
-		if (instructionBudgetRemaining < GC_WORK_WORD_CYCLES) return 0;
-		words = std::min(words, static_cast<size_t>(instructionBudgetRemaining / GC_WORK_WORD_CYCLES));
+size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget) {
+	if (m_runKind != CpuRunKind::Idle || sourceBudget) {
+		const int remaining = sourceBudget ? *sourceBudget : instructionBudgetRemaining;
+		if (remaining < GC_WORK_WORD_CYCLES) return 0;
+		words = std::min(words, static_cast<size_t>(remaining / GC_WORK_WORD_CYCLES));
 	}
 	const size_t work = m_heap.step(root0, root1, root2, growingThread, false, words);
 	chargeCollectionWork(work);

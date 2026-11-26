@@ -69,7 +69,8 @@ public:
 	void set(const Value& key, const Value& value, CPU* cpu = nullptr);
 	// A resolved opcode write may suspend only on a physical backing refusal.
 	int assignScheduled(Value key, Value value, CPU& cpu, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
-	bool resumeAssignment(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr);
+	bool resumeAssignment(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::RetryCurrent);
 	// The caller supplies a Table key. An absent mapping checks __newindex.
 	// Growth returns in place when no collection is required. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
@@ -219,18 +220,24 @@ private:
 	size_t hashValueSlot(size_t index) const { return hashSlots() + index; }
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
 	struct ResizePlan { size_t array, hash; bool keepHash; };
+	friend class CPU;
+	void installStagedGrowth(CPU&, const ResizePlan&, u32 base, u32 storage, Value key, Value value);
+	int retryStagedGrowth(CPU&, HeapServiceTableGrowthStage, Value key, Value value, u8 parkExtraSlots, int sourceBudget);
 	void countArrayRange(ArrayDensity&, u32 end) const;
 	void spendCensusGrant(ArrayDensity&, u32 capacity, int& cycles) const;
 	ResizePlan planRehash(Value key, u8 extraHashSlots, const ArrayDensity* counted) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
 	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
-		const ArrayDensity* counted = nullptr, LuaAllocationRecovery recovery = LuaAllocationRecovery::CurrentOrFresh)
+		const ArrayDensity* counted = nullptr, LuaAllocationRecovery recovery = LuaAllocationRecovery::CurrentOrFresh,
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, u8 parkExtraSlots = 0, int* sourceBudget = nullptr)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
-	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr);
+	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr,
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled);
 	template <HashStore Policy>
-	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
+	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu,
+		HeapServiceTableGrowthStage, u8 extraHashSlots, u8 parkExtraSlots, const int* sourceBudget)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	int resize(const ResizePlan&, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindHash(size_t hashSize, u32 address);
@@ -313,10 +320,12 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr);
 	template <HashStore Policy>
-	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr)
+	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr,
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
-	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr)
+	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;

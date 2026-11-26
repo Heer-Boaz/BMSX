@@ -29,7 +29,8 @@ public:
 	);
 	// Run an ordinary assist; a false result means the logical request
 	// needs recovery before it can be admitted.
-	bool prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u);
+	bool prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread = 0u,
+		const int* sourceBudget = nullptr);
 	i32 allocationDebt(size_t byteCount) const noexcept;
 	bool logicalAssistPressure(size_t byteCount) const;
 	static size_t logicalAssistAllowance(size_t debt, bool pressure);

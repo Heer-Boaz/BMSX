@@ -947,9 +947,10 @@ export class GcHeap {
 		return allowance;
 	}
 
-	public assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
+	public assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0,
+		sourceCycles?: number): void {
 		const allowance = this.reservationAssistAllowance(requested);
-		if (allowance !== null) this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance);
+		if (allowance !== null) this.cpu.assistAllocation(root0, root1, root2, growingThread, allowance, sourceCycles);
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,

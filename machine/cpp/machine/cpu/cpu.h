@@ -304,7 +304,7 @@ public:
 	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void chargeCollectionWork(size_t work);
-	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words);
+	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget = nullptr);
 	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }
 	class LocalRootsScope {
@@ -488,6 +488,10 @@ private:
 	template<class Operand> void concatenateValues(CallFrame& frame, int destination, int count, Operand operand);
 	void advanceConcat(CallFrame& frame);
 	void advanceTableStore(CallFrame& frame);
+	friend class TableRecord;
+	bool beginTableGrowthReservation(u32 receiver, Value key, Value value, u32 array, u32 hash, bool keepHash, bool stagedGrowth,
+		u8 extraSlots, u8 parkExtraSlots, HeapServiceTableGrowthStage stage);
+	void finishTableGrowthReservation();
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);

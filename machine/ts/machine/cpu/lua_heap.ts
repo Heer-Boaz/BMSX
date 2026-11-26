@@ -71,12 +71,12 @@ export class LuaHeap {
 	}
 
 	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
-		root2: Value, growingThread = 0): boolean {
+		root2: Value, growingThread = 0, sourceCycles?: number): boolean {
 		const debt = this.allocationDebt(byteCount);
 		if (debt < 0) return false;
 		if (debt === 0) return true;
 		const pressure = this.logicalAssistPressure(byteCount);
-		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, this.logicalAssistAllowance(debt, pressure));
+		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, this.logicalAssistAllowance(debt, pressure), sourceCycles);
 		this.creditLogicalAssist(byteCount, debt, pressure, work);
 		return true;
 	}

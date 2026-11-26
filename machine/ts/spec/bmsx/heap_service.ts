@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, CreateClosure, Count,
+	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -47,6 +47,14 @@ export const enum HeapServiceRecordControlField {
 }
 
 export const enum HeapServiceRecordKind { Table, CanonicalClosure }
+
+export const HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50;
+export const enum HeapServiceTableGrowthField {
+	Stage = 0, Receiver = 4, KeyTag = 8, KeyWord = 12, ValueTag = 16, ValueWord = 20,
+	ArraySlots = 24, HashSlots = 28, KeepHash = 32, ExtraSlots = 36, ParkExtraSlots = 40,
+	InstructionPc = 44, LastPc = 48, NextPc = 52, Budget = 56,
+}
+export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
@@ -99,3 +107,6 @@ export const enum HeapServiceObjectSweepAction { None, RebindRelocatedThread, Re
 
 export const HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 }
+
+export const HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET = 0x760;
+export const enum HeapServiceTableGrowthResultField { HashStorage = 0, ArrayStorage = 4 }

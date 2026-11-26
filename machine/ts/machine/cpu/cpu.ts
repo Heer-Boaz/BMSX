@@ -131,7 +131,8 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableRebuild, TableCensus, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, TableLookupStatus, type TableLookupResult } from './table';
+import { TableRecords, TableRebuild, TableCensus, TableStoreReturn, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED, HASH_STORE_PENDING,
+	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { StaticClosureIndex } from './static_closure_index';
@@ -182,6 +183,7 @@ import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceExecStage, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage, HeapServiceOperation,
 	HeapServiceRecordControlField, HeapServiceRecordKind,
+	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE, HeapServiceRootBankField, HeapServiceRootPlane,
@@ -309,6 +311,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly execFloorArgs = [0, 0];
 	private readonly newTableArgs: number[];
 	private readonly closureArgs: number[];
+	private readonly tableGrowthArgs: number[];
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private lengthKey!: StringId;
@@ -440,6 +443,7 @@ export class CPU implements MappedPageInvalidator {
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
 		this.heapService = new HeapService(this.gc);
+		this.tableGrowthArgs = [this.heapAllocator.allocatorStateOffset(), 0, 0, 0, 0, 0, 0, this.heapService.tableGrowthResultAddress - RAM_BASE];
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -664,12 +668,86 @@ export class CPU implements MappedPageInvalidator {
 			receiver = assignment.receiver;
 		}
 		if (this.runKind === CpuRunKind.Scheduled) {
-			if (tables.assignScheduled(receiver, key, value, this) === HASH_STORE_DECLINED)
-				return this.parkTableWrite(frame, receiver, key, value, 0);
+			const slot = tables.assignScheduled(receiver, key, value, this);
+			if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, receiver, key, value, 0);
+			if (slot === HASH_STORE_PENDING && this.heapServiceActive()) {
+				this.requestYield();
+				return true;
+			}
 		} else tables.set(receiver, key, value, this);
 		return false;
 	}
 	public allocationParked(): boolean { return this.pendingAllocation !== null; }
+
+	public beginStagedTableGrowth(receiver: number, key: Value, value: Value, array: number, hash: number,
+		keepHash: boolean, stagedGrowth: boolean, extra: number, parkExtra: number, stage: HeapServiceTableGrowthStage): boolean {
+		const services = this.systemImage.heapServiceFunctions;
+		if (services === null) return false;
+		const base = this.heapService.tableGrowthAddress, memory = this.memory;
+		const frame = this.activeThread.currentFrame!;
+		const nextPc = this.pendingAllocation === null ? frame.pc : this.pendingAllocation.nextPc;
+		memory.writeRamRecordWord(base + HeapServiceTableGrowthField.Receiver, receiver);
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.KeyTag, valueTag(key), valuePayload(key));
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.ValueTag, valueTag(value), valuePayload(value));
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.ArraySlots, array, hash);
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.KeepHash, +keepHash, extra);
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.ParkExtraSlots, parkExtra, this.currentInstructionPc);
+		memory.writeRamRecordPair(base + HeapServiceTableGrowthField.LastPc, this.lastPc, nextPc);
+		memory.writeRamRecordWord(base + HeapServiceTableGrowthField.Budget, extra ? Math.max(0, this.instructionBudgetRemaining) : 0);
+		memory.writeRamRecordWord(base + HeapServiceTableGrowthField.Stage, stage);
+		frame.pc = this.currentInstructionPc;
+		const args = this.tableGrowthArgs;
+		args[1] = receiver;
+		args[2] = array;
+		args[3] = hash;
+		args[4] = TableRecords.hashStorageBytes(hash);
+		args[5] = +keepHash;
+		args[6] = +stagedGrowth;
+		this.beginHeapService(services[HeapServiceOperation.ReserveTableGrowth], args);
+		return true;
+	}
+
+	private finishStagedTableGrowth(): void {
+		const base = this.heapService.tableGrowthAddress, memory = this.memory;
+		const stage = memory.readRamRecordWord(base + HeapServiceTableGrowthField.Stage) as HeapServiceTableGrowthStage;
+		if (stage === HeapServiceTableGrowthStage.Idle) return;
+		memory.writeRamRecordWord(base + HeapServiceTableGrowthField.Stage, HeapServiceTableGrowthStage.Idle);
+		const receiver = memory.readRamRecordWord(base + HeapServiceTableGrowthField.Receiver);
+		const key = valueFromTag(memory.readRamRecordWord(base + HeapServiceTableGrowthField.KeyTag),
+			memory.readRamRecordWord(base + HeapServiceTableGrowthField.KeyWord));
+		const value = valueFromTag(memory.readRamRecordWord(base + HeapServiceTableGrowthField.ValueTag),
+			memory.readRamRecordWord(base + HeapServiceTableGrowthField.ValueWord));
+		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceTableGrowthField.InstructionPc);
+		this.lastPc = memory.readRamRecordWord(base + HeapServiceTableGrowthField.LastPc);
+		this.lastExecutionDomainId = this.activeExecutionDomainId;
+		const frame = this.activeThread.currentFrame!;
+		const nextPc = memory.readRamRecordWord(base + HeapServiceTableGrowthField.NextPc);
+		frame.pc = nextPc;
+		if (this.heapServiceResult() !== 0) {
+			const result = this.heapService.tableGrowthResultAddress;
+			this.gc.tables.installTableRebuild(this.tableRebuild, receiver, key, value,
+				memory.readRamRecordWord(base + HeapServiceTableGrowthField.ArraySlots),
+				memory.readRamRecordWord(base + HeapServiceTableGrowthField.HashSlots),
+				memory.readRamRecordWord(base + HeapServiceTableGrowthField.KeepHash) !== 0,
+				memory.readRamRecordWord(result + HeapServiceTableGrowthResultField.HashStorage),
+				memory.readRamRecordWord(result + HeapServiceTableGrowthResultField.ArrayStorage));
+			return;
+		}
+		const parkExtra = memory.readRamRecordWord(base + HeapServiceTableGrowthField.ParkExtraSlots);
+		if (memory.readRamRecordWord(base + HeapServiceTableGrowthField.ExtraSlots) !== 0
+			&& this.gc.tables.retryStagedGrowth(receiver, key, value, this, stage, parkExtra,
+				memory.readRamRecordWord(base + HeapServiceTableGrowthField.Budget)) !== HASH_STORE_DECLINED) return;
+		if (stage === HeapServiceTableGrowthStage.Scheduled) {
+			this.parkTableWrite(frame, receiver, key, value, parkExtra);
+			return;
+		}
+		frame.pc = this.currentInstructionPc;
+		if (stage === HeapServiceTableGrowthStage.RetryFresh) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		this.pendingAllocation = {
+			recovery: AllocationRecovery.Fresh, instructionPc: this.currentInstructionPc, lastPc: this.lastPc, nextPc,
+			kind: PendingAllocationKind.TableAssignment, receiver, key, value, extraHashSlots: parkExtra,
+		};
+	}
 
 	private retireNewTable(frame: CallFrame, destination: number, address: number): void {
 		frame.registers.setTable(destination, address);
@@ -945,9 +1023,13 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		let retired: boolean;
 		if (pending.kind === PendingAllocationKind.TableAssignment) {
-			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots, this);
-			if (this.tableRebuild.census === TableCensus.RetryCurrent && pending.recovery === AllocationRecovery.RetryFresh)
-				this.tableRebuild.census = TableCensus.RetryFresh;
+			const stage = pending.recovery === AllocationRecovery.RetryCurrent
+				? HeapServiceTableGrowthStage.RetryCurrent : HeapServiceTableGrowthStage.RetryFresh;
+			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots, this, stage);
+			if (this.heapServiceActive()) {
+				this.pendingAllocation = null;
+				return;
+			}
 		} else {
 			if (this.systemImage.heapServiceFunctions !== null) {
 				const stage = pending.recovery === AllocationRecovery.RetryCurrent ? HeapServiceRecordStage.RetryCurrent : HeapServiceRecordStage.RetryFresh;
@@ -997,6 +1079,10 @@ export class CPU implements MappedPageInvalidator {
 			? tables.assignScheduled(assignment.receiver, field, value, this, assignment.slot, extraHashSlots)
 			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots, this);
 		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value, extraHashSlots);
+		if (slot === HASH_STORE_PENDING && this.heapServiceActive()) {
+			this.requestYield();
+			return true;
+		}
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
 	}
@@ -2440,6 +2526,7 @@ export class CPU implements MappedPageInvalidator {
 							case HeapServiceGcStage.Idle:
 								this.finishExecFloorService();
 								this.finishRecordReservation();
+								this.finishStagedTableGrowth();
 								break;
 						}
 						if (recordCollection && !this.heapServiceActive()) this.finishRecordCollection(recordStage);
@@ -4899,6 +4986,7 @@ export class CPU implements MappedPageInvalidator {
 				if (phase === TableCensus.RetryCurrent) this.pendingAllocation!.recovery = AllocationRecovery.Fresh;
 				return false;
 			}
+			if (this.heapServiceActive()) this.requestYield();
 		}
 		if (j.record || j.result === TableStoreReturn.None) return true;
 		this.currentInstructionPc = j.instructionPc;
@@ -5208,10 +5296,11 @@ export class CPU implements MappedPageInvalidator {
 		if (this.runKind !== CpuRunKind.Idle) this.charge(GC_WORK_WORD_CYCLES * work);
 	}
 
-	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number): number {
+	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number,
+		sourceCycles = this.instructionBudgetRemaining): number {
 		if (this.runKind !== CpuRunKind.Idle) {
-			if (this.instructionBudgetRemaining < GC_WORK_WORD_CYCLES) return 0;
-			words = Math.min(words, Math.trunc(this.instructionBudgetRemaining / GC_WORK_WORD_CYCLES));
+			if (sourceCycles < GC_WORK_WORD_CYCLES) return 0;
+			words = Math.min(words, Math.trunc(sourceCycles / GC_WORK_WORD_CYCLES));
 		}
 		const work = this.gc.step(root0, root1, root2, growingThread, false, words);
 		this.chargeCollectionWork(work);

@@ -78,7 +78,7 @@ bool LuaHeap::canAdmitWithoutAssist(size_t byteCount) const noexcept {
 #endif
 }
 
-bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread) {
+bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Value root2, u32 growingThread, const int* sourceBudget) {
 #if defined(BMSX_GC_STRESS)
 	stressHeapAllocation(*this);
 #endif
@@ -87,7 +87,7 @@ bool LuaHeap::prepareAllocation(size_t byteCount, Value root0, Value root1, Valu
 	if (debt > 0) {
 		const bool pressure = logicalAssistPressure(byteCount);
 		const size_t words = logicalAssistAllowance(debt, pressure);
-		const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words);
+		const size_t work = m_cpu.assistAllocation(root0, root1, root2, growingThread, words, sourceBudget);
 		creditLogicalAssist(byteCount, debt, pressure, work);
 	}
 	return true;

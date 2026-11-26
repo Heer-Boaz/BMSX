@@ -18,13 +18,14 @@ export const HEAP_SERVICE_WEAK_MODULE_PATH = 'kernel/gc_weak_quantum';
 export const HEAP_SERVICE_REMARK_MODULE_PATH = 'kernel/gc_remark';
 export const HEAP_SERVICE_ROOT_BANKS_MODULE_PATH = 'kernel/gc_root_banks';
 export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
+export const HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH = 'kernel/table_reserve_growth';
 export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
 	'kernel/gc_table_mode', 'kernel/gc_weak_mode', 'kernel/string_record', HEAP_SERVICE_TRACE_MODULE_PATH,
 	'kernel/gc_weak_table', HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,
-	HEAP_SERVICE_CLOSURE_MODULE_PATH,
+	HEAP_SERVICE_CLOSURE_MODULE_PATH, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH,
 ] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
@@ -49,6 +50,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.RootHead]: ['mark_root_head', 6, HEAP_SERVICE_REMARK_MODULE_PATH],
 	[HeapServiceOperation.RootBanks]: ['trace_root_banks', 8, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH],
 	[HeapServiceOperation.CreateClosure]: ['create_closure', 5, HEAP_SERVICE_CLOSURE_MODULE_PATH],
+	[HeapServiceOperation.ReserveTableGrowth]: ['reserve_table_growth', 8, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */
