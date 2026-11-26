@@ -1330,8 +1330,10 @@ replacing the storage. No later field is written by this instruction.
 
 A Table keeps its array slots in one allocation and its hash entries and
 collision links in another. A hash with more than 64 slots also holds a
-word counting its live mappings. A deleted entry does not count, even when
-its slot is retained for traversal. This word consumes physical storage,
+word counting its live mappings. From 1,024 slots onward, 32 further words
+count its live positive Integer keys by range: key 1, then keys greater than
+$2^{i-1}$ and at most $2^i$ for $i=1$ through 31. A deleted entry does not count, even when
+its slot is retained for traversal. These counts consume physical storage,
 not additional language-allocation budget. Either allocation may be absent. Growing the
 hash does not move the array. When the array grows, positive integer keys
 that now fit in it move there from the hash. The Table itself retains its
@@ -1627,13 +1629,11 @@ When an indexed store must repartition a table to insert a positive Integer
 key, it scans the existing array slots to choose the new array size. The first
 64 slots of each such scan are included; each further group of four slots,
 including a partial group, costs one cycle. A scan of 65,536 slots adds
-16,368 cycles. A positive Integer insertion that needs repartitioning also
-scans the old hash slots for keys eligible for the array. The first 64 hash slots are included; each additional pair of
-hash slots (key and value in each) costs one cycle, including a partial
-pair. These charges add when both parts are scanned. A full 1,024-slot
-hash scanned for repartitioning therefore adds 480 cycles to any array
-scan charge. For a hash-only addition, such as a new String key, the
-processor instead uses the live count in a large hash; no scan is charged. An overwrite or an insertion that fits an
+16,368 cycles. For a positive Integer key, a hash smaller than 1,024 slots
+is also scanned: the first 64 slots are included, then each pair costs one
+cycle. The largest such scan (512 slots) adds 224 cycles. From 1,024 slots
+onward, the processor reads the Integer range counts instead. A hash-only
+addition uses the live count above 64 slots. An overwrite or an insertion that fits an
 existing slot performs neither scan. A store through `rawset` pays the same
 scan charges. A failed reservation does not refund a completed
 scan; a recovery attempt that scans again pays for its own work.

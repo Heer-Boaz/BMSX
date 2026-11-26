@@ -174,28 +174,28 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
- for (const dense of [128, 256]) test(`first array publishes after resumable integer migration (${backend}, dense=${dense})`, () => {
+ for (const dense of [512, 1024]) test(`first array publishes after resumable integer migration (${backend}, dense=${dense})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
   const { cpu } = createTestSystemCpu(image, backend);
-  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, r = cpu.rootThread.currentFrame!.registers;
-  for (let i = 1; i <= 256; ++i) tables.setInteger(t, i <= dense ? i : -i, valueInteger(i));
+  const t = cpu.createTable(0, 1024), tables = cpu.gc.tables, r = cpu.rootThread.currentFrame!.registers;
+  for (let i = 1; i <= 1024; ++i) tables.setInteger(t, i <= dense ? i : -i, valueInteger(i));
   r.setTable(0, t); r.setInteger(1, dense+1); r.setInteger(2, 73);
   const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
-  grant(16); grant(8);
+  grant(16); assert.equal(cpu.instructionBudgetRemaining, 0); grant(8);
   assert.equal(tables.arrayCapacity(t), 0);
   assert.equal(tables.getInteger(t, dense+1), valueNil());
   assert.equal(cpu.tableRebuild.arrayCleared, 128);
   const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
   const finish = () => {
    let n = 0;
-   while (cpu.tableRebuild.record) { assert.ok(++n < 1024); grant(16); }
+   while (cpu.tableRebuild.record) { assert.ok(++n < 4096); grant(16); }
    assert.equal(tables.arrayCapacity(t), dense * 2);
-   assert.equal(tables.hashSize(t), 256 - dense);
+   assert.equal(tables.hashSize(t), 1024 - dense);
    assert.equal(tables.getInteger(t, dense+1), valueInteger(73));
-   for (let i = 1; i <= 256; ++i) assert.equal(tables.getInteger(t, i <= dense ? i : -i), valueInteger(i));
+   for (let i = 1; i <= 1024; ++i) assert.equal(tables.getInteger(t, i <= dense ? i : -i), valueInteger(i));
    return n;
   };
   const n = finish(), end = cpu.memory.captureSaveState();
@@ -209,8 +209,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, constants: ['new'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }] });
   const { cpu } = createTestSystemCpu(image, backend);
-  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, field = cpu.stringPool.intern('new');
-  for (let i = 1; i <= 256; ++i) tables.setInteger(t, -i, valueInteger(i));
+  const t = cpu.createTable(0, 512), tables = cpu.gc.tables, field = cpu.stringPool.intern('new');
+  for (let i = 1; i <= 512; ++i) tables.setInteger(t, i <= 256 ? i : -i, valueInteger(i));
   const r = cpu.rootThread.currentFrame!.registers;
   r.setTable(0, t); r.setInteger(1, 73);
   const grant = () => cpu.runUntilDepth(0, 8, cpu.rootThread.address, CpuRunKind.Scheduled);
@@ -224,7 +224,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const anchor = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
   assert.ok(cpu.tableRebuild.collisions);
   assert.equal(tables.getStringKey(t, field), valueNil());
-  assert.equal(tables.hashSize(t), 256);
+  assert.equal(tables.hashSize(t), 512);
   const finish = () => {
    let n = 0;
    while (cpu.tableRebuild.record) {
@@ -238,6 +238,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
   assert.equal(finish(), n);
   assert.deepEqual(cpu.memory.captureSaveState().ram, expected.ram);
+  // The 512-slot source had no stored range counts to copy into the larger hash.
+  for (let i = 513; i <= 1023; ++i) tables.setInteger(t, -i, valueInteger(i));
+  tables.setInteger(t, 257, valueInteger(71));
+  assert.equal(tables.arrayCapacity(t), 512); assert.equal(tables.hashSize(t), 1024);
+  assert.equal(tables.getInteger(t, 257), valueInteger(71));
  });
 
  for (const protect of [false, true]) test(`rawset publishes before growing its result window (${backend}, protected=${protect})`, () => {
@@ -301,13 +306,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    assert.equal(cpu.instructionBudgetRemaining, 0);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
    assert.equal(cpu.gc.tables.get(table, key), valueInteger(73));
-   for (const hash of [64, 128, 1024]) for (const kind of [CpuRunKind.Direct, CpuRunKind.Scheduled]) {
+   for (const hash of [64, 128, 512, 1024]) for (const kind of [CpuRunKind.Direct, CpuRunKind.Scheduled]) {
     const full = prepare(integer ? 0 : 512, hash);
     for (let i = 1; i <= hash; ++i) cpu.gc.tables.setInteger(full, -i, valueInteger(i));
     for (const overwrite of [false, true]) {
      cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
      assert.equal(cpu.runUntilDepth(0, base, cpu.rootThread.address, kind), RunResult.Yielded);
-     assert.equal(cpu.instructionBudgetRemaining, !integer || overwrite || hash === 64 ? 0 : -(hash - 64) / 2);
+     assert.equal(cpu.instructionBudgetRemaining, integer && !overwrite && hash > 64 && hash < 1024 ? -(hash - 64) / 2 : 0);
      assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
      if (!integer && !overwrite && hash > 64) {
       assert.equal(cpu.tableRebuild.record, full);

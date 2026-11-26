@@ -78,15 +78,15 @@ void writeRoutes(bool scalar) {
   if (cpu.runUntilDepth(0, base) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || table.get(key) != valueInteger(73))
    throw std::runtime_error("every table-write route completes growth at its ordinary charge");
-  for (const int hash : {64, 128, 1024}) for (auto kind : {CpuRunKind::Direct, CpuRunKind::Scheduled}) {
+  for (const int hash : {64, 128, 512, 1024}) for (auto kind : {CpuRunKind::Direct, CpuRunKind::Scheduled}) {
    auto full = prepare(integer ? 0 : 512, hash);
    for (int i = 1; i <= hash; ++i) full.setInteger(-i, valueInteger(i));
    for (const bool overwrite : {false, true}) {
     machine.restart();
     if (cpu.runUntilDepth(0, base, 0u, kind) != RunResult::Yielded
-     || cpu.instructionBudgetRemaining != (!integer || overwrite ? 0 : -(hash - 64) / 2)
+     || cpu.instructionBudgetRemaining != (integer && !overwrite && hash < 1024 ? -(hash - 64) / 2 : 0)
      || frame->readControl(FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES)
-     throw std::runtime_error("only positive Integer repartitioning scans the hash");
+     throw std::runtime_error("only an unindexed hash scans its bounded slots");
     if (!integer && !overwrite && hash > 64) {
      if (cpu.tableRebuild.record != full.address() || !isNil(full.get(key))) throw std::runtime_error("store must be pending");
      for (int steps = 0; cpu.tableRebuild.record; ++steps) {
@@ -111,8 +111,8 @@ void replayInFlightHash(bool scalar) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=2}};
  CpuMachine m(image, scalar);
  auto& cpu = m.cpu;
- auto table = cpu.createTable(0, 256);
- for (int i = 1; i <= 256; ++i) table.setInteger(-i, valueInteger(i));
+ auto table = cpu.createTable(0, 512);
+ for (int i = 1; i <= 512; ++i) table.setInteger(i <= 256 ? i : -i, valueInteger(i));
  auto r = cpu.activeThread()->currentFrame->registers;
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(73));
  const auto field = valueString(cpu.stringPool().intern("new"));
@@ -126,7 +126,7 @@ void replayInFlightHash(bool scalar) {
  cpu.cancelNonMaskableInterrupt();
  const auto anchor = cpu.captureRuntimeState();
  const auto ram = m.memory.captureSaveState();
- if (!anchor.rebuild.collisions || !isNil(table.get(field)) || table.hashSlots() != 256)
+ if (!anchor.rebuild.collisions || !isNil(table.get(field)) || table.hashSlots() != 512)
   throw std::runtime_error("the old mapping must remain published");
  const auto finish = [&] {
   int n = 0;
@@ -142,6 +142,11 @@ void replayInFlightHash(bool scalar) {
  cpu.restoreRuntimeState(anchor);
  if (finish() != n || m.memory.captureSaveState().ram != expected.ram)
   throw std::runtime_error("collision replay must reproduce the remaining grants and identical RAM");
+ // Cross the census threshold by copying a hash with no stored range counts.
+ for (int i = 513; i <= 1023; ++i) table.setInteger(-i, valueInteger(i));
+ table.setInteger(257, valueInteger(71));
+ if (table.arrayCapacity() != 512 || table.hashSlots() != 1024 || table.getInteger(257) != valueInteger(71))
+  throw std::runtime_error("replayed placement did not build the new hash integer census");
 }
 
 void publishFirstArray(bool scalar, int dense) {
@@ -152,12 +157,14 @@ void publishFirstArray(bool scalar, int dense) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
  CpuMachine machine(image, scalar);
  auto& cpu = machine.cpu;
- auto table = cpu.createTable(0, 256);
- for (int i=1; i<=256; ++i) table.setInteger(i <= dense ? i : -i, valueInteger(i));
+ auto table = cpu.createTable(0, 1024);
+ for (int i=1; i<=1024; ++i) table.setInteger(i <= dense ? i : -i, valueInteger(i));
  auto r = cpu.activeThread()->currentFrame->registers;
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(dense+1)); r.set(2, valueInteger(73));
  const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
- grant(16); grant(8);
+ grant(16);
+ if (cpu.instructionBudgetRemaining != 0) throw std::runtime_error("integer census overran the issuing grant");
+ grant(8);
  if (cpu.tableRebuild.arrayCleared != 128 || table.arrayCapacity() || !isNil(table.getInteger(dense+1)))
   throw std::runtime_error("only the detached array can change before retirement");
  const auto state = cpu.captureRuntimeState();
@@ -165,12 +172,12 @@ void publishFirstArray(bool scalar, int dense) {
  const auto finish = [&] {
   int n=0;
   while (cpu.tableRebuild.record) {
-   if (++n >= 1024) throw std::runtime_error("integer migration failed to retire");
+   if (++n >= 4096) throw std::runtime_error("integer migration failed to retire");
    grant(16);
   }
-  if (table.arrayCapacity() != dense*2 || table.hashSlots() != 256-dense || table.getInteger(dense+1) != valueInteger(73))
+  if (table.arrayCapacity() != dense*2 || table.hashSlots() != 1024-dense || table.getInteger(dense+1) != valueInteger(73))
    throw std::runtime_error("wrong partition after integer store");
-  for (int i=1; i<=256; ++i) if (table.getInteger(i <= dense ? i : -i) != valueInteger(i))
+  for (int i=1; i<=1024; ++i) if (table.getInteger(i <= dense ? i : -i) != valueInteger(i))
    throw std::runtime_error("integer migration lost an entry");
   return n;
  };
@@ -403,7 +410,7 @@ int main() {
   if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
-  publishFirstArray(scalar, 128); publishFirstArray(scalar, 256);
+  publishFirstArray(scalar, 512); publishFirstArray(scalar, 1024);
   rebuildWork(scalar);
   hostGrantScratch(scalar);
   for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {

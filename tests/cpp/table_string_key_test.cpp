@@ -309,6 +309,21 @@ void compactCopiedWeakHash(CPU& cpu) {
 		&& copy.getInteger(keys[128]) == valueBool(false), "retain the restored key, not the weakly removed entry");
 }
 
+void copiedIntegerPartition(CPU& cpu) {
+	auto table = cpu.createTable(0, 1024);
+	const auto weak = valueTable(cpu.createTable().address());
+	for (int k = 1; k <= 1024; ++k) table.setInteger(k <= 512 ? k : -k, k == 512 ? weak : valueInteger(k));
+	table.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
+	auto copy = table.copyOwn();
+	copy.setInteger(512, valueBool(false)); copy.setInteger(512, valueBool(true));
+	table.setInteger(513, valueInteger(71)); copy.setInteger(513, valueInteger(71));
+	require(table.arrayCapacity() == 512 && copy.arrayCapacity() == 1024 && table.hashSlots() == 1024 && copy.hashSlots() == 512,
+		"only the restored key takes its copy above the half-full partition cutoff");
+	require(isNil(table.getInteger(512)) && copy.getInteger(512) == valueBool(true)
+		&& table.getInteger(513) == valueInteger(71) && copy.getInteger(513) == valueInteger(71),
+		"the new integer can land in different backings without changing its value");
+}
+
 void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
 	auto table = cpu.createTable(4, 128);
 	for (int k = -1; k >= -128; --k) table.setInteger(k, valueInteger(-k));
@@ -407,6 +422,7 @@ int main() {
 		fullHashGrowsAndRetainsMappings(cpu);
 		rebuildFullCollisionChain(cpu);
 		compactCopiedWeakHash(cpu);
+		copiedIntegerPartition(cpu);
 		rebuildRoutesStoredIntegerByItsCurrentWord(cpu, memory);
 		std::cout << "String-key table tests passed\n";
 		return 0;

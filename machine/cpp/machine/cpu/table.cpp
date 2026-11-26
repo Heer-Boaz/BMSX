@@ -188,7 +188,17 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 		countBins = std::max(countBins, log + 1);
 		++counts[log];
 	};
-	for (u32 i = 0; i < body.count; ++i) {
+	if (body.count >= HASH_BAND_CAPACITY) {
+		totalKeys += body.live();
+		for (u32 bin = 0; bin < counts.size(); ++bin) {
+			const u32 n = m_memory->readRamRecordWord(body.liveAddress() + 4u * (1u + bin));
+			if (!n) continue;
+			counts[bin] += n;
+			countBins = std::max(countBins, size_t(bin + 1u));
+			// Plans choose power-of-two boundaries, so the band's lower edge suffices.
+			firstHashArraySlot = std::min(firstHashArraySlot, bin ? 1u << (bin - 1u) : 0u);
+		}
+	} else for (u32 i = 0; i < body.count; ++i) {
 		const u32 slot = i;
 		const auto tag = slots.tag(slot);
 		if (tag != ValueTag::Nil && slots.tag(slot + body.count) != ValueTag::Nil) {
@@ -261,15 +271,14 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	constexpr u32 included = 64;
 	const int arrayCycles = array > included && valueIsInteger(key) && asInteger(key) > 0
 		? static_cast<int>((array - included + 3u) / 4u) : 0;
-	// Repartitioning needs the Integer key distribution, not just the live count.
-	const int hashCycles = hash > included && valueIsInteger(key) && asInteger(key) > 0 ? static_cast<int>((hash - included + 1u) / 2u) : 0;
-	const int scanCycles = arrayCycles + hashCycles;
+	const int hashCycles = hash > included && hash < HASH_BAND_CAPACITY && valueIsInteger(key) && asInteger(key) > 0
+		? static_cast<int>((hash - included) / 2u) : 0;
 	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
-		if (hash > HASH_CENSUS_LIMIT || scanCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
+		if (hash > HASH_CENSUS_LIMIT || arrayCycles) return HASH_STORE_DECLINED; // the semantic owner holds the live grant
 	}
 	auto recovery = LuaAllocationRecovery::CurrentOrFresh;
 	for (;;) {
-		if (cpu) cpu->instructionBudgetRemaining -= scanCycles;
+		if (cpu) cpu->instructionBudgetRemaining -= arrayCycles + hashCycles;
 		const auto plan = planRehash(key, extraHashSlots);
 		const u32 requested = allocationCharge(plan.array, plan.hash);
 		bool admitted = true;
@@ -380,6 +389,7 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 	const u32 array = arrayCapacity();
 	const auto arrayValues = values();
 	u32 collisions = 0, live = 1;
+	body.adjustIntegerBand(key, 1);
 	for (u32 i = 0; i < source.count; ++i) {
 		const Value k = source.slots.get(i), v = source.slots.get(source.count + i);
 		if (isNil(k) || isNil(v)) continue;
@@ -388,6 +398,7 @@ int TableRecord::rebuildHashOnly(const RebuildBody& source, const RebuildBody& b
 			continue;
 		}
 		++live;
+		body.adjustIntegerBand(k, 1);
 		const u32 home = hashCanonicalTableKey(k) & mask;
 		if (body.slots.tag(home) == ValueTag::Nil) {
 			body.slots.set(home, k);
@@ -437,8 +448,12 @@ void TableRecord::initializeHash(u32 address, u32 count) {
 	const u32 bytes = hashNodeBytes(count);
 	std::fill(words, words + count * 10u, u8{0});
 	std::fill(words + count * 10u, words + bytes, u8{0xff});
-	if (count > HASH_CENSUS_LIMIT) hashBodyAt(address, count).setLive(0u);
-	m_memory->invalidateRamWrite(base, bytes);
+	u32 total = bytes;
+	if (count > HASH_CENSUS_LIMIT) {
+		total = hashStorageBytes(count);
+		std::fill(words + bytes, words + total, u8{0});
+	}
+	m_memory->invalidateRamWrite(base, total);
 }
 
 void TableRecord::freeStorage() {
@@ -524,6 +539,7 @@ int TableRecord::reinsertMapping(const RebuildBody& body, int& nextFree, Value k
 			values().set(index, value);
 			return -1;
 		}
+		body.adjustIntegerBand(key, 1);
 	}
 	const u32 home = hashCanonicalTableKey(key) & (body.count - 1u);
 	return insertAbsentHashKey(body, home, key, value, [&] {
@@ -541,7 +557,7 @@ int TableRecord::insertHashWithoutGrowth(const HashBody& body, u32 home, const V
 		return available;
 	},
 		[this] { m_heap->tableEntriesMoved(m_address); });
-	if (slot >= 0 && body.count > HASH_CENSUS_LIMIT) body.setLive(body.live() + 1u);
+	if (slot >= 0 && body.count > HASH_CENSUS_LIMIT) { body.setLive(body.live() + 1u); body.adjustIntegerBand(key, 1); }
 	return slot;
 }
 
@@ -597,8 +613,8 @@ void TableRecord::removeFromHash(const Value& key, int slot) {
 
 void TableRecord::markHashNodeDead(size_t index) {
 	const auto body = hashBody(hashSlots());
-	if (body.count > HASH_CENSUS_LIMIT) body.setLive(body.live() - 1u);
 	const Value key = body.slots.get(index);
+	if (body.count > HASH_CENSUS_LIMIT) { body.setLive(body.live() - 1u); body.adjustIntegerBand(key, -1); }
 	if (valueIsTable(key) || valueIsThread(key) || valueIsClosure(key)) {
 		const uint32_t hashId = valuePayload(key);
 		hashBody(hashSlots()).slots.set(index, valueFromTag(ValueTag::Nil, valueHeader(key)));
@@ -724,7 +740,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 	if (count != 0u) {
 		if (nodeIndex >= 0) {
 			const u32 slot = static_cast<u32>(nodeIndex);
-			if (count > HASH_CENSUS_LIMIT) body.setLive(body.live() + 1u);
+			if (count > HASH_CENSUS_LIMIT) { body.setLive(body.live() + 1u); body.adjustIntegerBand(key, 1); }
 			body.slots.set(slot, key);
 			body.slots.set(slot + count, value);
 		} else nodeIndex = insertHashWithoutGrowth(body, home, key, value);

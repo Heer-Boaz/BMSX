@@ -272,6 +272,24 @@ test('hash-only growth counts restored keys but not weakly retired mappings in a
 	assert.equal(tables.getInteger(copy, keys[128]), valueBool(false));
 });
 
+test('weak integer removal and resurrection straddle the density cutoff in a copied hash', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const tables = cpu.gc.tables, t = cpu.createTable(0, 1024), weak = valueTable(cpu.createTable());
+	for (let k = 1; k <= 1024; ++k) tables.setInteger(t, k <= 512 ? k : -k, k === 512 ? weak : valueInteger(k));
+	tables.clearWeakEntries(t, false, true, value => value !== weak);
+	const copy = tables.copyOwn(t);
+	tables.setInteger(copy, 512, valueBool(false)); tables.setInteger(copy, 512, valueBool(true));
+	for (const table of [t, copy]) tables.setInteger(table, 513, valueInteger(71));
+	assert.equal(tables.arrayCapacity(t), 512);
+	assert.equal(tables.arrayCapacity(copy), 1024);
+	assert.equal(tables.hashSize(t), 1024);
+	assert.equal(tables.hashSize(copy), 512);
+	assert.equal(tables.getInteger(t, 512), valueNil());
+	assert.equal(tables.getInteger(copy, 512), valueBool(true));
+	for (const table of [t, copy]) assert.equal(tables.getInteger(table, 513), valueInteger(71));
+});
+
 test('hash rebuild routes a stored Integer by its current RAM word', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));

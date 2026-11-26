@@ -34,7 +34,15 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 		cycles -= static_cast<int>((n + 15u) / 16u);
 		if (end < bytes) return;
 		const u32 home = hashCanonicalTableKey(j.key) & mask;
-		if (j.capacity > HASH_CENSUS_LIMIT) dst.setLive(src.live() + (trigger >= array));
+		if (j.capacity > HASH_CENSUS_LIMIT) {
+			dst.setLive(src.live() + (trigger >= array));
+			if (j.capacity >= HASH_BAND_CAPACITY) {
+				const u32 target = (dst.liveAddress() + 4u) & RAM_RECORD_WORD_MASK;
+				std::fill_n(m_memory->ramData() + target, 32u * 4u, u8{0});
+				m_memory->invalidateRamWrite(target, 32u * 4u);
+				if (trigger >= array) dst.adjustIntegerBand(j.key, 1);
+			}
+		}
 		if (trigger >= array) {
 			dst.slots.set(home, j.key);
 			dst.slots.set(j.capacity + home, j.value);
@@ -50,6 +58,7 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 			if (j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() - 1u);
 			continue;
 		}
+		dst.adjustIntegerBand(k, 1);
 		const u32 home = hashCanonicalTableKey(k) & mask;
 		if (dst.slots.tag(home) == ValueTag::Nil) {
 			dst.slots.set(home, k);
