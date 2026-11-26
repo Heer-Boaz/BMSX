@@ -15,7 +15,10 @@ import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_TABLE_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH, HEAP_SERVICE_OBJECTS_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
+import {
+	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_TABLE_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
+	HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TRACE_MODULE_PATH, HEAP_SERVICE_WEAK_MODULE_PATH,
+} from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
@@ -80,6 +83,8 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_TABLE_MODULE_PATH, 'create_table'],
 		[HEAP_SERVICE_STRINGS_MODULE_PATH, 'sweep_step'],
 		[HEAP_SERVICE_OBJECTS_MODULE_PATH, 'sweep_objects'],
+		[HEAP_SERVICE_TRACE_MODULE_PATH, 'trace_quantum'],
+		[HEAP_SERVICE_WEAK_MODULE_PATH, 'clear_weak_step'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {
@@ -105,9 +110,9 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 });
 
 test('the ROM linker rejects a missing allocator entry and a call out of its verified module', () => {
-	const missing = compile(true, 3, allocator.replace('is_object = bmsx_dlmalloc_is_object', 'old_is_object = bmsx_dlmalloc_is_object'));
+	const missing = compile(true, 3, allocator.replace('reset = bmsx_dlmalloc_reset', 'old_reset = bmsx_dlmalloc_reset'));
 	assert.throws(() => linkSystemBlua32Image(missing.object, missing.program.metadata, loadAddress, MAIN_RAM_SIZE,
-		BIOS_FUNCTION_EXPORTS), /bmsx_dlmalloc_is_object.*not a linked static function/);
+		BIOS_FUNCTION_EXPORTS), /bmsx_dlmalloc_reset.*not a linked static function/);
 	const source = allocator.replace('module<const>', "module<const>\nlocal foreign<const> = require('test/foreign')")
 		.replace(/(function\(a\) -- C:581\n)[\s\S]*?\nend/, '$1\treturn foreign.floor(a)\nend');
 	assert.notEqual(source, allocator);

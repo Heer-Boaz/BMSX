@@ -786,15 +786,21 @@ export class CPU implements MappedPageInvalidator {
 	public advanceAllocationRecovery(): boolean {
 		const recovery = this.pendingAllocation!.recovery;
 		if (recovery === AllocationRecovery.RetryCurrent || recovery === AllocationRecovery.RetryFresh) return false;
-		if (this.gc.finalMarkPending()) this.gc.stepFinalMark();
+		if (this.gc.finalMarkPending()) this.advanceFinalMark();
 		else {
 			const services = this.systemImage.heapServiceFunctions;
 			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
 				services === null ? 0 : services[HeapServiceOperation.StringSweep], HeapServiceGcStage.AllocationRecoveryStringSweep,
-				services === null ? 0 : services[HeapServiceOperation.ObjectSweep]);
+				services === null ? 0 : services[HeapServiceOperation.ObjectSweep], services === null ? 0 : services[HeapServiceOperation.Trace]);
 		}
 		this.finishAllocationRecovery();
 		return true;
+	}
+
+	public advanceFinalMark(): void {
+		const services = this.systemImage.heapServiceFunctions;
+		this.gc.stepFinalMark(GC_STEP_WORDS, services === null ? 0 : services[HeapServiceOperation.Trace],
+			services === null ? 0 : services[HeapServiceOperation.WeakClear], HeapServiceGcStage.MaintenanceTrace);
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2249,23 +2255,34 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		if (this.heapServiceActive()) {
-			const sweep = this.gc.sweepStage();
+			const gcStage = this.gc.serviceStage();
 			this.runKind = kind;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						switch (sweep) {
+						switch (gcStage) {
+							case HeapServiceGcStage.FullTrace:
+							case HeapServiceGcStage.MaintenanceTrace: {
+								const services = this.systemImage.heapServiceFunctions!;
+								const work = this.gc.finishTraceQuantum(services[HeapServiceOperation.Trace], services[HeapServiceOperation.WeakClear], gcStage);
+								if (gcStage === HeapServiceGcStage.FullTrace) this.chargeCollectionWork(work);
+								break;
+							}
+							case HeapServiceGcStage.FullWeakClear:
+							case HeapServiceGcStage.MaintenanceWeakClear:
+								this.gc.finishWeakQuantum();
+								break;
 							case HeapServiceGcStage.FullObjectSweep:
 							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
 								const services = this.systemImage.heapServiceFunctions!;
-								this.gc.finishObjectSweep(sweep, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
+								this.gc.finishObjectSweep(gcStage, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
 								break;
 							}
 							case HeapServiceGcStage.FullStringSweep:
 							case HeapServiceGcStage.AllocationRecoveryStringSweep:
-								this.gc.finishStringSweep(sweep);
-								if (sweep === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
+								this.gc.finishStringSweep(gcStage);
+								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
 								break;
 							case HeapServiceGcStage.Idle:
 								this.finishExecFloorService();
@@ -2277,7 +2294,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return sweep !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
+				return gcStage !== HeapServiceGcStage.Idle && kind === CpuRunKind.Scheduled ? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 			}
@@ -2297,7 +2314,8 @@ export class CPU implements MappedPageInvalidator {
 					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
 					const services = this.systemImage.heapServiceFunctions;
 					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words,
-						services === null ? 0 : services[HeapServiceOperation.StringSweep], services === null ? 0 : services[HeapServiceOperation.ObjectSweep]));
+						services === null ? 0 : services[HeapServiceOperation.StringSweep], services === null ? 0 : services[HeapServiceOperation.ObjectSweep],
+						services === null ? 0 : services[HeapServiceOperation.Trace], services === null ? 0 : services[HeapServiceOperation.WeakClear]));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
 					if (instructionBudget <= 0 || this.heapServiceActive()) return RunResult.Yielded;

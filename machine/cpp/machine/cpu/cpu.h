@@ -299,6 +299,7 @@ public:
 			|| m_pendingAllocation.recovery == AllocationRecovery::RetryFresh;
 	}
 	bool advanceAllocationRecovery();
+	void advanceFinalMark();
 	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void chargeCollectionWork(size_t work);

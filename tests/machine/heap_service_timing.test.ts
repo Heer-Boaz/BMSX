@@ -161,18 +161,27 @@ test('timed String GC crosses VBlank after a zero-work native prefix', () => {
 	applyRuntimeSaveState(runtime, boot);
 	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-vblank-string-${i}`);
 
-	// Reach the boundary after the first small String quantum, still in
-	// the explicit collection. Reserve the real frame grant for the next.
-	const slice = () => scheduler.runCpuSlice(0, 3, undefined, CpuRunKind.Scheduled);
+	// Keep admission at one native work word, but give an already-started
+	// firmware quantum enough instructions to retire. Its source allowance
+	// is already pinned. Reserve the real frame grant for the next String quantum.
+	const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	const control = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
+	const fullStages = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullWeakClear,
+		HeapServiceGcStage.FullObjectSweep, HeapServiceGcStage.FullStringSweep];
+	const seen = new Set<HeapServiceGcStage>();
 	let enteredStrings = false;
 	for (let i = 0; i < 4096 && (!enteredStrings || cpu.heapServiceActive()); ++i) {
-		const sweep = cpu.gc.sweepStage();
-		const result = slice();
-		if (sweep !== HeapServiceGcStage.Idle) assert.equal(result, RunResult.CollectionProgress);
-		if (memory.readRamRecordWord(control + HeapServiceGcField.Stage) === HeapServiceGcStage.FullStringSweep) enteredStrings = true;
+		const stage = cpu.gc.serviceStage();
+		if (stage === HeapServiceGcStage.Idle) slice(3);
+		else {
+			assert.ok(fullStages.includes(stage), `unexpected explicit GC stage ${stage}`);
+			assert.equal(slice(128), RunResult.CollectionProgress);
+			seen.add(stage);
+			enteredStrings ||= stage === HeapServiceGcStage.FullStringSweep;
+		}
 	}
 	assert.equal(enteredStrings, true);
+	assert.deepEqual([...seen], fullStages);
 	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.gc.phase(), GcPhase.Strings);
 	assert.equal(cpu.gc.fullEpochs(), 1);
@@ -254,7 +263,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native prefix and final-mark work remain stopped');
 	}
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryObjectSweep);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceTrace);
 	assert.equal(scheduler.nowCycles - before, deferred, 'the accepted issuing prefix settles once before BIOS instructions');
 	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
 	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
@@ -262,7 +271,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.ok(frames.lastTickCpuUsedCycles > deferred, 'the VBlank accounts for both the issuing prefix and the BIOS grant');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.AllocationRecoveryObjectSweep);
+	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceTrace);
 	assert.equal(cpu.allocationReady(), false);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(caller), issuePc);
@@ -272,7 +281,14 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 
 	function finish() {
 		assert.equal(tables.getInteger(owner, slots + 1), valueNil());
-		for (let i = 0; i < 12 && cpu.getFrameDepth() !== 0; ++i) frames.runCyclesToNextLogicalTick(100_000);
+		const grants: number[][] = [];
+		// Two bounded trace quanta walk the 8192-entry rooted Table on the
+		// guest clock. Keep the same timed grant and compare replay, rather
+		// than relying on the old native loop's low grant count.
+		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) {
+			frames.runCyclesToNextLogicalTick(100_000);
+			grants.push([scheduler.nowCycles, gc.phase(), gc.serviceStage(), +cpu.allocationParked(), +cpu.allocationReady()]);
+		}
 		assert.equal(cpu.allocationParked(), false);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
@@ -282,13 +298,13 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		assert.equal(cpu.stringPool.find('live-only-through-parked-sett'), valuePayload(payload));
 		assert.equal(cpu.stringPool.find('dead-sett-string-23'), undefined);
 		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
-		return scheduler.nowCycles;
+		return grants;
 	}
-	const completedAt = finish();
+	const completed = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
 	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
 	assert.equal(cpu.allocationReady(), false);
-	assert.equal(finish(), completedAt);
+	assert.deepEqual(finish(), completed);
 });
 
 test('production object sweep frees records before debugger callbacks without publishing the frontier', () => {
@@ -313,8 +329,18 @@ test('production object sweep frees records before debugger callbacks without pu
 		if (address !== null) callbacks.push([address, count(), cursor(),
 			+cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX)]);
 	};
-	for (let i = 0; i < 64 && gc.sweepStage() !== HeapServiceGcStage.FullObjectSweep; ++i) slice(12_288);
-	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
+	const beforeSweep = [HeapServiceGcStage.FullTrace, HeapServiceGcStage.FullWeakClear];
+	const seen = new Set<HeapServiceGcStage>();
+	for (let i = 0; i < 64 && gc.serviceStage() !== HeapServiceGcStage.FullObjectSweep; ++i) {
+		const stage = gc.serviceStage();
+		const [result] = slice(12_288);
+		if (stage === HeapServiceGcStage.Idle) continue;
+		assert.ok(beforeSweep.includes(stage), `unexpected explicit GC stage before object sweep: ${stage}`);
+		assert.equal(result, RunResult.CollectionProgress);
+		seen.add(stage);
+	}
+	assert.deepEqual([...seen], beforeSweep);
+	assert.equal(gc.serviceStage(), HeapServiceGcStage.FullObjectSweep);
 	const frontier = [count(), cursor()];
 	assert.notEqual(frontier[1], 0);
 	const newerBlock = newer - RAM_BASE - GC_OBJECT_PREFIX;
@@ -328,7 +354,7 @@ test('production object sweep frees records before debugger callbacks without pu
 	assert.equal(releasedInFirmware, true, 'a firmware instruction releases the object before handing off');
 	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier, 0]]);
 	assert.equal(callbacks.some(([address]) => address === older), false);
-	assert.equal(gc.sweepStage(), HeapServiceGcStage.FullObjectSweep);
+	assert.equal(gc.serviceStage(), HeapServiceGcStage.FullObjectSweep);
 	assert.equal(cpu.heapServiceActive(), true, 'the retired Table hands back to the same firmware quantum');
 	assert.deepEqual([count(), cursor()], frontier);
 	const checkpoint = captureRuntimeSaveState(runtime);

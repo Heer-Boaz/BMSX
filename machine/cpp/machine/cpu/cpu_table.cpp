@@ -230,14 +230,13 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::RetryFresh: return false;
 		case AllocationRecovery::Current:
 		case AllocationRecovery::Fresh: {
-			// This native prefix still belongs to stopped maintenance. Only the
-			// firmware sweep draws a timed grant, with the quantum's remainder.
-			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
+			// The remaining native work belongs to stopped maintenance.
+			if (m_heap.finalMarkPending()) advanceFinalMark();
 			else {
 				const auto& services = m_systemImage->heapServiceFunctions;
 				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS,
 					services[static_cast<size_t>(HeapServiceOperation::StringSweep)], HeapServiceGcStage::AllocationRecoveryStringSweep,
-					services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)]);
+					services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)], services[static_cast<size_t>(HeapServiceOperation::Trace)]);
 			}
 			finishAllocationRecovery();
 			return true;
@@ -245,6 +244,12 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::None: BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();
+}
+
+void CPU::advanceFinalMark() {
+	const auto& services = m_systemImage->heapServiceFunctions;
+	m_heap.stepFinalMark(GC_STEP_WORDS, services[static_cast<size_t>(HeapServiceOperation::Trace)],
+		services[static_cast<size_t>(HeapServiceOperation::WeakClear)], HeapServiceGcStage::MaintenanceTrace);
 }
 
 void CPU::finishAllocationRecovery() {

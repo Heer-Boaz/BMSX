@@ -109,9 +109,8 @@ export class FrameSchedulerState {
 			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
 		} else if (runtime.vblank.stepDeferredPressure()) return Pulse.Maintenance;
 		else if (heap.stoppedFinalMarkPending()) {
-			// Keep the host grant queued while the guest clock is stopped.
-			heap.stepFinalMark();
-			return Pulse.Maintenance;
+			cpu.advanceFinalMark();
+			if (!cpu.heapServiceActive()) return Pulse.Maintenance;
 		}
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}

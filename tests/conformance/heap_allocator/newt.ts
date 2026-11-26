@@ -153,10 +153,21 @@ try {
 				assert.equal(hashBytes(memory.ramData(), state, 0x200), refusedArena, 'allocation bookkeeping equals the WASM reference');
 				assert.equal(cpu.readFramePc(caller), newtPc);
 				const pressure = () => memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET);
-				const schedulerStep = (op: 'a' | 'd') => {
+				const schedulerStep = (step: 'a' | 'd') => {
+					const op = step === 'd' && cpu.gc.serviceStage() === HeapServiceGcStage.MaintenanceTrace ? 'k' : step;
 					const before = frames.lastTickSequence;
+					const cycle = scheduler.nowCycles;
 					const result = op === 'a' ? frames.advanceLogicalTick(0) : frames.stepInstruction(1);
-					observe(op, `${result} ${scheduler.nowCycles} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.sweepStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+					if (op === 'k') {
+						// Native trace mirrors check issuance and color in different
+						// order. Compare at retirement, including the device edge,
+						// while retaining single-instruction timing elsewhere.
+						for (let grant = 1; cpu.gc.serviceStage() === HeapServiceGcStage.MaintenanceTrace && grant < 65536; ++grant)
+							frames.stepInstruction(1);
+						assert.notEqual(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceTrace);
+						assert.ok(scheduler.nowCycles > cycle);
+					}
+					observe(op, `${result} ${op === 'k' ? 1 : scheduler.nowCycles - cycle} ${+(frames.lastTickSequence !== before)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${cpu.gc.serviceStage()} ${stage()} ${pressure()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 					return result;
 				};
 				for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) {
@@ -164,17 +175,35 @@ try {
 					assert.equal(result, cpu.heapServiceActive() ? LogicalTickResult.Incomplete : LogicalTickResult.Maintenance);
 					assert.equal(scheduler.nowCycles, edge - 96, 'only the remaining native prefix is stopped');
 				}
-				assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryObjectSweep);
+				assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.MaintenanceTrace);
 				assert.equal(memory.readRamRecordByte(deadString), BLUA32_STRING_RECORD_KIND);
+				const recoverySlice = () => {
+					const before = scheduler.nowCycles;
+					const result = schedulerStep('d');
+					if (result === InstructionStepResult.Blocked) {
+						assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
+						assert.equal(scheduler.nowCycles, before, 'a native maintenance boundary does not consume device time');
+					} else {
+						assert.equal(result, InstructionStepResult.Advanced);
+						assert.ok(scheduler.nowCycles > before, 'firmware advances device time');
+					}
+					assert.ok(cpu.allocationParked());
+					assert.equal(cpu.readFramePc(caller), newtPc);
+				};
+				let recoveryStages = 0;
 				let partialLogicalBytes = 0;
 				for (let i = 0; i < 65536 && memory.readRamRecordByte(deadString) !== 0; ++i) {
 					partialLogicalBytes = budget.usedBytes();
-					assert.equal(schedulerStep('d'), InstructionStepResult.Advanced);
-					assert.ok(cpu.heapServiceActive() && cpu.allocationParked() && !cpu.allocationReady());
-					assert.equal(cpu.readFramePc(caller), newtPc);
+					recoveryStages |= 1 << cpu.gc.serviceStage();
+					recoverySlice();
+					assert.equal(cpu.allocationReady(), false);
+				}
+				for (const entered of [HeapServiceGcStage.MaintenanceTrace, HeapServiceGcStage.MaintenanceWeakClear,
+					HeapServiceGcStage.AllocationRecoveryObjectSweep, HeapServiceGcStage.AllocationRecoveryStringSweep]) {
+					assert.notEqual(recoveryStages & (1 << entered), 0, `allocation recovery enters BIOS stage ${entered}`);
 				}
 				assert.equal(memory.readRamRecordByte(deadString), 0, 'checkpoint after unlinking but before charging the reclaimed String');
-				assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
+				assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
 				assert.equal(budget.usedBytes(), partialLogicalBytes);
 				assert.equal(frames.lastTickSequence, 1, 'physical VBlank runs during parked BIOS reclamation');
 				assert.ok(scheduler.nowCycles >= edge);
@@ -182,10 +211,10 @@ try {
 				const checkpointCycles = scheduler.nowCycles;
 				const finishSweep = () => {
 					for (let i = 0; i < 65536 && !cpu.allocationReady(); ++i) {
-						assert.equal(schedulerStep('d'), InstructionStepResult.Advanced);
+						recoverySlice();
 						assert.equal(pressure(), 1, 'the edge cannot admit an extra GC assist ahead of the retry');
 					}
-					assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.Idle);
+					assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
 					assert.ok(cpu.allocationReady());
 					assert.ok(scheduler.nowCycles > checkpointCycles);
 					assert.equal(cpu.readFramePc(caller), newtPc);
@@ -203,8 +232,6 @@ try {
 						assert.equal(cpu.stringPool.find(longString), discarded);
 						tryReservation(HeapServiceNewtStage.RetryCurrent);
 						assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
-						for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) schedulerStep('d');
-						assert.equal(cpu.gc.sweepStage(), HeapServiceGcStage.AllocationRecoveryObjectSweep);
 						finishSweep();
 						assert.equal(cpu.stringPool.find(longString), undefined);
 					}

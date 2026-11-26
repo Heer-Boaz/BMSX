@@ -4,11 +4,11 @@ module<const>
 -- T/C/H are the collector; O/P the object words; U/V/W the Upvalue
 -- owners; L/B/D the Closure owners; I/J the Thread backing; M RAM decode.
 -- The caller admits a gray Closure or closed Upvalue before entering
--- trace_admitted. The native trace-head eligibility, Table/Thread dispatch,
--- and the surrounding trace quantum remain outside this block.
+-- trace_admitted. The trace-head eligibility, Table/Thread dispatch,
+-- and the surrounding quantum belong to gc_trace.
 -- Record and stack aliases supplied to the private service lie in its RAM
 -- aperture. Preserve kind-before-issuance for capture cell references here;
--- the future production admission still owns decode of public raw aliases.
+-- the caller still owns decode of public raw aliases.
 local allocator<const> = require('kernel/dlmalloc') -- T:150-151 C:255-256
 local mark<const> = require('kernel/gc_mark') -- T:322-325,394,397 C:302-305,392,395
 local ram_base<const> = 0x08000000 -- M:6
@@ -130,8 +130,7 @@ local resume_captures<const> = function(control, arena, metadata, closure, limit
 	return work, pending -- T:525 C:542
 end
 
-local trace_admitted<const> = function(control, arena, metadata, address, kind, limit, pending_string_work, replace_color_byte) -- T:377,381-382 C:374,379-380; source dispatch admits this head
-	local cell<const> = kind == upvalue_kind -- T:381 C:379; only admitted closed cells reach here
+local pop_admitted<const> = function(control, address, cell, replace_color_byte) -- T:390-394 C:388-392
 	local offset<const> = cell and upvalue_next_offset or record_link -- T:390 C:388
 	local link<const>: *u32 = ram_base + ((address + offset) & word_mask) -- T:390-391 C:388-389
 	local packed<const> = *link -- T:391 C:389
@@ -139,6 +138,11 @@ local trace_admitted<const> = function(control, arena, metadata, address, kind, 
 	*head = packed & gray_index_mask -- T:392 C:390
 	if cell then *link = 0 else *link = packed & ~gray_index_mask end -- T:393 C:391
 	mark.internal.set_color(address, color_black, replace_color_byte) -- T:394 C:392
+end
+
+local trace_admitted<const> = function(control, arena, metadata, address, kind, limit, pending_string_work, replace_color_byte) -- T:377,381-382 C:374,379-380; source dispatch admits this head
+	local cell<const> = kind == upvalue_kind -- T:381 C:379; only admitted closed cells reach here
+	pop_admitted(control, address, cell, replace_color_byte) -- T:390-394 C:388-392
 	if cell then -- T:396 C:394
 		local tag<const>, word<const> = load_upvalue(address) -- T:397 C:395
 		local _<const>, string_work<const> = mark.mark_value(control, arena, metadata, tag, word, trace_head_offset, replace_color_byte) -- T:397 C:395
@@ -166,6 +170,7 @@ return {
 	internal = {
 		cell_record_address = cell_record_address, load_upvalue = load_upvalue,
 		capture_count = capture_count, capture_address = capture_address, trace_captures = trace_captures,
+		pop_admitted = pop_admitted,
 	},
 	mark_cell = mark_cell,
 	trace_admitted = trace_admitted,

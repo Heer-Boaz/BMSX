@@ -1481,10 +1481,12 @@ by one additional quantum. If the CPU is waiting for an interrupt and marking
 is already in progress, the marker receives a grant of four quanta instead.
 It can yield earlier at a phase boundary. The interrupt wait alone does not
 start collection or advance the final remark. A collection started by physical
-pressure can finish over later ticks without further allocation. Neither this
-work nor the final remark advances the console clock. Free space may be separated by retained
-allocations, so enough unoccupied bytes does not guarantee that an allocation
-of that size will fit.
+pressure can finish over later ticks without further allocation. The
+display-tick assist does not advance the console clock. When scheduled
+execution resumes with a final remark pending, tracing and weak-entry removal
+run on ordinary CPU grants; other final-remark work can run with the clock
+stopped. Free space may be separated by retained allocations, so enough
+unoccupied bytes does not guarantee that an allocation of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
 can advance it explicitly and report occupied budget and total capacity.
 
@@ -1503,19 +1505,21 @@ always performs the fresh cycle. For a full collection requested through the BIO
 the CPU admits marking, final remark and reclamation work against successive
 cycle grants. Each positive grant admits up to one collection quantum, at
 one work word per three cycles, with a minimum allowance of one word. An
-indivisible record operation can exceed its allowance. The resident sweep
-traverses the object inventory, reclaims Table, upvalue, Closure, dead
-Thread and String storage, and can shrink the stack of a retained Thread
-during a full collection. These operations use ordinary CPU cycles and are
-not charged a second time per work word. The rest of the quantum is charged for the actual
-work it performs. Device time advances for both, while interrupt entry and
-execution of the following instruction wait until the fresh cycle completes.
+indivisible record operation can exceed its allowance. The resident memory
+routine scans the records awaiting tracing and removes weak entries before
+reclamation. The sweep traverses the object inventory, reclaims Table,
+upvalue, Closure, dead Thread and String storage, and can shrink the stack of
+a retained Thread during a full collection. These operations use ordinary CPU
+cycles and are not charged a second time per work word. The rest of the
+quantum is charged for the actual work it performs. Device time advances for
+both, while interrupt entry and execution of the following instruction wait
+until the fresh cycle completes.
 
 Collection between reservation attempts for `NEWT` or a table insertion can
 pause execution with the console clock stopped. For an instruction suspended
-between attempts, the resident sweep runs on ordinary CPU grants: devices
-continue to advance while it runs. The CPU settles any
-unpaid cycles already accepted for the issuing instruction before the
+between attempts, resident tracing, weak-entry removal and sweeping run on
+ordinary CPU grants: devices continue to advance. The CPU settles any unpaid
+cycles already accepted for the issuing instruction before the
 routine runs, and does not charge them again on retry. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical
 budget and when its backing storage does not fit. After collection, the CPU
@@ -1531,8 +1535,8 @@ than three cycles defer the assist, not the reservation. An indivisible
 scan such as a record header may exceed the requested work. The charge stays
 with the instruction even if the reservation later fails or parks. A retry does not
 repay completed work. An explicit step or full collection also pays 3 cycles per work word,
-including work to finish an already active cycle, except for instructions
-executed by the resident sweep during a full collection. This also applies when
+including work to finish an already active cycle, except for the ordinary
+CPU cycles of the resident routine during a full collection. This also applies when
 program replacement requests a collection to free its static region.
 If an allocation fails and the issuing instruction performs emergency
 collection before retrying, it pays the same price for that work, even if

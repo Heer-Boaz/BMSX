@@ -5,7 +5,8 @@ static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFF
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_NEWT_OFFSET);
 static_assert(HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::DirectRecovery) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
-static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
+static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
+static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
 
 void CPU::initializeHeapService() {

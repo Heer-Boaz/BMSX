@@ -12,10 +12,10 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Count,
 };
 
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 7u;
+constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION = 8u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8u;
@@ -36,7 +36,7 @@ constexpr uint32_t HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
 constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0xc00;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 16;
-constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 128;
+constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 152;
 
 enum class HeapServiceExecStage : uint32_t { Idle, First, Retry };
 
@@ -49,7 +49,10 @@ enum class HeapServiceNewtStage : uint32_t { Idle, Direct, Scheduled, RetryCurre
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
-enum class HeapServiceGcStage : uint32_t { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep };
+enum class HeapServiceGcStage : uint32_t {
+	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
+	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear,
+};
 
 // Locals of the original object sweep quantum, retained across derived-view
 // notifications. Object count and cursor are not committed at such a handoff.
@@ -63,5 +66,8 @@ enum class HeapServiceObjectSweepField : uint32_t {
 	ProtectedBlock = 52, ProtectedCapacity = 56,
 };
 enum class HeapServiceObjectSweepAction : uint32_t { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord };
+
+constexpr uint32_t HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
+enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 };
 
 } // namespace bmsx

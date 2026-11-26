@@ -2506,25 +2506,37 @@ dispatch_continue:
 
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
 	if (heapServiceActive()) {
-		const auto sweep = m_heap.sweepStage();
+		const auto gcStage = m_heap.serviceStage();
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				switch (sweep) {
+				switch (gcStage) {
+					case HeapServiceGcStage::FullTrace:
+					case HeapServiceGcStage::MaintenanceTrace: {
+						const auto& services = m_systemImage->heapServiceFunctions;
+						const auto work = m_heap.finishTraceQuantum(services[static_cast<size_t>(HeapServiceOperation::Trace)],
+							services[static_cast<size_t>(HeapServiceOperation::WeakClear)], gcStage);
+						if (gcStage == HeapServiceGcStage::FullTrace) chargeCollectionWork(work);
+						break;
+					}
+					case HeapServiceGcStage::FullWeakClear:
+					case HeapServiceGcStage::MaintenanceWeakClear:
+						m_heap.finishWeakQuantum();
+						break;
 					case HeapServiceGcStage::FullObjectSweep:
 					case HeapServiceGcStage::AllocationRecoveryObjectSweep: {
 						const auto& services = m_systemImage->heapServiceFunctions;
-						m_heap.finishObjectSweep(sweep,
+						m_heap.finishObjectSweep(gcStage,
 							services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
 							services[static_cast<size_t>(HeapServiceOperation::StringSweep)]);
 						break;
 					}
 					case HeapServiceGcStage::FullStringSweep:
 					case HeapServiceGcStage::AllocationRecoveryStringSweep:
-						m_heap.finishStringSweep(sweep);
-						if (sweep == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();
+						m_heap.finishStringSweep(gcStage);
+						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();
 						break;
 					case HeapServiceGcStage::Idle:
 						finishExecutionFloor();
@@ -2542,7 +2554,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return sweep != HeapServiceGcStage::Idle && kind == CpuRunKind::Scheduled
+		return gcStage != HeapServiceGcStage::Idle && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {
@@ -2561,7 +2573,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			const auto words = std::clamp(instructionBudget / GC_WORK_WORD_CYCLES, 1, static_cast<int>(GC_STEP_WORDS));
 			const auto& services = m_systemImage->heapServiceFunctions;
 			chargeCollectionWork(m_heap.stepFullCollection(epochs, words,
-				services[static_cast<size_t>(HeapServiceOperation::StringSweep)], services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)]));
+				services[static_cast<size_t>(HeapServiceOperation::StringSweep)], services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
+				services[static_cast<size_t>(HeapServiceOperation::Trace)], services[static_cast<size_t>(HeapServiceOperation::WeakClear)]));
 			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
 			if (heapServiceActive()) return RunResult::Yielded;
 			instructionBudget = instructionBudgetRemaining;

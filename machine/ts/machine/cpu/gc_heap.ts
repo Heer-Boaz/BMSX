@@ -1,7 +1,7 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import {
 	HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceGcField, HeapServiceGcStage, HeapServiceObjectSweepField,
-	HeapServiceObjectSweepAction,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceObjectSweepAction, HeapServiceTraceField,
 } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
@@ -88,6 +88,9 @@ export class GcHeap {
 	private readonly stringSweepArgs: number[];
 	private readonly objectSweepOffset: number;
 	private readonly objectSweepArgs: number[];
+	private readonly traceOffset: number;
+	private readonly traceArgs: number[];
+	private readonly weakArgs: number[];
 	public phase(): GcPhase {
 		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
@@ -121,9 +124,12 @@ export class GcHeap {
 		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
 		this.sweepServiceOffset = management + HEAP_SERVICE_GC_OFFSET;
 		this.objectSweepOffset = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
+		this.traceOffset = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 		const allocator = arena.allocatorStateOffset();
 		this.stringSweepArgs = [cpu.stringPool.metadataOffset, allocator, budget.occupiedOffset, 0, 0];
 		this.objectSweepArgs = [this.controlOffset, allocator, budget.occupiedOffset, this.objectSweepOffset, 0, 0, 0, 0];
+		this.traceArgs = [this.controlOffset, allocator, cpu.stringPool.metadataOffset, this.traceOffset, modeKey, 0, 0, 0];
+		this.weakArgs = [this.controlOffset, allocator, cpu.stringPool.metadataOffset, this.traceOffset, modeKey, newIndexKey, 0];
 		this.threads = new ThreadRecords(memory, arena, budget);
 		this.tables = new TableRecords(this, newIndexKey);
 	}
@@ -665,13 +671,17 @@ export class GcHeap {
 		} finally { this.diagnostics?.endStep(); }
 	}
 
-	public stepFinalMark(limit = GC_STEP_WORDS): number {
+	public stepFinalMark(limit = GC_STEP_WORDS, traceFunction = 0, weakFunction = 0, traceStage = HeapServiceGcStage.Idle): number {
 		this.diagnostics?.beginStep();
 		this.diagnostics?.beginAtomic();
-		try { return this.accountEpochWork(this.finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit)); }
+		try {
+			const work = this.finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit, traceFunction, weakFunction, traceStage);
+			return traceFunction !== 0 && this.cpu.heapServiceActive() ? work : this.accountEpochWork(work);
+		}
 		finally { this.diagnostics?.endStep(); }
 	}
-	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean, limit: number): number {
+	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean, limit: number,
+		traceFunction = 0, weakFunction = 0, traceStage = HeapServiceGcStage.Idle): number {
 		let work = 0;
 		if (this.remarkStage() === RemarkStage.None) this.setRemarkStage(RemarkStage.Threads);
 		if (this.remarkStage() <= RemarkStage.Weak) {
@@ -694,13 +704,38 @@ export class GcHeap {
 		}
 		if (this.remarkStage() === RemarkStage.Trace) {
 			this.diagnostics?.phase('traceNanoseconds');
-			work = this.traceQuantum(true, limit, work);
-			if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0 || this.indexWord(GC_TRACE_HEAD) !== 0)
+			if (traceFunction !== 0) {
+				this.beginTraceQuantum(traceFunction, traceStage, true, limit, work, 0);
 				return work;
-			this.setRemarkStage(RemarkStage.ClearWeak);
-			if (work >= limit) return work;
+			}
+			return this.finishAtomicTrace(limit, this.traceQuantum(true, limit, work));
 		}
-		work += this.clearWeakQuantum(limit - work);
+		return this.atomicWeakWork(limit, work, weakFunction, traceStage, 0);
+	}
+
+	private finishAtomicTrace(limit: number, work: number, weakFunction = 0, traceStage = HeapServiceGcStage.Idle, mirror = 0): number {
+		if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0 || this.indexWord(GC_TRACE_HEAD) !== 0)
+			return work;
+		this.setRemarkStage(RemarkStage.ClearWeak);
+		return work >= limit ? work : this.atomicWeakWork(limit, work, weakFunction, traceStage, mirror);
+	}
+
+	private atomicWeakWork(limit: number, work: number, weakFunction: number, traceStage: HeapServiceGcStage, mirror: number): number {
+		if (weakFunction !== 0) {
+			const memory = this.memory, context = this.traceOffset;
+			memory.writeRamRecordWord(context + HeapServiceTraceField.Work, work);
+			memory.writeRamRecordWord(context + HeapServiceTraceField.Limit, limit);
+			memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, this.cpu.stringPool.takeMarkWork());
+			memory.writeRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage, traceStage === HeapServiceGcStage.FullTrace
+				? HeapServiceGcStage.FullWeakClear : HeapServiceGcStage.MaintenanceWeakClear);
+			this.weakArgs[6] = mirror;
+			this.cpu.beginHeapService(weakFunction, this.weakArgs);
+			return work;
+		}
+		return this.finishAtomicCollection(work + this.clearWeakQuantum(limit - work));
+	}
+
+	private finishAtomicCollection(work: number): number {
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_TRACE_RECORD) !== 0 || this.indexWord(GC_WEAK_VISITS) !== 0) return work;
 		this.memory.writeRamRecordByte(this.controlOffset + 1, this.white() ^ 1);
 		this.memory.writeRamRecordWord(this.controlOffset + GC_SWEEP_LINK, this.controlOffset + GC_OBJECT_HEAD);
@@ -889,7 +924,8 @@ export class GcHeap {
 	}
 
 	public step(t0: Value = valueNil(), t1: Value = valueNil(), t2: Value = valueNil(), growingThread = 0, compactThreads = false,
-		limit = GC_STEP_WORDS, stringSweepFunction = 0, stringSweepStage = HeapServiceGcStage.Idle, objectSweepFunction = 0): number {
+		limit = GC_STEP_WORDS, stringSweepFunction = 0, stringSweepStage = HeapServiceGcStage.Idle,
+		objectSweepFunction = 0, traceFunction = 0): number {
 		// Explicit and space-exhausted collection can finish the final pass synchronously.
 		if (this.finalMarkPending()) return this.finishFinalMark(t0, t1, t2);
 		this.diagnostics?.beginStep();
@@ -897,7 +933,11 @@ export class GcHeap {
 			const occupied = this.arena.occupiedBytes();
 			const stopBeforeStrings = stringSweepFunction !== 0;
 			const stopBeforeObjects = objectSweepFunction !== 0;
-			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit, stopBeforeStrings, stopBeforeObjects);
+			const traceStage = stringSweepStage === HeapServiceGcStage.FullStringSweep
+				? HeapServiceGcStage.FullTrace : HeapServiceGcStage.MaintenanceTrace;
+			const work = this.stepWork(t0, t1, t2, growingThread, compactThreads, limit, stopBeforeStrings, stopBeforeObjects,
+				traceFunction, traceStage, occupied);
+			if (traceFunction !== 0 && this.cpu.heapServiceActive()) return work;
 			if (work < limit && (stopBeforeStrings || stopBeforeObjects)) {
 				const phase = this.phase();
 				if (stopBeforeObjects && phase === GcPhase.Sweep) {
@@ -944,7 +984,8 @@ export class GcHeap {
 	}
 
 	private stepWork(t0: Value, t1: Value, t2: Value, growingThread: number, compactThreads: boolean, limit: number,
-		stopBeforeStrings: boolean, stopBeforeObjects: boolean): number {
+		stopBeforeStrings: boolean, stopBeforeObjects: boolean, traceFunction: number, traceStage: HeapServiceGcStage,
+		occupied: number): number {
 		let work = 0;
 		if (this.remarkStage() !== RemarkStage.None) {
 			work += this.remarkVisits(limit);
@@ -976,19 +1017,12 @@ export class GcHeap {
 				case GcPhase.Mark:
 				case GcPhase.MarkAgain:
 					this.diagnostics?.phase(this.phase() === GcPhase.Mark ? 'traceNanoseconds' : 'markAgainNanoseconds');
-					work = this.traceQuantum(false, limit, work);
-					if (work < limit) {
-						if (this.phase() === GcPhase.Mark) {
-							this.setRemarkStage(RemarkStage.Threads);
-							work += this.remarkVisits(limit - work);
-							if (this.remarkStage() !== RemarkStage.Roots) return work;
-							work = this.remarkRoots(t0, t1, t2, limit, work, false);
-							if (this.phase() === GcPhase.Mark) return work;
-						} else {
-							this.setPhase(GcPhase.Atomic);
-							return work;
-						}
+					if (traceFunction !== 0) {
+						this.beginTraceQuantum(traceFunction, traceStage, false, limit, work, occupied);
+						return work;
 					}
+					work = this.finishMajorTrace(t0, t1, t2, limit, this.traceQuantum(false, limit, work));
+					if (work >= limit || this.phase() !== GcPhase.MarkAgain) return work;
 					break;
 				case GcPhase.Atomic: return work;
 				case GcPhase.Sweep:
@@ -1006,6 +1040,17 @@ export class GcHeap {
 			}
 		}
 		return work;
+	}
+	private finishMajorTrace(t0: Value, t1: Value, t2: Value, limit: number, work: number): number {
+		if (work >= limit) return work;
+		if (this.phase() === GcPhase.MarkAgain) {
+			this.setPhase(GcPhase.Atomic);
+			return work;
+		}
+		this.setRemarkStage(RemarkStage.Threads);
+		work += this.remarkVisits(limit - work);
+		if (this.remarkStage() !== RemarkStage.Roots) return work;
+		return this.remarkRoots(t0, t1, t2, limit, work, false);
 	}
 	/** The owner retries its actual request after each recovered epoch. */
 	public recoverAllocation(next: LuaAllocationRecovery, t0 = valueNil(), t1 = valueNil(),
@@ -1026,14 +1071,66 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
 		this.cpu.requestYield();
 	}
-	public stepFullCollection(epochs: number, words: number, stringSweepFunction: number, objectSweepFunction = 0): number {
-		const work = this.finalMarkPending() ? this.stepFinalMark(words)
-			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, stringSweepFunction, HeapServiceGcStage.FullStringSweep, objectSweepFunction);
+	public stepFullCollection(epochs: number, words: number, stringSweepFunction: number, objectSweepFunction = 0,
+		traceFunction = 0, weakFunction = 0): number {
+		const work = this.finalMarkPending() ? this.stepFinalMark(words, traceFunction, weakFunction, HeapServiceGcStage.FullTrace)
+			: this.step(valueNil(), valueNil(), valueNil(), 0, true, words, stringSweepFunction, HeapServiceGcStage.FullStringSweep,
+				objectSweepFunction, traceFunction);
 		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, epochs - 1);
 		return work;
 	}
-	public sweepStage(): HeapServiceGcStage {
+	public serviceStage(): HeapServiceGcStage {
 		return this.memory.readRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage);
+	}
+
+	private beginTraceQuantum(functionAddress: number, stage: HeapServiceGcStage, atomic: boolean, limit: number,
+		work: number, occupied: number): void {
+		const memory = this.memory, context = this.traceOffset;
+		if (!atomic) memory.writeRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.OccupiedBefore, occupied);
+		memory.writeRamRecordWord(context + HeapServiceTraceField.Limit, limit);
+		memory.writeRamRecordWord(context + HeapServiceTraceField.Atomic, +atomic);
+		memory.writeRamRecordWord(context + HeapServiceTraceField.MirrorPolicy, 0);
+		memory.writeRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage, stage);
+		this.runTraceQuantum(functionAddress, work, atomic);
+	}
+
+	private runTraceQuantum(functionAddress: number, work: number, atomic: boolean): void {
+		const memory = this.memory, context = this.traceOffset;
+		memory.writeRamRecordWord(context + HeapServiceTraceField.Work, work);
+		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, this.cpu.stringPool.takeMarkWork());
+		const thread = this.cpu.activeThread.address;
+		this.traceArgs[5] = thread;
+		this.traceArgs[6] = atomic ? this.cpu.pendingOperandTop(thread) : 0;
+		this.traceArgs[7] = memory.readRamRecordWord(context + HeapServiceTraceField.MirrorPolicy);
+		this.cpu.beginHeapService(functionAddress, this.traceArgs);
+	}
+
+	/** Finish the source quantum; only the still-native suffix can owe CPU cycles. */
+	public finishTraceQuantum(functionAddress: number, weakFunction: number, stage: HeapServiceGcStage): number {
+		const memory = this.memory, context = this.traceOffset, state = this.sweepServiceOffset;
+		const atomic = memory.readRamRecordWord(context + HeapServiceTraceField.Atomic) !== 0;
+		const limit = memory.readRamRecordWord(context + HeapServiceTraceField.Limit);
+		const traced = this.cpu.heapServiceResult();
+		this.cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(context + HeapServiceTraceField.PendingStringWork));
+		const work = atomic ? this.finishAtomicTrace(limit, traced, weakFunction, stage,
+			memory.readRamRecordWord(context + HeapServiceTraceField.MirrorPolicy))
+			: this.finishMajorTrace(valueNil(), valueNil(), valueNil(), limit, traced);
+		if (this.cpu.heapServiceActive()) return work - traced;
+		if (!atomic && work < limit && this.phase() === GcPhase.MarkAgain) {
+			// Mark -> Remark -> MarkAgain can all share the source allowance.
+			this.runTraceQuantum(functionAddress, work, false);
+		} else {
+			if (atomic) this.accountEpochWork(work);
+			else this.finishStepWork(memory.readRamRecordWord(state + HeapServiceGcField.OccupiedBefore), work);
+			memory.writeRamRecordWord(state + HeapServiceGcField.Stage, HeapServiceGcStage.Idle);
+		}
+		return work - traced;
+	}
+
+	public finishWeakQuantum(): void {
+		this.cpu.stringPool.resumeMarkWork(this.memory.readRamRecordWord(this.traceOffset + HeapServiceTraceField.PendingStringWork));
+		this.accountEpochWork(this.finishAtomicCollection(this.cpu.heapServiceResult()));
+		this.memory.writeRamRecordWord(this.sweepServiceOffset + HeapServiceGcField.Stage, HeapServiceGcStage.Idle);
 	}
 
 	private publishSweepQuantum(stage: HeapServiceGcStage, occupied: number, prefixWork: number, limit: number): void {

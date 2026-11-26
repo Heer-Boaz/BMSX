@@ -6,10 +6,10 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 7;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 8;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -29,7 +29,7 @@ export const HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 export const HEAP_SERVICE_FRAME_OFFSET = 0x880;
 export const HEAP_SERVICE_VALUE_OFFSET = 0xc00;
 export const HEAP_SERVICE_FRAME_COUNT = 16;
-export const HEAP_SERVICE_VALUE_COUNT = 128;
+export const HEAP_SERVICE_VALUE_COUNT = 152;
 
 export const enum HeapServiceExecStage { Idle, First, Retry }
 
@@ -42,7 +42,10 @@ export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, 
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
-export const enum HeapServiceGcStage { Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep }
+export const enum HeapServiceGcStage {
+	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
+	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear,
+}
 
 // Locals of the original object sweep quantum, retained across derived-view
 // notifications. Object count and cursor are not committed at such a handoff.
@@ -56,3 +59,6 @@ export const enum HeapServiceObjectSweepField {
 	ProtectedBlock = 52, ProtectedCapacity = 56,
 }
 export const enum HeapServiceObjectSweepAction { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord }
+
+export const HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
+export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 }

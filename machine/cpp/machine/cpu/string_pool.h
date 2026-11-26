@@ -49,6 +49,7 @@ public:
 	void markReachable(StringId id);
 	void markLocalRoots();
 	size_t takeMarkWork();
+	void resumeMarkWork(size_t work) { m_markWork = work; }
 	void beginSweep();
 	u32 estimateSweepWork() const;
 	size_t sweepStep(size_t allowance);

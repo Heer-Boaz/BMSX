@@ -449,6 +449,7 @@ export class StringPool {
 		this.markWork = 0;
 		return work;
 	}
+	public resumeMarkWork(work: number): void { this.markWork = work; }
 
 	public beginSweep(): void {
 		const ready = this.metadata(REHASH_READY);
