@@ -1,10 +1,11 @@
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { tableConstructorHints } from '../helpers/table_constructor';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueBuiltinFunction, valueInteger, valueIsTable, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { createTestSystemCpu, disassembleTestBlua32Functions, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('O3 predicts a fresh local table shape without moving or replacing stores', () => {
 	const source = `
@@ -23,13 +24,13 @@ plain[10] = 60
 return receiver.x, forwarded.x, plain.alpha, plain.beta, plain[1], plain[2], plain[10], plain
 `;
 	for (const optLevel of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'table_shapes.lua', optLevel));
-		const text = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
-		const capacities = Array.from(text.matchAll(/\bNEWT r\d+, (\d+), (\d+)/g), match => match.slice(1).map(Number));
+		const compiled = compileHeapServiceSystem(source, optLevel, [], 'table_shapes.lua');
+		const image = linkTestSystemBlua32(compiled);
+		const capacities = tableConstructorHints(compiled, compiled.entryProtoIndex);
 		assert.deepEqual(capacities, optLevel === 3 ? [[0, 0], [0, 1], [0, 1], [2, 2]] : [[0, 0], [0, 1], [0, 0], [0, 0]]);
 		const { cpu } = createTestSystemCpu(image);
 		cpu.setGlobalByKey(cpu.stringPool.find('setmetatable')!, valueBuiltinFunction(BuiltinFunctionId.SetMetatable));
-		assert.equal(cpu.runUntilDepth(0, 1_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		const results = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(results.slice(0, -1), [valueNil(), ...[32, 41, 42, 51, 52, 60].map(valueInteger)]);
@@ -55,9 +56,8 @@ local function add_captured_field()
 end
 return shadow, original, captured, add_captured_field, replacement
 `;
-	const image = linkTestSystemBlua32(compileLuaSource(source, 'table_shape_boundaries.lua', 3));
-	const text = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
-	const capacities = Array.from(text.matchAll(/\bNEWT r\d+, (\d+), (\d+)/g), match => match.slice(1).map(Number));
+	const compiled = compileLuaSource(source, 'table_shape_boundaries.lua', 3);
+	const capacities = tableConstructorHints(compiled, compiled.entryProtoIndex);
 	assert.deepEqual(capacities, [[0, 0], [0, 0], [0, 0], [0, 0]]);
 });
 
@@ -81,14 +81,14 @@ local result<const>, status<const> = build()
 return result.original, result.one, result.two, result.three, result.four, status, result
 `;
 	for (const level of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'table_growth_request.lua', level));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, level, [], 'table_growth_request.lua'));
 		const fieldRuns = image.symbols.functionAddresses.map(address => Array.from(
 			disassembleTestBlua32Functions(image, [address]).matchAll(/; \+(\d+) hash slots/g), match => Number(match[1]),
 		)).filter(run => run.length > 0);
 		assert.equal(fieldRuns.length > 0, level === 3);
 		for (const run of fieldRuns) assert.deepEqual(run, [2, 2, 1]);
 		const { cpu } = createTestSystemCpu(image);
-		assert.equal(cpu.runUntilDepth(0, 10_000), RunResult.Halted);
+		runGuestToHalt(cpu, 100_000);
 		const results = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(results.slice(0, -1), [7, 13, 12, 14, 15, 20].map(valueInteger));
 		assert.equal(cpu.gc.tables.hashSize(valuePayload(results[6])), 8);

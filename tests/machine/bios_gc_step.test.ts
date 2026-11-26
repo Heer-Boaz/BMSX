@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
@@ -30,12 +29,7 @@ const driver = 'module<const>\n'
 const physicalAssist = GC_LAST_EPOCH_WORK + 8;
 
 function fixture(optLevel: 0 | 3) {
-	const extras = ['gc_pace', 'heap_admission', 'word_arithmetic', 'gc_epoch', 'gc_mark_quantum', 'gc_runtime_layout',
-		'gc_atomic_quantum', 'gc_sweep_quantum', 'gc_step', 'gc_vblank', 'gc_maintenance'].map(name => {
-		const path = `kernel/${name}`;
-		return { path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') };
-	});
-	const compiled = compileHeapServiceSystem('halt_until_irq', optLevel, [...extras, { path: 'test/driver', source: driver }]);
+	const compiled = compileHeapServiceSystem('halt_until_irq', optLevel, [{ path: 'test/driver', source: driver }]);
 	const linked = linkTestSystemBlua32(compiled);
 	const object = encodeCompiledProgramObject(compiled);
 	const indexes = ['vblank_maintenance', 'finish'].map(exportPathKey => {

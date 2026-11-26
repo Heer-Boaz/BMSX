@@ -4,12 +4,11 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { f32BitsToNumber, numberToF32Bits } from '../../machine/ts/common/float32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { TRIG32_INPUT_WORDS, TRIG32_ROM_SOURCE } from '../helpers/trig32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
@@ -24,11 +23,11 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 local boot<const> = require('test/boot')
 trig_roots = { math.sin, math.cos, math.tan, function(fn, value) return boot.pcall(fn, value) end }
 return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules,
+		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
 			{ entrySource, optLevel, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		runGuestToHalt(cpu, 100000);
 		const completed = materializeCpuCompletionValues(cpu);
 		const functions = completed.slice(0, 3).map(value => v.asClosure(value, cpu.gc));
 		const protectedCall = v.asClosure(completed[3], cpu.gc);
@@ -73,13 +72,12 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 }
 
 for (const optLevel of [3] as const) test(`BIOS trig O${optLevel}: physical ROM checks every reference and native raw results/cycles`, () => {
-	const program = compileLuaChunkToProgram(parseLuaChunk(TRIG32_ROM_SOURCE, 'trig32-rom.lua'), modules,
+	const program = compileTestSystemWithHeap(parseLuaChunk(TRIG32_ROM_SOURCE, 'trig32-rom.lua'), modules,
 		{ entrySource: TRIG32_ROM_SOURCE, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image);
 	cpu.installBootPrimitives();
 	const budget = 100_000_000;
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	runGuestToHalt(cpu, budget);
 	const results = materializeCpuCompletionValues(cpu);
 	assert.equal(results.length, 12);
 	assert.deepEqual(results.slice(3, 6), [v.valueFloatBits(0x80000000), v.valueFloat(1), v.valueFloatBits(0x80000000)]);

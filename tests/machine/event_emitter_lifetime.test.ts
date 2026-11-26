@@ -1,3 +1,4 @@
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { asClosure, valueInteger, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -225,7 +226,7 @@ function resume_emission()
  assert(next(events._global_listeners) == nil and next(events._scoped_listeners) == nil)
 end
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		const snapshot = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
@@ -256,7 +257,7 @@ function failure_kernel(count)
  return true
 end
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('failure_kernel')!), cpu.gc);
 		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
 		let first = 0;
@@ -303,13 +304,13 @@ function finish_traversal()
  assert(next(events._subscriptions_by_subscriber) == nil and next(events._global_listeners) == nil)
 end
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		cpu.collectTrackedHeapBytes();
 		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('finish_traversal')!), cpu.gc));
-		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 100000), RunResult.Halted);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 	});
 
@@ -338,7 +339,7 @@ end
 assert(received == 64 and next(events._subscriptions_by_subscriber) == nil)
 assert(next(events._global_listeners) == nil and next(events._scoped_listeners) == nil)
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 	});
 
@@ -348,7 +349,7 @@ function faulty_handler(self) self.missing_callback() end
 port:on({ event = 'fault', handler = faulty_handler })
 function emit_fault() port:emit('fault'); error('faulty handler returned normally') end
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('emit_fault')!), cpu.gc));
 		for (let grant = 0; grant < 10000 && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
 			cpu.runUntilDepth(0, 1);
@@ -372,7 +373,7 @@ function success_kernel(rounds)
  assert(count == before + rounds * 5)
 end
 return true`, { optLevel });
-		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
 		const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('success_kernel')!), cpu.gc);
 		const profile = profileWarmGuestKernel(cpu, kernel, 1024);
 		assert.equal(profile.reservations, 0);

@@ -1,8 +1,9 @@
+import { BIOS_CALL_ARITY, BIOS_CALL_CONTEXT_WORDS, BiosCall } from '../../../machine/ts/spec/bmsx/bios';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
+	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { programModuleExportKey, type ProgramModuleExport } from '../lua/compiler/program';
 import type { ProgramConstValueReloc } from '../lua/compiler/program_object';
@@ -21,7 +22,9 @@ export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
 export const HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH = 'kernel/table_reserve_growth';
 export const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
+const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
 export const HEAP_SERVICE_MODULES = [
+	'kernel/allocate_record', BIOS_CREATE_TABLE_MODULE,
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -47,7 +50,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.AllocationBytes]: ['bmsx_dlmalloc_allocation_bytes', 2],
 	[HeapServiceOperation.OccupiedBytes]: ['bmsx_dlmalloc_occupied_bytes', 1],
 	[HeapServiceOperation.IsObject]: ['bmsx_dlmalloc_is_object', 2],
-	[HeapServiceOperation.CreateTable]: ['create_table', 8, HEAP_SERVICE_TABLE_MODULE_PATH],
 	[HeapServiceOperation.StringSweep]: ['sweep_step', 5, HEAP_SERVICE_STRINGS_MODULE_PATH],
 	[HeapServiceOperation.ObjectSweep]: ['sweep_objects', 8, HEAP_SERVICE_OBJECTS_MODULE_PATH],
 	[HeapServiceOperation.Trace]: ['trace_quantum', 8, HEAP_SERVICE_TRACE_MODULE_PATH],
@@ -59,6 +61,10 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.ReserveTableGrowth]: ['reserve_table_growth', 8, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH],
 	[HeapServiceOperation.ResizeTable]: ['execute_table_resize', 7, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],
+};
+
+const guestCalls: Record<Exclude<BiosCall, BiosCall.Count>, readonly [string, string]> = {
+	[BiosCall.CreateTable]: ['create_table', BIOS_CREATE_TABLE_MODULE],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */
@@ -77,8 +83,10 @@ export function linkBlua32HeapService(
 	}
 
 	const roots: number[] = [];
-	for (let op = 0; op < HeapServiceOperation.Count; ++op) {
-		const [symbol, params, path = HEAP_SERVICE_MODULE_PATH] = entries[op];
+	for (let op = 0; op < HEAP_SERVICE_ENTRY_COUNT; ++op) {
+		const selector = op - HeapServiceOperation.Count;
+		const [symbol, params, path = HEAP_SERVICE_MODULE_PATH] = selector < 0 ? entries[op]
+			: [guestCalls[selector][0], BIOS_CALL_CONTEXT_WORDS + 2 * BIOS_CALL_ARITY[selector], guestCalls[selector][1]];
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, symbol));
 		if (address === undefined) throw new Error(`Heap service entry '${symbol}' is not a linked static function.`);
 		const index = blua32FunctionIndexAtAddress(image, address);

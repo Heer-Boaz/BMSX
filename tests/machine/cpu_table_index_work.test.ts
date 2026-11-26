@@ -1,3 +1,4 @@
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -108,7 +109,7 @@ return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		const targetKey = cpu.stringPool.intern('lookup_target');
-		for (let attempts = 0; attempts < 2048 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
+		for (let attempts = 0; attempts < 16_384 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		}
@@ -125,8 +126,7 @@ return true`, 0);
 		const saved = captureCpuCheckpoint(cpu);
 		let expected: ReturnType<typeof captureCpuCheckpoint>;
 		for (let replay = 0; replay < 2; ++replay) {
-			assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Halted);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0);
+			runGuestToHalt(cpu, 100_000);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 			assert.notEqual(cpu.rootThread.protectedWord(0, ProtectedField.Base), 0, 'the outer read returns into a nonzero slot');
 			assert.equal(cpu.rootThread.protectedWord(1, ProtectedField.Base), 0, 'the discard-only handler continuation has no receiving slot');

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { asStringId, valueBool, valueIsString } from '../../machine/ts/machine/cpu/value';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -32,7 +32,7 @@ local function verify()
 end
 observed_ok,observed_error=pcall(verify)
 `, {optLevel});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.concat owns conversion independently of global tostring (O${optLevel})`, () => {
@@ -51,7 +51,7 @@ local function execute()
 end
 observed_ok,observed_error = pcall(execute)
 `, {optLevel});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.unpack preserves counts, nils, bounds and ordered index effects (O${optLevel})`, () => {
@@ -91,7 +91,7 @@ assert(not ok2, 'non-table error')
 end
 observed_ok,observed_error=pcall(execute)
 `, {optLevel});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
@@ -122,7 +122,7 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 			const operands = keyRegisterByPc.get(pc)!;
 			if (registers.get(operands.table) === cpu.getGlobalByKey(target)) visited.push(registers.getInteger(operands.key));
 		}});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.deepEqual(visited, [...Array.from({length:16}, (_,i) => i+1), ...Array.from({length:9}, (_,i) => i+1)]);
@@ -161,7 +161,7 @@ local long<const> = string.from_bytes(long_ascii,257)
 assert(#long==257 and string.byte(long,1)==65 and string.byte(long,256)==65 and string.byte(long,257)==65,
  'chunk boundary')
 `, {optLevel});
-		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
 	});

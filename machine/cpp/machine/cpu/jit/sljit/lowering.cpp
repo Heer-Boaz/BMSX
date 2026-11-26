@@ -225,7 +225,7 @@ void NativeLowering::lower(const NativeInstruction& source) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// The translator selects the events; here only emit the actual counter.
 	constexpr std::array<sljit_sw, 6> counters{
-		-1, offsetof(DiagnosticNativeOpcodeCounts, newt), offsetof(DiagnosticNativeOpcodeCounts, call),
+		-1, offsetof(DiagnosticNativeOpcodeCounts, biosCall), offsetof(DiagnosticNativeOpcodeCounts, call),
 		offsetof(DiagnosticNativeOpcodeCounts, setfield), offsetof(DiagnosticNativeOpcodeCounts, concat),
 		offsetof(DiagnosticNativeOpcodeCounts, concatn),
 	};

@@ -42,7 +42,7 @@ try {
 				assert.equal(cpu.readFramePc(depth - 1), pc);
 				assert.ok(cpu.isHaltedUntilIrq(), 'completion evaluates a parked scope without resuming it');
 			}
-		});
+		}, undefined, 64);
 		assert.equal(suspensions, expectedSuspensions);
 		const result = execFileSync(nativeRunner, [path, 'frame'], { encoding: 'utf8' });
 		assert.equal(result.trim(), String(expectedSuspensions), 'native restored the same suspended cases');

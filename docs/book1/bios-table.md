@@ -32,6 +32,27 @@ Tables and their retained values use the shared
 [language allocation budget](cpu.md#sec-cpu-language-allocation-and-lifetime);
 they do not reserve a mapped byte buffer suitable for a device transfer.
 
+## Constructing an empty Table {#sec-bios-table-construction}
+
+In BLua, use a table constructor such as `{}` or `{12, 34, name = "item"}`.
+The construction service reserves storage first; the ordinary assignment
+instructions supply the entries afterward.
+
+An instruction sequence can reserve a Table directly with
+[`BIOSCALL`](cpu.md#sec-cpu-calls-and-captured-values) selector 0. Supply
+two Integer arguments, each from 0 through 32,767. The first requests array
+slots; the second requests hash slots. For example, set `R(5)` to 8 and
+`R(6)` to 3, then execute `BIOSCALL R(4), 0, 2`. On success `R(4)` holds
+an empty Table with eight array slots and four hash slots. The two input
+registers are unchanged. A nonzero hash request reserves the least power of
+two that can hold it. A zero request reserves no slots of that kind.
+
+Capacity does not add entries or determine the Table's length. It does
+reserve storage against the [language allocation budget](cpu.md#sec-cpu-language-allocation-and-lifetime).
+Arguments outside the stated range or of any other value kind raise
+`INVALID_ARGUMENT`. If collection and retry cannot supply the reservation,
+the call raises `OUT_OF_MEMORY` without returning a Table.
+
 ## Tables, lengths and visible effects {#sec-bios-table-tables-lengths-and-visible-effects}
 
 Sequence keys start at one. Zero and negative numeric keys remain ordinary

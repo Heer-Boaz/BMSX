@@ -157,6 +157,9 @@ export function visitInstructionUses<T>(
 			visitRegisterRange(state, visitor, instruction.a, instruction.c);
 			visitRegister(state, visitor, instruction.b);
 			break;
+		case OpCode.BIOSCALL:
+			visitRegisterRange(state, visitor, instruction.a + 1, instruction.c);
+			break;
 		case OpCode.CALL: {
 			const count = decodeValueCount(instruction.b, maxRegister - instruction.a);
 			visitRegisterRange(state, visitor, instruction.a, count + 1);
@@ -193,7 +196,7 @@ export function visitInstructionDefs<T>(
 		case OpCode.GETI:
 		case OpCode.GETFIELD:
 		case OpCode.GETT:
-		case OpCode.NEWT:
+		case OpCode.BIOSCALL:
 		case OpCode.ADD:
 		case OpCode.SUB:
 		case OpCode.MUL:

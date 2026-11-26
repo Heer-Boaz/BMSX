@@ -1121,11 +1121,11 @@ Writes accept only table bases, including for integer and string-field forms. As
 
 `SELF` prepares both a method value and its receiver. It preserves the original `R(B)` in `R(A+1)` before looking up the string-keyed field into `R(A)`. The receiver therefore remains available as the first argument when the method value is called. Both destination writes extend `top` as needed. Preserving the original receiver also defines the result when a destination overlaps the source register.
 
-`NEWT` creates an empty table with an array-capacity request and a hash-size
-request. Neither operand supplies initial elements. A nonzero hash request
-reserves the least power of two that can hold the requested number of entries.
-The reserved slots count against the language-allocation budget, whether or
-not they contain entries.
+A table constructor obtains an empty Table from the BIOS and then inserts
+its fields. The [Table construction service](bios-table.md#sec-bios-table-construction)
+accepts separate array and hash capacity requests; neither request supplies an
+initial element. The reserved slots count against the language-allocation
+budget, whether or not they contain entries.
 
 ### Table entries and inherited reads {#sec-cpu-table-entries-and-inherited-reads}
 
@@ -1523,14 +1523,14 @@ quantum is charged for the actual work it performs. Device time advances for
 both, while interrupt entry and execution of the following instruction wait
 until the fresh cycle completes.
 
-If a physical reservation for `NEWT` fails, the allocator frees its partial
-reservation before collection. It retries the same request after the permitted
-collection cycle. For `NEWT`, a new captureless closure from a STATIC ROM
-prototype, or a table insertion suspended between attempts, resident root
-scanning, tracing, remark visits, weak-entry removal and sweeping
-run on ordinary CPU grants: devices continue to advance. The CPU settles any
-unpaid cycles already accepted for the issuing instruction before the
-routine runs, and does not charge them again on retry. A table insertion
+If a physical reservation for a new Table fails, the BIOS releases its
+partial reservation before collecting and retrying the same request. The
+caller receives a Table only when its storage is ready. Root scanning,
+tracing, final remark, weak-entry removal and sweeping within that call
+execute on ordinary CPU grants while devices continue to advance.
+The instruction's base charge is not repeated on retry. Collection work for
+a new captureless closure from a STATIC ROM prototype or a suspended table
+insertion can also run on ordinary CPU grants. A table insertion
 can pause both when its proposed capacity exceeds the remaining logical
 budget and when its backing storage does not fit. After collection, the CPU
 replans the insertion using the surviving mappings. No table or new mapping
@@ -1547,9 +1547,9 @@ observe a partly updated table.
 Logical and physical assists each request at most one work word per three
 remaining cycles of the issuing grant. Fewer than three cycles defer the
 assist, not the reservation. An indivisible scan such as a record header may
-exceed the requested work. For `NEWT` and new captureless closures from STATIC
-ROM prototypes, the resident memory routine performs these assists on
-ordinary CPU grants before attempting the reservation.
+exceed the requested work. The BIOS performs these assists on ordinary CPU grants before reserving
+storage for a new Table. Assists before a new captureless closure from a
+STATIC ROM prototype also use ordinary CPU grants.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.
@@ -1620,11 +1620,24 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
 | `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 32 |
+| `BIOSCALL` | `10H` | `A, B, C` | Invoke BIOS service `B` with exactly `C` values starting at `R(A+1)`; put its single result in `R(A)`. | 32 |
 | `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 16 |
 | `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 3 |
 | `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 3 |
 | `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 4 |
+
+`BIOSCALL` preserves the argument registers. A selector not assigned to a
+service, or a count different from that service's fixed argument count, raises
+a reserved-instruction exception. A service reports any language error at
+the call instruction without publishing a result. The
+[BIOS reference](bios-table.md#sec-bios-table-construction) specifies the
+selector and accepted values for Table construction.
+
+A BIOS call uses a separate reserved execution context. Its code consumes
+ordinary CPU cycles and may continue across grants while devices advance.
+Other program instructions and interrupts wait until the call returns or
+raises its error. The call does not change the caller's access permissions.
 
 
 
@@ -1652,17 +1665,6 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `GETFIELD` | `3CH` | `A, B, C` | `R(A) = index(R(B), K(C))`, where `K(C)` supplies the string key. | 16 |
 | `SETFIELD` | `3DH` | `A, B, C` | `index(R(A), K(B)) = RK(C)`, where `K(B)` supplies the string key. | 16 |
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
-| `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
-
-`NEWT` has a base charge of 24 cycles whether the construction succeeds or fails.
-The capacity requests determine the storage reservation against the
-language-allocation budget; they do not change that base charge. The resident
-memory routine reserves the table record and any requested array and hash
-storage, then initializes them, all using ordinary CPU cycles in addition
-to the base charge. The routine can continue across cycle grants while
-devices advance. The table becomes visible in the destination register only
-after all of its storage is ready. A retry pays for its own reservation work without
-paying the base charge again.
 
 An insertion may reserve more storage. Its base charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
@@ -1985,7 +1987,7 @@ are selected instruction base charges, not a complete timing table:
 | `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
 | `GETI`, `SETI` | 8 cycles |
 | `SELF` | 17 cycles |
-| `NEWT` | 24 cycles |
+| `BIOSCALL` | 32 cycles, plus instructions executed by the service |
 | `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
 | `CALL` | 32 cycles, plus placed values |
 | `RET` | 16 cycles, plus placed values and closed captures |

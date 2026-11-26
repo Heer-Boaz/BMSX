@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as v from '../../machine/ts/machine/cpu/value';
@@ -29,7 +29,7 @@ modules.push({ path: 'tty/console', source: consoleSource, chunk: parseLuaChunk(
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
  test(`BIOS float words O${optLevel} ${backend}: Integer/Float encoding, raw NaNs and exact binary64 narrowing`, () => {
-  const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules,
+  const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
    { entrySource, optLevel, programDomain: 'system' });
   const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
   cpu.installBootPrimitives();

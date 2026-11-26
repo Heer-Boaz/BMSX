@@ -169,6 +169,16 @@ int main(int argc, char** argv) {
 					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
 					break;
 				}
+				case 'q': {
+					int depth, cycles;
+					trace >> depth >> cycles;
+					const auto before = scheduler.nowCycles();
+					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, depth, cycles);
+					std::cout << static_cast<unsigned>(result) << ' ' << scheduler.nowCycles() - before
+						<< ' ' << cpu.heapServiceActive() << ' ' << cpu.getFrameDepth()
+						<< ' ' << cpu.readFramePc(depth - 1) << ' ' << cpu.isHaltedUntilIrq() << '\n';
+					break;
+				}
 				case 'D': {
 					int cycles;
 					trace >> cycles;
@@ -181,48 +191,18 @@ int main(int argc, char** argv) {
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
-				case 'q': {
-					u32 stop, limit;
-					trace >> stop >> limit;
-					const auto base = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_RECORD_OFFSET;
-					const int frame = cpu.getFrameDepth() - 1;
-					const auto issue = memory.readRamRecordWord(base + static_cast<u32>(HeapServiceRecordField::InstructionPc));
-					const auto before = scheduler.nowCycles();
-					u32 visited = 0;
-					bool reached = false;
-					for (u32 grant = 0; grant < limit; ++grant) {
-						if (!cpu.heapServiceActive() || cpu.allocationParked() || cpu.readFramePc(frame) != issue)
-							throw std::runtime_error("Direct NEWT lost its issuing continuation");
-						visited |= 1u << static_cast<u32>(cpu.gcHeap().serviceStage());
-						const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, 1);
-						const auto stage = memory.readRamRecordWord(base + static_cast<u32>(HeapServiceRecordField::Stage));
-						if (stage != stop) continue;
-						if ((stop == static_cast<u32>(HeapServiceRecordStage::Idle) && cpu.readLuaFaultReasonWord() == 0u)
-							|| scheduler.nowCycles() <= before)
-							throw std::runtime_error("Direct NEWT did not retire at its expected boundary");
-						std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before << ' '
-							<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes()
-							<< ' ' << cpu.luaHeap().usedBytes() << ' ' << visited << '\n';
-						reached = true;
-						break;
-					}
-					if (!reached) throw std::runtime_error("Direct NEWT did not reach the fixture stage");
-					break;
-				}
 				case 'K': {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'N' && opcode != 'C' && opcode != 'F')
-						throw std::runtime_error("Expected generated NEWT, CLOSURE or SETFIELD");
-					const bool createTable = opcode == 'N';
+					if (opcode != 'B' && opcode != 'C' && opcode != 'F')
+						throw std::runtime_error("Expected generated BIOSCALL, CLOSURE or SETFIELD");
+					const bool biosCall = opcode == 'B';
 					const bool growField = opcode == 'F';
 					const auto gate = growField ? NativeBlockExit::WriteField
-						: createTable ? NativeBlockExit::AllocateTable : NativeBlockExit::CreateClosure;
+						: biosCall ? NativeBlockExit::BiosCall : NativeBlockExit::CreateClosure;
 					const u32 expectedStage = growField ? static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)
-						: static_cast<u32>(createTable ? HeapServiceRecordStage::Scheduled : HeapServiceRecordStage::Direct);
-					const u32 expectedKind = growField ? 1u
-						: static_cast<u32>(createTable ? HeapServiceRecordKind::Table : HeapServiceRecordKind::CanonicalClosure);
+						: static_cast<u32>(HeapServiceRecordStage::Direct);
 					cpu.prepareSystemNativeCode();
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
@@ -234,18 +214,17 @@ int main(int argc, char** argv) {
 					const auto stage = memory.readRamRecordWord(management + (growField
 						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Stage)
 						: HEAP_SERVICE_RECORD_OFFSET + static_cast<u32>(HeapServiceRecordField::Stage)));
-					const auto kind = memory.readRamRecordWord(management + (growField
-						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate)
-						: HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind)));
+					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Destination)) != 0u;
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once");
 					if (result != RunResult::Yielded || !cpu.heapServiceActive()
-						|| stage != expectedStage || kind != expectedKind
-						|| cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.readCurrentInstructionPc())
+						|| (biosCall ? (!issued || cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.lastPc + 4)
+							: (stage != expectedStage || cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.readCurrentInstructionPc())))
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
-					std::cout << allocation.entries - before.entries << ' ' << stage << ' ' << kind;
-					if (growField) std::cout << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
+					std::cout << allocation.entries - before.entries;
+					if (growField) std::cout << ' ' << stage << " 1 " << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
+					else if (!biosCall) std::cout << ' ' << stage << ' ' << static_cast<u32>(HeapServiceRecordKind::CanonicalClosure);
 					std::cout << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");

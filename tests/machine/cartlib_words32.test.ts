@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestBlua32PairCpu, createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileCartlibProgram } from '../helpers/cartlib_cpu';
 import { CLOCK_WORD_CHECKS, CLOCK_WORD_MODULES, CLOCK_WORD_ROM_SOURCE } from '../helpers/clock_words32';
@@ -16,7 +16,7 @@ const modules = CLOCK_WORD_MODULES.map(path => {
 });
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`cartlib clock words O${optLevel} ${backend}: both wraps and binary32 audio conversion`, () => {
-		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(CLOCK_WORD_ROM_SOURCE), modules,
+		const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(CLOCK_WORD_ROM_SOURCE), modules,
 			{ entrySource: CLOCK_WORD_ROM_SOURCE, optLevel, programDomain: 'system' }));
 		const { cpu } = createTestSystemCpu(image, backend), budget = 1_000_000;
 		cpu.installBootPrimitives();

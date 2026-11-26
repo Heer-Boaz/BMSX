@@ -1,5 +1,4 @@
 #include "machine/cpu/jit/worker.h"
-#include "machine/cpu/jit/runtime/record_constructor.h"
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/devices/irq/controller.h"
@@ -178,39 +177,36 @@ void rejectedFieldProofIsFrozenForWorker() {
 		"the next job starts with empty profile lanes without changing the prior region's proof");
 }
 
-void recordPlanIsReadyBeforePublication() {
+void biosCallUsesTheCapturedTerminal() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	ValueSlots constants(2);
-	constants.set(0, valueString(cpu.stringPool().intern("first")));
-	constants.set(1, valueString(cpu.stringPool().intern("last")));
-	constexpr u32 page = CART_ROM_BASE;
+	constexpr u32 pc = CART_ROM_BASE;
 	std::array decoded{
-		DecodedInstruction{.c = 2, .op = static_cast<u8>(OpCode::NEWT)},
-		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = 1, .op = static_cast<u8>(OpCode::SETFIELD)},
-		DecodedInstruction{.payload = DecodedInstruction::Payload::tableSlot(-1), .b = 1, .c = 2, .op = static_cast<u8>(OpCode::SETFIELD)},
+		DecodedInstruction{.a = 70, .b = 131, .c = 2, .op = static_cast<u8>(OpCode::BIOSCALL)},
+		DecodedInstruction{.op = static_cast<u8>(OpCode::HALT)},
 	};
-	std::array<NativeBlockInstruction, decoded.size()> instructions;
-	for (u32 i = 0; i < decoded.size(); ++i) {
-		decoded[i].width = 1;
-		decoded[i].baseCycles = BASE_CYCLES[decoded[i].op];
-		instructions[i] = {&decoded[i], page + i * INSTRUCTION_BYTES};
-	}
-	const std::array sources{NativeBlockSource{std::span(instructions).first<1>()},
-		NativeBlockSource{std::span(instructions).last<2>()}};
+	decoded[0].width = 2;
+	decoded[1].width = 1;
+	for (auto& word : decoded) word.baseCycles = BASE_CYCLES[word.op];
+	const std::array head{NativeBlockInstruction{&decoded[0], pc}};
+	const std::array next{NativeBlockInstruction{&decoded[1], pc + 2 * INSTRUCTION_BYTES}};
+	const std::array sources{NativeBlockSource{head}, NativeBlockSource{next}};
 	NativeCompilerWorker worker;
 	captureRuns(worker, sources);
 	worker.submit(NativeCodeBindings(memory, cpu.stringPool(), &cpu), {.immutableSource = true});
 	decoded.fill({});
 	worker.wait();
 	auto blocks = worker.take();
-	const auto* recipe = blocks.front()->terminal.recordConstructor;
-	require(recipe && recipe->count == 2 && recipe->nextPc == page + 3 * INSTRUCTION_BYTES,
-		"the worker builds the recipe from the captured source and page provenance");
-	require(recipe->continuation[0] == nullptr && recipe->continuation[1] == nullptr,
-		"publication alone binds the CPU-owned continuation directory");
+	const auto& exit = blocks.front()->terminal;
+	const auto [dest, selector, argc] = exit.operands.biosCall;
+	require(exit.exit == NativeBlockExit::BiosCall && dest == 70 && selector == 131 && argc == 2
+			&& exit.currentPc == pc && exit.lastPc == pc + INSTRUCTION_BYTES && exit.nextPc == next.front().pc,
+		"the worker retains raw operands and the complete captured WIDE frontier");
+	require(exit.continuationCells[0] == nullptr && exit.continuationCells[1] == nullptr
+			&& blocks[1]->firstPc == next.front().pc,
+		"the CPU alone reenters the caller after BIOS service completion");
 }
 
 struct CpuMachine {
@@ -621,7 +617,7 @@ int main() {
 		comparisonCapturesSkippedWideBody();
 		rejectedFieldProofIsFrozenForWorker();
 		unpublishedCodeCanBeDiscarded();
-		recordPlanIsReadyBeforePublication();
+		biosCallUsesTheCapturedTerminal();
 		retainedDemandFollowsPhysicalRoots();
 		hotRootsPublishWithoutAnotherGuestVisit();
 		cpuInvalidationAndLifecycle();

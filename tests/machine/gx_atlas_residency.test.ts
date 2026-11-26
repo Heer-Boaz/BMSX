@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
@@ -80,7 +80,7 @@ return {
 		chunk: parseLuaChunk(module.source, `${module.path}.lua`),
 		source: module.source,
 	}));
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		parseLuaChunk(entrySource, 'test.lua'),
 		moduleSources,
 		{ entrySource, optLevel: 3, programDomain: 'system' },

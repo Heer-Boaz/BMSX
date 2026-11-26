@@ -18,7 +18,9 @@ static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObj
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_RECORD_CONTROL_OFFSET);
 static_assert(HEAP_SERVICE_RECORD_CONTROL_OFFSET + static_cast<u32>(HeapServiceRecordControlField::Kind) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate) + sizeof(u32) <= HEAP_SERVICE_VALUE_OFFSET);
+static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Immediate) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
+static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Word) + sizeof(u32) <= HEAP_SERVICE_VALUE_OFFSET);
+static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET);
 static_assert(HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage) + sizeof(u32)
 	== HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET);
@@ -101,8 +103,16 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 		caller.placeResultTop(result, placement.count());
 		instructionBudgetRemaining -= placement.count();
 	} else {
-		const u32 result = produced == 0 ? 0u : valuePayload(frame.registers.get(base));
-		m_memory.writeRamRecordWord(RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_RESULT_OFFSET, result);
+		const u32 management = m_heapAllocator.managementOffset();
+		const u32 biosCall = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
+		if (m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Destination)) != 0u) {
+			m_memory.writeRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Status), valuePayload(frame.registers.get(base)));
+			m_memory.writeRamRecordPair(biosCall + static_cast<u32>(HeapServiceBiosCallField::Tag),
+				valuePayload(frame.registers.get(base + 1)), valuePayload(frame.registers.get(base + 2)));
+		} else {
+			const u32 result = produced == 0 ? 0u : valuePayload(frame.registers.get(base));
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_RESULT_OFFSET, result);
+		}
 		instructionBudgetRemaining -= produced;
 	}
 	m_heapServiceView.leaveFrame();

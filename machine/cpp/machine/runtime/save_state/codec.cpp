@@ -1212,19 +1212,10 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 		writer.u32(pending.instructionPc);
 		writer.u32(pending.lastPc);
 		writer.u32(pending.nextPc);
-		if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
-			writer.u32(static_cast<u32>(PendingAllocationKind::TableAssignment));
-			writer.u32(assignment->receiver);
-			writer.u64(assignment->key);
-			writer.u64(assignment->value);
-			writer.u8(assignment->extraHashSlots);
-		} else {
-			const auto& create = std::get<PendingTableCreation>(pending.operands);
-			writer.u32(static_cast<u32>(PendingAllocationKind::TableCreation));
-			writer.i32(create.destination);
-			writer.i32(create.arraySize);
-			writer.i32(create.hashSize);
-		}
+		writer.u32(pending.receiver);
+		writer.u64(pending.key);
+		writer.u64(pending.value);
+		writer.u8(pending.extraHashSlots);
 	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
@@ -1300,19 +1291,10 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 		pending.instructionPc = reader.u32();
 		pending.lastPc = reader.u32();
 		pending.nextPc = reader.u32();
-		switch (static_cast<PendingAllocationKind>(reader.u32())) {
-		case PendingAllocationKind::TableAssignment: {
-			const u32 receiver = reader.u32();
-			const Value key = reader.u64(), value = reader.u64();
-			pending.operands = PendingTableAssignment{receiver, reader.u8(), key, value};
-			break;
-		}
-		case PendingAllocationKind::TableCreation:
-			pending.operands = PendingTableCreation{reader.i32(), reader.i32(), reader.i32()};
-			break;
-		default:
-			throw BMSX_RUNTIME_ERROR("Unsupported pending allocation kind.");
-		}
+		pending.receiver = reader.u32();
+		pending.key = reader.u64();
+		pending.value = reader.u64();
+		pending.extraHashSlots = reader.u8();
 	}
 	state.statusWord = reader.u32();
 	state.causeWord = reader.u32();

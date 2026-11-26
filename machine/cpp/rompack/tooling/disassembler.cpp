@@ -295,8 +295,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "GETT r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
 		case OpCode::SETT:
 			return "SETT r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
-		case OpCode::NEWT:
-			return "NEWT r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
+		case OpCode::BIOSCALL:
+			return "BIOSCALL r" + std::to_string(decoded.a) + ", " + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::ADD:
 		case OpCode::SUB:
 		case OpCode::MUL:
@@ -422,8 +422,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("dst", decoded.a), registerOperand("table", decoded.b), rkOperand("key", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
 		case OpCode::SETT:
 			return {registerOperand("table", decoded.a), rkOperand("key", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("value", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
-		case OpCode::NEWT:
-			return {registerOperand("dst", decoded.a), plainOperand("array", std::to_string(decoded.b)), plainOperand("hash", std::to_string(decoded.c))};
+		case OpCode::BIOSCALL:
+			return {registerOperand("dst", decoded.a), plainOperand("selector", std::to_string(decoded.b)), plainOperand("argc", std::to_string(decoded.c))};
 		case OpCode::ADD:
 		case OpCode::SUB:
 		case OpCode::MUL:

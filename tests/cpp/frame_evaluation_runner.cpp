@@ -8,6 +8,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
+#include "support/cpu_execution_budget.h"
 
 namespace {
 using namespace bmsx;
@@ -41,7 +42,7 @@ void restoreSuspended(Runtime& runtime, bool inspectFrame) {
 	if (cpu.getGlobalByKey(*cpu.stringPool().find("fixture_inject_completion")) != valueBool(true)) return;
 	const auto argument = valueInteger(depth - 1);
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
-	require(cpu.runUntilDepth(depth, 1000000) == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0,
+	require(test::runCpuWithinBudget(cpu, 1000000, depth) == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0,
 		"the named completion call must finish without a fault");
 	const auto values = runtime.readCompletionValues();
 	require(values.size() == 4 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(43)
@@ -64,8 +65,9 @@ int main(int argc, char** argv) {
 		runtime.boot();
 		auto& cpu = runtime.machine.cpu;
 		int suspensions = 0;
-		for (int grant = 0; grant < 32; ++grant) {
-			const auto result = cpu.runUntilDepth(0, 1000000);
+		const int maxGrants = mode == "frame" ? 64 : 32;
+		for (int grant = 0; grant < maxGrants; ++grant) {
+			const auto result = bmsx::test::runCpuWithinBudget(cpu, 1000000);
 			require(cpu.readLuaFaultReasonWord() == 0 && cpu.readExceptionReturnFrameDepth() == -1,
 				"guest case faulted");
 			if (result == bmsx::RunResult::Yielded) continue;

@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -29,7 +30,7 @@ set('counter')
 return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
  get('absent')
 `;
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaChunkToProgram(
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
 		parseLuaChunk(source, 'global-register-access.lua'), [boot], { entrySource: source, optLevel: level, programDomain: 'system' },
 	)));
 	cpu.installBootPrimitives();

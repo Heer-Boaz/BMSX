@@ -1,3 +1,4 @@
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { hashText } from '../../machine/ts/common/hash';
 import assert from 'node:assert/strict';
@@ -273,7 +274,7 @@ assert(string.sub(s,256,256) == string.char(0))
 assert(string.sub(s,0,1000) == s and string.sub(s,nil) == s)
 assert(string.sub(s,258,255) == '' and string.sub(s,1,0) == '')
 `, { optLevel: 3 });
-	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 10_000_000);
 	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.equal(cpu.getFrameDepth(), 0);

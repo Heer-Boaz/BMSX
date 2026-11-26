@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import * as v from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { buildRomMetadataSection } from '../../toolchain/ts/rompack/metadata_encode';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -28,7 +28,7 @@ end, fixture_bytes`;
 		...['cartlib/memory', 'cartlib/bin'].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 	].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
-	const program = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules,
+	const program = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
 		{ entrySource, programDomain: 'system', optLevel });
 	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program), backend);
 	cpu.installBootPrimitives();

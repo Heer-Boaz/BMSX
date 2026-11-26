@@ -10,7 +10,7 @@ import { runGuestToHalt } from '../helpers/cpu_test_harness';
 test('steady-state table deletion and reinsertion do not reserve guest heap', t => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest(tableIterationVectors.delete_reinsert_churn, 3));
 	cpu.installBootPrimitives();
-	runGuestToHalt(cpu, 1_000_000);
+	runGuestToHalt(cpu, 10_000_000);
 	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!), cpu.gc);
 	const table = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!));
 	assert.equal(cpu.gc.tables.storedSlotCount(table), 32);

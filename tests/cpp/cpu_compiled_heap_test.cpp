@@ -41,7 +41,7 @@ struct CpuMachine {
 };
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-void fixedHelperContinuation(OpCode operation) {
+void fixedReadContinuation() {
 	test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 4}};
@@ -52,12 +52,12 @@ void fixedHelperContinuation(OpCode operation) {
 	const u32 sourcePc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	const u32 targetPc = sourcePc + INSTRUCTION_BYTES;
 	std::vector<u8> code(3 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, static_cast<u8>(operation), operation == OpCode::NEWT ? 0 : 2, 0, operation == OpCode::NEWT ? 0 : 1);
+	writeInstruction(code, 0, static_cast<u8>(OpCode::GETI), 2, 0, 1);
 	writeInstruction(code, 1, static_cast<u8>(OpCode::KSMI), 1, 0, 7);
 	writeInstruction(code, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(sourcePc, code.data(), code.size());
-		if (operation == OpCode::GETI) machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.createTable().address()));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.createTable().address()));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], sourcePc);
 	}
 	for (int pass = 0; pass < 4; ++pass) {
@@ -73,9 +73,9 @@ void fixedHelperContinuation(OpCode operation) {
 	test::waitForNativeEntry(native.cpu, *sourcePage, sourceWord);
 	test::waitForNativeEntry(native.cpu, *targetPage, 0);
 	auto* source = sourcePage->nativeBlocks->entries[sourceWord].get();
-	const auto& exit = operation == OpCode::NEWT ? source->terminal : source->sideExits.front();
+	const auto& exit = source->sideExits.front();
 	const auto cell = exit.continuationCells[0];
-	require(exit.exit == (operation == OpCode::NEWT ? NativeBlockExit::AllocateTable : NativeBlockExit::ReadInteger) && cell
+	require(exit.exit == NativeBlockExit::ReadInteger && cell
 		&& cell == exit.continuationCells[1] && *cell == targetPage->nativeCode[0],
 		"same-frame helper binds the shared RAM successor's image-lifetime cell");
 	for (int grant : {128, 1, 2, 3, 4, 5, 6, 7}) test::runCpuParity(native.cpu, scalar.cpu, grant);
@@ -444,8 +444,7 @@ void concatRangeAtMixedLengthBoundary(bool over) {
 int main() {
 	try {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		fixedHelperContinuation(OpCode::NEWT);
-		fixedHelperContinuation(OpCode::GETI);
+		fixedReadContinuation();
 #endif
 		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);

@@ -11,6 +11,7 @@ import { parseSystemRomImage } from '../../machine/ts/rompack/image';
 import { CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET } from '../../machine/ts/spec/bmsx/rom_package';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { afterTest } from '../helpers/test_cleanup';
@@ -42,6 +43,7 @@ return probe_target(41)`;
 const assets = [
 	{ path: 'diagnostic_probe', source },
 	...BASE_FIRMWARE_MODULES,
+	...HEAP_SERVICE_MODULES.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
 	...['table', 'string/base', 'debug/scopes', 'shell/source_location'].map(path => ({
 		path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
 	})),
@@ -55,7 +57,7 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 	const executables: Uint8Array[] = [];
 	for (const includeDiagnostics of [false, true]) for (const includeSymbols of [false, true]) {
 		const tail = buildRomBlua32Tail(assets, { domain: 'system', generatedLuaModules: [], biosExports: [],
-			ramByteCount: 0x00400000, optLevel: 0, includeDiagnostics, includeSymbols, includeSources: true });
+			ramByteCount: 0x00400000, optLevel: 0, includeDiagnostics, includeSymbols, includeSources: true, preloadModules: HEAP_SERVICE_MODULES });
 		const name = `diagnostics-${+includeDiagnostics}-symbols-${+includeSymbols}`;
 		const outputs = await finalizeRompack(name, { debug: false, blua32: tail, outputDirectory: directory });
 		assert.deepEqual(outputs.map(output => output.file), [`${name}.rom`], 'no standalone symbol sidecar is published');
@@ -75,7 +77,8 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		assert.ok(target, 'the fixture contains the named diagnostic target');
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_scope')), cpu.gc),
 			[valueInteger(target.address), valueInteger(target.codeAddress)]);
-		runGuestToHalt(cpu, 100_000);
+		// The BIOS materializes descriptor Tables on ordinary guest grants.
+		runGuestToHalt(cpu, 300_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueString(cpu.stringPool.intern('probe_target')), valueBool(true), valueBool(true)]);
 		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('inspect_location')), cpu.gc), [valueInteger(target.codeAddress)]);
 		runGuestToHalt(cpu, 100_000);

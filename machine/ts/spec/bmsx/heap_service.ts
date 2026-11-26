@@ -1,3 +1,5 @@
+import { BiosCall } from './bios';
+
 // System BLua32 image extension. The descriptor lives in immutable RODATA
 // and is not part of the cartridge-callable BIOS slot list.
 export const HEAP_SERVICE_IMAGE_FLAG = 1 << 1;
@@ -6,14 +8,15 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
 	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8;
-export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HeapServiceOperation.Count;
+export const HEAP_SERVICE_ENTRY_COUNT = HeapServiceOperation.Count + BiosCall.Count;
+export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HEAP_SERVICE_ENTRY_COUNT;
 
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
@@ -57,6 +60,11 @@ export const enum HeapServiceTableGrowthField {
 	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
 }
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
+
+export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
+export const enum HeapServiceBiosCallField {
+	Destination = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+}
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }

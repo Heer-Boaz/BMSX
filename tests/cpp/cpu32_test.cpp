@@ -9,11 +9,13 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/cpu_execution_budget.h"
 #include "support/cpu_execution_parity.h"
 #include "support/number32_cpu_fixture.h"
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <string_view>
 #include <tuple>
 
 namespace {
@@ -725,7 +727,8 @@ void tableHeap() {
 }
 } // namespace
 int main(int argc, char** argv) {
-	if ((argc == 2 || ((argc == 3 || argc == 4) && std::string(argv[2]) == "--boot-primitives")) &&
+	const bool profileFullGc = argc == 5 && std::string_view(argv[4]) == "--profile-full-gc";
+	if ((argc == 2 || ((argc == 3 || argc == 4 || profileFullGc) && std::string(argv[2]) == "--boot-primitives")) &&
 		std::string(argv[1]) == "--execute-rom") {
 		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin), {});
 		Memory memory(MemoryInit{bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
@@ -738,9 +741,15 @@ int main(int argc, char** argv) {
 #endif
 		if (argc >= 3)
 			cpu.installBootPrimitives();
-		cpu.runUntilDepth(0, argc == 4 ? std::stoi(argv[3]) : 100000);
+		int fullGcCycles = 0;
+		if (test::runCpuWithinBudget(cpu, argc >= 4 ? std::stoi(argv[3]) : 100000, 0,
+			profileFullGc ? &fullGcCycles : nullptr) != RunResult::Halted) {
+			std::cerr << "ROM did not finish within its cycle grant\n";
+			return 1;
+		}
 		auto results = cpu.readCompletionValues();
 		std::cout << "budget " << cpu.instructionBudgetRemaining << " fault " << cpu.readLuaFaultReasonWord() << "\n";
+		if (profileFullGc) std::cout << "full-gc " << fullGcCycles << '\n';
 		for (size_t i = 0; i < results.size(); ++i) {
 			const auto value = results.get(i);
 			if (valueIsString(value))

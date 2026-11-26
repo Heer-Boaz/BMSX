@@ -150,8 +150,8 @@ return read(), a, b, c, d
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		let result = RunResult.Yielded;
-		for (let step = 0; step < 1000 && result === RunResult.Yielded; ++step) {
-			result = cpu.runUntilDepth(0, 13);
+		for (let step = 0; step < 2048 && result === RunResult.Yielded; ++step) {
+			result = cpu.runUntilDepth(0, [13, 59, 191, 1024][step & 3]);
 			const state = cpu.captureRuntimeState();
 			cpu.restoreRuntimeState(state);
 			assert.deepEqual(cpu.captureRuntimeState(), state);
@@ -172,7 +172,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 `, optLevel);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		runGuestToHalt(cpu, 10000);
+		runGuestToHalt(cpu, 100_000);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(0), valueInteger(0), valueInteger(1)]);
@@ -182,7 +182,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 31]) {
 	test(`open captures remain roots when open VARARG sets top to ${top} (${backend})`, () => {
 		const text = new Uint8Array(8 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.NEWT, 2, 0, 0);
+		writeInstruction(text, 0, OpCode.MOV, 2, 1, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
 		writeInstruction(text, 3, OpCode.SETGL, 0, 0, 0);
@@ -195,6 +195,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 			{ firstWord: 6, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 2 }] },
 		], globalNames: ['read'], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
 		const { cpu } = createTestSystemCpu(image, backend);
+		cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.createTable());
 		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 5 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 		assert.equal(cpu.rootThread.currentFrame!.top, top);

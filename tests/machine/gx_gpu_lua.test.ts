@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -156,18 +157,18 @@ const biosModules = [
 	},
 	...sourceModules(BIOS_MODULE_FILES),
 ];
-const systemCompiled = compileLuaChunkToProgram(
+const systemCompiled = compileTestSystemWithHeap(
 	parseLuaChunk(SYSTEM_BOOT_SOURCE, 'boot.lua'),
 	systemModules,
 	{ entrySource: SYSTEM_BOOT_SOURCE, optLevel: 3, programDomain: 'system' },
 );
-const biosCompiled = compileLuaChunkToProgram(
+const biosCompiled = compileTestSystemWithHeap(
 	parseLuaChunk(BIOS_ENTRY_SOURCE, 'bios.lua'),
 	biosModules,
 	{ entrySource: BIOS_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
 );
 const biosImage = linkTestSystemBlua32(biosCompiled);
-const biosResetCompiled = compileLuaChunkToProgram(
+const biosResetCompiled = compileTestSystemWithHeap(
 	parseLuaChunk(BIOS_RESET_ENTRY_SOURCE, 'bios_reset.lua'),
 	biosModules,
 	{ entrySource: BIOS_RESET_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },

@@ -26,7 +26,7 @@ test('a failed thread retains its physical error word, tag and authored frames',
 test('a dead coroutine is collected after its last stack roots return', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.collection, 3));
 	cpu.installBootPrimitives();
-	runGuestToHalt(cpu, 100_000);
+	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	cpu.collectTrackedHeapBytes();
 	const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak_threads')!));

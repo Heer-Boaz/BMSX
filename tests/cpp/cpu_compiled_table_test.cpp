@@ -735,42 +735,6 @@ void tableIteratorUsesNativeEdgesAndRecordsTheCursor() {
 #endif
 }
 
-void allocationChargesFixedCycles() {
-	for (const bool wide : {false, true}) {
-		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-		u32 word = 0;
-		if (wide) writeInstruction(image.text, word++, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, word++, static_cast<u8>(OpCode::NEWT), 0, 2, 3, wide ? 1 : 0);
-		const u32 successor = word;
-		writeInstruction(image.text, word++, static_cast<u8>(OpCode::K1), 1, 0, 0);
-		writeInstruction(image.text, word, static_cast<u8>(OpCode::JMP), 0, 63, 63 - word, 255);
-		image.functions = {{.firstWord = 0, .wordCount = word + 1, .maxStack = 2}};
-		CpuMachine native(image), scalar(image, true);
-		const int hash = wide ? 67 : 3;
-		const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
-		const int loopCycles = cycles + BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
-		test::runCpuParity(native.cpu, scalar.cpu, loopCycles * NATIVE_WARM_SCALE * 34);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		const auto& page = *native.cpu.activeThread()->currentFrame->decodedPage;
-		const auto index = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-		test::waitForNativeEntry(native.cpu, page, index);
-		require(page.nativeBlocks->entries[index]->terminal.exit == NativeBlockExit::AllocateTable,
-			"the charge is tested through the native allocation exit");
-#endif
-		for (auto* machine : {&native, &scalar}) {
-			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], machine->rom.textAddress);
-			machine->cpu.activeThread()->currentFrame->registers.set(1, valueNil());
-		}
-		test::runCpuParity(native.cpu, scalar.cpu, 1);
-		requireParity(native, scalar);
-		require(native.cpu.instructionBudgetRemaining == 1 - cycles
-			&& native.cpu.readFramePc(0) == native.rom.textAddress + successor * INSTRUCTION_BYTES
-			&& isNil(native.cpu.readFrameRegister(0, 1)), "successful NEWT charges only its fixed cost and stops before the successor");
-		const auto table = asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap());
-		require(table.arrayCapacity() == 2 && table.hashSlots() > static_cast<u32>(hash), "actual hash storage is rounded independently of the charge");
-	}
-}
-
 void hashGrowthKeepsReservedArray() {
 	test::Blua32TestImage image;
 	image.text.resize(INSTRUCTION_BYTES);
@@ -799,43 +763,6 @@ void hashGrowthKeepsReservedArray() {
 		require(mixed.get(keys[i]) == valueInteger(static_cast<i32>(i)), "array growth retains all ordinary hash keys");
 }
 
-void wideAllocationFailure() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 63, 63);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::NEWT), 8, 63, 63, 63);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 9, 8, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
-	writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	// The reserved exception frame also needs one value slot. Requesting 15
-	// registers leaves that slot in the existing 16-slot backing block.
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 15}, {.firstWord = 32, .wordCount = 1}};
-	image.globalNames = {"retained"}; image.exceptionFunctionIndex = 1;
-	CpuMachine native(image), scalar(image, true);
-	for (int visit = 0; visit < NATIVE_WARM_SCALE * 32; ++visit) test::runCpuParity(native.cpu, scalar.cpu, 1);
-	requireParity(native, scalar);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	const auto& frame = *native.cpu.activeThread()->frameAtDepth(0);
-	test::waitForNativeEntry(native.cpu, *frame.decodedPage, (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-	requireParity(native, scalar);
-	const auto& block = frame.decodedPage->nativeBlocks->entries[(native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-	require(block && block->terminal.exit == NativeBlockExit::AllocateTable, "the WIDE allocator is a real typed native exit, not interpreter dispatch");
-#endif
-	for (auto* m : {&native, &scalar}) {
-		auto& cpu = m->cpu; auto& root = *cpu.activeThread()->frameAtDepth(0); root.registers.set(8, valueInteger(73)); root.registers.set(9, valueNil()); root.writeControl(bmsx::FrameField::Top, 9);
-		const auto key = cpu.stringPool().find("retained"); auto retained = cpu.createTable(690000); cpu.setGlobalByKey(*key, valueTable(retained.address()));
-		cpu.collectHeap();
-	}
-	test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]); requireParity(native, scalar);
-	const auto control = native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	const int work = native.memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK);
-	require(work > 0 && native.cpu.instructionBudgetRemaining == -3 * work,
-		"a WIDE NEWT that could fit alone pays the recovery epoch, but not initialization");
-	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES
-		&& native.cpu.readFrameRegister(0, 8) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9,
-		"failed allocation retains the precise prefix, original destination and WIDE EPC after collection");
-}
 void observedArithmeticResumesAtItsOwnInstruction() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETFIELD), 9, 6, 0);
@@ -2521,11 +2448,10 @@ void hintedFieldUnderPressure(FieldPressure pressure, bool weak = false) {
 	}
 	require(result == RunResult::ParkedAllocation, "SETFIELD parks when even minimum backing is unavailable");
 	const auto pending = cpu.captureRuntimeState().pendingAllocation;
-	const auto assignment = std::get<PendingTableAssignment>(pending.operands);
 	require(cpu.readFramePc(0) == pc && pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES
 		&& pending.nextPc == pc + 2u * INSTRUCTION_BYTES
-		&& assignment.receiver == owner.address() && assignment.key == valueString(field)
-		&& assignment.value == valueInteger(91) && assignment.extraHashSlots == extraHashSlots
+		&& pending.receiver == owner.address() && pending.key == valueString(field)
+		&& pending.value == valueInteger(91) && pending.extraHashSlots == extraHashSlots
 		&& owner.hashAddress() == originalStorage && budget.usedBytes() == budgetBefore,
 		"the WIDE reservation and canonical operands are parked without publishing the store");
 	for (int step = 0; !cpu.allocationReady() && step < 120; ++step) cpu.advanceAllocationRecovery();
@@ -2672,7 +2598,7 @@ int main() {
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
 		contradictoryOwnFieldProofRetiresItsSource();
-		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); allocationChargesFixedCycles(); hashGrowthKeepsReservedArray(); wideAllocationFailure();
+		genericArraysAndHashKeys(); inheritedTableFactsAreRecheckedOnCpuEntry(); inheritedArrayReads(false); inheritedArrayReads(true); boundaryLengthAndUtf8(); selfAndNilFaults(); methodCallReturnsOriginalReceiver(); iterationChargeIgnoresVacantCapacity(); hashGrowthKeepsReservedArray();
 		nativeTypedIndexRechecksAnExternalEntry();
 		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
 		tableIteratorUsesNativeEdgesAndRecordsTheCursor();

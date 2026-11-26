@@ -31,7 +31,7 @@ end
 local hash_capacity<const> = function(size) -- T:92 C:77 A:45 B:48
 	if size <= 0 then return 0 end -- T:92 C:78-80 A:46-47 B:49-50
 	local power = 1 -- A:49 B:52
-	while power < size do -- A:50 B:53; NEWT's decoded extent fits signed Integer
+	while power < size do -- A:50 B:53; the source capacity request fits a signed Integer
 		power = power << 1 -- A:51 B:54
 	end
 	return power -- A:53 B:56

@@ -426,8 +426,14 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			assert.ok(jumped); assert.equal(jumped.nextPc, DYNAMIC_RAM_BASE + 16 * INSTRUCTION_BYTES);
 			assert.equal(jumped.lastPc, DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES);
 			assert.equal(root.terminal, jumped);
-			assert.equal(root.exits.length, 3, 'an exhausted compare has its own deferred-JMP exit');
-			assert.equal(jumped.cycles, BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]); assert.equal(root.exits.find(exit => exit !== jumped)!.cycles, BASE_CYCLES[op]);
+			const jumpPc = DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES;
+			const deferred = root.exits.find(exit => exit.exit === CompiledBlockExit.Continue && exit.nextPc === jumpPc)!;
+			assert.ok(deferred, 'an exhausted compare has its own deferred-JMP exit');
+			assert.equal(deferred.cycles, BASE_CYCLES[op]);
+			assert.equal(jumped.cycles, BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]);
+			const stringOrder = root.exits.filter(exit => exit.exit === CompiledBlockExit.StringOrder);
+			assert.equal(stringOrder.length, op === OpCode.EQ ? 0 : 1, 'ordering can suspend on dynamic strings');
+			assert.equal(root.exits.length, 3 + stringOrder.length);
 			assert.equal(cache.entries[jumpWord], null, 'a JMP reached only through its fused comparison has no redundant body');
 			for (const linked of [0, 1, 2]) {
 				const entryWord = linked === 1 ? 24 : linked === 2 ? crossPageWord : 0;

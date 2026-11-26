@@ -29,7 +29,7 @@ enum class NativeBlockExit : u8 {
 	ReadInteger,
 	WriteInteger,
 	Length,
-	AllocateTable,
+	BiosCall,
 	ControlFault,
 	ControlBoundary,
 	ExceptionReturn,
@@ -88,7 +88,7 @@ union NativeExitOperands {
 	struct Control { u16 slot, field; } control;
 	struct Upvalue { u16 slot, capture; } upvalue;
 	struct Global { u32 index; u16 slot; } global;
-	struct Allocation { u16 result, arraySize, hashSize; } allocation;
+	struct BiosCall { u16 result, selector, argc; } biosCall;
 	struct Concat { u16 result; i16 left, right; } concat;
 	struct ConcatRange { u16 result, first, count; } concatRange;
 	struct Closure { u32 address; u16 result, flags; } closure;

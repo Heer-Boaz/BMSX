@@ -8,7 +8,6 @@
 #include "machine/cpu/jit/source_policy.h"
 #include "machine/memory/memory.h"
 #include "machine/cpu/jit/runtime/block.h"
-#include "machine/cpu/jit/runtime/record_constructor.h"
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 #include "machine/cpu/jit/worker.h"
 #endif
@@ -178,11 +177,6 @@ bool CPU::installNativeRegion(Blua32ExecutionImage& image, std::span<const Nativ
 		auto& page = *source.page;
 		const u32 entry = (block->firstPc - pagePc) / INSTRUCTION_BYTES;
 		auto& exit = block->terminal;
-		if (exit.exit == NativeBlockExit::AllocateTable && exit.recordConstructor) {
-			auto& recipe = *exit.recordConstructor;
-			for (u32 bank = firstBank; bank < endBank; ++bank)
-				recipe.continuation[bank] = lookup->entrySlot(recipe.nextPc, bank);
-		}
 		if (exit.exit == NativeBlockExit::Call || nativeBlockExitResumesFrame(exit.exit)) {
 			for (u32 bank = firstBank; bank < endBank; ++bank)
 				exit.continuationCells[bank] = lookup->entrySlot(exit.nextPc, bank);

@@ -200,9 +200,12 @@ local function put_weak()
  weak_values[1] = function(x) return x + retained_value + 3 end
 end
 put_weak()`);
+	for (let grant = 0; grant < 100 && !f.cpu.isHaltedUntilIrq(); ++grant) f.target.advanceGame(10000);
+	assert.equal(f.cpu.isHaltedUntilIrq(), true, 'the cartridge has published the weak entry');
 	const weakValues = valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_values')));
 	f.cpu.gc.tables.setMetatableAddress(weakValues, valuePayload(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('weak_meta'))));
 	const reference = f.cpu.gc.tables.getInteger(weakValues, 1);
+	assert.equal(valueTag(reference), ValueTag.Closure);
 	const retained = asClosure(reference, f.cpu.gc);
 	let visited = false;
 	f.cpu.gc.tables.setInteger(weakValues, 1, valueNil());

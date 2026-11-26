@@ -25,7 +25,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, FieldMiss, FieldHitInheritedHome, FieldHitStableSlot, FieldHitAlternatingSlot, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
+enum class Workload { Registers, Tables, FieldMiss, FieldHitInheritedHome, FieldHitStableSlot, FieldHitAlternatingSlot, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, Globals, Upvalues, Varargs };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -73,17 +73,6 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 3, static_cast<u8>(OpCode::GETT), 6, 0, 2);
 		writeInstruction(text, 4, static_cast<u8>(OpCode::SETI), 0, 1, 5);
 		writeInstruction(text, 5, static_cast<u8>(OpCode::LEN), 7, 0, 0);
-		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
-		break;
-	case Workload::TableChurn:
-	case Workload::TableChurnLive:
-		image.constants = {std::string("field")};
-		writeInstruction(text, 0, static_cast<u8>(OpCode::NEWT), 0, 1, 1);
-		writeInstruction(text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
-		writeInstruction(text, 2, static_cast<u8>(OpCode::GETFIELD), 5, 0, 0);
-		writeInstruction(text, 3, static_cast<u8>(OpCode::ADD), 5, 5, 2);
-		writeInstruction(text, 4, static_cast<u8>(OpCode::SETI), 0, 1, 5);
-		writeInstruction(text, 5, static_cast<u8>(OpCode::GETI), 6, 0, 1);
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
 		break;
 	case Workload::Builtin:
@@ -222,21 +211,9 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	ValueSpan registers = cpu.activeThread()->frameAtDepth(0)->registers;
 	registers.set(0, valueInteger(1)); registers.set(1, valueInteger(3));
 	registers.set(2, valueInteger(7)); registers.set(3, valueInteger(65535));
-	std::optional<TableRecord> retained;
 	if (workload == Workload::Globals) {
 		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
-	}
-	if (workload == Workload::TableChurnLive) {
-		retained = cpu.createTable(4096, 0);
-		cpu.setGlobalByKey(cpu.stringPool().intern("retained"), valueTable(retained->address()));
-		const auto field = cpu.stringPool().intern("field");
-		for (int index = 1; index <= 4096; ++index) {
-			auto child = cpu.createTable(1, 1);
-			child.setInteger(1, valueInteger(index));
-			child.setStringKey(field, valueInteger(index));
-			retained->setInteger(index, valueTable(child.address()));
-		}
 	}
 	if (workload == Workload::FieldMiss) {
 		auto table = cpu.createTable(0, 64);
@@ -368,10 +345,6 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		|| cpu.readFrameRegister(0, 6) != valueNil() || cpu.readFrameRegister(0, 7) != valueNil())) {
 		throw std::runtime_error("Context workloads must perform dynamic constant reads and range fills.");
 	}
-	if ((workload == Workload::TableChurn || workload == Workload::TableChurnLive)
-		&& cpu.readFrameRegister(0, 6) != valueInteger(10)) {
-		throw std::runtime_error("Allocation workload must populate and read its new tables.");
-	}
 	i64 cycles = 0;
 	const auto start = std::chrono::steady_clock::now();
 	while (cycles < measuredCycles) {
@@ -380,13 +353,6 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		cycles += budget - cpu.instructionBudgetRemaining;
 	}
 	const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
-	if (retained) {
-		for (int index = 1; index <= 4096; ++index) {
-			if (asTable(retained->getInteger(index), cpu.gcHeap()).getInteger(1) != valueInteger(index)) {
-				throw std::runtime_error("Collection must preserve the entire retained graph.");
-			}
-		}
-	}
 	const double mhz = static_cast<double>(cycles) * 1000.0 / static_cast<double>(nanoseconds);
 	size_t nativeBlocks = 0;
 	size_t nativeCodeBytes = 0;
@@ -424,17 +390,16 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 }
 
 int main(int argc, char** argv) {
-	bool fieldMisses = false, fieldHits = false, ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
+	bool fieldMisses = false, fieldHits = false, ramRecords = false, comparisons = false, fullyBacked = false, context = false;
 	for (int argument = 1; argument < argc; ++argument) {
 		const std::string_view option(argv[argument]);
 		if (option == "--field-misses") fieldMisses = true;
 		else if (option == "--field-hits") fieldHits = true;
 		else if (option == "--ram-records") ramRecords = true;
 		else if (option == "--comparisons") comparisons = true;
-		else if (option == "--allocations") allocations = true;
 		else if (option == "--fully-backed") fullyBacked = true;
 		else if (option == "--context") context = true;
-		else throw std::runtime_error("Expected --field-hits, --field-misses, --ram-records, --comparisons, --allocations, --context or --fully-backed.");
+		else throw std::runtime_error("Expected --field-hits, --field-misses, --ram-records, --comparisons, --context or --fully-backed.");
 	}
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
@@ -464,11 +429,6 @@ int main(int argc, char** argv) {
 		}
 		if (comparisons) {
 			measure(Workload::Comparisons, "comparisons", grant, round, fullyBacked);
-			continue;
-		}
-		if (allocations) {
-			measure(Workload::TableChurn, "table-churn", grant, round, fullyBacked);
-			measure(Workload::TableChurnLive, "table-churn-live", grant, round, fullyBacked);
 			continue;
 		}
 		measure(Workload::Registers, "registers", grant, round, fullyBacked);

@@ -288,6 +288,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		// uses a Bx selector wider than the ordinary register fields.
 		case OpCode.CALL: case OpCode.CLOSURE:
 			return 0;
+		case OpCode.BIOSCALL:
+			return a + c + 1;
 		case OpCode.ITERN:
 			return Math.max(a + 3, b + c);
 		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:

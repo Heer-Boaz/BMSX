@@ -176,7 +176,7 @@ int main(void) {
 		.gc_steps_over_2ms = 5u, .gc_steps_over_8ms = 1u,
 		.cpu_native_origin_cycles = INT64_C(9007199254740999),
 		.cpu_interpreter_runtime_cycles = INT64_C(9007199254740997),
-		.native_newt_count = UINT64_C(9007199254740995),
+		.native_bios_call_count = UINT64_C(9007199254740995),
 		.interpreter_concatn_count = UINT64_C(9007199254740993),
 	};
 	BmsxExecutionProfile execution_after = execution_before;
@@ -194,12 +194,12 @@ int main(void) {
 	execution_after.gc_mark_again_nanoseconds += 66u; execution_after.gc_atomic_nanoseconds += 77u;
 	execution_after.cpu_native_origin_cycles += 120u;
 	execution_after.cpu_interpreter_runtime_cycles += 52u;
-	execution_after.native_newt_count += 1u;
+	execution_after.native_bios_call_count += 1u;
 	execution_after.native_call_count += 2u;
 	execution_after.native_setfield_count += 3u;
 	execution_after.native_concat_count += 4u;
 	execution_after.native_concatn_count += 5u;
-	execution_after.interpreter_newt_count += 1u;
+	execution_after.interpreter_bios_call_count += 1u;
 	execution_after.interpreter_call_count += 2u;
 	execution_after.interpreter_setfield_count += 3u;
 	execution_after.interpreter_concat_count += 4u;
@@ -218,12 +218,12 @@ int main(void) {
 	CHECK(execution.gc_mark_again_nanoseconds == 66u && execution.gc_atomic_nanoseconds == 77u);
 	CHECK(execution.cpu_native_origin_cycles == 120u);
 	CHECK(execution.cpu_interpreter_runtime_cycles == 52u);
-	CHECK(execution.native_newt_count == 1u);
+	CHECK(execution.native_bios_call_count == 1u);
 	CHECK(execution.native_call_count == 2u);
 	CHECK(execution.native_setfield_count == 3u);
 	CHECK(execution.native_concat_count == 4u);
 	CHECK(execution.native_concatn_count == 5u);
-	CHECK(execution.interpreter_newt_count == 1u);
+	CHECK(execution.interpreter_bios_call_count == 1u);
 	CHECK(execution.interpreter_call_count == 2u);
 	CHECK(execution.interpreter_setfield_count == 3u);
 	CHECK(execution.interpreter_concat_count == 4u);
@@ -240,12 +240,12 @@ int main(void) {
 	CHECK(execution_idle.gc_steps == 0u && execution_idle.gc_steps_over_2ms == 0u && execution_idle.gc_max_step_nanoseconds == 9000000u);
 	CHECK(execution_idle.cpu_native_origin_cycles == 0);
 	CHECK(execution_idle.cpu_interpreter_runtime_cycles == 0);
-	CHECK(execution_idle.native_newt_count == 0);
+	CHECK(execution_idle.native_bios_call_count == 0);
 	CHECK(execution_idle.native_call_count == 0);
 	CHECK(execution_idle.native_setfield_count == 0);
 	CHECK(execution_idle.native_concat_count == 0);
 	CHECK(execution_idle.native_concatn_count == 0);
-	CHECK(execution_idle.interpreter_newt_count == 0);
+	CHECK(execution_idle.interpreter_bios_call_count == 0);
 	CHECK(execution_idle.interpreter_call_count == 0);
 	CHECK(execution_idle.interpreter_setfield_count == 0);
 	CHECK(execution_idle.interpreter_concat_count == 0);
@@ -276,8 +276,8 @@ int main(void) {
 	CHECK(strstr(line, "cpu_slices=3 cpu_consumed_cycles=172") != NULL);
 	CHECK(strstr(line, "gc_collections=1 gc_total_ns=800 gc_roots_ns=11 gc_trace_ns=22 gc_weak_ns=33 gc_sweep_ns=44 gc_string_reclaim_ns=55") != NULL);
 	CHECK(strstr(line, "cpu_native_origin_cycles=120 cpu_interpreter_runtime_cycles=52") != NULL);
-	CHECK(strstr(line, "native_newt_count=1 native_call_count=2 native_setfield_count=3 native_concat_count=4 native_concatn_count=5") != NULL);
-	CHECK(strstr(line, "interpreter_newt_count=1 interpreter_call_count=2 interpreter_setfield_count=3 interpreter_concat_count=4 interpreter_concatn_count=5") != NULL);
+	CHECK(strstr(line, "native_bios_call_count=1 native_call_count=2 native_setfield_count=3 native_concat_count=4 native_concatn_count=5") != NULL);
+	CHECK(strstr(line, "interpreter_bios_call_count=1 interpreter_call_count=2 interpreter_setfield_count=3 interpreter_concat_count=4 interpreter_concatn_count=5") != NULL);
 	CHECK(fclose(output) == 0);
 
 	BmsxFrameTimingReport guest_report = {.outliers = outliers};

@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valueInteger, valueNil, valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -28,7 +29,7 @@ const compileSystem = (
 		source: module.source,
 		chunk: parseLuaChunk(module.source, `${module.path}.lua`),
 	}));
-	return compileLuaChunkToProgram(
+	return compileTestSystemWithHeap(
 		parseLuaChunk(entrySource, 'entry.lua'),
 		modules,
 		{ entrySource, programDomain: 'system' },

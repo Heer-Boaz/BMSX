@@ -4,9 +4,9 @@ module<const>
 -- T/C: the original timed record continuations; L: native LuaHeap;
 -- A: scheduled recovery; G: native collector recovery; S: raw operation
 -- selectors. The pinned BLua frame replaces the host's intermediate stages.
--- Operands are unrounded NEWT sizes or a canonical ROM binding.
--- I: NEWT sizes use the decoded 15-bit ABC operands, so their rounded
--- capacity, physical extent and logical charge all fit a signed Integer.
+-- Operands are unrounded constructor hints or a canonical ROM binding.
+-- I: the reference instruction limited the hints to 15 bits. Rounded capacity,
+-- physical extent and logical charge fit a signed Integer.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:71-74 T:843,855-865
 local admission<const> = require('kernel/heap_admission') -- C:9-14,36,43,54-63,174,210-217 T:805-811,827-833,844-849,933,970-976 L:146
 local collector<const> = require('kernel/gc_step') -- C:154-159,181-186 A:238-251 G:1225-1229

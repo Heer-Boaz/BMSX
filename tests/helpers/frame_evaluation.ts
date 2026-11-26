@@ -2,7 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkTestSystemBlua32 } from './blua32';
+import { loadHeapServiceTestModules } from './heap_service_system';
 import { systemCaseSource } from './system_case_rom';
 
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
@@ -36,10 +38,13 @@ require('frame_test/primitives')
 escaped = false
 optimization_level = ${optLevel}
 ${execution}`;
-	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!,
-		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
-		{ entrySource: source, optLevel, programDomain: 'system' }),
-		includeDiagnostics ? new Map([{ path: 'frame_test', source }, ...modules].map(module => [module.path, { displayPath: `${module.path}.lua`, source: module.source }])) : null);
+	const programModules = [
+		...loadHeapServiceTestModules(),
+		...modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
+	];
+	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!, programModules,
+		{ entrySource: source, optLevel, programDomain: 'system', preloadModules: HEAP_SERVICE_MODULES }),
+		includeDiagnostics ? new Map([{ path: 'frame_test', source }, ...programModules].map(module => [module.path, { displayPath: `${module.path}.lua`, source: module.source }])) : null);
 }
 
 export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {

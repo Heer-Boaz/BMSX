@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
 
 const bootSource = 'return {pcall=__bmsx_pcall,error=__bmsx_error,select=__bmsx_select}';
@@ -16,16 +16,15 @@ const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
 });
 modules.push({ path: 'test/boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test/boot.lua').chunk });
 function compile(source: string, optLevel: 0 | 3) {
-	const program = compileLuaChunkToProgram(parseLuaChunk(source, 'math32.lua').chunk, modules,
-		{ entrySource: source, programDomain: 'system', optLevel });
+	const program = compileTestSystemWithHeap(parseLuaChunk(source, 'math32.lua').chunk, modules,
+		{ entrySource: source, optLevel, programDomain: 'system' });
 	return linkTestSystemBlua32(program);
 }
 function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend) {
 	const image = compile(source, opt), { cpu } = createTestSystemCpu(image, backend);
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
-	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	return { image, cpu, results };
 }
 const math = "local boot<const> = require('test/boot'); error=boot.error; select=boot.select; local math<const> = require('math')\n";

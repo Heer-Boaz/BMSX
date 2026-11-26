@@ -69,8 +69,10 @@ export class GuestFixture {
 		}
 		if (!this.callPending) {
 			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
-			if (exceptionDepth !== -1) {
-				runtime.cpuExecution.runSuspendedUntilDepth(exceptionDepth, cycles, cpu.activeThread.address);
+			if (exceptionDepth !== -1 || cpu.heapServiceActive()) {
+				// A fixed IRQ prelude is admitted before its cart exception frame exists.
+				const depth = exceptionDepth !== -1 ? exceptionDepth : cpu.getFrameDepth();
+				runtime.cpuExecution.runSuspendedUntilDepth(depth, cycles, cpu.activeThread.address);
 				this.lastCallCycles = runtime.machine.scheduler.nowCycles - before;
 				return false;
 			}

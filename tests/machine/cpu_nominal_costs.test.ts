@@ -19,7 +19,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			[OpCode.MOD, 12, 6, 7, 34], [OpCode.LEN, 13, 8, 0, 3],
 			[OpCode.GETT, 14, 0, 2, 16], [OpCode.GETI, 15, 0, 1, 8], [OpCode.GETFIELD, 16, 0, 0, 16],
 			[OpCode.SETT, 0, 2, 3, 16], [OpCode.SETI, 0, 1, 3, 8], [OpCode.SETFIELD, 0, 0, 3, 16],
-			[OpCode.SELF, 17, 0, 0, 17], [OpCode.NEWT, 19, 0, 0, 24],
+			[OpCode.SELF, 17, 0, 0, 17],
 			[OpCode.GETSYS, 20, 0, 0, 3], [OpCode.SETSYS, 3, 0, 0, 4],
 			[OpCode.GETGL, 21, 0, 0, 3], [OpCode.SETGL, 3, 0, 0, 4],
 		] as const;
@@ -51,15 +51,14 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			while (remaining > 0) remaining -= charges[completed++];
 			assert.equal(cpu.instructionBudgetRemaining, remaining, `debt at grant ${grant}`);
 			assert.equal(frame.pc, base + (completed === charges.length ? 0 : starts[completed]) * INSTRUCTION_BYTES);
-			for (const [after, slot, value] of [[1, 9, valueInteger(1)], [2, 10, valueFloat(8)], [3, 11, valueFloat(8)], [4, 12, valueInteger(1)], [5, 13, valueInteger(3)], [6, 14, valueInteger(17)], [7, 15, valueInteger(11)], [8, 16, valueInteger(17)], [12, 17, valueInteger(23)], [14, 20, valueInteger(31)], [16, 21, valueInteger(37)]]) {
+			for (const [after, slot, value] of [[1, 9, valueInteger(1)], [2, 10, valueFloat(8)], [3, 11, valueFloat(8)], [4, 12, valueInteger(1)], [5, 13, valueInteger(3)], [6, 14, valueInteger(17)], [7, 15, valueInteger(11)], [8, 16, valueInteger(17)], [12, 17, valueInteger(23)], [13, 20, valueInteger(31)], [15, 21, valueInteger(37)]]) {
 				assert.equal(r.get(slot), completed >= after ? value : valueNil(), `R${slot} at grant ${grant}`);
 			}
 			assert.equal(cpu.gc.tables.getStringKey(table, key), valueInteger(completed >= 9 ? 23 : 17));
 			assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(completed >= 10 ? 23 : 11));
 			assert.equal(r.get(18), completed >= 12 ? valueTable(table) : valueNil());
-			assert.equal(r.getTag(19), completed >= 13 ? ValueTag.Table : ValueTag.Nil);
-			assert.equal(cpu.getSystemGlobalByKey(global), valueInteger(completed >= 15 ? 23 : 31));
-			assert.equal(cpu.getGlobalByKey(global), valueInteger(completed >= 17 ? 23 : 37));
+			assert.equal(cpu.getSystemGlobalByKey(global), valueInteger(completed >= 14 ? 23 : 31));
+			assert.equal(cpu.getGlobalByKey(global), valueInteger(completed >= 16 ? 23 : 37));
 		}
 	});
 
@@ -109,7 +108,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 }
 
 const changed = [OpCode.GETT, OpCode.GETI, OpCode.GETFIELD, OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.SELF,
-	OpCode.CALL, OpCode.RET, OpCode.NEWT, OpCode.CLOSURE, OpCode.GETUP, OpCode.SETUP, OpCode.GETSYS, OpCode.GETGL,
+	OpCode.CALL, OpCode.RET, OpCode.BIOSCALL, OpCode.CLOSURE, OpCode.GETUP, OpCode.SETUP, OpCode.GETSYS, OpCode.GETGL,
 	OpCode.SETSYS, OpCode.SETGL, OpCode.LEN, OpCode.MOD, OpCode.POW];
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) for (const op of changed) {
 	test(`skipping work-class opcode ${op} charges neither body nor WIDE (${backend}, WIDE=${wide})`, () => {

@@ -134,7 +134,7 @@ void inactiveFrameMetadata() {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::NEWT), 0, 0, 0);
+	writeInstruction(image.text, DECODED_PAGE_WORDS, static_cast<u8>(OpCode::MOV), 0, 0, 0);
 	writeInstruction(image.text, DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS, static_cast<u8>(OpCode::KSMI), 0, 0, 27);
 	writeInstruction(image.text, 2 * DECODED_PAGE_WORDS + 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
@@ -152,6 +152,8 @@ void inactiveFrameMetadata() {
 		auto& cpu = machine->cpu;
 		auto* root = cpu.activeThread()->currentFrame;
 		cpu.beginCompletionCall(asClosure(root->registers.get(0), cpu.gcHeap()));
+		auto& frame = *cpu.activeThread()->currentFrame;
+		frame.registers.set(0, valueTable(cpu.createTable().address()));
 	}
 	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
 	auto* spare = generated.cpu.activeThread()->currentFrame;

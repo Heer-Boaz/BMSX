@@ -1,3 +1,5 @@
+import { runCpuWithinBudget } from './cpu_execution';
+import { runGuestToHalt } from './cpu_execution';
 import type { Blua32DiagnosticSourceMap } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
@@ -505,6 +507,6 @@ export function createTestBlua32PairCpu(
 export function runCompiledTestSystem(compiled: CompiledSystemProgram, cycleBudget: number): CPU {
 	const finalized = linkTestSystemBlua32(compiled);
 	const cpu = createTestSystemCpu(finalized).cpu;
-	assert.equal(cpu.runUntilDepth(0, cycleBudget), RunResult.Halted);
+	runGuestToHalt(cpu, cycleBudget);
 	return cpu;
 }

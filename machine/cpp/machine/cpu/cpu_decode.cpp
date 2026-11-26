@@ -20,6 +20,8 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::MFC0: case OpCode::MTC0:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return 0;
+		case OpCode::BIOSCALL:
+			return static_cast<u16>(row.a + row.c + 1);
 		case OpCode::ITERN:
 			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:

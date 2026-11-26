@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { AllocationRecovery, CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { AllocationRecovery, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -13,8 +13,8 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RECORD_OFFSET,
-	HeapServiceGcField, HeapServiceGcStage, HeapServiceRecordStage,
+	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
+	HeapServiceBiosCallField, HeapServiceGcField, HeapServiceGcStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -93,7 +93,7 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 	}
 });
 
-test('scheduled guest NEWT crosses VBlank without running its caller or pressure assist', () => {
+test('scheduled BIOSCALL allocates across VBlank and replays its continuation from RAM', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
@@ -106,38 +106,44 @@ test('scheduled guest NEWT crosses VBlank without running its caller or pressure
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
-	const stageAddress = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_RECORD_OFFSET;
-	// Measure the whole boot prefix, including its initial Closure service,
-	// then place the physical edge shortly after NEWT starts its BIOS entry.
+	const latch = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
+	const pendingDestination = () => memory.readRamRecordWord(latch + HeapServiceBiosCallField.Destination);
+	// Include the normal startup, not only the entry routine, when positioning the edge.
 	let bootCycles = 0;
-	for (let step = 0; step < 2048 && memory.readRamRecordWord(stageAddress) !== HeapServiceRecordStage.Scheduled; ++step) {
+	for (let step = 0; step < 2048 && pendingDestination() === 0; ++step) {
 		scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		bootCycles += 1 - cpu.instructionBudgetRemaining;
 	}
-	assert.equal(cpu.heapServiceActive(), true);
+	assert.ok(pendingDestination() !== 0 && cpu.heapServiceActive(), 'actual BIOSCALL is now armed');
 	applyRuntimeSaveState(runtime, boot);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - bootCycles - 32);
 
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Idle);
+	assert.equal(pendingDestination(), 0);
 	assert.equal(frames.runCyclesToNextLogicalTick(bootCycles + 64), true);
 	assert.ok(scheduler.nowCycles >= edge);
 	assert.ok(frames.lastTickCpuUsedCycles > 0);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Scheduled);
+	const destination = pendingDestination() - 1;
+	assert.ok(destination >= 0);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	const caller = cpu.getFrameDepth() - 1;
-	const issuePc = cpu.readFramePc(caller);
-	const beforeRetirement = scheduler.nowCycles;
-
-	for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
-	assert.equal(cpu.heapServiceActive(), false);
-	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceRecordStage.Idle);
-	assert.ok(cpu.readFramePc(caller) > issuePc);
-	assert.deepEqual(runtime.readCompletionValues(), [], 'the request retires before the caller can run again');
-	assert.ok(scheduler.nowCycles > beforeRetirement);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
+	assert.notEqual(valueTag(cpu.readFrameRegister(caller, destination)), ValueTag.Table);
+	const beforeRetirement = scheduler.nowCycles, partial = captureRuntimeSaveState(runtime);
+	const retire = () => {
+		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(pendingDestination(), 0);
+		assert.equal(cpu.readFramePc(caller), successor);
+		assert.equal(valueTag(cpu.readFrameRegister(caller, destination)), ValueTag.Table);
+		assert.deepEqual(runtime.readCompletionValues(), [], 'the BIOS grant retires before the successor executes');
+		assert.ok(scheduler.nowCycles > beforeRetirement);
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+		return [scheduler.nowCycles, cpu.readFrameRegister(caller, destination)];
+	};
+	const retired = retire();
+	applyRuntimeSaveState(runtime, partial);
+	assert.deepEqual(retire(), retired, 'restore repeats the same allocation and timed BIOS frontier');
 	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 });
@@ -237,7 +243,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	assert.equal(frames.runCyclesToNextLogicalTick(4096), false);
 	assert.equal(cpu.allocationParked(), true);
 	const pending = cpu.captureRuntimeState().pendingAllocation;
-	assert.equal(pending?.kind, PendingAllocationKind.TableAssignment);
+	assert.ok(pending);
 	assert.equal(pending.recovery, AllocationRecovery.Fresh);
 	assert.equal(pending.receiver, owner);
 	assert.equal(pending.value, payload);

@@ -82,49 +82,16 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
-u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
+TableRecord CPU::createTable(int arraySize, int hashSize) {
 	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
 	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
-		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(), TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity), mode,
-		TableRecord::hashStorageBytes(hashCapacity), static_cast<u32>(TableHeader::HashStorage));
-	if (!address) return 0u;
-	TableRecord(m_heap, address).initialize(arraySize, hashCapacity);
+		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(), TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity),
+		LuaAllocationMode::Direct, TableRecord::hashStorageBytes(hashCapacity), static_cast<u32>(TableHeader::HashStorage));
+	TableRecord table(m_heap, address);
+	table.initialize(arraySize, hashCapacity);
 	m_heap.publishObject(address);
 	trackLocalRoot(valueTable(address));
-	return address;
-}
-
-void CPU::retireNewTable(CallFrame& frame, int destination, u32 address) {
-	frame.registers.set(destination, valueTable(address));
-	frame.extendTop(destination + 1);
-}
-
-u32 CPU::reserveNewTable(CallFrame& frame, int destination, int arraySize, int hashSize) {
-	const auto mode = m_runKind == CpuRunKind::Scheduled ? LuaAllocationMode::Scheduled : LuaAllocationMode::Direct;
-	if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CreateTable)] != 0u) {
-		const PendingTableCreation create{destination, arraySize, hashSize};
-		const auto stage = mode == LuaAllocationMode::Scheduled ? HeapServiceRecordStage::Scheduled : HeapServiceRecordStage::Direct;
-		if (beginRecordReservation(frame, HeapServiceRecordKind::Table, destination, static_cast<u32>(arraySize),
-			static_cast<u32>(hashSize), stage, frame.readControl(FrameField::Pc))) requestYield();
-		else parkAllocation(frame, create);
-		return 0u;
-	}
-	const u32 address = allocateTable(arraySize, hashSize, mode);
-	if (!address) parkAllocation(frame, PendingTableCreation{destination, arraySize, hashSize});
-	return address;
-}
-
-void CPU::markPendingAllocationRoots(GcHeap& heap) {
-	const auto* assignment = std::get_if<PendingTableAssignment>(&m_pendingAllocation.operands);
-	if (!assignment) return;
-	heap.markValue(valueTable(assignment->receiver));
-	heap.markValue(assignment->key);
-	heap.markValue(assignment->value);
-}
-
-bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value, u8 extraHashSlots) {
-	parkAllocation(frame, PendingTableAssignment{receiver, extraHashSlots, canonicalTableKey(key), value});
-	return true;
+	return table;
 }
 
 bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, const TableRecord::ResizePlan& plan, u32 previous,
@@ -219,20 +186,22 @@ void CPU::finishTableGrowthReservation() {
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	if (stage == HeapServiceTableGrowthStage::RetryFresh) throw LuaOutOfMemorySignal{};
 	m_pendingAllocation = {AllocationRecovery::Fresh, m_currentInstructionPc, lastPc, nextPc,
-		PendingTableAssignment{receiver, parkExtra, key, value}};
+		receiver, parkExtra, key, value};
 }
 
-void CPU::parkAllocation(CallFrame& frame, PendingAllocation::Operands operands) {
+bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value, u8 extraHashSlots) {
+	const Value canonical = canonicalTableKey(key);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	++m_diagnosticGcProfile.fullCollections;
 #endif
 	m_pendingAllocation = {
 		m_heap.active() ? AllocationRecovery::Current : AllocationRecovery::Fresh,
-		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), operands
+		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), receiver, extraHashSlots, canonical, value
 	};
 	frame.writeControl(FrameField::Pc, m_pendingAllocation.instructionPc);
 	// The final root head visits parked operands after detaching the
 	// changed queue and before clearing weak references.
+	return true;
 }
 
 bool CPU::advanceAllocationRecovery() {
@@ -275,30 +244,13 @@ void CPU::resumeAllocation() {
 	m_currentInstructionPc = pending.instructionPc;
 	lastPc = pending.lastPc;
 	m_lastExecutionDomainId = m_activeExecutionDomainId;
-	bool retired;
-	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
-		const auto stage = pending.recovery == AllocationRecovery::RetryFresh
-			? HeapServiceTableGrowthStage::RetryFresh : HeapServiceTableGrowthStage::RetryCurrent;
-		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(
-			assignment->key, assignment->value, assignment->extraHashSlots, this, stage);
-		if (heapServiceActive()) {
-			m_pendingAllocation = {};
-			return;
-		}
-	} else {
-		const auto& create = std::get<PendingTableCreation>(pending.operands);
-		u32 address = 0u;
-		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CreateTable)] != 0u) {
-			const auto stage = pending.recovery == AllocationRecovery::RetryCurrent
-				? HeapServiceRecordStage::RetryCurrent : HeapServiceRecordStage::RetryFresh;
-			if (beginRecordReservation(frame, HeapServiceRecordKind::Table, create.destination,
-				static_cast<u32>(create.arraySize), static_cast<u32>(create.hashSize), stage, pending.nextPc)) {
-				m_pendingAllocation = {};
-				return;
-			}
-		} else address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
-		retired = address != 0u;
-		if (retired) retireNewTable(frame, create.destination, address);
+	const auto stage = pending.recovery == AllocationRecovery::RetryFresh
+		? HeapServiceTableGrowthStage::RetryFresh : HeapServiceTableGrowthStage::RetryCurrent;
+	const bool retired = TableRecord(m_heap, pending.receiver).resumeAssignment(
+		pending.key, pending.value, pending.extraHashSlots, this, stage);
+	if (heapServiceActive()) {
+		m_pendingAllocation = {};
+		return;
 	}
 	if (retired) {
 		frame.writeControl(FrameField::Pc, pending.nextPc);

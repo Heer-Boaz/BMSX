@@ -100,7 +100,7 @@ struct NativeTerminalExit {
 			NativeExitPlan{iterator.terminalExit, {.iterator = iterator}};
 	}
 	NativeExitPlan operator()(const NativeReturnSite& ret) const { return {ret.terminalExit, {.returned = ret}}; }
-	NativeExitPlan operator()(const NativeTableAllocation& table) const { return {table.terminalExit, {.allocation = table}}; }
+	NativeExitPlan operator()(const NativeBiosCall& call) const { return {call.terminalExit, {.biosCall = call}}; }
 	NativeExitPlan operator()(const NativeConcat& concat) const { return {concat.terminalExit, {.concat = concat}}; }
 	NativeExitPlan operator()(const NativeConcatRange& concat) const { return {concat.terminalExit, {.concatRange = concat}}; }
 	NativeExitPlan operator()(const NativeClosure& closure) const { return {closure.terminalExit, {.closure = closure}}; }
@@ -160,7 +160,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		}
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 		switch (static_cast<OpCode>(decoded.op)) {
-		case OpCode::NEWT: instruction.attempt = NativeAttempt::NewTable; break;
+		case OpCode::BIOSCALL: instruction.attempt = NativeAttempt::BiosCall; break;
 		case OpCode::CALL: instruction.attempt = NativeAttempt::Call; break;
 		case OpCode::SETFIELD: instruction.attempt = NativeAttempt::AssignField; break;
 		case OpCode::CONCAT: instruction.attempt = NativeAttempt::Concat; break;

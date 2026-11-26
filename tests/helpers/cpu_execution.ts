@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { CPU, type RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 /** Both routes receive the same grant, including when the final atomic
@@ -10,6 +10,27 @@ export function runCpuParity(generated: CPU, reference: CPU, grant: number, dept
 	assert.equal(reference.runUntilDepth(depth, grant), result, 'execution outcome with the same guest-cycle grant');
 	assert.equal(grant - reference.instructionBudgetRemaining, consumed, 'every executed guest cycle is charged');
 	return result;
+}
+
+/** Run one aggregate test grant even when firmware pauses between instructions. */
+export function runCpuWithinBudget(cpu: CPU, budget: number, depth = 0, profile?: { fullGcCycles: number }): RunResult {
+	let outcome = RunResult.Yielded;
+	// An admitted firmware body can yield at a zero-work phase boundary.
+	// Preserve the submitted aggregate grant; cap fixture pulses independently.
+	for (let slices = 0; slices < 16384 && outcome === RunResult.Yielded && budget > 0; ++slices) {
+		const fullGcGrant = profile !== undefined && cpu.gc.fullEpochs() !== 0;
+		outcome = cpu.runUntilDepth(depth, budget);
+		if (fullGcGrant) profile.fullGcCycles += budget - cpu.instructionBudgetRemaining;
+		budget = cpu.instructionBudgetRemaining;
+	}
+	return outcome;
+}
+
+/** Run to the requested depth and require a clean halt. A guest error also ends in
+ * Halted, so the Lua fault reason has to stay clear as well. */
+export function runGuestToHalt(cpu: CPU, budget: number, depth = 0): void {
+	assert.equal(runCpuWithinBudget(cpu, budget, depth), RunResult.Halted);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest halted without a Lua fault');
 }
 
 /** Generated regions store and read registers through the `s` and `p` aliases. */

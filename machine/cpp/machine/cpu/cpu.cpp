@@ -154,10 +154,6 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(id);
 }
 
-TableRecord CPU::createTable(int arraySize, int hashSize) {
-	return TableRecord(m_heap, allocateTable(arraySize, hashSize, LuaAllocationMode::Direct));
-}
-
 u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
 	const bool latched = !m_functionRecordLatch.romBacked;
 	const u32 address = m_luaHeap.allocateClosureRecord(count, latched, cells);
@@ -375,7 +371,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		if (values == 0u || values > HEAP_SERVICE_VALUE_COUNT || frames == 0u || frames > HEAP_SERVICE_FRAME_COUNT)
 			throw BMSX_RUNTIME_ERROR("Heap service descriptor does not fit the private CPU stack.");
 		const u8* functions = descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
-		for (u32 index = 0; index < static_cast<u32>(HeapServiceOperation::Count); ++index) {
+		for (u32 index = 0; index < HEAP_SERVICE_ENTRY_COUNT; ++index) {
 			const u32 entry = readLE32(functions + index * sizeof(u32));
 			const auto* version = image->romFunctions.find(entry);
 			if (!version || version->upvalueCount != 0u || version->entry.registerCapacity() > values
@@ -1900,6 +1896,7 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_heap_service.inl"
+#include "machine/cpu/cpu_bios_call.inl"
 #include "machine/cpu/cpu_heap_record.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
@@ -2425,7 +2422,7 @@ dispatch_native_block: {
 				m_diagnosticExecutionProfile.nativeOriginCycles += static_cast<i64>(nativeStartBudget) - instructionBudgetRemaining;
 				const auto& counts = nativeState.state.diagnosticOpcodes;
 				auto& total = m_diagnosticExecutionProfile.nativeOpcodes;
-				total.newt += counts.newt;
+				total.biosCall += counts.biosCall;
 				total.call += counts.call;
 				total.setfield += counts.setfield;
 				total.concat += counts.concat;
@@ -2552,7 +2549,9 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 	if (heapServiceActive()) {
 		const u32 irq = m_heapAllocator.managementOffset() + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
-		const auto gcStage = cartLane == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
+		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
+		const u32 destination = m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Destination));
+		const auto gcStage = cartLane == 0u && destination == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 		runLoop<true, false, true>(0, instructionBudget);
@@ -2608,6 +2607,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 							m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
 							placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
 								vector, false, m_cop0Words[COP0_EPC]);
+						} else if (destination != 0u) {
+							finishBiosCall(destination);
 						} else {
 							finishExecutionFloor();
 							finishRecordReservation();
@@ -2969,8 +2970,8 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		if (const u32 first = findStaticClosure(prototype)) return first;
 		if (functionRecord.romBacked
 			&& m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CreateClosure)] != 0u) {
-			beginRecordReservation(frame, HeapServiceRecordKind::CanonicalClosure, destination, prototype.functionAddress,
-				static_cast<u32>(prototype.executionDomainId), HeapServiceRecordStage::Direct, frame.readControl(FrameField::Pc));
+			beginRecordReservation(frame, destination, prototype.functionAddress,
+				static_cast<u32>(prototype.executionDomainId), frame.readControl(FrameField::Pc));
 			requestYield();
 			return 0u;
 		}
@@ -3219,10 +3220,11 @@ void CPU::publishHeapRemarkHead() {
 	if (m_stringComparison.remaining) {
 		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ComparisonLeft), m_stringComparison.left, m_stringComparison.right);
 	}
-	if (const auto* assignment = allocationParked() ? std::get_if<PendingTableAssignment>(&m_pendingAllocation.operands) : nullptr) {
-		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), assignment->receiver);
-		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(assignment->key)), valuePayload(assignment->key));
-		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(assignment->value)), valuePayload(assignment->value));
+	if (allocationParked()) {
+		const auto& assignment = m_pendingAllocation;
+		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), assignment.receiver);
+		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(assignment.key)), valuePayload(assignment.key));
+		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(assignment.value)), valuePayload(assignment.value));
 		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 1u);
 	} else {
 		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 0u);
@@ -3238,7 +3240,11 @@ void CPU::markRootHead(GcHeap& heap) {
 	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
 	heap.markValue(m_stringIndexTable);
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
-	if (allocationParked()) markPendingAllocationRoots(heap);
+	if (allocationParked()) {
+		heap.markValue(valueTable(m_pendingAllocation.receiver));
+		heap.markValue(m_pendingAllocation.key);
+		heap.markValue(m_pendingAllocation.value);
+	}
 }
 
 void CPU::markScopedRoots(GcHeap& heap) {

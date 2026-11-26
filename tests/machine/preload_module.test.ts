@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valueInteger, valueBool, valueIsTable, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -41,7 +42,7 @@ test('program roots retain dependency closure and preloads, not unrelated worksp
 });
 
 for (const optLevel of [3] as const) test(`preloads use the existing dependency/startup/init owners (O${optLevel})`, () => {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry'), modules, {
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, 'entry'), modules, {
 		entrySource, programDomain: 'system', optLevel,
 		preloadModules: ['second', 'constants', 'first', 'second'],
 	});

@@ -153,7 +153,7 @@ void formalReservationRoots(bool interpreted) {
 void capturedSlotSurvivesOpenTop(int top) {
 	test::Blua32TestImage image;
 	image.text.resize(8 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 2, 0, 0);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 2, 2, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
@@ -168,6 +168,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+	cpu.activeThread()->currentFrame->registers.set(2, valueTable(cpu.createTable().address()));
 	u32 stopPc = rom.textAddress + 5 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook({[](void* context, ExecutionDomainId, u32 pc) { return pc == *static_cast<u32*>(context); }, &stopPc, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	require(cpu.runUntilDepth(0, 100) == RunResult::ExecutionStopped, "stop after open VARARG changes top");

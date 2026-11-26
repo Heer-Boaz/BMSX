@@ -36,7 +36,6 @@ struct DecodedInstructionPage;
 struct DecodedInstruction;
 struct NativeCpuRunState;
 struct NativeBlockExitSite;
-struct NativeTableConstructor;
 
 struct NativeBlockLink {
 	void disconnect();
@@ -79,7 +78,7 @@ inline constexpr bool nativeBlockExitResumesFrame(NativeBlockExit exit) {
 	case NativeBlockExit::ReadInteger: case NativeBlockExit::WriteInteger:
 	case NativeBlockExit::Length:
 	case NativeBlockExit::ReadUpvalue: case NativeBlockExit::WriteUpvalue: case NativeBlockExit::Vararg:
-	case NativeBlockExit::AllocateTable: case NativeBlockExit::Concat: case NativeBlockExit::ConcatRange:
+	case NativeBlockExit::Concat: case NativeBlockExit::ConcatRange:
 		return true;
 	default:
 		return false;
@@ -122,7 +121,6 @@ struct NativeBlockExitSite {
 		mutable NativeBlockLink link{};
 		mutable NativeTableSlotBinding tableRead;
 		mutable NativeTableSlotBinding tableStore;
-		NativeTableConstructor* recordConstructor;
 		mutable NativeFixedCallBinding fixedCall;
 		DecodedInstruction* observingCall;
 	};
@@ -157,7 +155,6 @@ private:
 	void withdrawFromCache();
 	void* m_code = nullptr;
 	std::vector<NativeBlockExitSite> m_exitSites;
-	std::vector<NativeTableConstructor> m_constructors;
 	NativeCodeCache* m_cache = nullptr;
 	std::array<DecodedInstructionPage*, NATIVE_VERSION_REGION_MAX_PAGES> m_pages{};
 	// One-based page-local entry chains; zero is the empty chain.

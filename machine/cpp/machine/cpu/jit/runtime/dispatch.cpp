@@ -2,7 +2,6 @@
 #include "machine/cpu/frame_placement.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/runtime/execution.h"
-#include "machine/cpu/jit/runtime/record_constructor.h"
 #include "machine/cpu/upvalue.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "machine/cpu/value_length.h"
@@ -430,46 +429,15 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
-		case NativeBlockExit::AllocateTable: {
-			const auto& allocation = exit->operands.allocation;
-			const int a = allocation.result, array = allocation.arraySize;
-			// A ROM recipe stays resident across allocation and watched RAM writes.
-			auto* record = exit->recordConstructor;
-			const u32 address = cpu.reserveNewTable(*frame, a, array, allocation.hashSize);
-			if (!address) {
-				transition = NativeBlockTransition::Redispatch;
-				break;
-			}
-			cpu.retireNewTable(*frame, a, address);
-			if (record) {
-				const int fieldCycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
-				const int fields = static_cast<int>(record->count);
-				// The final store may exhaust the grant, but every store must
-				// begin with positive budget. Otherwise use the original PCs.
-				if (cpu.instructionBudgetRemaining > (fields - 1) * fieldCycles
-					&& record->requiredSlots <= static_cast<u32>(frame->stackCapacity())
-					&& record->bindKeys(frame->executionImage->constPool)) {
-					std::array<Value, TABLE_RECORD_FIELDS_MAX> values;
-					u32 present = 0;
-					for (int field = 0; field < fields; ++field) {
-						values[field] = readRK(*frame->executionImage, frame->registers, record->operands[field]);
-						present |= static_cast<u32>(!isNil(values[field])) << field;
-					}
-					if (present)
-						TableRecord(cpu.m_heap, address).fillStringRecord(record->layoutFor(present), std::span(record->keys).first(fields),
-							std::span(values).first(fields));
-					cpu.instructionBudgetRemaining -= fields * fieldCycles;
-					cpu.m_currentInstructionPc = record->lastInstructionPc;
-					cpu.lastPc = record->lastWordPc;
-					frame->writeControl(FrameField::Pc, record->nextPc);
-					continuation = record->continuation[run->cartridgeSlot];
-					continuationPc = record->nextPc;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-					state.diagnosticOpcodes.setfield += record->count;
+		case NativeBlockExit::BiosCall: {
+			const auto [result, selector, argc] = exit->operands.biosCall;
+			cpu.enterBiosCall(*frame, result, selector, argc);
+			// The ordinary CPU runs the pinned service before another guest
+			// instruction can use the result or the same register window.
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			++gateProfile.returns;
 #endif
-				}
-			}
-			break;
+			return nullptr;
 		}
 		case NativeBlockExit::Continue:
 		case NativeBlockExit::ScalarBoundary:

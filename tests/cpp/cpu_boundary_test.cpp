@@ -1066,7 +1066,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 	const OperandCase cases[]{
 		{OpCode::MOV, 0, 1, 0},
 		{OpCode::LOADNIL, 0, 2, 0},
-		{OpCode::NEWT, 1, 0, 0},
+		{OpCode::BIOSCALL, 0, 0, 2},
 		{OpCode::CONCATN, 0, 0, 2},
 		{OpCode::SELF, 0, 0, 0},
 		{OpCode::CALL, 1, 1, 1},

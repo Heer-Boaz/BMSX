@@ -9,14 +9,15 @@ import {
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
+	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE, HEAP_SERVICE_ENTRY_COUNT,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import {
-	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_TABLE_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
+	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_STRINGS_MODULE_PATH,
 	HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TRACE_MODULE_PATH, HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH,
 	HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, HEAP_SERVICE_CLOSURE_MODULE_PATH, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH,
 } from '../../toolchain/ts/rompack/blua32_heap_service';
@@ -25,7 +26,7 @@ import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
 const allocator = readFileSync(`machine/bios/${HEAP_SERVICE_MODULE_PATH}.lua`, 'utf8');
-const serviceModules = HEAP_SERVICE_MODULES.slice(1).map(path => {
+const serviceModules = HEAP_SERVICE_MODULES.filter(path => path !== HEAP_SERVICE_MODULE_PATH).map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
@@ -48,7 +49,7 @@ function compile(optLevel: 0 | 3 = 3, source = allocator, extraModules: readonly
 	return { program, object: encodeCompiledProgramObject(program) };
 }
 
-for (const optLevel of [0, 3] as const) test(`linked system heap-service descriptor binds the CPU-only roster at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) test(`linked system heap-service descriptor binds the fixed private and guest entry ranges at O${optLevel}`, () => {
 	const { program, object } = compile(optLevel);
 	const linked = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS);
 	const { layout, bytes } = linked, { header } = layout;
@@ -59,7 +60,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	const descriptor = readLE32(bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
 	assert.ok(descriptor >= header.rodataAddress && descriptor + HEAP_SERVICE_DESCRIPTOR_SIZE <= header.rodataAddress + header.rodataByteCount);
 	const offset = descriptor - loadAddress;
-	assert.equal(HEAP_SERVICE_DESCRIPTOR_SIZE, (2 + HeapServiceOperation.Count) * 4);
+	assert.equal(HEAP_SERVICE_DESCRIPTOR_SIZE, (2 + HEAP_SERVICE_ENTRY_COUNT) * 4);
 	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET) <= HEAP_SERVICE_VALUE_COUNT);
 	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET) <= HEAP_SERVICE_FRAME_COUNT);
 	assert.deepEqual(linked.biosImports.functions, BIOS_FUNCTION_EXPORTS.map((entry, index) => ({
@@ -69,7 +70,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	const entryBindings = [
 		...['reset', 'set_floor', 'floor', 'allocate', 'free', 'reserve_backing', 'resize_backing', 'shrink',
 			'allocation_bytes', 'occupied_bytes', 'is_object'].map(name => [HEAP_SERVICE_MODULE_PATH, 'bmsx_dlmalloc_' + name]),
-		[HEAP_SERVICE_TABLE_MODULE_PATH, 'create_table'],
 		[HEAP_SERVICE_STRINGS_MODULE_PATH, 'sweep_step'],
 		[HEAP_SERVICE_OBJECTS_MODULE_PATH, 'sweep_objects'],
 		[HEAP_SERVICE_TRACE_MODULE_PATH, 'trace_quantum'],
@@ -81,9 +81,10 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, 'reserve_table_growth'],
 		[HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'execute_table_resize'],
 		['kernel/vblank_irq', 'before_cart_irq'],
+		['kernel/bios_create_table', 'create_table'],
 	];
 	const functions = new Set<number>();
-	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {
+	for (let operation = 0; operation < HEAP_SERVICE_ENTRY_COUNT; ++operation) {
 		const address = readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * operation);
 		const index = blua32FunctionIndexAtAddress(layout, address);
 		const [path, binding] = entryBindings[operation];
@@ -92,7 +93,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length);
 		functions.add(index);
 	}
-	assert.equal(functions.size, HeapServiceOperation.Count);
+	assert.equal(functions.size, HEAP_SERVICE_ENTRY_COUNT);
 
 	const revised = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS,
 		{ image: layout, symbols: linked.symbols });

@@ -158,7 +158,8 @@ export class CpuExecutionState {
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		if (!cpu.heapServiceActive() && cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
-		while (cpu.readThreadFrameDepth(targetThread) > targetDepth) {
+		// A fixed service can own the next grant without a deeper guest frame.
+		while (cpu.heapServiceActive() || cpu.readThreadFrameDepth(targetThread) > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
@@ -200,11 +201,11 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			if (!cpu.heapServiceActive() && cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
-			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
-				return CpuSuspendedRunResult.Completed;
+			if (!cpu.heapServiceActive()) {
+				if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
+				if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) return CpuSuspendedRunResult.Completed;
+				if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			}
-			if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
 			}

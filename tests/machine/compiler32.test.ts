@@ -1,3 +1,5 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import { readLuaNumberLiteral, formatLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -21,9 +23,11 @@ function compile(source: string, optLevel: 0 | 1 | 2 | 3) {
 	return compileLuaChunkToProgram(parseLuaChunk(source, 'numbers.lua').chunk, [], { entrySource: source, programDomain: 'system', optLevel });
 }
 function execute(source: string, opt: 0 | 1 | 2 | 3, backend: CpuExecutionBackend) {
-	const image = linkTestSystemBlua32(compile(source, opt));
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'numbers.lua').chunk, [],
+		{ entrySource: source, optLevel: opt, programDomain: 'system' });
+	const image = linkTestSystemBlua32(compiled);
 	const { cpu } = createTestSystemCpu(image, backend);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	const results: v.Value[] = []; cpu.readCompletionValues(results); return { cpu, results, image };
 }
 

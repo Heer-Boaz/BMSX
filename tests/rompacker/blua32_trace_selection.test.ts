@@ -6,8 +6,10 @@ import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memor
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
 
 test('image builders select channels independently per image and across module boundaries', () => {
 	const systemSource = `module<entry>
@@ -21,7 +23,9 @@ system_observed = sink.count
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	const system = buildBlua32Image({
-		luaModules: [{ path: 'entry', displayPath: 'entry.lua', source: systemSource, chunk: parseLuaChunk(systemSource, 'entry') }],
+		luaModules: [{ path: 'entry', displayPath: 'entry.lua', source: systemSource, chunk: parseLuaChunk(systemSource, 'entry') },
+			...loadHeapServiceTestModules().map(module => ({ ...module, displayPath: `${module.path}.lua` }))],
+		preloadModules: HEAP_SERVICE_MODULES,
 		generatedLuaModules: [],
 		loadAddress: SYSTEM_ROM_BASE + 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,

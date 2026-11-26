@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include "spec/bmsx/bios.h"
+
 namespace bmsx {
 
 // System BLua32 image extension. The descriptor lives in immutable RODATA
@@ -13,16 +15,17 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, CreateTable, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
 	RootHead, RootBanks, CreateClosure, ReserveTableGrowth, ResizeTable, InterruptPrelude, Count,
 };
-using HeapServiceFunctions = std::array<uint32_t, static_cast<uint32_t>(HeapServiceOperation::Count)>;
+constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
+using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
 
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8u;
 constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
-	+ 4u * static_cast<uint32_t>(HeapServiceOperation::Count);
+	+ 4u * HEAP_SERVICE_ENTRY_COUNT;
 
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
@@ -66,6 +69,11 @@ enum class HeapServiceTableGrowthField : uint32_t {
 	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
 };
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
+
+constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
+enum class HeapServiceBiosCallField : uint32_t {
+	Destination = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+};
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };

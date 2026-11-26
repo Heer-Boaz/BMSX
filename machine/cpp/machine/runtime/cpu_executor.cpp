@@ -154,7 +154,9 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	if (!cpu.heapServiceActive() && cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
-	while (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
+	// A fixed service can own the next grant without a deeper guest frame.
+	while (cpu.heapServiceActive()
+		|| static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
@@ -198,11 +200,12 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		if (!cpu.heapServiceActive() && cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
-		if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth) {
-			return CpuSuspendedRunResult::Completed;
+		if (!cpu.heapServiceActive()) {
+			if (cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
+			if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth)
+				return CpuSuspendedRunResult::Completed;
+			if (cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 		}
-		if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
 		}

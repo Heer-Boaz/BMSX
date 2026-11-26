@@ -2,20 +2,20 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {test} from 'node:test';
-import {compileLuaChunkToProgram} from '../../toolchain/ts/lua/compiler';
+import {compileTestSystemWithHeap} from '../helpers/heap_service_system';
 import {parseLuaChunk} from '../../toolchain/ts/lua/analysis/parse';
 import {createTestSystemCpu,linkTestSystemBlua32} from '../helpers/blua32';
 import {CpuExecutionBackend} from '../../machine/ts/machine/cpu/compiled_block';
-import {RunResult} from '../../machine/ts/machine/cpu/cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
 const paths=['base','number/decimal','number/parse','table','string/base','string/pack','string/float/encode','string/float/decode'];
 const modules=paths.map(path=>{const source=readFileSync(`machine/bios/${path}.lua`,'utf8');return{path,source,chunk:parseLuaChunk(source,path+'.lua').chunk};});
 const consoleSource='return {write=function() end,end_line=function() end}';modules.push({path:'tty/console',source:consoleSource,chunk:parseLuaChunk(consoleSource,'tty/console.lua').chunk});
 const budget=1000000;
 function run(source:string,optLevel:0|3,backend:CpuExecutionBackend){
- const image=linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source,'pack32.lua').chunk,modules,{entrySource:source,optLevel,programDomain:'system'}));
- const {cpu}=createTestSystemCpu(image,backend);cpu.installBootPrimitives();assert.equal(cpu.runUntilDepth(0,budget),RunResult.Halted);
- const results:v.Value[]=[];cpu.readCompletionValues(results);assert.equal(cpu.readLuaFaultReasonWord(),0);
+ const image=linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(source,'pack32.lua').chunk,modules,{entrySource:source,optLevel,programDomain:'system'}));
+ const {cpu}=createTestSystemCpu(image,backend);cpu.installBootPrimitives();runGuestToHalt(cpu, budget);
+ const results:v.Value[]=[];cpu.readCompletionValues(results);
  return {image,cpu,results};
 }
 const prefix="require('base');local p<const>=require('string/pack');local s<const>=require('string/base');".replaceAll('<const>=','<const> =');

@@ -25,7 +25,7 @@ test::Blua32TestImage image(OpCode operation = OpCode::HALT, bool wide = false) 
 	u32 word = 0;
 	if (wide) writeInstruction(result.text, word++, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(result.text, word++, static_cast<u8>(operation), 0,
-		operation == OpCode::NEWT ? 2 : 1, 1);
+		1, 1);
 	writeInstruction(result.text, word++, static_cast<u8>(OpCode::KSMI), 7, 0, 37);
 	writeInstruction(result.text, word++, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	result.functions = {{.firstWord=0, .wordCount=word, .maxStack=8}};
@@ -473,28 +473,6 @@ void scheduledLogicalRefusalParks() {
 		"the reclaimed space admits the original store without executing its successor");
 }
 
-void impossibleNewTableDoesNotPark() {
-	auto source = image(OpCode::NEWT, true);
-	writeInstruction(source.text, 0, static_cast<u8>(OpCode::WIDE), 0, 63, 63);
-	writeInstruction(source.text, 1, static_cast<u8>(OpCode::NEWT), 0, 63, 63, 63);
-	source.functions = {{.firstWord=0, .wordCount=3, .maxStack=8}, {.firstWord=3, .wordCount=1}};
-	source.exceptionFunctionIndex = 1;
-	for (bool scalar : {false, true}) {
-		Machine m(source, scalar);
-		auto& cpu = m.cpu;
-		auto& arena = cpu.heapAllocator();
-		require(arena.setFloor(RAM_BASE + arena.managementOffset() - 16384u), "set the language arena to 16 KiB");
-		auto& frame = *cpu.rootThread()->currentFrame;
-		frame.registers.set(0, valueInteger(73)); frame.setTop(1);
-		const auto result = cpu.runUntilDepth(0, 1, 0u, CpuRunKind::Scheduled);
-		require(result != RunResult::ParkedAllocation && !cpu.allocationParked()
-			&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY && cpu.readEpcWord() == m.rom.textAddress,
-			"impossible scheduled NEWT faults at its WIDE issue PC");
-		require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)]
-			&& cpu.readFrameRegister(0, 0) == valueInteger(73), "no recovery charge or destination write");
-	}
-}
-
 void concatRecoveryChargesIssuingInstruction() {
 	Machine generated(image(OpCode::CONCAT)), scalar(image(OpCode::CONCAT), true);
 	for (auto* m : {&generated, &scalar}) {
@@ -514,25 +492,7 @@ void concatRecoveryChargesIssuingInstruction() {
 	require(generated.cpu.readFrameRegister(0, 7) == valueInteger(37), "the fresh grant resumes at the successor");
 }
 
-void allocationCollectionAndFailure() {
-	for (bool wide : {false, true}) for (const int grant : {1, 24 + 192}) {
-		Machine generated(image(OpCode::NEWT, wide)), scalar(image(OpCode::NEWT, wide), true);
-		for (auto* m : {&generated, &scalar}) {
-			m->cpu.luaHeap().setCollectionTarget(0);
-		}
-		require(test::runCpuParity(generated.cpu, scalar.cpu, grant) == RunResult::Yielded, "NEWT exhausts the short grant");
-		const auto work = generated.memory.readRamRecordWord(generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID);
-		require(grant == 1 ? work == 0u : work >= 64u && work < 64u + THREAD_HEAP_BYTES / 4u,
-			"ordinary allocation requests only funded work up to an indivisible record header");
-		require(generated.cpu.instructionBudgetRemaining == grant - 24 - 3 * static_cast<int>(work)
-			&& generated.cpu.collecting() == (grant > 24),
-			"NEWT pays its base charge and actual allocation assist");
-		require(generated.cpu.luaHeap().usedBytes() == bootBytes + 52 && valueIsTable(generated.cpu.readFrameRegister(0, 0))
-			&& isNil(generated.cpu.readFrameRegister(0, 7)), "request52 is admitted after collection");
-		test::runCpuParity(generated.cpu, scalar.cpu, 2);
-		require(generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.readFrameRegister(0, 7) == valueInteger(37),
-			"allocation and GC are not replayed on the next grant");
-	}
+void logicalAdmissionFailure() {
 	Machine failure(image()); auto& cpu = failure.cpu;
 	const auto doomed = cpu.createTable(16384, 0).address();
 	const auto used = cpu.luaHeap().usedBytes();
@@ -1938,7 +1898,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); impossibleNewTableDoesNotPark(); concatRecoveryChargesIssuingInstruction(); allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
+		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure(); collectionPrimitivePaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

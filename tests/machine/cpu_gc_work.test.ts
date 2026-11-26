@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
+import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase, GC_LAST_EPOCH_WORK, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
@@ -41,7 +41,7 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	let word = 0;
 	if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, word++, operation, 0, operation === OpCode.NEWT ? 2 : 1, 1);
+	writeInstruction(text, word++, operation, 0, 1, 1);
 	writeInstruction(text, word++, OpCode.KSMI, 7, 0, 37);
 	writeInstruction(text, word++, OpCode.HALT, 0, 0, 0);
 	return { text, functions: [{ firstWord: 0, wordCount: word, maxStack: 8 }], constants: [null, integerConstant(12), 'ROM text does not own guest text bytes'],
@@ -357,76 +357,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
 		assert.equal(frame.registers.get(7), valueInteger(37), 'fresh grant executes successor, not CALL/collection again');
 	});
-
-	for (const grant of [1, BASE_CYCLES[OpCode.NEWT] + 192]) test(`NEWT sizes allocation work to grant ${grant} (${backend}, WIDE=${wide})`, () => {
-		const image = linkRawTestSystemBlua32(source(OpCode.NEWT, wide));
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
-		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			cpu.runUntilDepth(0, 1);
-		}
-		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-		frame.registers.setNil(0); frame.top = 0;
-		cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
-		assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
-		cpu.luaHeap.setCollectionTarget(0);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc); frame.registers.setNil(7);
-		const paid = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
-		const previous = cpu.memory.readRamRecordWord(paid);
-		assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-		const funded = grant > BASE_CYCLES[OpCode.NEWT];
-		assert.equal(cpu.gc.active(), funded);
-		const work = funded ? cpu.memory.readRamRecordWord(paid) : 0;
-		if (funded) assert.ok(work >= 64 && work < 64 + THREAD_HEAP_BYTES / 4, `a Thread header can cross the grant: ${work}`);
-		else assert.equal(cpu.memory.readRamRecordWord(paid), previous);
-		assert.equal(cpu.instructionBudgetRemaining, grant - BASE_CYCLES[OpCode.NEWT] - 3 * work);
-		assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 52, 'request52 is admitted after collection and excluded from B_pre');
-		assert.equal(frame.registers.getTag(0), ValueTag.Table); assert.equal(frame.registers.get(7), valueNil());
-		assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
-		assert.equal(frame.registers.get(7), valueInteger(37));
-	});
 }
-
-test('an unfunded physical reservation leaves its scan debt for the next instruction', () => {
-	const image = linkRawTestSystemBlua32(source(OpCode.NEWT));
-	const { cpu, memory } = createTestSystemCpu(image);
-	const { gc, heapAllocator: arena, luaHeap: heap } = cpu;
-	const frame = cpu.rootThread.currentFrame!, pc = frame.pc;
-	const live = cpu.createTable(65536, 0); frame.registers.setTable(1, live); frame.top = 2;
-	gc.collect();
-	heap.setCollectionTarget(heap.capacity());
-	gc.step(valueNil(), valueNil(), valueNil(), 0, false, 256);
-	const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), live);
-	assert.notEqual(arena.allocate(128 * 1024, true), 0);
-	const paid = memory.readRamRecordWord(control + GC_PACE_PAID);
-	for (const cycles of [2, 48]) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.NEWT] + cycles);
-		assert.equal(memory.readRamRecordWord(control + GC_PACE_PAID), paid + Math.trunc(cycles / 3));
-		assert.equal(frame.registers.getTag(0), ValueTag.Table);
-		assert.equal(heap.collectionTarget(), heap.capacity());
-	}
-});
-
-test('an ordinary assist near capacity earns only the fraction of a quantum it performs', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.NEWT)));
-	const heap = cpu.luaHeap, frame = cpu.rootThread.currentFrame!;
-	const capacity = heap.capacity(), edge = capacity - (capacity >>> 3);
-	heap.setCollectionTarget(capacity);
-	const slots = Math.trunc((edge - heap.usedBytes()) / 5);
-	frame.registers.setTable(1, cpu.createTable(slots, 0)); frame.top = 2;
-	const occupied = heap.usedBytes();
-	assert.ok(occupied > edge);
-	heap.setCollectionTarget(occupied);
-	const grant = BASE_CYCLES[OpCode.NEWT] + 3 * 128;
-	cpu.runUntilDepth(0, grant);
-	const work = cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID);
-	assert.ok(work >= 128 && work < GC_STEP_WORDS);
-	assert.equal(cpu.instructionBudgetRemaining, grant - BASE_CYCLES[OpCode.NEWT] - 3 * work);
-	assert.equal(heap.collectionTarget(), occupied + Math.trunc(work * GC_ASSIST_BYTES / GC_STEP_WORDS));
-	assert.equal(frame.registers.getTag(0), ValueTag.Table);
-});
 
 test('a WIDE table store retries physical refusal in current then fresh epochs at its issue PC', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT, true)));
@@ -495,26 +426,6 @@ test('CONCAT pays for synchronous recovery of a refused String record before its
 	assert.equal(frame.registers.get(7), valueNil());
 	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 	assert.equal(frame.registers.get(7), valueInteger(37));
-});
-
-test('an impossible WIDE NEWT faults at issue instead of parking a scheduled allocation', () => {
-	const program = source(OpCode.NEWT, true);
-	writeInstruction(program.text, 0, OpCode.WIDE, 0, 63, 63);
-	writeInstruction(program.text, 1, OpCode.NEWT, 0, 63, 63, 63);
-	const image = linkRawTestSystemBlua32({ ...program, functions: [
-		{ firstWord: 0, wordCount: 3, maxStack: 8 }, { firstWord: 3, wordCount: 1 }],
-		exceptionFunctionIndex: 1 });
-	const { cpu } = createTestSystemCpu(image), arena = cpu.heapAllocator;
-	assert.ok(arena.setFloor(RAM_BASE + arena.managementOffset() - 16384));
-	const frame = cpu.rootThread.currentFrame!, issuePc = frame.pc;
-	frame.registers.setInteger(0, 73); frame.top = 1;
-	const result = cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled);
-	assert.notEqual(result, RunResult.ParkedAllocation);
-	assert.equal(cpu.allocationParked(), false);
-	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(cpu.readEpcWord(), issuePc);
-	assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT]);
-	assert.equal(frame.registers.get(0), valueInteger(73));
 });
 
 test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {

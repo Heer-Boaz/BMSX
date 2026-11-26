@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
@@ -19,7 +19,7 @@ function runVram(entrySource: string, displaySize: number) {
 	const systemVramRegionSource = `return function()
 	return ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)}
 end`;
-	const compiled = compileLuaChunkToProgram(
+	const compiled = compileTestSystemWithHeap(
 		parseLuaChunk(entrySource, 'test.lua'),
 		[
 			{

@@ -1,13 +1,17 @@
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
+import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
+import { compileHeapServiceSystem, linkHeapServiceEntry } from '../helpers/heap_service_system';
 import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
-import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
+import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { ValueTag, asClosure, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -16,7 +20,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('compiled generic-for preserves next deletion, captured loop locals and ordinary iterator fallback', () => {
 	const source = `
@@ -42,7 +46,7 @@ return sum, captures[1]() + captures[2]() + captures[3](), seeded, custom, calls
 end
 `;
 	for (const level of [0, 3] as const) {
-		const compiled = compileLuaSource(source, 'table-iterator.lua', level);
+		const compiled = compileHeapServiceSystem(source, level);
 		const code = compiled.program.code;
 		let iterations = 0;
 		for (let offset = 0; offset < code.length; offset += INSTRUCTION_BYTES)
@@ -385,35 +389,67 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	assert.equal(js.rootThread.frameAtDepth(0).registers.getInteger(3), 19);
 });
 
-test('compiled NEWT materializes allocation roots and leaves destination untouched when collection cannot admit a WIDE request', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
+test('compiled BIOSCALL keeps the destination unchanged when collection cannot admit a WIDE request', () => {
+	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 63, 63);
-	writeInstruction(text, 2, OpCode.NEWT, 8, 63, 63, 63);
-	writeInstruction(text, 3, OpCode.MOV, 9, 8, 0);
-	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 16 },
-		{ firstWord: 32, wordCount: 1 }], globalNames: ['retained'], exceptionFunctionIndex: 1 });
+	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.BIOSCALL, 8, BiosCall.CreateTable, 2);
+	writeInstruction(text, 3, OpCode.MOV, 11, 8, 0);
+	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
+	const image = linkHeapServiceEntry(text, 16);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (let visit = 0; visit < 32; visit++) runCpuParity(js, ref, 1);
-	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!, entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(page.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.AllocateTable);
+	const functionAddress = image.vectors.entryFunctionAddress;
+	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
+	const start = (cpu: typeof js, hint: number) => {
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
+		const root = cpu.rootThread.frameAtDepth(0);
+		root.registers.setInteger(8, 73);
+		root.registers.setInteger(9, hint);
+		root.registers.setInteger(10, hint);
+		root.registers.setNil(11);
+		root.top = 11;
+	};
+	for (let visit = 0; visit <= COMPILED_BLOCK_THRESHOLD; ++visit) {
+		start(js, 0); start(ref, 0);
+		assert.equal(runCpuParity(js, ref, 64), RunResult.Yielded);
+		assert.ok(js.heapServiceActive() && ref.heapServiceActive());
+		assert.equal(runCpuParity(js, ref, 4096), RunResult.Yielded);
+		assert.ok(!js.heapServiceActive() && !ref.heapServiceActive());
+	}
+	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
+	const terminal = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal;
+	assert.equal(terminal.exit, CompiledBlockExit.BiosCall);
+	assert.equal(terminal.currentPc, pc + INSTRUCTION_BYTES, 'the WIDE head, not the body, owns the operation');
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
-		const root = cpu.rootThread.frameAtDepth(0); root.registers.setInteger(8, 73); root.registers.setNil(9); root.top = 9;
-		cpu.collectTrackedHeapBytes(); // Discard the tables made while warming the code.
-		cpu.rootThread.resizeStack(32); // The exception frame must not allocate during the failed NEWT.
-		const retained = cpu.createTable(660000);
-		cpu.setGlobalByKey(cpu.stringPool.find('retained')!, valueTable(retained));
+		start(cpu, 1024);
+		cpu.collectTrackedHeapBytes(); // Discard the unrooted warming allocations.
+		cpu.rootThread.resizeStack(32); // Exception entry need not allocate a larger stack.
+		assert.ok(cpu.heapAllocator.setFloor(RAM_BASE + cpu.heapAllocator.managementOffset() - 65536));
+		const retained = cpu.createTable(11000);
+		cpu.setGlobalByKey(cpu.stringPool.intern('retained'), valueTable(retained));
 		cpu.collectTrackedHeapBytes();
 	}
-	runCpuParity(js, ref, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.NEWT]);
-	const work = js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
-	assert.ok(work > 0, 'the request performed collector work');
-	assert.equal(js.instructionBudgetRemaining, -3 * work, 'failed NEWT pays the recovered epoch despite having no cycles for an ordinary assist');
+	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
+	assert.equal(js.heapServiceActive(), false, 'the first short grant cannot admit the call');
+	assert.equal(frame.pc, terminal.currentPc);
+	assert.equal(frame.registers.getInteger(8), 73);
+	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.BIOSCALL]), RunResult.Yielded);
+	assert.equal(js.instructionBudgetRemaining, 0, 'gate launch charges only the instruction');
+	assert.ok(js.heapServiceActive() && ref.heapServiceActive());
+	let grants = 0;
+	while (js.heapServiceActive() && grants < 2048) {
+		runCpuParity(js, ref, 4096);
+		++grants;
+	}
+	assert.ok(!js.heapServiceActive());
+	assert.ok(grants > 1, 'recovery is timed and cannot retire inside the issuing instruction');
+	assert.equal(js.luaHeap.usedBytes(), ref.luaHeap.usedBytes());
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-	assert.equal(frame.registers.getInteger(8), 73); assert.equal(frame.top, 9);
+	assert.equal(js.readEpcWord(), terminal.currentPc);
+	assert.equal(frame.registers.getInteger(8), 73);
+	assert.equal(frame.registers.get(11), valueNil(), 'no following caller instruction ran');
+	assert.equal(frame.top, 11, 'the tagged argument window stays live through collection');
+	assert.ok(js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK) > 0);
 });

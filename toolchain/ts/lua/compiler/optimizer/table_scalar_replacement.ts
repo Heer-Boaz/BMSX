@@ -4,7 +4,7 @@ import { integerConstant } from '../../number';
 import { buildBasicBlocks, buildBlockGraph, isSkipInstruction, remapInstructions } from '../control_flow';
 import type { ProgramConstant } from '../program';
 import type { Instruction, InstructionSet, OptimizationContext } from './index';
-import { computeMaxRegister } from './instructions';
+import { computeMaxRegister, createsTable } from './instructions';
 import {
 	computeBlockLiveOut,
 	visitInstructionDefs,
@@ -97,7 +97,7 @@ function updateLength(table: VirtualTable, key: number, scalar: Scalar): void {
 // the virtual object. RHS producers are not removed by this transform.
 export function scalarReplacePrivateTables(set: InstructionSet, context: OptimizationContext): InstructionSet {
 	const { instructions, ranges } = set;
-	if (!instructions.some(instruction => instruction.op === OpCode.NEWT)) return set;
+	if (!instructions.some(createsTable)) return set;
 	const maxRegister = computeMaxRegister(instructions);
 	const captured = new Uint8Array(maxRegister + 1);
 	const resolveClosure = context.getClosureUpvalues;
@@ -119,7 +119,7 @@ export function scalarReplacePrivateTables(set: InstructionSet, context: Optimiz
 	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
 		const { start, end } = blocks[blockIndex];
 		let firstTable = start;
-		while (firstTable < end && instructions[firstTable].op !== OpCode.NEWT) firstTable += 1;
+		while (firstTable < end && !createsTable(instructions[firstTable])) firstTable += 1;
 		if (firstTable === end) continue;
 		state.tables.fill(undefined);
 		state.constants.fill(undefined);
@@ -168,7 +168,7 @@ export function scalarReplacePrivateTables(set: InstructionSet, context: Optimiz
 				}
 			}
 			visitInstructionDefs(instruction, maxRegister, state, redefine);
-			if (op === OpCode.NEWT && !skipVictim && captured[a] === 0) {
+			if (createsTable(instruction) && !skipVictim && captured[a] === 0) {
 				const created: VirtualTable = { escaped: false, length: 0, elements: new Map(), fields: new Map(), stores: [index], loads: [] };
 				state.tables[a] = created;
 				candidates.push(created);

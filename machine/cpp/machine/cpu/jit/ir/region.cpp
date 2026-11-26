@@ -72,7 +72,6 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	m_entryTypes.clear();
 	m_sideExits.clear();
 	m_admissionReplays.clear();
-	m_records.clear();
 	m_ownFieldAddresses.clear();
 	size_t instructionCount = 0;
 	for (const auto& source : sources) instructionCount += source.instructions.size();
@@ -199,7 +198,6 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 		return slots != block.requiredSlots || captures != block.requiredCaptures;
 	});
 	planAdmissionReplays();
-	if (options.immutableSource) planRecordConstructors(directory);
 }
 
 } // namespace bmsx

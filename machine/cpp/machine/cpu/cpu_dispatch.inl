@@ -262,22 +262,13 @@ DISPATCH_LABEL(SETT) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(NEWT) {
+DISPATCH_LABEL(BIOSCALL) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	++m_diagnosticExecutionProfile.interpreterOpcodes.newt;
+	++m_diagnosticExecutionProfile.interpreterOpcodes.biosCall;
 #endif
-	const int a = decoded->a;
-	const int b = decoded->b;
-	const int c = decoded->c;
 	PUBLISH_SCALAR_FRONTIER();
-	const u32 table = reserveNewTable(FRAME, a, b, c);
-	if (!table) {
-		if (heapServiceActive()) DISPATCH_CONTINUE();
-		return RunResult::ParkedAllocation;
-	}
-	RESUME_SCALAR_FRONTIER();
-	SET_REGISTER_FAST(a, valueTable(table));
-	DISPATCH_NEXT();
+	enterBiosCall(FRAME, decoded->a, static_cast<u32>(decoded->b), decoded->c);
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(ADD) {

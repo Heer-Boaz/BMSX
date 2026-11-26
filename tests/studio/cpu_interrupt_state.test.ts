@@ -163,14 +163,14 @@ function makeCompletionLatchTestImage(): TestBlua32Image {
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
 	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.MOV, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
 	return linkRawTestSystemBlua32({
 		text: code,
 		functions: [
 			{ firstWord: 0, wordCount: 3 },
-			{ firstWord: 3, wordCount: 2, maxStack: 1 },
+			{ firstWord: 3, wordCount: 2, maxStack: 1, numParams: 1 },
 			{ firstWord: 5, wordCount: 1 },
 		],
 		functionIds: ['return_function', 'return_table', 'interrupt_return'],
@@ -695,7 +695,7 @@ function returnFromInterruptFrame(runtime: Runtime, state: FrameState, cpu: CPU,
 
 test('CPU protected-call microcode preempts, saves, resumes, and preserves Lua results', () => {
 	const source = `
-marker = {}
+function marker() end
 local succeed<const> = function()
 	return 3, 4
 end
@@ -724,7 +724,8 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	cpu.setGlobalByKey(cpu.stringPool.intern('xpcall'), valueBuiltinFunction(BuiltinFunctionId.XPCall));
 
 	let restoredProtectedCall = false;
-	while (cpu.getFrameDepth() > 0) {
+	for (let grants = 0; cpu.getFrameDepth() > 0; ++grants) {
+		assert.ok(grants < 4096, 'the protected-call test must return');
 		assert.equal(cpu.runUntilDepth(0, 1), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
 		if (!restoredProtectedCall && cpu.getFrameDepth() > 0) {
 			const state = cpu.captureRuntimeState();
@@ -885,7 +886,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	const closureKey = cpu.stringPool.intern('completion_call');
 	cpu.setGlobalByKey(closureKey, valueClosure(closure));
 
-	cpu.beginCompletionCall(closure);
+	cpu.beginCompletionCall(closure, [valueTable(cpu.createTable())]);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 	const state = cpu.captureRuntimeState();
 	assert.equal(cpu.getFrameDepth(), 1);
@@ -895,14 +896,16 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const restoredTable = valuePayload(materializeCpuCompletionValues(cpu)[0]);
 	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.gc.tableRecordAddress(restoredTable), restoredTable, 'completion is the sole root of the returned Table');
 	assert.equal(valuePayload(materializeCpuCompletionValues(cpu)[0]), restoredTable);
 
 	const restoredClosure = asClosure(cpu.getGlobalByKey(closureKey), cpu.gc);
 	const runtime = makeRuntime(cpu, irqController);
-	const results = runtime.callClosure(restoredClosure);
+	const results = runtime.callClosure(restoredClosure, [valueTable(cpu.createTable())]);
 	assert.equal(results, runtime.readCompletionValues());
 	const borrowedTable = valuePayload(results[0]);
 	cpu.collectTrackedHeapBytes();
+	assert.equal(cpu.gc.tableRecordAddress(borrowedTable), borrowedTable);
 	assert.equal(valuePayload(results[0]), borrowedTable);
 });
 

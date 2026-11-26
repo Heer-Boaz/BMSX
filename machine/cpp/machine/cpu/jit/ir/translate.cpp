@@ -93,7 +93,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction) 
 	case OpCode::VARARG: return NativeVararg{{a, static_cast<i16>(decodeValueCount(b, -1))}};
 	case OpCode::RET: return NativeReturnSite{{a, static_cast<i16>(decodeValueCount(b, -1))}};
 	case OpCode::HALT: return NativeHalt{};
-	case OpCode::NEWT: return NativeTableAllocation{{a, static_cast<u16>(b), static_cast<u16>(c)}};
+	case OpCode::BIOSCALL: return NativeBiosCall{{a, static_cast<u16>(b), static_cast<u16>(c)}};
 	case OpCode::CONCAT: return NativeConcat{{a, b, c}};
 	case OpCode::CONCATN: return NativeConcatRange{{a, static_cast<u16>(b), static_cast<u16>(c)}};
 	case OpCode::CLOSURE: return NativeClosure{{instruction.bx(), a, static_cast<u16>(c)}};

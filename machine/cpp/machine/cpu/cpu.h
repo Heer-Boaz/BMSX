@@ -15,7 +15,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include "common/scratchbuffer.h"
@@ -98,22 +97,12 @@ private:
 };
 
 enum class AllocationRecovery : u32 { None, Current, RetryCurrent, Fresh, RetryFresh };
-enum class PendingAllocationKind : u32 { TableAssignment, TableCreation };
-struct PendingTableAssignment {
-	u32 receiver;
-	u8 extraHashSlots;
-	Value key, value;
-	bool operator==(const PendingTableAssignment&) const = default;
-};
-struct PendingTableCreation {
-	int destination, arraySize, hashSize;
-	bool operator==(const PendingTableCreation&) const = default;
-};
 struct PendingAllocation {
-	using Operands = std::variant<PendingTableAssignment, PendingTableCreation>;
 	AllocationRecovery recovery = AllocationRecovery::None;
 	u32 instructionPc = 0, lastPc = 0, nextPc = 0;
-	Operands operands{};
+	u32 receiver = 0;
+	u8 extraHashSlots = 0;
+	Value key = valueNil(), value = valueNil();
 	bool operator==(const PendingAllocation&) const = default;
 };
 
@@ -386,6 +375,8 @@ private:
 	void initializeHeapService();
 	CallFrame& prepareHeapServiceFrame(u32 functionAddress, int base, int supplied,
 		CallResultPlacement result, std::optional<u32> callSite);
+	void enterBiosCall(CallFrame&, int destination, u32 selector, int supplied);
+	void finishBiosCall(u32 destination);
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
@@ -522,21 +513,15 @@ private:
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
-	void parkAllocation(CallFrame&, PendingAllocation::Operands);
 	void finishAllocationRecovery();
-	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
-	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
-	bool beginRecordReservation(CallFrame&, HeapServiceRecordKind, int destination, u32 operand0, u32 operand1,
-		HeapServiceRecordStage, u32 nextPc);
-	void startRecordReservation(HeapServiceRecordStage, HeapServiceRecordKind, u32 operand0, u32 operand1, u32 charged);
-	void startRecordPhysicalAssist(HeapServiceRecordStage, HeapServiceRecordKind, int budget, u32 operand0, u32 operand1, u32 charged);
+	void beginRecordReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
+	void startRecordReservation(u32 prototype, u32 domain);
+	void startRecordPhysicalAssist(int budget, u32 prototype, u32 domain);
 	void finishRecordReservation();
 	void stepRecordCollection(size_t words);
 	void startDirectRecordLogicalEpoch();
 	void advanceDirectRecordRecovery();
 	void finishRecordCollection(HeapServiceRecordStage stage);
-	void retireNewTable(CallFrame&, int destination, u32 address);
-	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);

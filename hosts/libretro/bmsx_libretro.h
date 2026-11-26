@@ -170,12 +170,12 @@ typedef struct BmsxExecutionProfile {
 	uint64_t gc_atomic_nanoseconds;
 	int64_t cpu_native_origin_cycles;
 	int64_t cpu_interpreter_runtime_cycles;
-	uint64_t native_newt_count;
+	uint64_t native_bios_call_count;
 	uint64_t native_call_count;
 	uint64_t native_setfield_count;
 	uint64_t native_concat_count;
 	uint64_t native_concatn_count;
-	uint64_t interpreter_newt_count;
+	uint64_t interpreter_bios_call_count;
 	uint64_t interpreter_call_count;
 	uint64_t interpreter_setfield_count;
 	uint64_t interpreter_concat_count;

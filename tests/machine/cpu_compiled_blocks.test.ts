@@ -1,4 +1,3 @@
-import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterPayloadReads, observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
@@ -91,35 +90,6 @@ test('generated JavaScript warms within one slice and preserves every admitted s
 	assert.ok(compiledEntries(js) > 0, 'the JavaScript backend really installed generated functions');
 });
 
-test('a short grant stops before an unadmitted compiled allocation', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.MOV, 1, 0, 0);
-	writeInstruction(text, 2, OpCode.MOV, 2, 0, 0);
-	writeInstruction(text, 3, OpCode.NEWT, 3, 0, 0);
-	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
-	for (const { cpu, memory } of machines) {
-		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.runUntilDepth(0, 1000);
-	}
-	assert.ok(compiledEntries(machines[0].cpu) > 0);
-	for (const grant of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15]) {
-		for (const { cpu } of machines) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-			cpu.rootThread.frameAtDepth(0).registers.clear(4, 0);
-		}
-		const [generated, reference] = machines.map(({ cpu }) => cpu.runUntilDepth(0, grant));
-		assert.equal(generated, reference, `outcome at grant ${grant}`);
-		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining,
-			`cycle charge at grant ${grant}`);
-		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState(),
-			`visible state and allocation identity at grant ${grant}`);
-	}
-});
-
 test('a short grant stops before an unadmitted inline RAM store', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), target = DYNAMIC_RAM_BASE + 0x20000;
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0);
@@ -150,35 +120,11 @@ test('a short grant stops before an unadmitted inline RAM store', () => {
 	}
 });
 
-test('one admitted compiled NEWT completes even when it exhausts its grant', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.NEWT, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.MOV, 1, 0, 0);
-	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 3 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
-	for (const { cpu, memory } of machines) {
-		memory.writeBytes(DYNAMIC_RAM_BASE, text);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.runUntilDepth(0, 1000);
-	}
-	assert.ok(compiledEntries(machines[0].cpu) > 0);
-	for (const { cpu } of machines) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		const before = allocatedObjectRecords(cpu).length;
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.NEWT]);
-		assert.equal(allocatedObjectRecords(cpu).length, before + 1);
-		assert.equal(cpu.readFramePc(0), DYNAMIC_RAM_BASE + INSTRUCTION_BYTES);
-	}
-	assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState());
-});
-
-test('open VARARG work is charged before admitting a later compiled allocation', () => {
+test('open VARARG work is charged before admitting a later compiled write', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 3, 0, 0);
 	writeInstruction(text, 1, OpCode.VARARG, 4, 0, 0);
-	writeInstruction(text, 2, OpCode.NEWT, 7, 0, 0);
+	writeInstruction(text, 2, OpCode.K1, 7, 0, 0);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8, isVararg: true }] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
@@ -202,7 +148,7 @@ test('open VARARG work is charged before admitting a later compiled allocation',
 		assert.equal(machines[0].cpu.instructionBudgetRemaining, machines[1].cpu.instructionBudgetRemaining,
 			`open vararg cycle charge at grant ${grant}`);
 		assert.deepEqual(machines[0].cpu.captureRuntimeState(), machines[1].cpu.captureRuntimeState(),
-			`open vararg state and allocation identity at grant ${grant}`);
+			`open vararg state and successor write at grant ${grant}`);
 	}
 });
 
@@ -458,7 +404,7 @@ return n, t.value, other.value
 	for (const cpu of [js, ref]) cpu.installBootPrimitives();
 	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
 	let result = RunResult.Yielded;
-	for (let slice = 0; slice < 10000 && result === RunResult.Yielded; ++slice) {
+	for (let slice = 0; slice < 40_000 && result === RunResult.Yielded; ++slice) {
 		const grant = [1, 2, 3, 9, 33, 256][slice % 6];
 		result = runCpuParity(js, ref, grant);
 		assert.equal(js.readLuaFaultReasonWord(), 0, 'the field program must execute without a guest fault');

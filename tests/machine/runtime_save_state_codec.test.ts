@@ -1,4 +1,4 @@
-import { AllocationRecovery, PendingAllocationKind, type PendingAllocation } from '../../machine/ts/machine/cpu/cpu';
+import { AllocationRecovery, type PendingAllocation } from '../../machine/ts/machine/cpu/cpu';
 import { TableCensus, TableRebuild } from '../../machine/ts/machine/cpu/table';
 import { LuaAllocationRecovery } from '../../machine/ts/machine/cpu/lua_heap';
 import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
@@ -684,19 +684,17 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
 });
 
-test('typed pending allocations preserve their issued instruction and active operands', () => {
+test('parked Table writes preserve their exact issue and raw operands without a kind word', () => {
 	const state = createRuntimeSaveState();
-	const frontier = { recovery: AllocationRecovery.RetryCurrent, instructionPc: 0x2000, lastPc: 0x2004, nextPc: 0x2008 };
-	const requests: PendingAllocation[] = [
-		{ ...frontier, kind: PendingAllocationKind.TableCreation, destination: 17, arraySize: 1024, hashSize: 5 },
-		{ ...frontier, kind: PendingAllocationKind.TableAssignment, receiver: 0x12345678,
-			key: valueString(0x01023458), value: valueFloatBits(0xffc12345), extraHashSlots: 255 },
-	];
-	for (const pending of requests) {
-		state.cpuState.pendingAllocation = pending;
-		const encoded = encodeRuntimeSaveState(state);
-		assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
-	}
+	const emptyLength = encodeRuntimeSaveState(state).length;
+	const pending: PendingAllocation = {
+		recovery: AllocationRecovery.RetryCurrent, instructionPc: 0x2000, lastPc: 0x2004, nextPc: 0x2008,
+		receiver: 0x12345678, key: valueString(0x01023458), value: valueFloatBits(0xffc12345), extraHashSlots: 255,
+	};
+	state.cpuState.pendingAllocation = pending;
+	const encoded = encodeRuntimeSaveState(state);
+	assert.equal(encoded.length - emptyLength, 33); // four u32 words, two Values and one u8
+	assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
 });
 
 test('runtime save-state codec retains the USER ingress bank', () => {

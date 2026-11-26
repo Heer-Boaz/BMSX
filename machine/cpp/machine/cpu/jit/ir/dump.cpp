@@ -24,7 +24,7 @@ struct OperationName {
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
-	const char* operator()(const NativeTableAllocation& op) const { return op.record ? "allocate-record" : "allocate-table"; }
+	const char* operator()(const NativeBiosCall&) const { return "bios-call"; }
 	const char* operator()(const NativeConcat&) const { return "concat"; }
 	const char* operator()(const NativeConcatRange&) const { return "concat-range"; }
 	const char* operator()(const NativeClosure&) const { return "create-closure"; }
@@ -67,17 +67,6 @@ void writeSlotRange(std::ostream& out, NativeSlotRange range) {
 	else if (range.count > 1) out << "..R" << range.end() - 1;
 }
 
-void writeRecord(std::ostream& out, const NativeRecordPlan& record) {
-	out << " {";
-	for (u32 field = 0; field < record.count; ++field) {
-		if (field != 0) out << ", ";
-		out << 'K' << record.keySelectors[field] << '=';
-		writeValue(out, record.operands[field]);
-	}
-	out << "} required-slots=" << record.requiredSlots << " last-pc=" << record.lastInstructionPc
-		<< " last-word=" << record.lastWordPc << " -> pc=" << record.nextPc;
-}
-
 void writeNumericPlan(std::ostream& out, const NativeArithmetic& arithmetic) {
 	out << " op=" << unsigned(arithmetic.operation);
 	const auto& plan = std::get<NativeNumericPlan>(arithmetic.strategy);
@@ -111,9 +100,7 @@ struct OperationPlan {
 		out << " tag=" << unsigned(valueTag(op.value)) << " word=" << valuePayload(op.value);
 	}
 	void operator()(const NativeConstantLoad& op) const { out << " K" << op.index; }
-	void operator()(const NativeTableAllocation& op) const {
-		out << " array=" << op.arraySize << " hash=" << op.hashSize;
-	}
+	void operator()(const NativeBiosCall& op) const { out << " selector=" << op.selector << " argc=" << op.argc; }
 	void operator()(const NativeClosure& op) const {
 		if ((op.flags & CLOSURE_ADDRESS_REGISTER_FLAG) == 0) out << " address=" << op.address;
 		out << " flags=" << op.flags;
@@ -267,8 +254,6 @@ void dumpNativeIr(std::ostream& out, const NativeIrRegion& region) {
 				out << " reads=";
 				writeSlotRange(out, readsRange);
 			}
-			if (const auto* allocation = std::get_if<NativeTableAllocation>(&inst.operation); allocation && allocation->record)
-				writeRecord(out, region.recordPlans()[*allocation->record]);
 			std::visit(OperationPlan{out}, inst.operation);
 			if (row + 1 == block.instructions.size()) {
 				if (block.taken) out << " taken=e" << unsigned(*block.taken);

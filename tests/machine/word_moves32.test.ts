@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
@@ -22,8 +23,13 @@ for(const opt of [0,1,2,3] as const) for(const backend of [CpuExecutionBackend.I
 	});
 	test(`word moves O${opt} ${backend}: wrong subtypes fault even when a result is discarded`,()=>{
 		for(const expression of ['blua32.float_bits(2)','blua32.float_from_bits(2.0)','blua32.float_bits(nil)','blua32.float_from_bits({})']) {
-			const image=linkTestSystemBlua32(compile(expression+';return 1',opt)),{cpu}=createTestSystemCpu(image,backend);
-			for(let step=0;step<1000 && cpu.readLuaFaultReasonWord()===0;++step) if(cpu.runUntilDepth(0,1)===RunResult.Halted) break;
+			const entrySource = expression + ';return 1';
+			const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, 'words.lua').chunk, [],
+				{ entrySource, optLevel: opt, programDomain: 'system' });
+			const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
+			for (let step = 0; step < 16_384 && cpu.readLuaFaultReasonWord() === 0; ++step) {
+				if (cpu.runUntilDepth(0, 1) === RunResult.Halted) break;
+			}
 			assert.equal(cpu.readLuaFaultReasonWord(),10,expression);
 		}
 	});

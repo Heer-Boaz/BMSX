@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { parseHexFloat32Bits } from '../../machine/ts/common/parse_float32';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import * as v from '../../machine/ts/machine/cpu/value';
@@ -22,12 +22,11 @@ modules.push({ path: 'tty/console', source: 'return {write=function() end,end_li
 const parsedModules = modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`).chunk }));
 const budget = 10000000;
 function run(source: string, optLevel: 0 | 3, backend: CpuExecutionBackend) {
-	const program = compileLuaChunkToProgram(parseLuaChunk(source, 'number32.lua').chunk, parsedModules, { entrySource: source, optLevel, programDomain: 'system' });
+	const program = compileTestSystemWithHeap(parseLuaChunk(source, 'number32.lua').chunk, parsedModules, { entrySource: source, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image, backend);
 	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	runGuestToHalt(cpu, budget);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
-	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	return { image, cpu, results };
 }
 const source = readFileSync('tests/fixtures/compiler32/parse.lua','utf8');
@@ -80,7 +79,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS decimal ${ba
 			const text = digits.slice(0,-places)+'.'+digits.slice(-places);
 			const expected = delta < 0n ? lower : delta > 0n ? lower+1 : (lower & 1) === 0 ? lower : lower+1;
 			cpu.beginCompletionCall(closure,[v.valueString(cpu.stringPool.intern(text))]);
-			assert.equal(cpu.runUntilDepth(0,budget),RunResult.Halted);
+			runGuestToHalt(cpu, budget);
 			const actual: v.Value[] = []; cpu.readCompletionValues(actual);
 			assert.deepEqual(actual,[v.valueFloatBits(expected)],text);
 		}
@@ -120,7 +119,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS literal ${ba
 	}
 	for (const text of texts) {
 		cpu.beginCompletionCall(closure,[v.valueString(cpu.stringPool.intern(text))]);
-		assert.equal(cpu.runUntilDepth(0,budget),RunResult.Halted);
+		runGuestToHalt(cpu, budget);
 		const actual: v.Value[] = [];cpu.readCompletionValues(actual);
 		assert.deepEqual(actual,[v.valueFloatBits(parseHexFloat32Bits(text))],text);
 	}

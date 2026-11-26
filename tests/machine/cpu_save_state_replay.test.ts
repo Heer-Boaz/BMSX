@@ -14,11 +14,12 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as const) test(`checkpoint and GC retain a ${name} in the preserved caller prefix after an open-result call`, () => {
+for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${name} in the preserved caller prefix after an open-result call`, () => {
 	const code = new Uint8Array(6 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, op, 0, 0, 0);
+	writeInstruction(code, 0, name === 'table' ? OpCode.MOV : OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.CLOSURE, 4, 0, 0);
 	writeInstruction(code, 3, OpCode.CALL, 4, 1, 0);
@@ -30,11 +31,12 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
+	if (name === 'table') cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.ExecutionStopped);
 	assert.equal(cpu.rootThread.frameAtDepth(0).top, 4, 'open CALL accepts zero results without reviving earlier arguments');
-	if (op === OpCode.NEWT) {
+	if (name === 'table') {
 		const weak = cpu.createTable(1, 0);
 		const mode = cpu.createTable(0, 1);
 		cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
@@ -47,22 +49,22 @@ for (const [op, name] of [[OpCode.K1, 'constant'], [OpCode.NEWT, 'table']] as co
 	const saved = cpu.captureRuntimeState();
 	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	cpu.restoreRuntimeState(saved);
-	assert.equal(cpu.rootThread.frameAtDepth(0).registers.getTag(0), op === OpCode.K1 ? ValueTag.Integer : ValueTag.Table,
+	assert.equal(cpu.rootThread.frameAtDepth(0).registers.getTag(0), name === 'constant' ? ValueTag.Integer : ValueTag.Table,
 		'snapshot preserves the caller local below its call area');
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	assert.equal(values.length, 1);
-	if (op === OpCode.K1) assert.deepEqual(values, [valueInteger(1)]);
+	if (name === 'constant') assert.deepEqual(values, [valueInteger(1)]);
 	else assert.ok(values[0] === cpu.gc.tables.getInteger(valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!)), 1));
 });
 
 test('a closure completion value refers to separate physical closure and capture records', () => {
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource(`
+	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileHeapServiceSystem(`
 local root = {}
 return function() return root end
-`, 'snapshot-allocation-order.lua')));
-	cpu.runUntilDepth(0, 1000);
+`, 0)));
+	runGuestToHalt(cpu, 100_000);
 	const state = cpu.captureRuntimeState();
 	const result = state.completionValues[0];
 	const descriptor = asClosure(result, cpu.gc);
@@ -75,16 +77,16 @@ return function() return root end
 });
 
 test('repeated restore replays the full CPU state independently of fresh execution grants', () => {
-	const image = linkTestSystemBlua32(compileLuaSource(`
+	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
 local cached<const> = function() return 1 end
 local dynamic = function() return 2 end
 return {}, cached, dynamic
-`, 'snapshot-identities.lua'));
+`, 0));
 	const { cpu } = createTestSystemCpu(image);
 	const anchor = cpu.captureRuntimeState();
 	const anchorRam = cpu.memory.captureSaveState();
 
-	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+	runGuestToHalt(cpu, 100_000);
 	const expected = cpu.captureRuntimeState();
 	for (const budget of [1001, 2001, 4001, 8001]) {
 
@@ -92,7 +94,7 @@ return {}, cached, dynamic
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded, 'the next call consumes only its newly supplied grant');
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+		runGuestToHalt(cpu, budget + 10_000);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
 	}
 });
@@ -160,7 +162,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 0);
 	writeInstruction(code, 2, OpCode.KNIL, 0, 0, 0);
-	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0);
 	writeInstruction(code, 5, OpCode.RET, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({

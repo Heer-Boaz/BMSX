@@ -44,7 +44,7 @@ void exactTable() {
 	constexpr std::array<u8, 64> expected{
 		0, 2, 2, 2, 3, 2, 2, 2,
 		2, 2, 8, 2, 3, 3, 16, 16,
-		24, 2, 2, 2, 32, 34, 33, 128,
+		32, 2, 2, 2, 32, 34, 33, 128,
 		2, 2, 2, 2, 2, 2, 3, 2,
 		2, 3, 2, 2, 2, 2, 2, 2,
 		2, 2, 2, 8, 3, 4, 3, 32,
@@ -123,15 +123,41 @@ void middlePowAdmission() {
 	}
 }
 
+void reservedBiosCallChargesBeforeDispatch() {
+	for (const bool wide : {false, true}) {
+		test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
+		const u32 body = wide ? 1u : 0u;
+		if (wide) writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(image.text, body, static_cast<u8>(OpCode::BIOSCALL), 0, 0, 2);
+		writeInstruction(image.text, body + 1, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions = {{.firstWord=0, .wordCount=body+2, .maxStack=3}, {.firstWord=32, .wordCount=1}};
+		image.exceptionFunctionIndex = 1;
+		Machine generated(image, false), scalar(image, true);
+		for (auto* m : {&generated, &scalar}) {
+			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1],
+				m->rom.textAddress + 32 * INSTRUCTION_BYTES);
+			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+			auto regs = m->cpu.activeThread()->currentFrame->registers;
+			regs.set(0, valueInteger(17)); regs.set(1, valueInteger(2)); regs.set(2, valueInteger(3));
+			m->cpu.activeThread()->currentFrame->setTop(3);
+		}
+		const u32 before = generated.cpu.heapAllocator().occupiedBytes();
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
+				&& generated.cpu.instructionBudgetRemaining == 1 - 32
+				&& generated.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
+				&& generated.cpu.readEpcWord() == generated.rom.textAddress && !generated.cpu.heapServiceActive(),
+			"unbound BIOSCALL pays one base charge and faults at the narrow or WIDE head");
+		require(generated.cpu.readFrameRegister(0, 0) == valueInteger(17)
+				&& generated.cpu.readFrameRegister(0, 1) == valueInteger(2)
+				&& generated.cpu.readFrameRegister(0, 2) == valueInteger(3)
+				&& generated.cpu.heapAllocator().occupiedBytes() == before,
+			"the reserved gate changes neither the caller window nor the arena");
+	}
+}
+
 void creationAndCallWorkOnce() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, 2, 3);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
-	Machine generated(image, false), scalar(image, true);
-	test::runCpuParity(generated.cpu, scalar.cpu, 1);
-	require(generated.cpu.instructionBudgetRemaining == 1 - 24 && asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap()).storedSlotCount() == 6,
-		"NEWT pays 24 cycles and reserves two array and four hash slots");
+	test::Blua32TestImage image;
 	image.text.assign(2 * MAPPED_PAGE_BYTE_SIZE, 0);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
@@ -206,7 +232,7 @@ void countedStoreReadinessAndPartialFault() {
 
 int main() {
 	try {
-		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); creationAndCallWorkOnce(); countedStoreReadinessAndPartialFault();
+		exactTable(); expensiveInstructionDebtAndSkip(); middlePowAdmission(); reservedBiosCallChargesBeforeDispatch(); creationAndCallWorkOnce(); countedStoreReadinessAndPartialFault();
 		std::cout << "Nominal work-class cycle tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

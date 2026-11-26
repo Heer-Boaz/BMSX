@@ -1,11 +1,13 @@
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import assert from 'node:assert/strict';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import { runCompiledTestSystem } from './blua32';
+import { runGuestToHalt } from './cpu_execution';
+import { compileTestSystemWithHeap } from './heap_service_system';
+export { runGuestToHalt } from './cpu_execution';
 
 export function parseLuaChunk(source: string, path = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
@@ -22,7 +24,9 @@ export function compileLuaSource(source: string, path = 'test.lua', optLevel: Op
 }
 
 export function runCompiledLua(source: string, path = 'test.lua', optLevel: OptimizationLevel = 0): Value[] {
-	const compiled = compileLuaSource(source, path, optLevel);
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, path), [], {
+		entrySource: source, optLevel, programDomain: 'system',
+	});
 	const cpu = runCompiledTestSystem(compiled, 100000);
 	return materializeCpuCompletionValues(cpu);
 }
@@ -31,13 +35,6 @@ export function materializeCpuCompletionValues(cpu: CPU): Value[] {
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	return values;
-}
-
-/** Run to the requested depth and require a clean halt. A guest error also ends in
- * Halted, so the Lua fault reason has to stay clear as well. */
-export function runGuestToHalt(cpu: CPU, budget: number, depth = 0): void {
-	assert.equal(cpu.runUntilDepth(depth, budget), RunResult.Halted);
-	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest halted without a Lua fault');
 }
 
 /** Complete one actual guest call and report its machine-cycle charge. */

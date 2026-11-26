@@ -1,11 +1,14 @@
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { tableConstructorHints } from '../helpers/table_constructor';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { valueBool, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
-import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createTestSystemCpu, disassembleTestBlua32Functions, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 
 test('scoped locals reuse the frame window, and O3 returns an existing argument directly', () => {
 	const source = `local function probe(t)\n${'do local x = 1 end\n'.repeat(256)}return t\nend\nreturn probe`;
@@ -71,16 +74,12 @@ local ok = protect(fault, false)
 return length, forwarded, other, escaped(), before, after, reads_from_capture(), calls, ok, point_sum(4, 20)
 `;
 	for (const opt of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaChunkToProgram(
-			parseLuaChunk(source, 'scalar-tables.lua'),
-			[{ path: 'boot', source: boot, chunk: parseLuaChunk(boot, 'boot.lua') }],
-			{ entrySource: source, optLevel: opt, programDomain: 'system' },
-		));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [{ path: 'boot', source: boot }], 'scalar-tables.lua'));
 		if (opt === 3) {
 			for (const name of ['dense', 'forward']) {
 				const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(`:${name}`));
 				const disassembly = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
-				assert.doesNotMatch(disassembly, /\b(?:NEWT|SETFIELD|SETI|GETFIELD|GETI|LEN)\b/);
+				assert.doesNotMatch(disassembly, /\b(?:BIOSCALL|SETFIELD|SETI|GETFIELD|GETI|LEN)\b/);
 				assert.match(disassembly, /\bCALL\b/);
 			}
 			const pointIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':point_sum'));
@@ -88,10 +87,10 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 			assert.match(point, /len=8 params=2 vararg=0 stack=3/);
 			assert.match(point, /ADD r\d+, r0, r1/);
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':escaped'));
-			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), /\bNEWT\b/);
+			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), /\bBIOSCALL\b/);
 		}
 		const expected = [...[3, 7, 4, 3, 8, 9, 13, 2].map(valueInteger), valueBool(false), valueInteger(24)];
-		const budget = 20_000;
+		const budget = 100_000;
 		let remaining = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
@@ -122,19 +121,22 @@ a.left = 90
 return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id == nil
 `;
 	for (const opt of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'record-constructor.lua', opt));
+		const compiled = compileHeapServiceSystem(source, opt, [], 'record-constructor.lua');
+		const image = linkTestSystemBlua32(compiled);
 		if (opt === 3) {
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':record'));
 			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
 			const body = listing.split('\n').map(line => line.replace(/^0x[\da-f]+: /i, ''));
-			const allocation = body.findIndex(line => line.startsWith('NEWT '));
-			assert.match(body[allocation], /NEWT r\d+, 0, 5/);
+			const allocation = body.findIndex(line => line.startsWith('BIOSCALL '));
+			assert.match(body[allocation], /BIOSCALL r\d+, 0, 2/);
+			const proto = compiled.metadata.protoIds.findIndex(id => id.endsWith(':record'));
+			assert.deepEqual(tableConstructorHints(compiled, proto), [[0, 5]]);
 			assert.deepEqual(body.slice(allocation + 1, allocation + 6).map(line => line.split('"')[1]),
 				['left', 'right', 'source', 'enabled', 'item_id']);
 			assert.ok(body.slice(allocation + 1, allocation + 6).every(line => line.startsWith('SETFIELD ')));
 		}
 		const { cpu } = createTestSystemCpu(image);
-		runGuestToHalt(cpu, 10_000);
+		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu),
 			[valueBool(true), valueBool(true), valueInteger(90), valueInteger(7),
 				valueInteger(13), valueBool(false), valueBool(true)]);
@@ -171,11 +173,7 @@ local captured_ok, doubled = protect(captured, make, collect)
 return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 `;
 	for (const opt of [0, 3] as const) {
-		const compiled = compileLuaChunkToProgram(
-			parseLuaChunk(source, 'last-table-use.lua'),
-			[{ path: 'boot', source: boot, chunk: parseLuaChunk(boot, 'boot.lua') }],
-			{ entrySource: source, optLevel: opt, programDomain: 'system' },
-		);
+		const compiled = compileHeapServiceSystem(source, opt, [{ path: 'boot', source: boot }], 'last-table-use.lua');
 		const image = linkTestSystemBlua32(compiled);
 		if (opt === 3) {
 			const index = compiled.metadata.protoIds.findIndex(id => id.endsWith(':probe'));
@@ -192,22 +190,32 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 			assert.ok(t.liveWordRanges.at(-1)!.end <= n.liveWordRanges[0].start);
 		}
 		const expected = [valueBool(true), valueInteger(37), valueBool(opt === 3), valueBool(true), valueInteger(74), valueBool(true)];
-		const budget = 80_000;
-		let remaining = 0;
+		const budget = 1_000_000;
+		let remaining = 0, fullGcCycles = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.installBootPrimitives();
-			runGuestToHalt(cpu, budget);
+			const profile = { fullGcCycles: 0 };
+			assert.equal(runCpuWithinBudget(cpu, budget, 0, profile), RunResult.Halted);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
-			if (backend === CpuExecutionBackend.Interpreter) remaining = cpu.instructionBudgetRemaining;
-			else assert.equal(cpu.instructionBudgetRemaining, remaining);
+			assert.ok(profile.fullGcCycles > 0, 'the fixture actually runs explicit collection');
+			if (backend === CpuExecutionBackend.Interpreter) {
+				remaining = cpu.instructionBudgetRemaining;
+				fullGcCycles = profile.fullGcCycles;
+			} else assert.deepEqual([cpu.instructionBudgetRemaining, profile.fullGcCycles], [remaining, fullGcCycles]);
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)],
+			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget), '--profile-full-gc'],
 				{ input: image.romBytes, encoding: 'utf8' });
-			assert.equal(output, [`budget ${remaining} fault 0`,
-				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
+			const cost = /^budget (\d+) fault 0\nfull-gc ([1-9]\d*)\n/.exec(output);
+			assert.ok(cost, 'native execution completes without a fault and bills its explicit GC');
+			// Native and TS explicit collection currently preserve their own source mirror order.
+			// The compiler and its BIOSCALLs must still use exactly the same guest cycles.
+			assert.equal(Number(cost[1]) + Number(cost[2]), remaining + fullGcCycles);
+			assert.equal(output.slice(cost[0].length),
+				[...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
 		}
 	}
 });
@@ -291,20 +299,21 @@ end
 return a,b,c,d,e,f,g,h,i,j,k,l,m,n,direct()
 `;
 	const expected = [21, 100, 101, 102, 103, 11, 12, 1, 2, 70, 1, 2, 50, 11, 7, 9, 8].map(valueInteger);
-	const budget = 100_000;
+	const budget = 2_000_000;
 	const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 	for (const opt of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileLuaSource(source, 'lifetime.lua', opt));
+		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [], 'lifetime.lua'));
 		let scalarBudget = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
+			cpu.installBootPrimitives();
 			runGuestToHalt(cpu, budget);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
 			if (backend === CpuExecutionBackend.Interpreter) scalarBudget = cpu.instructionBudgetRemaining;
 			else assert.equal(cpu.instructionBudgetRemaining, scalarBudget);
 		}
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom'], { input: image.romBytes, encoding: 'utf8' });
+			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)], { input: image.romBytes, encoding: 'utf8' });
 			assert.equal(output, [`budget ${scalarBudget} fault 0`,
 				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
 		}

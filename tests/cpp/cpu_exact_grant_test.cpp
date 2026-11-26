@@ -437,17 +437,24 @@ void exactGrant(bool store) {
 	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
 	for (int grant : {2, 4, 6, 8}) {
 		test::Blua32TestImage image;
-		image.text.resize(6u * INSTRUCTION_BYTES);
+		image.text.resize(8u * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
 		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
 		if (store) writeInstruction(image.text, 3, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
 			static_cast<u8>(MemoryAccessKind::U32LE));
-		else writeInstruction(image.text, 3, static_cast<u8>(OpCode::NEWT), 3, 0, 0);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 6},
-			{.firstWord = 5, .wordCount = 1, .maxStack = 1}};
+		else {
+			writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+		}
+		const u32 jump = store ? 4u : 5u;
+		writeInstruction(image.text, jump, static_cast<u8>(OpCode::JMP), 0, 63, 63 - jump, 255);
+		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 1, 0);
+		image.functions = {{.firstWord = 0, .wordCount = jump + 1u, .maxStack = 6},
+			{.firstWord = 6, .wordCount = 1, .maxStack = 1},
+			{.firstWord = 7, .wordCount = 1, .staticClosure = false}};
+		if (!store) image.closureRelocations = {{4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 		image.irqFunctionIndex = 1;
 		Machine native(image, false, bssByteCount), scalar(image, true, bssByteCount);
 		for (auto* machine : {&native, &scalar}) {
@@ -579,17 +586,21 @@ void exactGrantSweep(bool scalarControl) {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x20000u;
 	constexpr u32 bssByteCount = address - DYNAMIC_RAM_BASE + sizeof(u32);
 	test::Blua32TestImage image;
-	image.text.resize(7u * INSTRUCTION_BYTES);
+	image.text.resize(9u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 1, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 2, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::NEWT), 3, 4, 3);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
+	writeInstruction(image.text, 5, static_cast<u8>(OpCode::STORE_MEM), 5, 4,
 		static_cast<u8>(MemoryAccessKind::U32LE));
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 58, 255);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::RFE), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 6},
-		{.firstWord = 6, .wordCount = 1, .maxStack = 1}};
+	writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 57, 255);
+	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 6},
+		{.firstWord = 7, .wordCount = 1, .maxStack = 1},
+		{.firstWord = 8, .wordCount = 1, .staticClosure = false}};
+	image.closureRelocations = {{4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	image.irqFunctionIndex = 1;
 	unsigned mismatchCount = 0;
 	for (int grant = 1; grant <= 64; ++grant) {
@@ -598,7 +609,7 @@ void exactGrantSweep(bool scalarControl) {
 			auto& frame = *machine->cpu.rootThread()->frameAtDepth(0);
 			frame.registers.set(4, valueInteger(address));
 			frame.registers.set(5, valueInteger(0x12345678));
-			// These inputs are live across NEWT and its GC work, not just within the register capacity.
+			// These inputs are live across CLOSURE and its GC work, not just within the register capacity.
 			frame.setTop(6);
 		}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
@@ -642,14 +653,9 @@ void exactGrantSweep(bool scalarControl) {
 		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
 		const u32 scalarAllocations = test::allocatedObjectRecords(scalar.cpu) - scalarStartCount;
 		bool registersEqual = native.cpu.getFrameRegisterCount(0) == scalar.cpu.getFrameRegisterCount(0);
-		for (const int reg : {0, 1, 2, 4, 5}) {
+		for (const int reg : {0, 1, 2, 3, 4, 5}) {
 			registersEqual &= native.cpu.readFrameRegister(0, reg) == scalar.cpu.readFrameRegister(0, reg);
 		}
-		// Table pointers are host identities, not guest values shared across CPUs.
-		const Value nativeTable = native.cpu.readFrameRegister(0, 3), scalarTable = scalar.cpu.readFrameRegister(0, 3);
-		registersEqual &= (nativeTable == valueNil() && scalarTable == valueNil())
-			|| (valueIsTable(nativeTable) && valueIsTable(scalarTable)
-				&& asTable(nativeTable, native.cpu.gcHeap()).storedSlotCount() == asTable(scalarTable, scalar.cpu.gcHeap()).storedSlotCount());
 		for (auto* machine : {&native, &scalar}) {
 			machine->irq.raise(IRQ_GPU);
 			require(machine->cpu.enterPendingInterrupt(), "IRQ is accepted");

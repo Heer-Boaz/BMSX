@@ -1,6 +1,8 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/decoded_instruction.h"
 #include "machine/cpu/jit/runtime/block.h"
+#include "machine/cpu/jit/ir/liveness.h"
+#include "machine/cpu/jit/ir/region.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -24,6 +26,61 @@ void require(bool condition, const char* message) {
 int instructionCharge(std::span<const DecodedInstruction> instructions) {
 	return std::accumulate(instructions.begin(), instructions.end(), 0,
 		[](int cycles, const DecodedInstruction& inst) { return cycles + inst.baseCycles; });
+}
+
+void biosCallRetainsItsCallerWindow(CPU& cpu, Memory& memory) {
+	static_assert(static_cast<u8>(OpCode::BIOSCALL) == 0x10u);
+	const u8 op = static_cast<u8>(OpCode::BIOSCALL);
+	require(BASE_CYCLES[op] == 32 && OPCODE_RK_OPERANDS[op] == 0,
+		"BIOSCALL has the fixed boundary price and two raw operands");
+	constexpr u32 pc = 0x1000u;
+	for (const u8 width : {1u, 2u}) {
+		// A reserved selector is intentionally accepted by the compiler:
+		// only the CPU semantic gate owns operation/argument admission.
+		const i16 selector = width == 2 ? 0x408 : 7;
+		const std::array decoded{
+			DecodedInstruction{.a = 5, .op = static_cast<u8>(OpCode::K1), .width = 1, .baseCycles = 2},
+			DecodedInstruction{.a = 6, .b = 1, .op = static_cast<u8>(OpCode::MOV), .width = 1, .baseCycles = 2},
+			DecodedInstruction{.a = 4, .b = selector, .c = 2, .op = op, .width = width, .baseCycles = BASE_CYCLES[op]},
+		};
+		const auto slots = std::get<NativeBiosCall>(translateNativeOperation(decoded[2])).slots();
+		require(slots.writes.first == 4 && slots.writes.count == 1 && slots.readsRange.first == 5
+			&& slots.readsRange.count == 2 && !slots.readsRange.open && slots.fixedExtent() == 7,
+			"IR reads the fixed argument window and writes only the result");
+		const std::array source{
+			NativeBlockInstruction{&decoded[0], pc},
+			NativeBlockInstruction{&decoded[1], pc + INSTRUCTION_BYTES},
+			NativeBlockInstruction{&decoded[2], pc + 2u * INSTRUCTION_BYTES},
+		};
+		const std::array region{NativeBlockSource{std::span(source).first<2>()}, NativeBlockSource{std::span(source).last<1>()}};
+		NativeRegisterUses live;
+		NativeIrRegion ir;
+		ir.build(region, live);
+		require(!live.entryReads(1, 4) && live.entryReads(1, 5) && live.entryReads(1, 6) && !live.entryReads(1, 7),
+			"both argument lanes survive liveness even when native code ends at BIOSCALL");
+
+		const auto block = test::compileNative(source, memory, cpu.stringPool());
+		ValueSlots registers(7);
+		registers.set(1, valueFloat(-0.0f)); registers.set(4, valueInteger(27));
+		registers.set(5, valueBool(false)); registers.set(6, valueInteger(-5));
+		NativeBlockRunState state{};
+		state.heap = &cpu.gcHeap();
+		state.remainingCycles = 4;
+		const auto* replay = block->run(registers.view(), state);
+		require(replay->exit == NativeBlockExit::ScalarBoundary && replay->nextPc == pc && state.remainingCycles == 4
+			&& registers.get(5) == valueBool(false) && registers.get(6) == valueInteger(-5),
+			"an exact prefix-only grant cannot start BIOSCALL or double-charge the prefix");
+
+		state.remainingCycles = 5;
+		const auto* exit = block->run(registers.view(), state);
+		const auto& call = exit->operands.biosCall;
+		require(exit->exit == NativeBlockExit::BiosCall && call.result == 4 && call.selector == static_cast<u16>(selector)
+			&& call.argc == 2 && state.remainingCycles == 1 - BASE_CYCLES[op], "one cycle admits exactly one full BIOSCALL issue");
+		require(exit->currentPc == source[2].pc && exit->lastPc == source[2].pc + (width - 1u) * INSTRUCTION_BYTES
+			&& exit->nextPc == source[2].pc + width * INSTRUCTION_BYTES, "the gate distinguishes WIDE origin, body and next PC");
+		require(registers.get(4) == valueInteger(27) && registers.get(5) == valueInteger(1)
+			&& registers.get(6) == valueFloat(-0.0f), "the gate preserves the prepared arguments and leaves result publication to BIOS retirement");
+	}
 }
 
 void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
@@ -1022,6 +1079,7 @@ int main() {
 	try {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		biosCallRetainsItsCallerWindow(cpu, memory);
 		inheritedReadFollowsLiveOwners(cpu, memory);
 		stringReadsFollowLiveTables(cpu, memory);
 		oneHopStringReadsProveTheCurrentPath(cpu, memory);

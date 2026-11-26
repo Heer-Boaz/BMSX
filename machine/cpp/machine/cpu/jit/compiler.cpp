@@ -9,7 +9,6 @@
 #include "machine/cpu/jit/ir/region.h"
 #include "machine/cpu/jit/ir/liveness.h"
 #include "machine/cpu/jit/sljit/lowering.h"
-#include "machine/cpu/jit/runtime/record_constructor.h"
 
 namespace bmsx {
 
@@ -43,9 +42,6 @@ NativeBlockExitSite materializeExit(const NativeIrExit& exit, const NativeCodeBi
 	case NativeBlockExit::WriteField:
 	case NativeBlockExit::WriteIndex:
 		std::construct_at(&site.tableStore, tableSlot());
-		break;
-	case NativeBlockExit::AllocateTable:
-		site.recordConstructor = nullptr;
 		break;
 	default:
 		break;
@@ -88,8 +84,6 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 	for (const auto& exit : sideExits) sites.push_back(materializeExit(exit, bindings));
 	for (const auto& replay : replays) sites.push_back(materializeExit(replay, bindings));
 	const auto published = std::span(sites);
-	region->m_constructors.reserve(ir.recordPlans().size());
-	for (const auto& record : ir.recordPlans()) region->m_constructors.emplace_back(record);
 	const auto& gate = nativeBlockGate();
 	std::vector<std::unique_ptr<NativeBlock>> entries;
 	entries.reserve(plans.size());
@@ -103,9 +97,6 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 		block->hasFusedJump = plan.hasFusedJump;
 		block->terminal = materializeExit(plan.terminal, bindings);
 		block->sideExits = published.subspan(plan.firstSideExit, plan.sideExitCount);
-		if (const auto* allocation = std::get_if<NativeTableAllocation>(&plan.instructions.back().operation);
-			allocation && allocation->record)
-			block->terminal.recordConstructor = &region->m_constructors[*allocation->record];
 		entries.push_back(std::move(block));
 	}
 	lowering.prepare(entries);

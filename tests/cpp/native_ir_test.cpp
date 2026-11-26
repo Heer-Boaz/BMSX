@@ -1010,44 +1010,34 @@ void dumpReportsSelectedBuiltinAndVarargPaths() {
 		"a rejected builtin candidate is not printed as an emitted fast path");
 }
 
-void recordPlanUsesTypedEntriesAndFullRomWords() {
-	DecodedInstruction allocation{.c = 2, .op = static_cast<u8>(OpCode::NEWT)};
-	DecodedInstruction first{.payload = DecodedInstruction::Payload::tableSlot(-1), .c = -1, .op = static_cast<u8>(OpCode::SETFIELD)};
-	DecodedInstruction last{.payload = DecodedInstruction::Payload::tableSlot(-1), .b = 1, .c = 70, .op = static_cast<u8>(OpCode::SETFIELD)};
-	allocation.width = first.width = 1;
-	last.width = 2;
-	for (auto* instruction : {&allocation, &first, &last}) instruction->baseCycles = BASE_CYCLES[instruction->op];
-	constexpr u32 page = 0x1000;
-	for (const u32 start : {page, page + MAPPED_PAGE_BYTE_SIZE - 3 * INSTRUCTION_BYTES}) {
-		const std::array head{NativeBlockInstruction{&allocation, start}};
-		const std::array fields{NativeBlockInstruction{&first, start + INSTRUCTION_BYTES},
-			NativeBlockInstruction{&last, start + 2 * INSTRUCTION_BYTES}};
-		// Publish out of address order to exercise the typed entry directory.
-		const std::array sources{NativeBlockSource{fields}, NativeBlockSource{head}};
+void biosCallKeepsItsOperandWindowAndFrontier() {
+	DecodedInstruction call{.a = 66, .b = 192, .c = 2, .op = static_cast<u8>(OpCode::BIOSCALL)};
+	DecodedInstruction next{.a = 69, .b = 66, .op = static_cast<u8>(OpCode::MOV)};
+	call.width = 2;
+	next.width = 1;
+	call.baseCycles = BASE_CYCLES[call.op];
+	next.baseCycles = BASE_CYCLES[next.op];
+	constexpr u32 start = 0x1000u + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
+	constexpr u32 successor = start + 2 * INSTRUCTION_BYTES;
+	const std::array head{NativeBlockInstruction{&call, start}};
+	const std::array suffix{NativeBlockInstruction{&next, successor}};
+	const std::array sources{NativeBlockSource{suffix}, NativeBlockSource{head}};
+	for (const bool immutable : {false, true}) {
 		NativeRegisterUses uses;
-		NativeIrRegion writable;
-		writable.build(sources, uses, true);
-		require(writable.recordPlans().empty(), "writable code never owns a record recipe");
-		NativeIrRegion readonly;
-		readonly.build(sources, uses, true, {.immutableSource = true});
-		const auto& entry = readonly.blocks().back();
-		const auto& allocation = std::get<NativeTableAllocation>(entry.instructions.back().operation);
-		const auto* recipe = allocation.record ? &readonly.recordPlans()[*allocation.record] : nullptr;
-		if (start != page) {
-			require(!recipe, "a WIDE body must also belong to the captured immutable page");
-			continue;
-		}
-		require(recipe && recipe->count == 2 && recipe->requiredSlots == 71
-			&& recipe->keySelectors[0] == 0 && recipe->keySelectors[1] == 1 && recipe->operands[0] == -1 && recipe->operands[1] == 70
-			&& recipe->lastInstructionPc == start + 2 * INSTRUCTION_BYTES && recipe->lastWordPc == start + 3 * INSTRUCTION_BYTES
-			&& recipe->nextPc == start + 4 * INSTRUCTION_BYTES && entry.sourceWords == 4,
-			"the typed plan preserves operands, guest positions and complete source coverage");
-		require(readonly.blocks()[0].firstPc == fields[0].pc && readonly.blocks()[1].firstPc == fields[1].pc,
-			"each field retains its ordinary independent entry");
-		std::ostringstream report;
-		dumpNativeIr(report, readonly);
-		require(report.str().find("allocate-record {K0=K0, K1=R70}") != std::string::npos,
-			"the fused constructor recipe is visible in the IR beside ordinary field entries");
+		NativeIrRegion region;
+		region.build(sources, uses, true, {.immutableSource = immutable});
+		const auto& entry = region.blocks().back();
+		const auto& exit = entry.terminal;
+		const auto [dest, selector, argc] = exit.operands.biosCall;
+		require(exit.exit == NativeBlockExit::BiosCall && dest == 66 && selector == 192 && argc == 2,
+			"raw selector and argc are independent of register operands");
+		const auto slots = entry.instructions.back().slots;
+		require(slots.readsRange.first == 67 && slots.readsRange.count == 2
+				&& slots.writes.first == 66 && slots.writes.count == 1 && entry.requiredSlots == 69,
+			"BIOSCALL reads A+1 through A+C and defines only A");
+		require(exit.currentPc == start && exit.lastPc == start + INSTRUCTION_BYTES && exit.nextPc == successor
+				&& entry.sourceWords == 2 && exit.cycles == 32 && region.blocks().front().firstPc == successor,
+			"cross-page WIDE belongs to the terminal; the successor remains independently enterable");
 	}
 }
 
@@ -1292,7 +1282,7 @@ int main() {
 		rejectedReceiverDoesNotAdvertiseAFieldDatapath();
 		dumpDistinguishesFoldedEdgesFromPublicEntries();
 		dumpReportsSelectedBuiltinAndVarargPaths();
-		recordPlanUsesTypedEntriesAndFullRomWords();
+		biosCallKeepsItsOperandWindowAndFrontier();
 		registerUses();
 		knownFaultEndsOnlyTheNativePath();
 		knownFaultEndsTheFieldAddressLifetime();

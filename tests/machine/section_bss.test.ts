@@ -1,3 +1,4 @@
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { numberToHost, type Value, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -20,7 +21,7 @@ import {
 	linkTestBlua32Pair,
 	linkTestSystemBlua32,
 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -60,7 +61,7 @@ function runColdCompiled(compiled: CompiledSystemProgram, memory = new Memory({ 
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 	cpu.reset();
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 100000);
 	return { memory, values: materializeCpuCompletionValues(cpu), image: finalized.image };
 }
 
@@ -179,7 +180,7 @@ return *counter, state.counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'bss_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
 
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
@@ -208,7 +209,7 @@ return state.read()
 	assert.equal(compiled.staticModulePaths.includes('state'), false);
 	assert.match(compiled.metadata.exportProtoIdBySlot.state__read, /\/static:/);
 	const disasm = disassembleEntryFunction(compiled);
-	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
 	assert.equal(image.link.constRelocs.some(
 		reloc => reloc.kind === 'export_proto'
@@ -330,7 +331,7 @@ return { make = make }
 `;
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.make()', 'state', moduleSource),
-		/forbidden static opcode NEWT \(table allocation\)/,
+		/forbidden static opcode BIOSCALL \(BIOS service call\)/,
 	);
 });
 
@@ -552,7 +553,7 @@ return *counter, &counter
 });
 
 test('BLua static declaration words remain identifiers outside declaration shape', () => {
-	const result = runCold(`
+	const result = runColdCompiled(compileHeapServiceSystem(`
 local struct = { [0] = 1 }
 local bss = { [0] = 2 }
 local data = { [0] = 1 }
@@ -562,7 +563,7 @@ bss[0] = bss[0] + 1
 data[0] = data[0] + 1
 rodata[0] = rodata[0] + 1
 return struct[0], bss[0], data[0], rodata[0]
-`, new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes));
+`, 0));
 	assert.deepEqual(result.values, [2, 3, 2, 5].map(valueInteger));
 });
 
@@ -604,7 +605,7 @@ return before, *counter, state.counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
 	assert.deepEqual(runColdCompiled(compiled).values, [12, 88, DYNAMIC_RAM_BASE].map(valueInteger));
 });
 
@@ -794,7 +795,7 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 	]);
 	const disassembly = disassembleEntryFunction(compiled);
 	assert.match(disassembly, /LOADKR/);
-	assert.doesNotMatch(disassembly, /\bNEWT\b/);
+	assert.doesNotMatch(disassembly, /\bBIOSCALL\b/);
 	assert.deepEqual(runColdCompiled(compiled).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
 });
 
@@ -850,7 +851,7 @@ return values[0], values[1], data.values
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
-	assert.doesNotMatch(disasm, /\bNEWT\b/);
+	assert.doesNotMatch(disasm, /\bBIOSCALL\b/);
 	const result = runColdCompiled(compiled);
 	assert.deepEqual(result.values, [5, 6, result.image.header.rodataAddress].map(valueInteger));
 });

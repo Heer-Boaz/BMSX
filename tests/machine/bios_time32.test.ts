@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { asClosure, valueFloat, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -28,7 +28,7 @@ function sample()
 end`;
 
 for (const optLevel of [3] as const) test(`BIOS samples the unsigned millisecond port once per call across rollover (O${optLevel})`, () => {
-	const program = compileLuaChunkToProgram(parseLuaChunk(source), modules, { entrySource: source, programDomain: 'system', optLevel });
+	const program = compileTestSystemWithHeap(parseLuaChunk(source), modules, { entrySource: source, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program);
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
@@ -97,8 +97,8 @@ if os.difftime(2147483647,2147483646) ~= 1 then return -104 end
 return #rows`;
 
 for (const optLevel of [3] as const) test(`BIOS civil seconds: exact signed endpoints, normalization and whole-second difference (O${optLevel})`, () => {
-	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(calendar), modules,
-		{ entrySource: calendar, programDomain: 'system', optLevel }));
+	const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(calendar), modules,
+		{ entrySource: calendar, optLevel, programDomain: 'system' }));
 	const budget = 20_000_000;
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend);

@@ -17,8 +17,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_RECORD_CONTROL_OFFSET, HEAP_SERVICE_RECORD_OFFSET, HeapServiceRecordControlField,
-	HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordKind, HeapServiceRecordStage,
+	HEAP_SERVICE_RECORD_OFFSET, HeapServiceGcStage, HeapServiceRecordField, HeapServiceRecordStage,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -67,7 +66,6 @@ try {
 		const { cpu, memory, scheduler } = runtime.machine;
 		const { gc, heapAllocator: arena, luaHeap: budget } = cpu;
 		const management = arena.managementOffset(), record = management + HEAP_SERVICE_RECORD_OFFSET;
-		const kindAddress = management + HEAP_SERVICE_RECORD_CONTROL_OFFSET + HeapServiceRecordControlField.Kind;
 		const stage = () => memory.readRamRecordWord(record + HeapServiceRecordField.Stage);
 		const allocationCounts = () => [arena.occupiedBytes(), budget.usedBytes()];
 		const head = () => {
@@ -130,7 +128,6 @@ try {
 		assert.ok(cpu.heapServiceActive(), 'cache miss executes a private BIOS reservation');
 		assert.equal(stage(), HeapServiceRecordStage.Direct, 'CLOSURE retains its non-parked caller policy');
 		assert.equal(cpu.allocationParked(), false);
-		assert.equal(memory.readRamRecordWord(kindAddress), HeapServiceRecordKind.CanonicalClosure);
 		const destination = memory.readRamRecordWord(record + HeapServiceRecordField.Destination);
 		const prototype = memory.readRamRecordWord(record + HeapServiceRecordField.Prototype);
 		const nextPc = memory.readRamRecordWord(record + HeapServiceRecordField.NextPc);
@@ -145,7 +142,7 @@ try {
 		assert.deepEqual(allocationCounts(), before);
 		assert.equal(allocatorHash, hashBytes(memory.ramData(), allocatorState, allocatorEnd - allocatorState));
 		observeRam(allocatorState, allocatorEnd);
-		observeRam(record, kindAddress + 4);
+		observeRam(record, record + HeapServiceRecordField.DirectRecovery + 4);
 
 		// Persist the admission and stop a second time in the publish-to-RET
 		// window, when restore already sees the object in the inventory.

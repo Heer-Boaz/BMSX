@@ -1,3 +1,4 @@
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
 import { asClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
@@ -7,8 +8,6 @@ import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import { createTestBlua32PairCpu, createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileCartlibProgram } from '../helpers/cartlib_cpu';
@@ -327,9 +326,7 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 		const rows = [];
 		for (const typed of [false, true]) {
 			const source = storageFixture(dimension, typed);
-			const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'storage-kernels').chunk, [], {
-				entrySource: source, programDomain: 'system', optLevel,
-			});
+			const compiled = compileHeapServiceSystem(source, optLevel, [], 'storage-kernels');
 			const linked = linkTestSystemBlua32(compiled);
 			const { cpu } = createTestSystemCpu(linked);
 			const initialHeap = cpu.luaHeap.usedBytes();
@@ -346,7 +343,7 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 				let f64Accesses = 0;
 				for (let pc = emitted.codeAddress; pc < emitted.codeAddress + emitted.codeByteCount; pc += INSTRUCTION_BYTES) {
 					const instruction = describeBlua32InstructionAtPc(linked.image, null, pc);
-					assert.notEqual(instruction.op, OpCode.NEWT);
+					assert.notEqual(instruction.op, OpCode.BIOSCALL);
 					assert.notEqual(instruction.op, OpCode.CLOSURE);
 					assert.notEqual(instruction.op, OpCode.CALL, 'synthetic kernels contain no per-coefficient accessor calls');
 					if ((instruction.op === OpCode.LOAD_MEM_D || instruction.op === OpCode.STORE_MEM_D)

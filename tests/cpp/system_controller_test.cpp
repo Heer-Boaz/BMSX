@@ -233,12 +233,12 @@ auto makeCompletionLatchSystemImage() -> bmsx::test::Blua32TestImage {
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::NEWT), 0, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
 	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 3u},
-		{.firstWord = 3u, .wordCount = 2u, .maxStack = 1u, .staticClosure = true},
+		{.firstWord = 3u, .wordCount = 2u, .numParams = 1u, .maxStack = 1u, .staticClosure = true},
 		{.firstWord = 5u, .wordCount = 1u},
 	};
 	image.closureRelocations = {{
@@ -944,7 +944,8 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
 	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
-	cpu.beginCompletionCall(closure);
+	const bmsx::Value argument = bmsx::valueTable(cpu.createTable().address());
+	cpu.beginCompletionCall(closure, bmsx::BuiltinArgsView(&argument, 1));
 	require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "completion call remains in flight before RET");
 	const bmsx::CpuRuntimeState state = cpu.captureRuntimeState();
 	require(
@@ -959,7 +960,8 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == restoredTable.address(), "completion latch roots its restored heap result");
 
 	bmsx::u32 restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap());
-	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(restoredClosure);
+	const bmsx::Value nextArgument = bmsx::valueTable(cpu.createTable().address());
+	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(restoredClosure, bmsx::BuiltinArgsView(&nextArgument, 1));
 	const auto latch = cpu.readCompletionValues();
 	require(results.words() == latch.words() && results.tags() == latch.tags(), "Runtime borrows the CPU completion latch without copying");
 	bmsx::TableRecord borrowedTable = bmsx::asTable(results.get(0), cpu.gcHeap());

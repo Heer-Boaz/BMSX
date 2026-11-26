@@ -4,7 +4,7 @@ import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import { AllocationRecovery, PendingAllocationKind, type CpuRuntimeState, type PendingAllocation } from '../../cpu/cpu';
+import { AllocationRecovery, type CpuRuntimeState, type PendingAllocation } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
@@ -1183,17 +1183,10 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 		writer.u32(pending.instructionPc);
 		writer.u32(pending.lastPc);
 		writer.u32(pending.nextPc);
-		writer.u32(pending.kind);
-		if (pending.kind === PendingAllocationKind.TableAssignment) {
-			writer.u32(pending.receiver);
-			writer.u64(pending.key);
-			writer.u64(pending.value);
-			writer.u8(pending.extraHashSlots);
-		} else {
-			writer.i32(pending.destination);
-			writer.i32(pending.arraySize);
-			writer.i32(pending.hashSize);
-		}
+		writer.u32(pending.receiver);
+		writer.u64(pending.key);
+		writer.u64(pending.value);
+		writer.u8(pending.extraHashSlots);
 	}
 	writer.u32(state.statusWord);
 	writer.u32(state.causeWord);
@@ -1214,16 +1207,8 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 	const recovery = reader.u32() as AllocationRecovery;
 	if (recovery === AllocationRecovery.None) return null;
 	const instructionPc = reader.u32(), lastPc = reader.u32(), nextPc = reader.u32();
-	const kind = reader.u32() as PendingAllocationKind;
-	switch (kind) {
-		case PendingAllocationKind.TableAssignment:
-			return { recovery, instructionPc, lastPc, nextPc, kind, receiver: reader.u32(),
-				key: reader.u64() as Value, value: reader.u64() as Value, extraHashSlots: reader.u8() };
-		case PendingAllocationKind.TableCreation:
-			return { recovery, instructionPc, lastPc, nextPc, kind, destination: reader.i32(), arraySize: reader.i32(), hashSize: reader.i32() };
-		default:
-			throw new Error('Unsupported pending allocation kind.');
-	}
+	return { recovery, instructionPc, lastPc, nextPc, receiver: reader.u32(),
+		key: reader.u64() as Value, value: reader.u64() as Value, extraHashSlots: reader.u8() };
 }
 
 function readTableRebuild(reader: BinaryReader) {

@@ -1,4 +1,5 @@
 import { ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { BiosCall } from '../../../machine/ts/spec/bmsx/bios';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import type { FileSemanticData } from './semantic/model';
@@ -75,6 +76,8 @@ import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
 import { computeMaxRegister } from './compiler/optimizer/instructions';
 import { allocateFrameSlots } from './compiler/optimizer/frame_slots';
+import { isSkipInstruction } from './compiler/control_flow';
+import { encodeWideIntegerLoad, MAX_ABX_REGISTER_A } from './compiler/wide_integer';
 import { staticLuaTableFieldName } from './syntax/table_fields';
 import { predictTableShapes, type TableShapes } from './compiler/table_shapes';
 import { compactUnusedUpvalues } from './compiler/optimizer/upvalues';
@@ -273,7 +276,7 @@ type CompileOptionsBase = {
 	captureLayout?: LuaCaptureLayout;
 };
 
-type SystemCompileOptions = CompileOptionsBase & {
+export type SystemCompileOptions = CompileOptionsBase & {
 	programDomain: 'system';
 	biosFunctions?: never;
 };
@@ -1863,7 +1866,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const instructions = allocation === undefined ? this.code : allocation.instructions;
 		const ranges = this.ranges;
-		const wideFlags: boolean[] = new Array(instructions.length);
+		const wordWidths = new Uint8Array(instructions.length);
+		let wideIntegers: Map<number, Uint8Array> | undefined;
 		const sbxValues: number[] = new Array(instructions.length).fill(0);
 		const sbxBaseBits = MAX_BX_BITS + EXT_BX_BITS;
 		const sbxWideBits = sbxBaseBits + MAX_OPERAND_BITS;
@@ -1874,12 +1878,21 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
+			if (instr.op === OpCode.KSMI && instr.a > MAX_ABX_REGISTER_A) {
+				// The optimizer and slot allocator keep one known Integer
+				// definition. Only the narrow ABx encoding needs expansion.
+				const integer = encodeWideIntegerLoad(instr.a, instr.b,
+					index !== 0 && isSkipInstruction(instructions[index - 1]));
+				(wideIntegers ??= new Map()).set(index, integer);
+				wordWidths[index] = integer.byteLength / INSTRUCTION_BYTES;
+				continue;
+			}
 			if (instr.format === 'ABC') {
 				if (isDisplacedMemoryOp(instr.op)) {
 					const aWide = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
 					const bWide = needsWideUnsigned(instr.b, MAX_OPERAND_BITS, 0);
 					const cWide = needsWideUnsigned(instr.c, MAX_OPERAND_BITS, 0);
-					wideFlags[index] = aWide || bWide || cWide;
+					wordWidths[index] = aWide || bWide || cWide ? 2 : 1;
 					continue;
 				}
 				const bWidthValue = instr.b;
@@ -1894,7 +1907,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const cWide = (instr.rkMask & RK_C) !== 0
 					? needsWideSigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS)
 					: needsWideUnsigned(cWidthValue, MAX_OPERAND_BITS, EXT_C_BITS);
-				wideFlags[index] = forceWide || forceFieldWide || aWide || bWide || cWide;
+				wordWidths[index] = forceWide || forceFieldWide || aWide || bWide || cWide ? 2 : 1;
 				continue;
 			}
 			if (instr.format === 'ABx') {
@@ -1907,25 +1920,26 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				const bxWide = isSignedBxOp(instr.op)
 					? needsWideSigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS)
 					: needsWideUnsigned(bxWidthValue, MAX_BX_BITS, EXT_BX_BITS);
-				wideFlags[index] = forceWide || aWide || bxWide;
+				wordWidths[index] = forceWide || aWide || bxWide ? 2 : 1;
 				continue;
 			}
-			wideFlags[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0);
+			wordWidths[index] = needsWideUnsigned(instr.a, MAX_OPERAND_BITS, 0) ? 2 : 1;
 		}
 
 		let changed = true;
 		const instrStartIndex: number[] = new Array(instructions.length);
 		const instrWordIndex: number[] = new Array(instructions.length);
+		let endIndex = 0;
 		while (changed) {
 			changed = false;
 			let cursor = 0;
 			for (let index = 0; index < instructions.length; index += 1) {
-				const hasWide = wideFlags[index];
+				const width = wordWidths[index];
 				instrStartIndex[index] = cursor;
-				instrWordIndex[index] = cursor + (hasWide ? 1 : 0);
-				cursor += hasWide ? 2 : 1;
+				instrWordIndex[index] = cursor + width - 1;
+				cursor += width;
 			}
-			const endIndex = cursor;
+			endIndex = cursor;
 			for (let index = 0; index < instructions.length; index += 1) {
 				const instr = instructions[index];
 				if (instr.format !== 'AsBx') {
@@ -1941,16 +1955,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 					throw new Error(`[FunctionBuilder] Jump offset out of range: ${sbx}`);
 				}
 				sbxValues[index] = sbx;
-				if (!wideFlags[index] && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
-					wideFlags[index] = true;
+				if (wordWidths[index] === 1 && (sbx < sbxBaseMin || sbx > sbxBaseMax)) {
+					wordWidths[index] = 2;
 					changed = true;
 				}
 			}
-		}
-
-		let totalInstr = 0;
-		for (let index = 0; index < instructions.length; index += 1) {
-			totalInstr += wideFlags[index] ? 2 : 1;
 		}
 
 		for (let index = 0; index < instructions.length; index += 1) {
@@ -1960,15 +1969,23 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			}
 		}
 
-		const code = new Uint8Array(totalInstr * INSTRUCTION_BYTES);
-		const finalRanges: Array<SourceRange | null> = new Array(totalInstr);
-		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(totalInstr).fill(ROOT_INLINE_CALL_SITES);
+		const code = new Uint8Array(endIndex * INSTRUCTION_BYTES);
+		const finalRanges: Array<SourceRange | null> = new Array(endIndex);
+		const finalInlineCallSites: Array<ReadonlyArray<InlineCallSite>> = new Array(endIndex);
 		const constRelocs: ProgramCompilerConstReloc[] = [];
 		let cursor = 0;
 		for (let index = 0; index < instructions.length; index += 1) {
 			const instr = instructions[index];
-			const hasWide = wideFlags[index];
+			const width = wordWidths[index];
 			const range = ranges[index];
+			const integer = wideIntegers?.get(index);
+			if (integer !== undefined) {
+				code.set(integer, cursor * INSTRUCTION_BYTES);
+				finalRanges.fill(range, cursor, cursor + width);
+				cursor += width;
+				continue;
+			}
+			const hasWide = width === 2;
 			if (instr.format === 'ABC') {
 				if (isDisplacedMemoryOp(instr.op)) {
 					const aSplit = splitUnsignedOperand(instr.a, 'A', MAX_OPERAND_BITS, 0, hasWide);
@@ -2091,10 +2108,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		for (let index = 0; index < instructions.length; index += 1) {
 			const inlineCallSites = instructions[index].inlineCallSites ?? ROOT_INLINE_CALL_SITES;
 			const start = instrStartIndex[index];
-			finalInlineCallSites[start] = inlineCallSites;
-			if (wideFlags[index]) {
-				finalInlineCallSites[start + 1] = inlineCallSites;
-			}
+			finalInlineCallSites.fill(inlineCallSites, start, start + wordWidths[index]);
 		}
 
 		this.finalizedCode = code;
@@ -4883,10 +4897,24 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		return keys;
 	}
 
+	private emitTableCreation(target: number, base: number, arraySize: number, hashSize: number): void {
+		this.emitLoadConst(base + 1, integerConstant(arraySize));
+		this.emitLoadConst(base + 2, integerConstant(hashSize));
+		this.emitABC(OpCode.BIOSCALL, base, BiosCall.CreateTable, 2);
+		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
+	}
+
 	private compileTableConstructor(expression: LuaTableConstructorExpression, target: number): void {
+		const tempBase = this.tempTop;
+		const useTarget = target >= this.localCount && target === tempBase - 1;
+		const creation = useTarget ? target : tempBase;
+		// Reserve before preparing a fixed record's RHSs, so its live values
+		// cannot overlap the two capacity operands.
+		this.reserveTempRange(creation, 3);
 		if (expression.fields.length === 0) {
 			const shape = this.program.tableShapes?.fresh.get(expression);
-			this.emitABC(OpCode.NEWT, target, shape?.array ?? 0, shape?.hash ?? 0);
+			this.emitTableCreation(target, creation, shape?.array ?? 0, shape?.hash ?? 0);
+			this.tempTop = tempBase;
 			return;
 		}
 		const keys = this.preparedRecordKeys(expression);
@@ -4897,9 +4925,9 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.compileExpressionInto(expression.fields[i].value, base + i, 1);
 				this.tempTop = afterValues;
 			}
-			this.emitABC(OpCode.NEWT, target, 0, keys.length);
+			this.emitTableCreation(target, creation, 0, keys.length);
 			for (let i = 0; i < keys.length; i += 1) this.emitTableSetConst(target, this.program.constIndex(keys[i]), base + i);
-			this.tempTop = base;
+			this.tempTop = tempBase;
 			return;
 		}
 		let arrayCount = 0;
@@ -4912,8 +4940,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				hashCount += 1;
 			}
 		}
-		this.emitABC(OpCode.NEWT, target, arrayCount, hashCount);
-		const tempBase = this.tempTop;
+		if (arrayCount > MAX_EXT_REGISTER_BC || hashCount > MAX_EXT_REGISTER_BC)
+			throw new Error(`Table constructor capacity exceeds ${MAX_EXT_REGISTER_BC} slots per storage lane.`);
+		this.emitTableCreation(target, creation, arrayCount, hashCount);
+		this.tempTop = tempBase;
 		let arrayIndex = 1;
 		for (let i = 0; i < expression.fields.length; i += 1) {
 			const field = expression.fields[i];

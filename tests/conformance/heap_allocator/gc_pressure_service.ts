@@ -8,7 +8,7 @@ import { GC_LAST_EPOCH_WORK, GC_PACE_PAID, GcPhase } from '../../../machine/ts/m
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../../machine/ts/machine/cpu/lua_heap';
 import { valueTable } from '../../../machine/ts/machine/cpu/value';
-import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
+import { advanceRuntimeTime, CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { InstructionStepResult } from '../../../machine/ts/machine/runtime/frame/state';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -160,10 +160,32 @@ try {
 		irqController.raise(IRQ_DMA0_DONE);
 		observe(`i ${IRQ_DMA0_DONE}`);
 		const maskedPc = irqAdmission();
-		finishPrelude();
+		function settleSuspended(cycles: number) {
+			const before = scheduler.nowCycles;
+			const result = runtime.cpuExecution.runSuspendedUntilDepth(callerDepth, cycles);
+			const elapsed = scheduler.nowCycles - before;
+			assert.ok(elapsed > 0);
+			observe(`q ${callerDepth} ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${cpu.getFrameDepth()} ${callerPc()} ${+cpu.isHaltedUntilIrq()}`);
+			return result;
+		}
+		assert.equal(settleSuspended(1), CpuSuspendedRunResult.Yielded, 'admitted firmware owns time at unchanged ordinary depth');
+		assert.equal(cpu.heapServiceActive(), true);
+		assert.equal(readReport()[0], 0, 'cart vector cannot run before the firmware retires');
+		assert.equal(flags(), IRQ_VBLANK | IRQ_DMA0_DONE, 'firmware did not acknowledge any pending source');
+		assert.equal(settleSuspended(4096), CpuSuspendedRunResult.Completed);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.getFrameDepth(), callerDepth);
+		assert.equal(callerPc(), maskedPc.pc, 'stop after RFE before the next ordinary instruction');
+		assert.equal(cpu.isHaltedUntilIrq(), false);
+		assert.equal(status(), popStatus(maskedPc.irqStatus));
+		assert.deepEqual(readReport(), [1, IRQ_VBLANK | IRQ_DMA0_DONE, maskedPc.pc, maskedPc.irqStatus, CPU_CAUSE_IRQ, 71]);
+		assert.equal(flags(), IRQ_VBLANK);
+		markMemory(report - RAM_BASE, report - RAM_BASE + 24);
+		observe(`M ${IO_IRQ_FLAGS}`, `${IRQ_VBLANK} 0`);
 		assert.equal(word(sampled), 0);
 		assert.equal(gc.phase(), GcPhase.Pause);
-		deliver(maskedPc, 1, IRQ_VBLANK | IRQ_DMA0_DONE, IRQ_VBLANK);
+		assert.equal(grant(4096), RunResult.Halted); // Separately resume the parked cart body.
+		assert.equal(cpu.isHaltedUntilIrq(), true);
 
 		// The same latched VBlank, now enabled, owns the full BIOS quantum.
 		mask(IRQ_VBLANK);
@@ -257,7 +279,7 @@ try {
 		deliver({ pc: issuePc, irqStatus }, count + 1, IRQ_VBLANK, 0);
 		assert.deepEqual(run('inside-dispatch', ['X', ...trace.slice(insideTrace)], insidePath), expected.slice(insideExpected));
 
-		console.log(`BIOS-GC-PRESSURE-IRQ:PASS O${optLevel} (real EXEC, VBlank masking/ACK, cart forwarding, NMI, portable rewind, Atomic and sweep)`);
+		console.log(`BIOS-GC-PRESSURE-IRQ:PASS O${optLevel} (real EXEC, VBlank masking/ACK, cart forwarding, suspended RFE boundary, NMI, portable rewind, Atomic and sweep)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

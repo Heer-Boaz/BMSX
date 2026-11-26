@@ -2,7 +2,6 @@
 #include "machine/cpu/call_state.h"
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/runtime/execution.h"
-#include "machine/cpu/jit/runtime/record_constructor.h"
 #include "machine/cpu/thread.h"
 
 #if defined(BMSX_NATIVE_PERF_MAP)

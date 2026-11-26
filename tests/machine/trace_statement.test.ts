@@ -2,13 +2,13 @@ import { asStringId, valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
 
 function compileTraceSource(source: string, traceStatements: TraceStatementSelection, optLevel: 0 | 3 = 3) {
-	return compileLuaChunkToProgram(parseLuaChunk(source, 'trace_statement.lua'), [], {
+	return compileTestSystemWithHeap(parseLuaChunk(source, 'trace_statement.lua'), [], {
 		entrySource: source,
 		optLevel,
 		programDomain: 'system',

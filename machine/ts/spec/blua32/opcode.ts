@@ -19,7 +19,7 @@ export const enum OpCode {
 	STORE_MEM_WORDS_D,
 	GETT,
 	SETT,
-	NEWT,
+	BIOSCALL,
 	ADD,
 	SUB,
 	MUL,
@@ -86,7 +86,7 @@ export const decodeValueCount = (operand: number, openCount: number): number =>
 export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
 	2, 2, 8, 2, 3, 3, 16, 16,
-	24, 2, 2, 2, 32, 34, 33, 128,
+	32, 2, 2, 2, 32, 34, 33, 128,
 	2, 2, 2, 2, 2, 2, 3, 2,
 	2, 3, 2, 2, 2, 2, 2, 2,
 	2, 2, 2, 8, 3, 4, 3, 32,

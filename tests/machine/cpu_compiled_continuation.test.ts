@@ -9,7 +9,7 @@ import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
-for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper continuations survive cross-page target replacement (operation=${operation})`, () => {
+test('same-frame integer table read continuations survive cross-page target replacement', () => {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
@@ -18,12 +18,12 @@ for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper cont
 	const sourcePc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	const targetPc = sourcePc + INSTRUCTION_BYTES;
 	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, operation, operation === OpCode.NEWT ? 0 : 2, 0, operation === OpCode.NEWT ? 0 : 1);
+	writeInstruction(code, 0, OpCode.GETI, 2, 0, 1);
 	writeInstruction(code, 1, OpCode.KSMI, 1, 0, 7);
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(sourcePc, code);
-		if (operation === OpCode.GETI) cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], sourcePc);
 		cpu.runUntilDepth(0, 4096);
 	}
@@ -34,7 +34,7 @@ for (const operation of [OpCode.NEWT, OpCode.GETI]) test(`same-frame helper cont
 	const sourceWord = (sourcePc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const source = sourcePage.compiledBlocks!.entries[sourceWord]!;
 	const successor = lookup.find(targetPc, 0)!.compiledBlocks!.entries[0]!;
-	const exit = source.exits.find(exit => exit.exit === (operation === OpCode.NEWT ? CompiledBlockExit.AllocateTable : CompiledBlockExit.ReadInteger))!;
+	const exit = source.exits.find(exit => exit.exit === CompiledBlockExit.ReadInteger)!;
 	assert.equal(exit.linkedBlock, successor);
 	let lookups = 0;
 	const find = lookup.find.bind(lookup);

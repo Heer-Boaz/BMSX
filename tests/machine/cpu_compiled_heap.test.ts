@@ -17,7 +17,8 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
+import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -28,7 +29,7 @@ function assertParity(js: CPU, ref: CPU): void {
 	assert.equal(js.lastPc, ref.lastPc);
 }
 
-test('a warm JavaScript NEWT exit yields to the bound BIOS before its compiled continuation', t => {
+test('a warm JavaScript BIOSCALL exit yields to the bound BIOS before its compiled continuation', t => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
 	assert.ok(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const functionAddress = image.vectors.entryFunctionAddress;
@@ -51,11 +52,12 @@ test('a warm JavaScript NEWT exit yields to the bound BIOS before its compiled c
 	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
 	const { terminal, region } = block;
-	assert.equal(terminal.exit, CompiledBlockExit.AllocateTable);
+	assert.equal(terminal.exit, CompiledBlockExit.BiosCall);
 	assert.ok(terminal.resumesFrame);
 	assert.ok(block.page.compiledBlocks!.entries[(terminal.nextPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
 		'the generated region includes a warm continuation');
-	assert.ok(terminal.exitB > 0 && terminal.exitC > 0, 'the compound reservation includes both backings');
+	assert.equal(terminal.exitB, BiosCall.CreateTable);
+	assert.equal(terminal.exitC, 2, 'the constructor uses the two tagged shape arguments');
 	const execute = region.execute;
 	let returnedExit: CompiledBlockExit | undefined;
 	const compiled = t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
@@ -67,12 +69,17 @@ test('a warm JavaScript NEWT exit yields to the bound BIOS before its compiled c
 	frame.registers.setInteger(terminal.exitA, 73);
 	assert.equal(grant(), RunResult.Yielded);
 	assert.equal(compiled.mock.callCount(), 1);
-	assert.equal(returnedExit, CompiledBlockExit.AllocateTable);
+	assert.equal(returnedExit, CompiledBlockExit.BiosCall);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(frame.pc, terminal.currentPc);
+	const state = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc), terminal.currentPc);
+	assert.equal(frame.pc, terminal.nextPc, 'the successor is published but fenced until BIOS RET');
+	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
+		[valueInteger(1), valueInteger(1)], 'the actual compiled exit publishes its argument window');
 	assert.equal(frame.registers.getInteger(terminal.exitA), 73, 'destination was not committed at launch');
 	retireService();
 	assert.equal(compiled.mock.callCount(), 1, 'allocator grants ran only the pinned BIOS lane');
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Destination), 0);
 	assert.equal(frame.pc, terminal.nextPc);
 	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.Table);
 	assert.equal(grant(), RunResult.Halted);

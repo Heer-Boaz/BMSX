@@ -77,15 +77,15 @@ struct Run {
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 DiagnosticOpcodeCounts difference(const DiagnosticOpcodeCounts& end, const DiagnosticOpcodeCounts& begin) {
-	return {end.newt-begin.newt, end.call-begin.call, end.setfield-begin.setfield,
+	return {end.biosCall-begin.biosCall, end.call-begin.call, end.setfield-begin.setfield,
 		end.concat-begin.concat, end.concatn-begin.concatn};
 }
 void requireCounts(const DiagnosticOpcodeCounts& actual, DiagnosticOpcodeCounts expected, const char* message) {
-	require(actual.newt == expected.newt && actual.call == expected.call && actual.setfield == expected.setfield
+	require(actual.biosCall == expected.biosCall && actual.call == expected.call && actual.setfield == expected.setfield
 		&& actual.concat == expected.concat && actual.concatn == expected.concatn, message);
 }
 DiagnosticOpcodeCounts total(const Run& run) {
-	return {run.native.newt+run.interpreter.newt, run.native.call+run.interpreter.call,
+	return {run.native.biosCall+run.interpreter.biosCall, run.native.call+run.interpreter.call,
 		run.native.setfield+run.interpreter.setfield, run.native.concat+run.interpreter.concat,
 		run.native.concatn+run.interpreter.concatn};
 }
@@ -163,19 +163,20 @@ test::Blua32TestImage imageWithHandler(u32 words) {
 test::Blua32TestImage mixedImage() {
 	auto image=imageWithHandler(8);
 	image.constants={std::string{"field"}};
-	writeInstruction(image.text,0,static_cast<u8>(OpCode::NEWT),0,3,2);
+	writeInstruction(image.text,0,static_cast<u8>(OpCode::MOV),0,0,0);
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::K1),2,0,0);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::SETFIELD),0,0,2);
 	writeInstruction(image.text,3,static_cast<u8>(OpCode::CONCAT),3,4,5);
 	writeInstruction(image.text,4,static_cast<u8>(OpCode::CONCATN),6,4,2);
 	writeInstruction(image.text,5,static_cast<u8>(OpCode::JMPIF),7,0,1);
-	writeInstruction(image.text,6,static_cast<u8>(OpCode::NEWT),8,0,0);
+	writeInstruction(image.text,6,static_cast<u8>(OpCode::BIOSCALL),8,0,2);
 	writeInstruction(image.text,7,static_cast<u8>(OpCode::HALT),0,0,0);
 	return image;
 }
 
-void initializeStrings(Fixture& fixture) {
+void initializeMixedRoots(Fixture& fixture) {
 	auto& cpu=fixture.runtime.machine.cpu;
+	fixture.frame().registers.set(0, valueTable(cpu.createTable(3, 2).address()));
 	fixture.frame().registers.set(4, valueString(cpu.stringPool().intern(std::string("a\0雪",5))));
 	fixture.frame().registers.set(5, valueString(cpu.stringPool().intern("tail")));
 	fixture.frame().registers.set(7, valueBool(true));
@@ -183,7 +184,7 @@ void initializeStrings(Fixture& fixture) {
 
 std::vector<u8> mixedGrants() {
 	Fixture generated(mixedImage(),false),scalar(mixedImage(),true);
-	initializeStrings(generated); initializeStrings(scalar);
+	initializeMixedRoots(generated); initializeMixedRoots(scalar);
 	for(int grant : {0,1,2,3,5,7,11,64,1024}) {
 		const auto measured=runPair(generated,scalar,grant);
 		std::cout<<"mixed grant="<<grant<<" consumed="<<measured.consumed
@@ -192,13 +193,13 @@ std::vector<u8> mixedGrants() {
 	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
 	require(generated.frame().registers.get(3)==generated.frame().registers.get(6),"CONCAT and CONCATN produce identical complete strings");
-	require(isNil(generated.frame().registers.get(8)),"a compiled but untaken suffix never creates its table");
+	require(isNil(generated.frame().registers.get(8)),"an untaken BIOSCALL never changes its destination");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto& p=generated.runtime.machine.cpu.diagnosticExecutionProfile();
-	requireCounts({p.nativeOpcodes.newt+p.interpreterOpcodes.newt,p.nativeOpcodes.call+p.interpreterOpcodes.call,
+	requireCounts({p.nativeOpcodes.biosCall+p.interpreterOpcodes.biosCall,p.nativeOpcodes.call+p.interpreterOpcodes.call,
 		p.nativeOpcodes.setfield+p.interpreterOpcodes.setfield,p.nativeOpcodes.concat+p.interpreterOpcodes.concat,
-		p.nativeOpcodes.concatn+p.interpreterOpcodes.concatn},{1,0,1,1,1},
-		"each completed mixed instruction counts once, excluding the untaken NEWT suffix");
+		p.nativeOpcodes.concatn+p.interpreterOpcodes.concatn},{0,0,1,1,1},
+		"each completed mixed instruction counts once, excluding the untaken BIOSCALL suffix");
 #endif
 	return encodeRuntimeSaveState(captureRuntimeSaveState(generated.runtime));
 }
@@ -206,26 +207,26 @@ std::vector<u8> mixedGrants() {
 void scalarBoundaryRetry() {
 	auto image=imageWithHandler(3);
 	writeInstruction(image.text,0,static_cast<u8>(OpCode::K1),1,0,0);
-	writeInstruction(image.text,1,static_cast<u8>(OpCode::NEWT),0,7,5);
+	writeInstruction(image.text,1,static_cast<u8>(OpCode::BIOSCALL),0,0,2);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::HALT),0,0,0);
 	Fixture generated(image,false),scalar(image,true);
 	const auto zero=runPair(generated,scalar,0);
 	require(zero.consumed==0,"an exhausted entry executes no instruction");
 	[[maybe_unused]] const auto shortGrant=runPair(generated,scalar,1);
 	require(generated.frame().registers.get(1)==valueInteger(1) && isNil(generated.frame().registers.get(0)),
-		"the insufficient prefix grant executes only the scalar K1, not the unadmitted NEWT suffix");
+		"the insufficient prefix grant executes only the scalar K1, not the unadmitted BIOSCALL suffix");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	require(shortGrant.nativeCycles==0,"ScalarBoundary refunds the unexecuted native entry before scalar retry");
-	requireCounts(total(shortGrant),{},"a declined native suffix counts no allocating semantic attempt");
+	requireCounts(total(shortGrant),{},"a declined native suffix counts no BIOSCALL attempt");
 #endif
 	const auto retry=runPair(generated,scalar,1);
-	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],"the admitted NEWT pays its fixed cost");
+	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::BIOSCALL)],"the admitted BIOSCALL pays its fixed cost");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(retry),{1,0,0,0,0},"the successor retry admits and counts NEWT exactly once");
+	requireCounts(total(retry),{1,0,0,0,0},"the successor retry admits and counts BIOSCALL exactly once");
 #endif
 	[[maybe_unused]] const auto finish=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(finish),{},"resuming the successor does not count the allocating instruction twice");
+	requireCounts(total(finish),{},"the exception handler does not count BIOSCALL twice");
 #endif
 }
 
@@ -319,9 +320,9 @@ void fetchAndCallFaults() {
 void interruptBoundary() {
  for(bool nmi : {false,true}) {
 	auto image=imageWithHandler(2);
-	writeInstruction(image.text,0,static_cast<u8>(OpCode::NEWT),0,0,0);
+	writeInstruction(image.text,0,static_cast<u8>(OpCode::CONCATN),0,0,0);
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::JMP),0,63,63,255);
-	writeInstruction(image.text,96,static_cast<u8>(OpCode::NEWT),2,0,0);
+	writeInstruction(image.text,96,static_cast<u8>(OpCode::CONCATN),2,0,0);
 	writeInstruction(image.text,97,static_cast<u8>(OpCode::RFE),0,0,0);
 	image.functions[2].wordCount=2;
 	image.exceptionFunctionIndex=2;
@@ -334,7 +335,7 @@ void interruptBoundary() {
 	[[maybe_unused]] const auto handler=runPair(generated,scalar,1);
 	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==2,"the short grant executes the actual interrupt handler in its own frame");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(handler),{1,0,0,0,0},"an interrupt entry counts the handler allocation, not a second root allocation");
+	requireCounts(total(handler),{0,0,0,0,1},"an interrupt entry counts the handler CONCATN, not a second root opcode");
 #endif
 	if(!nmi) for(auto* fixture : {&generated,&scalar}) fixture->runtime.machine.irqController.acknowledge(IRQ_GPU);
 	runPair(generated,scalar,64);
@@ -345,11 +346,15 @@ void interruptBoundary() {
 
 void lazyCompilation() {
 	auto image=imageWithHandler(3); image.constants={std::string{"field"}};
-	writeInstruction(image.text,0,static_cast<u8>(OpCode::NEWT),0,0,1);
+	writeInstruction(image.text,0,static_cast<u8>(OpCode::MOV),0,0,0);
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::SETFIELD),0,0,2);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::JMP),0,63,61,255);
 	Fixture generated(image,false,false),scalar(image,true,false);
-	for(auto* fixture : {&generated,&scalar}) fixture->frame().registers.set(2, valueInteger(73));
+	for(auto* fixture : {&generated,&scalar}) {
+		auto& cpu = fixture->runtime.machine.cpu;
+		fixture->frame().registers.set(0, valueTable(cpu.createTable(0, 1).address()));
+		fixture->frame().registers.set(2, valueInteger(73));
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.runtime.machine.cpu.setNativeCompilationProfiling(true);
 #endif
@@ -362,13 +367,13 @@ void lazyCompilation() {
 #endif
 	[[maybe_unused]] const auto warm=runPair(generated,scalar,1024);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) && defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	require(warm.nativeCycles>0 && warm.native.newt>0 && warm.native.setfield>0,
-		"lazy/worker-published native code reports executed allocating and field-store paths");
+	require(warm.nativeCycles>0 && warm.native.setfield>0,
+		"lazy/worker-published native code reports executed field-store paths");
 #endif
 }
 
 void statisticsAreNotCheckpointState() {
-	Fixture fixture(mixedImage(),false); initializeStrings(fixture);
+	Fixture fixture(mixedImage(),false); initializeMixedRoots(fixture);
 	// Compare actual restored boundaries; GX restore publishes presentation state.
 	applyRuntimeSaveState(fixture.runtime,captureRuntimeSaveState(fixture.runtime));
 	const auto checkpoint=captureRuntimeSaveState(fixture.runtime);

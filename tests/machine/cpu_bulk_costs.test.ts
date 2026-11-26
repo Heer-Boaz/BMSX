@@ -16,6 +16,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { compileTableIterationTest } from '../helpers/table_iteration';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -102,34 +103,11 @@ assert(count == 1 and key == nil and value == nil)
 return true`, 3);
   const { cpu } = createTestSystemCpu(image, backend);
   cpu.installBootPrimitives();
-  assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+  runGuestToHalt(cpu, 200_000);
   const values: Value[] = [];
   cpu.readCompletionValues(values);
   assert.deepEqual(values, [valueBool(true)]);
  });
-
- for (const [array, hash, capacity] of [[0, 0, 0], [1, 0, 0], [0, 1, 1], [7, 3, 4], [13, 5, 8], [0, 31, 32], [9, 33, 64], [63, 63, 64]]) {
-  test(`NEWT reserves capacity at the base charge (${backend}, ${array}, ${hash})`, () => {
-   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-   writeInstruction(text, 0, OpCode.NEWT, 0, array, hash);
-   writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
-   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }] });
-   const { cpu } = createTestSystemCpu(image, backend);
-   cpu.runUntilDepth(0, 20000);
-   const entry = image.image.functions[0].codeAddress;
-   if (backend === CpuExecutionBackend.JavaScript) {
-    const page = cpu.rootThread.currentFrame!.decodedPage!;
-    assert.equal(page.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
-     CompiledBlockExit.AllocateTable, 'the NEWT entry is compiled before its cycle check');
-   }
-   cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-   const grant = BASE_CYCLES[OpCode.NEWT];
-   assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
-   assert.equal(cpu.instructionBudgetRemaining, 0);
-   assert.equal(cpu.rootThread.currentFrame!.pc, image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
-   assert.equal(cpu.gc.tables.storedSlotCount(cpu.rootThread.currentFrame!.registers.getPayload(0)), array + capacity);
-  });
- }
 
  test(`field growth charges completed scans, initialization and relocation (${backend})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);

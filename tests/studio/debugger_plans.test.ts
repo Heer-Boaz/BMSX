@@ -151,7 +151,7 @@ function completionFixture() {
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.CLOSURE, 0, 0, 1, 0);
 	writeInstruction(code, 2, OpCode.RET, 0, 2, 0, 0);
-	writeInstruction(code, 3, OpCode.NEWT, 0, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.K1, 0, 0, 0, 0);
 	writeInstruction(code, 4, OpCode.RET, 0, 2, 0, 0);
 	writeInstruction(code, 5, OpCode.RFE, 0, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({

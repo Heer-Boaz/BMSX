@@ -15,7 +15,7 @@ namespace bmsx {
 class NativeRegisterUses;
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-enum class NativeAttempt : u8 { None, NewTable, Call, AssignField, Concat, ConcatRange };
+enum class NativeAttempt : u8 { None, BiosCall, Call, AssignField, Concat, ConcatRange };
 #endif
 
 // Compile-time description only. Publication materializes runtime sites and
@@ -109,7 +109,6 @@ public:
 		return std::span(m_sideExits).subspan(block.firstSideExit, block.sideExitCount);
 	}
 	std::span<const NativeIrExit> admissionReplays() const { return m_admissionReplays; }
-	std::span<const NativeRecordPlan> recordPlans() const { return m_records; }
 	size_t instructionCount() const { return m_instructions.size(); }
 
 private:
@@ -121,14 +120,12 @@ private:
 	std::vector<NativeIrBlock> m_blocks;
 	std::vector<NativeIrExit> m_sideExits;
 	std::vector<NativeIrExit> m_admissionReplays;
-	std::vector<NativeRecordPlan> m_records;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
 	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 	void finalizeBlockExits(NativeIrBlock& block);
 	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void truncateOwnFieldAddresses(NativeIrBlock& block);
-	void planRecordConstructors(std::span<const u16> byAddress);
 };
 
 NativeOperation translateNativeOperation(const DecodedInstruction& source);

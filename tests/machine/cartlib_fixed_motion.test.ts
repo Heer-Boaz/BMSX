@@ -1,8 +1,9 @@
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -24,11 +25,11 @@ const modules = [
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`signed Q8 movement O${optLevel} ${backend}: negative motion, word limits, rejection and acceleration`, () => {
-		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'fixed-motion.lua').chunk, modules,
+		const program = compileTestSystemWithHeap(parseLuaChunk(source, 'fixed-motion.lua').chunk, modules,
 			{ entrySource: source, programDomain: 'system', optLevel });
 		const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+		assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.Halted);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		const results: Value[] = [];
 		cpu.readCompletionValues(results);

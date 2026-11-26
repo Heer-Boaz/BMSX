@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { CpuRunKind, PendingAllocationKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { INSTRUCTION_BYTES, packInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -39,39 +39,6 @@ test('next charges only the primitive and the receiving range even when traversa
 			assert.equal(frame.registers.get(3), valueNil());
 		}
 	}
-});
-
-for (const wide of [false, true]) test(`NEWT pays the base cycle charge and reserves rounded heap capacity (WIDE=${wide})`, () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	let word = 0;
-	if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, word++, OpCode.NEWT, 0, 2, 3, wide ? 1 : 0);
-	const successor = word;
-	writeInstruction(text, word++, OpCode.K1, 1, 0, 0);
-	writeInstruction(text, word, OpCode.JMP, 0, 63, 63 - word, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 2 }] });
-	const { cpu: generated } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const { cpu: scalar } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-	const frame = generated.rootThread.frameAtDepth(0), pc = frame.pc;
-	const cycles = BASE_CYCLES[OpCode.NEWT];
-	runCpuParity(generated, scalar, (cycles + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP]) * 68);
-	const entry = frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
-	const state = { remainingCycles: 1, registerTop: frame.top, memoryAddress: 0 };
-	const exit = entry.region.exits[entry.region.execute(frame.registers, frame.executionImage.constWords, frame.decodedPage!, frame, entry.entry, state)];
-	assert.equal(exit.exit, CompiledBlockExit.AllocateTable);
-	for (const cpu of [generated, scalar]) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		cpu.rootThread.frameAtDepth(0).registers.setNil(1);
-	}
-	const before = generated.luaHeap.usedBytes();
-	assert.equal(runCpuParity(generated, scalar, cycles), RunResult.Yielded);
-	assert.equal(generated.instructionBudgetRemaining, 0);
-	assert.equal(frame.pc, pc + successor * INSTRUCTION_BYTES);
-	assert.equal(frame.registers.get(1), valueNil());
-	const table = frame.registers.getPayload(0), slots = wide ? 128 : 4;
-	assert.equal(generated.gc.tables.arrayCapacity(table), 2);
-	assert.equal(generated.gc.tables.hashSize(table), slots);
-	assert.equal(generated.luaHeap.usedBytes() - before, 32 + 2 * 5 + slots * 10);
 });
 
 test('a WIDE SETFIELD hint affects only growth at its original table and follows code replacement', () => {
@@ -175,7 +142,7 @@ for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFI
 	assert.equal(tables.hashAddress(table), oldStorage);
 	assert.equal(tables.getStringKey(table, field), valueNil());
 	const pending = cpu.captureRuntimeState().pendingAllocation;
-	assert.ok(pending?.kind === PendingAllocationKind.TableAssignment);
+	assert.ok(pending);
 	assert.equal(pending.extraHashSlots, 31);
 	const checkpoint = captureCpuCheckpoint(cpu);
 	for (let replay = 0; replay < 2; ++replay) {

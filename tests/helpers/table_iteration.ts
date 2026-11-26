@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { compileHeapServiceSystem } from './heap_service_system';
 import { linkTestSystemBlua32 } from './blua32';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
@@ -17,9 +16,7 @@ ${body}`;
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		...COROUTINE_FIRMWARE_MODULES,
 	];
-	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'table_iteration').chunk!,
-		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
-		{ entrySource: source, optLevel, programDomain: 'system' }));
+	return linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, modules));
 }
 
 export const tableIterationVectors = {

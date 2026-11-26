@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { compileHeapServiceSystem } from './heap_service_system';
 import { linkTestSystemBlua32 } from './blua32';
 import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
@@ -18,11 +17,11 @@ next = __bmsx_next`;
 
 export function compileCoroutineTest(body: string, optLevel: 0 | 3) {
 	const source = `require('boot')\ncoroutine = require('coroutine')\n${body}`;
-	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'test').chunk, [
-		{ path: 'boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'boot').chunk },
-		...COROUTINE_FIRMWARE_MODULES.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk })),
-		...testModules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk })),
-	], { entrySource: source, programDomain: 'system', optLevel }));
+	return linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [
+		{ path: 'boot', source: bootSource },
+		...COROUTINE_FIRMWARE_MODULES,
+		...testModules,
+	]));
 }
 
 export const coroutineVectors = {

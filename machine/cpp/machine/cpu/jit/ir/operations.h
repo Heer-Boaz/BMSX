@@ -8,7 +8,6 @@
 
 #include "machine/cpu/jit/exit_contract.h"
 #include "machine/cpu/jit/ir/numeric_plan.h"
-#include "machine/cpu/jit/record_recipe.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 
@@ -85,10 +84,11 @@ struct NativeReturnSite : NativeExitOperands::Return {
 		return {.readsRange = {first, static_cast<u16>(std::max<int>(produced, 0)), produced < 0}};
 	}
 };
-struct NativeTableAllocation : NativeExitOperands::Allocation {
-	static constexpr auto terminalExit = NativeBlockExit::AllocateTable;
-	std::optional<NativeRecordId> record{};
-	constexpr NativeSlotAccess slots() const { return {.writes = {result, 1}}; }
+struct NativeBiosCall : NativeExitOperands::BiosCall {
+	static constexpr auto terminalExit = NativeBlockExit::BiosCall;
+	constexpr NativeSlotAccess slots() const {
+		return {.writes = {result, 1}, .readsRange = {u32{result} + 1u, argc}};
+	}
 };
 struct NativeConcat : NativeExitOperands::Concat {
 	static constexpr auto terminalExit = NativeBlockExit::Concat;
@@ -309,7 +309,7 @@ struct NativeVararg : NativeExitOperands::Vararg {
 };
 
 using NativeOperation = std::variant<
-	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite, NativeTableAllocation,
+	NativeReplay, NativeJump, NativeHalt, NativeInvalidOperand, NativeExceptionReturn, NativeReturnSite, NativeBiosCall,
 	NativeConcat, NativeConcatRange, NativeClosure, NativeLiteral, NativeConstantLoad, NativeMove, NativeNot, NativeClearSlots, NativePoolRead,
 	NativeLength, NativeTableIterator, NativeGlobalAccess, NativeUpvalueAccess, NativeControlAccess, NativeMemoryAccess,
 	NativeTableAccess, NativeArithmetic, NativeTruthBranch, NativeComparison, NativeCallSite, NativeVararg>;

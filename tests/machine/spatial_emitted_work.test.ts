@@ -130,7 +130,7 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: num
 		// constant table. Operand/register decoding is shared; do not mislabel
 		// their dynamic constants using the unrelated AOT table.
 		const instruction = describeMappedBlua32InstructionAtPc(image, bytes, codeAddress, pc, { showConsts: false });
-		assert.notEqual(instruction.op, OpCode.NEWT, `${owner}: steady-state table construction`);
+		assert.notEqual(instruction.op, OpCode.BIOSCALL, `${owner}: steady-state table construction`);
 		assert.notEqual(instruction.op, OpCode.CLOSURE, `${owner}: steady-state closure construction`);
 		if (instruction.op === OpCode.SELF) methodLookups += 1;
 		if (instruction.op === OpCode.CALL) calls.push({ pc, calleeSlot: instruction.operands.find(operand => operand.field === 'a')!.registerIndex! });

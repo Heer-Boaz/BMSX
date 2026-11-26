@@ -410,7 +410,6 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/ir/field_addresses.cpp
 		machine/cpu/jit/ir/liveness.cpp
 		machine/cpu/jit/ir/numeric_plan.cpp
-		machine/cpu/jit/ir/record_fusion.cpp
 		machine/cpu/jit/ir/region.cpp
 		machine/cpu/jit/ir/translate.cpp
 		machine/cpu/jit/ir/type_propagation.cpp
@@ -440,7 +439,6 @@ if(BMSX_ENABLE_NATIVE_BLOCKS)
 		machine/cpu/jit/runtime/feedback.cpp
 		machine/cpu/jit/runtime/numeric_kernel.cpp
 		machine/cpu/jit/runtime/publication.cpp
-		machine/cpu/jit/runtime/record_constructor.cpp
 		machine/cpu/jit/runtime/return.cpp
 	)
 	target_compile_definitions(bmsx_core PUBLIC BMSX_ENABLE_NATIVE_BLOCKS=1)

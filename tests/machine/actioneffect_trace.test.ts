@@ -1,3 +1,4 @@
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -234,7 +235,7 @@ function compileActionEffectProgram(
 		sourceModule(path, readFileSync(file, 'utf8')),
 	);
 	cartModules.push(sourceModule('cartlib/event_emitter', EVENT_EMITTER_STUB_SOURCE));
-	const system = compileLuaChunkToProgram(
+	const system = compileTestSystemWithHeap(
 		parseLuaChunk(SYSTEM_ENTRY_SOURCE, 'boot.lua'),
 		systemModules,
 		{

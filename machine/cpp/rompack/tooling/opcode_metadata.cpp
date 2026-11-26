@@ -19,7 +19,7 @@ const std::array<const char*, OPCODE_COUNT> OPCODE_NAMES{
 	"STORE_MEM_WORDS_D",
 	"GETT",
 	"SETT",
-	"NEWT",
+	"BIOSCALL",
 	"ADD",
 	"SUB",
 	"MUL",

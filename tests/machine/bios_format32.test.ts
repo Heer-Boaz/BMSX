@@ -3,12 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { FORMAT32_CASES, FORMAT32_MODULES, FORMAT32_ROM_SOURCE, formatFloat32 } from '../helpers/format32';
-import { materializeCpuCompletionValues, parseLuaChunk } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const sources = FORMAT32_MODULES.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
 sources.push({ path: 'tty/console', source: 'return {write=function() end, end_line=function() end}' },
@@ -25,14 +24,13 @@ test('rational formatter reference includes exact halves, signed zero and decima
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS format O${optLevel} ${backend}: edge magnitudes, exact decimal references, raw words and fields`, () => {
-		const program = compileLuaChunkToProgram(parseLuaChunk(FORMAT32_ROM_SOURCE), modules,
+		const program = compileTestSystemWithHeap(parseLuaChunk(FORMAT32_ROM_SOURCE), modules,
 			{ entrySource: FORMAT32_ROM_SOURCE, optLevel, programDomain: 'system' });
 		const image = linkTestSystemBlua32(program);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		const budget = 500_000_000;
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		runGuestToHalt(cpu, budget);
 		const results = materializeCpuCompletionValues(cpu);
 		assert.equal(results[0], v.valueBool(true), v.valueTag(results[1]) === v.ValueTag.String ? cpu.stringPool.toString(v.asStringId(results[1])) : 'protected corpus failed');
 		assert.equal(results.length, 6);

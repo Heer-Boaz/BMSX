@@ -561,36 +561,6 @@ int main() {
   publishFirstArray(scalar, 512); publishFirstArray(scalar, 1024);
   rebuildWork(scalar);
   hostGrantScratch(scalar);
-  for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {
-   test::Blua32TestImage image;
-   image.text.resize(2 * INSTRUCTION_BYTES);
-   writeInstruction(image.text, 0, static_cast<u8>(OpCode::NEWT), 0, array, hash);
-   writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
-   image.functions = {{.firstWord=0, .wordCount=2, .maxStack=1}};
-   const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
-   Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-   IrqController irq(memory);
-   ExecutionAddressSpace addresses(memory);
-   CPU cpu(memory, irq, addresses);
-   cpu.reset();
-   if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
-   cpu.runUntilDepth(0, 20000);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-   if (!scalar) {
-    test::waitForNativeEntry(cpu, *cpu.activeThread()->frameAtDepth(0)->decodedPage, (rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES);
-    const auto& block = cpu.activeThread()->frameAtDepth(0)->decodedPage->nativeBlocks->entries[(rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES];
-    if (!block || block->terminal.exit != NativeBlockExit::AllocateTable) throw std::runtime_error("allocation path was not warmed");
-   }
-#endif
-   cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-   const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)];
-   if (cpu.runUntilDepth(0, grant) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0)
-    throw std::runtime_error("NEWT must charge its fixed cost independently of the reservation");
-   if (cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Pc) != rom.textAddress + INSTRUCTION_BYTES || !valueIsTable(cpu.readFrameRegister(0, 0)))
-    throw std::runtime_error("an exact grant must stop after creating the table and before the next instruction");
-   if (asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap()).storedSlotCount() != static_cast<size_t>(array + capacity))
-    throw std::runtime_error("NEWT retains the requested array and rounded hash capacity");
-  }
   {
    test::Blua32TestImage image;
    image.text.resize(2 * INSTRUCTION_BYTES);

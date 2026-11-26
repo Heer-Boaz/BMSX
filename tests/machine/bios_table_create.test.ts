@@ -78,7 +78,7 @@ function dirtyBackings(cpu: CPU, arrayBytes: number, hashBytes: number): void {
 }
 
 for (const optLevel of [0, 3] as const) {
-	test(`BLua NEWT initializes all fresh backing layouts and publishes the same object at O${optLevel}`, () => {
+	test(`BLua table creation initializes all fresh backing layouts and publishes the same object at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, finish, compare } = fixture(optLevel);
 		for (const [index, [array, requested]] of [[0, 0], [1, 1], [3, 2], [5, 64], [8, 65], [9, 129], [11, 513], [7, 1024]].entries()) {
 			const hash = TableRecords.hashCapacity(requested);
@@ -102,7 +102,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 	});
 
-	test(`BLua NEWT resumes in the Array and Hash writes before publishing inventory at O${optLevel}`, () => {
+	test(`BLua table creation resumes in the Array and Hash writes before publishing inventory at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, grant, finish, compare } = fixture(optLevel);
 		const array = 33, hash = 256, hashBytes = TableRecords.hashStorageBytes(hash);
 		dirtyBackings(cpu, array * 5, hashBytes);
@@ -158,7 +158,7 @@ for (const optLevel of [0, 3] as const) {
 		compare();
 	});
 
-	test(`BLua NEWT refusal performs only the legacy reservation cleanup at O${optLevel}`, () => {
+	test(`BLua table creation refusal performs only the legacy reservation cleanup at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, finish, compare } = fixture(optLevel);
 		const arena = cpu.heapAllocator;
 		const record = arena.allocate(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX, true);
