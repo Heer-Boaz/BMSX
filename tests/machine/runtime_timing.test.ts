@@ -480,7 +480,9 @@ test('a full collection spans CPU grants and resumes its outstanding fresh epoch
 	assert.equal(step(), InstructionStepResult.Executed);
 	const pc = cpu.readFramePc(0);
 	assert.equal(gc.fullEpochs(), 2);
-	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0]), /maintenance must retire/);
+	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0]));
+	assert.equal(gc.fullEpochs(), 2, 'the rejected call must not displace either outstanding epoch');
+	assert.equal(cpu.readFramePc(0), pc);
 	assert.equal(step(), InstructionStepResult.Advanced, 'a tracing grant is not an executed guest instruction');
 	assert.equal(cpu.readFramePc(0), pc);
 	const snapshot = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
