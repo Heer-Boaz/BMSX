@@ -94,7 +94,7 @@ export class Runtime {
 	public admitExternalCpuMutation(): boolean {
 		const { scheduler, gxGpu, cpu } = this.machine;
 		return scheduler.acceptedCpuCycles === 0 && !scheduler.isCpuSliceActive()
-			&& !gxGpu.backendServiceBlocksMachine() && !cpu.heapServiceActive();
+			&& !gxGpu.backendServiceBlocksMachine() && !cpu.heapServiceActive() && !this.vblank.hasDeferredPressure();
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

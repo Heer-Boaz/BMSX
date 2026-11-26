@@ -20,22 +20,23 @@ bool settleTime(Runtime& runtime, i64 targetCycle);
 
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
-	if (cpu.allocationParked()) return false;
+	const bool service = cpu.heapServiceActive();
+	if (!service && cpu.allocationParked()) return false;
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (gxGpu.backendServiceBlocksMachine()) {
 		return tickCompleted;
 	}
-	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
+	if ((service || !cpu.isHaltedUntilIrq()) && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
 	while (true) {
-		if (!system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
+		if (!service && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
+		if ((service || !cpu.isHaltedUntilIrq()) && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {
@@ -76,7 +77,8 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running && !cpu.gcHeap().stoppedFinalMarkPending()) {
+	while (running && (cpu.heapServiceActive()
+		|| (!cpu.gcHeap().stoppedFinalMarkPending() && !runtime.vblank.hasDeferredPressure(runtime)))) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;
@@ -108,7 +110,9 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 }
 
 InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameState& frameState) {
-	const CpuSliceResult result = runSlice(runtime, frameState, runtime.machine.cpu.gcHeap().fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
+	const auto& cpu = runtime.machine.cpu;
+	const CpuSliceResult result = runSlice(runtime, frameState,
+		!cpu.heapServiceActive() && cpu.gcHeap().fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
 	switch (result) {
 		case CpuSliceResult::Advanced:
 			return InstructionStepResult::Advanced;
@@ -135,7 +139,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
-	if (cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
+	if (cpu.allocationParked() || cpu.heapServiceActive() || runtime.vblank.hasDeferredPressure(runtime)) return CpuSuspendedRunResult::Halted;
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
@@ -248,7 +252,8 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
-	if (cpu.allocationParked()) {
+	const bool service = cpu.heapServiceActive();
+	if (!service && cpu.allocationParked()) {
 		if (!cpu.allocationReady()) return CpuSliceResult::ParkedAllocation;
 		// Late fault handling observes the same effective clock as the original slice.
 		const int deferred = frameState.deferredAllocationCycles;
@@ -276,7 +281,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		&& !tickCompleted
 		&& !machine.gxGpu.backendServiceBlocksMachine()
 		&& !machine.systemController.cpuHeld()) {
-		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
+		if ((!service && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
@@ -332,6 +337,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSliceResult::ExecutionStopped;
 		}
+		if (service && consumed == 0) return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Blocked;
 		if (cpu.isMemoryWriteBlocked()) {
 			if (consumed > 0) {
 				return result == RunResult::Halted

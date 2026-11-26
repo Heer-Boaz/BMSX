@@ -42,21 +42,22 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
-		if (cpu.allocationParked()) return false;
+		const service = cpu.heapServiceActive();
+		if (!service && cpu.allocationParked()) return false;
 		const gxGpu = machine.gxGpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (gxGpu.backendServiceBlocksMachine()) {
 			return tickCompleted;
 		}
-		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
+		if ((service || !cpu.isHaltedUntilIrq()) && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		const scheduler = machine.scheduler;
 		while (true) {
-			if (!machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
+			if (!service && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 				return tickCompleted;
 			}
-			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
+			if ((service || !cpu.isHaltedUntilIrq()) && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -96,7 +97,8 @@ export class CpuExecutionState {
 		let result = CpuExecutionResult.Yielded;
 		const cpu = this.runtime.machine.cpu;
 		let running = true;
-		while (running && !cpu.gc.stoppedFinalMarkPending()) {
+		while (running && (cpu.heapServiceActive()
+			|| (!cpu.gc.stoppedFinalMarkPending() && !this.runtime.vblank.hasDeferredPressure()))) {
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;
@@ -128,7 +130,8 @@ export class CpuExecutionState {
 	}
 
 	public runInstruction(state: FrameState): InstructionStepResult {
-		const result = this.runSlice(state, this.runtime.machine.cpu.gc.fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
+		const cpu = this.runtime.machine.cpu;
+		const result = this.runSlice(state, !cpu.heapServiceActive() && cpu.gc.fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
 		switch (result) {
 			case CpuSliceResult.Advanced:
 				return InstructionStepResult.Advanced;
@@ -149,7 +152,7 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
-		if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
+		if (cpu.allocationParked() || cpu.heapServiceActive() || runtime.vblank.hasDeferredPressure()) return CpuSuspendedRunResult.Halted;
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
@@ -257,7 +260,8 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		if (cpu.allocationParked()) {
+		const service = cpu.heapServiceActive();
+		if (!service && cpu.allocationParked()) {
 			if (!cpu.allocationReady()) return CpuSliceResult.ParkedAllocation;
 			const deferred = state.deferredAllocationCycles;
 			cpu.instructionBudgetRemaining = 0;
@@ -285,7 +289,7 @@ export class CpuExecutionState {
 			&& !tickCompleted
 			&& !runtime.machine.gxGpu.backendServiceBlocksMachine()
 			&& !runtime.machine.systemController.cpuHeld()) {
-			if (cpu.isMemoryWriteBlocked() || runtime.machine.dmaController.cpuBusHeld()) {
+			if ((!service && cpu.isMemoryWriteBlocked()) || runtime.machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
@@ -338,6 +342,7 @@ export class CpuExecutionState {
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
 			}
+			if (service && consumed === 0) return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
 			if (cpu.isMemoryWriteBlocked()) {
 				if (consumed > 0) {
 					return result === RunResult.Halted

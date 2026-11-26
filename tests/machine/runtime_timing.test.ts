@@ -945,6 +945,7 @@ test('runtime restore preserves an in-flight frame budget', () => {
 
 test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	const grants: number[] = [];
+	const timingRuntime = createTimingRuntime();
 	let scheduler!: FrameSchedulerState;
 	const frameState = {
 		cycleBudgetRemaining: 0,
@@ -972,7 +973,8 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 	const runtime = {
 		history: { mode: HistoryMode.Disabled, executionPaused: false },
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
-		machine: createTimingRuntime().machine,
+		machine: timingRuntime.machine,
+		vblank: timingRuntime.vblank,
 		frameLoop,
 	} as unknown as Runtime;
 	scheduler = new FrameSchedulerState(runtime);

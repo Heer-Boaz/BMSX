@@ -30,7 +30,7 @@ Runtime::~Runtime() = default;
 auto Runtime::callClosure(u32 fn, BuiltinArgsView args) -> ConstValueSpan {
 	const auto& scheduler = machine.scheduler;
 	if (scheduler.acceptedCpuCycles() != 0 || scheduler.isCpuSliceActive() || machine.gxGpu.backendServiceBlocksMachine()
-		|| machine.cpu.heapServiceActive()) {
+		|| machine.cpu.heapServiceActive() || vblank.hasDeferredPressure(*this)) {
 		throw std::runtime_error("External Lua closure execution requires a settled CPU and device frontier.");
 	}
 	history.stop();

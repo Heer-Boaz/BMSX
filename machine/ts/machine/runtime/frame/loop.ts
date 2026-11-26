@@ -76,7 +76,8 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = budget;
 		state.cycleCarryGranted = carry;
 		state.activeCpuUsedCycles = 0;
-		state.deferredAllocationCycles = 0;
+		// A timed service can cross a display tick while its caller's
+		// already admitted allocation prefix still owes cycle settlement.
 		runtime.vblank.beginTick();
 		this.frameActive = true;
 		return state;
@@ -100,7 +101,7 @@ export class FrameLoopState {
 			return false;
 		}
 		if (this.frameActive
-			&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
+			&& ((!runtime.machine.cpu.heapServiceActive() && runtime.machine.cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld())
 			&& runtime.machine.scheduler.nextDeadline() === Number.MAX_SAFE_INTEGER) {
 			// Cart parked waiting for an interrupt that nothing has scheduled: report
 			// no progress so the scheduler yields the host slice instead of spinning.
@@ -167,7 +168,8 @@ export class FrameLoopState {
 		if (!this.frameActive) {
 			return this.runtime.frameScheduler.startScheduledFrame();
 		}
-		if (this.runtime.machine.scheduler.acceptedCpuCycles !== 0 || this.runtime.machine.cpu.allocationReady()) return true;
+		const { cpu, scheduler } = this.runtime.machine;
+		if (scheduler.acceptedCpuCycles !== 0 || (!cpu.heapServiceActive() && cpu.allocationReady())) return true;
 		if (this.frameState.cycleBudgetRemaining <= 0) {
 			return this.runtime.frameScheduler.refillFrameBudget(this.frameState);
 		}
@@ -180,10 +182,12 @@ export class FrameLoopState {
 			const tickCompleted = settleAcceptedCpuTime(runtime);
 			this.finalizeUpdateSlice();
 			if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles !== 0
-				|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gc.stoppedFinalMarkPending()) return false;
+				|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+			const cpu = runtime.machine.cpu;
+			if (!cpu.heapServiceActive() && (cpu.gc.stoppedFinalMarkPending() || runtime.vblank.hasDeferredPressure())) return false;
 		}
 		const state = this.frameState;
-		if (runtime.pendingCall === 'entry') {
+		if (runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) {
 			const executionStopped = this.runUpdatePhase();
 			state.updateExecuted = runtime.pendingCall !== 'entry';
 			this.finalizeUpdateSlice();
@@ -200,7 +204,7 @@ export class FrameLoopState {
 			this.finalizeUpdateSlice();
 			return InstructionStepResult.Advanced;
 		}
-		if (runtime.pendingCall !== 'entry') {
+		if (runtime.pendingCall !== 'entry' && !runtime.machine.cpu.heapServiceActive()) {
 			this.finalizeUpdateSlice();
 			return InstructionStepResult.Advanced;
 		}
@@ -212,7 +216,7 @@ export class FrameLoopState {
 
 	private finalizeUpdateSlice(): void {
 		const runtime = this.runtime;
-		if (runtime.pendingCall === 'entry' && !runtime.vblank.tickCompleted) {
+		if ((runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) && !runtime.vblank.tickCompleted) {
 			return;
 		}
 		this.abandonFrameState();
@@ -224,14 +228,14 @@ export class FrameLoopState {
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
 		while (true) {
-			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 				const tickCompleted = cpuExecution.runStoppedCpu(state);
-				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+				if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 					return false;
 				}
 				continue;
 			}
-			if (runtime.pendingCall !== 'entry') {
+			if (runtime.pendingCall !== 'entry' && !cpu.heapServiceActive()) {
 				return false;
 			}
 			const result = runtime.cpuExecution.runWithBudget(state);
@@ -255,20 +259,20 @@ export class FrameLoopState {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
-		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+		if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 			const previousRemaining = state.cycleBudgetRemaining;
 			const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
-			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 				return tickCompleted || state.cycleBudgetRemaining !== previousRemaining
 					? InstructionStepResult.Advanced
 					: InstructionStepResult.Blocked;
 			}
 		}
-		if (runtime.pendingCall !== 'entry') {
+		if (runtime.pendingCall !== 'entry' && !cpu.heapServiceActive()) {
 			return InstructionStepResult.Blocked;
 		}
 		const result = runtime.cpuExecution.runInstruction(state);
-		if (cpu.getFrameDepth() === 0) {
+		if (cpu.getFrameDepth() === 0 && !cpu.heapServiceActive()) {
 			runtime.pendingCall = null;
 			runtime.frameScheduler.clearQueuedTime();
 			this.abandonFrameState();

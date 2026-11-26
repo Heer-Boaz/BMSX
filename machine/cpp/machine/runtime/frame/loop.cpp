@@ -33,10 +33,14 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 void FrameLoopState::beginFrameState(Runtime& runtime, i64 budget, i64 carry) {
 	frameActive = true;
 	runtime.vblank.beginTick();
-	frameState = FrameState{};
-	frameState.cycleBudgetRemaining = budget;
-	frameState.cycleBudgetGranted = budget;
-	frameState.cycleCarryGranted = carry;
+	// A timed service can cross a display tick while its caller's
+	// already admitted allocation prefix still owes cycle settlement.
+	frameState = {
+		.cycleBudgetRemaining = budget,
+		.cycleBudgetGranted = budget,
+		.cycleCarryGranted = carry,
+		.deferredAllocationCycles = frameState.deferredAllocationCycles,
+	};
 }
 
 void FrameLoopState::abandonFrameState(Runtime& runtime) {
@@ -57,7 +61,8 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 	if (!frameActive) {
 		return runtime.frameScheduler.startScheduledFrame(runtime);
 	}
-	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || runtime.machine.cpu.allocationReady()) return true;
+	const auto& cpu = runtime.machine.cpu;
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || (!cpu.heapServiceActive() && cpu.allocationReady())) return true;
 	if (frameState.cycleBudgetRemaining <= 0) {
 		return runtime.frameScheduler.refillFrameBudget(runtime, frameState);
 	}
@@ -65,7 +70,7 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 }
 
 void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
-	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
+	if ((runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) && !runtime.vblank.tickCompleted()) {
 		return;
 	}
 	abandonFrameState(runtime);
@@ -76,9 +81,11 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 		const bool tickCompleted = settleAcceptedCpuTime(runtime);
 		finalizeUpdateSlice(runtime);
 		if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles() != 0
-			|| runtime.machine.gxGpu.backendServiceBlocksMachine() || runtime.machine.cpu.gcHeap().stoppedFinalMarkPending()) return false;
+			|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+		const auto& cpu = runtime.machine.cpu;
+		if (!cpu.heapServiceActive() && (cpu.gcHeap().stoppedFinalMarkPending() || runtime.vblank.hasDeferredPressure(runtime))) return false;
 	}
-	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) {
 		const bool executionStopped = runUpdatePhase(runtime);
 		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
 		finalizeUpdateSlice(runtime);
@@ -94,7 +101,7 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 		finalizeUpdateSlice(runtime);
 		return InstructionStepResult::Advanced;
 	}
-	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !runtime.machine.cpu.heapServiceActive()) {
 		finalizeUpdateSlice(runtime);
 		return InstructionStepResult::Advanced;
 	}
@@ -107,14 +114,14 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	while (true) {
-		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+		if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+			if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 				return false;
 			}
 			continue;
 		}
-		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+		if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !cpu.heapServiceActive()) {
 			return false;
 		}
 		const CpuExecutionResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
@@ -136,20 +143,20 @@ bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 
 InstructionStepResult FrameLoopState::runUpdateInstruction(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
-	if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+	if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 		const i64 previousRemaining = frameState.cycleBudgetRemaining;
 		const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-		if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
+		if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
 			return tickCompleted || frameState.cycleBudgetRemaining != previousRemaining
 				? InstructionStepResult::Advanced
 				: InstructionStepResult::Blocked;
 		}
 	}
-	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !cpu.heapServiceActive()) {
 		return InstructionStepResult::Blocked;
 	}
 	const InstructionStepResult result = runtime.cpuExecution.runInstruction(runtime, frameState);
-	if (cpu.getFrameDepth() == 0) {
+	if (cpu.getFrameDepth() == 0 && !cpu.heapServiceActive()) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.frameScheduler.clearQueuedTime();
 		abandonFrameState(runtime);
@@ -176,7 +183,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return false;
 	}
 	if (frameActive
-		&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
+		&& ((!runtime.machine.cpu.heapServiceActive() && runtime.machine.cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld())
 		&& runtime.machine.scheduler.nextDeadline() == std::numeric_limits<i64>::max()) {
 		// Cart parked waiting for an interrupt that nothing has scheduled: report
 		// no progress so the scheduler yields the host slice instead of spinning.

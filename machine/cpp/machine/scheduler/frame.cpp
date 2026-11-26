@@ -22,8 +22,11 @@ i64 FrameSchedulerState::remainingCycleBudget(const Runtime& runtime) const {
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.history.executionPaused() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
-	if (runtime.machine.cpu.gcHeap().stoppedFinalMarkPending()) return false;
-	if (runtime.machine.cpu.allocationParked()) return runtime.machine.cpu.allocationReady();
+	const auto& cpu = runtime.machine.cpu;
+	if (!cpu.heapServiceActive()) {
+		if (runtime.vblank.hasDeferredPressure(runtime) || cpu.gcHeap().stoppedFinalMarkPending()) return false;
+		if (cpu.allocationParked()) return cpu.allocationReady();
+	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
 		|| m_accumulatedHostTimeMs > 0.0;
@@ -46,7 +49,11 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	m_backendServiceSuspended = backendBlocked;
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
-	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || cpu.heapServiceActive()) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
+	if (runtime.vblank.stepDeferredPressure(runtime)) {
+		++m_maintenancePulseSequence;
+		return Pulse::Maintenance;
+	}
 	if (cpu.allocationParked() ? cpu.advanceAllocationRecovery() : heap.stoppedFinalMarkPending()) {
 		// Keep the host grant queued while the guest clock is stopped.
 		if (!cpu.allocationParked()) heap.stepFinalMark();
@@ -174,7 +181,8 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 	if (budget == 0) {
 		budget = takeScheduledCycleBudget(runtime);
 		if (budget <= 0) {
-			if (runtime.machine.scheduler.acceptedCpuCycles() == 0) return false;
+			const auto& cpu = runtime.machine.cpu;
+			if (runtime.machine.scheduler.acceptedCpuCycles() == 0 && (cpu.heapServiceActive() || !cpu.allocationReady())) return false;
 			budget = 0;
 		}
 	}
@@ -209,7 +217,8 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 tickBudget) {
 	const auto admission = beginScheduledExecution(runtime, 0.0);
 	if (admission == Pulse::Maintenance) return LogicalTickResult::Maintenance;
-	const bool parked = runtime.machine.cpu.allocationParked();
+	const auto& cpu = runtime.machine.cpu;
+	const bool parked = !cpu.heapServiceActive() && cpu.allocationParked();
 	if ((tickBudget == 0 && !parked && runtime.machine.scheduler.acceptedCpuCycles() == 0)
 		|| admission == Pulse::Blocked) return LogicalTickResult::Incomplete;
 	if (parked) {
@@ -249,7 +258,7 @@ LogicalTickResult FrameSchedulerState::advanceLogicalTick(Runtime& runtime, i64 
 	if (lastTickSequence != targetSequence) {
 		// The attempt itself changed CPU/recovery state, but hasn't
 		// advanced a collector quantum or made its clock debit visible.
-		return runtime.machine.cpu.allocationParked() ? LogicalTickResult::DeferredCpu : LogicalTickResult::Incomplete;
+		return !cpu.heapServiceActive() && cpu.allocationParked() ? LogicalTickResult::DeferredCpu : LogicalTickResult::Incomplete;
 	}
 	m_logicalTickRunPending = false;
 	m_logicalTickRunTargetSequence = 0;
@@ -282,8 +291,9 @@ bool FrameSchedulerState::runDevicesToNextLogicalTick(Runtime& runtime, i64 cycl
 		if (carry != 0 || cycleGrant != 0 || runtime.machine.scheduler.acceptedCpuCycles() != 0)
 			beginScheduledFrame(runtime, carry + cycleGrant, carry);
 	}
+	const auto& cpu = runtime.machine.cpu;
 	if (beginScheduledExecution(runtime, 0.0) != Pulse::Ready || !runtime.frameLoop.frameActive
-		|| runtime.machine.cpu.allocationParked()) return false;
+		|| (!cpu.heapServiceActive() && cpu.allocationParked())) return false;
 	const i64 previous = lastTickSequence;
 	FrameState& state = runtime.frameLoop.frameState;
 	auto& scheduler = runtime.machine.scheduler;
