@@ -442,13 +442,16 @@ void refusedRecordConstructorRetiresOnlyAllocation() {
 	while (arena.allocate(header, true)) {}
 	arena.free(spare);
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	const u32 paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+	const u32 beforeAssist = prepared.runtime.machine.memory.readRamRecordWord(paidAt);
 	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] +
 		5 * BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
 	require(cpu.runUntilDepth(0, grant, 0, CpuRunKind::Scheduled) == RunResult::ParkedAllocation,
 		"native allocation declines even with enough accepted cycles for all fused fields");
-	require(cpu.readFrameRegister(0, 0) == valueInteger(73) && cpu.readFramePc(0) == start
-		&& cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)],
-		"the exit issues NEWT alone and has no committed result");
+	const auto assist = prepared.runtime.machine.memory.readRamRecordWord(paidAt) - beforeAssist;
+	require(assist > 0 && cpu.readFrameRegister(0, 0) == valueInteger(73) && cpu.readFramePc(0) == start
+		&& cpu.instructionBudgetRemaining == grant - BASE_CYCLES[static_cast<u8>(OpCode::NEWT)] - 3 * static_cast<int>(assist),
+		"the exit charges only NEWT and its allocation assist without publishing the destination");
 	for (int n = 0; !cpu.allocationReady() && n < 120; ++n)
 		require(cpu.advanceAllocationRecovery(), "collection advances in the same shared maintenance owner");
 	require(cpu.allocationReady(), "the dead backing has been reclaimed");
