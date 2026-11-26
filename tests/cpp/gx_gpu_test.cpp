@@ -5777,6 +5777,28 @@ void testRawVramExtensionWordAcrossCommandAndReadback() {
 		"command and readback restore retain the complete extension word");
 }
 
+void testSoftwareWrappedFill() {
+	auto commands = std::make_unique<bmsx::GxGpuCommandStorage>();
+	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
+	std::vector<bmsx::u16> expected(software.vram.size());
+	commands->commandCount = 1;
+	commands->commandKind[0] = bmsx::GX_GPU_COMMAND_FILL_RECTANGLE;
+	commands->commandWordCount[0] = 3;
+	commands->commandSkippedLineParity[0] = 0;
+	commands->words[0] = 0x0200ff00u;
+	commands->words[1] = (511u << 16u) | 1023u;
+	for (const auto [rawWidth, width] : {std::pair{0u, 0u}, {17u, 32u}, {1023u, 1024u}}) {
+		commands->words[2] = (3u << 16u) | rawWidth;
+		std::fill(software.vram.begin(), software.vram.end(), 0xffffu);
+		std::fill(expected.begin(), expected.end(), 0xffffu);
+		for (unsigned y : {511u, 1u}) {
+			for (unsigned x = 1008; x < 1008 + width; ++x) expected[y * 1024 + (x & 1023)] = 0x03e0;
+		}
+		bmsx::executeGxGpuSoftwareCommands(software, *commands, 0u, 1u);
+		require(software.vram == expected, "fill wraps within each enabled row without spilling into its neighbours");
+	}
+}
+
 void testSoftwareRawUploadSpanContract() {
 	auto commands = std::make_unique<bmsx::GxGpuCommandStorage>();
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
@@ -5885,6 +5907,7 @@ int main() {
 	testBackendSubmissionLimitSchedulesAndCatchesUpGpuWork();
 	testPartialImageSurvivesSupervisorRestoreAndQueuedReadback();
 	testSplitDmaImagePayloadRestoresBeforeIrqAndReadback();
+	testSoftwareWrappedFill();
 	testSoftwareRawUploadSpanContract();
 	testSplitDmaPolylinePayloadRestoresBeforeIrqAndReadback();
 	testBlockedCpuGp0StoreResumesAcrossDeviceRestore();

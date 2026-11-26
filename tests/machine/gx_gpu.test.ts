@@ -3054,6 +3054,28 @@ test('GX-GPU software backend packed RGB555 blend matches channel arithmetic', (
 	}
 });
 
+test('GX-GPU fill wraps within each enabled row without spilling into its neighbours', () => {
+	const commands = new GxGpuCommandBuffer(standaloneCommandBufferDma);
+	const software = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);
+	const expected = new Uint16Array(software.vram.length);
+	commands.commandCount = 1;
+	commands.commandKind[0] = GX_GPU_COMMAND_FILL_RECTANGLE;
+	commands.commandWordCount[0] = 3;
+	commands.commandSkippedLineParity[0] = 0;
+	commands.words[0] = 0x0200ff00;
+	commands.words[1] = (511 << 16) | 1023;
+	for (const [rawWidth, width] of [[0, 0], [17, 32], [1023, 1024]]) {
+		commands.words[2] = (3 << 16) | rawWidth;
+		software.vram.fill(0xffff);
+		expected.fill(0xffff);
+		for (const y of [511, 1]) {
+			for (let x = 1008; x < 1008 + width; ++x) expected[y * 1024 + (x & 1023)] = 0x03e0;
+		}
+		executeGxGpuSoftwareCommands(software, commands, 0, 1);
+		assert.deepEqual(software.vram, expected);
+	}
+});
+
 test('GX-GPU software raw uploads preserve packing, wrap, masks and untouched words', () => {
 	const commands = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	const software = new GxGpuSoftwareState(PSX_MACHINE_SPEC.gxGpuVramBytes, 0);

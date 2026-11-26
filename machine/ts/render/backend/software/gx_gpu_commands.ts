@@ -57,6 +57,7 @@ function executeFillRectangle(software: GxGpuSoftwareState, commandBuffer: GxGpu
 	const x = gxGpuFillX(xyWord);
 	const y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
 	const width = gxGpuFillWidth(sizeWord);
+	const first = Math.min(width, GX_GPU_VRAM_X_ADDRESS_PERIOD - x);
 	const height = gxGpuFillHeight(sizeWord);
 	const skippedLineParity = commandBuffer.commandSkippedLineParity[commandIndex];
 	for (let row = 0; row < height; row += 1) {
@@ -64,9 +65,9 @@ function executeFillRectangle(software: GxGpuSoftwareState, commandBuffer: GxGpu
 		if ((targetY & 1) === skippedLineParity) {
 			continue;
 		}
-		for (let column = 0; column < width; column += 1) {
-			software.vram[gxGpuSoftwareVramIndex(software, x + column, targetY)] = colorWord;
-		}
+		const line = gxGpuSoftwareVramIndex(software, 0, targetY);
+		software.vram.fill(colorWord, line + x, line + x + first);
+		if (first !== width) software.vram.fill(colorWord, line, line + width - first);
 	}
 }
 

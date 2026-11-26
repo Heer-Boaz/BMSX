@@ -24,7 +24,8 @@ void executeFillRectangle(
 	const u32 vramYAddressExtensionWord = commandBuffer.commandVramYAddressExtensionWord[commandIndex];
 	const i32 x = static_cast<i32>(gxGpuFillX(xyWord));
 	const u32 y = gxGpuTransferY(xyWord, vramYAddressExtensionWord);
-	const i32 width = static_cast<i32>(gxGpuFillWidth(sizeWord));
+	const u32 width = gxGpuFillWidth(sizeWord);
+	const u32 first = std::min(width, GX_GPU_VRAM_X_ADDRESS_PERIOD - static_cast<u32>(x));
 	const i32 height = static_cast<i32>(gxGpuFillHeight(sizeWord));
 	const i32 skippedLineParity = static_cast<i32>(commandBuffer.commandSkippedLineParity[commandIndex]);
 	for (i32 row = 0; row < height; row += 1) {
@@ -32,13 +33,9 @@ void executeFillRectangle(
 		if (static_cast<i32>(targetY & 1u) == skippedLineParity) {
 			continue;
 		}
-		for (i32 column = 0; column < width; column += 1) {
-			software.vram[
-				gxGpuSoftwareVramIndex(
-					software,
-					x + column,
-					static_cast<i32>(targetY))] = colorWord;
-		}
+		auto* line = software.vram.data() + gxGpuSoftwareVramIndex(software, 0, static_cast<i32>(targetY));
+		std::fill_n(line + x, first, colorWord);
+		if (first != width) std::fill_n(line, width - first, colorWord);
 	}
 }
 
