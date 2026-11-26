@@ -21,6 +21,7 @@ local gc_visit_member<const> = 0x40 -- T:61 H:62
 local visit_link_low_bits<const> = 32 - gc_gray_index_bits -- T:62 C:168
 local visit_link_high_mask<const> = gc_gray_index_mask >> visit_link_low_bits -- T:63 C:169
 local pause<const> = 0 -- T:64 H:18
+local strings<const> = 5 -- T:64,66-68 H:18,82-84
 
 struct gc_visit_list
 	head: u32 -- T:24-25 H:26-27
@@ -57,15 +58,17 @@ struct gc_control
 	sweep_link: addr -- T:46 H:48
 end
 
-rodata gc_phase_selector: u8[8] = { 0, 1, 2, 3, 4, 5, 0, 0 } -- T:64,66-68 H:18,82-84
-
 local decode_gc_phase<const> = function(word) -- T:69 H:81
-	return gc_phase_selector[word & 7] -- T:70 H:85
+	local selector<const> = word & 7 -- T:70 H:85
+	-- The two unused inputs select Pause. Scalar selection avoids a
+	-- System ROM data load in the CPU's private RAM instruction lane.
+	return selector <= strings and selector or pause -- T:64,66-70 H:18,82-85
 end
 
 local phase<const> = function(control) -- T:83 H:90
 	local state<const>: *gc_control = ram_base + control -- T:84 H:90; map the record-port offset
-	return decode_gc_phase(state.phase) -- T:84 H:90
+	local decoded<const> = decode_gc_phase(state.phase) -- T:84 H:90
+	return decoded -- T:84 H:90; fixed single result in the private lane
 end
 
 local active<const> = function(control) -- T:155 H:92
