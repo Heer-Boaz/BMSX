@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { AllocationRecovery, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
-import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
+import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { LuaAllocationMode } from '../../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
@@ -14,13 +14,14 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { LogicalTickResult } from '../../../machine/ts/machine/scheduler/frame';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
-import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import {
-	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET, HeapServiceGcStage, HeapServiceNewtStage,
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET,
+	HeapServiceGcStage, HeapServiceNewtField, HeapServiceNewtStage,
 } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -45,9 +46,10 @@ try {
 		let newtPc = 0;
 		for (const scenario of ['direct', 'scheduled', 'oom', 'recovered'] as const) {
 			const scheduled = scenario !== 'direct';
-			const runtime = new Runtime({
+			const configuration = {
 				systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
-			}, runtimeInput);
+			};
+			const runtime = new Runtime(configuration, runtimeInput);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine;
 			const arena = cpu.heapAllocator, budget = cpu.luaHeap;
@@ -75,6 +77,7 @@ try {
 			trace.push('l');
 			const label = `O${optLevel}-${scenario}`;
 			const checkpointPath = join(directory, `newt-${label}.state`);
+			const nativeCheckpointPath = join(directory, `newt-${label}-native.state`);
 			if (scenario === 'oom' || scenario === 'recovered') {
 				for (let i = 0; i < 256 && cpu.readFramePc(cpu.getFrameDepth() - 1) !== newtPc; ++i) step(1);
 				assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), newtPc);
@@ -230,20 +233,66 @@ try {
 				const before = arena.occupiedBytes(), logical = budget.usedBytes();
 				const caller = cpu.getFrameDepth() - 1;
 				const issuePc = cpu.readFramePc(caller);
+				const destination = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.Destination);
+				const parkedValue = cpu.readFrameRegister(caller, destination);
+				const arrayCount = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.ArraySize);
+				const hashRequest = memory.readRamRecordWord(stageAddress + HeapServiceNewtField.HashSize);
+				const oracle = new Runtime(configuration, runtimeInput);
+				oracle.boot();
+				applyRuntimeSaveState(oracle, captureRuntimeSaveState(runtime));
+				const record = oracle.machine.cpu['allocateTable'](arrayCount, hashRequest, LuaAllocationMode.Retry);
+				const oracleMemory = oracle.machine.memory;
+				const array = oracleMemory.readRamRecordWord(record + TableHeader.ArrayStorage);
+				const hash = oracleMemory.readRamRecordWord(record + TableHeader.HashStorage);
+				const hashExtent = TableRecords.hashStorageBytes(TableRecords.hashCapacity(hashRequest));
+				assert.ok(record && array && hash);
+				const published = () => {
+					let found = false;
+					cpu.gc.visitObjectRecords(record, (target, address) => { if (address === target) found = true; });
+					return found;
+				};
 				newtPc = issuePc;
 				for (let i = 0; i < 2048 && arena.occupiedBytes() === before; ++i) step(1);
 				assert.ok(cpu.heapServiceActive());
 				assert.ok(arena.occupiedBytes() > before, 'first physical reservation has mutated the arena');
 				assert.equal(budget.usedBytes(), logical, 'compound reservation has not yet committed');
+				for (let i = 0; i < 4096 && budget.usedBytes() === logical; ++i) step(1);
+				assert.equal(budget.usedBytes(), oracle.machine.cpu.luaHeap.usedBytes());
+				assert.equal(memory.readRamRecordWord(record + TableHeader.ArrayStorage), array);
+				assert.equal(memory.readRamRecordWord(record + TableHeader.HashStorage), hash);
+
+				// These allocated words stand in for stale backing data. Stop
+				// after the array payload is cleared but before the hash starts.
+				const stale = 0x39393939;
+				for (const address of [array, hash]) {
+					memory.writeRamRecordWord(address, stale);
+					trace.push(`W ${address} ${stale}`);
+				}
+				for (let i = 0; i < 4096 && memory.readRamRecordWord(array) !== 0; ++i) step(1);
+				assert.equal(memory.readRamRecordWord(array), 0);
+				assert.equal(memory.readRamRecordWord(hash), stale);
+				assert.ok(cpu.heapServiceActive());
 				assert.equal(cpu.readFramePc(caller), issuePc, 'issuing NEWT has not advanced');
+				assert.equal(cpu.readFrameRegister(caller, destination), parkedValue);
+				assert.equal(published(), false, 'the collector cannot see a half-initialized table');
+				const compare = (address: number, bytes: number) => {
+					const first = address & RAM_RECORD_WORD_MASK;
+					const end = first + bytes;
+					assert.equal(Buffer.compare(memory.ramData().subarray(first, end), oracleMemory.ramData().subarray(first, end)), 0);
+					observe(`H ${first} ${end}`, hashBytes(oracleMemory.ramData(), first, bytes));
+				};
 				body = () => {
 					let paid = 0;
 					for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) paid += step(1);
-					assert.ok(paid > 0, 'normal guest grants are consumed to finish the compound reservation');
+					assert.ok(paid > 0, 'normal guest grants are consumed to finish initialization');
 					assert.equal(cpu.heapServiceActive(), false);
 					assert.equal(stage(), HeapServiceNewtStage.Idle);
 					assert.ok(budget.usedBytes() > logical);
 					assert.ok(cpu.readFramePc(caller) > issuePc, 'NEWT retires before the next guest instruction');
+					assert.equal(published(), true);
+					compare(record - GC_OBJECT_LINK_BEFORE, TableRecords.HEADER_BYTES + GC_OBJECT_LINK_BEFORE);
+					compare(array, arrayCount * 5);
+					compare(hash, hashExtent);
 					let running = true;
 					for (let i = 0; i < 16 && running; ++i) {
 						step(65536);
@@ -262,7 +311,7 @@ try {
 			const checkpoint = captureRuntimeSaveState(runtime);
 			const checkpointRam = history.capture(memory, baseline);
 			writeFileSync(checkpointPath, encodeRuntimeSaveState(checkpoint));
-			trace.push('S', 's');
+			trace.push('S', 's', `x ${nativeCheckpointPath}`);
 			const firstCommand = trace.length, firstResult = expected.length;
 			body();
 			const continuation = trace.slice(firstCommand), results = expected.slice(firstResult);
@@ -286,7 +335,13 @@ try {
 			assert.equal(output.length, expected.length);
 			const mismatch = output.findIndex((line, i) => line !== expected[i]);
 			assert.equal(mismatch, -1, `first differing NEWT observation ${mismatch}: native=${output[mismatch]}, TS=${expected[mismatch]}`);
-			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${expected.length} observations, ${scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-reservation'} rewind and restore)`);
+			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeCheckpointPath),
+				PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+			const command = trace.length, result = expected.length;
+			body();
+			assert.deepEqual(trace.slice(command), continuation, 'C++ checkpoint resumes the same command sequence');
+			assert.deepEqual(expected.slice(result), results, 'C++ checkpoint resumes the same work and RAM on TS');
+			console.log(`BIOS-NEWT-HEAP-SERVICE:PASS ${label} (${output.length} observations, ${scenario === 'oom' || scenario === 'recovered' ? 'mid-reclamation' : 'mid-initialization'} rewind and cross-core restore)`);
 		}
 	}
 	rmSync(directory, { recursive: true });

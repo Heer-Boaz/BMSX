@@ -1633,10 +1633,10 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 The capacity requests determine the storage reservation against the
 language-allocation budget; they do not change that base charge. The resident
 memory routine reserves the table record and any requested array and hash
-storage using ordinary CPU cycles, in addition to the base charge. The
-routine can continue across cycle grants while devices advance. The CPU
-does not publish the table to the destination register until the whole
-reservation succeeds. A retry pays for its own reservation work without
+storage, then initializes them, all using ordinary CPU cycles in addition
+to the base charge. The routine can continue across cycle grants while
+devices advance. The table becomes visible in the destination register only
+after all of its storage is ready. A retry pays for its own reservation work without
 paying the base charge again.
 
 An insertion may reserve more storage. Its base charge does not depend on

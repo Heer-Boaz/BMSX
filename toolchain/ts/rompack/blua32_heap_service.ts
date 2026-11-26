@@ -10,12 +10,12 @@ import { deriveBlua32FixedStack } from './blua32_fixed_stack';
 import { blua32FunctionIndexAtAddress, type Blua32ImageLayout } from './blua32_image';
 
 export const HEAP_SERVICE_MODULE_PATH = 'kernel/dlmalloc';
-export const HEAP_SERVICE_RECORD_MODULE_PATH = 'kernel/dlmalloc_record';
+export const HEAP_SERVICE_TABLE_MODULE_PATH = 'kernel/table_create';
 export const HEAP_SERVICE_STRINGS_MODULE_PATH = 'kernel/gc_strings';
 export const HEAP_SERVICE_OBJECTS_MODULE_PATH = 'kernel/gc_objects';
 export const HEAP_SERVICE_MODULES = [
-	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH,
-	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH,
+	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
+	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 ] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
@@ -31,7 +31,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.AllocationBytes]: ['bmsx_dlmalloc_allocation_bytes', 2],
 	[HeapServiceOperation.OccupiedBytes]: ['bmsx_dlmalloc_occupied_bytes', 1],
 	[HeapServiceOperation.IsObject]: ['bmsx_dlmalloc_is_object', 2],
-	[HeapServiceOperation.ReserveRecord]: ['bmsx_dlmalloc_reserve_record', 9, HEAP_SERVICE_RECORD_MODULE_PATH],
+	[HeapServiceOperation.CreateTable]: ['create_table', 8, HEAP_SERVICE_TABLE_MODULE_PATH],
 	[HeapServiceOperation.StringSweep]: ['sweep_step', 5, HEAP_SERVICE_STRINGS_MODULE_PATH],
 	[HeapServiceOperation.ObjectSweep]: ['sweep_objects', 8, HEAP_SERVICE_OBJECTS_MODULE_PATH],
 };

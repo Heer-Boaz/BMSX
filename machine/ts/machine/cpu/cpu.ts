@@ -170,7 +170,7 @@ import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { GC_STEP_WORDS, LuaAllocationMode, LuaAllocationRecovery, LuaHeap } from './lua_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
-import { HeapAllocator } from './heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
@@ -422,8 +422,8 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.newTableArgs = [this.heapAllocator.allocatorStateOffset(), TableRecords.HEADER_BYTES, 1, 0,
-			TableHeader.ArrayStorage, 0, 0, TableHeader.HashStorage, this.luaHeap.occupiedOffset];
+		this.newTableArgs = [this.heapAllocator.allocatorStateOffset(), this.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET,
+			this.luaHeap.occupiedOffset, 0, 0, 0, 0, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.indexKey = this.stringPool.intern('__index');
 		const newIndexKey = this.stringPool.intern('__newindex');
@@ -465,14 +465,10 @@ export class CPU implements MappedPageInvalidator {
 		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, 5 * arraySize,
 			TableHeader.ArrayStorage, valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity), mode, TableRecords.hashStorageBytes(hashCapacity), TableHeader.HashStorage);
 		if (address === 0) return 0;
-		this.publishNewTable(address, arraySize, hashCapacity);
-		return address;
-	}
-
-	private publishNewTable(address: number, arraySize: number, hashCapacity: number): void {
 		this.gc.tables.initialize(address, arraySize, hashCapacity);
 		this.gc.publishObject(address);
 		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
+		return address;
 	}
 
 	/** Synchronous host materialization owns roots until VM call admission. */
@@ -698,16 +694,18 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordWord(base + HeapServiceNewtField.DirectRecovery, recovery);
 		memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, stage);
 		frame.pc = this.currentInstructionPc;
-		this.startNewTableReservation(arrayBytes, hashBytes, charged);
+		this.startNewTableReservation(arraySize, hashCapacity, arrayBytes, hashBytes, charged);
 		return true;
 	}
 
-	private startNewTableReservation(arrayBytes: number, hashBytes: number, charged: number): void {
+	private startNewTableReservation(array: number, hash: number, arrayBytes: number, hashBytes: number, charged: number): void {
 		const args = this.newTableArgs;
-		args[3] = arrayBytes;
-		args[5] = charged;
+		args[3] = array;
+		args[4] = hash;
+		args[5] = arrayBytes;
 		args[6] = hashBytes;
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.ReserveRecord], args);
+		args[7] = charged;
+		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CreateTable], args);
 	}
 
 	private finishNewTableReservation(): void {
@@ -715,8 +713,6 @@ export class CPU implements MappedPageInvalidator {
 		const stage = memory.readRamRecordWord(base + HeapServiceNewtField.Stage);
 		if (stage === HeapServiceNewtStage.Idle) return;
 		const destination = memory.readRamRecordWord(base + HeapServiceNewtField.Destination);
-		const arraySize = memory.readRamRecordWord(base + HeapServiceNewtField.ArraySize);
-		const hashSize = memory.readRamRecordWord(base + HeapServiceNewtField.HashSize);
 		const nextPc = memory.readRamRecordWord(base + HeapServiceNewtField.NextPc);
 		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceNewtField.InstructionPc);
 		this.lastPc = memory.readRamRecordWord(base + HeapServiceNewtField.LastPc);
@@ -726,11 +722,13 @@ export class CPU implements MappedPageInvalidator {
 		const offset = this.heapServiceResult();
 		if (offset !== 0) {
 			const address = RAM_BASE + offset;
-			this.publishNewTable(address, arraySize, TableRecords.hashCapacity(hashSize));
+			if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
 			this.retireNewTable(frame, destination, address);
 			frame.pc = nextPc;
 			return;
 		}
+		const arraySize = memory.readRamRecordWord(base + HeapServiceNewtField.ArraySize);
+		const hashSize = memory.readRamRecordWord(base + HeapServiceNewtField.HashSize);
 		if (stage === HeapServiceNewtStage.Direct) {
 			// The BIOS has released every partial reservation, so the
 			// existing direct collector retry can now inspect the arena.
@@ -739,7 +737,7 @@ export class CPU implements MappedPageInvalidator {
 			memory.writeRamRecordWord(recoveryAddress, recovery);
 			memory.writeRamRecordWord(base + HeapServiceNewtField.Stage, stage);
 			const hashCapacity = TableRecords.hashCapacity(hashSize);
-			this.startNewTableReservation(5 * arraySize, TableRecords.hashStorageBytes(hashCapacity),
+			this.startNewTableReservation(arraySize, hashCapacity, 5 * arraySize, TableRecords.hashStorageBytes(hashCapacity),
 				TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity));
 			return;
 		}

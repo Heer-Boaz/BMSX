@@ -15,7 +15,7 @@ import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_RECORD_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH, HEAP_SERVICE_OBJECTS_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_TABLE_MODULE_PATH, HEAP_SERVICE_STRINGS_MODULE_PATH, HEAP_SERVICE_OBJECTS_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
@@ -77,7 +77,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	const entryBindings = [
 		...['reset', 'set_floor', 'floor', 'allocate', 'free', 'reserve_backing', 'resize_backing', 'shrink',
 			'allocation_bytes', 'occupied_bytes', 'is_object'].map(name => [HEAP_SERVICE_MODULE_PATH, 'bmsx_dlmalloc_' + name]),
-		[HEAP_SERVICE_RECORD_MODULE_PATH, 'bmsx_dlmalloc_reserve_record'],
+		[HEAP_SERVICE_TABLE_MODULE_PATH, 'create_table'],
 		[HEAP_SERVICE_STRINGS_MODULE_PATH, 'sweep_step'],
 		[HEAP_SERVICE_OBJECTS_MODULE_PATH, 'sweep_objects'],
 	];

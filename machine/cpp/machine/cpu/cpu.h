@@ -516,10 +516,9 @@ private:
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);
 	void finishAllocationRecovery();
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
-	void publishNewTable(u32 address, int arraySize, size_t hashCapacity);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
 	bool beginNewTableReservation(CallFrame&, PendingTableCreation, HeapServiceNewtStage, u32 nextPc);
-	void startNewTableReservation(u32 arrayBytes, u32 hashBytes, u32 charged);
+	void startNewTableReservation(u32 array, u32 hash, u32 arrayBytes, u32 hashBytes, u32 charged);
 	void finishNewTableReservation();
 	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
