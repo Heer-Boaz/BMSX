@@ -812,7 +812,8 @@ export class GcHeap {
 		const occupied = this.arena.occupiedBytes();
 		const previousOccupied = this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
 		if (occupied !== previousOccupied) this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
-		if (this.finalMarkPending()) return;
+		const current = this.phase();
+		if (current === GcPhase.Atomic) return;
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST) === 0) {
 			if (occupied <= previousOccupied) return;
 			const demand = occupied - previousOccupied;
@@ -824,7 +825,8 @@ export class GcHeap {
 			if (this.arena.unoccupiedBytes() > demand * quanta) return;
 			this.memory.writeRamRecordWord(this.controlOffset + GC_PHYSICAL_ASSIST, 1);
 		}
-		this.step();
+		const idleMark = (current === GcPhase.Mark || current === GcPhase.MarkAgain) && this.cpu.isHaltedUntilIrq();
+		this.step(valueNil(), valueNil(), valueNil(), 0, false, idleMark ? 4 * GC_STEP_WORDS : GC_STEP_WORDS);
 	}
 
 	private beginPaceCredit(estimate: number, runwayShift: number): void {

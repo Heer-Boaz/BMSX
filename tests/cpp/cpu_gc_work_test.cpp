@@ -186,15 +186,23 @@ void physicalPressurePacesLargeLiveHeap() {
 	const u8 white = heap.white();
 	cpu.instructionBudgetRemaining = 89;
 	u32 physicalSteps = 0u;
+	bool exercisedHalt = false;
 	for (u32 tick = 0; tick + 1u < initialIntervals; ++tick) {
 		require(arena.allocate(pressureBytes, true) != 0u, "add physical occupancy each interval");
 		const u32 control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const u32 before = machine.memory.readRamRecordWord(control + GC_EPOCH_WORK);
 		const bool wasActive = heap.active();
+		const bool halted = !exercisedHalt && heap.phase() == GcPhase::Mark && physicalSteps >= 2u;
+		if (halted) cpu.haltUntilIrq();
 		heap.assistPhysicalPressureAtTick();
 		const auto after = machine.memory.readRamRecordWord(control + (heap.active() ? GC_EPOCH_WORK : GC_LAST_EPOCH_WORK));
+		if (halted) {
+			require(after - before == 4u * GC_STEP_WORDS && cpu.isHaltedUntilIrq(), "pressure uses idle mark bandwidth without waking the CPU");
+			exercisedHalt = true;
+			cpu.clearHaltUntilIrq();
+		}
 		if (wasActive || heap.active()) {
-			require(after - before <= GC_STEP_WORDS, "a physical pulse runs one ordinary collector quantum");
+			if (!halted) require(after - before <= GC_STEP_WORDS, "an awake CPU lends only one quantum");
 			++physicalSteps;
 		}
 		for (u32 steps = 0; heap.finalMarkPending(); ++steps) {
@@ -202,7 +210,7 @@ void physicalPressurePacesLargeLiveHeap() {
 			heap.stepFinalMark();
 		}
 	}
-	require(physicalSteps >= 50u && !heap.active() && heap.white() == (white ^ 1u)
+	require(exercisedHalt && physicalSteps >= 50u && !heap.active() && heap.white() == (white ^ 1u)
 		&& heap.tableRecordAddress(garbage) == 0u && arena.unoccupiedBytes() > 2u * pressureBytes,
 		"the larger epoch completed before the allocator exhausted its byte runway");
 	heap.assistPhysicalPressureAtTick();

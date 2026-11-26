@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend, COMPILED_BLOCK_THRESHOLD } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
+import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
@@ -275,18 +276,28 @@ test('physical occupancy advances a large live epoch before a table replacement 
 	frame.top = 2;
 	const white = gc.white();
 	cpu.instructionBudgetRemaining = 89;
-	let physicalSteps = 0;
+	let physicalSteps = 0, exercisedHalt = false;
+	const paid = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
 	for (let tick = 0; tick + 1 < initialIntervals; ++tick) {
 		assert.notEqual(arena.allocate(pressureBytes, true), 0);
 		const wasActive = gc.active();
+		const halted = !exercisedHalt && gc.phase() === GcPhase.Mark && physicalSteps >= 2;
+		const before = cpu.memory.readRamRecordWord(paid);
+		if (halted) cpu.haltUntilIrq();
 		gc.assistPhysicalPressureAtTick();
+		if (halted) {
+			assert.equal(cpu.memory.readRamRecordWord(paid) - before, 4 * GC_STEP_WORDS);
+			assert.ok(cpu.isHaltedUntilIrq());
+			cpu.clearHaltUntilIrq();
+			exercisedHalt = true;
+		}
 		if (wasActive || gc.active()) ++physicalSteps;
 		for (let steps = 0; gc.finalMarkPending(); ++steps) {
 			assert.ok(steps < 8);
 			gc.stepFinalMark();
 		}
 	}
-	assert.ok(physicalSteps >= 50 && !gc.active() && gc.white() === (white ^ 1));
+	assert.ok(exercisedHalt && physicalSteps >= 50 && !gc.active() && gc.white() === (white ^ 1));
 	assert.equal(gc.tableRecordAddress(garbage), 0);
 	assert.ok(arena.unoccupiedBytes() > 2 * pressureBytes);
 	gc.assistPhysicalPressureAtTick();

@@ -1432,9 +1432,12 @@ Logical capacity still applies throughout the collection.
 The collector also compares unoccupied physical heap space with recent
 growth in physical occupancy and the remaining collection work. At a
 completed display tick, physical pressure can advance marking or reclamation
-by one additional quantum. A collection started this way can finish over
-later ticks without further allocation. Neither this work nor the final
-remark advances the console clock. Free space may be separated by retained
+by one additional quantum. If the CPU is waiting for an interrupt and marking
+is already in progress, the marker receives a grant of four quanta instead.
+It can yield earlier at a phase boundary. The interrupt wait alone does not
+start collection or advance the final remark. A collection started by physical
+pressure can finish over later ticks without further allocation. Neither this
+work nor the final remark advances the console clock. Free space may be separated by retained
 allocations, so enough unoccupied bytes does not guarantee that an allocation
 of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)

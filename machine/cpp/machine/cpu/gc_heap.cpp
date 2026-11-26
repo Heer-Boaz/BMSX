@@ -880,7 +880,8 @@ void GcHeap::assistPhysicalPressureAtTick() {
 	const u32 previousOccupied = memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK);
 	if (occupied != previousOccupied) memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_OCCUPIED_AT_TICK, occupied);
 	// The existing maintenance boundary owns atomic work.
-	if (finalMarkPending()) return;
+	const auto current = phase();
+	if (current == GcPhase::Atomic) return;
 	if (memory.readRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST) == 0u) {
 		if (occupied <= previousOccupied) return;
 		const u32 demand = occupied - previousOccupied;
@@ -893,7 +894,9 @@ void GcHeap::assistPhysicalPressureAtTick() {
 		if (arena.unoccupiedBytes() > demand * quanta) return;
 		memory.writeRamRecordWord(m_controlOffset + GC_PHYSICAL_ASSIST, 1u);
 	}
-	step(valueNil(), valueNil(), valueNil());
+	// The interrupt wait lends bandwidth to an existing mark pass, not a new cycle.
+	const bool idleMark = (current == GcPhase::Mark || current == GcPhase::MarkAgain) && m_cpu.isHaltedUntilIrq();
+	step(valueNil(), valueNil(), valueNil(), 0u, false, idleMark ? 4u * GC_STEP_WORDS : GC_STEP_WORDS);
 }
 
 void GcHeap::beginPaceCredit(u32 estimate, u32 runwayShift) {
