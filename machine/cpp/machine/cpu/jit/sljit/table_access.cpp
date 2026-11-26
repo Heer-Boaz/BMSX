@@ -83,20 +83,14 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, sljit_jump** m
 	};
 	auto* otherKey = compareWord();
 	auto* checkTag = sljit_emit_label(c);
-	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
-	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
-		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
+	auto rejectTag = [&] {
+		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
+		return sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
+			stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
+	};
+	auto* otherTag = rejectTag();
+	auto* loadValue = sljit_emit_label(c);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
-	if (meteredExit) {
-		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash,
-			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
-		auto* included = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
-		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES - 1);
-		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles,
-			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_R0, 0);
-		sljit_set_label(included, sljit_emit_label(c));
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
-	}
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
 	auto* nilMatch = stringKey ? sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, nilTag) : nullptr;
@@ -141,7 +135,21 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey, sljit_jump** m
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R0), hash, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
-	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), checkTag);
+	if (meteredExit) {
+		// A home hit visits one included node. Only a matching successor
+		// needs the saved walk distance; a wrong tag must not charge a hit.
+		sljit_set_label(rejectTag(), different);
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
+
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), hash,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::remaining);
+		auto* included = sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES);
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, TABLE_STRING_HIT_BASE_NODES - 1);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::linkCycles, SLJIT_R0, 0);
+		sljit_set_label(included, sljit_emit_label(c));
+	}
+	sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), meteredExit ? loadValue : checkTag);
 	auto* missed = sljit_emit_label(c);
 	for (auto* jump : exhausted) sljit_set_label(jump, missed);
 	for (auto* jump : end) sljit_set_label(jump, missed);

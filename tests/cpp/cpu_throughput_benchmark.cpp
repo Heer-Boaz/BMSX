@@ -25,7 +25,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, FieldMiss, FieldHitStableSlot, FieldHitAlternatingSlot, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
+enum class Workload { Registers, Tables, FieldMiss, FieldHitInheritedHome, FieldHitStableSlot, FieldHitAlternatingSlot, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -52,6 +52,7 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 7, 6, 0);
 		writeInstruction(text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 		break;
+	case Workload::FieldHitInheritedHome:
 	case Workload::FieldHitStableSlot:
 	case Workload::FieldHitAlternatingSlot:
 		image.text.resize(6 * INSTRUCTION_BYTES);
@@ -253,15 +254,24 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			throw std::runtime_error("Field miss must traverse the specified chain.");
 		registers.set(7, valueBool(false));
 	}
-	const bool fieldHit = workload == Workload::FieldHitStableSlot || workload == Workload::FieldHitAlternatingSlot;
+	const bool inherited = workload == Workload::FieldHitInheritedHome;
+	const bool fieldHit = inherited || workload == Workload::FieldHitStableSlot || workload == Workload::FieldHitAlternatingSlot;
 	if (fieldHit) {
 		const auto field = cpu.stringPool().intern("field");
 		int slots[2];
 		for (int i = 0; i < 2; ++i) {
-			const int capacity = std::max(64, fieldNodes) * (i == 1 && workload == Workload::FieldHitAlternatingSlot ? 2 : 1);
+			const int capacity = inherited ? 0 : std::max(64, fieldNodes) * (i == 1 && workload == Workload::FieldHitAlternatingSlot ? 2 : 1);
 			auto table = cpu.createTable(0, capacity);
 			registers.set(i, valueTable(table.address()));
 			cpu.activeThread()->currentFrame->setTop(i + 1);
+			if (inherited) {
+				auto meta = cpu.createTable(0, 1);
+				table.setMetatableAddress(meta.address());
+				auto parent = cpu.createTable(0, 1);
+				meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+				parent.setStringKey(field, valueInteger(i + 1));
+				continue;
+			}
 			const auto home = table.beginStringProbe(field).node;
 			// Insert the field as the first displaced node. Each subsequent
 			// collision is inserted after home, leaving the field at the tail.
@@ -285,7 +295,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			if (table.advanceStringProbe(field, probe, table.hashSlots()) != static_cast<size_t>(fieldNodes)
 				|| probe.value != valueInteger(i + 1)) throw std::runtime_error("Expected the field at the specified depth.");
 		}
-		if ((slots[0] == slots[1]) != (workload == Workload::FieldHitStableSlot))
+		if (!inherited && ((slots[0] == slots[1]) != (workload == Workload::FieldHitStableSlot)))
 			throw std::runtime_error("Unexpected aliasing of predicted field slots.");
 		registers.set(7, valueInteger(0));
 		cpu.activeThread()->currentFrame->setTop(8);
@@ -429,6 +439,7 @@ int main(int argc, char** argv) {
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
 		if (fieldHits) {
+			measure(Workload::FieldHitInheritedHome, "field-hit-inherited-home", grant, round, fullyBacked);
 			measure(Workload::FieldHitStableSlot, "field-hit-stable-64", grant, round, fullyBacked, 64);
 			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-16", grant, round, fullyBacked, 16);
 			measure(Workload::FieldHitAlternatingSlot, "field-hit-alternating-64", grant, round, fullyBacked, 64);
