@@ -27,6 +27,9 @@ int bmsx_dlmalloc_set_floor(bmsx_dlmalloc_arena, uint32_t floor);
 uint32_t bmsx_dlmalloc_floor(bmsx_dlmalloc_arena);
 uint32_t bmsx_dlmalloc_allocate(bmsx_dlmalloc_arena, uint32_t bytes, int object);
 void bmsx_dlmalloc_free(bmsx_dlmalloc_arena, uint32_t offset);
+// Reserve a resized backing. The same offset is already resized. A different
+// offset is uninitialized and the caller still owns the original allocation.
+uint32_t bmsx_dlmalloc_reserve_backing(bmsx_dlmalloc_arena, uint32_t offset, uint32_t bytes);
 // Resize a nonempty backing allocation. On failure the old offset is still live.
 uint32_t bmsx_dlmalloc_resize_backing(bmsx_dlmalloc_arena, uint32_t offset, uint32_t bytes);
 // The owner has retired the suffix of this backing allocation.

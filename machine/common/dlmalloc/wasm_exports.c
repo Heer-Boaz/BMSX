@@ -30,6 +30,11 @@ void free_chunk(uint32_t offset) {
 	bmsx_dlmalloc_free(arena, offset);
 }
 
+__attribute__((export_name("reserveBacking")))
+uint32_t reserve_backing(uint32_t offset, uint32_t bytes) {
+	return bmsx_dlmalloc_reserve_backing(arena, offset, bytes);
+}
+
 __attribute__((export_name("resizeBacking")))
 uint32_t resize_backing(uint32_t offset, uint32_t bytes) {
 	return bmsx_dlmalloc_resize_backing(arena, offset, bytes);

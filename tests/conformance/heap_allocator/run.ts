@@ -111,9 +111,14 @@ function churn(steps: number): void {
 			const index = next(live.length), entry = live[index];
 			if (entry.owned) {
 				const bytes = entry.bytes + requestBytes();
-				script.push(`G ${index} ${bytes}`);
-				const address = allocator.resizeBacking(entry.address, bytes);
-				if (address !== 0) live[index] = { address, bytes, owned: true };
+				const reserve = band < 81;
+				script.push(`${reserve ? 'P' : 'G'} ${index} ${bytes}`);
+				const address = reserve ? allocator.reserveBacking(entry.address, bytes) : allocator.resizeBacking(entry.address, bytes);
+				if (address !== 0) {
+					const target = { address, bytes, owned: true };
+					if (reserve && address !== entry.address) live.push(target);
+					else live[index] = target;
+				}
 				expected.push(String(address));
 			} else mutate(index);
 		}

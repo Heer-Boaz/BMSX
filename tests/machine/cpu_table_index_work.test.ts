@@ -400,6 +400,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
 			assert.equal(3 - cpu.instructionBudgetRemaining, 18 + (spare ? 0 : (capacity - 64 + 3) >>> 2));
+			if (capacity === 8192 && !spare) {
+				assert.equal(cpu.tableRebuild.record, table); assert.equal(tables.getInteger(table, capacity + 1), valueNil());
+				cpu.runUntilDepth(0, 2 * capacity * 5 / 16); assert.equal(cpu.instructionBudgetRemaining, 0);
+			}
 			assert.equal(tables.getInteger(table, capacity + 1), valueBool(false));
 			assert.equal(r.get(8), valueInteger(91));
 		}

@@ -614,7 +614,7 @@ void bmsx_dlmalloc_shrink(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
 
 /* try_realloc_chunk for backing storage. Objects retain their issued address.
  * TOP must keep a nonempty suffix; DV and bins may be consumed completely. */
-u32 bmsx_dlmalloc_resize_backing(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
+u32 bmsx_dlmalloc_reserve_backing(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
 {
   if (bytes > LIMIT - FLOOR) return 0;
   const u32 p = offset - 8, old = chunksize(a, p), nb = request2size(bytes);
@@ -652,8 +652,14 @@ u32 bmsx_dlmalloc_resize_backing(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
       return offset;
     }
   }
-  const u32 dest = bmsx_dlmalloc_allocate(a, bytes, 0);
-  if (!dest) return 0;
+  return bmsx_dlmalloc_allocate(a, bytes, 0);
+}
+
+u32 bmsx_dlmalloc_resize_backing(bmsx_dlmalloc_arena a, u32 offset, u32 bytes)
+{
+  const u32 dest = bmsx_dlmalloc_reserve_backing(a, offset, bytes);
+  if (!dest || dest == offset) return dest;
+  const u32 old = chunksize(a, offset - 8);
   /* The next chunk's prev_foot belongs to this in-use payload. */
   const u32 retained = old - 4;
   copy_word((void*)((uintptr_t)a.ram + dest),

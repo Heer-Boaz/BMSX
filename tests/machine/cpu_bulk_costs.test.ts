@@ -174,6 +174,40 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ for (const keepHash of [false, true]) test(`displaced array growth keeps both planes until publication (${backend}, keepHash=${keepHash})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables;
+  const t = cpu.createTable(1024, 2), r = cpu.rootThread.currentFrame!.registers;
+  const original = tables.arrayAddress(t), originalHash = tables.hashAddress(t);
+  for (let i = 1; i <= 1024; ++i) if (i !== 77) tables.setInteger(t, i, valueInteger(-i));
+  if (keepHash) tables.setInteger(t, 77, valueInteger(0));
+  tables.setInteger(t, -1, valueInteger(71)); tables.setInteger(t, keepHash ? -2 : 1026, valueInteger(72));
+  r.setTable(0, t); r.setInteger(1, 1025); r.setInteger(2, 73);
+  const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
+  grant(16);
+  assert.equal(cpu.tableRebuild.record, t);
+  assert.notEqual(cpu.tableRebuild.arrayStorage, original);
+  // Checkpoint partway through the retained tag plane, after the payload has moved.
+  for (let i = 0; cpu.tableRebuild.arrayCleared <= 8192; ++i) { assert.ok(i < 100); grant(37); }
+  assert.equal(tables.arrayAddress(t), original); assert.equal(tables.getInteger(t, 1025), valueNil());
+  const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  const finish = () => {
+   let n = 0;
+   while (cpu.tableRebuild.record) { assert.ok(++n < 100); grant(37); }
+   assert.equal(tables.arrayCapacity(t), 2048); assert.equal(tables.hashAddress(t) === originalHash, keepHash);
+   for (let i = 1; i <= 1024; ++i) assert.equal(tables.getInteger(t, i), i !== 77 ? valueInteger(-i) : keepHash ? valueInteger(0) : valueNil());
+   assert.equal(tables.getInteger(t, 1025), valueInteger(73));
+   assert.equal(tables.getInteger(t, keepHash ? -2 : 1026), valueInteger(72));
+   assert.equal(tables.getInteger(t, -1), valueInteger(71)); assert.equal(tables.getInteger(t, 2048), valueNil());
+   return n;
+  };
+  const n = finish(), end = cpu.memory.captureSaveState();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+  assert.equal(finish(), n); assert.deepEqual(cpu.memory.captureSaveState().ram, end.ram);
+ });
+
  for (const dense of [512, 1024]) test(`first array publishes after resumable integer migration (${backend}, dense=${dense})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);

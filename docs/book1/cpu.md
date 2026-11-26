@@ -1646,6 +1646,14 @@ collision is placed. Each such visit costs eight cycles, including a repeated
 visit when the next free-slot candidate is occupied. A started visit finishes
 even if fewer than eight cycles remain.
 
+When growth moves an existing array of at least 1,024 slots to a different
+block, the processor transfers 16 destination bytes per cycle. Each retained
+payload and tag goes to its position in the larger array; new slots are
+initialized to nil. The old array stays attached until publication. A hash
+that needs no repartitioning keeps its block and links; otherwise its
+replacement proceeds under the same cycle grants. Growth within the same
+block does not pay this transfer charge.
+
 The old hash remains attached until the replacement is complete. The processor
 then publishes the insertion before issuing another instruction or accepting
 an interrupt. Guest time advances during the replacement; this is not an

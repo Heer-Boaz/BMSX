@@ -53,6 +53,10 @@ u32 HeapAllocator::allocate(u32 byteCount, bool owned) {
 }
 
 void HeapAllocator::free(u32 address) { bmsx_dlmalloc_free(m_arena, address - RAM_BASE); }
+u32 HeapAllocator::reserveBacking(u32 address, u32 bytes) {
+	const u32 offset = bmsx_dlmalloc_reserve_backing(m_arena, address - RAM_BASE, bytes);
+	return offset != 0u ? RAM_BASE + offset : 0u;
+}
 u32 HeapAllocator::resizeBacking(u32 address, u32 bytes) {
 	const u32 offset = bmsx_dlmalloc_resize_backing(m_arena, address - RAM_BASE, bytes);
 	return offset != 0u ? RAM_BASE + offset : 0u;

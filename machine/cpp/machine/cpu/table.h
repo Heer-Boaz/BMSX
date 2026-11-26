@@ -227,7 +227,7 @@ private:
 	template <HashStore Policy>
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
-	int resize(const ResizePlan&, u32 storage, Value key, Value value, u32 previous, u32 requested);
+	int resize(const ResizePlan&, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindHash(size_t hashSize, u32 address);
 	void initializeArray(u32 address, u32 capacity, u32 retained);
 	void initializeHash(u32 address, u32 count);

@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 	while (input >> op) {
 		u32 a = 0, b = 0, c = 0;
 		if (op == "R" || op == "S" || op == "F") input >> a;
-		else if (op == "A" || op == "T" || op == "G") input >> a >> b;
+		else if (op == "A" || op == "T" || op == "G" || op == "P") input >> a >> b;
 		else if (op == "W") input >> a >> b >> c;
 		if (op == "R") {
 			allocator.reset(a);
@@ -43,6 +43,10 @@ int main(int argc, char** argv) {
 		} else if (op == "W") {
 			memory.writeRamRecordByte(addresses[a] + b, static_cast<u8>(c));
 			std::cout << "W\n";
+		} else if (op == "P") {
+			const u32 address = allocator.reserveBacking(addresses[a], b);
+			if (address && address != addresses[a]) addresses.push_back(address);
+			std::cout << address << '\n';
 		} else if (op == "G") {
 			const u32 address = allocator.resizeBacking(addresses[a], b);
 			if (address != 0u) addresses[a] = address;

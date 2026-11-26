@@ -149,6 +149,53 @@ void replayInFlightHash(bool scalar) {
   throw std::runtime_error("replayed placement did not build the new hash integer census");
 }
 
+void publishDisplacedArray(bool scalar, bool keepHash) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
+ CpuMachine machine(image, scalar);
+ auto& cpu = machine.cpu;
+ auto table = cpu.createTable(1024, 2);
+ const u32 original = table.arrayAddress(), originalHash = table.hashAddress();
+ for (int i=1; i<=1024; ++i) if (i != 77) table.setInteger(i, valueInteger(-i));
+ if (keepHash) table.setInteger(77, valueInteger(0));
+ table.setInteger(-1, valueInteger(71)); table.setInteger(keepHash ? -2 : 1026, valueInteger(72));
+ auto r = cpu.activeThread()->currentFrame->registers;
+ r.set(0, valueTable(table.address())); r.set(1, valueInteger(1025)); r.set(2, valueInteger(73));
+ const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
+ grant(16);
+ if (cpu.tableRebuild.record != table.address() || cpu.tableRebuild.arrayStorage == original)
+  throw std::runtime_error("expected a detached replacement");
+ for (int i=0; cpu.tableRebuild.arrayCleared <= 8192; ++i) {
+  if (i >= 100) throw std::runtime_error("never entered retained tag transfer");
+  grant(37);
+ }
+ if (table.arrayAddress() != original || !isNil(table.getInteger(1025))) throw std::runtime_error("early publication");
+ const auto state = cpu.captureRuntimeState();
+ const auto ram = machine.memory.captureSaveState();
+ const auto finish = [&] {
+  int n=0;
+  while (cpu.tableRebuild.record) {
+   if (++n >= 100) throw std::runtime_error("array transfer did not retire");
+   grant(37);
+  }
+  if (table.arrayCapacity() != 2048 || (table.hashAddress() == originalHash) != keepHash
+   || table.getInteger(1025) != valueInteger(73) || table.getInteger(keepHash ? -2 : 1026) != valueInteger(72)
+   || table.getInteger(-1) != valueInteger(71) || !isNil(table.getInteger(2048)))
+   throw std::runtime_error("wrong replacement partition");
+  for (int i=1; i<=1024; ++i) if (table.getInteger(i) != (i != 77 ? valueInteger(-i) : keepHash ? valueInteger(0) : valueNil()))
+   throw std::runtime_error("retained array slot changed");
+  return n;
+ };
+ const int n = finish();
+ const auto end = machine.memory.captureSaveState();
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+ if (finish() != n || machine.memory.captureSaveState().ram != end.ram)
+  throw std::runtime_error("partial tag transfer replay changed retirement");
+}
+
 void publishFirstArray(bool scalar, int dense) {
  test::Blua32TestImage image;
  image.text.resize(2 * INSTRUCTION_BYTES);
@@ -410,6 +457,7 @@ int main() {
   if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
+  publishDisplacedArray(scalar, true); publishDisplacedArray(scalar, false);
   publishFirstArray(scalar, 512); publishFirstArray(scalar, 1024);
   rebuildWork(scalar);
   hostGrantScratch(scalar);

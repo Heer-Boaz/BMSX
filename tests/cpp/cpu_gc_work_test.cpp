@@ -435,7 +435,10 @@ void scheduledLogicalRefusalParks() {
 	}
 	cpu.resumeAllocation();
 	require(!cpu.allocationParked() && cpu.gcHeap().tableRecordAddress(garbage) == 0u
-		&& owner.getInteger(slots + 1) == valueInteger(slots + 1) && isNil(frame.registers.get(7)),
+		&& cpu.tableRebuild.record == owner.address() && isNil(owner.getInteger(slots + 1)),
+		"recovery reserves the destination but does not execute the transfer");
+	cpu.runUntilDepth(0, 2 * slots * 5 / 16, 0u, CpuRunKind::Scheduled);
+	require(cpu.instructionBudgetRemaining == 0 && owner.getInteger(slots + 1) == valueInteger(slots + 1) && isNil(frame.registers.get(7)),
 		"the reclaimed space admits the original store without executing its successor");
 }
 

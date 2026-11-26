@@ -17,11 +17,24 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 	if (j.arrayCleared < 5u * j.arraySlots) {
 		const u32 left = 5u * j.arraySlots - j.arrayCleared;
 		const u32 n = std::min(left, 16u * std::min(static_cast<u32>(cycles), (left + 15u) / 16u));
-		std::fill_n(words + j.arrayCleared, n, u8{0});
+		const u32 end = j.arrayCleared + n;
+		if (!oldArray) std::fill_n(words + j.arrayCleared, n, u8{0});
+		else {
+			const auto old = values();
+			for (u32 at = j.arrayCleared; at < end;) {
+				const u32 next = std::min(end, at < oldArray * 4u ? oldArray * 4u : at < array * 4u ? array * 4u
+					: at < array * 4u + oldArray ? array * 4u + oldArray : 5u * array);
+				if (at < oldArray * 4u) std::copy_n(old.words + at, next - at, words + at);
+				else if (at >= array * 4u && at < array * 4u + oldArray)
+					std::copy_n(old.tags + (at - array * 4u), next - at, words + at);
+				else std::fill_n(words + at, next - at, u8{0});
+				at = next;
+			}
+		}
 		m_memory->invalidateRamWrite((j.arrayStorage & RAM_RECORD_WORD_MASK) + j.arrayCleared, n);
 		j.arrayCleared += n;
 		cycles -= static_cast<int>((n + 15u) / 16u);
-		if (cycles <= 0) return;
+		if (j.arrayCleared < 5u * j.arraySlots || (cycles == 0 && j.cleared < bytes)) return;
 	}
 	if (j.cleared < bytes) {
 		const u32 n = std::min(bytes - j.cleared, 16u * std::min(static_cast<u32>(cycles), (bytes + 15u) / 16u));
@@ -35,7 +48,7 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 		if (end < bytes) return;
 		const u32 home = hashCanonicalTableKey(j.key) & mask;
 		if (j.capacity > HASH_CENSUS_LIMIT) {
-			dst.setLive(src.live() + (trigger >= array));
+			dst.setLive((j.count > HASH_CENSUS_LIMIT ? src.live() : 0u) + (trigger >= array));
 			if (j.capacity >= HASH_BAND_CAPACITY) {
 				const u32 target = (dst.liveAddress() + 4u) & RAM_RECORD_WORD_MASK;
 				std::fill_n(m_memory->ramData() + target, 32u * 4u, u8{0});
@@ -55,9 +68,10 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 		if (isNil(k) || isNil(v)) continue;
 		if (valueIsInteger(k) && arraySlot(asInteger(k)) < array) {
 			arr.set(arraySlot(asInteger(k)), v);
-			if (j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() - 1u);
+			if (j.count > HASH_CENSUS_LIMIT && j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() - 1u);
 			continue;
 		}
+		if (j.count <= HASH_CENSUS_LIMIT && j.capacity > HASH_CENSUS_LIMIT) dst.setLive(dst.live() + 1u);
 		dst.adjustIntegerBand(k, 1);
 		const u32 home = hashCanonicalTableKey(k) & mask;
 		if (dst.slots.tag(home) == ValueTag::Nil) {
@@ -86,14 +100,18 @@ void TableRecord::advanceRebuild(CPU& cpu) {
 	}
 	if (j.collisions && j.cursor < j.count) return;
 	m_heap->tableEntriesMoved(m_address);
+	const u32 oldHash = hashSlots();
 	if (j.arrayStorage) {
+		if (oldArray) m_heap->arena.free(arrayAddress());
 		writeHeader(TableHeader::ArrayStorage, j.arrayStorage);
 		writeHeader(TableHeader::Array, array);
 	}
 	if (trigger < array) arr.set(trigger, j.value);
-	bindHash(j.capacity, j.storage);
-	if (j.free != mask) writeHeader(TableHeader::Free, j.free);
-	m_heap->budget.replaceRecord(j.source, allocationCharge(oldArray, j.count), allocationCharge(array, j.capacity));
+	if (j.source || j.storage) {
+		bindHash(j.capacity, j.storage);
+		if (j.free != mask) writeHeader(TableHeader::Free, j.free);
+	}
+	m_heap->budget.replaceRecord(j.source, allocationCharge(oldArray, oldHash), allocationCharge(array, hashSlots()));
 	publishHashInsertion(j.key, j.value);
 	const u32 index = arraySlot(j.key);
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, true);

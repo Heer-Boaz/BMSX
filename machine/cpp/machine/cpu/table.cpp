@@ -243,21 +243,30 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	}
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
+	const u32 oldArray = arrayCapacity(), oldBase = arrayAddress(), oldHash = hashSlots();
+	u32 base = oldBase;
+	const bool stagedGrowth = cpu && oldArray >= 1024 && plan.array > oldArray;
+	if (plan.array > oldArray) {
+		const u32 bytes = 5u * plan.array;
+		base = !oldBase ? m_heap->arena.allocate(bytes, true) : stagedGrowth
+			? m_heap->arena.reserveBacking(oldBase, bytes) : m_heap->arena.resizeBacking(oldBase, bytes);
+		if (!base) {
+			if (storage && !plan.keepHash) m_heap->arena.free(storage);
+			return HASH_STORE_DECLINED;
+		}
+	}
 	if constexpr (Policy != HashStore::ReturningIndex && Policy != HashStore::ReturningField) {
-		if (cpu && hashSlots() > 64 && (plan.array == arrayCapacity() || !arrayCapacity()) && !plan.keepHash) {
-			const u32 array = plan.array != arrayCapacity() ? plan.array : 0;
-			const u32 base = array ? m_heap->arena.allocate(5u * array, true) : 0;
-			if (array && !base) {
-				if (storage) m_heap->arena.free(storage);
-				return HASH_STORE_DECLINED;
-			}
-			cpu->tableRebuild = {.record=m_address, .source=hashAddress(), .count=hashSlots(), .storage=storage,
-				.capacity=static_cast<u32>(plan.hash), .arrayStorage=base, .arraySlots=array, .free=static_cast<u32>(plan.hash - 1), .key=key, .value=value};
+		if ((stagedGrowth && base != oldBase) || (cpu && oldHash > 64 && (plan.array == oldArray || !oldArray) && !plan.keepHash)) {
+			const u32 array = plan.array != oldArray ? plan.array : 0;
+			const u32 hash = plan.keepHash ? 0u : plan.hash;
+			cpu->tableRebuild = {.record=m_address, .source=plan.keepHash ? 0u : hashAddress(), .count=plan.keepHash ? 0u : oldHash,
+				.storage=plan.keepHash ? 0u : storage, .capacity=hash, .arrayStorage=array ? base : 0u,
+				.arraySlots=array, .free=hash - 1u, .key=key, .value=value};
 			advanceRebuild(*cpu);
 			return HASH_STORE_PENDING;
 		}
 	}
-	return resize(plan, storage, key, value, previous, requested);
+	return resize(plan, base, storage, key, value, previous, requested);
 }
 
 template <TableRecord::HashStore Policy>
@@ -320,17 +329,9 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 	}
 }
 
-int TableRecord::resize(const ResizePlan& plan, u32 storage, Value key, Value value, u32 previous, u32 requested) {
+int TableRecord::resize(const ResizePlan& plan, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested) {
 	const auto [newArraySize, newHashSize, keepHash] = plan;
 	const size_t oldArraySize = arrayCapacity(), oldHashSize = hashSlots();
-	u32 base = arrayAddress();
-	if (newArraySize > oldArraySize) {
-		base = base ? m_heap->arena.resizeBacking(base, 5u * newArraySize) : m_heap->arena.allocate(5u * newArraySize, true);
-		if (!base) {
-			if (storage && !keepHash) m_heap->arena.free(storage);
-			return HASH_STORE_DECLINED;
-		}
-	}
 	m_heap->tableEntriesMoved(m_address);
 	const u32 oldStorage = hashAddress();
 	const auto oldValues = hashBodyAt(oldStorage, oldHashSize).slots;

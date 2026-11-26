@@ -445,6 +445,10 @@ test('scheduled SETT yields on a logical refusal before collecting the dead back
 	cpu.resumeAllocation();
 	assert.ok(!cpu.allocationParked());
 	assert.equal(gc.tableRecordAddress(garbage), 0);
+	assert.equal(cpu.tableRebuild.record, owner);
+	assert.equal(gc.tables.getInteger(owner, slots + 1), valueNil());
+	cpu.runUntilDepth(0, 2 * slots * 5 / 16, rootThread.address, CpuRunKind.Scheduled);
+	assert.equal(cpu.instructionBudgetRemaining, 0);
 	assert.equal(gc.tables.getInteger(owner, slots + 1), valueInteger(slots + 1));
 	assert.equal(frame.registers.get(7), valueNil());
 });

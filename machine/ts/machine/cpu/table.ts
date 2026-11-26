@@ -776,27 +776,25 @@ export class TableRecords {
 		const memory = this.heap.memory, arena = this.heap.arena;
 		const storage = keepHash ? oldWords : hash ? arena.allocate(TableRecords.hashStorageBytes(hash), true) : 0;
 		if (hash && !storage) return HASH_STORE_DECLINED;
-		if (budget && oldHash > 64 && (oldArray === array || !oldArray) && !keepHash) {
-			const slots = array !== oldArray ? array : 0, base = slots ? arena.allocate(slots * 5, true) : 0;
-			if (slots && !base) {
-				if (storage) arena.free(storage);
-				return HASH_STORE_DECLINED;
-			}
-			const j = budget.tableRebuild;
-			j.record = record; j.source = oldWords; j.count = oldHash; j.storage = storage; j.capacity = hash;
-			j.arrayStorage = base; j.arraySlots = slots; j.arrayCleared = 0;
-			j.cleared = j.homes = j.cursor = j.collisions = 0; j.free = hash - 1; j.key = key; j.value = value;
-			j.result = TableStoreReturn.None; j.destination = j.wanted = j.instructionPc = 0;
-			this.advanceRebuild(budget);
-			return HASH_STORE_PENDING;
-		}
-		let base = this.arrayAddress(record);
+		const oldBase = this.arrayAddress(record), stagedGrowth = budget && oldArray >= 1024 && array > oldArray;
+		let base = oldBase;
 		if (array > oldArray) {
-			base = base ? arena.resizeBacking(base, array * 5) : arena.allocate(array * 5, true);
+			base = !oldBase ? arena.allocate(array * 5, true) : stagedGrowth
+				? arena.reserveBacking(oldBase, array * 5) : arena.resizeBacking(oldBase, array * 5);
 			if (!base) {
 				if (storage && !keepHash) arena.free(storage);
 				return HASH_STORE_DECLINED;
 			}
+		}
+		if (budget && ((stagedGrowth && base !== oldBase) || (oldHash > 64 && (oldArray === array || !oldArray) && !keepHash))) {
+			const j = budget.tableRebuild;
+			j.record = record; j.source = keepHash ? 0 : oldWords; j.count = keepHash ? 0 : oldHash;
+			j.storage = keepHash ? 0 : storage; j.capacity = keepHash ? 0 : hash;
+			j.arraySlots = array !== oldArray ? array : 0; j.arrayStorage = j.arraySlots ? base : 0; j.arrayCleared = 0;
+			j.cleared = j.homes = j.cursor = j.collisions = 0; j.free = (j.capacity - 1) >>> 0; j.key = key; j.value = value;
+			j.result = TableStoreReturn.None; j.destination = j.wanted = j.instructionPc = 0;
+			this.advanceRebuild(budget);
+			return HASH_STORE_PENDING;
 		}
 		this.heap.tableEntriesMoved(record);
 		this.writeHeader(record, TableHeader.Array, array);
@@ -849,11 +847,25 @@ export class TableRecords {
 		if (j.arrayCleared < 5 * j.arraySlots) {
 			const n = Math.min(5 * j.arraySlots - j.arrayCleared, 16 * budget.instructionBudgetRemaining);
 			const start = (j.arrayStorage & RAM_RECORD_WORD_MASK) + j.arrayCleared;
-			memory.ramData().fill(0, start, start + n);
+			const ram = memory.ramData(), target = base & RAM_RECORD_WORD_MASK, end = j.arrayCleared + n;
+			if (!oldArray) ram.fill(0, start, start + n);
+			else {
+				const source = this.arrayAddress(j.record) & RAM_RECORD_WORD_MASK;
+				for (let at = j.arrayCleared; at < end;) {
+					const next = Math.min(end, at < oldArray * 4 ? oldArray * 4 : at < array * 4 ? array * 4
+						: at < array * 4 + oldArray ? array * 4 + oldArray : 5 * array);
+					if (at < oldArray * 4) ram.copyWithin(target + at, source + at, source + next);
+					else if (at >= array * 4 && at < array * 4 + oldArray) {
+						const tag = source + oldArray * 4 + (at - array * 4);
+						ram.copyWithin(target + at, tag, tag + next - at);
+					} else ram.fill(0, target + at, target + next);
+					at = next;
+				}
+			}
 			memory.invalidateRamWrite(start, n);
 			j.arrayCleared += n;
 			budget.instructionBudgetRemaining -= (n + 15) >>> 4;
-			if (budget.instructionBudgetRemaining <= 0) return;
+			if (j.arrayCleared < 5 * j.arraySlots || (budget.instructionBudgetRemaining === 0 && j.cleared < bytes)) return;
 		}
 		if (j.cleared < bytes) {
 			const n = Math.min(bytes - j.cleared, 16 * budget.instructionBudgetRemaining);
@@ -867,7 +879,7 @@ export class TableRecords {
 			if (end < bytes) return;
 			if (j.capacity > TableRecords.HASH_CENSUS_LIMIT) {
 				const source = j.source + TableRecords.hashNodeBytes(j.count);
-				memory.writeRamRecordWord(j.storage + bytes, memory.readRamRecordWord(source) + (trigger >= array ? 1 : 0));
+				memory.writeRamRecordWord(j.storage + bytes, (j.count > TableRecords.HASH_CENSUS_LIMIT ? memory.readRamRecordWord(source) : 0) + (trigger >= array ? 1 : 0));
 				if (j.capacity >= TableRecords.HASH_BAND_CAPACITY) {
 					const target = (j.storage + bytes + 4) & RAM_RECORD_WORD_MASK;
 					memory.ramData().fill(0, target, target + 32 * 4);
@@ -890,9 +902,10 @@ export class TableRecords {
 			const index = (kw - 1) >>> 0;
 			if (kt === ValueTag.Integer && index < array) {
 				this.writeSlot(base, base + 4 * array, index, vt, vw);
-				this.adjustHashLive(j.storage, j.capacity, -1);
+				if (j.count > TableRecords.HASH_CENSUS_LIMIT) this.adjustHashLive(j.storage, j.capacity, -1);
 				continue;
 			}
+			if (j.count <= TableRecords.HASH_CENSUS_LIMIT) this.adjustHashLive(j.storage, j.capacity, 1);
 			this.adjustIntegerBand(j.storage, j.capacity, kt, kw, 1);
 			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
 			if (memory.readRamRecordByte(tags + home) === ValueTag.Nil) {
@@ -924,14 +937,18 @@ export class TableRecords {
 		}
 		if (j.collisions && j.cursor < j.count) return;
 		this.heap.tableEntriesMoved(j.record);
+		const oldHash = this.hashSize(j.record);
 		if (j.arrayStorage) {
+			if (oldArray) this.heap.arena.free(this.arrayAddress(j.record));
 			this.writeHeader(j.record, TableHeader.ArrayStorage, base);
 			this.writeHeader(j.record, TableHeader.Array, array);
 		}
 		if (trigger < array) this.writeSlot(base, base + 4 * array, trigger, valueTag(j.value), valuePayload(j.value));
-		this.bindHash(j.record, j.capacity, j.storage);
-		if (j.free !== mask) this.writeHeader(j.record, TableHeader.Free, j.free);
-		this.heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(oldArray, j.count), TableRecords.allocationCharge(array, j.capacity));
+		if (j.source || j.storage) {
+			this.bindHash(j.record, j.capacity, j.storage);
+			if (j.free !== mask) this.writeHeader(j.record, TableHeader.Free, j.free);
+		}
+		this.heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(oldArray, oldHash), TableRecords.allocationCharge(array, this.hashSize(j.record)));
 		if (j.key === this.newIndexKey) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
 		this.heap.writeTableAssignment(j.record, valueTag(j.value), valuePayload(j.value), j.key);
 		const index = this.getArrayIndex(j.key);
