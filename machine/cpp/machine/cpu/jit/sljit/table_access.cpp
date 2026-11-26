@@ -61,19 +61,25 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	}
 	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R3, 0, SLJIT_IMM, 1);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_R2, 0);
-	// The owner's signed chain cursor does not enter a negative home.
-	auto* negativeHome = sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
+	// A shifted unsigned StringId cannot have a negative home; a mixed key can.
+	auto* negativeHome = stringKey ? nullptr : sljit_emit_cmp(c, SLJIT_SIG_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, 0);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R0),
 		static_cast<u32>(TableHeader::HashStorage), SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 	sljit_emit_op2(c, SLJIT_SHL32, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, 3);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, SLJIT_R2, 0, SLJIT_R3, 0);
 	auto* node = sljit_emit_label(c);
+	// Most colliding field names are also Strings. Reject the wrong identity
+	// before touching the tag plane; equal payload bits alone are not a match.
+	auto compareWord = [&] {
+		return sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2,
+			SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
+	};
+	auto* otherKey = stringKey ? compareWord() : nullptr;
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R0, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
 	auto* otherTag = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R0, 0,
 		stringKey ? SLJIT_IMM : SLJIT_MEM1(SLJIT_SP), stringKey ? stringTag : NativeTableScratch::keyTag);
-	auto* otherKey = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM2(SLJIT_R2, SLJIT_R1), 2,
-		SLJIT_MEM1(SLJIT_SP), NativeTableScratch::keyWord);
+	if (!stringKey) otherKey = compareWord();
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R1, 0, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R0), hash);
 	sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R3, 0, SLJIT_MEM2(SLJIT_R3, SLJIT_R1), 0);
@@ -104,7 +110,8 @@ sljit_jump* emitReceiverSearch(sljit_compiler* c, bool stringKey) {
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), NativeTableScratch::header);
 
 	auto* absent = sljit_emit_label(c);
-	for (auto* edge : {empty, negativeHome}) sljit_set_label(edge, absent);
+	sljit_set_label(empty, absent);
+	if (negativeHome) sljit_set_label(negativeHome, absent);
 	if (nilMatch) sljit_set_label(nilMatch, absent);
 	return found;
 }

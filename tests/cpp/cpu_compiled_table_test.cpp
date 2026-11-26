@@ -62,9 +62,9 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 }
 
 void completedOwnStringProbeKeepsLookupSemantics() {
-	enum class Path { NoMetatable, EmptyMetatable, InheritedFalse, Callable, BadForward, Loop, TwoHops };
+	enum class Path { NoMetatable, EmptyMetatable, IndexWordAlias, InheritedFalse, Callable, BadForward, Loop, TwoHops };
 	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) {
-		for (auto path : {Path::NoMetatable, Path::EmptyMetatable, Path::InheritedFalse, Path::Callable,
+		for (auto path : {Path::NoMetatable, Path::EmptyMetatable, Path::IndexWordAlias, Path::InheritedFalse, Path::Callable,
 			Path::BadForward, Path::Loop, Path::TwoHops}) {
 			test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 			writeInstruction(image.text, 0, static_cast<u8>(op), 2, 0, op == OpCode::GETT ? 1 : 0);
@@ -108,6 +108,12 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				auto meta = cpu.createTable(0,1), holder = cpu.createTable(0,1);
 				root.setStringKey(key, valueNil());
 				if (path != Path::NoMetatable) root.setMetatableAddress(meta.address());
+				if (path == Path::IndexWordAlias) {
+					// One hash slot puts the integer at the exact home of "__index".
+					meta.setInteger(static_cast<i32>(index), valueInteger(47));
+					require(meta.hashSlots() == 1 && meta.getInteger(static_cast<i32>(index)) == valueInteger(47),
+						"the non-string key with identical payload occupies the probed node");
+				}
 				if (path == Path::InheritedFalse) { meta.setStringKey(index, valueTable(holder.address())); holder.setStringKey(key, valueFromTag(ValueTag::False, 37)); }
 				if (path == Path::Callable) meta.setStringKey(index, valueBuiltinFunction(BuiltinFunctionId::Type));
 				if (path == Path::BadForward) meta.setStringKey(index, valueInteger(47));
@@ -153,7 +159,7 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				"both outcomes hit the intended HALT");
 			requireParity(native, scalar);
 			const auto result = native.cpu.readFrameRegister(0, 4);
-			if (path == Path::NoMetatable || path == Path::EmptyMetatable) require(result == valueNil(), "an ordinary terminal miss commits nil");
+			if (path == Path::NoMetatable || path == Path::EmptyMetatable || path == Path::IndexWordAlias) require(result == valueNil(), "an ordinary terminal miss commits nil");
 			if (path == Path::InheritedFalse) require(result == valueFromTag(ValueTag::False,37), "an inherited false is not absence");
 			if (path == Path::Callable) require(result == valueString(*native.cpu.stringPool().find("table")), "the callable sees the original receiver after the own miss");
 			if (path == Path::BadForward) require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE && result == valueInteger(73),
