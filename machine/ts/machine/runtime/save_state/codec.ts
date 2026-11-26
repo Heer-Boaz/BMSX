@@ -1156,6 +1156,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(j === null ? 0 : j.record);
 	if (j !== null) {
 		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
+		writer.u32(j.arrayStorage); writer.u32(j.arraySlots); writer.u32(j.arrayCleared);
 		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
 		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
 		writer.u64(j.key); writer.u64(j.value);
@@ -1222,7 +1223,8 @@ function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
 function readTableRebuild(reader: BinaryReader) {
 	const record = reader.u32();
 	if (!record) return null;
-	return { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(), capacity: reader.u32(),
+	return { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(),
+		arrayStorage: reader.u32(), arraySlots: reader.u32(), arrayCleared: reader.u32(), capacity: reader.u32(),
 		cleared: reader.u32(), homes: reader.u32(), cursor: reader.u32(), free: reader.u32(), collisions: reader.u32(),
 		key: reader.u64() as Value, value: reader.u64() as Value,
 		result: reader.u32(), destination: reader.u32(), wanted: reader.u32(), instructionPc: reader.u32() };

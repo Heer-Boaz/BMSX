@@ -173,7 +173,10 @@ void CPU::reset() {
 	m_pendingAllocation = {};
 	m_stringComparison = {};
 	m_concat = {};
-	if (tableRebuild.record) m_heapAllocator.free(tableRebuild.storage);
+	if (tableRebuild.record) {
+		if (tableRebuild.storage) m_heapAllocator.free(tableRebuild.storage);
+		if (tableRebuild.arrayStorage) m_heapAllocator.free(tableRebuild.arrayStorage);
+	}
 	tableRebuild = {};
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;

@@ -144,6 +144,43 @@ void replayInFlightHash(bool scalar) {
   throw std::runtime_error("collision replay must reproduce the remaining grants and identical RAM");
 }
 
+void publishFirstArray(bool scalar, int dense) {
+ test::Blua32TestImage image;
+ image.text.resize(2 * INSTRUCTION_BYTES);
+ writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
+ writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+ image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
+ CpuMachine machine(image, scalar);
+ auto& cpu = machine.cpu;
+ auto table = cpu.createTable(0, 256);
+ for (int i=1; i<=256; ++i) table.setInteger(i <= dense ? i : -i, valueInteger(i));
+ auto r = cpu.activeThread()->currentFrame->registers;
+ r.set(0, valueTable(table.address())); r.set(1, valueInteger(dense+1)); r.set(2, valueInteger(73));
+ const auto grant = [&](int cycles) { cpu.runUntilDepth(0, cycles, 0, CpuRunKind::Scheduled); };
+ grant(16); grant(8);
+ if (cpu.tableRebuild.arrayCleared != 128 || table.arrayCapacity() || !isNil(table.getInteger(dense+1)))
+  throw std::runtime_error("only the detached array can change before retirement");
+ const auto state = cpu.captureRuntimeState();
+ const auto ram = machine.memory.captureSaveState();
+ const auto finish = [&] {
+  int n=0;
+  while (cpu.tableRebuild.record) {
+   if (++n >= 1024) throw std::runtime_error("integer migration failed to retire");
+   grant(16);
+  }
+  if (table.arrayCapacity() != dense*2 || table.hashSlots() != 256-dense || table.getInteger(dense+1) != valueInteger(73))
+   throw std::runtime_error("wrong partition after integer store");
+  for (int i=1; i<=256; ++i) if (table.getInteger(i <= dense ? i : -i) != valueInteger(i))
+   throw std::runtime_error("integer migration lost an entry");
+  return n;
+ };
+ const int n = finish();
+ const auto end = machine.memory.captureSaveState();
+ machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+ if (finish() != n || machine.memory.captureSaveState().ram != end.ram)
+  throw std::runtime_error("first-array restore changed retirement");
+}
+
 void publishRawStoreBeforeReturning(bool protectedCall) {
  test::Blua32TestImage image;
  image.text.resize(2 * INSTRUCTION_BYTES);
@@ -366,6 +403,7 @@ int main() {
   if (scalar) { publishRawStoreBeforeReturning(false); publishRawStoreBeforeReturning(true); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
+  publishFirstArray(scalar, 128); publishFirstArray(scalar, 256);
   rebuildWork(scalar);
   hostGrantScratch(scalar);
   for (const auto [array, hash, capacity] : {std::array{0, 0, 0}, std::array{1, 0, 0}, std::array{0, 1, 1}, std::array{7, 3, 4}, std::array{13, 5, 8}, std::array{0, 31, 32}, std::array{9, 33, 64}, std::array{63, 63, 64}}) {

@@ -1186,6 +1186,7 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u32(j.record);
 	if (j.record) {
 		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
+		writer.u32(j.arrayStorage); writer.u32(j.arraySlots); writer.u32(j.arrayCleared);
 		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
 		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
 		writer.u64(j.key); writer.u64(j.value);
@@ -1269,6 +1270,7 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	j.record = reader.u32();
 	if (j.record) {
 		j.source = reader.u32(); j.count = reader.u32(); j.storage = reader.u32();
+		j.arrayStorage = reader.u32(); j.arraySlots = reader.u32(); j.arrayCleared = reader.u32();
 		j.capacity = reader.u32(); j.cleared = reader.u32(); j.homes = reader.u32();
 		j.cursor = reader.u32(); j.free = reader.u32(); j.collisions = reader.u32();
 		j.key = reader.u64(); j.value = reader.u64();

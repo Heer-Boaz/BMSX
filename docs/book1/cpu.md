@@ -1638,7 +1638,7 @@ existing slot performs neither scan. A store through `rawset` pays the same
 scan charges. A failed reservation does not refund a completed
 scan; a recovery attempt that scans again pays for its own work.
 When an insertion replaces a hash with more than 64 **old** slots and
-leaves array capacity unchanged, the store continues across cycle grants.
+either leaves array capacity unchanged or creates the first array backing, the store continues across cycle grants.
 It initializes 16 replacement bytes per cycle (rounding the final group up)
 and visits each source slot at eight cycles per visit to establish the home
 positions. If any entries collide, it visits the source again until the last

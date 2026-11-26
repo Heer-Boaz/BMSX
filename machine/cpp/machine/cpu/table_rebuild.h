@@ -6,6 +6,7 @@ namespace bmsx {
 enum class TableStoreReturn : u32 { None, Call, Protected };
 struct TableRebuild {
 	u32 record = 0, source = 0, count = 0, storage = 0, capacity = 0;
+	u32 arrayStorage = 0, arraySlots = 0, arrayCleared = 0;
 	u32 cleared = 0, homes = 0, cursor = 0, free = 0, collisions = 0;
 	Value key = valueNil(), value = valueNil();
 	TableStoreReturn result = TableStoreReturn::None;

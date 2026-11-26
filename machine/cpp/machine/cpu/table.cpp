@@ -234,9 +234,15 @@ int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, 
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
 	if constexpr (Policy != HashStore::ReturningIndex && Policy != HashStore::ReturningField) {
-		if (cpu && hashSlots() > 64 && plan.array == arrayCapacity() && !plan.keepHash) {
+		if (cpu && hashSlots() > 64 && (plan.array == arrayCapacity() || !arrayCapacity()) && !plan.keepHash) {
+			const u32 array = plan.array != arrayCapacity() ? plan.array : 0;
+			const u32 base = array ? m_heap->arena.allocate(5u * array, true) : 0;
+			if (array && !base) {
+				if (storage) m_heap->arena.free(storage);
+				return HASH_STORE_DECLINED;
+			}
 			cpu->tableRebuild = {.record=m_address, .source=hashAddress(), .count=hashSlots(), .storage=storage,
-				.capacity=static_cast<u32>(plan.hash), .free=static_cast<u32>(plan.hash - 1), .key=key, .value=value};
+				.capacity=static_cast<u32>(plan.hash), .arrayStorage=base, .arraySlots=array, .free=static_cast<u32>(plan.hash - 1), .key=key, .value=value};
 			advanceRebuild(*cpu);
 			return HASH_STORE_PENDING;
 		}

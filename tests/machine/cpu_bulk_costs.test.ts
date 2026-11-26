@@ -174,6 +174,35 @@ return true`, 3);
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
+ for (const dense of [128, 256]) test(`first array publishes after resumable integer migration (${backend}, dense=${dense})`, () => {
+  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+  writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
+  writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
+  const { cpu } = createTestSystemCpu(image, backend);
+  const t = cpu.createTable(0, 256), tables = cpu.gc.tables, r = cpu.rootThread.currentFrame!.registers;
+  for (let i = 1; i <= 256; ++i) tables.setInteger(t, i <= dense ? i : -i, valueInteger(i));
+  r.setTable(0, t); r.setInteger(1, dense+1); r.setInteger(2, 73);
+  const grant = (cycles: number) => cpu.runUntilDepth(0, cycles, cpu.rootThread.address, CpuRunKind.Scheduled);
+  grant(16); grant(8);
+  assert.equal(tables.arrayCapacity(t), 0);
+  assert.equal(tables.getInteger(t, dense+1), valueNil());
+  assert.equal(cpu.tableRebuild.arrayCleared, 128);
+  const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
+  const finish = () => {
+   let n = 0;
+   while (cpu.tableRebuild.record) { assert.ok(++n < 1024); grant(16); }
+   assert.equal(tables.arrayCapacity(t), dense * 2);
+   assert.equal(tables.hashSize(t), 256 - dense);
+   assert.equal(tables.getInteger(t, dense+1), valueInteger(73));
+   for (let i = 1; i <= 256; ++i) assert.equal(tables.getInteger(t, i <= dense ? i : -i), valueInteger(i));
+   return n;
+  };
+  const n = finish(), end = cpu.memory.captureSaveState();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+  assert.equal(finish(), n); assert.deepEqual(cpu.memory.captureSaveState().ram, end.ram);
+ });
+
  test(`collision placement resumes from the same grant and RAM checkpoint (${backend})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETFIELD, 0, 0, 1);

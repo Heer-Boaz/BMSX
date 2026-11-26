@@ -798,7 +798,10 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.stringComparison = new StringComparisonLatch();
-		if (this.tableRebuild.record) this.heapAllocator.free(this.tableRebuild.storage);
+		if (this.tableRebuild.record) {
+			if (this.tableRebuild.storage) this.heapAllocator.free(this.tableRebuild.storage);
+			if (this.tableRebuild.arrayStorage) this.heapAllocator.free(this.tableRebuild.arrayStorage);
+		}
 		this.tableRebuild.record = 0;
 		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
