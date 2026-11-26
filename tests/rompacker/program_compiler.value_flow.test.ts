@@ -29,6 +29,26 @@ function parseChunk(source: string, path: string = 'value_flow.lua') {
 	return parser.parseChunk();
 }
 
+test('an entry loop does not fold its input using the value on the backedge', () => {
+	const source = `
+local walk<const> = function(work, limit, pending)
+	while work < limit do
+		work = work + 1 + pending
+		pending = 0
+	end
+	return work, pending
+end
+local a, b = walk(3, 3, 17)
+local c, d = walk(3, 4, 17)
+local e, f = walk(3, 24, 17)
+return a, b, c, d, e, f
+`;
+	for (const optLevel of [0, 1, 2, 3] as const) {
+		assert.deepEqual(Array.from(runCompiledLua(source, 'entry_loop.lua', optLevel)),
+			[3, 17, 21, 0, 24, 0].map(valueInteger), `O${optLevel}`);
+	}
+});
+
 test('ITERN keeps incoming results live on the guard-miss edge', () => {
 	const instructions: Instruction[] = [
 		{ op: OpCode.ITERN, a: 0, b: 4, c: 3, format: 'ABC', rkMask: 0, target: null },

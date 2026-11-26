@@ -396,12 +396,14 @@ const computeBlockConstantIn = (
 		changed = false;
 		for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
 			const preds = predecessors[blockIndex];
-			const nextIn = preds.length === 0
-				? new Map<number, ConstValue>()
-				: intersectConstMaps(preds.map(pred => outMaps[pred]));
-			if (!equalConstMaps(nextIn, inMaps[blockIndex])) {
-				inMaps[blockIndex] = nextIn;
-				changed = true;
+			// The function-entry edge supplies unknown argument values even
+			// when instruction zero is also the target of a loop backedge.
+			if (blockIndex !== 0 && preds.length !== 0) {
+				const nextIn = intersectConstMaps(preds.map(pred => outMaps[pred]));
+				if (!equalConstMaps(nextIn, inMaps[blockIndex])) {
+					inMaps[blockIndex] = nextIn;
+					changed = true;
+				}
 			}
 			const constants = new Map(inMaps[blockIndex]);
 			const block = blocks[blockIndex];
