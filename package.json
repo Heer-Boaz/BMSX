@@ -92,6 +92,7 @@
 		"test:bios-table-create": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_create.ts",
 		"test:bios-gc-mark": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_mark.ts",
 		"test:bios-gc-capture-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_capture_trace.ts",
+		"test:bios-gc-thread-trace": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_thread_trace.ts",
 		"test:bios-gc-object-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_object_service.ts",
 		"test:symbols-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
 		"test:host-shortcuts-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",
