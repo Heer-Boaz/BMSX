@@ -55,9 +55,9 @@ int main(int argc, char** argv) {
 		for (char op; trace >> op;) {
 			switch (op) {
 				case 'B': {
-					u32 function, count, args[3];
+					u32 function, count, args[8];
 					trace >> function >> count;
-					if (count > 3) throw std::runtime_error("Unexpected fixture arity");
+					if (count > std::size(args)) throw std::runtime_error("Unexpected fixture arity");
 					for (u32 i = 0; i < count; ++i) trace >> args[i];
 					std::cout << cpu.beginHeapService(function, {args, count}) << '\n';
 					break;
@@ -136,6 +136,13 @@ int main(int argc, char** argv) {
 					std::string seed;
 					trace >> seed;
 					std::cout << cpu.stringPool().intern(seed) << '\n';
+					break;
+				}
+				case 'm': {
+					u32 tag, payload, queue;
+					trace >> tag >> payload >> queue;
+					const bool marked = cpu.gcHeap().markValue(valueFromTag(static_cast<ValueTag>(tag), payload), queue);
+					std::cout << marked << ' ' << cpu.stringPool().takeMarkWork() << '\n';
 					break;
 				}
 				case 'f': {
