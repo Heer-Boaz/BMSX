@@ -642,12 +642,23 @@ export class TableRecords {
 			plan.hash = nextPowerOfTwo(live);
 			return;
 		}
+		if (oldArray === 0 && oldHash === 0) {
+			// Only index 1 is dense enough by itself to select an array.
+			plan.keepHash = added === 0;
+			plan.array = added === 0 ? 1 : 0;
+			plan.hash = added === 0 ? 0 : 1;
+			return;
+		}
 		const counts = TableRecords.rehashIntegerCounts;
 		let bins = 0, totalKeys = 0, firstHashArrayKey = TABLE_MAX_ARRAY_INDEX + 1;
 		const arrayTags = this.arrayAddress(record) + 4 * oldArray;
-		for (let slot = 0; slot < oldArray; ++slot) {
-			if (memory.readRamRecordByte(arrayTags + slot) === ValueTag.Nil) continue;
-			++totalKeys; bins = TableRecords.countIntegerKey(counts, bins, slot + 1);
+		// Slots arrive in histogram order; only hash keys need a logarithm.
+		for (let slot = 0, boundary = 1; slot < oldArray; boundary *= 2) {
+			const end = Math.min(boundary, oldArray);
+			let live = 0;
+			for (; slot < end; ++slot) live += +(memory.readRamRecordByte(arrayTags + slot) !== ValueTag.Nil);
+			counts[bins++] = live;
+			totalKeys += live;
 		}
 		for (let index = 0; index < oldHash; ++index) {
 			const slot = index, keyTag = memory.readRamRecordByte(tags + slot);

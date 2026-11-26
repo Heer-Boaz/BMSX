@@ -64,6 +64,31 @@ test('array growth keeps a full hash when none of its keys move into the array',
 	assert.equal(tables.getInteger(table, -1), v.valueInteger(41));
 });
 
+test('only index one selects an array on the first integer insertion', () => {
+	const cpu = machine(), tables = cpu.gc.tables;
+	for (const key of [1, 2, 0x7fffffff]) {
+		const table = cpu.createTable();
+		tables.setInteger(table, key, v.valueBool(false));
+		assert.equal(tables.arrayCapacity(table), key === 1 ? 1 : 0);
+		assert.equal(tables.hashSize(table), key === 1 ? 0 : 1);
+		assert.equal(tables.getInteger(table, key), v.valueBool(false));
+	}
+});
+
+test('integer growth counts a partial array density band at the strict half boundary', () => {
+	const cpu = machine(), tables = cpu.gc.tables;
+	for (const added of [16, 17]) {
+		const table = cpu.createTable(13, 0);
+		for (const key of [1, 2, 3, 4, 5, 9, 10, 13]) tables.setInteger(table, key, v.valueBool(false));
+		tables.setInteger(table, added, v.valueInteger(41));
+		// At 17 exactly eight of the first sixteen are present; at 16 there are nine.
+		assert.equal(tables.arrayCapacity(table), added === 16 ? 16 : 8);
+		assert.equal(tables.hashSize(table), added === 16 ? 0 : 4);
+		for (const key of [1, 2, 3, 4, 5, 9, 10, 13]) assert.equal(tables.getInteger(table, key), v.valueBool(false));
+		assert.equal(tables.getInteger(table, added), v.valueInteger(41));
+	}
+});
+
 test('growth for non-array keys preserves sparse reserved slots and their charge', () => {
 	const cpu = machine(), tables = cpu.gc.tables;
 	const mixed = cpu.createTable(8, 0), identity = cpu.createTable();

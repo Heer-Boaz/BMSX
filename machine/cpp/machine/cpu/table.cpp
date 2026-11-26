@@ -160,27 +160,31 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots) co
 		}
 		return {arrayCapacity(), nextPowerOfTwo(live), false};
 	}
+	const u32 capacity = arrayCapacity();
+	if (!capacity && !body.count) {
+		// Only index 1 is dense enough by itself to select an array.
+		return added == 0 ? ResizePlan{1, 0, true} : ResizePlan{0, 1, false};
+	}
 	size_t totalKeys = 0;
 	u32 firstHashArraySlot = NO_ARRAY_SLOT;
 	std::array<u32, 32> counts{};
 	size_t countBins = 0;
 
+	// Consecutive array indices already arrive in histogram order. Count
+	// each density band directly, including a partial last reservation.
+	const auto arrayValues = values();
+	for (u32 first = 0; first < capacity;) {
+		const u32 end = first + std::min(std::max(first, 1u), capacity - first);
+		u32 live = 0;
+		for (; first < end; ++first) live += arrayValues.tag(first) != ValueTag::Nil;
+		counts[countBins++] = live;
+		totalKeys += live;
+	}
 	auto countIntegerKey = [&counts, &countBins](size_t index) {
 		const size_t log = ceilLog2(index);
-		while (countBins <= log) {
-			counts[countBins] = 0;
-			++countBins;
-		}
-		counts[log] += 1;
+		countBins = std::max(countBins, log + 1);
+		++counts[log];
 	};
-
-	const auto arrayValues = values();
-	for (u32 i = 0; i < arrayCapacity(); ++i) {
-		if (arrayValues.tag(i) != ValueTag::Nil) {
-			totalKeys += 1;
-			countIntegerKey(i + 1);
-		}
-	}
 	for (u32 i = 0; i < body.count; ++i) {
 		const u32 slot = i;
 		const auto tag = slots.tag(slot);

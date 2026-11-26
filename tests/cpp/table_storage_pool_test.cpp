@@ -44,6 +44,30 @@ void mixedGrowthKeepsUnchangedStorage(bmsx::CPU& cpu) {
 	table.clear();
 }
 
+void firstIntegerPlacement(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	for (int key : {1, 2, 2147483647}) {
+		auto table = cpu.createTable();
+		table.setInteger(key, valueBool(false));
+		require(table.arrayCapacity() == (key == 1 ? 1u : 0u) && table.hashSlots() == (key == 1 ? 0u : 1u)
+			&& table.getInteger(key) == valueBool(false), "only index one starts an array by itself");
+	}
+}
+
+void partialArrayDensity(bmsx::CPU& cpu) {
+	using namespace bmsx;
+	for (int added : {16, 17}) {
+		auto table = cpu.createTable(13, 0);
+		for (int key : {1, 2, 3, 4, 5, 9, 10, 13}) table.setInteger(key, valueBool(false));
+		table.setInteger(added, valueInteger(41));
+		require(table.arrayCapacity() == (added == 16 ? 16u : 8u) && table.hashSlots() == (added == 16 ? 0u : 4u),
+			"nine of sixteen select the array; exactly eight do not");
+		for (int key : {1, 2, 3, 4, 5, 9, 10, 13}) require(table.getInteger(key) == valueBool(false),
+			"repartitioning preserves each false entry of the partial band");
+		require(table.getInteger(added) == valueInteger(41), "the triggering key remains reachable");
+	}
+}
+
 void fullByteChainsWidenOnRehash(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	auto source = cpu.createTable(0, 128);
@@ -216,6 +240,8 @@ int main() {
 		denseArrayRetainsBacking(cpu);
 		fullByteChainsWidenOnRehash(cpu);
 		mixedGrowthKeepsUnchangedStorage(cpu);
+		firstIntegerPlacement(cpu);
+		partialArrayDensity(cpu);
 		tableSlotWritesMarkBothHistoryPages(cpu);
 		rebuildingHashMarksAllDestinationPages(cpu);
 		hashBudgetFollowsReservedSlots(cpu);
