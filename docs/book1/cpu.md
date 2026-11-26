@@ -1474,8 +1474,10 @@ instruction even if the reservation later fails or parks. A retry does not
 repay completed work. An explicit step or full collection also pays 3 cycles per work word,
 including work to finish an already active cycle. This also applies when
 program replacement requests a collection to free its static region.
-Vertical blanking maintenance and emergency allocation recovery do not
-incur this charge.
+If an allocation fails and the issuing instruction performs emergency
+collection before retrying, it pays the same price for that work, even if
+the retry fails. Vertical blanking maintenance and recovery steps performed
+while the issuing instruction is parked do not debit its grant.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 

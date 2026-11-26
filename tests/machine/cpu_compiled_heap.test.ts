@@ -1,3 +1,5 @@
+import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
@@ -250,6 +252,8 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
-	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0), 'allocation faults retain logical text-work charges without charging emergency collection');
+	const work = js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
+	assert.ok(work > 0);
+	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0) - 3 * work, 'the fault retains both text and recovery work');
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
 });

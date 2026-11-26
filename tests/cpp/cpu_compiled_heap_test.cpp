@@ -399,7 +399,8 @@ void concatAllocationFault(bool range) {
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	require(native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0), "allocation faults retain logical text-work charges without charging emergency collection");
+	const int work = native.memory.readRamRecordWord(native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
+	require(work > 0 && native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0) - 3 * work, "the fault retains both text and recovery work");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
 }
 } // namespace

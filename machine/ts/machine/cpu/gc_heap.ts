@@ -37,7 +37,7 @@ export const GC_MODE_NODE = GC_MODE_META + 4;
 const GC_MODE_REMAINING = GC_MODE_NODE + 4;
 export const GC_ROOT_CURSOR = GC_MODE_REMAINING + 4;
 const GC_EPOCH_WORK = GC_ROOT_CURSOR + 4;
-const GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + 4;
+export const GC_LAST_EPOCH_WORK = GC_EPOCH_WORK + 4;
 const GC_PHYSICAL_OCCUPIED_AT_TICK = GC_LAST_EPOCH_WORK + 4;
 const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 const GC_OBJECT_HEAD = GC_PHYSICAL_ASSIST + 4;
@@ -956,7 +956,7 @@ export class GcHeap {
 		const continueCurrent = first && this.active();
 		if (first && this.diagnostics !== null) ++this.diagnostics.fullCollections;
 		// Recovery finishes just this epoch, without allocating to shrink live stacks.
-		do { this.step(t0, t1, t2, growingThread); } while (this.active());
+		do { this.cpu.assistAllocation(t0, t1, t2, growingThread, GC_STEP_WORDS); } while (this.active());
 		return continueCurrent ? LuaAllocationRecovery.Fresh : LuaAllocationRecovery.Exhausted;
 	}
 

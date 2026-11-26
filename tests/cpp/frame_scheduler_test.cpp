@@ -616,19 +616,23 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	arena.free(spare);
 	require(!arena.allocate(5120u, true), "the replacement cannot fit before entering its real recovery path");
 	cpu.gcHeap().step(valueNil(), valueNil(), valueNil(), 0u, false, 1u);
+	const auto paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+	const auto beforeAssist = runtime.machine.memory.readRamRecordWord(paidAt);
 	const auto before = captureRuntimeSaveState(runtime);
 	cpu.runUntilDepth(0, 1); // The direct CPU owner deliberately retains synchronous recovery.
-	const int charge = 1 - cpu.instructionBudgetRemaining;
+	const int inlineCharge = 1 - cpu.instructionBudgetRemaining;
 	const int base = BASE_CYCLES[static_cast<u8>(OpCode::SETT)];
 	const int scan = (512 - 64) / 4;
-	require(cpu.getFrameDepth() == 1 && charge > base + 2 + 3 * scan && (charge - base - 2 - 3 * scan) % 3 == 0,
+	require(cpu.getFrameDepth() == 1 && inlineCharge > base + 2 + 3 * scan,
 		"inline protected failure pays for the assist and transports its two result values");
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const i64 clock = runtime.machine.scheduler.nowCycles();
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"physical failure parks rather than exiting the protected frame");
-	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - 2 * scan,
+	const int charge = base + 3 * scan + 2
+		+ 3 * static_cast<int>(runtime.machine.memory.readRamRecordWord(paidAt) - beforeAssist);
+	require(inlineCharge > charge && runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - 2 * scan,
 		"the first refusal retains one scan, not the two retries or result placement");
 	const auto drain = [&] {
 		for (int n = 0; n < 80 && !cpu.allocationReady(); ++n)

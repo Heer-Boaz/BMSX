@@ -6,7 +6,7 @@ import { RunResult, CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
-import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_LAST_EPOCH_WORK, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
@@ -381,7 +381,26 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 }
 
-test('failed allocation finishes emergency collection without a cycle debit or pending bytes', () => {
+test('CONCAT pays for synchronous recovery of a refused String record before its successor', () => {
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.CONCAT)));
+	const frame = cpu.rootThread.currentFrame!;
+	frame.registers.setInteger(1, 12); frame.top = 2;
+	const garbage = cpu.createTable(2048, 0);
+	// Leave no extent for the String until sweep releases the unreachable Table.
+	for (const bytes of [4088, 32, 8]) while (cpu.heapAllocator.allocate(bytes, true)) {}
+	const issue = BASE_CYCLES[OpCode.CONCAT] + 4; // "12" concatenated twice
+	assert.equal(cpu.runUntilDepth(0, issue + 2), RunResult.Yielded);
+	const work = memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
+	assert.ok(work > 0);
+	assert.equal(cpu.instructionBudgetRemaining, 2 - 3 * work);
+	assert.equal(cpu.gc.tableRecordAddress(garbage), 0);
+	assert.equal(frame.registers.getTag(0), ValueTag.String);
+	assert.equal(frame.registers.get(7), valueNil());
+	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
+	assert.equal(frame.registers.get(7), valueInteger(37));
+});
+
+test('failed allocation outside execution finishes emergency collection without a cycle debit or pending bytes', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
 	const doomed = cpu.createTable(16384, 0);
 	cpu.instructionBudgetRemaining = 1;

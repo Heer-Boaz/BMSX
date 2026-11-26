@@ -812,17 +812,21 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	callee.top = 3;
 	while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 	cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+	const paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
+	const beforeAssist = cpu.memory.readRamRecordWord(paidAt);
 	const before = captureRuntimeSaveState(runtime);
 	cpu.runUntilDepth(0, 1);
-	const charge = 1 - cpu.instructionBudgetRemaining;
+	const inlineCharge = 1 - cpu.instructionBudgetRemaining;
 	assert.equal(cpu.getFrameDepth(), 1, 'direct CPU retains synchronous recovery');
-	assert.ok(charge >= BASE_CYCLES[OpCode.SETT] + 2);
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(1, 0);
 	const clock = scheduler.nowCycles;
 	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 	assert.ok(cpu.allocationParked());
 	const scan = (512 - 64) / 4;
+	const charge = BASE_CYCLES[OpCode.SETT] + 3 * scan + 2
+		+ 3 * (cpu.memory.readRamRecordWord(paidAt) - beforeAssist);
+	assert.ok(inlineCharge > charge);
 	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2 - 2 * scan);
 	const drain = () => {
 		for (let n = 0; n < 80 && !cpu.allocationReady(); ++n)
