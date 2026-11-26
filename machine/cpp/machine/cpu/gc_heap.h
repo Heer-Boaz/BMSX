@@ -12,6 +12,7 @@ namespace bmsx {
 class CPU;
 class TableRecord;
 // Collector work is measured in 32-bit pool words, not host time.
+inline constexpr int GC_WORK_WORD_CYCLES = 3;
 inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
@@ -93,7 +94,7 @@ public:
 	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
 	bool stoppedFinalMarkPending() const { return finalMarkPending() && !fullEpochs(); }
 	void requestFullCollection();
-	size_t stepFullCollection(u32 epochs);
+	size_t stepFullCollection(u32 epochs, size_t words);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);
 	}
@@ -105,7 +106,7 @@ public:
 	bool reservationAssistDue(size_t requested) const;
 	void assistBeforeReservation(size_t requested, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	// Only the stopped mutator may advance the final pass.
-	size_t stepFinalMark();
+	size_t stepFinalMark(size_t limit = GC_STEP_WORDS);
 	size_t finishFinalMark(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	// The owner retries its actual request after each recovered epoch.
 	LuaAllocationRecovery recoverAllocation(LuaAllocationRecovery next,
@@ -169,7 +170,7 @@ private:
 	size_t remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final);
 	size_t accountEpochWork(size_t work);
 	size_t stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads, size_t limit);
-	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots);
+	size_t finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit);
 	RemarkStage remarkStage() const {
 		return static_cast<RemarkStage>(memory.readRamRecordWord(m_controlOffset + GC_REMARK_VISIT_STATE) >> GC_GRAY_INDEX_BITS);
 	}

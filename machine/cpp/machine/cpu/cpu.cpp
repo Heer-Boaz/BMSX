@@ -2362,7 +2362,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		if (const u32 epochs = m_heap.fullEpochs()) {
 			instructionBudgetRemaining = instructionBudget;
 			if (instructionBudget <= 0) return RunResult::Yielded;
-			chargeCollectionWork(m_heap.stepFullCollection(epochs));
+			const auto words = std::clamp(instructionBudget / GC_WORK_WORD_CYCLES, 1, static_cast<int>(GC_STEP_WORDS));
+			chargeCollectionWork(m_heap.stepFullCollection(epochs, words));
 			if (kind == CpuRunKind::Scheduled) return RunResult::CollectionProgress;
 			instructionBudget = instructionBudgetRemaining;
 			if (instructionBudget <= 0) return RunResult::Yielded;
@@ -2466,7 +2467,7 @@ size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread
 }
 
 void CPU::chargeCollectionWork(size_t work) {
-	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= 3 * static_cast<int>(work);
+	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= GC_WORK_WORD_CYCLES * static_cast<int>(work);
 }
 
 size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words) {

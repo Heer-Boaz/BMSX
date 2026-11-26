@@ -103,10 +103,10 @@ inline u32 allocatedObjectRecords(CPU& cpu) {
 }
 
 // Both routes receive the same grant; compare their actual consumed cycles.
-inline RunResult runCpuParity(CPU& generated, CPU& reference, int grant, int depth = 0) {
-	const auto result = generated.runUntilDepth(depth, grant);
+inline RunResult runCpuParity(CPU& generated, CPU& reference, int grant, int depth = 0, CpuRunKind kind = CpuRunKind::Direct) {
+	const auto result = generated.runUntilDepth(depth, grant, 0u, kind);
 	const int consumed = grant - generated.instructionBudgetRemaining;
-	if (reference.runUntilDepth(depth, grant) != result
+	if (reference.runUntilDepth(depth, grant, 0u, kind) != result
 		|| grant - reference.instructionBudgetRemaining != consumed) {
 		throw std::runtime_error("generated and scalar execution differ at the same guest-cycle boundary");
 	}

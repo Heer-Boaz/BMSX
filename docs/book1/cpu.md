@@ -1468,7 +1468,10 @@ earlier scan of the interrupted cycle. A request that still cannot fit raises
 the out-of-memory error without admitting its bytes. Explicit full collection
 always performs the fresh cycle. For a full collection requested through the BIOS,
 the CPU admits marking, final remark and reclamation work against successive
-cycle grants. Device time advances for that work, while interrupt entry and
+cycle grants. Each positive grant admits up to one collection quantum, at
+one work word per three cycles, with a minimum allowance of one word. An
+indivisible record operation can exceed its allowance; the CPU charges the
+actual work. Device time advances for that work, while interrupt entry and
 execution of the following instruction wait until the fresh cycle completes.
 
 Recovery for `NEWT` or for a table insertion can pause execution with the

@@ -689,26 +689,25 @@ size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 	size_t work = 0;
 	bool scopedRoots = true;
 	do {
-		work += finalMarkWork(root0, root1, root2, scopedRoots);
+		work += finalMarkWork(root0, root1, root2, scopedRoots, GC_STEP_WORDS);
 		scopedRoots = remarkStage() <= RemarkStage::Weak;
 	} while (finalMarkPending());
 	return accountEpochWork(work);
 }
 
-size_t GcHeap::stepFinalMark() {
+size_t GcHeap::stepFinalMark(size_t limit) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 	GcStepMeasurement total(profile);
 	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
 #endif
-	return accountEpochWork(finalMarkWork(valueNil(), valueNil(), valueNil(), false));
+	return accountEpochWork(finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit));
 }
 
-size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots) {
+size_t GcHeap::finalMarkWork(Value root0, Value root1, Value root2, bool scopedRoots, size_t limit) {
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	auto& profile = m_cpu.m_diagnosticGcProfile;
 #endif
-	constexpr size_t limit = GC_STEP_WORDS;
 	size_t work = 0;
 	if (remarkStage() == RemarkStage::None) setRemarkStage(RemarkStage::Threads);
 	if (remarkStage() <= RemarkStage::Weak) {
@@ -1068,8 +1067,8 @@ void GcHeap::requestFullCollection() {
 	m_cpu.requestYield();
 }
 
-size_t GcHeap::stepFullCollection(u32 epochs) {
-	const size_t work = finalMarkPending() ? stepFinalMark() : step(valueNil(), valueNil(), valueNil(), 0u, true);
+size_t GcHeap::stepFullCollection(u32 epochs, size_t words) {
+	const size_t work = finalMarkPending() ? stepFinalMark(words) : step(valueNil(), valueNil(), valueNil(), 0u, true, words);
 	if (!active()) memory.writeRamRecordByte(m_controlOffset + GC_FULL_EPOCHS, epochs - 1u);
 	return work;
 }

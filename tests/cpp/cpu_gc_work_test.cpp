@@ -398,7 +398,7 @@ void explicitCollectionAndNoReplay() {
 			&& generated.cpu.instructionBudgetRemaining == 0 && generated.cpu.gcHeap().fullEpochs() == 1,
 			"issue retires before collection starts");
 		for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
-			require(grants < 64 && test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
+			require(grants < 64 && test::runCpuParity(generated.cpu, scalar.cpu, 96, 0, CpuRunKind::Scheduled) == RunResult::CollectionProgress
 				&& isNil(generated.cpu.readFrameRegister(0, 7)), "the collector holds the successor across grants");
 		}
 		require(generated.cpu.gcHeap().tableRecordAddress(doomed) == 0u,
@@ -527,6 +527,7 @@ void collectionPrimitivePaysActualWork() {
 			for (auto* machine : {&generated, &scalar, &inspected}) {
 				auto& cpu = machine->cpu;
 				auto& frame = *cpu.rootThread()->currentFrame;
+				if (capacity > 1) cpu.rootThread()->resizeStack(capacity);
 				frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
 				frame.registers.set(1, valueInteger(static_cast<i32>(operation)));
 				frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
@@ -540,10 +541,22 @@ void collectionPrimitivePaysActualWork() {
 			previousWork = work;
 			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "the primitive is issued once");
 			int cycles = 1 - generated.cpu.instructionBudgetRemaining;
+			const auto trace = generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
+			int markSlices = 0, remarkSlices = 0;
 			for (int grants = 0; generated.cpu.gcHeap().fullEpochs(); ++grants) {
-				require(grants < 100 && test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "full collection advances");
-				cycles += 1 - generated.cpu.instructionBudgetRemaining;
+				constexpr int grant = 3 * 512;
+				const auto phase = generated.cpu.gcHeap().phase();
+				const auto record = generated.memory.readRamRecordWord(trace);
+				require(grants < 100 && test::runCpuParity(generated.cpu, scalar.cpu, grant, 0, CpuRunKind::Scheduled) == RunResult::CollectionProgress, "full collection advances");
+				const int paid = grant - generated.cpu.instructionBudgetRemaining;
+				if (record && generated.memory.readRamRecordWord(trace) == record && generated.cpu.gcHeap().phase() == phase) {
+					if (phase == GcPhase::Mark) ++markSlices;
+					else if (phase == GcPhase::Atomic) ++remarkSlices;
+					require(paid >= grant && paid <= grant + 3, "mid-array and stack scans stop within one slot of the grant");
+				}
+				cycles += paid;
 			}
+			if (capacity > 1 && !step) require(markSlices > 1 && remarkSlices > 1, "both mark and atomic scans span short grants");
 			require(cycles == 32 + 4 + 1 + 3 * static_cast<int>(work)
 				&& generated.cpu.readFrameRegister(0, 0) == (step ? valueBool(false) : valueNil())
 				&& generated.cpu.collecting() == step,

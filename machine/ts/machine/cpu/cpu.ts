@@ -1,5 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcRootBank } from './gc_heap';
+import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -163,7 +163,7 @@ import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COM
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
-import { LuaAllocationMode, LuaHeap } from './lua_heap';
+import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -1990,7 +1990,8 @@ export class CPU implements MappedPageInvalidator {
 				if (epochs !== 0) {
 					this.instructionBudgetRemaining = instructionBudget;
 					if (instructionBudget <= 0) return RunResult.Yielded;
-					this.chargeCollectionWork(this.gc.stepFullCollection(epochs));
+					const words = Math.min(GC_STEP_WORDS, Math.max(1, Math.trunc(instructionBudget / GC_WORK_WORD_CYCLES)));
+					this.chargeCollectionWork(this.gc.stepFullCollection(epochs, words));
 					if (kind === CpuRunKind.Scheduled) return RunResult.CollectionProgress;
 					instructionBudget = this.instructionBudgetRemaining;
 					if (instructionBudget <= 0) return RunResult.Yielded;
@@ -4492,7 +4493,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public chargeCollectionWork(work: number): void {
-		if (this.runKind !== CpuRunKind.Idle) this.charge(3 * work);
+		if (this.runKind !== CpuRunKind.Idle) this.charge(GC_WORK_WORD_CYCLES * work);
 	}
 
 	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number): number {

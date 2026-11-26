@@ -346,7 +346,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.gc.fullEpochs(), 1);
 		for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
 			assert.ok(grants < 64);
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 96, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.CollectionProgress);
 			assert.equal(frame.registers.get(7), valueNil());
 		}
 		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'the successor cannot observe uncollected garbage');
@@ -471,6 +471,7 @@ test('collect and step charge CALL, placement and actual collector work across h
 			const physicalWork: number[] = [];
 			for (const capacity of [1, 8192]) {
 				const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+				if (capacity > 1) cpu.rootThread.resizeStack(capacity);
 				frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
 				frame.registers.setInteger(1, operation);
 				frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
@@ -482,11 +483,23 @@ test('collect and step charge CALL, placement and actual collector work across h
 				memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 				let cycles = 1 - cpu.instructionBudgetRemaining;
+				const trace = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_TRACE_RECORD;
+				let markSlices = 0, remarkSlices = 0;
 				for (let grants = 0; cpu.gc.fullEpochs(); ++grants) {
 					assert.ok(grants < 100);
-					assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-					cycles += 1 - cpu.instructionBudgetRemaining;
+					const grant = 3 * 512;
+					const phase = cpu.gc.phase(), record = memory.readRamRecordWord(trace);
+					assert.equal(cpu.runUntilDepth(0, grant, cpu.rootThread.address, CpuRunKind.Scheduled), RunResult.CollectionProgress);
+					const paid = grant - cpu.instructionBudgetRemaining;
+					if (record !== 0 && memory.readRamRecordWord(trace) === record && cpu.gc.phase() === phase) {
+						if (phase === GcPhase.Mark) ++markSlices;
+						else if (phase === GcPhase.Atomic) ++remarkSlices;
+						// Mid-array and stack scans finish at most one two-word slot across the grant.
+						assert.ok(paid >= grant && paid <= grant + 3);
+					}
+					cycles += paid;
 				}
+				if (capacity > 1 && operation === GarbageCollectionOperation.Collect) assert.ok(markSlices > 1 && remarkSlices > 1);
 				assert.equal(cycles, 32 + 4 + 1 + 3 * work);
 				assert.equal(cpu.readFrameRegister(0, 0),
 					operation === GarbageCollectionOperation.Step ? valueBool(false) : valueNil());

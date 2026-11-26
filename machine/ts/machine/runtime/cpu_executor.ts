@@ -128,7 +128,7 @@ export class CpuExecutionState {
 	}
 
 	public runInstruction(state: FrameState): InstructionStepResult {
-		const result = this.runSlice(state, 1);
+		const result = this.runSlice(state, this.runtime.machine.cpu.gc.fullEpochs() ? MAX_CPU_SLICE_CYCLES : 1);
 		switch (result) {
 			case CpuSliceResult.Advanced:
 				return InstructionStepResult.Advanced;

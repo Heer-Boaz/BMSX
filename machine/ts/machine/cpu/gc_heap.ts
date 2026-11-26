@@ -17,6 +17,7 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import { ceilDiv4, toSignedWord } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
 
+export const GC_WORK_WORD_CYCLES = 3;
 export const GC_TRACE_HEAD = 4;
 export const GC_CHANGED_HEAD = 8;
 // Head, tail and extent; the first two words start on a pair boundary.
@@ -635,21 +636,20 @@ export class GcHeap {
 			let work = 0;
 			let scopedRoots = true;
 			do {
-				work += this.finalMarkWork(t0, t1, t2, scopedRoots);
+				work += this.finalMarkWork(t0, t1, t2, scopedRoots, GC_STEP_WORDS);
 				scopedRoots = this.remarkStage() <= RemarkStage.Weak;
 			} while (this.finalMarkPending());
 			return this.accountEpochWork(work);
 		} finally { this.diagnostics?.endStep(); }
 	}
 
-	public stepFinalMark(): number {
+	public stepFinalMark(limit = GC_STEP_WORDS): number {
 		this.diagnostics?.beginStep();
 		this.diagnostics?.beginAtomic();
-		try { return this.accountEpochWork(this.finalMarkWork(valueNil(), valueNil(), valueNil(), false)); }
+		try { return this.accountEpochWork(this.finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit)); }
 		finally { this.diagnostics?.endStep(); }
 	}
-	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean): number {
-		const limit = GC_STEP_WORDS;
+	private finalMarkWork(t0: Value, t1: Value, t2: Value, scopedRoots: boolean, limit: number): number {
 		let work = 0;
 		if (this.remarkStage() === RemarkStage.None) this.setRemarkStage(RemarkStage.Threads);
 		if (this.remarkStage() <= RemarkStage.Weak) {
@@ -967,8 +967,8 @@ export class GcHeap {
 		this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, this.active() ? 2 : 1);
 		this.cpu.requestYield();
 	}
-	public stepFullCollection(epochs: number): number {
-		const work = this.finalMarkPending() ? this.stepFinalMark() : this.step(valueNil(), valueNil(), valueNil(), 0, true);
+	public stepFullCollection(epochs: number, words: number): number {
+		const work = this.finalMarkPending() ? this.stepFinalMark(words) : this.step(valueNil(), valueNil(), valueNil(), 0, true, words);
 		if (!this.active()) this.memory.writeRamRecordByte(this.controlOffset + GC_FULL_EPOCHS, epochs - 1);
 		return work;
 	}
