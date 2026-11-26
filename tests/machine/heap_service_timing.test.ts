@@ -1,20 +1,24 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
-import { HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
+import {
+	HEAP_SERVICE_DEFERRED_PRESSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_NEWT_OFFSET, HeapServiceNewtStage,
+} from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 test('a real VBlank separates allocator service grants and defers pressure across restore', () => {
 	const path = 'kernel/dlmalloc';
@@ -84,4 +88,55 @@ test('a real VBlank separates allocator service grants and defers pressure acros
 		assert.equal(memory.readRamRecordWord(pending), 0);
 		if (attempt === 0) applyRuntimeSaveState(runtime, partial);
 	}
+});
+
+test('scheduled guest NEWT crosses VBlank without running its caller or pressure assist', () => {
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
+	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine;
+	const frames = runtime.frameScheduler;
+	const boot = captureRuntimeSaveState(runtime);
+	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	const edge = scheduler.nowCycles;
+	applyRuntimeSaveState(runtime, boot);
+	// Measure the ordinary boot prefix independently of the device clock,
+	// then place the physical edge shortly after NEWT starts its BIOS entry.
+	let bootCycles = 0;
+	for (let step = 0; step < 256 && !cpu.heapServiceActive(); ++step) {
+		scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		bootCycles += 1 - cpu.instructionBudgetRemaining;
+	}
+	assert.equal(cpu.heapServiceActive(), true);
+	applyRuntimeSaveState(runtime, boot);
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - bootCycles - 32);
+
+	const stageAddress = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Idle);
+	assert.equal(frames.runCyclesToNextLogicalTick(bootCycles + 64), true);
+	assert.ok(scheduler.nowCycles >= edge);
+	assert.ok(frames.lastTickCpuUsedCycles > 0);
+	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Scheduled);
+	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(cpu.enterPendingInterrupt(), false);
+	assert.equal(runtime.vblank.hasDeferredPressure(), true);
+	const caller = cpu.getFrameDepth() - 1;
+	const issuePc = cpu.readFramePc(caller);
+	const beforeRetirement = scheduler.nowCycles;
+
+	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(memory.readRamRecordWord(stageAddress), HeapServiceNewtStage.Idle);
+	assert.ok(cpu.readFramePc(caller) > issuePc);
+	assert.deepEqual(runtime.readCompletionValues(), [], 'the scheduler has not yet admitted the caller again');
+	assert.ok(scheduler.nowCycles > beforeRetirement);
+	assert.equal(runtime.vblank.hasDeferredPressure(), true);
+	assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Maintenance);
+	assert.equal(runtime.vblank.hasDeferredPressure(), false);
+	frames.runCyclesToNextLogicalTick(30_000);
+	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 });

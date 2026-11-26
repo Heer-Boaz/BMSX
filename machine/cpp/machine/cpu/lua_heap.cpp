@@ -133,21 +133,32 @@ u32 LuaHeap::reserveRecord(u32 bytes, bool object, u32 backingBytes, u32 backing
 u32 LuaHeap::allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField,
 	Value root0, Value root1, Value root2, std::optional<u32> recordCharge, LuaAllocationMode mode, u32 secondBytes, u32 secondField) {
 	const u32 charged = recordCharge.value_or(bytes + backingBytes + secondBytes);
-	if (mode != LuaAllocationMode::Direct) {
-		const bool admitted = mode == LuaAllocationMode::Scheduled
-			? prepareFixedAllocation(charged, root0, root1, root2)
-			: usedBytes() + charged <= capacity();
-		if (!admitted) return 0u;
-		if (mode == LuaAllocationMode::Scheduled)
-			assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes, root0, root1, root2);
+	const u32 physical = bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes;
+	const auto admission = admitRecordAllocation(charged, physical, mode, root0, root1, root2);
+	if (!admission) return 0u;
+	if (mode != LuaAllocationMode::Direct)
 		return reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
-	}
-	auto recovery = admit(charged, root0, root1, root2, 0u);
-	assistBeforeReservation(bytes + (object ? GC_OBJECT_PREFIX : 0u) + backingBytes + secondBytes, root0, root1, root2);
+	auto recovery = *admission;
 	for (;;) {
 		if (const u32 address = reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField)) return address;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2);
 	}
+}
+
+std::optional<LuaAllocationRecovery> LuaHeap::admitRecordAllocation(u32 charged, u32 physical, LuaAllocationMode mode,
+	Value root0, Value root1, Value root2) {
+	if (mode != LuaAllocationMode::Direct) {
+		const bool admitted = mode == LuaAllocationMode::Scheduled
+			? prepareFixedAllocation(charged, root0, root1, root2)
+			: usedBytes() + charged <= capacity();
+		if (!admitted) return std::nullopt;
+		if (mode == LuaAllocationMode::Scheduled)
+			assistBeforeReservation(physical, root0, root1, root2);
+		return LuaAllocationRecovery::CurrentOrFresh;
+	}
+	const auto recovery = admit(charged, root0, root1, root2);
+	assistBeforeReservation(physical, root0, root1, root2);
+	return recovery;
 }
 
 u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root1, Value root2, u32 growingThread) {

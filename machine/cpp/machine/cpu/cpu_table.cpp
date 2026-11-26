@@ -88,10 +88,14 @@ u32 CPU::allocateTable(int arraySize, int hashSize, LuaAllocationMode mode) {
 		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(), TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity), mode,
 		TableRecord::hashStorageBytes(hashCapacity), static_cast<u32>(TableHeader::HashStorage));
 	if (!address) return 0u;
+	publishNewTable(address, arraySize, hashCapacity);
+	return address;
+}
+
+void CPU::publishNewTable(u32 address, int arraySize, size_t hashCapacity) {
 	TableRecord(m_heap, address).initialize(arraySize, hashCapacity);
 	m_heap.publishObject(address);
 	trackLocalRoot(valueTable(address));
-	return address;
 }
 
 void CPU::retireNewTable(CallFrame& frame, int destination, u32 address) {
@@ -101,9 +105,101 @@ void CPU::retireNewTable(CallFrame& frame, int destination, u32 address) {
 
 u32 CPU::reserveNewTable(CallFrame& frame, int destination, int arraySize, int hashSize) {
 	const auto mode = m_runKind == CpuRunKind::Scheduled ? LuaAllocationMode::Scheduled : LuaAllocationMode::Direct;
+	if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveRecord)] != 0u) {
+		const PendingTableCreation create{destination, arraySize, hashSize};
+		const auto stage = mode == LuaAllocationMode::Scheduled ? HeapServiceNewtStage::Scheduled : HeapServiceNewtStage::Direct;
+		if (beginNewTableReservation(frame, create, stage, frame.readControl(FrameField::Pc))) requestYield();
+		else parkAllocation(frame, create);
+		return 0u;
+	}
 	const u32 address = allocateTable(arraySize, hashSize, mode);
 	if (!address) parkAllocation(frame, PendingTableCreation{destination, arraySize, hashSize});
 	return address;
+}
+
+bool CPU::beginNewTableReservation(CallFrame& frame, PendingTableCreation create, HeapServiceNewtStage stage, u32 nextPc) {
+	const auto mode = stage == HeapServiceNewtStage::Direct ? LuaAllocationMode::Direct
+		: stage == HeapServiceNewtStage::Scheduled ? LuaAllocationMode::Scheduled : LuaAllocationMode::Retry;
+	const size_t hashCapacity = TableRecord::hashCapacity(create.hashSize);
+	const u32 charged = TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(create.arraySize, hashCapacity);
+	const u32 arrayBytes = 5u * create.arraySize;
+	const u32 hashBytes = TableRecord::hashStorageBytes(hashCapacity);
+	const u32 physical = TableRecord::HEADER_BYTES + GC_OBJECT_PREFIX + arrayBytes + hashBytes;
+	const auto recovery = m_luaHeap.admitRecordAllocation(charged, physical, mode);
+	if (!recovery) return false;
+	const u32 base = m_heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::Destination), static_cast<u32>(create.destination));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::ArraySize), static_cast<u32>(create.arraySize));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::HashSize), static_cast<u32>(create.hashSize));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::InstructionPc), m_currentInstructionPc);
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::LastPc), lastPc);
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::NextPc), nextPc);
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::DirectRecovery), static_cast<u32>(*recovery));
+	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::Stage), static_cast<u32>(stage));
+	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
+	startNewTableReservation(arrayBytes, hashBytes, charged);
+	return true;
+}
+
+void CPU::startNewTableReservation(u32 arrayBytes, u32 hashBytes, u32 charged) {
+	const std::array arguments{
+		m_heapAllocator.stateOffset(), TableRecord::HEADER_BYTES, 1u, arrayBytes,
+		static_cast<u32>(TableHeader::ArrayStorage), charged,
+		hashBytes, static_cast<u32>(TableHeader::HashStorage),
+		m_heapAllocator.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET,
+	};
+	beginHeapService(m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveRecord)], arguments);
+}
+
+void CPU::finishNewTableReservation() {
+	const u32 base = m_heapAllocator.managementOffset() + HEAP_SERVICE_NEWT_OFFSET;
+	const u32 stageAddress = base + static_cast<u32>(HeapServiceNewtField::Stage);
+	const auto stage = static_cast<HeapServiceNewtStage>(m_memory.readRamRecordWord(stageAddress));
+	if (stage == HeapServiceNewtStage::Idle) return;
+	const PendingTableCreation create{
+		static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::Destination))),
+		static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::ArraySize))),
+		static_cast<int>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::HashSize))),
+	};
+	const u32 nextPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::NextPc));
+	m_currentInstructionPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::InstructionPc));
+	lastPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceNewtField::LastPc));
+	m_lastExecutionDomainId = m_activeExecutionDomainId;
+	auto& frame = *m_activeThread->currentFrame;
+	m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceNewtStage::Idle));
+	if (const u32 offset = heapServiceResult()) {
+		const u32 address = RAM_BASE + offset;
+		publishNewTable(address, create.arraySize, TableRecord::hashCapacity(create.hashSize));
+		retireNewTable(frame, create.destination, address);
+		frame.writeControl(FrameField::Pc, nextPc);
+		return;
+	}
+	switch (stage) {
+		case HeapServiceNewtStage::Direct: {
+			// The firmware has released every partial reservation. Only now
+			// may native collection run, following the original direct retry.
+			const u32 recoveryAddress = base + static_cast<u32>(HeapServiceNewtField::DirectRecovery);
+			const auto recovery = m_heap.recoverAllocation(static_cast<LuaAllocationRecovery>(m_memory.readRamRecordWord(recoveryAddress)));
+			m_memory.writeRamRecordWord(recoveryAddress, static_cast<u32>(recovery));
+			m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceNewtStage::Direct));
+			const size_t hashCapacity = TableRecord::hashCapacity(create.hashSize);
+			startNewTableReservation(5u * create.arraySize, TableRecord::hashStorageBytes(hashCapacity),
+				TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(create.arraySize, hashCapacity));
+			return;
+		}
+		case HeapServiceNewtStage::Scheduled:
+			frame.writeControl(FrameField::Pc, nextPc);
+			parkAllocation(frame, create);
+			return;
+		case HeapServiceNewtStage::RetryCurrent:
+			m_pendingAllocation = {AllocationRecovery::Fresh, m_currentInstructionPc, lastPc, nextPc, create};
+			return;
+		case HeapServiceNewtStage::RetryFresh:
+			throw LuaOutOfMemorySignal{};
+		case HeapServiceNewtStage::Idle:
+			BMSX_UNREACHABLE();
+	}
+	BMSX_UNREACHABLE();
 }
 
 void CPU::markPendingAllocationRoots(GcHeap& heap) {
@@ -162,7 +258,15 @@ void CPU::resumeAllocation() {
 			tableRebuild.census = TableCensus::RetryFresh;
 	} else {
 		const auto& create = std::get<PendingTableCreation>(pending.operands);
-		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
+		u32 address = 0u;
+		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveRecord)] != 0u) {
+			const auto stage = pending.recovery == AllocationRecovery::RetryCurrent
+				? HeapServiceNewtStage::RetryCurrent : HeapServiceNewtStage::RetryFresh;
+			if (beginNewTableReservation(frame, create, stage, pending.nextPc)) {
+				m_pendingAllocation = {};
+				return;
+			}
+		} else address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
 		retired = address != 0u;
 		if (retired) retireNewTable(frame, create.destination, address);
 	}

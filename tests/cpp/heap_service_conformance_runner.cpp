@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/history/ram_history.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/heap_service.h"
@@ -48,6 +49,9 @@ int main(int argc, char** argv) {
 		auto& scheduler = runtime.machine.scheduler;
 		const auto occupied = cpu.heapAllocator().occupiedBytes();
 		RuntimeSaveState saved;
+		RuntimeCheckpointState historyCheckpoint;
+		RamHistory ramHistory;
+		RamHistory::PageMap historyBaseline, historyPartial, historyEnd;
 		for (char op; trace >> op;) {
 			switch (op) {
 				case 'B': {
@@ -79,10 +83,70 @@ int main(int argc, char** argv) {
 						<< ' ' << static_cast<int>(cpu.activeCartridgeSlot()) << '\n';
 					break;
 				}
+				case 'J': {
+					int cycles, mode;
+					trace >> cycles >> mode;
+					const auto result = scheduler.runCpuSlice(0, cycles, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
+						+ HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::Stage));
+					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
+						<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
+				case 'D': {
+					int cycles;
+					trace >> cycles;
+					const auto before = scheduler.nowCycles();
+					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles);
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
+						+ HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::Stage));
+					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
+						<< ' ' << cpu.heapServiceActive() << ' ' << stage << ' '
+						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
+				case 'K': {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+					cpu.prepareSystemNativeCode();
+					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::AllocateTable)];
+					const auto before = allocation;
+					const auto result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
+						+ HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::Stage));
+					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
+						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
+						throw std::runtime_error("The generated AllocateTable exit did not hand off exactly once");
+					if (result != RunResult::Yielded || !cpu.heapServiceActive()
+						|| stage != static_cast<u32>(HeapServiceNewtStage::Scheduled)
+						|| cpu.readFramePc(cpu.getFrameDepth() - 1) != cpu.readCurrentInstructionPc())
+						throw std::runtime_error("The generated NEWT did not suspend at its own instruction");
+					std::cout << allocation.entries - before.entries << '\n';
+#else
+					throw std::runtime_error("Generated NEWT proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
+#endif
+					break;
+				}
+				case 'Q': {
+					cpu.instructionBudgetRemaining = 0;
+					if (cpu.allocationReady()) cpu.resumeAllocation();
+					else cpu.advanceAllocationRecovery();
+					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
+						+ HEAP_SERVICE_NEWT_OFFSET + static_cast<u32>(HeapServiceNewtField::Stage));
+					std::cout << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
+						<< ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
 				case 'A': {
 					u32 bytes;
 					trace >> bytes;
 					std::cout << cpu.heapAllocator().allocate(bytes, true) << '\n';
+					break;
+				}
+				case 'V': {
+					u32 address;
+					trace >> address;
+					cpu.heapAllocator().free(address);
 					break;
 				}
 				case 'C': {
@@ -90,6 +154,13 @@ int main(int argc, char** argv) {
 					std::cout << (values.size() == 0 ? 0 : asInteger(values.get(0))) << '\n';
 					break;
 				}
+				case 'Y': {
+					int array, hash;
+					trace >> array >> hash;
+					std::cout << cpu.createTable(array, hash).address() << '\n';
+					break;
+				}
+				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;
 				case 'F': std::cout << cpu.captureRuntimeState().hardHalted << '\n'; break;
 				case 'T': {
 					runtime.frameLoop.beginFrameState(runtime, 1000000, 0);
@@ -151,6 +222,16 @@ int main(int argc, char** argv) {
 				}
 				case 'S': saved = captureRuntimeSaveState(runtime); break;
 				case 'U': applyRuntimeSaveState(runtime, saved); break;
+				case 'l': ramHistory.capture(memory, nullptr, historyBaseline); break;
+				case 's':
+					captureRuntimeCheckpointState(runtime, historyCheckpoint);
+					ramHistory.capture(memory, &historyBaseline, historyPartial);
+					break;
+				case 'u':
+					ramHistory.capture(memory, &historyPartial, historyEnd);
+					ramHistory.restore(memory, historyEnd, historyPartial);
+					applyRuntimeCheckpointState(runtime, historyCheckpoint, RuntimeRestoreOrigin::HistorySeek);
+					break;
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,
 					PSX_MACHINE_SPEC.gxGpuVramBytes)); break;
 				default: throw std::runtime_error("Unknown fixture operation");

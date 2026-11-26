@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { readLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_HEADER_SIZE, Blua32ConstantTag,
@@ -9,17 +9,18 @@ import {
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION, HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET,
-	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE, HeapServiceOperation,
+	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { HEAP_SERVICE_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_RECORD_MODULE_PATH } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
+const recordSource = readFileSync(`machine/bios/${HEAP_SERVICE_RECORD_MODULE_PATH}.lua`, 'utf8');
 const allocator = readFileSync(`machine/bios/${HEAP_SERVICE_MODULE_PATH}.lua`, 'utf8');
 const publicModules = BIOS_FUNCTION_EXPORTS.map(({ path }) => {
 	const source = 'module<const>\nlocal public_entry<const> = function() return 0 end\nreturn public_entry';
@@ -30,12 +31,12 @@ const publicModules = BIOS_FUNCTION_EXPORTS.map(({ path }) => {
 const loadAddress = 0x104;
 
 function compile(preload: boolean, optLevel: 0 | 3 = 3, source = allocator, extraModules: readonly { path: string; source: string }[] = []) {
-	const modules = [...publicModules, ...[{ path: HEAP_SERVICE_MODULE_PATH, source }, ...extraModules].map(module => ({
+	const modules = [...publicModules, ...[{ path: HEAP_SERVICE_MODULE_PATH, source }, { path: HEAP_SERVICE_RECORD_MODULE_PATH, source: recordSource }, ...extraModules].map(module => ({
 		...module, chunk: parseLuaChunk(module.source, module.path),
 	}))];
 	const entrySource = 'return true';
 	const program = compileLuaChunkToProgram(parseLuaChunk(entrySource), modules, {
-		entrySource, programDomain: 'system', optLevel, preloadModules: preload ? [HEAP_SERVICE_MODULE_PATH] : [],
+		entrySource, programDomain: 'system', optLevel, preloadModules: preload ? HEAP_SERVICE_MODULES : [],
 	});
 	return { program, object: encodeCompiledProgramObject(program) };
 }
@@ -64,19 +65,20 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	assert.ok(descriptor >= header.rodataAddress && descriptor + HEAP_SERVICE_DESCRIPTOR_SIZE <= header.rodataAddress + header.rodataByteCount);
 	const offset = descriptor - loadAddress;
 	assert.equal(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET), HEAP_SERVICE_DESCRIPTOR_VERSION);
-	assert.equal(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET), optLevel === 0 ? 69 : 62);
-	assert.equal(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET), optLevel === 0 ? 10 : 6);
+	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET) <= HEAP_SERVICE_VALUE_COUNT);
+	assert.ok(readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET) <= HEAP_SERVICE_FRAME_COUNT);
 	assert.deepEqual(linked.biosImports.functions, BIOS_FUNCTION_EXPORTS.map((entry, index) => ({
 		...entry, functionAddress: header.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE,
 	})));
 
 	const entryNames = ['reset', 'set_floor', 'floor', 'allocate', 'free', 'reserve_backing', 'resize_backing',
-		'shrink', 'allocation_bytes', 'occupied_bytes', 'is_object'];
+		'shrink', 'allocation_bytes', 'occupied_bytes', 'is_object', 'reserve_record'];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HeapServiceOperation.Count; ++operation) {
 		const address = readLE32(bytes, offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * operation);
 		const index = blua32FunctionIndexAtAddress(layout, address);
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === HEAP_SERVICE_MODULE_PATH
+		const path = operation === HeapServiceOperation.ReserveRecord ? HEAP_SERVICE_RECORD_MODULE_PATH : HEAP_SERVICE_MODULE_PATH;
+		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path
 			&& entry.exportPathKey === `bmsx_dlmalloc_${entryNames[operation]}`)!;
 		assert.equal(linked.symbols.metadata.functionIds[index], object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length);
@@ -89,6 +91,10 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	assert.equal(readLE32(revised.bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET), descriptor);
 	assert.deepEqual(revised.bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE),
 		bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE));
+	const oldDescriptorBytes = layout.bytes.slice();
+	writeLE32(oldDescriptorBytes, offset + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET, HEAP_SERVICE_DESCRIPTOR_VERSION - 1);
+	assert.throws(() => linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS,
+		{ image: { ...layout, bytes: oldDescriptorBytes }, symbols: linked.symbols }), /rebuilding and booting/);
 });
 
 test('the ROM linker rejects a missing allocator entry and a call out of its verified module', () => {

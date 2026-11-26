@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
@@ -15,13 +15,12 @@ import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_ma
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
-import { HEAP_SERVICE_MODULE_PATH } from '../../../toolchain/ts/rompack/blua32_heap_service';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const allocator = readFileSync(`machine/bios/${HEAP_SERVICE_MODULE_PATH}.lua`, 'utf8');
 const biosSource = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const cartSource = 'bss records: word[0x10000]\nrecords[0] = 37\nreturn records[0]';
 
@@ -30,9 +29,7 @@ const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-exec-heap-floor-'
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
-		const bios = compileLuaChunkToProgram(parseLuaChunk(biosSource), [{
-			path: HEAP_SERVICE_MODULE_PATH, source: allocator, chunk: parseLuaChunk(allocator, HEAP_SERVICE_MODULE_PATH),
-		}], { entrySource: biosSource, optLevel, programDomain: 'system', preloadModules: [HEAP_SERVICE_MODULE_PATH] });
+		const bios = compileHeapServiceSystem(biosSource, optLevel);
 		const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel });
 		const pair = linkTestBlua32Pair(bios, cart);
 		const otherCartSource = cartSource.replace('37', '73');

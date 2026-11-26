@@ -515,7 +515,11 @@ private:
 	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
 	void parkAllocation(CallFrame&, PendingAllocation::Operands);
 	u32 allocateTable(int arraySize, int hashSize, LuaAllocationMode);
+	void publishNewTable(u32 address, int arraySize, size_t hashCapacity);
 	u32 reserveNewTable(CallFrame&, int destination, int arraySize, int hashSize);
+	bool beginNewTableReservation(CallFrame&, PendingTableCreation, HeapServiceNewtStage, u32 nextPc);
+	void startNewTableReservation(u32 arrayBytes, u32 hashBytes, u32 charged);
+	void finishNewTableReservation();
 	void retireNewTable(CallFrame&, int destination, u32 address);
 	void markPendingAllocationRoots(GcHeap& heap);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);

@@ -152,11 +152,11 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
-		if (cpu.allocationParked() || cpu.heapServiceActive() || runtime.vblank.hasDeferredPressure()) return CpuSuspendedRunResult.Halted;
+		if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure())) return CpuSuspendedRunResult.Halted;
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
-		if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
+		if (!cpu.heapServiceActive() && cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
 		runDueRuntimeTimers(runtime);
 		while (cpu.readThreadFrameDepth(targetThread) > targetDepth) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
@@ -164,7 +164,7 @@ export class CpuExecutionState {
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
-			if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
+			if ((!cpu.heapServiceActive() && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
@@ -200,10 +200,11 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
+			if (!cpu.heapServiceActive() && cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
 			if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
+			if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure())) return CpuSuspendedRunResult.Halted;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
 			}

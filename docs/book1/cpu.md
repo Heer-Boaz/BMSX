@@ -1507,13 +1507,13 @@ indivisible record operation can exceed its allowance; the CPU charges the
 actual work. Device time advances for that work, while interrupt entry and
 execution of the following instruction wait until the fresh cycle completes.
 
-Recovery for `NEWT` or for a table insertion can pause execution with the
-console clock stopped. For a table insertion this applies both when its
-proposed capacity exceeds the remaining logical budget and when its backing
-storage does not fit. After collection, the CPU replans the insertion using
-the surviving mappings. No table or new mapping is visible until the
-reservation succeeds. The instruction completes, or raises its error, before the console
-accepts a following interrupt or device deadline.
+Collection between reservation attempts for `NEWT` or a table insertion can
+pause execution with the console clock stopped. For a table insertion this
+applies both when its proposed capacity exceeds the remaining logical budget
+and when its backing storage does not fit. After collection, the CPU replans
+the insertion using the surviving mappings. No table or new mapping is
+visible until its reservation succeeds. Interrupt entry and the following
+instruction wait until the request completes or raises its error.
 
 When an instruction assists incremental collection to admit a logical charge
 or reserve physical storage, it pays **3 cycles per collector work word**
@@ -1618,9 +1618,15 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 | `SELF` | `3EH` | `A, B, C` | Preserve original `R(B)` in `R(A+1)`, then set `R(A) = index(original R(B), K(C))`, where `K(C)` supplies the string key. | 17 |
 | `NEWT` | `10H` | `A, B, C` | Put a new table in `R(A)`, with array-capacity request `B` and hash-size request `C`. | 24 |
 
-`NEWT` has a base charge of 24 cycles whether the construction succeeds or fails. The
-capacity requests determine the storage reservation against the
-language-allocation budget; they do not change that base charge.
+`NEWT` has a base charge of 24 cycles whether the construction succeeds or fails.
+The capacity requests determine the storage reservation against the
+language-allocation budget; they do not change that base charge. The resident
+memory routine reserves the table record and any requested array and hash
+storage using ordinary CPU cycles, in addition to the base charge. The
+routine can continue across cycle grants while devices advance. The CPU
+does not publish the table to the destination register until the whole
+reservation succeeds. A retry pays for its own reservation work without
+paying the base charge again.
 
 An insertion may reserve more storage. Its base charge does not depend on
 whether the current storage can hold the mapping, or on how entries are

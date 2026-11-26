@@ -336,7 +336,7 @@ export type Blua32ExecutionImage = {
 	executionDomainId: ExecutionDomainId;
 	irqFunctionAddress: number;
 	staticEnd: number;
-	heapServiceSetFloor: number;
+	heapServiceFunctions: Uint32Array | null;
 	constantBase: number;
 	constTags: Uint8Array;
 	constWords: Uint32Array;

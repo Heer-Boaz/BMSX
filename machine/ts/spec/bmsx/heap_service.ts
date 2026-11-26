@@ -6,10 +6,10 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject, ReserveRecord, Count,
 }
 
-export const HEAP_SERVICE_DESCRIPTOR_VERSION = 1;
+export const HEAP_SERVICE_DESCRIPTOR_VERSION = 2;
 export const HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET = 0;
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 4;
 export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 8;
@@ -32,3 +32,10 @@ export const HEAP_SERVICE_FRAME_COUNT = 16;
 export const HEAP_SERVICE_VALUE_COUNT = 128;
 
 export const enum HeapServiceExecStage { Idle, First, Retry }
+
+export const HEAP_SERVICE_NEWT_OFFSET = 0xf00;
+export const enum HeapServiceNewtField {
+	Stage = 0, Destination = 4, ArraySize = 8, HashSize = 12,
+	InstructionPc = 16, LastPc = 20, NextPc = 24, DirectRecovery = 28,
+}
+export const enum HeapServiceNewtStage { Idle, Direct, Scheduled, RetryCurrent, RetryFresh }

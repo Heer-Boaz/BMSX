@@ -271,7 +271,10 @@ DISPATCH_LABEL(NEWT) {
 	const int c = decoded->c;
 	PUBLISH_SCALAR_FRONTIER();
 	const u32 table = reserveNewTable(FRAME, a, b, c);
-	if (!table) return RunResult::ParkedAllocation;
+	if (!table) {
+		if (heapServiceActive()) DISPATCH_CONTINUE();
+		return RunResult::ParkedAllocation;
+	}
 	RESUME_SCALAR_FRONTIER();
 	SET_REGISTER_FAST(a, valueTable(table));
 	DISPATCH_NEXT();

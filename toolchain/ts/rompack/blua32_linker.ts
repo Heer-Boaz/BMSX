@@ -98,9 +98,10 @@ import type {
 import { programModuleExportKey } from '../lua/compiler/program';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import {
-	HEAP_SERVICE_DESCRIPTOR_SIZE, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
+	HEAP_SERVICE_DESCRIPTOR_SIZE, HEAP_SERVICE_DESCRIPTOR_VERSION, HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET,
+	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 } from '../../../machine/ts/spec/bmsx/heap_service';
-import { writeLE32 } from '../../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { fmix32, hashText } from '../../../machine/ts/common/hash';
 import { Blua32RomStringLayout } from './blua32_rom_strings';
 import { hashAssetId } from '../../../machine/ts/rompack/tokens';
@@ -712,6 +713,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	if (input.domain === 'system' && input.previous !== undefined
 		&& ((input.previous.image.header.flags & HEAP_SERVICE_IMAGE_FLAG) !== 0) !== heapService)
 		throw new Error('Changing the system heap service requires rebuilding and booting the system ROM.');
+	if (heapService && input.previous !== undefined) {
+		const previous = input.previous.image;
+		const descriptor = readLE32(previous.bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET) - previous.address;
+		if (readLE32(previous.bytes, descriptor + HEAP_SERVICE_DESCRIPTOR_VERSION_OFFSET) !== HEAP_SERVICE_DESCRIPTOR_VERSION)
+			throw new Error('Changing the system heap service requires rebuilding and booting the system ROM.');
+	}
 	let offset = heapService ? HEAP_SERVICE_IMAGE_HEADER_SIZE : BLUA32_IMAGE_HEADER_SIZE;
 	let rodataOffset = 0;
 	let dataLoadOffset = 0;

@@ -38,6 +38,10 @@ public:
 	u32 allocateRecord(u32 bytes, bool object, u32 backingBytes, u32 backingField, Value root0 = valueNil(), Value root1 = valueNil(),
 		Value root2 = valueNil(), std::optional<u32> recordCharge = {}, LuaAllocationMode mode = LuaAllocationMode::Direct,
 		u32 secondBytes = 0, u32 secondField = 0);
+	// A physical reservation can be performed by either allocator entry.
+	// Both consume this same logical admission and collector policy.
+	std::optional<LuaAllocationRecovery> admitRecordAllocation(u32 charged, u32 physical, LuaAllocationMode mode,
+		Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil());
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);

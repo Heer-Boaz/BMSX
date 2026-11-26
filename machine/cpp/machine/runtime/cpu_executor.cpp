@@ -139,11 +139,11 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
-	if (cpu.allocationParked() || cpu.heapServiceActive() || runtime.vblank.hasDeferredPressure(runtime)) return CpuSuspendedRunResult::Halted;
+	if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure(runtime))) return CpuSuspendedRunResult::Halted;
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
-	if (cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
+	if (!cpu.heapServiceActive() && cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
 	runDueRuntimeTimers(runtime);
 	while (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
@@ -151,7 +151,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
 		}
-		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
+		if ((!cpu.heapServiceActive() && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				return CpuSuspendedRunResult::Halted;
@@ -189,10 +189,11 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		if (cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
+		if (!cpu.heapServiceActive() && cpu.gcHeap().stoppedFinalMarkPending()) cpu.gcHeap().finishFinalMark();
 		if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}
+		if (!cpu.heapServiceActive() && (cpu.allocationParked() || runtime.vblank.hasDeferredPressure(runtime))) return CpuSuspendedRunResult::Halted;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
 		}

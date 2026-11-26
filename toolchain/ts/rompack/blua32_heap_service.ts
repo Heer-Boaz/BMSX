@@ -10,8 +10,10 @@ import { deriveBlua32FixedStack } from './blua32_fixed_stack';
 import { blua32FunctionIndexAtAddress, type Blua32ImageLayout } from './blua32_image';
 
 export const HEAP_SERVICE_MODULE_PATH = 'kernel/dlmalloc';
+export const HEAP_SERVICE_RECORD_MODULE_PATH = 'kernel/dlmalloc_record';
+export const HEAP_SERVICE_MODULES = [HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_RECORD_MODULE_PATH] as const;
 
-const entries = {
+const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
 	[HeapServiceOperation.Reset]: ['reset', 3],
 	[HeapServiceOperation.SetFloor]: ['set_floor', 2],
 	[HeapServiceOperation.Floor]: ['floor', 1],
@@ -23,7 +25,8 @@ const entries = {
 	[HeapServiceOperation.AllocationBytes]: ['allocation_bytes', 2],
 	[HeapServiceOperation.OccupiedBytes]: ['occupied_bytes', 1],
 	[HeapServiceOperation.IsObject]: ['is_object', 2],
-} as const satisfies Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number]>;
+	[HeapServiceOperation.ReserveRecord]: ['reserve_record', 9, HEAP_SERVICE_RECORD_MODULE_PATH],
+};
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */
 export function linkBlua32HeapService(
@@ -35,16 +38,16 @@ export function linkBlua32HeapService(
 ): void {
 	const localFunctions = new Set<number>();
 	for (const { path, exportPathKey } of moduleExports) {
-		if (path !== HEAP_SERVICE_MODULE_PATH) continue;
+		if (path !== HEAP_SERVICE_MODULE_PATH && path !== HEAP_SERVICE_RECORD_MODULE_PATH) continue;
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, exportPathKey));
 		if (address !== undefined) localFunctions.add(blua32FunctionIndexAtAddress(image, address));
 	}
 
 	const roots: number[] = [];
 	for (let op = 0; op < HeapServiceOperation.Count; ++op) {
-		const [name, params] = entries[op];
+		const [name, params, path = HEAP_SERVICE_MODULE_PATH] = entries[op];
 		const symbol = `bmsx_dlmalloc_${name}`;
-		const address = functionAddressBySymbol.get(programModuleExportKey(HEAP_SERVICE_MODULE_PATH, symbol));
+		const address = functionAddressBySymbol.get(programModuleExportKey(path, symbol));
 		if (address === undefined) throw new Error(`Heap service entry '${symbol}' is not a linked static function.`);
 		const index = blua32FunctionIndexAtAddress(image, address);
 		if (image.functions[index].numParams !== params)

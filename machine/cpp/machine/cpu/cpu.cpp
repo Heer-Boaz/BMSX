@@ -371,8 +371,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 			if (!version || version->upvalueCount != 0u || version->entry.registerCapacity() > values
 				|| (version->entry.flags & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) != BLUA32_FUNCTION_STATIC)
 				throw BMSX_RUNTIME_ERROR("Heap service descriptor does not name a fixed System ROM activation.");
+			image->heapServiceFunctions[index] = entry;
 		}
-		image->heapServiceSetFloor = readLE32(functions + static_cast<u32>(HeapServiceOperation::SetFloor) * sizeof(u32));
 	}
 	if (update == ExecutionImageUpdate::Replace) {
 		admitImageReplacement(*image);
@@ -888,7 +888,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		staticEnd = targetBoot->staticEnd;
 	}
 	if (staticEnd) {
-		if (const u32 service = m_systemImage->heapServiceSetFloor) {
+		if (const u32 service = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::SetFloor)]) {
 			const u32 management = m_heapAllocator.managementOffset();
 			const u32 floor = m_heapAllocator.floorOffset(*staticEnd);
 			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET, functionAddress);
@@ -928,7 +928,7 @@ void CPU::finishExecutionFloor() {
 		m_luaHeap.collectRuntime();
 		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Retry));
 		const std::array arguments{m_heapAllocator.stateOffset(), floor};
-		beginHeapService(m_systemImage->heapServiceSetFloor, arguments);
+		beginHeapService(m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::SetFloor)], arguments);
 	} else {
 		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Idle));
 		hardHalt();
@@ -2512,6 +2512,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		if (!heapServiceActive()) {
 			try {
 				finishExecutionFloor();
+				finishNewTableReservation();
 			} catch (const LuaOutOfMemorySignal&) {
 				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
 				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);

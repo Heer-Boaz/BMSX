@@ -6,9 +6,9 @@ import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
@@ -17,7 +17,9 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 function assertParity(js: CPU, ref: CPU): void {
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'full values, heap graph, roots, frame extents and control latches');
@@ -25,6 +27,59 @@ function assertParity(js: CPU, ref: CPU): void {
 	assert.equal(js.readCurrentInstructionPc(), ref.readCurrentInstructionPc());
 	assert.equal(js.lastPc, ref.lastPc);
 }
+
+test('a warm JavaScript NEWT exit yields to the bound BIOS before its compiled continuation', t => {
+	const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
+	assert.ok(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
+	const functionAddress = image.vectors.entryFunctionAddress;
+	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
+	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const frame = cpu.rootThread.frameAtDepth(0);
+	const enter = () => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
+	const grant = () => cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled);
+	function retireService() {
+		for (let grantIndex = 0; grantIndex < 16 && cpu.heapServiceActive(); ++grantIndex)
+			assert.equal(grant(), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), false);
+	}
+	for (let visit = 0; visit <= COMPILED_BLOCK_THRESHOLD; ++visit) {
+		enter();
+		assert.equal(grant(), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), true);
+		retireService();
+	}
+	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
+	const block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
+	const { terminal, region } = block;
+	assert.equal(terminal.exit, CompiledBlockExit.AllocateTable);
+	assert.ok(terminal.resumesFrame);
+	assert.ok(block.page.compiledBlocks!.entries[(terminal.nextPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES],
+		'the generated region includes a warm continuation');
+	assert.ok(terminal.exitB > 0 && terminal.exitC > 0, 'the compound reservation includes both backings');
+	const execute = region.execute;
+	let returnedExit: CompiledBlockExit | undefined;
+	const compiled = t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
+		const exitIndex = execute(...args);
+		returnedExit = region.exits[exitIndex].exit;
+		return exitIndex;
+	});
+	enter();
+	frame.registers.setInteger(terminal.exitA, 73);
+	assert.equal(grant(), RunResult.Yielded);
+	assert.equal(compiled.mock.callCount(), 1);
+	assert.equal(returnedExit, CompiledBlockExit.AllocateTable);
+	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(frame.pc, terminal.currentPc);
+	assert.equal(frame.registers.getInteger(terminal.exitA), 73, 'destination was not committed at launch');
+	retireService();
+	assert.equal(compiled.mock.callCount(), 1, 'allocator grants ran only the pinned BIOS lane');
+	assert.equal(frame.pc, terminal.nextPc);
+	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.Table);
+	assert.equal(grant(), RunResult.Halted);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	assert.deepEqual(values, [valueInteger(42)]);
+});
 
 for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value kind before an overlapping write (A=${destination})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

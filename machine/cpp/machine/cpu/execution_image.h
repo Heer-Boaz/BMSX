@@ -27,6 +27,8 @@
 #include "machine/cpu/jit/runtime/field_feedback.h"
 #endif
 
+#include "spec/bmsx/heap_service.h"
+
 namespace bmsx {
 
 struct Blua32ExecutionImage;
@@ -173,7 +175,7 @@ struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
-	u32 heapServiceSetFloor = 0;
+	std::array<u32, static_cast<size_t>(HeapServiceOperation::Count)> heapServiceFunctions{};
 	u32 constantBase = 0;
 	ConstValueSpan constPool;
 	// Derived from the immutable pool, including during restore. Only a

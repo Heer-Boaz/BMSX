@@ -85,6 +85,8 @@
 		"test:bios-dlmalloc-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/blua.ts",
 		"test:bios-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/private_service.ts",
 		"test:bios-exec-heap-floor": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/exec_floor.ts",
+		"test:bios-newt-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/newt.ts",
+		"test:bios-newt-native-gate": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/native_newt.ts",
 		"test:symbols-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/symbols/run.ts",
 		"test:host-shortcuts-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/host_shortcuts/run.ts",
 		"test:keyboard-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/keyboard/run.ts",
