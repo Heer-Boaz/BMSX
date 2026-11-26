@@ -116,6 +116,14 @@ production throughput; `Debug` also retains assertions and is a distinct gate.
 Record the compiler, CPU and build flags alongside results. Do not compare Debug
 with Release, or treat QEMU throughput as hardware throughput.
 
+For native field-lookup timing, build the separate
+`bmsx_cpu_throughput_benchmark` target and run it through
+`npm run test:exec -- <build-dir>/bmsx_cpu_throughput_benchmark --field-misses`.
+It executes the same four-instruction loop with a missing field at the end
+of a 1-, 16- or 64-node hash chain. Table construction and verification are
+outside the timed grants. Compare the reported active cycles, wall time and
+guest MHz on the target device; this isolates CPU time, not whole-frame cost.
+
 The default compiler optimization level is O3; `--opt-level 0` tests unoptimized
 Lua. Optional `--filter 'math|concat|closure'` selects workloads and
 `--grants 256,4096` selects CPU slice sizes. Omitting both C++ paths runs only the

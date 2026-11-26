@@ -25,7 +25,7 @@
 namespace {
 using namespace bmsx;
 
-enum class Workload { Registers, Tables, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
+enum class Workload { Registers, Tables, FieldMiss, Builtin, Ram, Calls, CallsBacked, CallsArithmetic, CallsRamRecord, CodeWrites, Fractions, Comparisons, TableChurn, TableChurnLive, Globals, Upvalues, Varargs };
 constexpr u32 RAM_RECORD_ADDRESS = DYNAMIC_RAM_BASE + 0x18000;
 
 test::Blua32TestImage program(Workload workload) {
@@ -42,6 +42,15 @@ test::Blua32TestImage program(Workload workload) {
 		writeInstruction(text, 4, static_cast<u8>(OpCode::SUB), 6, 5, 1);
 		writeInstruction(text, 5, static_cast<u8>(OpCode::NOT), 7, 6, 0);
 		writeInstruction(text, 6, static_cast<u8>(OpCode::JMPIFNOT), 7, 63, 57, 255);
+		break;
+	case Workload::FieldMiss:
+		image.text.resize(4 * INSTRUCTION_BYTES);
+		image.functions[0].wordCount = 4;
+		image.constants = {std::string("field")};
+		writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 6, 0, 0);
+		writeInstruction(text, 1, static_cast<u8>(OpCode::GETFIELD), 6, 6, 0);
+		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 7, 6, 0);
+		writeInstruction(text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
 		break;
 	case Workload::Tables:
 		image.constants = {std::string("field")};
@@ -185,7 +194,7 @@ test::Blua32TestImage program(Workload workload) {
 	return image;
 }
 
-void measure(Workload workload, const char* name, int grant, int round, bool fullyBacked) {
+void measure(Workload workload, const char* name, int grant, int round, bool fullyBacked, int fieldNodes = 0) {
 	const auto image = program(workload);
 	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	if (fullyBacked || workload == Workload::CallsBacked || workload == Workload::CallsRamRecord) {
@@ -215,6 +224,22 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			child.setStringKey(field, valueInteger(index));
 			retained->setInteger(index, valueTable(child.address()));
 		}
+	}
+	if (workload == Workload::FieldMiss) {
+		auto table = cpu.createTable(0, 64);
+		registers.set(0, valueTable(table.address()));
+		cpu.activeThread()->currentFrame->setTop(1);
+		const auto field = cpu.stringPool().intern("field");
+		const int home = table.beginStringProbe(field).node;
+		for (int n = 0, added = 0; added < fieldNodes; ++n) {
+			const auto key = cpu.stringPool().intern("field_" + std::to_string(n));
+			if (table.beginStringProbe(key).node != home) continue;
+			table.setStringKey(key, valueInteger(++added));
+		}
+		auto probe = table.beginStringProbe(field);
+		if (table.advanceStringProbe(field, probe, 64) != static_cast<size_t>(fieldNodes) || !isNil(probe.value))
+			throw std::runtime_error("Field miss must traverse the specified chain.");
+		registers.set(7, valueBool(false));
 	}
 	if (workload == Workload::Tables) {
 		TableRecord table = cpu.createTable(8, 1);
@@ -267,6 +292,8 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 			codeOutcomes |= value == valueInteger(1) ? 2u : 0u;
 		}
 	}
+	if (workload == Workload::FieldMiss && !isNil(cpu.readFrameRegister(0, 7)))
+		throw std::runtime_error("The field miss loop must have published its nil result.");
 	if (workload == Workload::CodeWrites && codeOutcomes != 3u) {
 		throw std::runtime_error("Executable RAM writes must change both the instruction and its observed result.");
 	}
@@ -336,18 +363,25 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 }
 
 int main(int argc, char** argv) {
-	bool ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
+	bool fieldMisses = false, ramRecords = false, comparisons = false, allocations = false, fullyBacked = false, context = false;
 	for (int argument = 1; argument < argc; ++argument) {
 		const std::string_view option(argv[argument]);
-		if (option == "--ram-records") ramRecords = true;
+		if (option == "--field-misses") fieldMisses = true;
+		else if (option == "--ram-records") ramRecords = true;
 		else if (option == "--comparisons") comparisons = true;
 		else if (option == "--allocations") allocations = true;
 		else if (option == "--fully-backed") fullyBacked = true;
 		else if (option == "--context") context = true;
-		else throw std::runtime_error("Expected --ram-records, --comparisons, --allocations, --context or --fully-backed.");
+		else throw std::runtime_error("Expected --field-misses, --ram-records, --comparisons, --allocations, --context or --fully-backed.");
 	}
 	std::cout << std::fixed << std::setprecision(3);
 	for (const int grant : {256, 4096}) for (int round = 0; round < 3; ++round) {
+		if (fieldMisses) {
+			measure(Workload::FieldMiss, "field-miss-1", grant, round, fullyBacked, 1);
+			measure(Workload::FieldMiss, "field-miss-16", grant, round, fullyBacked, 16);
+			measure(Workload::FieldMiss, "field-miss-64", grant, round, fullyBacked, 64);
+			continue;
+		}
 		if (context) {
 			measure(Workload::Globals, "globals", grant, round, fullyBacked);
 			measure(Workload::Upvalues, "upvalues", grant, round, fullyBacked);
