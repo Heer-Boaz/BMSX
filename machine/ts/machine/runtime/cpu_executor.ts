@@ -267,8 +267,11 @@ export class CpuExecutionState {
 			} finally {
 				scheduler.endCpuSlice();
 			}
-			if (cpu.allocationParked()) return CpuSliceResult.ParkedAllocation;
 			const consumed = deferred - cpu.instructionBudgetRemaining;
+			if (cpu.allocationParked()) {
+				state.deferredAllocationCycles = consumed;
+				return CpuSliceResult.ParkedAllocation;
+			}
 			state.deferredAllocationCycles = 0;
 			state.cycleBudgetRemaining -= consumed;
 			state.activeCpuUsedCycles += consumed;

@@ -151,6 +151,29 @@ void grantsAndRestore() {
 	}
 }
 
+void integerStoreCensus() {
+	Program program(OpCode::SETT, false);
+	writeInstruction(program.image.text, 1, static_cast<u8>(OpCode::SETT), 6, 1, 2);
+	Machine generated(program.image, false), scalar(program.image, true);
+	for (const int capacity : {64, 65, 68, 69, 8192}) for (const int spare : {0, 1}) {
+		for (auto* m : {&generated, &scalar}) {
+			auto& cpu = m->cpu;
+			auto table = cpu.createTable(capacity, spare);
+			for (int i = 1; i <= capacity; ++i) table.setInteger(i, valueInteger(i));
+			auto r = cpu.activeThread()->currentFrame->registers;
+			r.set(0, valueTable(table.address())); r.set(1, valueFloat(capacity + 1));
+			r.set(2, valueBool(false)); r.set(8, valueInteger(91));
+			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		}
+		test::runCpuParity(generated.cpu, scalar.cpu, 3);
+		const int scan = spare ? 0 : (capacity - 64 + 3) / 4;
+		require(3 - generated.cpu.instructionBudgetRemaining == 18 + scan
+			&& generated.cpu.readFrameRegister(0, 8) == valueInteger(91)
+			&& asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap()).getInteger(capacity+1) == valueBool(false),
+			"only an actual positive-integer repartition charges its array scan before the suffix");
+	}
+}
+
 void exhaustedStringChainCharges() {
 	for (int capacity : {8, 256}) for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
 		Program program(op, false);
@@ -692,7 +715,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); integerStoreCensus(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}

@@ -61,10 +61,10 @@ public:
 		std::span<const Value> values) noexcept;
 
 	Value get(const Value& key) const;
-	void set(const Value& key, const Value& value);
+	void set(const Value& key, const Value& value, int* cycles = nullptr);
 	// A resolved opcode write may suspend only on a physical backing refusal.
-	int assignScheduled(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
-	bool resumeAssignment(Value key, Value value, u8 extraHashSlots);
+	int assignScheduled(Value key, Value value, int& cycles, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	bool resumeAssignment(Value key, Value value, u8 extraHashSlots, int* cycles = nullptr);
 	// The caller supplies a Table key. An absent mapping checks __newindex.
 	// Growth returns in place when no collection is required. Declining leaves the table and collector unchanged.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
@@ -214,10 +214,10 @@ private:
 	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
 	enum class HashStore : u8 { General, Scheduled, Resume, ReturningIndex, ReturningField };
 	template <HashStore Policy>
-	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots)
+	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, int* cycles = nullptr)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
-	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
+	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr);
 	template <HashStore Policy>
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
@@ -292,10 +292,10 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
-	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
+	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, int* cycles = nullptr)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
-	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots)
+	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, int* cycles = nullptr)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;

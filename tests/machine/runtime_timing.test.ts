@@ -594,7 +594,8 @@ test('a physically refused WIDE SETT retires before queued VBlank, even after a 
 		const beforeWrite = captureRuntimeSaveState(runtime);
 		assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 		assert.ok(cpu.allocationParked());
-		const charge = BASE_CYCLES[OpCode.SETT] + TABLE_INDEX_VISIT_CYCLES + 3 * (memory.readRamRecordWord(paidAt) - beforeAssist);
+		const scan = (512 - 64) / 4;
+		const charge = BASE_CYCLES[OpCode.SETT] + TABLE_INDEX_VISIT_CYCLES + 2 * scan + 3 * (memory.readRamRecordWord(paidAt) - beforeAssist);
 		let accepted = 1;
 		const unchanged = () => {
 			assert.equal(scheduler.nowCycles, edge - 1);
@@ -821,7 +822,8 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	const clock = scheduler.nowCycles;
 	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
 	assert.ok(cpu.allocationParked());
-	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2);
+	const scan = (512 - 64) / 4;
+	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2 - 2 * scan);
 	const drain = () => {
 		for (let n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
@@ -836,6 +838,7 @@ test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', (
 	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryCurrent);
 	assert.equal(fs.advanceLogicalTick(0), LogicalTickResult.DeferredCpu);
 	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
+	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2 - scan);
 	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const finish = () => {
 		drain();

@@ -474,7 +474,8 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	const auto beforeWrite = captureRuntimeSaveState(runtime);
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"the physically refused WIDE SETT parks before the scheduled edge");
-	const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES
+	const int scan = (512 - 64) / 4;
+	const int charge = BASE_CYCLES[static_cast<u8>(OpCode::SETT)] + TABLE_INDEX_VISIT_CYCLES + 2 * scan
 		+ 3 * static_cast<int>(machine.memory.readRamRecordWord(paidAt) - beforeAssist);
 	i64 accepted = 1;
 	const auto unchanged = [&] {
@@ -619,15 +620,16 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	cpu.runUntilDepth(0, 1); // The direct CPU owner deliberately retains synchronous recovery.
 	const int charge = 1 - cpu.instructionBudgetRemaining;
 	const int base = BASE_CYCLES[static_cast<u8>(OpCode::SETT)];
-	require(cpu.getFrameDepth() == 1 && charge > base + 2 && (charge - base - 2) % 3 == 0,
+	const int scan = (512 - 64) / 4;
+	require(cpu.getFrameDepth() == 1 && charge > base + 2 + 3 * scan && (charge - base - 2 - 3 * scan) % 3 == 0,
 		"inline protected failure pays for the assist and transports its two result values");
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const i64 clock = runtime.machine.scheduler.nowCycles();
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
 		"physical failure parks rather than exiting the protected frame");
-	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2,
-		"the parked grant retains the identical assist but has not delivered the two results");
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - 2 * scan,
+		"the first refusal retains one scan, not the two retries or result placement");
 	const auto drain = [&] {
 		for (int n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked,
@@ -642,6 +644,7 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	require(scheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::DeferredCpu
 		&& cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::Fresh,
 		"a failed retry admits one fresh epoch, not a completed instruction");
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - scan, "the second scan survives the fresh-epoch wait");
 	const auto checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
 		drain();

@@ -5,6 +5,7 @@ import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASO
 import { LuaExecutionError } from './errors';
 import { LuaAllocationMode, LuaAllocationRecovery } from './lua_heap';
 import { gcPacedPhase, type GcHeap } from './gc_heap';
+import type { CPU } from './cpu';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
@@ -466,16 +467,16 @@ export class TableRecords {
 		}
 		result.slot = -1; result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
-	public set(record: number, key: Value, value: Value): void {
-		this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General);
+	public set(record: number, key: Value, value: Value, budget?: CPU): void {
+		this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General, 0, budget);
 	}
-	public assignScheduled(record: number, key: Value, value: Value, slot = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
-		return this.setOwn(record, key, value, slot, HashStore.Scheduled, extraHashSlots);
+	public assignScheduled(record: number, key: Value, value: Value, budget: CPU, slot = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
+		return this.setOwn(record, key, value, slot, HashStore.Scheduled, extraHashSlots, budget);
 	}
-	public resumeAssignment(record: number, key: Value, value: Value, extraHashSlots: number): boolean {
-		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume, extraHashSlots) !== HASH_STORE_DECLINED;
+	public resumeAssignment(record: number, key: Value, value: Value, extraHashSlots: number, budget?: CPU): boolean {
+		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume, extraHashSlots, budget) !== HASH_STORE_DECLINED;
 	}
-	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore, extraHashSlots = 0): number {
+	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore, extraHashSlots = 0, budget?: CPU): number {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
@@ -487,12 +488,12 @@ export class TableRecords {
 			const words = this.arrayAddress(record);
 			this.writeSlot(words, words + array * 4, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
-		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots);
+		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots, budget);
 		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return node;
 	}
 	private setHash(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
-		policy = HashStore.General, extraHashSlots = 0): number {
+		policy = HashStore.General, extraHashSlots = 0, budget?: CPU): number {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
@@ -524,7 +525,7 @@ export class TableRecords {
 				return index;
 			}
 		}
-		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots);
+		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots, budget);
 		if (index === HASH_STORE_DECLINED) return index;
 		if (key === this.newIndexKey) memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
@@ -684,12 +685,15 @@ export class TableRecords {
 		plan.hash = TableRecords.hashCapacity(hashKeys);
 		plan.keepHash = arraySize > oldArray && added < arraySize && plan.hash === oldHash && firstHashArrayKey > arraySize;
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number): number {
+	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
+		const scanCycles = array > 64 && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
+			? (array - 64 + 3) >>> 2 : 0;
 		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
+			if (cycleBudget) cycleBudget.instructionBudgetRemaining -= scanCycles;
 			this.planRehash(record, key, extraHashSlots);
 			const requested = TableRecords.allocationCharge(plan.array, plan.hash);
 			const admitted = requested <= previous || (policy === HashStore.Resume || recovery !== LuaAllocationRecovery.CurrentOrFresh

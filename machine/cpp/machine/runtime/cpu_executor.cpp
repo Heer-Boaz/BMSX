@@ -258,8 +258,11 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			ScopeExit activeSlice([&scheduler]() { scheduler.endCpuSlice(); });
 			cpu.resumeAllocation();
 		}
-		if (cpu.allocationParked()) return CpuSliceResult::ParkedAllocation;
 		const int consumed = deferred - cpu.instructionBudgetRemaining;
+		if (cpu.allocationParked()) {
+			frameState.deferredAllocationCycles = consumed;
+			return CpuSliceResult::ParkedAllocation;
+		}
 		frameState.deferredAllocationCycles = 0;
 		frameState.cycleBudgetRemaining -= consumed;
 		frameState.activeCpuUsedCycles += consumed;

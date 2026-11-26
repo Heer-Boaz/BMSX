@@ -612,9 +612,9 @@ export class CPU implements MappedPageInvalidator {
 			receiver = assignment.receiver;
 		}
 		if (this.runKind === CpuRunKind.Scheduled) {
-			if (tables.assignScheduled(receiver, key, value) === HASH_STORE_DECLINED)
+			if (tables.assignScheduled(receiver, key, value, this) === HASH_STORE_DECLINED)
 				return this.parkTableWrite(frame, receiver, key, value, 0);
-		} else tables.set(receiver, key, value);
+		} else tables.set(receiver, key, value, this);
 		return false;
 	}
 	public allocationParked(): boolean { return this.pendingAllocation !== null; }
@@ -680,7 +680,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lastPc = pending.lastPc;
 		let retired: boolean;
 		if (pending.kind === PendingAllocationKind.TableAssignment) {
-			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots);
+			retired = this.gc.tables.resumeAssignment(pending.receiver, pending.key, pending.value, pending.extraHashSlots, this);
 		} else {
 			const address = this.allocateTable(pending.arraySize, pending.hashSize, LuaAllocationMode.Retry);
 			retired = address !== 0;
@@ -718,7 +718,7 @@ export class CPU implements MappedPageInvalidator {
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
 		const extraHashSlots = assignment.extraVisits === 0 ? page.operandByte[pageOffset] : 0;
 		const slot = this.runKind === CpuRunKind.Scheduled
-			? tables.assignScheduled(assignment.receiver, field, value, assignment.slot, extraHashSlots)
+			? tables.assignScheduled(assignment.receiver, field, value, this, assignment.slot, extraHashSlots)
 			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots);
 		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value, extraHashSlots);
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;

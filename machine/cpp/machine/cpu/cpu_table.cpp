@@ -157,7 +157,7 @@ void CPU::resumeAllocation() {
 	bool retired;
 	if (const auto* assignment = std::get_if<PendingTableAssignment>(&pending.operands)) {
 		retired = TableRecord(m_heap, assignment->receiver).resumeAssignment(
-			assignment->key, assignment->value, assignment->extraHashSlots);
+			assignment->key, assignment->value, assignment->extraHashSlots, &instructionBudgetRemaining);
 	} else {
 		const auto& create = std::get<PendingTableCreation>(pending.operands);
 		const u32 address = allocateTable(create.arraySize, create.hashSize, LuaAllocationMode::Retry);
@@ -185,8 +185,8 @@ bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) 
 	TableRecord(m_heap, valuePayload(base)).resolveAssignment(key, result);
 	if (finishTableAssignment(frame, key, value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
-	if (m_runKind != CpuRunKind::Scheduled) table.set(key, value);
-	else if (table.assignScheduled(key, value) == TableRecord::HASH_STORE_DECLINED)
+	if (m_runKind != CpuRunKind::Scheduled) table.set(key, value, &instructionBudgetRemaining);
+	else if (table.assignScheduled(key, value, instructionBudgetRemaining) == TableRecord::HASH_STORE_DECLINED)
 		return parkTableWrite(frame, result.receiver, key, value);
 	return false;
 }
@@ -197,8 +197,8 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(index, result);
 	if (finishTableAssignment(frame, valueInteger(index), value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
-	if (m_runKind != CpuRunKind::Scheduled) table.setInteger(index, value);
-	else if (table.assignScheduled(valueInteger(index), value) == TableRecord::HASH_STORE_DECLINED)
+	if (m_runKind != CpuRunKind::Scheduled) table.set(valueInteger(index), value, &instructionBudgetRemaining);
+	else if (table.assignScheduled(valueInteger(index), value, instructionBudgetRemaining) == TableRecord::HASH_STORE_DECLINED)
 		return parkTableWrite(frame, result.receiver, valueInteger(index), value);
 	return false;
 }
@@ -211,7 +211,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 	if (result.extraVisits != 0u) extraHashSlots = 0;
 	TableRecord table(m_heap, result.receiver);
 	const int slot = m_runKind == CpuRunKind::Scheduled
-		? table.assignScheduled(valueString(key), value, result.slot, extraHashSlots)
+		? table.assignScheduled(valueString(key), value, instructionBudgetRemaining, result.slot, extraHashSlots)
 		: table.setStringKey(key, value, result.slot, extraHashSlots);
 	if (slot == TableRecord::HASH_STORE_DECLINED)
 		return parkTableWrite(frame, result.receiver, valueString(key), value, extraHashSlots);

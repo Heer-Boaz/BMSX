@@ -1572,8 +1572,14 @@ language-allocation budget; they do not change that base charge.
 An insertion may reserve more storage. Its base charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
 arranged or moved. A `SETFIELD` prefix request does not change this charge.
-Storage growth counts against the language-allocation
-budget. A metamethod invocation pays its ordinary call charge separately.
+When an indexed store must repartition a table to insert a positive Integer
+key, it scans the existing array slots to choose the new array size. The first
+64 slots of each such scan are included; each further group of four slots,
+including a partial group, costs one cycle. A scan of 65,536 slots adds
+16,368 cycles. An overwrite or an insertion that fits an existing slot does
+not perform this scan. A failed reservation does not refund a completed
+scan; a recovery attempt that scans again pays for its own work.
+Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
 An incremental allocation assist adds its work charge as specified above. An insertion that
 fails to reserve storage leaves the requested mapping unmodified.
 
