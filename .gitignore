@@ -117,3 +117,5 @@ carts/pietious/res/_ignore/**
 /hardware/.venv/
 /hardware/build/
 /hardware/**/*.kicad_prl
+tmp/**
+/BMSX/tmp/**
