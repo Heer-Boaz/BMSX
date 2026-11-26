@@ -32,7 +32,7 @@ let operationCount = 0;
 
 // Issue the same calls in the ROM on both cores. The C/WASM oracle supplies
 // each expected offset and predicate, never the guest's arena contents.
-function step(name: string, args: readonly number[], result: number | void): void {
+function step(name: string, args: readonly number[], result?: number): void {
 	const expression = `alloc.bmsx_dlmalloc_${name}(${state}${args.map(value => ', 0x' + value.toString(16)).join('')})`;
 	source.push(result === undefined ? expression
 		: `if ${expression} ~= 0x${result.toString(16)} then return false, ${operationCount} end`);
@@ -46,7 +46,8 @@ function allocate(bytes: number, object = 0): number {
 }
 
 function free(offset: number): void {
-	step('free', [offset], oracle.free(offset));
+	oracle.free(offset);
+	step('free', [offset]);
 }
 
 function compareArena(): void {
@@ -54,7 +55,8 @@ function compareArena(): void {
 	source.push(`if arena_hash() ~= 0x${expected.toString(16)} then return false, ${operationCount} end`);
 }
 
-step('reset', [floor, limit], oracle.reset(floor, limit));
+oracle.reset(floor, limit);
+step('reset', [floor, limit]);
 step('floor', [], oracle.floor());
 const first = allocate(36);
 const guard = allocate(48, 1);
@@ -73,11 +75,22 @@ assert.equal(split, victim, 'allocation must split a tree-bin chunk');
 const retained = oldBytes - 4; // Includes the following chunk's prev_foot.
 for (let i = 0; i < retained; ++i) memory.ramData()[first + i] = (i * 13 + 0x5a) & 0xff;
 source.push(`for i = 0, ${retained - 1} do ram[${first - floor} + i] = (i * 13 + 0x5a) & 0xff end`);
+
+const reserved = oracle.reserveBacking(first, 480);
+assert.ok(reserved !== 0 && reserved !== first, 'a displaced reserve returns separate storage');
+step('reserve_backing', [first, 480], reserved);
+// Unlike resize, displacement by reserve must not copy or free the old
+// payload. Both the reservation and the original are live at this digest.
+step('allocation_bytes', [first], oldBytes);
+compareArena();
+free(reserved);
+
 const moved = oracle.resizeBacking(first, 480);
 assert.ok(moved !== 0 && moved !== first, 'a live object prevents in-place growth');
 step('resize_backing', [first, 480], moved);
 compareArena();
-step('shrink', [moved, 64], oracle.shrink(moved, 64));
+oracle.shrink(moved, 64);
+step('shrink', [moved, 64]);
 
 const large = allocate(6000);
 assert.ok(large !== 0 && large < first, 'arena must prepend pages for the large request');
@@ -114,7 +127,7 @@ try {
 		assert.equal(execFileSync(nativeRunner, [path, 'run'], { encoding: 'utf8' }).trim(), '0');
 	}
 	rmSync(directory, { recursive: true });
-	console.log(`BIOS-DLMALLOC-PARITY:PASS (${operationCount} C-oracle operations and 3 arena digests at O0/O3, TS and C++)`);
+	console.log(`BIOS-DLMALLOC-PARITY:PASS (${operationCount} C-oracle operations and 4 arena digests at O0/O3, TS and C++)`);
 } catch (error) {
 	console.error(`Evidence retained: ${directory}`);
 	throw error;
