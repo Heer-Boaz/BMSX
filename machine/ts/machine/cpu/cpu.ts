@@ -2476,19 +2476,22 @@ export class CPU implements MappedPageInvalidator {
 		this.setRegisterIntegerFast(frame, registers, secondPage.a[secondPageOffset], secondResult);
 	}
 
-	private executeConcat(frame: CallFrame, a: number, rkB: number, rkC: number): void {
-		const left = this.readRKValue(frame, rkB), right = this.readRKValue(frame, rkC);
-		const l = valueToByteString(left, this.stringPool), r = valueToByteString(right, this.stringPool);
-		this.charge(l.length + r.length);
-		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(l + r));
-	}
-	private executeConcatRange(frame: CallFrame, a: number, b: number, c: number): void {
-		let text = '', byteWork = 0;
-		for (let i = 0; i < c; ++i) {
-			const part = valueToByteString(frame.registers.get(b + i), this.stringPool);
-			text += part; byteWork += part.length;
+	private executeConcat(frame: CallFrame, a: number, b: number, c: number, range = false): void {
+		const count = range ? c : 2;
+		if (range) this.charge(count);
+		let text = '';
+		for (let i = 0; i < count; ++i) {
+			const v = range ? frame.registers.get(b + i) : this.readRKValue(frame, i === 0 ? b : c);
+			const string = valueTag(v) === ValueTag.String;
+			const part = string ? '' : valueToByteString(v, this.stringPool);
+			const length = string ? this.stringPool.byteLength(valuePayload(v)) >>> 0 : part.length;
+			if (length >= MAIN_RAM_SIZE - text.length) {
+				this.charge(MAIN_RAM_SIZE);
+				throw LUA_OUT_OF_MEMORY_SIGNAL;
+			}
+			text += string ? this.stringPool.bytes(valuePayload(v), length) : part;
 		}
-		this.charge(c + byteWork);
+		this.charge(text.length);
 		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(text));
 	}
 
@@ -2918,7 +2921,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.Concat:
 					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC); break;
 				case CompiledBlockExit.ConcatRange:
-					this.executeConcatRange(frame, exit.exitA, exit.exitB, exit.exitC); break;
+					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC, true); break;
 				case CompiledBlockExit.Call:
 					redispatch = !this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC);
 					break;
@@ -3212,7 +3215,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.CONCAT:
 					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
 				case OpCode.CONCATN:
-					this.executeConcatRange(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
+					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset], true); return;
 				case OpCode.UNM: {
 					this.setRegisterValueFast(frame, registers, a, valueNegate(registers.get(page.b[pageOffset])));
 					return;

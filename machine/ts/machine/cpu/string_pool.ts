@@ -91,8 +91,7 @@ export class StringPool {
 		return this.storage(id)[storageOffset(id) + BLUA32_STRING_RECORD_HEADER_SIZE + index];
 	}
 
-	public bytes(id: StringId): string {
-		const length = this.byteLength(id) >>> 0;
+	public bytes(id: StringId, length = this.byteLength(id) >>> 0): string {
 		if (length === 0) return '';
 		if (isRamStringId(id)) {
 			const source = this.memory.ramData(), offset = (id + BLUA32_STRING_RECORD_HEADER_SIZE) & RAM_BYTE_MASK;

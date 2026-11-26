@@ -16,7 +16,7 @@ import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } 
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
-import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 function assertParity(js: CPU, ref: CPU): void {
@@ -233,7 +233,8 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	}
 });
 
-for (const range of [false, true]) test(`compiled concatenation allocation failure retains its destination and exact fault prefix (range=${range})`, () => {
+for (const range of [false, true]) for (const bytes of [3 << 19, 2 << 20, (2 << 20) + 1])
+test(`compiled concatenation retains the exact fault prefix (range=${range}, operand bytes=${bytes})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
 	writeInstruction(text, 1, range ? OpCode.CONCATN : OpCode.CONCAT, 0, 1, 2);
@@ -244,16 +245,36 @@ for (const range of [false, true]) test(`compiled concatenation allocation failu
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2);
 		cpu.runUntilDepth(0, range ? 396 : 320);
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(2 * 1024 * 1024));
+		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(bytes));
 		r.setString(1, id); r.setString(2, id); r.setInteger(0, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
+	const lastWorkAt = js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
+	const beforeWork = js.memory.readRamRecordWord(lastWorkAt);
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
-	const work = js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
-	assert.ok(work > 0);
-	assert.equal(js.instructionBudgetRemaining, -4 * 1024 * 1024 - (range ? 2 : 0) - 3 * work, 'the fault retains both text and recovery work');
+	const afterWork = js.memory.readRamRecordWord(lastWorkAt);
+	const work = 2 * bytes < MAIN_RAM_SIZE ? afterWork : 0;
+	if (2 * bytes < MAIN_RAM_SIZE) assert.ok(work > 0);
+	else assert.equal(afterWork, beforeWork, 'size fault does not run a recovery epoch');
+	assert.equal(js.instructionBudgetRemaining, -Math.min(2 * bytes, MAIN_RAM_SIZE) - (range ? 2 : 0) - 3 * work);
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
+});
+
+test('CONCATN length includes conversion after repeated references to the same String', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.CONCATN, 0, 1, 32);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 33 },
+		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
+	const { cpu } = createTestSystemCpu(image);
+	const frame = cpu.rootThread.currentFrame!, id = cpu.stringPool.intern('x'.repeat(135300));
+	for (let i = 1; i <= 31; ++i) frame.registers.setString(i, id);
+	frame.registers.set(32, valueBool(false)); // 31 × 135300 leaves four bytes; "false" needs five.
+	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN]);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
+	assert.equal(cpu.instructionBudgetRemaining, -MAIN_RAM_SIZE - 32);
+	assert.equal(frame.registers.get(0), valueNil());
 });

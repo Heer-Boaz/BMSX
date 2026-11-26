@@ -129,7 +129,7 @@ inline uint32_t hashCanonicalTableKey(Value value) {
 uint32_t asClosure(Value value, const GcHeap& heap);
 uint32_t asThread(Value value, const GcHeap& heap);
 
-int appendValueString(std::string& out, Value value, const StringPool& strings);
+void appendValueString(std::string& out, Value value, const StringPool& strings);
 std::string valueToString(Value value, const StringPool& strings);
 const char* valueTypeName(Value value);
 const char* valueTypeNameForLua(Value value);

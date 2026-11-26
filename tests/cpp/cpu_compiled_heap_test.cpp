@@ -373,7 +373,7 @@ void closureAddressAlias(int source) {
 	}
 }
 
-void concatAllocationFault(bool range) {
+void concatAllocationFault(bool range, int bytes) {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 8, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(range ? OpCode::CONCATN : OpCode::CONCAT), 0, 1, 2);
@@ -385,7 +385,7 @@ void concatAllocationFault(bool range) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(1, valueInteger(1)); frame.registers.set(2, valueInteger(2));
 		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
 		m->cpu.luaHeap().setCollectionTarget(m->cpu.luaHeap().capacity());
-		const StringId id = m->cpu.stringPool().intern(std::string(2u * 1024u * 1024u, 'x'));
+		const StringId id = m->cpu.stringPool().intern(std::string(bytes, 'x'));
 		frame.registers.set(1, valueString(id)); frame.registers.set(2, valueString(id)); frame.registers.set(0, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -396,12 +396,36 @@ void concatAllocationFault(bool range) {
 	const auto& block = page.nativeBlocks->entries[word];
 	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
 #endif
+	const auto lastWorkAt = native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
+	const int beforeWork = native.memory.readRamRecordWord(lastWorkAt);
 	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
 	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
 		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	const int work = native.memory.readRamRecordWord(native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
-	require(work > 0 && native.cpu.instructionBudgetRemaining == -4 * 1024 * 1024 - (range ? 2 : 0) - 3 * work, "the fault retains both text and recovery work");
+	const int afterWork = native.memory.readRamRecordWord(lastWorkAt);
+	const bool fitsLength = 2 * bytes < static_cast<int>(MAIN_RAM_SIZE);
+	const int work = fitsLength ? afterWork : 0;
+	require(fitsLength ? work > 0 : afterWork == beforeWork, "only a representable result attempts recovery");
+	require(native.cpu.instructionBudgetRemaining == -std::min(2 * bytes, static_cast<int>(MAIN_RAM_SIZE)) - (range ? 2 : 0) - 3 * work,
+		"oversized result saturates the byte debit; an ordinary allocation fault retains recovery work");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
+}
+void concatRangeCrossesLimitDuringConversion() {
+	test::Blua32TestImage image;
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CONCATN), 0, 1, 32);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 33}, {.firstWord = 1, .wordCount = 1}};
+	image.exceptionFunctionIndex = 1;
+	CpuMachine m(image);
+	auto& frame = *m.cpu.rootThread()->currentFrame;
+	// 31 references occupy 4 MiB minus four bytes in the result. "false" crosses the limit.
+	const auto repeated = valueString(m.cpu.stringPool().intern(std::string(135300, 'x')));
+	for (int i = 1; i <= 31; ++i) frame.registers.set(i, repeated);
+	frame.registers.set(32, valueBool(false));
+	m.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)]);
+	require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
+		&& m.cpu.instructionBudgetRemaining == -static_cast<int>(MAIN_RAM_SIZE) - 32
+		&& isNil(frame.registers.get(0)), "converted non-String bytes participate in the saturated size fault");
 }
 } // namespace
 
@@ -414,7 +438,8 @@ int main() {
 		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
 		allocationRoots(false); allocationRoots(true); canonicalImmediateClosure(); closureBusFault(false); closureBusFault(true);
-		closureAddressAlias(0); closureAddressAlias(513); concatAllocationFault(false); concatAllocationFault(true);
+		closureAddressAlias(0); closureAddressAlias(513); concatRangeCrossesLimitDuringConversion();
+		for (int bytes : {3 << 19, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
 		std::cout << "Compiled CPU heap tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
