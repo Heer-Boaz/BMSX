@@ -117,7 +117,7 @@ import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } fr
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
-	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString,
+	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString, MAX_NON_STRING_TEXT_BYTES,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
 	isNil, valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
@@ -2480,17 +2480,40 @@ export class CPU implements MappedPageInvalidator {
 	private executeConcat(frame: CallFrame, a: number, b: number, c: number, range = false): void {
 		const count = range ? c : 2;
 		if (range) this.charge(count);
-		let text = '';
-		for (let i = 0; i < count; ++i) {
-			const v = range ? frame.registers.get(b + i) : this.readRKValue(frame, i === 0 ? b : c);
-			const string = valueTag(v) === ValueTag.String;
-			const part = string ? '' : valueToByteString(v, this.stringPool);
-			const length = string ? this.stringPool.byteLength(valuePayload(v)) >>> 0 : part.length;
-			if (length >= MAIN_RAM_SIZE - text.length) {
+		const strings = this.stringPool;
+		let text: string;
+		if (count === 2) {
+			const left = range ? frame.registers.get(b) : this.readRKValue(frame, b);
+			const right = range ? frame.registers.get(b + 1) : this.readRKValue(frame, c);
+			const ls = valueTag(left) === ValueTag.String, rs = valueTag(right) === ValueTag.String;
+			const leftText = ls ? '' : valueToByteString(left, strings), rightText = rs ? '' : valueToByteString(right, strings);
+			const n = ls ? strings.byteLength(valuePayload(left)) >>> 0 : leftText.length;
+			const m = rs ? strings.byteLength(valuePayload(right)) >>> 0 : rightText.length;
+			if (n + m >= MAIN_RAM_SIZE) {
 				this.charge(MAIN_RAM_SIZE);
 				throw LUA_OUT_OF_MEMORY_SIGNAL;
 			}
-			text += string ? this.stringPool.bytes(valuePayload(v), length) : part;
+			text = (ls ? strings.bytes(valuePayload(left), n) : leftText) + (rs ? strings.bytes(valuePayload(right), m) : rightText);
+		} else {
+			let length = 0, conversions = 0;
+			for (let i = 0; i < count; ++i) {
+				const v = frame.registers.get(b + i);
+				if (valueTag(v) === ValueTag.String) length += strings.byteLength(valuePayload(v)) >>> 0;
+				else ++conversions;
+				if (length >= MAIN_RAM_SIZE) break;
+			}
+			if (length < MAIN_RAM_SIZE && conversions * MAX_NON_STRING_TEXT_BYTES >= MAIN_RAM_SIZE - length) {
+				for (let i = 0; i < count && length < MAIN_RAM_SIZE; ++i) {
+					const v = frame.registers.get(b + i);
+					if (valueTag(v) !== ValueTag.String) length += valueToByteString(v, strings).length;
+				}
+			}
+			if (length >= MAIN_RAM_SIZE) {
+				this.charge(MAIN_RAM_SIZE);
+				throw LUA_OUT_OF_MEMORY_SIGNAL;
+			}
+			text = '';
+			for (let i = 0; i < count; ++i) text += valueToByteString(frame.registers.get(b + i), strings);
 		}
 		this.charge(text.length);
 		this.setRegisterStringFast(frame, frame.registers, a, this.stringPool.intern(text));

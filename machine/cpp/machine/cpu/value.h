@@ -130,6 +130,8 @@ uint32_t asClosure(Value value, const GcHeap& heap);
 uint32_t asThread(Value value, const GcHeap& heap);
 
 void appendValueString(std::string& out, Value value, const StringPool& strings);
+// Longest non-String spelling: a signed seven-digit Float such as -1.234567e-30.
+inline constexpr u32 MAX_NON_STRING_TEXT_BYTES = 13;
 std::string valueToString(Value value, const StringPool& strings);
 const char* valueTypeName(Value value);
 const char* valueTypeNameForLua(Value value);

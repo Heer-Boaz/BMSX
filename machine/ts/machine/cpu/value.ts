@@ -120,6 +120,9 @@ export function valueToString(value: Value, strings: StringPool): string {
 	return valueIsString(value) ? strings.toString(asStringId(value)) : valueToByteString(value, strings);
 }
 
+// Longest non-String spelling: a signed seven-digit Float such as -1.234567e-30.
+export const MAX_NON_STRING_TEXT_BYTES = 13;
+
 export function valueToByteString(value: Value, strings: StringPool): string {
 	switch (valueTag(value)) {
 		case ValueTag.Nil: return 'nil';

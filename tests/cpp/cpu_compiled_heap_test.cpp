@@ -409,7 +409,7 @@ void concatAllocationFault(bool range, int bytes) {
 		"oversized result saturates the byte debit; an ordinary allocation fault retains recovery work");
 	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
 }
-void concatRangeCrossesLimitDuringConversion() {
+void concatRangeAtMixedLengthBoundary(bool over) {
 	test::Blua32TestImage image;
 	image.text.resize(2 * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CONCATN), 0, 1, 32);
@@ -418,13 +418,13 @@ void concatRangeCrossesLimitDuringConversion() {
 	image.exceptionFunctionIndex = 1;
 	CpuMachine m(image);
 	auto& frame = *m.cpu.rootThread()->currentFrame;
-	// 31 references occupy 4 MiB minus four bytes in the result. "false" crosses the limit.
+	// Four bytes remain: nil fits the String representation, false does not.
 	const auto repeated = valueString(m.cpu.stringPool().intern(std::string(135300, 'x')));
 	for (int i = 1; i <= 31; ++i) frame.registers.set(i, repeated);
-	frame.registers.set(32, valueBool(false));
+	frame.registers.set(32, over ? valueBool(false) : valueNil());
 	m.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)]);
 	require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-		&& m.cpu.instructionBudgetRemaining == -static_cast<int>(MAIN_RAM_SIZE) - 32
+		&& m.cpu.instructionBudgetRemaining == -static_cast<int>(over ? MAIN_RAM_SIZE : MAIN_RAM_SIZE - 1) - 32
 		&& isNil(frame.registers.get(0)), "converted non-String bytes participate in the saturated size fault");
 }
 } // namespace
@@ -438,7 +438,7 @@ int main() {
 		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
 		allocationRoots(false); allocationRoots(true); canonicalImmediateClosure(); closureBusFault(false); closureBusFault(true);
-		closureAddressAlias(0); closureAddressAlias(513); concatRangeCrossesLimitDuringConversion();
+		closureAddressAlias(0); closureAddressAlias(513); for (bool over : {false, true}) concatRangeAtMixedLengthBoundary(over);
 		for (int bytes : {3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
 		std::cout << "Compiled CPU heap tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

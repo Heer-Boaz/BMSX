@@ -15,20 +15,30 @@ inline StringId concatenateValues(StringPool& strings, int& cycles, int count, O
 			return strings.internConcat(a, n, b, m);
 		}
 	}
-	u32 stringBytes = 0;
+	u32 stringBytes = 0, conversions = 0;
 	for (int index = 0; index < count; ++index) {
 		const Value value = operand(index);
 		if (valueIsString(value)) {
 			const u32 length = strings.byteLength(asStringId(value));
 			if (length >= MAIN_RAM_SIZE - stringBytes) oversized();
 			stringBytes += length;
+		} else ++conversions;
+	}
+	// Only a mixed range at the length boundary needs the exact converted
+	// sizes before assembly. Ordinary numeric operands are formatted once.
+	if (conversions * MAX_NON_STRING_TEXT_BYTES >= MAIN_RAM_SIZE - stringBytes) {
+		for (int index = 0; index < count; ++index) {
+			const Value v = operand(index);
+			if (!valueIsString(v)) {
+				stringBytes += static_cast<u32>(valueToString(v, strings).size());
+				if (stringBytes >= MAIN_RAM_SIZE) oversized();
+			}
 		}
 	}
 	std::string text;
 	text.reserve(stringBytes);
 	for (int index = 0; index < count; ++index) {
 		appendValueString(text, operand(index), strings);
-		if (text.size() >= MAIN_RAM_SIZE) oversized();
 	}
 	cycles -= static_cast<int>(text.size());
 	return strings.intern(text);

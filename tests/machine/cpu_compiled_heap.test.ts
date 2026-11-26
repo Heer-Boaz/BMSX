@@ -234,7 +234,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 });
 
 for (const range of [false, true]) for (const bytes of [3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1])
-test(`compiled concatenation retains the exact fault prefix (range=${range}, operand bytes=${bytes})`, () => {
+test(`compiled concatenation retains the exact fault prefix (range=${range}, operand bytes=${bytes})`, t => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
 	writeInstruction(text, 1, range ? OpCode.CONCATN : OpCode.CONCAT, 0, 1, 2);
@@ -253,7 +253,9 @@ test(`compiled concatenation retains the exact fault prefix (range=${range}, ope
 		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
 	const lastWorkAt = js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
 	const beforeWork = js.memory.readRamRecordWord(lastWorkAt);
+	const reads = 2 * bytes >= MAIN_RAM_SIZE ? t.mock.method(js.stringPool, 'bytes') : null;
 	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
+	if (reads !== null) assert.equal(reads.mock.callCount(), 0, 'no payload reads before the size fault');
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
 	const afterWork = js.memory.readRamRecordWord(lastWorkAt);
 	const recoverableSize = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= js.luaHeap.capacity();
@@ -264,7 +266,7 @@ test(`compiled concatenation retains the exact fault prefix (range=${range}, ope
 	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
 });
 
-test('CONCATN length includes conversion after repeated references to the same String', () => {
+for (const over of [false, true]) test(`CONCATN admits the exact mixed byte length before reading payloads (over=${over})`, t => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.CONCATN, 0, 1, 32);
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
@@ -273,9 +275,12 @@ test('CONCATN length includes conversion after repeated references to the same S
 	const { cpu } = createTestSystemCpu(image);
 	const frame = cpu.rootThread.currentFrame!, id = cpu.stringPool.intern('x'.repeat(135300));
 	for (let i = 1; i <= 31; ++i) frame.registers.setString(i, id);
-	frame.registers.set(32, valueBool(false)); // 31 × 135300 leaves four bytes; "false" needs five.
+	// Four bytes remain: nil fits, false does not.
+	frame.registers.set(32, over ? valueBool(false) : valueNil());
+	const reads = t.mock.method(cpu.stringPool, 'bytes');
 	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN]);
 	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(cpu.instructionBudgetRemaining, -MAIN_RAM_SIZE - 32);
+	assert.equal(cpu.instructionBudgetRemaining, -(over ? MAIN_RAM_SIZE : MAIN_RAM_SIZE - 1) - 32);
+	if (over) assert.equal(reads.mock.callCount(), 0);
 	assert.equal(frame.registers.get(0), valueNil());
 });
