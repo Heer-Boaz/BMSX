@@ -4473,9 +4473,13 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	public chargeCollectionWork(work: number): void {
+		if (this.runKind !== CpuRunKind.Idle) this.charge(3 * work);
+	}
+
 	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number): number {
 		const work = this.gc.step(root0, root1, root2, growingThread, false, words);
-		if (this.runKind !== CpuRunKind.Idle) this.charge(3 * work);
+		this.chargeCollectionWork(work);
 		return work;
 	}
 

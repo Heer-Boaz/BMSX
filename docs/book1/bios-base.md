@@ -105,8 +105,9 @@ local cycle_finished = collectgarbage('step')
 A step does not wait for a display frame and does not guarantee a maximum
 pause. Full collection is synchronous; use it at a suitable point, such as
 a loading screen. Each underlying collection-control primitive call adds
-4 cycles beyond `CALL`, with ordinary result placement. The charge does not
-depend on how much collection work it performs.
+4 base cycles beyond `CALL`, with ordinary result placement. A collection or
+step also costs 3 cycles per collector work word actually performed. Reading
+counts does not incur this charge.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 

@@ -270,6 +270,7 @@ public:
 	bool advanceAllocationRecovery();
 	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
+	void chargeCollectionWork(size_t work);
 	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words);
 	size_t stepHeap(Value root0, Value root1, Value root2, u32 growingThread = 0u);
 	bool collecting() const { return m_heap.active(); }

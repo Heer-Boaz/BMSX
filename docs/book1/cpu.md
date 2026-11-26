@@ -1459,8 +1459,11 @@ When an instruction assists incremental collection to admit a logical charge
 or reserve physical storage, it pays **3 cycles per collector work word**
 actually performed, not per word requested. The charge stays with the
 instruction even if the reservation later fails or parks. A retry does not
-repay completed work. Vertical blanking maintenance, explicit collection and
-emergency recovery do not incur this allocation-assist charge.
+repay completed work. An explicit step or full collection also pays 3 cycles per work word,
+including work to finish an already active cycle. This also applies when
+program replacement requests a collection to free its static region.
+Vertical blanking maintenance and emergency allocation recovery do not
+incur this charge.
 
 #### Weak references and collection {#sec-cpu-weak-references-and-collection}
 

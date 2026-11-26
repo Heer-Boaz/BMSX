@@ -326,8 +326,8 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
-	test(`explicit collection uses only CALL and primitive cycles at the short-grant frontier (${backend}, WIDE=${wide})`, () => {
+for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
+	test(`explicit collection exhausts a grant that would otherwise reach the successor (${backend}, WIDE=${wide})`, () => {
 		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
 		for (let warm = 0; warm < COMPILED_BLOCK_THRESHOLD + 2; ++warm) {
@@ -339,8 +339,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.registers.setNil(7); frame.top = 1;
 		const doomed = cpu.createTable(16384, 0);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4, 'CALL and primitive only, no receiving slots');
+		assert.equal(cpu.runUntilDepth(0, 64), RunResult.Yielded);
+		assert.ok(cpu.instructionBudgetRemaining < 0);
 		assert.equal(cpu.gc.tableRecordAddress(doomed), 0, 'explicit collection finishes before the instruction retires');
 		assert.equal(frame.pc, pc + (wide ? 2 : 1) * INSTRUCTION_BYTES); assert.equal(frame.registers.get(7), valueNil());
 		assert.equal(cpu.runUntilDepth(0, 0), RunResult.Yielded); assert.equal(cpu.instructionBudgetRemaining, 0);
@@ -385,7 +385,7 @@ test('failed allocation finishes emergency collection without a cycle debit or p
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
 });
 
-test('collect and step keep the same exact CALL and result-placement cycles across heap shapes', () => {
+test('collect and step charge CALL, placement and actual collector work across heap shapes', () => {
 	const program = source(OpCode.CALL);
 	writeInstruction(program.text, 0, OpCode.CALL, 0, 2, 2);
 	const image = linkRawTestSystemBlua32(program);
@@ -398,15 +398,16 @@ test('collect and step keep the same exact CALL and result-placement cycles acro
 				frame.registers.setInteger(1, operation);
 				frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
 				const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-				physicalWork.push(operation === GarbageCollectionOperation.Collect ? cpu.gc.collect() : cpu.gc.step());
+				const work = operation === GarbageCollectionOperation.Collect ? cpu.gc.collect() : cpu.gc.step();
+				physicalWork.push(work);
 				memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
 				assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-				assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4 - 1);
+				assert.equal(cpu.instructionBudgetRemaining, 1 - 32 - 4 - 1 - 3 * work);
 				assert.equal(cpu.readFrameRegister(0, 0),
 					operation === GarbageCollectionOperation.Step ? valueBool(false) : valueNil());
 				assert.equal(cpu.gc.active(), operation === GarbageCollectionOperation.Step);
 			}
-			assert.ok(physicalWork[1] > physicalWork[0], 'the same guest charge covers different physical work');
+			assert.ok(physicalWork[1] > physicalWork[0], 'the larger scan incurs a larger charge');
 		}
 	}
 });

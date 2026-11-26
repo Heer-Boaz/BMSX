@@ -244,11 +244,11 @@ export class LuaHeap {
 		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
 		growingThread = 0,
 	): void {
-		this.cpu.gc.collect(root0, root1, root2, growingThread);
+		this.cpu.chargeCollectionWork(this.cpu.gc.collect(root0, root1, root2, growingThread));
 	}
 
 	public stepRuntime(): boolean {
-		this.cpu.gc.step();
+		this.cpu.chargeCollectionWork(this.cpu.gc.step());
 		this.creditStep();
 		return !this.cpu.gc.active();
 	}

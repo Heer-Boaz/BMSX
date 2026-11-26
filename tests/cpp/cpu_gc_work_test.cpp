@@ -394,9 +394,9 @@ void explicitCollectionAndNoReplay() {
 		}
 		const auto doomed = generated.cpu.createTable(16384, 0).address();
 		require(scalar.cpu.createTable(16384, 0).address() == doomed, "both backends start with the same garbage");
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-			&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4,
-			"explicit collection pays CALL32 and primitive4, without a collector charge or receiving slots");
+		require(test::runCpuParity(generated.cpu, scalar.cpu, 64) == RunResult::Yielded
+			&& generated.cpu.instructionBudgetRemaining < 0,
+			"collector work exhausts a grant that would cover CALL, primitive and successor");
 		require(generated.cpu.gcHeap().tableRecordAddress(doomed) == 0u,
 			"explicit collection completes before the instruction retires");
 		require(generated.cpu.readFramePc(0) == generated.rom.textAddress + (wide ? 8 : 4)
@@ -439,7 +439,7 @@ void allocationCollectionAndFailure() {
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
 }
 
-void collectionPrimitiveCyclesIgnoreHeapShape() {
+void collectionPrimitivePaysActualWork() {
 	auto source = image(OpCode::CALL);
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::CALL), 0, 2, 2);
 	for (auto operation : {GarbageCollectionOperation::Collect, GarbageCollectionOperation::Step}) {
@@ -459,10 +459,10 @@ void collectionPrimitiveCyclesIgnoreHeapShape() {
 			require(work > previousWork, "the same guest instruction causes different physical work");
 			previousWork = work;
 			require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
-				&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - 1
+				&& generated.cpu.instructionBudgetRemaining == 1 - 32 - 4 - 1 - 3 * static_cast<int>(work)
 				&& generated.cpu.readFrameRegister(0, 0) == (step ? valueBool(false) : valueNil())
 				&& generated.cpu.collecting() == step,
-				"both execution routes pay only CALL, primitive and placement regardless of heap shape");
+				"both execution routes pay CALL, primitive, placement and the measured collector work");
 		}
 	}
 }
@@ -1784,7 +1784,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); explicitCollectionAndNoReplay();
-		allocationCollectionAndFailure(); collectionPrimitiveCyclesIgnoreHeapShape();
+		allocationCollectionAndFailure(); collectionPrimitivePaysActualWork();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

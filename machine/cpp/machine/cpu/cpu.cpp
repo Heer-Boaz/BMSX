@@ -2452,9 +2452,13 @@ size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread
 	return m_heap.collect(root0, root1, root2, growingThread);
 }
 
+void CPU::chargeCollectionWork(size_t work) {
+	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= 3 * static_cast<int>(work);
+}
+
 size_t CPU::assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words) {
 	const size_t work = m_heap.step(root0, root1, root2, growingThread, false, words);
-	if (m_runKind != CpuRunKind::Idle) instructionBudgetRemaining -= 3 * static_cast<int>(work);
+	chargeCollectionWork(work);
 	return work;
 }
 

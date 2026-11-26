@@ -252,11 +252,11 @@ u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> ce
 }
 
 void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingThread) {
-	m_cpu.collectHeap(root0, root1, root2, growingThread);
+	m_cpu.chargeCollectionWork(m_cpu.collectHeap(root0, root1, root2, growingThread));
 }
 
 bool LuaHeap::stepRuntime() {
-	m_cpu.stepHeap(valueNil(), valueNil(), valueNil());
+	m_cpu.chargeCollectionWork(m_cpu.stepHeap(valueNil(), valueNil(), valueNil()));
 	creditStep();
 	return !m_cpu.collecting();
 }
