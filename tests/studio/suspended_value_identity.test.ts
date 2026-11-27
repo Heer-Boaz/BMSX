@@ -3,8 +3,10 @@ import test from 'node:test';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
-import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, valueResidentFunction, type Value } from '../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
@@ -98,15 +100,21 @@ test('suspended member reads and enumeration follow the runtime index field', ()
 });
 
 test('a replaced heap retires tool lifetime tokens without a collector notification', () => {
-	const runtime = createTestRuntime(createTestRuntimeRomPayload()), { cpu } = runtime.machine;
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('halt_until_irq', 3));
+	const runtime = createTestRuntime(system.romBytes), { cpu } = runtime.machine;
+	runtime.boot();
 	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
 	const table = valueTable(cpu.createTable());
+	const romFunction = valueResidentFunction(residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
 	const checkpoint = captureRuntimeSaveState(runtime);
 	const previous = observer.identity(table);
+	const previousFunction = observer.identity(romFunction);
 	guest.invalidate('execution');
 	assert.equal(observer.matchesIdentity(table, previous), true, 'suspending the same live heap retains the observation');
+	assert.equal(observer.matchesIdentity(romFunction, previousFunction), true);
 	applyRuntimeSaveState(runtime, checkpoint);
 	assert.equal(observer.matchesIdentity(table, previous), false, 'an actual RAM restore drops derived observations');
+	assert.equal(observer.matchesIdentity(romFunction, previousFunction), false, 'ROM observations end on replacement without a RAM watch');
 	const restored = observer.identity(table);
 	guest.invalidate('heap-replaced');
 	assert.equal(observer.matchesIdentity(table, restored), false, 'a replacement can reuse exactly the same encoded address');
