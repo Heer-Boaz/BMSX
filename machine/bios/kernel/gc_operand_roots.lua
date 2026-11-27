@@ -54,6 +54,26 @@ local mark_detached_frame_roots<const> = function(control, arena, metadata, scop
 	return work -- J:730,1033 Y:679,965
 end
 
+-- Borrowed String basis: e3774a03a44e94be4d9d8be73c7ce2de80a336c2.
+-- InternSource: TS 365–368, C++ 355–359; LuaHeap passes that tagged root0.
+-- An operation borrowing one Value publishes its raw tag and payload,
+-- independent of whether that Value is a String, Table or another type.
+struct single_value_roots
+	tag: u32 -- V:23 W:29
+	payload: u32 -- V:24 W:30
+end
+
+local single_value_scope_tag<const> = 2 -- Z:365-368; separate from the existing Table and argument descriptors
+
+local single_value_scope<const> = function(management, tag, payload) -- Z:365-368
+	-- No table planner can run while this activation borrows its roots.
+	local offset<const> = management + layout.table_plan_offset -- Z:366-368; lifetime of the old root0 argument
+	local root<const>: *single_value_roots = layout.ram_base + offset -- V:23-24 W:29-30
+	root.tag = tag -- V:23 W:29 Z:368
+	root.payload = payload -- V:24 W:30 Z:368
+	return offset | single_value_scope_tag -- Z:368; encode the software scope, not a console register
+end
+
 -- This is the explicit operand suffix, not the ordinary root head or the
 -- scope of an unrelated synchronous builtin. Mark invokes it after initial
 -- banks, major remark on reaching Roots before its banks, and scoped Atomic
@@ -70,6 +90,11 @@ local mark_operand_roots<const> = function(control, arena, metadata, scope, atom
 	if (scope & detached_scope_tag) ~= 0 then -- I:15-20; decode the prepared-frame argument source
 		local work<const> = mark_detached_frame_roots(control, arena, metadata, scope, atomic) -- J:724-730 I:15-20
 		return work -- J:730,1033
+	end
+	if (scope & single_value_scope_tag) ~= 0 then -- T:656,710,1060 C:677,734,1136
+		local root<const>: *single_value_roots = layout.ram_base + (scope & ~single_value_scope_tag) -- T:656,710,1060 C:677,734,1136
+		local _<const>, work<const> = mark.mark_value(control, arena, metadata, root.tag, root.payload, trace_head, 1) -- T:345-352,656,710,1060 C:77-92,677,734,1136
+		return work -- T:657,711,1061 C:678,735,1137
 	end
 	local roots<const>: *table_operand_roots = layout.ram_base + scope -- A:761,788,793 B:255 M:6; published operand lanes
 	mark.mark_record(control, arena, roots.receiver, table_kind, trace_head, 1) -- T:324-325,347,656,710,1060 C:81-82,100,297-298,677,734,1136
@@ -95,5 +120,6 @@ end
 return {
 	internal = { mark_detached_frame_roots = mark_detached_frame_roots }, -- I:15-20
 	mark_operand_roots = mark_operand_roots, -- T:656-657 C:677-678
+	single_value_scope = single_value_scope, -- Z:368
 	table_copy_scope = table_copy_scope, -- P:35-36 Q:71-72
 } -- I:15-20 P:35-36

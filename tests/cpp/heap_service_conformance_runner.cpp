@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "machine/runtime/runtime.h"
+#include "machine/cpu/errors.h"
 #include "machine/runtime/history/ram_history.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
@@ -56,6 +57,24 @@ int main(int argc, char** argv) {
 		RamHistory::PageMap historyBaseline, historyPartial, historyEnd;
 		for (char op; trace >> op;) {
 			switch (op) {
+				case '=': {
+					u32 source, first, bytes;
+					trace >> source >> first >> bytes;
+					try {
+						const u32 id = cpu.stringPool().internSlice(source, first, bytes);
+						std::cout << id << '\n';
+					} catch (const LuaOutOfMemorySignal&) {
+						std::cout << "0\n";
+					} catch (const std::runtime_error& error) {
+						const std::string_view message(error.what());
+						if (message.ends_with("BLua32 ROM String chain is invalid.")) std::cout << "1\n";
+						else if (message.ends_with("BLua32 ROM String header is invalid.")) std::cout << "2\n";
+						else if (message.ends_with("BLua32 ROM String is truncated.")) std::cout << "3\n";
+						else throw;
+					}
+					break;
+				}
+
 				case 'B': {
 					u32 function, count, args[8];
 					trace >> function >> count;

@@ -13,6 +13,7 @@ local strings<const> = require('kernel/gc_strings') -- S:447-449 R:438-439
 local hashes<const> = require('kernel/table_reinsert') -- T:61 C:48
 
 local name_charge<const> = 9 -- T:10 C:9
+local backing_slot_bytes<const> = 17 -- T:95 C:86
 local integer_tag<const> = 3 -- T:61 C:48 K:9
 local mark_phase<const> = 1 -- G:68
 local atomic_phase<const> = 3 -- G:68
@@ -122,4 +123,5 @@ end
 return {
 	internal = { bucket_for = bucket_for, grow = grow },
 	find_name = find_name, growth_capacity = growth_capacity, commit_name = commit_name,
+	name_charge = name_charge, backing_slot_bytes = backing_slot_bytes,
 }

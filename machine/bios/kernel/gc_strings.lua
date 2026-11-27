@@ -271,7 +271,10 @@ end
 
 return {
 	internal = { is_ram_string_id = is_ram_string_id, shrink_step = shrink_step,
-		rom_tables_offset = 0x18 }, -- T:20-21 C:21-22
+		rom_tables_offset = 0x18, -- T:20-21 C:21-22
+		ram_bucket_extent_mask = ram_bucket_extent_mask, ram_bucket_rehash = ram_bucket_rehash,
+		ram_bucket_shrink = ram_bucket_shrink, max_ram_records = max_ram_records,
+	},
 	mark = mark,
 	begin_reachability_epoch = begin_reachability_epoch,
 	begin_sweep = begin_sweep,
