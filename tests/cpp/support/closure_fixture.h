@@ -30,4 +30,29 @@ inline u32 seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = 
 	return record;
 }
 
+// Raw-CPU fixtures that exercise a later CALL/return/GC/inspection boundary
+// build their input records directly. Capture addresses are chosen by the
+// fixture, not sampled from the prototype's descriptors.
+inline u32 seedTestCapturedClosure(CPU& cpu, u32 address, std::span<u32> newCells,
+	std::span<const u32> captures = {}, ExecutionDomainId domain = SYSTEM_EXECUTION_DOMAIN_ID) {
+	auto& memory = cpu.memory();
+	const auto bus = domain == SYSTEM_EXECUTION_DOMAIN_ID ? MAPPED_BUS_MASTER_CPU : mappedBusSignalsForCartridgeSlot(domain);
+	Span<const u8> bytes;
+	if (!memory.bindMappedReadView(address, BLUA32_FUNCTION_RECORD_SIZE, bus, bytes))
+		throw std::logic_error("fixture captured closure prototype has no physical backing");
+	const auto count = readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
+	if (captures.empty()) captures = newCells;
+	if (count != captures.size()) throw std::logic_error("fixture must supply each capture explicitly");
+	const bool latched = address >= RAM_BASE && (address < CART_ROM_BASE || address >= CART_ROM_END);
+	const FunctionPrototype prototype{.functionAddress = address, .entry = FunctionEntry::fromRom(bytes.data()),
+		.upvalueTableAddress = readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET),
+		.recordUpvalueCount = count, .executionDomainId = domain};
+	const u32 record = cpu.luaHeap().allocateClosureRecord(count, latched, newCells);
+	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), count, false, latched);
+	for (u32 index = 0; index < count; ++index)
+		ClosureRecord::setCaptureAddress(memory, record, index, captures[index]);
+	cpu.gcHeap().publishObject(record);
+	return record;
+}
+
 } // namespace bmsx::test

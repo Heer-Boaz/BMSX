@@ -138,8 +138,15 @@ auto makeClosureCartImage(
 	image.globalNames.emplace_back(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 	image.globalNames.emplace_back(TEST_CARTRIDGE_VALUE_GLOBAL);
 	std::span<bmsx::u8> code(image.text);
-	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
+	if (staticClosure) {
+		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 0, 0, 1);
+		image.closureRelocations = {{1u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::Cartridge, 1u)}};
+	} else {
+		// The wire-format test supplies its already bound input in R0.
+		bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
+		bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 0, 0, 0);
+	}
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 0);
 	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, bmsx::encodeFixedValueCount(0), 2);
 	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::SETGL), 0, 0, 1);
@@ -152,13 +159,7 @@ auto makeClosureCartImage(
 		{.firstWord = 6u, .wordCount = 2u, .staticClosure = staticClosure},
 		{.firstWord = 8u, .wordCount = 1u},
 	};
-	// This hand-authored image isolates distinct captured-closure identities
-	// through the save wire. Captureless ROM allocation uses the linked BIOS.
 	if (!staticClosure) image.functions[1].upvalues = {{true, 2u}};
-	image.closureRelocations = {{
-		1u,
-		bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::Cartridge, 1u),
-	}};
 	image.irqFunctionIndex = 2u;
 	image.exceptionFunctionIndex = 2u;
 	return image;
@@ -817,6 +818,22 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(runtime.callClosure(restoredPublished).get(0) == bmsx::valueInteger(222), "restored slot 1 closure executes slot 1 code");
 }
 
+void seedDynamicClosureAtCartStartup(SystemRuntimeFixture& fixture) {
+	auto& cpu = fixture.runtime.machine.cpu;
+	auto startup = fixture.cartRom.textAddress;
+	cpu.setExecutionHook({
+		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) {
+			return pc == *static_cast<const bmsx::u32*>(context);
+		},
+		.context = &startup, .domainMask = bmsx::executionDomainBit(0),
+	});
+	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped, "stop at served cart startup before publication");
+	cpu.setExecutionHook({});
+	std::array<bmsx::u32, 1> cells{};
+	const auto record = bmsx::test::seedTestCapturedClosure(cpu, fixture.cartRom.functionAddresses[1], cells, {}, 0);
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueClosure(record));
+}
+
 void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWireFormat() {
 	SystemRuntimeFixture fixture(
 		makeExecutionSelectorSystemImage(),
@@ -827,11 +844,13 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
+	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the first non-static closure");
 	const bmsx::Value firstClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 firstClosure = bmsx::asClosure(firstClosureValue, cpu.gcHeap());
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
+	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cartridge startup publishes the second non-static closure");
 	const bmsx::Value secondClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 secondClosure = bmsx::asClosure(secondClosureValue, cpu.gcHeap());
@@ -880,6 +899,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
+	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "slot 0 publishes the dynamic closure");
 	const bmsx::Value dynamicClosureValue = cpu.getGlobalByKey(publishedClosureName);
 	bmsx::u32 dynamicClosure = bmsx::asClosure(dynamicClosureValue, cpu.gcHeap());
@@ -918,6 +938,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0u);
 	cpu.requestNonMaskableInterrupt();
 	require(cpu.enterPendingInterrupt(), "physical NMI re-enters the system execution selector");
+	seedDynamicClosureAtCartStartup(fixture);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "system NMI handler switches the execution latch to the non-static cartridge");
 	bmsx::applyRuntimeSaveState(
 		runtime,

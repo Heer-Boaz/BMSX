@@ -482,7 +482,7 @@ private:
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
-	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
+	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
 	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
@@ -500,8 +500,6 @@ private:
 	bool executeVararg(CallFrame& frame, int first, int requested);
 	bool acquireRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top, int end, u32 receiverFlags);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
-	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
-	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
 	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
 	void setRegister(CallFrame& frame, int index, Value value);
@@ -700,7 +698,6 @@ private:
 	int m_localRootScopeDepth = 0;
 
 	std::array<std::vector<u32>, 3> m_capturedClosureOperands;
-	std::vector<u32> m_closureUpvalueWordScratch;
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;
 	Value m_stringIndexTable = valueNil();

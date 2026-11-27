@@ -2,6 +2,7 @@
 #include "machine/cpu/jit/runtime/block.h"
 #include "common/endian.h"
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
@@ -14,6 +15,7 @@
 #include "spec/bmsx/memory_map.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 
 #include <algorithm>
 #include <chrono>
@@ -161,8 +163,15 @@ test::Blua32TestImage program(Workload workload) {
 	case Workload::Varargs: {
 		const bool captures = workload == Workload::Upvalues;
 		text.resize(12u * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+		if (captures) {
+			// This measures the steady-state access loop, not binding setup.
+			writeInstruction(text, 0, static_cast<u8>(OpCode::MOV), 0, 0, 0);
+			writeInstruction(text, 1, static_cast<u8>(OpCode::MOV), 0, 0, 0);
+		} else {
+			writeInstruction(text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+			writeInstruction(text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+			image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		}
 		writeInstruction(text, 2, static_cast<u8>(OpCode::MOV), 4, 0, 0);
 		const u32 call = captures ? 3u : 6u;
 		if (!captures) {
@@ -189,7 +198,6 @@ test::Blua32TestImage program(Workload workload) {
 		image.functions = {{.firstWord = 0, .wordCount = call + 2, .maxStack = 8},
 			{.firstWord = callee, .wordCount = captures ? 6u : 4u, .maxStack = 5, .isVararg = !captures, .staticClosure = !captures,
 				.upvalues = captures ? std::vector<Blua32UpvalueRecord>{{true, 1}} : std::vector<Blua32UpvalueRecord>{}}};
-		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		break;
 	}
 	}
@@ -211,6 +219,14 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 	ValueSpan registers = cpu.activeThread()->frameAtDepth(0)->registers;
 	registers.set(0, valueInteger(1)); registers.set(1, valueInteger(3));
 	registers.set(2, valueInteger(7)); registers.set(3, valueInteger(65535));
+	if (workload == Workload::Upvalues) {
+		auto& frame = *cpu.activeThread()->currentFrame;
+		std::array<u32, 1> cells{};
+		registers.set(0, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
+		Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase() + 1, 0u);
+		frame.writeControl(FrameField::OpenHead, cells[0]);
+		frame.setTop(1);
+	}
 	if (workload == Workload::Globals) {
 		cpu.setGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));

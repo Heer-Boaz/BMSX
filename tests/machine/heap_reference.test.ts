@@ -3,7 +3,7 @@ import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memo
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
-import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, isOpen } from '../../machine/ts/machine/cpu/upvalue';
+import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
@@ -16,19 +16,23 @@ import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function machine(): CPU {
-	const text = new Uint8Array(16);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 1, 0, 0);
-	writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.RET, 0, 1, 0);
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [
-		{ firstWord: 0, wordCount: 3, maxStack: 8 },
-		{ firstWord: 3, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-	], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] }));
+	const text = new Uint8Array(8);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 1, maxStack: 8 },
+		{ firstWord: 1, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+	] });
+	const { cpu, memory } = createTestSystemCpu(image);
+	const frame = cpu.rootThread.currentFrame!, cells = new Uint32Array(1);
+	frame.registers.set(1, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[1], cells)));
+	bindOpen(memory, cells[0], frame.thread.address, frame.stackBase, 0);
+	frame.openUpvalueHead = cells[0];
+	frame.top = 2;
 	runGuestToHalt(cpu, 1000);
 	return cpu;
 }

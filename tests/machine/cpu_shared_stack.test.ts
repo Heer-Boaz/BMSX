@@ -1,4 +1,5 @@
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
+import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -7,13 +8,13 @@ import { MAPPED_BUS_INSTRUCTION_FETCH } from '../../machine/ts/machine/memory/bu
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ValueTag, asClosure, valueBool, valueFloat, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, asClosure, valueBool, valueClosure, valueFloat, valueInteger, valueNil, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -87,37 +88,44 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`overlapping parent and child captures close with their own activation (${backend})`, () => {
-		const text = new Uint8Array(18 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.KSMI, 5, 0, 37);
+		const text = new Uint8Array(13 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.SETGL, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 3, OpCode.SETGL, 0, 0, 0);
-		writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 5, OpCode.CLOSURE, 4, 0, 0);
-		writeInstruction(text, 6, OpCode.CALL, 4, 2, 1);
-		writeInstruction(text, 7, OpCode.KSMI, 5, 0, 51);
+		writeInstruction(text, 2, OpCode.CLOSURE, 4, 0, 0);
+		writeInstruction(text, 3, OpCode.CALL, 4, 2, 1);
+		writeInstruction(text, 4, OpCode.KSMI, 5, 0, 51);
+		writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 6, OpCode.SETGL, 1, 0, 1);
+		writeInstruction(text, 7, OpCode.KSMI, 0, 0, 42);
 		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
-		writeInstruction(text, 9, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 10, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 11, OpCode.SETGL, 1, 0, 1);
-		writeInstruction(text, 12, OpCode.KSMI, 0, 0, 42);
-		writeInstruction(text, 13, OpCode.RET, 0, 1, 0);
-		writeInstruction(text, 14, OpCode.GETUP, 0, 0, 0);
-		writeInstruction(text, 15, OpCode.RET, 0, 2, 0);
-		writeInstruction(text, 16, OpCode.GETUP, 0, 0, 0);
-		writeInstruction(text, 17, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 9, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
+		writeInstruction(text, 11, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 12, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
-			{ firstWord: 0, wordCount: 9, maxStack: 6 },
-			{ firstWord: 9, wordCount: 5, numParams: 1, maxStack: 2 },
-			{ firstWord: 14, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 5 }] },
-			{ firstWord: 16, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-		], globalNames: ['outer_read', 'inner_read'], closureRelocations: [
-			{ wordIndex: 2, functionIndex: 2 },
-			{ wordIndex: 5, functionIndex: 1 },
-			{ wordIndex: 10, functionIndex: 3 },
-		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+			{ firstWord: 0, wordCount: 6, maxStack: 6 },
+			{ firstWord: 6, wordCount: 3, numParams: 1, maxStack: 2 },
+			{ firstWord: 9, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 5 }] },
+			{ firstWord: 11, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+		], globalNames: ['outer_read', 'inner_read'], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		const parent = cpu.rootThread.currentFrame!, outer = new Uint32Array(1);
+		parent.registers.set(0, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], outer)));
+		parent.registers.setInteger(5, 37);
+		parent.top = 6;
+		bindOpen(memory, outer[0], parent.thread.address, parent.stackBase + 5, 0);
+		parent.openUpvalueHead = outer[0];
+		const childEntry = image.image.functions[1].codeAddress;
+		cpu.setExecutionHook((_domain, pc) => pc === childEntry, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
+		const child = cpu.rootThread.currentFrame!, inner = new Uint32Array(1);
+		assert.equal(child.stackBase, parent.stackBase + 5);
+		child.registers.set(1, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[3], inner)));
+		child.top = 2;
+		bindOpen(memory, inner[0], child.thread.address, child.stackBase, 0);
+		child.openUpvalueHead = inner[0];
+		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
 			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern(name)), cpu.gc));
@@ -183,22 +191,24 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 31]) {
 	test(`open captures remain roots when open VARARG sets top to ${top} (${backend})`, () => {
-		const text = new Uint8Array(8 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.MOV, 2, 1, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 3, OpCode.SETGL, 0, 0, 0);
-		writeInstruction(text, 4, OpCode.VARARG, top, 0, 0);
-		writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
-		writeInstruction(text, 6, OpCode.GETUP, 0, 0, 0);
-		writeInstruction(text, 7, OpCode.RET, 0, 2, 0);
+		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.SETGL, 0, 0, 0);
+		writeInstruction(text, 1, OpCode.VARARG, top, 0, 0);
+		writeInstruction(text, 2, OpCode.RET, 0, 1, 0);
+		writeInstruction(text, 3, OpCode.GETUP, 0, 0, 0);
+		writeInstruction(text, 4, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
-			{ firstWord: 0, wordCount: 6, maxStack: 4, isVararg: true },
-			{ firstWord: 6, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 2 }] },
-		], globalNames: ['read'], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
-		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.createTable());
-		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 5 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+			{ firstWord: 0, wordCount: 3, maxStack: 4, isVararg: true },
+			{ firstWord: 3, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 2 }] },
+		], globalNames: ['read'] });
+		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const frame = cpu.rootThread.currentFrame!, cells = new Uint32Array(1);
+		frame.registers.setTable(2, cpu.createTable());
+		frame.registers.set(0, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[1], cells)));
+		frame.top = 3;
+		bindOpen(memory, cells[0], frame.thread.address, frame.stackBase + 2, 0);
+		frame.openUpvalueHead = cells[0];
+		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 		assert.equal(cpu.rootThread.currentFrame!.top, top);
 		cpu.collectTrackedHeapBytes(); cpu.restoreRuntimeState(cpu.captureRuntimeState());

@@ -36,6 +36,7 @@ import {
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
 import {
 	INSTRUCTION_BYTES,
@@ -519,6 +520,21 @@ export function seedTestRomClosure(cpu: CPU, address: number, domain: ExecutionD
 	assert.equal(prototype.romBacked, true);
 	assert.equal(prototype.recordUpvalueCount, 0);
 	return cpu['staticClosureFromLatch']();
+}
+
+/** Provision raw capture records when a fixture measures another instruction or GC. */
+export function seedTestCapturedClosure(cpu: CPU, address: number, newCells: Uint32Array,
+	captures: ArrayLike<number> = newCells, domain: ExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID): number {
+	const image = cpu['executionImageForDomain'](domain);
+	assert.ok(image);
+	assert.ok(cpu['readFunctionRecordOnBus'](image, address, CPU['executionBusSignalsForDomain'](domain)));
+	const prototype = cpu['functionRecordLatch'], count = prototype.recordUpvalueCount, latched = !prototype.romBacked;
+	assert.equal(captures.length, count);
+	const record = cpu.luaHeap.allocateClosureRecord(count, latched, newCells, newCells.length);
+	ClosureRecord.initializeRecord(cpu.memory, record, prototype, false, cpu.gc.white(), count, latched);
+	for (let i = 0; i < count; ++i) ClosureRecord.setCaptureAddress(cpu.memory, record, i, captures[i]);
+	cpu.gc.publishObject(record);
+	return record;
 }
 
 export function runCompiledTestSystem(compiled: CompiledSystemProgram, cycleBudget: number): CPU {

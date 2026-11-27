@@ -99,9 +99,6 @@ import {
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_STRING_ROM_ADDRESS_MASK,
 	BLUA32_STRING_ROM_SOCKET_SHIFT,
-	BLUA32_UPVALUE_INDEX_MASK,
-	BLUA32_UPVALUE_IN_STACK_MASK,
-	BLUA32_UPVALUE_RECORD_SIZE,
 	Blua32ConstantTag,
 } from '../../spec/blua32/image_format';
 import {
@@ -379,7 +376,6 @@ export class CPU implements MappedPageInvalidator {
 	private builtinResultsScratchIndex = 0;
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
-	private closureUpvalueWords = new Uint32Array(0);
 	private readonly capturedClosureOperands = [new Uint32Array(0), new Uint32Array(0), new Uint32Array(0)];
 	private readonly capturedClosureExtent = new Uint32Array(3);
 	private readonly capturedClosureArgs = [0, 0, 0, 0, 0, 0];
@@ -573,33 +569,6 @@ export class CPU implements MappedPageInvalidator {
 		this.builtinResultsScratchIndex -= 1;
 	}
 
-	private findOpenUpvalue(frame: CallFrame, index: number): number {
-		const slot = (frame.stackBase + index) >>> 0;
-		let address = frame.openUpvalueHead;
-		for (let remaining = UPVALUE_CHAIN_LIMIT; address !== 0 && remaining !== 0; --remaining) {
-			const cell = this.gc.openCellAddress(address);
-			if (cell === 0) break;
-			const current = this.memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-			if (current <= slot) return current === slot ? cell : 0;
-			address = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
-		}
-		return 0;
-	}
-
-	private linkOpenUpvalue(frame: CallFrame, cell: number, slot: number): void {
-		let previous = 0;
-		let next = frame.openUpvalueHead;
-		for (let remaining = UPVALUE_CHAIN_LIMIT; next !== 0 && remaining !== 0; --remaining) {
-			const current = this.gc.openCellAddress(next);
-			if (current === 0 || this.memory.readRamRecordWord(current + UPVALUE_VALUE_WORD) <= slot) break;
-			previous = current;
-			next = this.memory.readRamRecordWord(current + UPVALUE_NEXT);
-		}
-		Upvalue.bindOpen(this.memory, cell, frame.thread.address, slot, next);
-		if (previous === 0) frame.openUpvalueHead = cell;
-		else this.memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
-	}
-
 	private tableIndexAddress(base: Value): number {
 		switch (valueTag(base)) {
 			case ValueTag.Table: return valuePayload(base);
@@ -732,7 +701,7 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
 		frame.pc = this.currentInstructionPc;
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Prototype, record.functionAddress, record.executionDomainId);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Latched, 0, record.codeAddress);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Latched, +!record.romBacked, record.codeAddress);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
 		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
@@ -2993,8 +2962,8 @@ export class CPU implements MappedPageInvalidator {
 			this.requestYield();
 			return;
 		}
-		if (!captureless && record.romBacked && !record.image.romFunctions.mappedCode) {
-			const bytes = Closure.closureRecordBytes(record.recordUpvalueCount, false);
+		if (!captureless) {
+			const bytes = Closure.closureRecordBytes(record.recordUpvalueCount, !record.romBacked);
 			if (bytes > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
 			if (this.systemImage.heapServiceFunctions === null) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -3004,8 +2973,14 @@ export class CPU implements MappedPageInvalidator {
 			this.requestYield();
 			return;
 		}
-		const closure = canonical ? this.allocateStaticClosureFromLatch() : this.createClosure(frame);
-		if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
+		if (canonical) {
+			this.setRegisterClosureFast(frame, registers, a, this.allocateStaticClosureFromLatch());
+			return;
+		}
+		const closure = this.luaHeap.allocateClosureRecord(0, true);
+		Closure.initializeRecord(this.memory, closure, record, false, this.gc.white(), 0, true);
+		this.gc.publishObject(closure);
+		this.setRegisterClosureFast(frame, registers, a, closure);
 	}
 
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
@@ -4299,60 +4274,6 @@ export class CPU implements MappedPageInvalidator {
 		thread.stackTop = frame.stackBase + frame.stackCapacity;
 		thread.enterFrame(frame);
 		this.latchActiveExecutionImage(domain, image);
-	}
-
-	private createClosure(frame: CallFrame): number {
-		const functionRecord = this.functionRecordLatch;
-		const count = functionRecord.recordUpvalueCount;
-		const latched = !functionRecord.romBacked;
-		if (Closure.closureRecordBytes(count, latched) > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		if (this.closureUpvalueWords.length < count) this.closureUpvalueWords = new Uint32Array(count);
-		if (this.capturedClosureOperands[0].length < count) this.capturedClosureOperands[0] = new Uint32Array(count);
-		const upvalueWords = this.closureUpvalueWords;
-		const upvalues = this.capturedClosureOperands[0];
-		upvalues.fill(0, 0, count);
-		const faultSequence = this.memory.readBusFaultSequence();
-		let newUpvalueCount = 0;
-		for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
-			const word = this.memory.readMappedBusU32LE(
-				(functionRecord.upvalueTableAddress
-					+ index * BLUA32_UPVALUE_RECORD_SIZE) >>> 0,
-				functionRecord.busSignals,
-			);
-			if (this.memory.readBusFaultSequence() !== faultSequence) {
-				this.hardHalt();
-				return 0;
-			}
-			upvalueWords[index] = word;
-			const upvalueIndex = word & BLUA32_UPVALUE_INDEX_MASK;
-			if ((word & BLUA32_UPVALUE_IN_STACK_MASK) !== 0) {
-				if (upvalueIndex >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				const cell = this.findOpenUpvalue(frame, upvalueIndex);
-				upvalues[index] = cell;
-				if (cell === 0) newUpvalueCount += 1;
-				continue;
-			}
-			if (upvalueIndex >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			upvalues[index] = frame.captureAddress(upvalueIndex);
-		}
-		if (this.capturedClosureOperands[1].length < newUpvalueCount) this.capturedClosureOperands[1] = new Uint32Array(newUpvalueCount);
-		const cells = this.capturedClosureOperands[1];
-		const address = this.luaHeap.allocateClosureRecord(count, latched, cells, newUpvalueCount);
-		const closure = address;
-		Closure.initializeRecord(this.memory, address, functionRecord, false, this.gc.white(), count, latched);
-		let nextCell = 0;
-		for (let index = 0; index < functionRecord.recordUpvalueCount; index += 1) {
-			if (upvalues[index] !== 0 || (upvalueWords[index] & BLUA32_UPVALUE_IN_STACK_MASK) === 0) {
-				Closure.setCaptureAddress(this.memory, closure, index, upvalues[index]);
-				continue;
-			}
-			const cell = cells[nextCell++];
-			this.linkOpenUpvalue(frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
-			Closure.setCaptureAddress(this.memory, closure, index, cell);
-		}
-		this.gc.publishObject(closure);
-		this.charge(count);
-		return closure;
 	}
 
 	private closeUpvalues(frame: CallFrame, firstSlot = 0): number {

@@ -21,7 +21,7 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 
 function machine() {
 	const text = new Uint8Array(4);
@@ -267,34 +267,36 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 
 test('major marking resumes large closure captures from a RAM snapshot', () => {
 	const captures = 9000;
-	const text = new Uint8Array(7 * 4);
-	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
-	writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.CLOSURE, 3, 0, 0);
-	writeInstruction(text, 4, OpCode.JMP, 1, 0, 0);
-	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
+	const text = new Uint8Array(3 * 4);
+	writeInstruction(text, 0, OpCode.JMP, 1, 0, 0);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
 	const capture = { inStack: true, index: 0 }, lastCapture = { inStack: true, index: 1 };
 	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
 	upvalueDescs[captures - 1] = lastCapture;
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({
+	const image = linkRawTestSystemBlua32({
 		text,
 		functions: [
-			{ firstWord: 0, wordCount: 6, maxStack: 8 },
-			{ firstWord: 6, wordCount: 1, upvalueDescs: [capture, lastCapture] },
-			{ firstWord: 6, wordCount: 1, upvalueDescs },
+			{ firstWord: 0, wordCount: 2, maxStack: 8 },
+			{ firstWord: 2, wordCount: 1, upvalueDescs: [capture, lastCapture] },
+			{ firstWord: 2, wordCount: 1, upvalueDescs },
 		],
-		closureRelocations: [
-			{ wordIndex: 1, functionIndex: 1 },
-			{ wordIndex: 3, functionIndex: 2 },
-		],
-	}));
+	});
+	const { cpu, memory } = createTestSystemCpu(image);
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc;
 	const lastTarget = cpu.createTable();
 	frame.registers.setTable(0, cpu.createTable());
-	frame.registers.setTable(1, lastTarget); frame.top = 2;
-	cpu.runUntilDepth(0, 20000);
+	frame.registers.setTable(1, lastTarget);
+	const cells = new Uint32Array(2);
+	frame.registers.set(2, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[1], cells)));
+	const references = new Uint32Array(captures).fill(cells[0]);
+	references[captures - 1] = cells[1];
+	frame.registers.set(3, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], new Uint32Array(0), references)));
+	Upvalue.bindOpen(memory, cells[0], frame.thread.address, frame.stackBase, 0);
+	Upvalue.bindOpen(memory, cells[1], frame.thread.address, frame.stackBase + 1, cells[0]);
+	frame.openUpvalueHead = cells[1];
+	frame.top = 4;
+	assert.equal(cpu.runUntilDepth(0, 20000), RunResult.Halted);
 	frame.registers.clear(3);
 	const closure = frame.registers.getPayload(3);
 	const cell = Closure.captureAddress(memory, closure, 0);
@@ -325,37 +327,42 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 	assert.deepEqual(finish(), expected, 'save and restore reproduce both marking and mutation');
 });
 
-test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET lifecycle', () => {
-	const captures = 3000, text = new Uint8Array(9 * 4);
+test('a suspended Thread scan follows closing JMP and RET of a large live capture list', () => {
+	const captures = 3000, text = new Uint8Array(7 * 4);
 	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
 	writeInstruction(text, 2, OpCode.CALL, 0, 2, 2);
 	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.CLOSURE, 3, 0, 0);
-	writeInstruction(text, 6, OpCode.JMP, 1, 0, 0);
-	writeInstruction(text, 7, OpCode.RET, 3, 2, 0);
-	writeInstruction(text, 8, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 4, OpCode.JMP, 1, 0, 0);
+	writeInstruction(text, 5, OpCode.RET, 3, 2, 0);
+	writeInstruction(text, 6, OpCode.HALT, 0, 0, 0);
 	const capture = { inStack: true, index: 1 };
 	const upvalueDescs = Array<typeof capture>(captures).fill(capture);
 	upvalueDescs[captures - 1] = { inStack: true, index: 0 };
 	const image = linkRawTestSystemBlua32({
 		text, functions: [
 			{ firstWord: 0, wordCount: 4, maxStack: 8 },
-			{ firstWord: 4, wordCount: 4, numParams: 1, maxStack: 8 },
-			{ firstWord: 8, wordCount: 1, upvalueDescs },
+			{ firstWord: 4, wordCount: 2, numParams: 1, maxStack: 8 },
+			{ firstWord: 6, wordCount: 1, upvalueDescs },
 		],
-		closureRelocations: [
-			{ wordIndex: 1, functionIndex: 1 },
-			{ wordIndex: 5, functionIndex: 2 },
-		],
+		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 	});
 	const { cpu, memory } = createTestSystemCpu(image);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc, target = cpu.createTable();
 	frame.registers.setTable(1, target); frame.top = 2;
-	assert.equal(cpu.runUntilDepth(0, 2 * BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL] + captures), RunResult.Yielded);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 	assert.equal(cpu.getFrameDepth(), 2);
+	const child = cpu.activeThread.currentFrame!, cells = new Uint32Array(captures);
+	child.registers.set(3, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[2], cells)));
+	let head = cells[captures - 1];
+	Upvalue.bindOpen(memory, head, child.thread.address, child.stackBase, 0);
+	for (let i = 0; i < captures - 1; ++i) {
+		Upvalue.bindOpen(memory, cells[i], child.thread.address, child.stackBase + 1, head);
+		head = cells[i];
+	}
+	child.openUpvalueHead = head;
+	child.top = 4;
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const work = gc.step();
 	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);

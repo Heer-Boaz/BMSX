@@ -155,9 +155,9 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(id);
 }
 
-u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical, std::span<u32> cells) {
+u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical) {
 	const bool latched = !m_functionRecordLatch.romBacked;
-	const u32 address = m_luaHeap.allocateClosureRecord(count, latched, cells);
+	const u32 address = m_luaHeap.allocateClosureRecord(count, latched);
 	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, canonical, latched);
 	m_heap.publishObject(address);
 	return address;
@@ -2919,33 +2919,6 @@ void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
 }
 
-u32 CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
-	const u32 slot = static_cast<u32>(frame.stackBase()) + static_cast<u32>(index);
-	u32 address = frame.readControl(FrameField::OpenHead);
-	for (u32 remaining = UPVALUE_CHAIN_LIMIT; address != 0 && remaining != 0; --remaining) {
-		const u32 cell = m_heap.openCellAddress(address);
-		if (cell == 0u) break;
-		const u32 current = m_memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
-		if (current <= slot) return current == slot ? cell : 0u;
-		address = m_memory.readRamRecordWord(cell + UPVALUE_NEXT);
-	}
-	return 0u;
-}
-
-void CPU::linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot) {
-	u32 previous = 0u;
-	u32 next = frame.readControl(FrameField::OpenHead);
-	for (u32 remaining = UPVALUE_CHAIN_LIMIT; next != 0 && remaining != 0; --remaining) {
-		const u32 current = m_heap.openCellAddress(next);
-		if (current == 0u || m_memory.readRamRecordWord(current + UPVALUE_VALUE_WORD) <= slot) break;
-		previous = current;
-		next = m_memory.readRamRecordWord(current + UPVALUE_NEXT);
-	}
-	Upvalue::bindOpen(m_memory, cell, frame.thread->address, slot, next);
-	if (previous != 0u) m_memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
-	else frame.writeControl(FrameField::OpenHead, cell);
-}
-
 u32 CPU::createClosure(CallFrame& frame, int destination) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const bool captureless = functionRecord.upvalueCount == 0u;
@@ -2964,8 +2937,8 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		requestYield();
 		return 0u;
 	}
-	if (!captureless && functionRecord.romBacked && !functionRecord.image->romFunctions.mappedCode) {
-		if (functionRecord.upvalueCount > maxClosureCaptures(false)) throw LuaOutOfMemorySignal{};
+	if (!captureless) {
+		if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
 		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
 			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return 0u;
@@ -2975,53 +2948,7 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		return 0u;
 	}
 	if (canonical) return allocateStaticClosure(decodePrototype(functionRecord));
-	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
-	auto& resolvedCells = m_capturedClosureOperands[0];
-	auto& issuedCells = m_capturedClosureOperands[1];
-	resolvedCells.resize(functionRecord.upvalueCount);
-	std::fill(resolvedCells.begin(), resolvedCells.end(), 0u);
-	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);
-	const u32 faultSequence = m_memory.readBusFaultSequence();
-	size_t newUpvalueCount = 0;
-	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
-		const u32 upvalueWord = m_memory.readMappedBusU32LE(
-			functionRecord.upvalueTableAddress + index * BLUA32_UPVALUE_RECORD_SIZE,
-			functionRecord.busSignals
-		);
-		if (m_memory.readBusFaultSequence() != faultSequence) {
-			resolvedCells.clear();
-			m_closureUpvalueWordScratch.clear();
-			hardHalt();
-			return 0u;
-		}
-		m_closureUpvalueWordScratch[index] = upvalueWord;
-		const u32 upvalueIndex = upvalueWord & BLUA32_UPVALUE_INDEX_MASK;
-		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
-			if (upvalueIndex >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			const u32 cell = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
-			resolvedCells[index] = cell;
-			newUpvalueCount += cell == 0u;
-		} else {
-			if (upvalueIndex >= frame.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			resolvedCells[index] = frame.captureAddress(upvalueIndex);
-		}
-	}
-	issuedCells.resize(newUpvalueCount);
-	const u32 closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, issuedCells);
-	size_t nextCell = 0;
-	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
-		u32 address = resolvedCells[index];
-		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
-			address = issuedCells[nextCell++];
-			linkOpenUpvalue(frame, address, static_cast<u32>(frame.stackBase())
-				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
-		}
-		ClosureRecord::setCaptureAddress(m_memory, closure, index, address);
-	}
-	resolvedCells.clear();
-	m_closureUpvalueWordScratch.clear();
-	instructionBudgetRemaining -= static_cast<int>(functionRecord.upvalueCount);
-	return closure;
+	return allocateClosure(decodePrototype(functionRecord), 0u, false);
 }
 
 int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {

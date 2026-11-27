@@ -21,6 +21,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { createReferenceCapturedClosure } from '../helpers/captured_closure_reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -114,13 +115,12 @@ for (const level of [0, 3] as const) {
 			finish();
 			return actual.heapServiceResult() | 0;
 		}
-		// Call the unchanged native mutable-descriptor sampler as a test oracle.
-		// Its mapped reads consume the same verified prototype descriptor words.
+		// The frozen sampler observes the same verified prototype and mapped words.
 		function nativeCapture(frame: typeof oracle.activeThread.currentFrame & {}) {
 			assert.ok(oracle['readFunctionRecordOnBus'](frame.executionImage, target.address, oracle.readExecutionBusSignals()));
 			oracle.instructionBudgetRemaining = 0;
 			oracle['runKind'] = CpuRunKind.Direct;
-			return oracle['createClosure'](frame);
+			return createReferenceCapturedClosure(oracle, frame, oracle['functionRecordLatch']);
 		}
 		function startWhole() {
 			assert.ok(actual.beginHeapService(driver, [management, RAM_BASE + frame.controlOffset, owner, binding, workspace, 0]));

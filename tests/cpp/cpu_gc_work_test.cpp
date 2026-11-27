@@ -785,20 +785,14 @@ void resumesRootBanksBeforeTracing() {
 void resumesLargeClosureCaptures() {
 	constexpr u32 captures = 9000;
 	test::Blua32TestImage program;
-	program.text.resize(7 * INSTRUCTION_BYTES);
-	writeInstruction(program.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(program.text, 1, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-	writeInstruction(program.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(program.text, 3, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
-	writeInstruction(program.text, 4, static_cast<u8>(OpCode::JMP), 1, 0, 0);
-	writeInstruction(program.text, 5, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(program.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	program.functions = {{.firstWord=0, .wordCount=6, .maxStack=8},
-		{.firstWord=6, .wordCount=1, .upvalues={{true, 0}, {true, 1}}},
-		{.firstWord=6, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 0})}};
+	program.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::JMP), 1, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	program.functions = {{.firstWord=0, .wordCount=2, .maxStack=8},
+		{.firstWord=2, .wordCount=1, .upvalues={{true, 0}, {true, 1}}},
+		{.firstWord=2, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 0})}};
 	program.functions.back().upvalues.back().index = 1;
-	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
-		{3, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	Machine machine(program, true);
 	auto& cpu = machine.cpu;
 	auto& memory = machine.memory;
@@ -807,8 +801,16 @@ void resumesLargeClosureCaptures() {
 	frame.registers.set(0, valueTable(cpu.createTable().address()));
 	const auto lastTarget = cpu.createTable().address();
 	frame.registers.set(1, valueTable(lastTarget));
-	frame.setTop(2);
-	require(cpu.runUntilDepth(0, 20000) == RunResult::Halted, "guest creates and closes both capture cells");
+	std::array<u32, 2> cells{};
+	frame.registers.set(2, valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells)));
+	std::vector<u32> references(captures, cells[0]);
+	references.back() = cells[1];
+	frame.registers.set(3, valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[2], {}, references)));
+	Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
+	Upvalue::bindOpen(memory, cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
+	frame.writeControl(FrameField::OpenHead, cells[1]);
+	frame.setTop(4);
+	require(cpu.runUntilDepth(0, 20000) == RunResult::Halted, "guest closes both capture cells");
 	frame.registers.clear(0, 3);
 	const u32 closure = valuePayload(frame.registers.get(3));
 	const u32 cell = ClosureRecord::captureAddress(memory, closure, 0);
@@ -846,22 +848,19 @@ void resumesLargeClosureCaptures() {
 void resumesOpenThreadAfterClosingInstruction() {
 	constexpr u32 captures = 3000;
 	test::Blua32TestImage program;
-	program.text.resize(9 * INSTRUCTION_BYTES);
+	program.text.resize(7 * INSTRUCTION_BYTES);
 	writeInstruction(program.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(program.text, 1, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 	writeInstruction(program.text, 2, static_cast<u8>(OpCode::CALL), 0, 2, 2);
 	writeInstruction(program.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(program.text, 4, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(program.text, 5, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
-	writeInstruction(program.text, 6, static_cast<u8>(OpCode::JMP), 1, 0, 0);
-	writeInstruction(program.text, 7, static_cast<u8>(OpCode::RET), 3, 2, 0);
-	writeInstruction(program.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 4, static_cast<u8>(OpCode::JMP), 1, 0, 0);
+	writeInstruction(program.text, 5, static_cast<u8>(OpCode::RET), 3, 2, 0);
+	writeInstruction(program.text, 6, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	program.functions = {{.firstWord=0, .wordCount=4, .maxStack=8},
-		{.firstWord=4, .wordCount=4, .numParams=1, .maxStack=8},
-		{.firstWord=8, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 1})}};
+		{.firstWord=4, .wordCount=2, .numParams=1, .maxStack=8},
+		{.firstWord=6, .wordCount=1, .upvalues=std::vector<Blua32UpvalueRecord>(captures, {true, 1})}};
 	program.functions.back().upvalues.back().index = 0;
-	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
-		{5, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
+	program.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	Machine generated(program), scalar(program, true);
 	for (auto* machine : {&generated, &scalar}) {
 		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[1]);
@@ -876,8 +875,22 @@ void resumesOpenThreadAfterClosingInstruction() {
 	const u32 target = setup(generated);
 	require(setup(scalar) == target, "the test shares the same physical operands across modes");
 	constexpr auto cycles = [](OpCode op) { return BASE_CYCLES[static_cast<u8>(op)]; };
-	require(test::runCpuParity(generated.cpu, scalar.cpu, 2 * cycles(OpCode::CLOSURE) + cycles(OpCode::CALL) + captures) == RunResult::Yielded,
-		"the child remains at its closing JMP after creating a large open chain");
+	require(test::runCpuParity(generated.cpu, scalar.cpu, cycles(OpCode::CLOSURE) + cycles(OpCode::CALL)) == RunResult::Yielded,
+		"both cores stop at the child entry before the closing JMP");
+	for (auto* machine : {&generated, &scalar}) {
+		auto& frame = *machine->cpu.activeThread()->currentFrame;
+		std::vector<u32> cells(captures);
+		const auto record = test::seedTestCapturedClosure(machine->cpu, machine->rom.functionAddresses[2], cells);
+		Upvalue::bindOpen(machine->memory, cells.back(), frame.thread->address, frame.stackBase(), 0u);
+		u32 head = cells.back();
+		for (u32 index = 0; index < captures - 1; ++index) {
+			Upvalue::bindOpen(machine->memory, cells[index], frame.thread->address, frame.stackBase() + 1, head);
+			head = cells[index];
+		}
+		frame.writeControl(FrameField::OpenHead, head);
+		frame.registers.set(3, valueClosure(record));
+		frame.setTop(4);
+	}
 	const u32 control = generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const auto step = [](Machine& machine) { return machine.cpu.stepHeap(valueNil(), valueNil(), valueNil()); };
 	const auto firstWork = step(generated);

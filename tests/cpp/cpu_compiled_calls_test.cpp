@@ -297,35 +297,31 @@ void valueRangePlacementCycles() {
 	}
 }
 
-void closureBindingAndClosingCycles() {
+void closingSharedCaptureCycles() {
 	test::Blua32TestImage image;
-	image.text.resize(8 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 3, 0, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 2, 3, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8},
-		{.firstWord = 6, .wordCount = 2, .maxStack = 2, .staticClosure = false, .upvalues = {{true, 0}, {true, 1}}}};
-	image.constants = {17};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
-		{4, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.text.resize(3 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::RET), 2, 3, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 8},
+		{.firstWord = 1, .wordCount = 2, .maxStack = 2, .staticClosure = false, .upvalues = {{true, 0}, {true, 1}}}};
 	for (const bool scalar : {true, false}) {
 		CpuMachine machine(image, scalar);
-		machine.cpu.runUntilDepth(0, 1);
-		for (int call = 0; call < 2; ++call) require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
-			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] - 2, "every descriptor costs one even when an earlier closure already opened its cell");
-		auto first = asClosure(machine.cpu.readFrameRegister(0, 2), machine.cpu.gcHeap());
-		auto second = asClosure(machine.cpu.readFrameRegister(0, 3), machine.cpu.gcHeap());
-		require(ClosureRecord::captureAddress(machine.cpu.memory(), first, 0) == ClosureRecord::captureAddress(machine.cpu.memory(), second, 0) && ClosureRecord::captureAddress(machine.cpu.memory(), first, 1) == ClosureRecord::captureAddress(machine.cpu.memory(), second, 1),
-			"successive closures share both captured cells");
+		auto& frame = *machine.cpu.activeThread()->currentFrame;
+		std::array<u32, 2> cells{};
+		const auto prototype = machine.rom.functionAddresses[1];
+		const auto first = test::seedTestCapturedClosure(machine.cpu, prototype, cells);
+		const auto second = test::seedTestCapturedClosure(machine.cpu, prototype, {}, cells);
+		Upvalue::bindOpen(machine.cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
+		Upvalue::bindOpen(machine.cpu.memory(), cells[1], frame.thread->address, frame.stackBase() + 1, cells[0]);
+		frame.writeControl(FrameField::OpenHead, cells[1]);
+		frame.registers.set(0, valueInteger(17));
+		frame.registers.set(2, valueClosure(first));
+		frame.registers.set(3, valueClosure(second));
 		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 2 - 2,
 			"RET charges two distinct open cells, not four descriptors, and two received values");
-		require(!Upvalue::isOpen(machine.cpu.memory(), ClosureRecord::captureAddress(machine.cpu.memory(), first, 0))
-			&& !Upvalue::isOpen(machine.cpu.memory(), ClosureRecord::captureAddress(machine.cpu.memory(), first, 1)), "both charged captures are closed");
+		require(!Upvalue::isOpen(machine.cpu.memory(), cells[0]) && !Upvalue::isOpen(machine.cpu.memory(), cells[1]),
+			"both charged captures are closed");
 	}
 }
 
@@ -2006,7 +2002,7 @@ int main(int argc, char** argv) {
 		inactiveFrameMetadata();
 		protectedNestedFrames();
 		valueRangePlacementCycles();
-		closureBindingAndClosingCycles();
+		closingSharedCaptureCycles();
 		weakCanonicalClosuresAndStaticEntry();
 		protectedBuiltinPlacementCycles();
 		returnPlacementCycles();

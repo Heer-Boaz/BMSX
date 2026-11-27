@@ -171,8 +171,8 @@ test('LOADKR converts its Number index to U32 and faults outside the constant po
 	}
 });
 
-test('CLOSURE rejects out-of-window descriptors before allocating or opening any capture', () => {
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const inStack of [true, false]) {
+test('captured CLOSURE without verified firmware traps before allocating or opening any capture', () => {
+	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.CLOSURE, 2, 0, 0);
@@ -182,7 +182,7 @@ test('CLOSURE rejects out-of-window descriptors before allocating or opening any
 			text, functions: [
 				{ firstWord: 0, wordCount: 3, maxStack: 4 },
 				{ firstWord: 3, wordCount: 1, staticClosure: false, upvalueDescs: [
-					{ inStack: true, index: 0 }, { inStack, index: inStack ? 4 : 0 },
+					{ inStack: true, index: 0 }, { inStack: true, index: 1 },
 				] },
 			],
 			// The exception route reuses the existing root closure. Its first
@@ -193,18 +193,19 @@ test('CLOSURE rejects out-of-window descriptors before allocating or opening any
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.rootThread.resizeStack(64);
 		const parent = cpu.rootThread.frameAtDepth(0);
-		assert.equal(parent.stackCapacity, 4, 'the parent window, not the larger Thread backing, bounds a register capture');
+		assert.equal(parent.stackCapacity, 4);
 		assert.equal(parent.captureCount, 0);
 		parent.registers.setInteger(0, 73);
+		parent.registers.setInteger(1, 29);
 		parent.registers.setInteger(2, 91);
 		const occupied = cpu.heapAllocator.occupiedBytes(), open = parent.openUpvalueHead, pc = parent.pc;
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
-		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.equal(cpu.readEpcWord(), pc, 'the WIDE head is the faulting instruction');
 		assert.equal(parent.registers.get(2), valueInteger(91), 'the failed CLOSURE leaves its destination untouched');
-		assert.equal(parent.openUpvalueHead, open, 'the valid first descriptor did not open a capture before later rejection');
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'failed capture admission allocates neither a closure nor cells');
+		assert.equal(parent.openUpvalueHead, open, 'neither valid descriptor opened a capture without firmware');
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'absent firmware never falls back to native allocation');
 	}
 });
 

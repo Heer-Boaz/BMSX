@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compiledBlockSupports, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { ValueTag, valueInteger, valueFloat, valueNil, valueTable, valueBool } from '../../machine/ts/machine/cpu/value';
@@ -9,7 +10,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [false, true]) {
 	test(`nominal work classes retain every admitted effect, prefix and debt (${backend}, WIDE=${wide})`, () => {
@@ -63,10 +64,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		}
 	});
 
-	test(`closure, upvalue, call and return work is charged once (${backend}, WIDE=${wide})`, () => {
+	test(`cached closure, upvalue, call and return work is charged once (${backend}, WIDE=${wide})`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), rootStarts: number[] = [], childStarts: number[] = [];
 		let word = 0, closureBody = 0;
-		for (const [op, a, b, c] of [[OpCode.LOADK, 4, 0, 0], [OpCode.CLOSURE, 0, 0, 0], [OpCode.CALL, 0, 1, 1], [OpCode.KTRUE, 5, 0, 0]]) {
+		for (const [op, a, b, c] of [[OpCode.LOADK, 4, 0, 0], [OpCode.CLOSURE, 6, 0, 0], [OpCode.CALL, 0, 1, 1], [OpCode.KTRUE, 5, 0, 0]]) {
 			rootStarts.push(word); if (wide || op === OpCode.CLOSURE) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
 			if (op === OpCode.CLOSURE) closureBody = word;
 			writeInstruction(text, word++, op, a, b, c);
@@ -77,18 +78,26 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			childStarts.push(word); if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
 			writeInstruction(text, word++, op, a, b, c);
 		}
+		writeInstruction(text, 64, OpCode.RET, 0, 1, 0);
 		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], functions: [{ firstWord: 0, wordCount: rootWords, maxStack: 8 },
-			{ firstWord: 32, wordCount: word - 32, maxStack: 4, staticClosure: false, upvalueDescs: [{ inStack: true, index: 4 }] }],
-			closureRelocations: [{ wordIndex: closureBody, functionIndex: 1 }] });
+			{ firstWord: 32, wordCount: word - 32, maxStack: 4, staticClosure: false, upvalueDescs: [{ inStack: true, index: 4 }] },
+			{ firstWord: 64, wordCount: 1 }],
+			closureRelocations: [{ wordIndex: closureBody, functionIndex: 2 }] });
 		const { cpu } = createTestSystemCpu(image, backend), root = cpu.rootThread.currentFrame!, base = root.pc;
-		const charges = [2, 9, 32, 3, 2, 4, 16, 2, 2]; // CLOSURE8 + one bound descriptor; RET16 + zero receiving slots.
+		const cells = new Uint32Array(1);
+		const captured = seedTestCapturedClosure(cpu, image.symbols.functionAddresses[1], cells);
+		root.registers.setClosure(0, captured);
+		bindOpen(cpu.memory, cells[0], root.thread.address, root.stackBase + 4, 0);
+		root.openUpvalueHead = cells[0];
+		const cached = seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
+		const charges = [2, 8, 32, 3, 2, 4, 16, 2, 2]; // Cached CLOSURE8; RET16 + zero receiving slots.
 		const total = charges.reduce((a, b) => a + b, 0);
 		cpu.runUntilDepth(0, total * 32);
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(root.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		for (let grant = 0; grant <= total; ++grant) {
 			cpu.runUntilDepth(1, 100);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-			root.registers.setNil(0); root.registers.setNil(4); root.registers.setNil(5);
+			root.registers.setNil(4); root.registers.setNil(5); root.registers.setNil(6);
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 			let remaining = grant, completed = 0;
 			while (remaining > 0) remaining -= charges[completed++];
@@ -97,7 +106,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			const next = [rootStarts[0], rootStarts[1], rootStarts[2], ...childStarts, rootStarts[3], rootStarts[4], 0][completed];
 			assert.equal(cpu.rootThread.currentFrame!.pc, base + next * INSTRUCTION_BYTES);
 			assert.equal(root.registers.get(4), completed >= 6 ? valueInteger(29) : completed >= 1 ? valueInteger(17) : valueNil());
-			assert.equal(root.registers.getTag(0), completed >= 2 ? ValueTag.Closure : ValueTag.Nil);
+			assert.equal(root.registers.getClosure(0, cpu.gc), captured);
+			assert.equal(root.registers.getTag(6), completed >= 2 ? ValueTag.Closure : ValueTag.Nil);
+			if (completed >= 2) assert.equal(root.registers.getClosure(6, cpu.gc), cached);
 			assert.equal(root.registers.get(5), completed >= 8 ? valueBool(true) : valueNil());
 			if (completed >= 3 && completed < 7) {
 				const r = cpu.rootThread.currentFrame!.registers;

@@ -158,11 +158,20 @@ void capturesUsePhysicalRecords() {
 	image.functions[1].upvalues = {{true, 0u}};
 	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
 	image.closureRelocations[1].functionAddress = dynamicPrototype;
+	image.closureRelocations.erase(image.closureRelocations.begin());
+	bmsx::writeInstruction(image.text, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
+	bmsx::writeInstruction(image.text, 2, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
-	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	auto& definition = *cpu.activeThread()->currentFrame;
+	definition.registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	std::array<bmsx::u32, 1> cells{};
+	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
+	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
+	definition.writeControl(bmsx::FrameField::OpenHead, cells[0]);
+	definition.registers.set(1, bmsx::valueClosure(seeded));
 	cpu.runUntilDepth(0, 1000);
 	const auto closure = bmsx::asClosure(cpu.readCompletionValues().get(1), cpu.gcHeap());
 	const auto address = bmsx::ClosureRecord::captureAddress(cpu.memory(), closure, 0);
@@ -178,11 +187,20 @@ void inspectOpenAndClosedClosure() {
 	image.functions[1].upvalues = {{true, 0u}};
 	constexpr auto dynamicPrototype = bmsx::DYNAMIC_RAM_BASE + bmsx::BLUA32_FUNCTION_RECORD_SIZE;
 	image.closureRelocations[1].functionAddress = dynamicPrototype;
+	image.closureRelocations.erase(image.closureRelocations.begin());
+	bmsx::writeInstruction(image.text, 1, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
+	bmsx::writeInstruction(image.text, 2, static_cast<bmsx::u8>(bmsx::OpCode::MOV), 1, 1, 0);
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.memory().writeBytes(dynamicPrototype, machine.rom.bytes.data() + machine.rom.functionAddresses[2] - bmsx::SYSTEM_ROM_BASE,
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
-	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	auto& definition = *cpu.activeThread()->currentFrame;
+	definition.registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	std::array<bmsx::u32, 1> cells{};
+	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
+	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
+	definition.writeControl(bmsx::FrameField::OpenHead, cells[0]);
+	definition.registers.set(1, bmsx::valueClosure(seeded));
 	auto stopPc = machine.rom.textAddress + 5u * bmsx::INSTRUCTION_BYTES;
 	cpu.setExecutionHook({
 		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) { return pc == *static_cast<bmsx::u32*>(context); },

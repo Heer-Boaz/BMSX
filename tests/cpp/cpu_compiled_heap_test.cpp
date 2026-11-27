@@ -237,24 +237,17 @@ void concatRange(int count) {
 	require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 514, "counted sources do not inflate the destination top");
 }
 
-void allocationRoots(bool closure) {
+void concatAllocationRoots() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KNIL), 9, 0, 0);
-	if (closure) {
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0); writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
-		image.closureRelocations = {{3, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-	} else {
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CONCAT), 0, 1, 2); writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	}
-	writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = closure ? 5u : 4u, .maxStack = 16},
-		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}};
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CONCAT), 0, 1, 2);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 16}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(9, valueInteger(1)); r.set(1, valueInteger(2)); r.set(2, valueInteger(3));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (closure ? 405 : 400));
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -262,7 +255,7 @@ void allocationRoots(bool closure) {
 	test::waitForNativeEntry(native.cpu, page, word);
 	requireParity(native, scalar);
 	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == (closure ? NativeBlockExit::CreateClosure : NativeBlockExit::Concat), "collection is reached from actual native code");
+	require(block && block->terminal.exit == NativeBlockExit::Concat, "collection is reached from actual native code");
 #endif
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
@@ -280,8 +273,7 @@ void allocationRoots(bool closure) {
 		require(m->cpu.collecting() && m->memory.readRamRecordByte(retained.address() + GC_COLOR_OFFSET) == 3, "the allocation assist traced the moved reference before returning");
 		m->cpu.collectHeap();
 		require(retained.getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
-		if (closure) require(m->cpu.readClosureUpvalue(asClosure(r.get(0), m->cpu.gcHeap()), 0) == r.get(7), "capture observes the published reference value");
-		else require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
+		require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
 	}
 }
 
@@ -312,17 +304,19 @@ void canonicalImmediateClosure() {
 	require(native.cpu.readFrameRegister(0, 0) == native.cpu.readFrameRegister(0, 2), "STATIC creation preserves canonical function identity");
 }
 
-void closureBusFault(bool descriptors) {
+void closurePrototypeBusFault() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0); writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 4, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255); writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 257},
-		{.firstWord = 16, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 7}}}}; image.globalNames = {"target"};
+		{.firstWord = 16, .wordCount = 1}}; image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true); constexpr u32 bad = 0xdead0000u;
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1])); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
+		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(m->rom.functionAddresses[1]));
+		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 504);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
@@ -334,12 +328,8 @@ void closureBusFault(bool descriptors) {
 		"the actual hot register-address path retains its WIDE destination");
 #endif
 	for (auto* m : {&native, &scalar}) {
-		if (descriptors) {
-			const u32 offset = m->rom.functionAddresses[1] - SYSTEM_ROM_BASE;
-			m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + offset, BLUA32_FUNCTION_RECORD_SIZE);
-			m->memory.writeMappedU32LE(DYNAMIC_RAM_BASE + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, bad);
-		}
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(descriptors ? DYNAMIC_RAM_BASE : bad));
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("target"), valueInteger(bad));
+		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(256, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 	}
 	require(native.cpu.runUntilDepth(0, 6) == RunResult::Halted && scalar.cpu.runUntilDepth(0, 6) == RunResult::Halted, "a metadata bus fault hard-halts both paths"); requireParity(native, scalar);
@@ -451,7 +441,7 @@ int main() {
 #endif
 		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
 		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
-		allocationRoots(false); allocationRoots(true); canonicalImmediateClosure(); closureBusFault(false); closureBusFault(true);
+		concatAllocationRoots(); canonicalImmediateClosure(); closurePrototypeBusFault();
 		closureAddressAlias(0); closureAddressAlias(513); for (bool over : {false, true}) concatRangeAtMixedLengthBoundary(over);
 		for (int bytes : {3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
 		std::cout << "Compiled CPU heap tests passed\n"; return 0;

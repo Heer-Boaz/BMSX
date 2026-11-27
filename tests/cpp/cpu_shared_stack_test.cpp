@@ -1,4 +1,5 @@
 #include "machine/cpu/cpu.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
@@ -156,24 +157,25 @@ void formalReservationRoots(bool interpreted) {
 
 void capturedSlotSurvivesOpenTop(int top) {
 	test::Blua32TestImage image;
-	image.text.resize(8 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 2, 2, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::VARARG), top, 0, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 4, .isVararg = true},
-		{.firstWord = 6, .wordCount = 2, .maxStack = 1, .staticClosure = false, .upvalues = {{true, 2}}}};
+	image.text.resize(5 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETGL), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::VARARG), top, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::GETUP), 0, 0, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 2, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4, .isVararg = true},
+		{.firstWord = 3, .wordCount = 2, .maxStack = 1, .staticClosure = false, .upvalues = {{true, 2}}}};
 	image.globalNames = {"read"};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
-	cpu.activeThread()->currentFrame->registers.set(2, valueTable(cpu.createTable().address()));
-	u32 stopPc = rom.textAddress + 5 * INSTRUCTION_BYTES;
+	auto& frame = *cpu.activeThread()->currentFrame;
+	frame.registers.set(2, valueTable(cpu.createTable().address()));
+	std::array<u32, 1> cells{};
+	frame.registers.set(0, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
+	Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase() + 2, 0u);
+	frame.writeControl(FrameField::OpenHead, cells[0]);
+	u32 stopPc = rom.textAddress + 2 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook({[](void* context, ExecutionDomainId, u32 pc) { return pc == *static_cast<u32*>(context); }, &stopPc, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	require(cpu.runUntilDepth(0, 100) == RunResult::ExecutionStopped, "stop after open VARARG changes top");
 	require(static_cast<bmsx::i32>(cpu.activeThread()->currentFrame->readControl(bmsx::FrameField::Top)) == top, "raw open VARARG retains its exact top");

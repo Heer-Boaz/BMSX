@@ -6,6 +6,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 
 #include <algorithm>
 #include <iostream>
@@ -18,14 +19,11 @@ void require(bool condition, const char* message) { if (!condition) throw std::r
 
 test::Blua32TestImage program() {
 	test::Blua32TestImage image;
-	image.text.resize(4 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord=0, .wordCount=3, .maxStack=8},
-		{.firstWord=3, .wordCount=1, .maxStack=1, .staticClosure=false, .upvalues={{true, 0}}}};
-	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord=0, .wordCount=1, .maxStack=8},
+		{.firstWord=1, .wordCount=1, .maxStack=1, .staticClosure=false, .upvalues={{true, 0}}}};
 	return image;
 }
 struct Machine {
@@ -34,7 +32,16 @@ struct Machine {
 	IrqController irq{memory};
 	ExecutionAddressSpace addresses{memory};
 	CPU cpu{memory, irq, addresses};
-	Machine() { cpu.reset(); require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "fixture reaches HALT"); }
+	Machine() {
+		cpu.reset();
+		auto& frame = *cpu.rootThread()->currentFrame;
+		std::array<u32, 1> cells{};
+		frame.registers.set(1, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
+		Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase(), 0u);
+		frame.writeControl(FrameField::OpenHead, cells[0]);
+		frame.setTop(2);
+		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "fixture reaches HALT");
+	}
 };
 
 void checkReferences(CPU& cpu) {

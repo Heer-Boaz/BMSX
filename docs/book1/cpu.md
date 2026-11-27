@@ -1048,11 +1048,9 @@ operations add **1 cycle per value slot placed**:
   Include status prefixes, copied values and nil padding. The error argument
   supplied to an `xpcall` handler counts as one placed slot.
 
-For a published function of a non-mapped executable, `CLOSURE` executes
-capture preparation and binding as a BIOS routine. Its instructions consume
-ordinary CPU cycles, with no separate per-descriptor surcharge. Other captured closures charge
-**1 cycle per upvalue descriptor bound**, whether the descriptor binds a
-newly opened cell or an existing capture.
+Captured `CLOSURE` executes capture preparation and binding as a BIOS
+routine. Its instructions consume ordinary CPU cycles, with no separate
+per-descriptor surcharge.
 
 Closing captures charges **1 cycle per open cell actually closed**, not per
 closure referring to that cell. This applies to `RET`, `RFE`, protected error
@@ -1127,14 +1125,13 @@ wait for it to finish.
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. A non-STATIC prototype constructs a distinct closure on
-each execution. For a captureless ROM prototype, or a published function of
-a non-mapped executable, one BIOS activation handles capture sampling,
-admission, any collection work and retry, and initialization. The capture
-descriptors need not reside in ROM. The activation uses ordinary CPU cycles
-while devices continue to advance. The new function becomes visible only
-when its record is ready. If the reservation still cannot be made, `CLOSURE` reports
-`OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
-instruction wait for that result.
+each execution. For a captured prototype or a captureless ROM prototype,
+one BIOS activation handles capture sampling when needed, admission,
+collection and retry, and initialization. The activation uses ordinary CPU
+cycles while devices continue to advance. The new function becomes visible
+only when its record is ready. If the reservation still cannot be made,
+`CLOSURE` reports `OUT_OF_MEMORY` at the issuing instruction. Interrupt
+entry and the next instruction wait for that result.
 An ordinary call uses a function value, not a numeric address. For a
 resident function record in System ROM, `CLOSURE` supplies the immutable
 function value without allocating a closure. `CALL` copies the arguments
@@ -1575,8 +1572,8 @@ caller receives a Table only when its storage is ready. Root scanning,
 tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
-same admission and recovery procedure for a new Closure from a captureless
-ROM prototype or a published function of a non-mapped executable.
+same admission and recovery procedure for a new captured Closure or a
+Closure from a captureless ROM prototype.
 It reserves the Closure and new cells together. If a reservation fails, it
 releases its partial reservation before retrying without publishing any new
 capture links. Collection during a suspended table insertion
@@ -1597,8 +1594,8 @@ a partly updated table.
 
 Logical and physical assists each request at most one work word per three
 cycles in their allowance. An indivisible scan such as a record header may
-exceed the requested work. For new Tables, eligible ROM Closures, or
-Table insertions that cannot use their existing slots, the BIOS sizes
+exceed the requested work. For new Tables, BIOS-managed Closure
+reservations, or Table insertions that cannot use their existing slots, the BIOS sizes
 the assist from the time until the next timed hardware event after the
 issuing instruction or builtin charge. It performs the assists on
 ordinary CPU grants. Fewer than three cycles defer the assist, not the reservation.

@@ -2,6 +2,7 @@
 #include "machine/cpu/value_arithmetic.h"
 #include "support/number32_cpu_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/closure_fixture.h"
 
 #include <algorithm>
 #include <iostream>
@@ -220,18 +221,21 @@ test::Blua32TestImage capturedChunk(bool onlyStore = false, bool suspendFactory 
 	image.functions[0].staticClosure = false;
 	image.functions[0].upvalues = {{true, 8}};
 	const u32 first = image.text.size() / INSTRUCTION_BYTES;
-	image.text.resize((first + 3) * INSTRUCTION_BYTES);
-	writeInstruction(image.text, first, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, first + 1, static_cast<u8>(OpCode::CLOSURE), 9, 0, 0);
-	writeInstruction(image.text, first + 2, static_cast<u8>(suspendFactory ? OpCode::HALT : OpCode::RET), 9, 2, 0);
-	image.functions.push_back({.firstWord = first, .wordCount = 3, .maxStack = 16});
+	image.text.resize((first + 1) * INSTRUCTION_BYTES);
+	writeInstruction(image.text, first, static_cast<u8>(suspendFactory ? OpCode::HALT : OpCode::RET), 9, 2, 0);
+	image.functions.push_back({.firstWord = first, .wordCount = 1, .maxStack = 16});
 	image.startupFunctionIndex = 2;
 	image.irqFunctionIndex = 1;
-	image.closureRelocations = {{first + 1, test::blua32TestFunctionAddress(RomImageDomain::System, 0)}};
 	return image;
 }
 u32 beginCaptured(Number32Machine& machine, bool suspended = false) {
-	require(machine.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "factory returns a real captured closure");
+	auto& definition = *machine.cpu.activeThread()->currentFrame;
+	std::array<u32, 1> cells{};
+	const auto record = test::seedTestCapturedClosure(machine.cpu, machine.rom.functionAddresses[0], cells);
+	Upvalue::bindOpen(machine.memory, cells[0], definition.thread->address, definition.stackBase() + 8, 0u);
+	definition.writeControl(FrameField::OpenHead, cells[0]);
+	definition.registers.set(9, valueClosure(record));
+	require(machine.cpu.runUntilDepth(0, 1000) == RunResult::Halted, "the seeded defining frame returns or suspends");
 	auto closure = asClosure(suspended ? machine.cpu.activeThread()->currentFrame->registers.get(9)
 										: machine.cpu.readCompletionValues().get(0),
 		machine.cpu.gcHeap());

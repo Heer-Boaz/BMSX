@@ -20,7 +20,7 @@ void CPU::beginCapturedClosure(CallFrame& frame, int destination) {
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceClosureField::LastPc), lastPc, frame.readControl(FrameField::Pc));
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Prototype), record.address, static_cast<u32>(record.image->executionDomainId));
-	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Latched), 0u, record.codeAddress);
+	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Latched), !record.romBacked, record.codeAddress);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Params), record.numParams, record.maxStack);
 	m_memory.writeRamRecordPair(binding + static_cast<u32>(Field::Flags), record.flags, record.upvalueTableAddress);
 	m_memory.writeRamRecordWord(binding + static_cast<u32>(Field::Count), record.upvalueCount);

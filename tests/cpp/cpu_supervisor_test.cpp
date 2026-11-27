@@ -15,6 +15,7 @@
 #include "machine/scheduler/device.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
+#include "machine/cpu/upvalue.h"
 #include "support/cartridge_fixture.h"
 
 #include <array>
@@ -1240,28 +1241,30 @@ void testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi() {
 
 void testBoundClosureArguments() {
 	bmsx::test::Blua32TestImage image;
-	image.text.resize(9u * bmsx::INSTRUCTION_BYTES);
+	image.text.resize(6u * bmsx::INSTRUCTION_BYTES);
 	std::span<bmsx::u8> code(image.text);
-	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
-	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 0);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::GETUP), 1, 0, 0);
-	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::ADD), 0, 0, 1);
-	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::SETUP), 0, 0, 0);
-	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
-	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 2, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::GETUP), 1, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::ADD), 0, 0, 1);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::SETUP), 0, 0, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 2, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
 	image.functions = {
-		{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u},
-		{.firstWord = 4u, .wordCount = 4u, .numParams = 1u, .maxStack = 2u, .staticClosure = false, .upvalues = {{true, 0u}}},
-		{.firstWord = 8u, .wordCount = 1u},
+		{.firstWord = 0u, .wordCount = 1u, .maxStack = 2u},
+		{.firstWord = 1u, .wordCount = 4u, .numParams = 1u, .maxStack = 2u, .staticClosure = false, .upvalues = {{true, 0u}}},
+		{.firstWord = 5u, .wordCount = 1u},
 	};
-	image.constants = {7};
 	image.irqFunctionIndex = 2u;
 	image.exceptionFunctionIndex = 2u;
-	image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
 	CpuTestMachine machine(std::move(image));
 	auto& cpu = machine.cpu;
+	auto& frame = *cpu.activeThread()->currentFrame;
+	std::array<bmsx::u32, 1> cells{};
+	const auto record = bmsx::test::seedTestCapturedClosure(cpu, machine.systemRom.functionAddresses[1], cells);
+	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], frame.thread->address, frame.stackBase(), 0u);
+	frame.writeControl(bmsx::FrameField::OpenHead, cells[0]);
+	frame.registers.set(0, bmsx::valueInteger(7));
+	frame.registers.set(1, bmsx::valueClosure(record));
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "capture factory returns");
 	auto closure = bmsx::asClosure(cpu.readCompletionValues().get(0), cpu.gcHeap());
 	for (const auto [argument, expected] : {std::pair{3, 10}, std::pair{5, 15}}) {
