@@ -33,9 +33,10 @@ export function* blua32RomStrings(image: Blua32ImageLayout): IterableIterator<{ 
 export class Blua32RomStringLayout {
 	private readonly addresses = new Map<string, number>();
 	private firstInstalledAddress = Infinity;
+	private readonly installedEndAddress: number;
 	public endAddress: number;
 
-	public constructor(firstFreeAddress: number, previous: Blua32ImageLayout | undefined) {
+	public constructor(firstFreeAddress: number, private readonly previous: Blua32ImageLayout | undefined) {
 		this.endAddress = alignBlua32ImageOffset(firstFreeAddress, 0, BLUA32_STRING_RECORD_ALIGNMENT);
 		if (previous !== undefined) {
 			this.firstInstalledAddress = previous.header.stringBucketAddress;
@@ -48,6 +49,7 @@ export class Blua32RomStringLayout {
 				this.endAddress = Math.max(this.endAddress, alignBlua32ImageOffset(address + BLUA32_STRING_RECORD_HEADER_SIZE + value.length, 0, BLUA32_STRING_RECORD_ALIGNMENT));
 			}
 		}
+		this.installedEndAddress = this.endAddress;
 	}
 
 	// Keep a cartridge's original table placement when the table still fits.
@@ -66,11 +68,26 @@ export class Blua32RomStringLayout {
 	}
 
 	public addressOf(value: string): number { return this.addresses.get(value)!; }
-	public bucketCount(): number { return nextPowerOfTwo(Math.max(1, this.addresses.size)); }
+	// The immutable records also own their chain links. Rehashing a
+	// retained bucket would require rewriting an existing String record.
+	public bucketCount(): number {
+		return this.previous?.header.stringBucketCount ?? nextPowerOfTwo(Math.max(1, this.addresses.size));
+	}
 
 	public write(bytes: Uint8Array, base: number, bucketOffset: number, bucketCount: number): void {
+		const previous = this.previous;
+		if (previous !== undefined) {
+			const first = previous.header.stringBucketAddress - previous.address;
+			bytes.set(previous.bytes.subarray(first, first + 4 * bucketCount), bucketOffset);
+		}
 		for (const [value, address] of this.addresses) {
 			const record = address - base;
+			if (previous !== undefined && address < this.installedEndAddress) {
+				const first = address - previous.address;
+				const length = alignBlua32ImageOffset(BLUA32_STRING_RECORD_HEADER_SIZE + value.length, 0, BLUA32_STRING_RECORD_ALIGNMENT);
+				bytes.set(previous.bytes.subarray(first, first + length), record);
+				continue;
+			}
 			const hash = hashText(value);
 			const bucket = bucketOffset + 4 * (hash & (bucketCount - 1));
 			writeLE32(bytes, record, BLUA32_STRING_RECORD_KIND | BLUA32_STRING_RECORD_ROM_FLAG);

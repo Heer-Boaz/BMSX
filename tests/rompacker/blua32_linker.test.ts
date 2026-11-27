@@ -3,6 +3,8 @@ import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declarat
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readLE32 } from '../../machine/ts/common/endian';
+import { hashText } from '../../machine/ts/common/hash';
 
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type {
@@ -26,6 +28,8 @@ import type {
 } from '../../toolchain/ts/lua/compiler/program';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE,
+	BLUA32_STRING_NEXT_OFFSET,
+	BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	INSTRUCTION_BYTES,
@@ -280,6 +284,60 @@ test('incremental linking places grown immediate tables around the installed Str
 		assert.equal(layout.functions[0].codeAddress, layout.header.textAddress);
 		if (literals.length > 1) assert.ok(layout.header.constantTableAddress >= directory + count * 4);
 		else assert.equal(layout.header.constantTableAddress, initial.layout.header.constantTableAddress);
+	}
+});
+
+test('incremental linking adds String operands without rehashing installed String records', () => {
+	const vector = [{ op: OpCode.RET, a: 0, b: 1, c: 0 }];
+	const system = makeSystemObject(vector);
+	const bios = linkSystemBlua32Image(system.object, system.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	let previous: ReturnType<typeof linkCartBlua32Image> | undefined;
+	function link(constants: string[], globals: string[]) {
+		const { object } = makeCartObject(vector, constants);
+		object.link.symbols = runtimeSymbols(['system'], globals);
+		return previous = linkCartBlua32Image(bios.biosImports, object, makeMetadata(['system'], 1, globals), CART_ROM_BASE + 0x100,
+			LINK_TARGET_RAM_BYTES, previous && { image: previous.layout, symbols: previous.symbols });
+	}
+
+	const initial = link(['a'], ['c']).layout;
+	const count = initial.header.stringBucketCount;
+	// These installed records form one chain that the next larger mask would split.
+	assert.equal(count, 2);
+	assert.equal(hashText('a') & (count - 1), hashText('c') & (count - 1));
+	assert.notEqual(hashText('a') & (2 * count - 1), hashText('c') & (2 * count - 1));
+	const [head, tail] = Array.from(blua32RomStrings(initial));
+	assert.equal(readLE32(initial.bytes, head.address - initial.address + BLUA32_STRING_NEXT_OFFSET), tail.address);
+
+	let installed = initial;
+	for (const [constants, globals] of [
+		[['e', 'brand-new literal'], ['c', 'fresh_global']],
+		[['fresh literal'], ['c', 'fresh_global', 'next_global']],
+	]) {
+		const { layout } = link(constants, globals);
+		assert.deepEqual(layout.constants, constants);
+		assert.deepEqual(layout.globalNames, globals);
+		assert.notEqual(layout.header.stringBucketAddress, installed.header.stringBucketAddress);
+		assert.equal(layout.header.stringBucketCount, count);
+		const retained = Array.from(blua32RomStrings(installed));
+		const records = Array.from(blua32RomStrings(layout));
+		const values = new Set([...retained.map(({ value }) => value), ...constants, ...globals]);
+		assert.equal(records.length, values.size);
+		assert.deepEqual(new Set(records.map(({ value }) => value)), values);
+		const directory = layout.header.stringBucketAddress - layout.address;
+		for (let bucket = 0; bucket < count; ++bucket) {
+			let address = readLE32(layout.bytes, directory + 4 * bucket);
+			while (address !== 0) {
+				assert.equal(hashText(records.find(record => record.address === address)!.value) & (count - 1), bucket);
+				address = readLE32(layout.bytes, address - layout.address + BLUA32_STRING_NEXT_OFFSET);
+			}
+		}
+		for (const { value, address } of retained) {
+			assert.equal(records.find(record => record.value === value)!.address, address);
+			const start = address - layout.address;
+			const end = start + BLUA32_STRING_RECORD_HEADER_SIZE + value.length;
+			assert.deepEqual(layout.bytes.subarray(start, end), installed.bytes.subarray(start, end));
+		}
+		installed = layout;
 	}
 });
 
