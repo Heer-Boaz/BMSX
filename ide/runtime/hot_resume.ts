@@ -1,9 +1,10 @@
 import { retireRuntimeFrameScopes } from './frame_scopes';
+import { readRuntimeLuaModuleExport } from './lua_inspection';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { valueInteger } from '../../machine/ts/machine/cpu/value';
+import { isNil, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -488,10 +489,11 @@ export function admitHotResume(
 					if (isCurrent()) installation(false, true);
 				}, error => report({ kind: 'failed', error }));
 			});
-			retireRuntimeFrameScopes(runtime, sources, guest, thread.address, retainedFrameCount);
+			const scopes = readRuntimeLuaModuleExport(sources, guest, SYSTEM_EXECUTION_DOMAIN_ID, 'debug/frame_scopes');
+			const retireScopes = scopes.kind === 'value' && !isNil(scopes.value) ? guest.readStringMember(scopes.value, 'retire') : valueNil();
 			runtime.history.stop();
 			guest.invalidate();
-			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, unwindFunctionAddress, [valueInteger(retainedFrameCount)]);
+			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, unwindFunctionAddress, [valueInteger(retainedFrameCount), retireScopes]);
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}

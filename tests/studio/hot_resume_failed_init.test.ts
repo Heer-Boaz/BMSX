@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { Input } from '../../hosts/common/input/manager';
@@ -10,10 +11,11 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { isOpen, load as readCapture } from '../../machine/ts/machine/cpu/upvalue';
-import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executor';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../machine/ts/spec/blua32/cop0';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	IO_SYS_CONTROL, IO_SYS_STATUS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE, SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
 	SYS_CONTROL_SUPERVISOR_LEAVE, SYS_STATUS_SUPERVISOR_EXIT_REQUESTED, SYS_STATUS_SUPERVISOR_RESUMABLE,
@@ -32,17 +34,27 @@ import { createLoadedTestRuntimeSourceState, createTestRomToolingLayer } from '.
 test('Hot Resume unwinds a failed initializer’s captured frames in the installed firmware', async () => {
 	const system = linkManagedTestSystem(`
 local bridge<const> = require('kernel/exception_bridge')
+local scopes<const> = require('debug/frame_scopes')
 local ready<const>: *word = bridge.monitor_ready
 *ready = 1
 function exception()
  local entry<const>: *monitor_entry_state = bridge.monitor_entry
  local pc<const>, status<const> = entry.epc, entry.status
+ local thread<const> = __bmsx_coroutine_running()
+ local completion = __bmsx_frame_count(thread) - 1
+ while true do
+  local _<const>, _<const>, _<const>, injected<const> = __bmsx_frame_header(thread, completion)
+  if injected then break end
+  completion = completion - 1
+ end
+ kept_scope = scopes.open(thread, completion - 1)
+ removed_scope = scopes.open(thread, completion)
  mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH}
  while (mem[${IO_SYS_STATUS}] & ${SYS_STATUS_SUPERVISOR_EXIT_REQUESTED}) == 0 do end
  cop0.epc, cop0.status = pc, status
  mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_LEAVE}
 end
-` + TEST_CART_TRANSFER_SOURCE, 3);
+` + TEST_CART_TRANSFER_SOURCE, 3, [{ path: 'debug/frame_scopes', source: readFileSync('machine/bios/debug/frame_scopes.lua', 'utf8') }]);
 	const source = `module<entry>
 fail_once = true
 fail_callable = false
@@ -108,17 +120,28 @@ while true do halt_until_irq end
 	const cell = ClosureRecord.captureAddress(memory, retained, 0);
 	assert.equal(isOpen(memory, cell), true);
 	assert.equal(readCapture(memory, cell), valueInteger(42));
+	const thread = valueThread(cpu.activeThread.address);
+	const keptScope = guest.global('kept_scope'), removedScope = guest.global('removed_scope');
+	assert.equal(guest.readStringMember(keptScope, 'thread'), thread);
+	assert.equal(guest.readStringMember(removedScope, 'thread'), thread);
 	const events: HotResumeEvent[] = [];
-	const unwind = system.symbols.functionAddresses[system.symbols.metadata.functionIds.indexOf('module:kernel/frame_unwind/module')];
+	const unwind = system.layout.functions[system.symbols.metadata.functionIds.indexOf('module:kernel/frame_unwind/module')];
+	const unwindIssued = () => {
+		const pc = cpu.readEpcWord() - INSTRUCTION_BYTES;
+		return cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
+			&& pc >= unwind.codeAddress && pc < unwind.codeAddress + unwind.codeByteCount;
+	};
 	let enteredUnwind = false;
 	assert.equal(admitHotResume(sources, guest, fault, debuggerState, input, tasks, runtime, null, () => true,
 		event => events.push(event)), 'deferred');
 	for (let i = 0; i < 180 && !events.some(event => event.kind === 'initializing'); ++i) {
-		if (cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1) === unwind) {
+		if (cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1) === unwind.address) {
 			assert.equal(isOpen(memory, cell), true, 'the host has not retired the failed frames');
-			for (let instruction = 0; instruction < 8 && !cpu.fixedInterruptActive(); ++instruction) step(1);
-			assert.equal(cpu.fixedInterruptActive(), true);
-			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+			assert.equal(guest.readStringMember(removedScope, 'thread'), thread, 'admitting the unwind has not changed its scope');
+			for (let instruction = 0; instruction < 2048 && !unwindIssued(); ++instruction) step(1);
+			assert.ok(unwindIssued(), 'only the ordinary unwind body can issue this frame transfer');
+			assert.equal(guest.readStringMember(removedScope, 'thread'), valueNil(), 'guest scope retirement precedes its frame transfer');
+			assert.equal(guest.readStringMember(keptScope, 'thread'), thread, 'a scope below the unwind boundary remains live');
 			assert.equal(isOpen(memory, cell), true, 'the fixed guest code has not closed it yet');
 			enteredUnwind = true;
 		}
