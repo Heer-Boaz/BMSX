@@ -653,30 +653,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private clearCallStack(): void {
-		this.abortStalledMemoryWrite();
-		for (;;) {
-			while (this.activeThread.frameDepth > 0) {
-				const frame = this.activeThread.currentFrame!;
-				this.closeUpvalues(frame);
-				frame.thread.leaveFrame();
-			}
-			this.activeThread.stackRegisters.clear(this.activeThread.stackRegisters.capacity());
-			this.activeThread.stackTop = 0;
-			const thread = this.activeThread;
-			thread.status = ThreadStatus.Dead;
-			thread.entry = 0;
-			thread.error = valueNil();
-			if (thread === this.rootThread) break;
-			const resumer = thread.resumer;
-			thread.resumer = 0;
-			this.activeThread = resumer === 0 ? this.rootThread : this.bindThread(resumer);
-		}
-		this.rootThread.status = ThreadStatus.Running;
-		this.completionThread = this.rootThread.address;
-		this.threadSwitchRequested = false;
-	}
-
 	public reset(): void {
 		if (this.fixedInterruptDefersReset()) throw new Error('System IRQ must retire before reset.');
 		// Publish the last admitted execution context before detaching views.
@@ -1786,18 +1762,24 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeFunctionAddress(functionAddress: number): void {
 		// Publish a receiving bank before a normal execution transfer.
-		if (this.resetBankSelected()) { this.hardHalt(); return; }
+		const fixed = this.fixedInterruptActive();
+		if (!fixed && this.resetBankSelected()) { this.hardHalt(); return; }
 		if (!this.readFunctionRecordOnBus(this.activeExecutionImage, functionAddress, MAPPED_BUS_MASTER_CPU)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
 			return;
 		}
 		const image = this.functionRecordLatch.image;
-		this.clearCallStack();
+		if (fixed) {
+			this.irqThread.discardFrames();
+			this.resumeInterruptedContext();
+		}
+		this.activeThread.discardFrames();
+		this.completionThread = this.activeThread.address;
 		this.latchActiveExecutionImage(image.executionDomainId, image);
 		this.programExecutionDomainId = image.executionDomainId;
 		const cartridgeEntry = image.executionDomainId >= 0;
-		if (cartridgeEntry) {
+		if (cartridgeEntry && !fixed) {
 			this.systemGlobalBank.bind();
 			this.globalBank.bind();
 		}

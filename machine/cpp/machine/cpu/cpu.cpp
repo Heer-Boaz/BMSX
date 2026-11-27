@@ -1032,16 +1032,22 @@ void CPU::resumeInterruptedContext() {
 
 void CPU::executeFunctionAddress(u32 functionAddress) {
 	// A normal transfer reuses the receiving bank; it cannot retain reset authority.
-	if (resetBankSelected()) { hardHalt(); return; }
+	const bool fixed = fixedInterruptActive();
+	if (!fixed && resetBankSelected()) { hardHalt(); return; }
 	if (!readFunctionRecordOnBus(*m_activeExecutionImage, functionAddress, MAPPED_BUS_MASTER_CPU)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
 		return;
 	}
-	clearCallStack();
+	if (fixed) {
+		m_irqView.discardFrames();
+		resumeInterruptedContext();
+	}
+	m_activeThread->discardFrames();
+	m_completionThreadAddress = m_activeThread->address;
 	latchActiveExecutionImage(m_functionRecordLatch.image->executionDomainId, m_functionRecordLatch.image);
 	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
-	if (m_programExecutionDomainId >= 0) {
+	if (!fixed && m_programExecutionDomainId >= 0) {
 		m_systemGlobalBank.bind();
 		m_globalBank.bind();
 	}
@@ -2698,31 +2704,6 @@ ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	frame.growRegisterWindow(static_cast<int>(bucket));
 	return frame.registers;
 }
-
-void CPU::clearCallStack() {
-	abortStalledMemoryWrite();
-	for (;;) {
-		while (m_activeThread->frameDepth() != 0) {
-			CallFrame* frame = m_activeThread->currentFrame;
-			closeUpvalues(*frame);
-			m_activeThread->leaveFrame();
-		}
-		m_activeThread->stack.clear(0, m_activeThread->stackCapacity);
-		m_activeThread->setStackTop(0);
-		Thread* thread = m_activeThread;
-		thread->setStatus(ThreadStatus::Dead);
-		thread->setEntry(0u);
-		thread->setError(valueNil());
-		if (thread == &m_rootView) break;
-		const u32 resumer = thread->resumer();
-		thread->setResumer(0u);
-		m_activeThread = resumer == 0u ? &m_rootView : &bindThread(resumer);
-	}
-	m_rootView.setStatus(ThreadStatus::Running);
-	m_completionThreadAddress = m_rootView.address;
-	m_runSignals &= ~RunThreadSwitch;
-}
-
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
 	BuiltinResults& out = m_builtinResultScratch.get(m_builtinResultScratchIndex);

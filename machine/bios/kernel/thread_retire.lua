@@ -116,6 +116,24 @@ local retire_thread_frames<const> = function(control, arena, address, retained_d
 	end
 end
 
+-- Before EXEC, release the software state of the outgoing bank. Its windows
+-- remain live through RFE so the launcher can issue the machine transfer.
+-- The dropped register slots cease to be roots and the atomic trace clears
+-- them as usual; the transfer does not have to scrub their entire backing.
+local prepare_exec<const> = function(management, address) -- T:860 C:3195; ordinary System launcher retains this selected bank
+	local control<const> = management + layout.control_offset -- U:50 V:53
+	local arena<const> = management + layout.arena_offset -- H:140-143 K:253-256
+	local thread<const>: *stopped_thread = address -- T:871 I:42-43 C:3206 J:31
+	local frames<const> = thread.frame_block & word_mask -- T:865 I:69-70,203 C:3200 S:41,57-59
+	for index = (thread.frame_depth & frame_count_mask) - 1, 0, -1 do -- T:864-867 I:265 C:3199-3202 J:287; EXEC later publishes the dropped depth
+		local frame<const> = ram_base + ((frames + index * sizeof(stopped_frame)) & word_mask) -- T:865 F:21 C:3200 G:42
+		retire_open_cells(control, arena, frame, 0) -- T:866 C:3201
+	end
+	thread.entry = 0 -- T:873 I:53 C:3208
+	thread.error_word = 0 -- T:874 I:60-61 C:3209 J:48-49
+	thread.error_kind = 0 -- T:874 I:60-61 C:3209 J:48-49
+end
+
 local retire_threads<const> = function(management, root, active) -- T:860-862 C:3195-3197; the stopped bank supplies raw root and active addresses
 	local control<const> = management + layout.control_offset -- U:50 V:53
 	local arena<const> = management + layout.arena_offset -- H:140-143 K:253-256
@@ -147,4 +165,5 @@ local retire_threads<const> = function(management, root, active) -- T:860-862 C:
 	root_thread.status = running -- T:880 I:46 C:3215 J:34
 end
 
-return { retire_threads = retire_threads, retire_thread_frames = retire_thread_frames, retire_open_cells = retire_open_cells }
+return { retire_threads = retire_threads, retire_thread_frames = retire_thread_frames, retire_open_cells = retire_open_cells,
+	prepare_exec = prepare_exec }

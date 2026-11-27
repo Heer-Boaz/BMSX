@@ -233,6 +233,12 @@ void Thread::leaveFrame() {
 	releaseFrameView(*frame);
 }
 
+void Thread::discardFrames() {
+	detachFrameViews();
+	setStackTop(0);
+	publishDepth(0u);
+}
+
 CallFrame* Thread::frameAtDepth(size_t depth) const {
 	auto* frame = firstFrame;
 	for (size_t index = 0; index < depth; ++index) frame = frame->next;

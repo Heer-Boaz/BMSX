@@ -21,6 +21,7 @@ struct Thread {
 		publishDepth(static_cast<u32>(frameDepth()) + 1u);
 	}
 	void leaveFrame();
+	void discardFrames();
 	void detachFrameViews();
 	void bindFrameViews();
 	bool currentFrameViewMatches() const;

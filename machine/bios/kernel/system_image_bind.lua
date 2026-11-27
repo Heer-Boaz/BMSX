@@ -13,6 +13,7 @@ local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-
 local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
 local names<const> = require('kernel/global_bank') -- G:71-109 H:59-101
 local frame_storage<const> = require('kernel/thread_frame_storage')
+local retire<const> = require('kernel/thread_retire')
 
 local string_constant_tag<const> = 4 -- F:67-75
 local image_magic<const> = 0x32334c42
@@ -225,7 +226,9 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	if slots == 0 then slots = 1 end
 	if slots > ram_bytes // 5 then return 0 end
 
-	return (frame_storage.prepare_frame_space(management, owner, slots, 2, 0, remaining))
+	local reservation<const> = frame_storage.prepare_frame_space(management, owner, slots, 2, 0, remaining)
+	if reservation == 0 then retire.prepare_exec(management, owner) end
+	return reservation
 end
 
 return {

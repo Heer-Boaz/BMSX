@@ -198,6 +198,12 @@ export class Thread {
 		}
 	}
 
+	public discardFrames(): void {
+		this.detachFrameViews();
+		this.stackTop = 0;
+		this.publishDepth(0);
+	}
+
 	public bindFrameViews(): void {
 		this.detachFrameViews();
 		const depth = this.frameDepth;

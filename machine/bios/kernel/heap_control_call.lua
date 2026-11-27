@@ -9,6 +9,7 @@ local step<const> = require('kernel/gc_collect_step')
 local floor<const> = require('kernel/heap_floor')
 local bindings<const> = require('kernel/system_image_bind')
 local tables<const> = require('kernel/bios_create_table')
+local retire<const> = require('kernel/thread_retire')
 local control_count_mask<const> = (1 << 18) - 1
 local window_mask<const> = (1 << 20) - 1
 local word_mask<const> = 0x003ffffc
@@ -63,8 +64,10 @@ local receive<const> = function(owner, token, destination, count)
 		elseif token == ids.bind_cartridge then
 			result_word = bindings.bind_cartridge(arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], arguments[5], owner)
 		else
-			local reason<const> = frames.reserve_system_entry(arguments[0])
-			return reason
+			local status<const> = frames.prepare_frame_space(layout.management_offset, owner, arguments[0], 2, 0, cop0.event_cycles)
+			if status ~= 0 then return status - 1 end
+			retire.prepare_exec(layout.management_offset, owner)
+			return nil
 		end
 	end
 

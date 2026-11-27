@@ -424,7 +424,6 @@ private:
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);
 	bool executeLength(CallFrame& frame, int destination, Value operand);
 
-	void clearCallStack();
 	struct FunctionActivation { Blua32ExecutionImage* image; FunctionCallEntry function; };
 	FunctionActivation resolveFunctionActivation(u32 closure, u32 codeFunction);
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
