@@ -66,7 +66,7 @@ local close_thread<const> = function(target) -- T:4532-4545,4682-4696 C:1276-129
 		*tag = thread.error_kind -- T:4543 C:1288
 		error = *value -- T:4543 C:1288
 	end
-	retire.retire_thread_frames(management + layout.control_offset, arena, thread) -- T:4687-4690 C:1427-1430; guest instructions now pay for closing captures
+	retire.retire_thread_frames(management + layout.control_offset, arena, thread, 0) -- T:4687-4690 C:1427-1430; guest instructions now pay for closing captures
 	thread.protected_depth = 0 -- T:4692 C:1431
 	local capacity<const> = thread.stack_capacity -- T:4693 C:1432
 	values.internal.clear_stack_range(thread.stack_block & word_mask, capacity, 0, capacity) -- T:4693 C:1432

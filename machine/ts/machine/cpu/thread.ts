@@ -144,6 +144,16 @@ export class Thread {
 		this.rebindFrames();
 	}
 
+	/** Is the retained activation still the RAM-selected frame and register window? */
+	public currentFrameViewMatches(): boolean {
+		const frame = this.currentFrame, depth = this.frameDepth;
+		if (frame === null) return depth === 0;
+		if (depth === 0 || (this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK) !== this.boundFrameOffset
+			|| frame.controlOffset !== (this.frameControlAddress(depth - 1) & RAM_RECORD_WORD_MASK)) return false;
+		return frame.registers.capacity() === frame.stackCapacity
+			&& frame.registers.ramOffset() === this.stackOffset() + 4 * frame.stackBase;
+	}
+
 	private rebindFrames(): void {
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			frame.registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);

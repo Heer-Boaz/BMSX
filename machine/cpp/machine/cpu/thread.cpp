@@ -150,6 +150,17 @@ void Thread::bindStack(bool ifRelocated) {
 	rebindRegisters();
 }
 
+bool Thread::currentFrameViewMatches() const {
+	const auto* frame = currentFrame;
+	const auto depth = static_cast<u32>(frameDepth());
+	if (!frame) return depth == 0u;
+	if (depth == 0u || (read(ThreadField::FrameBlock) & RAM_RECORD_WORD_MASK) != boundFrameOffset
+		|| frame->controlOffset != (frameControlAddress(depth - 1u) & RAM_RECORD_WORD_MASK)) return false;
+	const u32 wordStart = stackOffset() + static_cast<u32>(frame->stackBase()) * sizeof(u32);
+	return frame->registers.size() == static_cast<size_t>(frame->stackCapacity())
+		&& frame->registers.wordAddress() == (wordStart & RAM_RECORD_WORD_MASK);
+}
+
 void Thread::rebindRegisters() {
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		frame->registers = stack.subspan(frame->stackBase(), frame->stackCapacity());

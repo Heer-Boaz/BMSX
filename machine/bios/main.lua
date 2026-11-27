@@ -73,7 +73,7 @@ bss boot_cart_state: word
 bss boot_frame: word
 
 function exception()
-	monitor.enter(exception_bridge.take_trap_value())
+	monitor.enter()
 end
 
 local scan_cartridges<const> = function()
@@ -182,7 +182,8 @@ local init<const> = function()
 end
 
 init()
-cop0.system_vector = vectors.exception_bridge
+local monitor_ready<const>: *word = exception_bridge.monitor_ready
+*monitor_ready = 1
 cop0.irq_vector = vectors.user_irq
 *irq_mask = irq_dma_done | irq_vblank
 *input_control = input_arm

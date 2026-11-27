@@ -1,4 +1,4 @@
-import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -169,7 +169,9 @@ export function deriveBlua32FixedStack(
 					if (b === COP0_CONTEXT || b === COP0_RAM_END) {
 						if (index !== boundary.ordinaryCode.reset) reject('context and RAM aperture belong to the reset root');
 						if (b === COP0_CONTEXT) continue;
-					} else if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR) reject('not a bounded direct-vector control write');
+					} else if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR) {
+						reject('not a bounded direct-vector control write');
+					}
 					break;
 				case OpCode.MOV:
 					if (a >= width || c !== ValueMoveKind.Copy) reject('not a scalar register copy');

@@ -73,7 +73,6 @@ constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
 // BIOS-owned data in the unused tail of the physical management reservation.
 constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.
-enum class PreparedWindowField : uint32_t { Destination = 0, SourceSlot = 4, Copied = 8, Padded = 12, Capacity = 16, Top = 20 };
 
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };

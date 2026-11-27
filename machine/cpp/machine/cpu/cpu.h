@@ -474,7 +474,7 @@ private:
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced, bool fromArguments = false);
 	bool executeVararg(CallFrame& frame, int first, int requested);
-	bool acquireRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top, int end, u32 receiverFlags);
+	int admitRegisterWindow(CallFrame& issuer, const CallFrame& receiver, int end, OpCode opcode, int a);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
 	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
@@ -572,12 +572,13 @@ private:
 #endif
 	void clearHaltAfterAcceptedInterrupt();
 	void executeSupervisorCall(CallFrame& frame, int source);
+	void enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a);
 	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord,
-		std::optional<Value> argument = {});
+		std::span<const Value> arguments = {});
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
 	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
 	bool supervisorSystemInstruction() const {
@@ -590,12 +591,12 @@ private:
 	void installSystemVector(CallFrame& frame, u32 address, int field);
 	void transferExceptionVector(CallFrame& frame, u32 target);
 	void resumeInterruptedContext();
-	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::optional<Value> argument = {});
+	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::span<const Value> arguments = {});
 	void initializeResetBank();
 	void bindFixedIrqBank();
-	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::optional<Value> argument = {});
+	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::span<const Value> arguments = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
-		std::optional<Value> argument);
+		std::span<const Value> arguments);
 	Value luaFaultValue(u32 reason) const;
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void retireNumericLuaFault(u32 reason);

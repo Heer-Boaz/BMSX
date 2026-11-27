@@ -17,8 +17,8 @@ import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTag,
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
-import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
+import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
+import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -385,6 +385,67 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(report), 43);
 	trace.observe(`M ${report}`, '43 0');
 	trace.replay('stock string.char with fixed, open and protected argument windows', rom);
+}
+
+function verifyRegisterWindowGrowth(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
+	const system = readFileSync(rom);
+	const width = 1100, returned = Array.from({ length: width }, (_, slot) => `input+${slot + 1}`).join(',');
+	const source = `bss report: word
+mem[${IO_IRQ_MASK}] = 0
+local function wide(input) return ${returned} end
+local functions = { wide }
+*report = functions[1](41)
+halt_until_irq
+`;
+	const linked = compileCartridge(system, source, 'window-growth.lua', optLevel);
+	const cart = writeTestBlua32Rom(linked), cartPath = join(dir, 'window-growth.rom');
+	writeFileSync(cartPath, cart);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine, frames = runtime.frameScheduler;
+	const trace = new Trace(native, join(dir, 'window-growth.trace'), cartPath);
+	const report = linked.layout.header.bssAddress;
+	const early = { issue: 0, before: 0, after: 0, required: 0, deadline: 0 };
+	cpu.setExecutionHook((_domain, pc) => {
+		if (cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW || cpu.readEpcWord() >= CART_ROM_BASE) return false;
+		const current = memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackCapacity);
+		if (early.issue === 0 && cpu.fixedInterruptActive() && cpu.getFrameDepth() === 1) {
+			early.issue = cpu.readEpcWord();
+			early.before = current;
+			early.required = asInteger(cpu.readFrameRegister(0, 0));
+			early.deadline = asInteger(cpu.readFrameRegister(0, 3));
+		}
+		if (early.issue === pc && !cpu.fixedInterruptActive() && early.after === 0) early.after = current;
+		return false;
+	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	for (let grant = 0; grant < 2048 && memory.readMappedU32LE(report) === 0; ++grant) {
+		if (gxGpu.backendCommandDrainPending()) {
+			gxGpu.retireExecutedCommands();
+			trace.observe('>');
+		}
+		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
+		const complete = frames.runCyclesToNextLogicalTick(65536);
+		trace.observe('p 65536', [
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
+			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+		].join(' '));
+	}
+	assert.ok(early.before > 0 && early.before < early.required && early.after >= early.required,
+		'the first managed System CALL faults, grows its window and retries before startup completes');
+	assert.equal(decodeBlua32InstructionAtPc(system, SYSTEM_ROM_BASE, early.issue).op, OpCode.CALL);
+	assert.ok(early.deadline > 0 && early.deadline < 0x7fff_ffff, 'firmware received an actual device deadline');
+	assert.equal(memory.readMappedU32LE(report), 42);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	assert.equal(cpu.fixedInterruptActive(), false);
+	assert.equal(cpu.activeCartridgeSlot(), 0);
+	const epc = cpu.readEpcWord(), root = cpu.rootThread.address, offset = root - RAM_BASE;
+	assert.equal(decodeBlua32InstructionAtPc(cart, CART_ROM_BASE, epc).op, OpCode.CALL);
+	assert.ok(memory.readRamRecordWord(root + ThreadField.StackCapacity) >= width);
+	trace.observe(`M ${report}`, '42 0');
+	trace.observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${epc}`);
+	trace.observe(`H ${offset} ${offset + THREAD_HEAP_BYTES}`, hashBytes(memory.ramData(), offset, THREAD_HEAP_BYTES));
+	trace.replay('ordinary startup and cartridge register-window growth', rom);
 }
 
 function verifyExceptionBridge(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
@@ -1150,6 +1211,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 			const rom = join(output, 'system', 'bmsx-bios.debug.rom');
 			const cases = [
 				['System EXEC consumes its existing frame backing', () => verifySystemExec(rom, native, output)],
+				['System startup and cartridge CALL resume after register-window growth', () => verifyRegisterWindowGrowth(rom, native, output, optLevel)],
 				['selected socket 1 supplies its own DATA/BSS extent', () => verifySelectedCartFloor(rom, native, output, optLevel)],
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],

@@ -12,6 +12,7 @@ local heap_floor<const> = require('kernel/heap_floor').internal
 local stopped_roots<const> = require('kernel/gc_stopped_roots')
 local gc<const> = require('kernel/gc_control').internal
 local layout<const> = require('kernel/gc_runtime_layout')
+local bridge<const> = require('kernel/exception_bridge')
 
 local ram_base<const> = 0x08000000
 local static_base<const> = 0x08040000
@@ -92,4 +93,9 @@ if image_bind.bind_initial_image(management, header, ordinary_bank, system_bank,
 root.publish_system_root(address, start.prepared_entry)
 local roots<const>: *root_descriptors = ram_base + management + layout.root_banks_offset
 roots.root = address
+-- The very first managed CALL can require new backing, before the monitor
+-- or the rest of the System libraries have started.
+local monitor_ready<const>: *word = bridge.monitor_ready
+*monitor_ready = 0
+cop0.system_vector = start.exception_bridge
 cop0.context = address

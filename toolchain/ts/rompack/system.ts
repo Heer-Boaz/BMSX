@@ -1,5 +1,6 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
 import type { Blua32PreparedEntry, Blua32StaticExport } from './blua32_image_builder';
+import type { ManagedEntry } from '../lua/compiler';
 import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
@@ -25,6 +26,10 @@ export const BIOS_USER_IRQ_ENTRY: Blua32StaticExport = {
 export const BIOS_EXCEPTION_BRIDGE: Blua32StaticExport = {
 	path: 'kernel/exception_bridge', exportPathKey: 'enter',
 };
+
+export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
+	{ symbol: 'protected_handler', path: 'kernel/protected_handler' },
+];
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_BLUA32_IMAGE_LIMIT) {

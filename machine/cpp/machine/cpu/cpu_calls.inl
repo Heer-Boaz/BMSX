@@ -82,8 +82,11 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		available = extras - skip;
 	} else available = std::max(frame.readWindow(FrameField::Top) - a, 0);
 	const int count = produced < 0 ? available : fromArguments ? std::min(produced, available) : produced;
-	const auto admitAndClose = [&](int copied) {
+	const auto admitSource = [&](int copied) {
 		if (!fromArguments && !frame.registers.containsRange(a, copied)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	};
+	const auto admitAndClose = [&](int copied) {
+		admitSource(copied);
 		instructionBudgetRemaining -= closeUpvalues(frame);
 	};
 	const u32 continuation = frame.readControl(FrameField::Protected);
@@ -134,13 +137,17 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
 			frame.readWindow(FrameField::ReturnCount), frame.readControl(FrameField::Flags));
 		const auto placement = ValuePlacement::fit(count, result.selected(count));
-		admitAndClose(placement.copied);
+		admitSource(placement.copied);
 		const int selected = placement.count(), end = result.base + selected;
+		int capacity = 0;
+		if (selected != 0 && end > caller.stackCapacity()) {
+			capacity = admitRegisterWindow(frame, caller, end, OpCode::RET, a);
+			if (capacity == 0) return false;
+		}
+		instructionBudgetRemaining -= closeUpvalues(frame);
+		if (capacity != 0) caller.growRegisterWindow(capacity);
 		const int source = stackBase + first;
 		const int top = !result.extendsTop() || end > caller.readWindow(FrameField::Top) ? end : -1;
-		if (selected != 0 && end > caller.stackCapacity()
-			&& acquireRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top, end,
-				FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
 		placeRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top);
 	}
 	m_activeThread->leaveFrame();
@@ -158,34 +165,22 @@ inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {
 		return false;
 	}
 	const int source = frame.readWindow(FrameField::VarargBase);
-	if (end > frame.stackCapacity() && acquireRegisterWindow(frame, a, source, placement.copied, placement.padded, top, end, 0u)) return true;
+	if (end > frame.stackCapacity()) {
+		const int capacity = admitRegisterWindow(frame, frame, end, OpCode::VARARG, a);
+		if (capacity == 0) return true;
+		frame.growRegisterWindow(capacity);
+	}
 	placeRegisterWindow(frame, a, source, placement.copied, placement.padded, top);
 	return false;
 }
 
-inline bool CPU::acquireRegisterWindow(CallFrame& frame, int destination, int source, int copied, int padded,
-	int top, int end, u32 receiverFlags) {
-	auto& thread = *frame.thread;
+inline int CPU::admitRegisterWindow(CallFrame& issuer, const CallFrame& receiver, int end, OpCode opcode, int a) {
 	const auto capacity = registerWindowBucket(static_cast<size_t>(end));
-	const auto extent = static_cast<size_t>(frame.stackBase()) + capacity;
-	if (extent > thread.stackCapacity) {
-		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
-		if (function != 0u) {
-			const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-			using Window = PreparedWindowField;
-			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Destination), destination, source);
-			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Copied), copied, padded);
-			m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Capacity), static_cast<u32>(capacity), static_cast<u32>(top));
-			// Both Closure roots are already edges of this live Thread.
-			beginFrameSpaceAcquisition(function, static_cast<u32>(extent), 0, 0, FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
-			return true;
-		}
-		// A RET's receiving frame is not the issuing activation.
-		enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return true;
-	}
-	frame.growRegisterWindow(static_cast<int>(capacity));
-	return false;
+	const auto extent = static_cast<size_t>(receiver.stackBase()) + capacity;
+	if (extent <= receiver.thread->stackCapacity) return static_cast<int>(capacity);
+	if (resetBankSelected()) enterSynchronousException(issuer, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+	else enterRegisterWindowException(issuer, static_cast<u32>(extent), 0u, opcode, a);
+	return 0;
 }
 
 inline void CPU::placeRegisterWindow(CallFrame& frame, int destination, int source, int copied, int padded, int top) {

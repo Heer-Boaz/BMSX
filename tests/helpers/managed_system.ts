@@ -10,7 +10,8 @@ import { buildBlua32Image, type Blua32StaticExport } from '../../toolchain/ts/ro
 import type { Blua32BiosFunctionExport } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { LinkedSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
-import { BIOS_PREPARED_ENTRY } from '../../toolchain/ts/rompack/system';
+import { BIOS_EXCEPTION_BRIDGE, BIOS_MANAGED_ENTRIES, BIOS_PREPARED_ENTRY } from '../../toolchain/ts/rompack/system';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { writeTestBlua32Rom } from './blua32';
 import { cartridgeSlots } from './cartridge';
 
@@ -22,6 +23,8 @@ const firmware = [
 	'kernel/gc_stopped_roots', 'kernel/global_bank', 'kernel/warm_bindings',
 	'kernel/boot_image_admission',
 	'kernel/string_slice', 'kernel/allocate_string_slice',
+	BIOS_EXCEPTION_BRIDGE.path, 'kernel/exception_report', 'kernel/register_window', 'kernel/protected_return',
+	...BIOS_MANAGED_ENTRIES.map(entry => entry.path),
 ];
 
 function systemModule(path: string, source: string, linkValues?: ReadonlyMap<string, number>) {
@@ -39,10 +42,14 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 				: readFileSync('machine/bios/' + path + '.lua', 'utf8')));
 	for (const { path, source, linkValues } of extraModules) luaModules.push(systemModule(path, source, linkValues));
 	luaModules.push(systemModule(entryPath, 'module<entry>\n' + source));
+	const generatedLuaModules = extraModules.some(module => module.path === 'bmsx/blua32') ? []
+		: [{ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE }];
 	const { linked, object } = buildBlua32Image({
-		domain: 'system', luaModules, generatedLuaModules: [], loadAddress: 0x100,
+		domain: 'system', luaModules, generatedLuaModules, loadAddress: 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
 		resetModule, irqModule, exceptionModule, preparedEntry: BIOS_PREPARED_ENTRY, userIrqEntry: options.userIrqEntry,
+		exceptionBridge: BIOS_EXCEPTION_BRIDGE,
+		managedEntries: BIOS_MANAGED_ENTRIES,
 		preloadModules: HEAP_SERVICE_MODULES, biosExports,
 	});
 	return Object.assign(linked, { object });

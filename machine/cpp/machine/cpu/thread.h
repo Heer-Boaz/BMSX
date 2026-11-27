@@ -23,6 +23,7 @@ struct Thread {
 	void leaveFrame();
 	void detachFrameViews();
 	void bindFrameViews();
+	bool currentFrameViewMatches() const;
 	void reserveFixedFrameViews();
 	size_t frameDepth() const { return read(ThreadField::FrameDepth) & THREAD_CONTROL_COUNT_MASK; }
 	i32 stackTop() const { return static_cast<i32>(read(ThreadField::StackTop) & FRAME_WINDOW_MASK); }

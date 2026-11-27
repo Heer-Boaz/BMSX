@@ -62,6 +62,7 @@ import {
 	type Blua32StaticExport,
 	type GeneratedLuaModule,
 } from '../../toolchain/ts/rompack/blua32_image_builder';
+import type { ManagedEntry } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { createTextureAtlas, resolveTextureAtlasName } from './atlasbuilder';
 import {
@@ -904,6 +905,7 @@ type BuildRomBlua32TailOptions = {
 		preparedEntry?: Blua32PreparedEntry;
 		userIrqEntry?: Blua32StaticExport;
 		exceptionBridge?: Blua32StaticExport;
+		managedEntries?: readonly ManagedEntry[];
 		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
@@ -973,6 +975,7 @@ export function buildRomBlua32Tail(
 			preparedEntry: options.preparedEntry,
 			userIrqEntry: options.userIrqEntry,
 			exceptionBridge: options.exceptionBridge,
+			managedEntries: options.managedEntries,
 			biosExports: options.biosExports,
 		});
 		const linked = built.linked;

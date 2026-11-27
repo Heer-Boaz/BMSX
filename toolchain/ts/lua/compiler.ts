@@ -46,6 +46,7 @@ import {
 	type LuaWhileStatement,
 	type LuaGotoStatement,
 } from './syntax/ast';
+import { findLuaModuleExport } from './semantic/module_bindings';
 import { OpCode, decodeValueCount, encodeFixedValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { integerConstant, numberConstantKey, numberConstantValue, numberConstantInteger, numberConstantText, type NumberConstant } from './number';
 import type { SourcePosition, SourceRange } from './source_range';
@@ -193,6 +194,7 @@ export type CompiledSystemProgram = CompiledProgramBase & {
 	domain: 'system';
 	resetProtoIndex: number;
 	managedExceptionProtoIndex: number | undefined;
+	managedEntryProtos: ReadonlyMap<string, number>;
 	constRelocs: ProgramImageConstReloc[];
 };
 
@@ -281,6 +283,8 @@ type CompileOptionsBase = {
 	captureLayout?: LuaCaptureLayout;
 };
 
+export type ManagedEntry = { readonly symbol: string; readonly path: string };
+
 export type SystemCompileOptions = CompileOptionsBase & {
 	programDomain: 'system';
 	/** Authored cold reset vector; never a module initializer. */
@@ -289,6 +293,8 @@ export type SystemCompileOptions = CompileOptionsBase & {
 	irqModule?: string;
 	/** Authored direct System exception vector; top-level return performs RFE. */
 	exceptionModule?: string;
+	/** Capture-free function bodies entered by software, never module initializers. */
+	managedEntries?: readonly ManagedEntry[];
 	biosFunctions?: never;
 };
 
@@ -6387,6 +6393,18 @@ export function compileLuaChunkToProgram(
 		|| (exceptionPath !== undefined && (exceptionPath === resetPath || exceptionPath === irqPath))) {
 		throw new Error('System reset, interrupt and exception vectors must name separate source bodies.');
 	}
+	const managedEntries = options.programDomain === 'system' ? options.managedEntries : undefined;
+	const managedEntryByPath = new Map<string, string>();
+	const managedEntryProtos = new Map<string, number>();
+	if (managedEntries !== undefined) {
+		const symbols = new Set<string>();
+		for (const { path, symbol } of managedEntries) {
+			if (path === resetPath || path === irqPath || path === exceptionPath || managedEntryByPath.has(path) || symbols.has(symbol))
+				throw new Error(`Managed System entry '${symbol}' must name a distinct source body and symbol.`);
+			managedEntryByPath.set(path, symbol);
+			symbols.add(symbol);
+		}
+	}
 	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
 	compiledModulePaths[0] = toLuaModulePath(chunk.locations.path);
 	const sourceMaps = new Map<string, LuaSourceMap>();
@@ -6457,6 +6475,7 @@ export function compileLuaChunkToProgram(
 	recordModuleExportContracts(programBuilder, moduleCompileContext);
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
+		if (managedEntryByPath.has(module.path)) continue;
 		const info = moduleCompileContext.modulesByPath.get(module.path);
 		if (info === undefined || !info.staticStorage) {
 			continue;
@@ -6479,6 +6498,7 @@ export function compileLuaChunkToProgram(
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
+		if (managedEntryByPath.has(module.path)) continue;
 		const info = moduleCompileContext.modulesByPath.get(module.path);
 		if (info === undefined || info.staticFunctionExportByPathKey.size === 0) {
 			continue;
@@ -6560,6 +6580,20 @@ export function compileLuaChunkToProgram(
 	}
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
+		const managedSymbol = managedEntryByPath.get(module.path);
+		if (managedSymbol !== undefined) {
+			try {
+				const expression = findLuaModuleExport(module.chunk)?.expressions[0];
+				if (module.chunk.constModule || module.chunk.body.length !== 1 || expression?.kind !== LuaSyntaxKind.FunctionExpression)
+					throw new Error(`Managed System entry '${managedSymbol}' must contain only a returned function body.`);
+				const index = compileFunctionExpression(programBuilder, expression, null, false,
+					buildModuleProtoId(module.path), managedSymbol, module.path, frontend.getFile(module.path), frontend);
+				managedEntryProtos.set(managedSymbol, index);
+			} catch (error) {
+				compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
+			}
+			continue;
+		}
 		// Const modules are compile-time symbol tables: their exports are inlined at
 		// use sites, so they carry no runtime proto and are never statically initialized.
 		const moduleInfo = moduleCompileContext.modulesByPath.get(module.path);
@@ -6632,7 +6666,15 @@ export function compileLuaChunkToProgram(
 	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
 			const path = canonicalModules[index].path;
-			if (path !== resetPath && path !== irqPath && path !== exceptionPath) entryBuilder.markStaticModulePath(path);
+			if (path !== resetPath && path !== irqPath && path !== exceptionPath && !managedEntryByPath.has(path))
+				entryBuilder.markStaticModulePath(path);
+		}
+		if (managedEntries !== undefined) {
+			for (const { path, symbol } of managedEntries) {
+				if (!managedEntryProtos.has(symbol)) throw new Error(`Managed System entry '${symbol}' has no source body at '${path}'.`);
+				if (programBuilder.staticModulePaths.includes(path))
+					throw new Error(`Managed System entry '${symbol}' cannot be initialized as an ordinary module.`);
+			}
 		}
 	}
 	if (resetPath !== undefined) {
@@ -6683,6 +6725,7 @@ export function compileLuaChunkToProgram(
 			startupProtoIndex,
 			resetProtoIndex: resetProtoIndex ?? startupProtoIndex,
 			managedExceptionProtoIndex,
+			managedEntryProtos,
 			sectionInitProtoIndex,
 			irqProtoIndex,
 			exceptionProtoIndex,

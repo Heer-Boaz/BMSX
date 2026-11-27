@@ -35,12 +35,15 @@ const values = (context: number) => context + 0x200;
 const returningValue = valueInteger(0x719b6cad);
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+type ReturnEdit = 'none' | 'bank' | 'unwind' | 'window';
 
-function assemble(status: number, payload: Value, source: number, redirect: boolean) {
+function assemble(status: number, payload: Value, source: number, edit: ReturnEdit) {
 	const constants: number[] = [], relocations: { slot: number; fn: number; at: number }[] = [];
+	const closureRelocations: { wordIndex: number; functionIndex: number }[] = [];
 	const instructions: [OpCode, number, number, number][] = [];
 	const functions: { firstWord: number; wordCount: number; maxStack: number }[] = [];
 	const capacity = Math.max(8, source + 1);
+	const redirect = edit === 'bank', unwind = edit === 'unwind', window = edit === 'window';
 	function body(maxStack: number, emit: () => void) {
 		const firstWord = instructions.length;
 		emit();
@@ -61,12 +64,14 @@ function assemble(status: number, payload: Value, source: number, redirect: bool
 		constant(1, address);
 		instructions.push([OpCode.STORE_MEM, 0, 1, kind]);
 	}
-	function prepare(context: number, fn: number, count: number, top: number, slot: number, value: Value) {
+	function prepare(context: number, fn: number, count: number, top: number, slot: number, value: Value,
+		width = count, frameCapacity = 2) {
 		const frame = controls(context), backing = values(context);
 		for (const [field, data] of [
-			[ThreadField.StackTop, count], [ThreadField.StackBlock, backing], [ThreadField.StackCapacity, count],
-			[ThreadField.FrameCapacity, 2], [ThreadField.FrameDepth, 1], [ThreadField.FrameBlock, frame],
-			[frame - context + FrameField.Protected, -1], [frame - context + FrameField.StackCapacity, count],
+			[ThreadField.StackTop, width], [ThreadField.StackBlock, backing], [ThreadField.StackCapacity, count],
+			[ThreadField.FrameCapacity, frameCapacity], [ThreadField.FrameDepth, 1], [ThreadField.FrameBlock, frame],
+			[frame - context + FrameField.Protected, -1],
+			[frame - context + FrameField.StackCapacity, width],
 			[frame - context + FrameField.Top, top],
 		] as const) store(context + field, data);
 		reference(0, fn, -1);
@@ -79,8 +84,17 @@ function assemble(status: number, payload: Value, source: number, redirect: bool
 		store(backing + 4 * count + slot, valueTag(value), MemoryAccessKind.U8);
 	}
 	body(8, () => {
-		prepare(a, 1, capacity, source + 1, source, payload);
+		const count = unwind || window ? 2 * capacity : capacity;
+		if (unwind) {
+			prepare(a, 4, count, 1, 0, returningValue, capacity, 3);
+			store(values(a) + 4 * (capacity + source), valuePayload(payload));
+			store(values(a) + 4 * count + capacity + source, valueTag(payload), MemoryAccessKind.U8);
+		} else prepare(a, 1, count, source + 1, source, payload, capacity);
 		if (redirect) prepare(b, 4, 8, 1, 0, returningValue);
+		if (window) {
+			store(values(a) + 4 * (capacity + source), valuePayload(returningValue));
+			store(values(a) + 4 * count + capacity + source, valueTag(returningValue), MemoryAccessKind.U8);
+		}
 		store(IO_IRQ_MASK, IRQ_VBLANK);
 		reference(0, 3, -1);
 		instructions.push([OpCode.MTC0, 0, COP0_IRQ_VECTOR, 0]);
@@ -102,8 +116,18 @@ function assemble(status: number, payload: Value, source: number, redirect: bool
 		if (redirect) {
 			constant(5, b); constant(6, CPU_INTERRUPTED_CONTEXT_ADDRESS);
 			instructions.push([OpCode.STORE_MEM, 5, 6, MemoryAccessKind.Word]);
-			reference(5, 4, 1);
+		}
+		if (unwind) {
+			store(a + ThreadField.FrameDepth, 1);
+			store(a + ThreadField.StackTop, capacity);
+		}
+		if (redirect || unwind) {
+			reference(5, 4, unwind ? 3 : 1);
 			instructions.push([OpCode.MTC0, 5, COP0_EPC, 0]);
+		}
+		if (window) {
+			store(controls(a) + FrameField.StackBase, capacity);
+			store(a + ThreadField.StackTop, 2 * capacity);
 		}
 		instructions.push([OpCode.RFE, 0, 0, 0]);
 	});
@@ -111,13 +135,18 @@ function assemble(status: number, payload: Value, source: number, redirect: bool
 		constant(0, IRQ_VBLANK); constant(1, IO_IRQ_ACK);
 		instructions.push([OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Word], [OpCode.RFE, 0, 0, 0]);
 	});
-	if (redirect) body(8, () => {
-		instructions.push([OpCode.K0, 0, 0, 0], [OpCode.RET, 0, 2, 0]); // Not this first PC.
+	if (redirect || unwind) body(capacity, () => {
+		if (unwind) {
+			instructions.push([OpCode.WIDE, 0, 0, 0]);
+			closureRelocations.push({ wordIndex: instructions.length, functionIndex: 1 });
+			instructions.push([OpCode.CLOSURE, capacity - 1, 0, 0], [OpCode.CALL, capacity - 1, 1, 1]);
+		} else instructions.push([OpCode.K0, 0, 0, 0]); // Not this first PC.
+		instructions.push([OpCode.RET, 0, 2, 0]);
 	});
 
 	const text = new Uint8Array(instructions.length * word);
 	for (const [index, instruction] of instructions.entries()) writeInstruction(text, index, ...instruction);
-	const { image, romBytes: rom } = linkRawTestSystemBlua32({ text, functions, constants: constants.map(integerConstant),
+	const { image, romBytes: rom } = linkRawTestSystemBlua32({ text, functions, closureRelocations, constants: constants.map(integerConstant),
 		verifiedControlFlow: true, irqFunctionIndex: 3, exceptionFunctionIndex: 2 });
 	assert.equal(image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 	assert.equal(image.header.globalNameCount, 0);
@@ -129,18 +158,28 @@ function assemble(status: number, payload: Value, source: number, redirect: bool
 	// The independently authored System IRQ is a fixed-bank code function.
 	const vector = image.functions[3];
 	writeLE32(rom, vector.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, vector.flags | BLUA32_FUNCTION_CODE);
+	if (unwind) {
+		const child = image.functions[1];
+		writeLE32(rom, child.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, child.flags | BLUA32_FUNCTION_CODE);
+	}
 	return { rom, functions: image.functions };
 }
 
-for (const { name, status, source, payload, redirect } of [
-	{ name: 'supervisor SVC passes Nil as one argument', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), redirect: false },
-	{ name: 'user WIDE SVC passes raw Float bits from R256', status: CPU_STATUS_CART_ENTRY, source: 256, payload: valueFloatBits(0xff812345), redirect: false },
-	{ name: 'SVC handler can change the physical return bank and EPC', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueFloatBits(0x80000000), redirect: true },
-]) test(name, t => {
-	const { rom, functions } = assemble(status, payload, source, redirect);
+for (const { name, status, source, payload, edit } of [
+	{ name: 'supervisor SVC passes Nil as one argument', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), edit: 'none' },
+	{ name: 'user WIDE SVC passes raw Float bits from R256', status: CPU_STATUS_CART_ENTRY, source: 256, payload: valueFloatBits(0xff812345), edit: 'none' },
+	{ name: 'SVC handler can change the physical return bank and EPC', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueFloatBits(0x80000000), edit: 'bank' },
+	{ name: 'SVC handler can unwind a suspended frame before RFE', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), edit: 'unwind' },
+	{ name: 'SVC handler can change the selected register window without relocating its backing', status: CPU_STATUS_SYSTEM_ENTRY, source: 7, payload: valueNil(), edit: 'window' },
+] as const) test(name, t => {
+	const { rom, functions } = assemble(status, payload, source, edit);
 	const svc = functions[1].codeAddress + 2 * word, successor = svc + (source >= 256 ? 2 : 1) * word;
 	const handler = functions[2].codeAddress, irq = functions[3].codeAddress;
-	const returnContext = redirect ? b : a, returnPc = redirect ? functions[4].codeAddress + word : successor;
+	const redirect = edit === 'bank', unwind = edit === 'unwind', redirectedPc = redirect || unwind;
+	const returnContext = redirect ? b : a, returnPc = redirectedPc ? functions[4].codeAddress + (unwind ? 3 : 1) * word : successor;
+	const expectedValue = edit === 'none' ? payload : returningValue;
+	const interruptedIndex = +unwind;
+	const interruptedFrame = controls(a) + interruptedIndex * FRAME_CONTROL_BYTES;
 	function boot() {
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
@@ -185,15 +224,19 @@ for (const { name, status, source, payload, redirect } of [
 	}
 	for (let i = 0; i < 256 && cpu.activeThread.address !== a; ++i) assert.equal(grant(runtime), RunResult.Yielded);
 	assert.equal(cpu.activeThread.address, a);
+	if (unwind) {
+		grant(runtime); grant(runtime); // Static CLOSURE + ordinary CALL.
+		assert.equal(cpu.getFrameDepth(), 2);
+	}
 	grant(runtime); grant(runtime); // LOADK + STATUS, not SVC yet.
-	assert.equal(cpu.readFramePc(0), svc);
-	assert.equal(cpu.readFrameRegister(0, source), payload);
+	assert.equal(cpu.readFramePc(interruptedIndex), svc);
+	assert.equal(cpu.readFrameRegister(interruptedIndex, source), payload);
 	assert.equal(cpu.captureRuntimeState().statusWord, status);
 	assert.equal(grant(runtime), RunResult.Yielded);
 	assert.equal(cpu.fixedInterruptActive(), true);
 	assert.equal(cpu.readCauseWord(), 8 << 2);
 	assert.equal(cpu.readEpcWord(), successor);
-	assert.equal(memory.readRamRecordWord(controls(a) + FrameField.Pc), successor);
+	assert.equal(memory.readRamRecordWord(interruptedFrame + FrameField.Pc), successor);
 	assert.equal(cpu.readFramePc(0), handler);
 	assert.equal(cpu.isUserMode(), false);
 	const entry = cpu.activeThread.currentFrame!;
@@ -230,11 +273,12 @@ for (const { name, status, source, payload, redirect } of [
 		for (let i = 0; i < 16 && cpu.fixedInterruptActive(); ++i) assert.equal(grant(rt), RunResult.Yielded);
 		assert.equal(cpu.activeThread.address, returnContext);
 		assert.equal(cpu.rootThread.address, a);
+		assert.equal(cpu.getFrameDepth(), 1);
 		assert.equal(cpu.readFramePc(0), returnPc);
 		assert.equal(cpu.captureRuntimeState().statusWord, status);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
-		assert.equal(cpu.readFrameRegister(0, redirect ? 0 : source), redirect ? returningValue : payload);
-		assert.equal(memory.readRamRecordWord(controls(a) + FrameField.Pc), successor);
+		assert.equal(cpu.readFrameRegister(0, redirectedPc ? 0 : source), expectedValue);
+		assert.equal(memory.readRamRecordWord(interruptedFrame + FrameField.Pc), successor);
 		assert.equal(irqController.enabledPendingFlags(), IRQ_VBLANK);
 		assert.equal(cpu.enterPendingInterrupt(), true);
 		observe('I', 1);
@@ -249,9 +293,8 @@ for (const { name, status, source, payload, redirect } of [
 		assert.equal(cpu.readFramePc(0), returnPc);
 		assert.equal(irqController.enabledPendingFlags(), 0);
 		assert.equal(grant(rt), RunResult.Halted);
-		const expected = redirect ? returningValue : payload;
-		assert.deepEqual(rt.readCompletionValues(), [expected]);
-		observe('c', `1 ${valueTag(expected)} ${valuePayload(expected)}`);
+		assert.deepEqual(rt.readCompletionValues(), [expectedValue]);
+		observe('c', `1 ${valueTag(expectedValue)} ${valuePayload(expectedValue)}`);
 		const management = cpu.heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET;
 		const length = management + HEAP_SERVICE_ROOT_BANKS_OFFSET - first;
 		assert.deepEqual(memory.ramData().subarray(first, first + length), new Uint8Array(length));

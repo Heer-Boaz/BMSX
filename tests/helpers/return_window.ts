@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, valuePayload, ValueTag, valueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField } from '../../machine/ts/spec/bmsx/heap_service';
 import { instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -33,19 +31,18 @@ export function returnWindowFixture(level: 0 | 3) {
 	});
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
-	const management = arena.managementOffset();
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		return { result, used: cycles - cpu.instructionBudgetRemaining };
 	}
 	function atLeafRet() {
-		if (cpu.heapServiceActive()) return false;
+		if (cpu.heapServiceActive() || cpu.fixedInterruptActive()) return false;
 		const frame = cpu.activeThread.currentFrame;
 		return frame !== null && frame.previous !== null && frame.top >= numbers.length + 1 && frame.previous.stackCapacity <= 8
 			&& instructionOpcode(memory.readMappedU32LE(frame.pc)) === OpCode.RET;
 	}
 	for (let n = 0; n < 65_536 && !atLeafRet(); ++n)
-		assert.equal(grant(cpu.heapServiceActive() ? 256 : 1).result, RunResult.Yielded);
+		assert.equal(grant(cpu.heapServiceActive() || cpu.fixedInterruptActive() ? 256 : 1).result, RunResult.Yielded);
 	assert.ok(atLeafRet());
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const thread = cpu.activeThread, callee = thread.currentFrame!, caller = callee.previous!;
@@ -56,9 +53,7 @@ export function returnWindowFixture(level: 0 | 3) {
 	assert.equal(valueTag(edge), ValueTag.Closure);
 	expected.push(edge);
 	return {
-		romBytes, runtime, cpu, memory, arena, management, thread, callee, caller, issue, first, expected, edge, closure: valuePayload(edge), grant,
-		flags: () => memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Flags),
-		prepared: (field: PreparedWindowField) => memory.readRamRecordWord(management + HEAP_SERVICE_PREPARED_FRAME_OFFSET + field),
+		romBytes, runtime, cpu, memory, arena, thread, callee, caller, issue, first, expected, edge, closure: valuePayload(edge), grant,
 		completion: [valueInteger(37), ...expected],
 	};
 }

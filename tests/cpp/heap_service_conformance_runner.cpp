@@ -278,7 +278,7 @@ int main(int argc, char** argv) {
 					const bool coroutine = opcode == 'Y';
 					const bool prepared = opcode == 'A', vararg = opcode == 'V';
 					const bool metamethod = opcode == 'M';
-					const bool acquiresFrameSpace = prepared || vararg || metamethod;
+					const bool acquiresFrameSpace = prepared || metamethod;
 					const auto gate = metamethod ? NativeBlockExit::ReadField : vararg ? NativeBlockExit::Vararg : rawSet || coroutine || prepared ? NativeBlockExit::Call
 						: growField ? NativeBlockExit::WriteField : NativeBlockExit::CreateClosure;
 					if (rawSet) {
@@ -372,6 +372,7 @@ int main(int argc, char** argv) {
 						cpu.beginCompletionCall(closure, {args.data(), args.size()});
 					}
 					cpu.prepareSystemNativeCode();
+					const u32 owner = cpu.activeThread()->address;
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
 					auto result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
@@ -389,6 +390,16 @@ int main(int argc, char** argv) {
 							+ std::to_string(allocation.entries - before.entries) + " entries, "
 							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
 							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
+					if (vararg) {
+						// Unlike a private service, the ordinary vector and
+						// retried instruction can both run in the remaining grant.
+						if (result != RunResult::Halted || cpu.heapServiceActive() || cpu.fixedInterruptActive()
+							|| cpu.readCauseWord() != CPU_CAUSE_CODE_REGISTER_WINDOW || cpu.activeThread()->address != owner
+							|| memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) != 0u)
+							throw std::runtime_error("Generated VARARG did not retire through its register-window exception");
+						std::cout << allocation.entries - before.entries << ' ' << cpu.readCauseWord() << ' ' << cpu.readEpcWord() << '\n';
+						break;
+					}
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					if (result != RunResult::Yielded || !cpu.heapServiceActive())
 						throw std::runtime_error("The generated allocation did not suspend");
@@ -404,7 +415,7 @@ int main(int argc, char** argv) {
 							: memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
 						const auto want = acquiresFrameSpace || coroutine ? HeapServiceBiosCallKind::Idle
 							: rawSet ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
-						const u32 receiver = coroutine ? 0u : vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY;
+						const u32 receiver = coroutine ? 0u : FRAME_RESIDENT_PREPARED_ENTRY;
 						if ((acquiresFrameSpace || coroutine) && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != (FRAME_RESIDENT_ACTIVATION | receiver))
 							throw std::runtime_error("The fixed root did not retain its prepared-activation receiving mode");
 						if (completion != want || cpu.allocationParked() || activeRoot != root
@@ -416,7 +427,7 @@ int main(int argc, char** argv) {
 					}
 					std::cout << allocation.entries - before.entries;
 					if (growField || rawSet || coroutine || acquiresFrameSpace)
-						std::cout << ' ' << (coroutine ? FRAME_RESIDENT_ACTIVATION : acquiresFrameSpace ? (FRAME_RESIDENT_ACTIVATION | (vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY)) : static_cast<u32>(completion))
+						std::cout << ' ' << (coroutine ? FRAME_RESIDENT_ACTIVATION : acquiresFrameSpace ? (FRAME_RESIDENT_ACTIVATION | FRAME_RESIDENT_PREPARED_ENTRY) : static_cast<u32>(completion))
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else

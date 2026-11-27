@@ -34,19 +34,31 @@ struct stopped_thread
 	stack_top: u32 -- R:22 S:21
 	stack_block: addr -- R:22 S:21
 	stack_capacity: u32 -- R:22 S:21
-	before_error: u32[2] -- R:23 S:22
+	frame_capacity: u32 -- R:23 S:22
+	protected_capacity: u32 -- R:23 S:22
 	error_word: u32 -- R:23 S:22 I:60-61 J:48-49
 	error_kind: u32 -- R:23 S:22 I:60-61 J:48-49
-	return_range: u32[2] -- R:23 S:22
+	call_base: u32 -- R:23 S:22
+	return_count: u32 -- R:23 S:22
 	frame_depth: u32 -- R:24 S:23
 	protected_depth: u32 -- R:24 S:23
 	frame_block: addr -- R:24 S:23
+	protected_block: addr -- R:24 S:23
 end
 
 struct stopped_frame
-	before_head: u32[2] -- F:19 G:41
+	fn: addr -- F:19 G:41
+	call_site: addr -- F:19 G:41
 	head: addr -- F:19 G:41
-	before_window: u32[9] -- F:19 G:41
+	protected: u32 -- F:19 G:41
+	flags: u32 -- F:19 G:41
+	pc: u32 -- F:19 G:41
+	vararg_base: u32 -- F:19 G:41
+	argument_count: u32 -- F:19 G:41
+	return_base: u32 -- F:19 G:41
+	return_count: u32 -- F:19 G:41
+	top: u32 -- F:19 G:41
+	closure: addr -- F:19 G:41
 	stack_base: u32 -- F:19,97 G:41,147
 	stack_capacity: u32 -- F:19,98 G:41,147
 end
@@ -87,11 +99,11 @@ local retire_open_cells<const> = function(control, arena, frame_address, first_s
 	return closed -- T:4312 C:2991
 end
 
-local retire_thread_frames<const> = function(control, arena, address) -- T:864-867 C:3199-3202
+local retire_thread_frames<const> = function(control, arena, address, retained_depth) -- T:864-867 C:3199-3202
 	local thread<const>: *stopped_thread = address -- T:864 I:42-43 C:3199 J:31
 	local depth = thread.frame_depth & frame_count_mask -- T:864 I:14 C:3199 S:27
 	local frames<const> = thread.frame_block & word_mask -- T:865 I:69-70,203 C:3200 S:41,57-59
-	while depth ~= 0 do -- T:864 C:3199
+	while depth > retained_depth do -- T:2781 C:2759; full retirement retains zero frames
 		local frame<const> = ram_base + ((frames + (depth - 1) * sizeof(stopped_frame)) & word_mask) -- T:865 I:69-70,203 F:21 C:3200 S:41 G:42
 		retire_open_cells(control, arena, frame, 0) -- T:866 C:3201
 		depth = depth - 1 -- T:867 I:265 C:3202 J:287
@@ -111,7 +123,7 @@ local retire_threads<const> = function(management, root, active) -- T:860-862 C:
 	while true do -- T:862 C:3197
 		local thread<const>: *stopped_thread = active -- T:863,871 I:42-43 C:3198,3206 J:31
 		thread.protected_depth = 0 -- T:863 I:67-68 C:3198 S:23
-		retire_thread_frames(control, arena, active) -- T:864-867 C:3199-3202
+		retire_thread_frames(control, arena, active, 0) -- T:864-867 C:3199-3202
 		local capacity<const> = thread.stack_capacity -- T:869 I:141 C:3204 J:141 S:63-64
 		values.internal.clear_stack_range(thread.stack_block & word_mask, capacity, 0, capacity) -- T:869 I:141 C:3204 J:135-150 S:37,43-46
 		thread.stack_top = 0 -- T:870 I:17 C:3205

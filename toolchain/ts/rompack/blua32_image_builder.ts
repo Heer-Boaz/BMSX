@@ -4,7 +4,7 @@ import {
 	utf8FatalDecoder,
 } from '../../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../lua/analysis/parse';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ManagedEntry } from '../lua/compiler';
 import type { ProgramObjectImage } from '../lua/compiler/program_object';
 import { resolveLuaEntryModuleIndex } from '../lua/entry_module';
 import { selectLuaProgramModules } from '../lua/compiler/module_graph';
@@ -42,12 +42,7 @@ export type GeneratedLuaModule = {
 	linkValues?: ReadonlyMap<string, number>;
 };
 
-function systemStartupLayoutModule(prepared: boolean, userIrq: boolean, exceptionBridge: boolean): GeneratedLuaModule {
-	const entries = ['managed_entry'];
-	if (prepared) entries.push('prepared_entry', 'managed_entry_slots');
-	entries.push('managed_exception');
-	if (userIrq) entries.push('user_irq');
-	if (exceptionBridge) entries.push('exception_bridge');
+function systemStartupLayoutModule(entries: readonly string[]): GeneratedLuaModule {
 	return {
 		path: SYSTEM_STARTUP_MODULE_PATH,
 		source: 'module<const>\nreturn { ' + entries.map(entry => entry + ' = 0').join(', ') + ' }',
@@ -93,6 +88,7 @@ type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	preparedEntry?: Blua32PreparedEntry;
 	userIrqEntry?: Blua32StaticExport;
 	exceptionBridge?: Blua32StaticExport;
+	managedEntries?: readonly ManagedEntry[];
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 };
 
@@ -197,8 +193,21 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[entryIndex] = entry;
 	}
 	const authoredReset = options.domain === 'system' && options.resetModule !== undefined;
-	const generatedModules = authoredReset
-		? [...options.generatedLuaModules, systemStartupLayoutModule(options.preparedEntry !== undefined, options.userIrqEntry !== undefined, options.exceptionBridge !== undefined)]
+	const managedEntries = options.domain === 'system' ? options.managedEntries ?? [] : [];
+	const startupSymbols: string[] = [];
+	if (authoredReset) {
+		startupSymbols.push('managed_entry');
+		if (options.preparedEntry !== undefined) startupSymbols.push('prepared_entry', 'managed_entry_slots');
+		startupSymbols.push('managed_exception');
+		if (options.userIrqEntry !== undefined) startupSymbols.push('user_irq');
+		if (options.exceptionBridge !== undefined) startupSymbols.push('exception_bridge');
+	}
+	for (const { symbol } of managedEntries) {
+		if (startupSymbols.includes(symbol)) throw new Error(`System startup symbol '${symbol}' is already defined.`);
+		startupSymbols.push(symbol);
+	}
+	const generatedModules = startupSymbols.length !== 0
+		? [...options.generatedLuaModules, systemStartupLayoutModule(startupSymbols)]
 		: options.generatedLuaModules;
 	for (const generated of generatedModules) {
 		if (modulePaths.has(generated.path)) {
@@ -222,7 +231,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[index] = modules[index + 1];
 	}
 	modules.length -= 1;
-	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path)];
+	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path), ...managedEntries.map(entry => entry.path)];
 	if (options.domain === 'system') {
 		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
 		if (options.preparedEntry !== undefined) moduleRoots.push(options.preparedEntry.path);
@@ -285,6 +294,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		resetModule: options.resetModule,
 		irqModule: options.irqModule,
 		exceptionModule: options.exceptionModule,
+		managedEntries,
 		traceStatements: options.traceStatements,
 		preloadModules: options.preloadModules,
 	});
@@ -296,9 +306,12 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			options.ramByteCount,
 			options.biosExports,
 	);
+	const values = new Map(Array.from(compiled.managedEntryProtos, ([symbol, proto]) =>
+		[symbol, linked.layout.functions[linked.functionProtoIndices.indexOf(proto)].address]));
+	let userIrq: number | undefined, bridge: number | undefined;
 	if (authoredReset) {
 		const managed = linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.startupProtoIndex)];
-		const values = new Map([['managed_entry', managed.address]]);
+		values.set('managed_entry', managed.address);
 		if (compiled.managedExceptionProtoIndex !== undefined) {
 			const handler = linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.managedExceptionProtoIndex)];
 			values.set('managed_exception', handler.address);
@@ -319,15 +332,18 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			values.set('prepared_entry', target.address);
 			values.set('managed_entry_slots', Math.max(1, managed.numParams, managed.maxStack));
 		}
-		const userIrq = options.userIrqEntry === undefined ? undefined
+		userIrq = options.userIrqEntry === undefined ? undefined
 			: resolveStaticEntry(options.userIrqEntry, 'User IRQ entry');
 		if (userIrq !== undefined) values.set('user_irq', linked.layout.functions[userIrq].address);
-		const exception = linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex);
-		const bridge = options.exceptionBridge === undefined ? undefined : resolveStaticEntry(options.exceptionBridge, 'Exception bridge');
+		bridge = options.exceptionBridge === undefined ? undefined : resolveStaticEntry(options.exceptionBridge, 'Exception bridge');
 		if (bridge !== undefined) values.set('exception_bridge', linked.layout.functions[bridge].address);
+	}
+	if (startupSymbols.length !== 0)
 		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
+	if (authoredReset) {
 		linkBlua32ResetCode(linked.layout, linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
-			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), exception, [userIrq, bridge]);
+			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex),
+			[userIrq, bridge]);
 	}
 	return {
 		linked,

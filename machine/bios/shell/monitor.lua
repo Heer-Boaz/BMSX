@@ -13,6 +13,7 @@ local interrupts<const> = require('kernel/interrupts')
 local dma_transfer<const> = require('kernel/dma')
 local gx_gpu<const> = require('gpu/gpu')
 local assets<const> = require('bmsx/system_assets')
+local exception_bridge<const> = require('kernel/exception_bridge')
 
 local byte<const> = __bmsx_string_byte
 local monitor<const> = {}
@@ -30,10 +31,8 @@ local irq_dma_done<const> = interrupts.dma_done
 local input_arm<const> = 0x00000001
 local system_supervisor_enter<const> = 0x00000002
 local system_supervisor_leave<const> = 0x00000004
-local system_supervisor_fault<const> = 0x00000008
 local system_supervisor_fault_publish<const> = 0x00000010
 local system_supervisor_exit_requested<const> = 0x00000002
-local system_supervisor_resumable<const> = 0x00000004
 local cause_nmi<const> = 0x00010000
 
 local palette_text<const> = terminal.palette_text
@@ -413,7 +412,17 @@ local leave_monitor<const> = function(saved_status, saved_epc, saved_cart_select
 	end
 end
 
-function monitor.enter(error_value)
+function monitor.enter()
+	local entry<const>: *monitor_entry_state = exception_bridge.monitor_entry
+	local saved_status<const> = entry.status
+	local saved_cause<const> = entry.cause
+	local saved_epc<const> = entry.epc
+	local saved_bad_address<const> = entry.bad_address
+	local saved_lua_fault_reason<const> = entry.lua_fault_reason
+	local saved_irq_mask<const> = entry.irq_mask
+	local saved_cart_select<const> = entry.cart_select
+	local owns_supervisor_context<const> = entry.owns_supervisor_context ~= 0
+	local error_value<const> = exception_bridge.take_trap_value()
 	local thread<const> = running()
 	local retained_frames = frame_count(thread) - 1
 	while true do
@@ -421,24 +430,11 @@ function monitor.enter(error_value)
 		if exception then break end
 		retained_frames = retained_frames - 1
 	end
-	-- Nested VBlank IRQ entry overwrites CP0 latches, so preserve the interrupted
-	-- context before the monitor enables maskable supervisor interrupts.
-	local saved_status<const> = cop0.status
-	local saved_cause<const> = cop0.cause
-	local saved_epc<const> = cop0.epc
-	local saved_bad_address<const> = cop0.bad_address
-	local saved_lua_fault_reason<const> = cop0.lua_fault_reason
-	local saved_irq_mask<const> = *irq_mask
-	local saved_cart_select<const> = *cart_select
-	local owns_supervisor_context<const> = (*system_status & system_supervisor_resumable) == 0
-
-	-- Firmware owns exception classification. NMI completes an already quiesced
-	-- supervisor request; a synchronous fault starts the same retained-context
-	-- fence and hardware holds this handler until that bank is ready.
+	-- NMI completes an already quiesced request. Synchronous faults have
+	-- already selected the supervisor device context at the fixed vector.
 	if (saved_cause & cause_nmi) ~= 0 then
 		*system_control = system_supervisor_enter
 	else
-		*system_control = system_supervisor_fault
 		local fault_domain<const> = *supervisor_fault_domain
 		if fault_domain ~= 0xffffffff then
 			*cart_select = fault_domain

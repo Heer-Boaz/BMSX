@@ -36,6 +36,7 @@ import {
 	CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR,
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_SYSCALL,
+	CPU_CAUSE_CODE_REGISTER_WINDOW,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
@@ -169,7 +170,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -184,7 +185,7 @@ import {
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceProjection, HeapServiceResidentField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
@@ -2042,8 +2043,10 @@ export class CPU implements MappedPageInvalidator {
 	private resumeInterruptedContext(): void {
 		const context = this.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0, 0);
-		this.activeThread = this.bindThread(context);
-		this.activeThread.bindStack(true);
+		const thread = this.bindThread(context);
+		if (thread.currentFrameViewMatches()) thread.bindStack(true);
+		else this.bindPhysicalFrames(thread);
+		this.activeThread = thread;
 		this.threadSwitchRequested = this.yieldRequested = true;
 	}
 
@@ -2305,6 +2308,13 @@ export class CPU implements MappedPageInvalidator {
 			frame.registers.get(source));
 	}
 
+	private enterRegisterWindowException(issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number): void {
+		const deadline = this.remainingDeviceCycles();
+		issuer.pc = this.currentInstructionPc;
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+			this.currentInstructionPc, valueInteger(valueEnd), valueInteger(frameEnd), valueInteger(op | (operand << 8)), valueInteger(deadline));
+	}
+
 	private enterLuaFaultException(reason: number, error: Value): void {
 		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
 		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP,
@@ -2354,6 +2364,9 @@ export class CPU implements MappedPageInvalidator {
 		causeWord: number,
 		epcWord: number,
 		argument?: Value,
+		secondArgument?: Value,
+		thirdArgument?: Value,
+		fourthArgument?: Value,
 	): CallFrame | null {
 		this.latchExceptionEntry(causeWord, epcWord);
 		if (this.fixedInterruptActive()) {
@@ -2366,7 +2379,8 @@ export class CPU implements MappedPageInvalidator {
 			this.activeThread = this.irqThread;
 			this.threadSwitchRequested = this.yieldRequested = true;
 		}
-		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord, argument);
+		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord,
+			argument, secondArgument, thirdArgument, fourthArgument);
 	}
 
 	private latchExceptionEntry(causeWord: number, epcWord: number): void {
@@ -2378,17 +2392,19 @@ export class CPU implements MappedPageInvalidator {
 		this.clearHaltAfterAcceptedInterrupt();
 	}
 
-	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number, argument?: Value): CallFrame | null {
+	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number,
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value): CallFrame | null {
 		if (!this.readFunctionRecordOnBus(vectorImage, functionAddress, CPU.executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 			this.hardHalt();
 			return null;
 		}
-		return this.enterLatchedExceptionFrame(nmi, epcWord, argument);
+		return this.enterLatchedExceptionFrame(nmi, epcWord, argument, secondArgument, thirdArgument, fourthArgument);
 	}
 
-	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number, argument?: Value): CallFrame | null {
+	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number,
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value): CallFrame | null {
 		try {
-			return this.enterDirectFrame(epcWord, nmi, argument);
+			return this.enterDirectFrame(epcWord, nmi, argument, secondArgument, thirdArgument, fourthArgument);
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
 			this.hardHalt();
@@ -2397,11 +2413,14 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	// Direct machine entry binds the sampled Function and no capture environment.
-	private enterDirectFrame(epcWord?: number, nmi = false, argument?: Value): CallFrame | null {
+	private enterDirectFrame(epcWord?: number, nmi = false,
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value): CallFrame | null {
 		const entry = this.functionRecordLatch;
 		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
 		const thread = this.activeThread, base = thread.stackTop;
-		const capacity = Math.max(1, numParams, maxStack);
+		const argumentCount = fourthArgument !== undefined ? 4 : thirdArgument !== undefined ? 3
+			: secondArgument !== undefined ? 2 : argument !== undefined ? 1 : 0;
+		const capacity = Math.max(1, numParams, maxStack, argumentCount);
 		const end = base + capacity;
 		const exception = epcWord !== undefined, boardBank = thread.address === CPU_RESET_BANK_ADDRESS;
 		if (!exception && !boardBank && !thread.frameSpaceFits(end)) {
@@ -2419,11 +2438,13 @@ export class CPU implements MappedPageInvalidator {
 		const frame = thread.acquireFrame();
 		frame.executionImage = image;
 		frame.decodedPage = null;
-		const argumentCount = argument === undefined ? 0 : 1;
 		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,
 			base + numParams, argumentCount, 0, 0, Math.max(numParams, argumentCount), 0, base, capacity);
 		frame.registers.clear(exception ? Math.max(1, numParams) : numParams);
 		if (argument !== undefined) frame.registers.set(0, argument);
+		if (secondArgument !== undefined) frame.registers.set(1, secondArgument);
+		if (thirdArgument !== undefined) frame.registers.set(2, thirdArgument);
+		if (fourthArgument !== undefined) frame.registers.set(3, fourthArgument);
 		if (epcWord !== undefined) frame.enterException(nmi);
 		thread.stackTop = end;
 		thread.enterFrame(frame);
@@ -3167,44 +3188,42 @@ export class CPU implements MappedPageInvalidator {
 				if (copied !== 0 && a + copied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
 		}
-		this.charge(this.closeUpvalues(frame));
-		const frameIndex = this.activeThread.frameDepth - 1;
-		if (frame.protectedContinuationIndex >= 0) {
-			this.finishProtectedCall(frame.protectedContinuationIndex, source, first, total);
-			frame.thread.leaveFrame();
-			this.resumeFrameBank();
-			return false;
-		}
-		if (frame.returnToCompletionLatch) {
+		const caller = frame.previous, continuation = frame.protectedContinuationIndex;
+		if (continuation >= 0 || frame.returnToCompletionLatch || caller === null) {
+			this.charge(this.closeUpvalues(frame));
+			if (continuation >= 0) {
+				this.finishProtectedCall(continuation, source, first, total);
+				frame.thread.leaveFrame();
+				this.resumeFrameBank();
+				return false;
+			}
+			const completes = frame.returnToCompletionLatch;
+			if (!completes && this.activeThread.resumer !== 0) {
+				const finished = this.activeThread;
+				finished.status = ThreadStatus.Dead;
+				this.returnToResumer(source, first, total);
+				finished.stackTop = 0;
+				frame.thread.leaveFrame();
+				return false;
+			}
 			this.latchCompletionValues(source, first, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
 			this.resumeFrameBank();
-			return false;
+			return !completes;
 		}
-		if (frameIndex === 0 && this.activeThread.resumer !== 0) {
-			const finished = this.activeThread;
-			finished.status = ThreadStatus.Dead;
-			this.returnToResumer(source, first, total);
-			finished.stackTop = 0;
-			frame.thread.leaveFrame();
-			return false;
-		}
-		if (frameIndex === 0) {
-			this.latchCompletionValues(source, first, total);
-			this.charge(total);
-			frame.thread.leaveFrame();
-			this.resumeFrameBank();
-			return true;
-		}
-		const caller = frame.previous!;
 		const destination = frame.returnBase, result = frame.returnCount;
 		const selected = selectedCallResultCount(result, total), end = destination + selected;
 		const copied = Math.min(total, selected), padded = selected - copied;
 		const sourceSlot = mode === ReturnSource.Registers ? frame.stackBase + a : first;
 		const top = (result & CALL_RESULT_EXTEND_TOP) === 0 || end > caller.top ? end : -1;
-		if (selected !== 0 && end > caller.stackCapacity
-			&& this.acquireRegisterWindow(caller, destination, sourceSlot, copied, padded, top, end, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
+		let capacity = 0;
+		if (selected !== 0 && end > caller.stackCapacity) {
+			capacity = this.admitRegisterWindow(frame, caller, end, OpCode.RET, a);
+			if (capacity === 0) return false;
+		}
+		this.charge(this.closeUpvalues(frame));
+		if (capacity !== 0) caller.growRegisterWindow(capacity);
 		this.placeRegisterWindow(caller, destination, sourceSlot, copied, padded, top);
 		frame.thread.leaveFrame();
 		this.resumeFrameBank();
@@ -3239,34 +3258,22 @@ export class CPU implements MappedPageInvalidator {
 			return false;
 		}
 		const source = frame.varargBase, copied = Math.min(count, available), padded = count - copied;
-		if (end > frame.stackCapacity && this.acquireRegisterWindow(frame, a, source, copied, padded, top, end, 0)) return true;
+		if (end > frame.stackCapacity) {
+			const capacity = this.admitRegisterWindow(frame, frame, end, OpCode.VARARG, a);
+			if (capacity === 0) return true;
+			frame.growRegisterWindow(capacity);
+		}
 		this.placeRegisterWindow(frame, a, source, copied, padded, top);
 		return false;
 	}
 
-	// Both source and receiver remain live on this Thread until placement.
-	private acquireRegisterWindow(frame: CallFrame, destination: number, source: number, copied: number, padded: number,
-		top: number, end: number, receiverFlags: number): boolean {
-		const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
-		if (extent > frame.thread.stackRegisters.capacity()) {
-			const services = this.systemImage.heapServiceFunctions;
-			if (services !== null) {
-				const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Destination, destination, source);
-				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Copied, copied, padded);
-				this.memory.writeRamRecordPair(prepared + PreparedWindowField.Capacity, capacity, top);
-				// The live frame chain already owns both Closure roots. The
-				// reference C++ window path has no additional operand scope.
-				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], extent, 0, 0,
-					FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
-				return true;
-			}
-			// A RET's receiving frame is not the issuing activation.
-			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return true;
-		}
-		frame.growRegisterWindow(capacity);
-		return false;
+	// A RET's issuing frame remains live until the receiving window fits.
+	private admitRegisterWindow(issuer: CallFrame, receiver: CallFrame, end: number, op: OpCode, operand: number): number {
+		const capacity = registerWindowBucket(end), extent = receiver.stackBase + capacity;
+		if (extent <= receiver.thread.stackRegisters.capacity()) return capacity;
+		if (this.resetBankSelected()) this.enterSynchronousException(issuer, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		else this.enterRegisterWindowException(issuer, extent, 0, op, operand);
+		return 0;
 	}
 
 	private placeRegisterWindow(frame: CallFrame, destination: number, source: number, copied: number, padded: number, top: number): void {
@@ -4158,20 +4165,6 @@ export class CPU implements MappedPageInvalidator {
 			this.enterPreparedFrame();
 			return;
 		}
-		if ((flags & FRAME_RESIDENT_PLACE_WINDOW) !== 0) {
-			const current = this.activeThread.currentFrame!, retire = (flags & FRAME_RESIDENT_RETIRE_WINDOW_SOURCE) !== 0;
-			const window = retire ? current.previous! : current;
-			const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-			window.growRegisterWindow(memory.readRamRecordWord(prepared + PreparedWindowField.Capacity));
-			this.placeRegisterWindow(window, memory.readRamRecordWord(prepared + PreparedWindowField.Destination),
-				memory.readRamRecordWord(prepared + PreparedWindowField.SourceSlot), memory.readRamRecordWord(prepared + PreparedWindowField.Copied),
-				memory.readRamRecordWord(prepared + PreparedWindowField.Padded), memory.readRamRecordWord(prepared + PreparedWindowField.Top) | 0);
-			if (retire) {
-				current.thread.leaveFrame();
-				this.resumeFrameBank();
-			}
-			return;
-		}
 		const index = frame.protectedContinuationIndex;
 		const caller = this.activeThread.currentFrame!;
 		const base = frame.returnBase, result = frame.returnCount, selected = selectedCallResultCount(result, count);
@@ -4350,6 +4343,10 @@ export class CPU implements MappedPageInvalidator {
 		const fits = thread.frameSpaceFits(end);
 		if (ordinaryCall && !fits) {
 			if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
+			if (shared && protectedIndex < 0) {
+				this.enterRegisterWindowException(args, end, thread.frameDepth + 2, OpCode.CALL, argBase - 1);
+				return null;
+			}
 			const detached = args instanceof ValueSlots;
 			const services = this.systemImage.heapServiceFunctions;
 			if (services !== null) {

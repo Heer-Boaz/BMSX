@@ -7,6 +7,7 @@ import {
 	BIOS_PREPARED_ENTRY,
 	BIOS_USER_IRQ_ENTRY,
 	BIOS_EXCEPTION_BRIDGE,
+	BIOS_MANAGED_ENTRIES,
 	SYSTEM_ROM_NAME,
 } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -83,6 +84,7 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 		preparedEntry: BIOS_PREPARED_ENTRY,
 		userIrqEntry: BIOS_USER_IRQ_ENTRY,
 		exceptionBridge: BIOS_EXCEPTION_BRIDGE,
+		managedEntries: BIOS_MANAGED_ENTRIES,
 		preloadModules: HEAP_SERVICE_MODULES,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
