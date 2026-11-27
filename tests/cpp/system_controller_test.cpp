@@ -22,6 +22,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <limits>
@@ -773,7 +774,7 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 		"an unexecuted second cartridge does not allocate guest string ids"
 	);
 	require(
-		singleCpu.createTable().address() == dualCpu.createTable().address(),
+		bmsx::test::allocateTableReference(singleCpu).address() == bmsx::test::allocateTableReference(dualCpu).address(),
 		"an unexecuted second cartridge does not allocate guest object ids"
 	);
 
@@ -808,7 +809,7 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	require(cpu.getGlobalByKey(publishedValueName) == bmsx::valueInteger(111), "slot 0 startup executes its published closure");
 	const bmsx::StringId savedClosureName = cpu.stringPool().intern("saved_closure");
 	const bmsx::StringId closureTableName = cpu.stringPool().intern("closure_table");
-	bmsx::TableRecord closureTable = cpu.createTable();
+	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(slot0ClosureValue, bmsx::valueInteger(77));
 	cpu.setGlobalByKey(savedClosureName, slot0ClosureValue);
 	cpu.setGlobalByKey(closureTableName, bmsx::valueTable(closureTable.address()));
@@ -914,7 +915,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	const bmsx::StringId firstName = cpu.stringPool().intern("first_closure");
 	const bmsx::StringId secondName = cpu.stringPool().intern("second_closure");
 	const bmsx::StringId tableName = cpu.stringPool().intern("closure_table");
-	bmsx::TableRecord closureTable = cpu.createTable();
+	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(firstClosureValue, bmsx::valueInteger(11));
 	closureTable.set(secondClosureValue, bmsx::valueInteger(22));
 	cpu.setGlobalByKey(firstName, firstClosureValue);
@@ -972,7 +973,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	const bmsx::StringId dynamicName = cpu.stringPool().intern("dynamic_closure");
 	const bmsx::StringId canonicalName = cpu.stringPool().intern("canonical_closure");
 	const bmsx::StringId tableName = cpu.stringPool().intern("mixed_closure_table");
-	bmsx::TableRecord closureTable = cpu.createTable();
+	bmsx::TableRecord closureTable = bmsx::test::allocateTableReference(cpu);
 	closureTable.set(dynamicClosureValue, bmsx::valueInteger(11));
 	closureTable.set(canonicalClosureValue, bmsx::valueInteger(22));
 	cpu.setGlobalByKey(dynamicName, dynamicClosureValue);
@@ -1032,7 +1033,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	const bmsx::StringId closureKey = cpu.stringPool().intern("completion_call");
 	cpu.setGlobalByKey(closureKey, bmsx::valueClosure(closure));
 
-	const bmsx::Value argument = bmsx::valueTable(cpu.createTable().address());
+	const bmsx::Value argument = bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address());
 	cpu.beginCompletionCall(closure, bmsx::BuiltinArgsView(&argument, 1));
 	require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "completion call remains in flight before RET");
 	const bmsx::CpuRuntimeState state = cpu.captureRuntimeState();
@@ -1048,7 +1049,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 	require(bmsx::valuePayload(cpu.readCompletionValues().get(0)) == restoredTable.address(), "completion latch roots its restored heap result");
 
 	bmsx::u32 restoredClosure = bmsx::asClosure(cpu.getGlobalByKey(closureKey), cpu.gcHeap());
-	const bmsx::Value nextArgument = bmsx::valueTable(cpu.createTable().address());
+	const bmsx::Value nextArgument = bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address());
 	const bmsx::ConstValueSpan results = fixture.runtime.callClosure(restoredClosure, bmsx::BuiltinArgsView(&nextArgument, 1));
 	const auto latch = cpu.readCompletionValues();
 	require(results.words() == latch.words() && results.tags() == latch.tags(), "Runtime borrows the CPU completion latch without copying");

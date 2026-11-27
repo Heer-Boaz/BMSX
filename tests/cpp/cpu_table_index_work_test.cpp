@@ -9,6 +9,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -83,14 +84,14 @@ Value keyFor(CPU& cpu, KeyKind kind) {
 TableRecord makeChain(CPU& cpu, TableRecord root, int depth, Value key, Value value) {
 	auto current = root;
 	for (int i = 1; i < depth; ++i) {
-		auto next = cpu.createTable(2, 2); auto meta = cpu.createTable(0, 1);
+		auto next = bmsx::test::allocateTableReference(cpu, 2, 2); auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(next.address())); current.setMetatableAddress(meta.address()); current = next;
 	}
 	current.set(key, value);
 	return current;
 }
 void cycle(CPU& cpu, TableRecord root) {
-	auto meta = cpu.createTable(0, 1);
+	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(root.address())); root.setMetatableAddress(meta.address());
 }
 
@@ -100,7 +101,7 @@ void grantsAndRestore() {
 		const std::array charges{2, (op == OpCode::SELF ? 17 : op == OpCode::GETI ? 8 : 16) + 8 * (depth - 1), 2, 2};
 		const int total = charges[0] + charges[1] + charges[2] + charges[3];
 		for (auto* m : {&generated, &scalar}) {
-			auto root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
+			auto root = bmsx::test::allocateTableReference(m->cpu, 2, 2); const auto key = keyFor(m->cpu, kind);
 			makeChain(m->cpu, root, depth, key, valueBool(false));
 			if (depth == 1) cycle(m->cpu, root);
 			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(root.address())); r.set(1, key);
@@ -160,7 +161,7 @@ void integerStoreCensus() {
 	for (const int capacity : {64, 65, 68, 69, 8192}) for (const int spare : {0, 1}) {
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto table = cpu.createTable(capacity, spare);
+			auto table = bmsx::test::allocateTableReference(cpu, capacity, spare);
 			for (int i = 1; i <= capacity; ++i) table.setInteger(i, valueInteger(i));
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(table.address())); r.set(1, valueFloat(capacity + 1));
@@ -191,7 +192,7 @@ void exhaustedStringChainCharges() {
 		Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto root = cpu.createTable(0, capacity);
+			auto root = bmsx::test::allocateTableReference(cpu, 0, capacity);
 			auto key = cpu.stringPool().intern("field");
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(root.address())); r.set(1, valueString(key));
@@ -254,7 +255,7 @@ void growingStringHitCharges() {
 				auto& cpu = m->cpu;
 				const auto key = keyFor(cpu, KeyKind::String);
 				auto r = cpu.activeThread()->currentFrame->registers;
-				auto table = depth == 64 ? cpu.createTable(0, 128) : asTable(r.get(0), cpu.gcHeap());
+				auto table = depth == 64 ? bmsx::test::allocateTableReference(cpu, 0, 128) : asTable(r.get(0), cpu.gcHeap());
 				r.set(0, valueTable(table.address())); r.set(1, key);
 				const auto home = hashCanonicalTableKey(key) & 127u;
 				next = n;
@@ -306,7 +307,7 @@ void directIndexMemberWork() {
 		Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu;
-			auto receiver = cpu.createTable(), meta = cpu.createTable(0, 128), parent = cpu.createTable(2, 1);
+			auto receiver = bmsx::test::allocateTableReference(cpu), meta = bmsx::test::allocateTableReference(cpu, 0, 128), parent = bmsx::test::allocateTableReference(cpu, 2, 1);
 			const auto key = keyFor(cpu, kind);
 			const auto method = valueString(cpu.stringPool().intern("__index"));
 			const u32 home = hashCanonicalTableKey(method) & 127u;
@@ -359,11 +360,11 @@ void periodicIndexChainKeepsThePartialTail() {
 	constexpr std::array next{1, 2, 3, 4, 2};
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
-		const std::array roots{cpu.createTable(), cpu.createTable(), cpu.createTable(), cpu.createTable(), cpu.createTable()};
+		const std::array roots{bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu), bmsx::test::allocateTableReference(cpu)};
 		const auto method = valueString(cpu.stringPool().intern("__index")), key = keyFor(cpu, KeyKind::String);
 		const u32 home = hashCanonicalTableKey(method) & 127u;
 		for (size_t i = 0; i < roots.size(); ++i) {
-			auto meta = cpu.createTable(0, 128);
+			auto meta = bmsx::test::allocateTableReference(cpu, 0, 128);
 			auto receiver = roots[i];
 			receiver.setMetatableAddress(meta.address());
 			for (int j = 0, n = 0; j < 65 + static_cast<int>(i); ++j) {
@@ -398,7 +399,7 @@ void faultsOnce() {
 	for (bool wide : {false, true}) for (const auto [op, kind] : forms) for (bool cyclic : {false, true}) {
 		Program program(op, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto root = m->cpu.createTable(2, 2); const auto key = keyFor(m->cpu, kind);
+			auto root = bmsx::test::allocateTableReference(m->cpu, 2, 2); const auto key = keyFor(m->cpu, kind);
 			if (cyclic) cycle(m->cpu, root); else makeChain(m->cpu, root, 33, key, valueInteger(73));
 			auto r = m->cpu.activeThread()->currentFrame->registers; r.set(0, valueTable(root.address())); r.set(1, key); r.set(8, valueInteger(57));
 		}
@@ -426,9 +427,9 @@ void warmedOneHopUsesLiveMappings() {
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
 			const auto key = keyFor(cpu, KeyKind::String);
-			auto receiver = cpu.createTable(0, 2);
+			auto receiver = bmsx::test::allocateTableReference(cpu, 0, 2);
 			makeChain(cpu, receiver, 2, key, valueInteger(73));
-			auto replacement = cpu.createTable(0, 2);
+			auto replacement = bmsx::test::allocateTableReference(cpu, 0, 2);
 			replacement.set(key, valueInteger(107));
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueTable(receiver.address())); r.set(1, key); r.set(2, valueTable(replacement.address()));
@@ -511,11 +512,11 @@ void callableIndexUsesARealDetachedActivation() {
 			auto* frame = cpu.activeThread()->currentFrame;
 			frame->registers.set(3, valueClosure(closure));
 			frame->writeControl(FrameField::Top, 0x4900000bu);
-			auto root = cpu.createTable(0, 2);
+			auto root = bmsx::test::allocateTableReference(cpu, 0, 2);
 			frame->registers.set(0, valueTable(root.address())); frame->registers.set(1, key);
 			auto receiver = makeChain(cpu, root, 2, key, valueNil());
 			frame->registers.set(2, valueTable(receiver.address()));
-			auto meta = cpu.createTable(0, 1);
+			auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 			meta.setStringKey(cpu.stringPool().intern("__index"), frame->registers.get(3));
 			receiver.setMetatableAddress(meta.address());
 			frame->registers.set(8, valueInteger(57)); frame->registers.set(9, valueInteger(99));
@@ -571,7 +572,7 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 	for (bool wide : {false, true}) for (bool fault : {false, true}) {
 		Program program(OpCode::SELF, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto root = m->cpu.createTable(0, 1), meta = m->cpu.createTable(0, 1);
+			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
 			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::Type));
 			root.setMetatableAddress(meta.address());
 			auto* frame = m->cpu.activeThread()->currentFrame;
@@ -603,7 +604,7 @@ void protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries() {
 	Program program(OpCode::GETT, true); Machine generated(program.image, false), scalar(program.image, true);
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
-		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
 		root.setMetatableAddress(meta.address());
 		auto* frame = cpu.activeThread()->currentFrame;
@@ -644,7 +645,7 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 		auto& cpu = m->cpu;
 		const u32 entry = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[1], {});
 		auto* frame = cpu.activeThread()->currentFrame;
-		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		root.setMetatableAddress(meta.address());
 		const u32 thread = bmsx::test::allocateThreadRecordReference(cpu, entry);
@@ -688,7 +689,7 @@ void stringReceiver() {
 	for (bool wide : {false, true}) {
 		Program program(OpCode::GETFIELD, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
-			auto& cpu = m->cpu; auto installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
+			auto& cpu = m->cpu; auto installed = bmsx::test::allocateTableReference(cpu, 0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
 			const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 			m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
@@ -707,7 +708,7 @@ void stringReceiver() {
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
 			TableRecord installed(m->cpu.gcHeap(), m->cpu.gcHeap().diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord));
-			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.createTable().address()));
+			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);
 		}

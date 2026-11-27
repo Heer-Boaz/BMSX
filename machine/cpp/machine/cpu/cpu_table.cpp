@@ -89,18 +89,6 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
-TableRecord CPU::createTable(int arraySize, int hashSize) {
-	const size_t hashCapacity = TableRecord::hashCapacity(hashSize);
-	const u32 address = m_luaHeap.allocateRecord(TableRecord::HEADER_BYTES, true, 5u * arraySize,
-		static_cast<u32>(TableHeader::ArrayStorage), valueNil(), valueNil(), valueNil(), TableRecord::HEADER_CHARGE + TableRecord::allocationCharge(arraySize, hashCapacity),
-		LuaAllocationMode::Direct, TableRecord::hashStorageBytes(hashCapacity), static_cast<u32>(TableHeader::HashStorage));
-	TableRecord table(m_heap, address);
-	table.initialize(arraySize, hashCapacity);
-	m_heap.publishObject(address);
-	trackLocalRoot(valueTable(address));
-	return table;
-}
-
 bool CPU::beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion) {
 	if (m_runKind == CpuRunKind::Idle) return false;
 	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::TableGrow)];

@@ -10,6 +10,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -59,7 +60,7 @@ void fixedReadContinuation() {
 	writeInstruction(code, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	for (auto* machine : {&native, &scalar}) {
 		machine->memory.writeBytes(sourcePc, code.data(), code.size());
-		machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(machine->cpu.createTable().address()));
+		machine->cpu.activeThread()->currentFrame->registers.set(0, valueTable(bmsx::test::allocateTableReference(machine->cpu).address()));
 		machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine->rom.functionAddresses[0], sourcePc);
 	}
 	for (int pass = 0; pass < 4; ++pass) {
@@ -171,7 +172,7 @@ void concatKindsAndAliases(int destination) {
 			if (kind < values.size()) frame.registers.set(0, values[kind].first);
 			else switch (kind - values.size()) {
 				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
-				case 1: frame.registers.set(0, valueTable(m->cpu.createTable(0, 0).address())); break;
+				case 1: frame.registers.set(0, valueTable(bmsx::test::allocateTableReference(m->cpu, 0, 0).address())); break;
 				case 2: frame.registers.set(0, valueClosure(test::seedTestCapturedClosure(m->cpu, m->rom.functionAddresses[0], {}))); break;
 				case 3: frame.registers.set(0, valueThread(m->cpu.activeThread()->address)); break;
 			}
@@ -270,7 +271,7 @@ void concatAllocationRoots() {
 	for (auto* m : {&native, &scalar}) {
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
-		TableRecord table = m->cpu.createTable(1024, 1); auto& strings = m->cpu.stringPool();
+		TableRecord table = bmsx::test::allocateTableReference(m->cpu, 1024, 1); auto& strings = m->cpu.stringPool();
 		table.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
 		r.set(9, valueTable(table.address())); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
 		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};

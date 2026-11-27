@@ -12,6 +12,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <fstream>
 #include <iostream>
@@ -177,7 +178,7 @@ test::Blua32TestImage mixedImage() {
 
 void initializeMixedRoots(Fixture& fixture) {
 	auto& cpu=fixture.runtime.machine.cpu;
-	fixture.frame().registers.set(0, valueTable(cpu.createTable(3, 2).address()));
+	fixture.frame().registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 3, 2).address()));
 	fixture.frame().registers.set(4, valueString(cpu.stringPool().intern(std::string("a\0雪",5))));
 	fixture.frame().registers.set(5, valueString(cpu.stringPool().intern("tail")));
 	fixture.frame().registers.set(7, valueBool(true));
@@ -239,7 +240,7 @@ void tableWrites() {
 		Fixture generated(image,false),scalar(image,true);
 		for(auto* fixture : {&generated,&scalar}) {
 			auto& cpu=fixture->runtime.machine.cpu;
-			auto table=cpu.createTable(0,2);
+			auto table=bmsx::test::allocateTableReference(cpu, 0,2);
 			table.setStringKey(cpu.stringPool().intern("field"),valueInteger(11));
 			fixture->frame().registers.set(0, valueTable(table.address())); fixture->frame().registers.set(2, valueInteger(73));
 		}
@@ -248,7 +249,7 @@ void tableWrites() {
 			fixture->restart();
 			if(route==1) {
 				auto& cpu=fixture->runtime.machine.cpu;
-				fixture->frame().registers.set(0, valueTable(cpu.createTable(0,0).address()));
+				fixture->frame().registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 0,0).address()));
 			}
 			if(route==2) fixture->frame().registers.set(0, valueInteger(19));
 		}
@@ -366,7 +367,7 @@ void lazyCompilation() {
 	Fixture generated(image,false,false),scalar(image,true,false);
 	for(auto* fixture : {&generated,&scalar}) {
 		auto& cpu = fixture->runtime.machine.cpu;
-		fixture->frame().registers.set(0, valueTable(cpu.createTable(0, 1).address()));
+		fixture->frame().registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 0, 1).address()));
 		fixture->frame().registers.set(2, valueInteger(73));
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

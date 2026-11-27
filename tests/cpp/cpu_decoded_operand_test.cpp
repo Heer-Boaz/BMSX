@@ -11,6 +11,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -142,7 +143,7 @@ void rawFieldsAndInlineCaches() {
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
 		// Keep growth work separate from the operand and inline-cache base charges.
-		TableRecord table = cpu.createTable(0, 2);
+		TableRecord table = bmsx::test::allocateTableReference(cpu, 0, 2);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(1, valueTable(table.address()));
 		registers.set(32767, valueFloat(91.5));
@@ -169,7 +170,7 @@ void rewrittenPayloadVariants() {
 		image.constants = {std::string("field"), Blua32FloatConstant{numberToF32Bits(73.5f)}};
 		CpuMachine machine(image, instrumented);
 		auto& cpu = machine.cpu;
-		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(cpu.createTable().address()));
+		cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 		cpu.activeThread()->frameAtDepth(0)->registers.set(2, valueFloat(81.5));
 		std::array<u8, 2u * INSTRUCTION_BYTES> code{};
 		for (const OpCode op : {OpCode::KSMI, OpCode::SETFIELD, OpCode::JMP, OpCode::GETFIELD, OpCode::LOADK, OpCode::KSMI}) {

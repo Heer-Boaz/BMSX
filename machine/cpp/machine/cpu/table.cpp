@@ -19,17 +19,6 @@ constexpr int32_t kTableHashNextEnd = -1;
 constexpr u32 kHashSlotBudgetBytes = 10u;
 } // namespace
 
-void TableRecord::initialize(size_t array, size_t hash) {
-	const u32 kind = static_cast<u32>(ValueTag::Table) | (static_cast<u32>(m_heap->white()) << 8u)
-		| (1u << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
-	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Kind), kind, 0u);
-	writeHeader(TableHeader::Metatable, 0u);
-	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Array), array, hash);
-	m_memory->writeRamRecordPair(m_address + static_cast<u32>(TableHeader::Length), 0u, static_cast<u32>(hash) - 1u);
-	initializeArray(arrayAddress(), array, 0);
-	initializeHash(hashAddress(), hash);
-}
-
 void TableRecord::setMetatableAddress(u32 address) {
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);

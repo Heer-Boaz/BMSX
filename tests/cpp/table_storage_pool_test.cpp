@@ -4,6 +4,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <iostream>
@@ -17,7 +18,7 @@ void require(bool condition, const char* message) {
 
 void denseArrayRetainsBacking(bmsx::CPU& cpu) {
 	using namespace bmsx;
-	auto table = cpu.createTable(1, 0);
+	auto table = bmsx::test::allocateTableReference(cpu, 1, 0);
 	const u32 storage = table.arrayAddress();
 	table.setInteger(1, valueBool(false));
 	table.setInteger(2, valueInteger(0x12345678));
@@ -31,7 +32,7 @@ void denseArrayRetainsBacking(bmsx::CPU& cpu) {
 void partialBandDensity(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	for (bool extra : {false, true}) {
-		auto table = cpu.createTable(16383, 0);
+		auto table = bmsx::test::allocateTableReference(cpu, 16383, 0);
 		for (int key = 1; key <= 4097; ++key) table.setInteger(key, valueInteger(0));
 		for (int key = 8193; key <= 16381; key += 2) table.setInteger(key, valueBool(false));
 		if (extra) table.setInteger(16383, valueBool(true));
@@ -46,7 +47,7 @@ void partialBandDensity(bmsx::CPU& cpu) {
 
 void mixedGrowthKeepsUnchangedStorage(bmsx::CPU& cpu) {
 	using namespace bmsx;
-	auto table = cpu.createTable(1, 1);
+	auto table = bmsx::test::allocateTableReference(cpu, 1, 1);
 	table.setInteger(1, valueBool(false));
 	table.setInteger(-1, valueInteger(41));
 	const u32 hash = table.hashAddress();
@@ -64,7 +65,7 @@ void mixedGrowthKeepsUnchangedStorage(bmsx::CPU& cpu) {
 void firstIntegerPlacement(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	for (int key : {1, 2, 2147483647}) {
-		auto table = cpu.createTable();
+		auto table = bmsx::test::allocateTableReference(cpu);
 		table.setInteger(key, valueBool(false));
 		require(table.arrayCapacity() == (key == 1 ? 1u : 0u) && table.hashSlots() == (key == 1 ? 0u : 1u)
 			&& table.getInteger(key) == valueBool(false), "only index one starts an array by itself");
@@ -74,7 +75,7 @@ void firstIntegerPlacement(bmsx::CPU& cpu) {
 void partialArrayDensity(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	for (int added : {16, 17}) {
-		auto table = cpu.createTable(13, 0);
+		auto table = bmsx::test::allocateTableReference(cpu, 13, 0);
 		for (int key : {1, 2, 3, 4, 5, 9, 10, 13}) table.setInteger(key, valueBool(false));
 		table.setInteger(added, valueInteger(41));
 		require(table.arrayCapacity() == (added == 16 ? 16u : 8u) && table.hashSlots() == (added == 16 ? 0u : 4u),
@@ -87,7 +88,7 @@ void partialArrayDensity(bmsx::CPU& cpu) {
 
 void fullByteChainsWidenOnRehash(bmsx::CPU& cpu) {
 	using namespace bmsx;
-	auto table = cpu.createTable(0, 128);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 128);
 	for (i32 key = 1; key <= 128; ++key) table.setInteger(-key, valueInteger(key));
 	require(table.hashSlots() == 128, "fill the signed byte index range");
 	table.setInteger(-129, valueBool(true));
@@ -101,7 +102,7 @@ void fullByteChainsWidenOnRehash(bmsx::CPU& cpu) {
 void tableSlotWritesMarkBothHistoryPages(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	constexpr u32 capacity = MAPPED_PAGE_BYTE_SIZE / sizeof(u32);
-	auto table = cpu.createTable(capacity, 0);
+	auto table = bmsx::test::allocateTableReference(cpu, capacity, 0);
 	table.setInteger(1, valueInteger(7));
 	const u32 word = table.arrayAddress() & RAM_RECORD_WORD_MASK;
 	const u32 wordPage = word >> MAPPED_PAGE_BYTE_SHIFT;
@@ -118,7 +119,7 @@ void tableSlotWritesMarkBothHistoryPages(bmsx::CPU& cpu) {
 void rebuildingHashMarksAllDestinationPages(bmsx::CPU& cpu) {
 	using namespace bmsx;
 	constexpr i32 capacity = 1024;
-	auto table = cpu.createTable(capacity * 4, capacity);
+	auto table = bmsx::test::allocateTableReference(cpu, capacity * 4, capacity);
 	const u32 array = table.arrayAddress();
 	const u32 middlePage = ((array & RAM_RECORD_WORD_MASK) + 2 * MAPPED_PAGE_BYTE_SIZE) >> MAPPED_PAGE_BYTE_SHIFT;
 	for (i32 i = 1; i <= capacity; ++i) table.setInteger(-i, valueInteger(i));
@@ -150,7 +151,7 @@ void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 		if (keys[home] == 0u) { keys[home] = id; ++assigned; }
 		else if (home == 0u) collision = id;
 	}
-	auto spare = cpu.createTable(0, 16), tombstones = cpu.createTable(0, 16);
+	auto spare = bmsx::test::allocateTableReference(cpu, 0, 16), tombstones = bmsx::test::allocateTableReference(cpu, 0, 16);
 	for (auto key : keys) tombstones.setInteger(key, valueInteger(17));
 	for (size_t i = 2; i < keys.size(); ++i) tombstones.setInteger(keys[i], valueNil());
 	for (size_t i = 0; i < 2; ++i) spare.setInteger(keys[i], valueInteger(17));
@@ -167,7 +168,7 @@ void hashBudgetFollowsReservedSlots(bmsx::CPU& cpu) {
 	tombstones.clear(); spare.clear();
 
 	const auto logical = cpu.luaHeap().usedBytes();
-	auto table = cpu.createTable(0, 3);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 3);
 	const u32 backing = table.hashAddress();
 	for (size_t i = 0; i < 4; ++i) table.setInteger(keys[i], valueInteger(29));
 	require(table.hashSlots() == 4u && table.hashAddress() == backing && cpu.luaHeap().usedBytes() == logical + 32u + 40u,
@@ -185,7 +186,7 @@ void reservedHashSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 		const auto home = hashCanonicalTableKey(valueInteger(id)) & (keys.size() - 1u);
 		if (keys[home] == 0) { keys[home] = id; ++assigned; }
 	}
-	auto table = cpu.createTable();
+	auto table = bmsx::test::allocateTableReference(cpu);
 	for (auto key : keys) table.setInteger(key, valueInteger(13));
 	const u32 backing = table.hashAddress();
 	const auto home = hashCanonicalTableKey(valueInteger(1)) & (keys.size() - 1u);
@@ -208,7 +209,7 @@ void reservedHashSurvivesDeletionAndRestore(bmsx::CPU& cpu) {
 
 void mixedArrayMigrationPreservesRawValues(bmsx::CPU& cpu) {
 	using namespace bmsx;
-	auto table = cpu.createTable(4, 0);
+	auto table = bmsx::test::allocateTableReference(cpu, 4, 0);
 	const Value prefix = valueFloatBits(0x7fc12345u), tail = valueFloatBits(0xffc23456u);
 	table.setInteger(1, valueBool(false));
 	table.setInteger(3, prefix);
@@ -268,7 +269,7 @@ int main() {
 		const auto before = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
 		const auto& arena = cpu.heapAllocator();
 		const u32 physicalBefore = arena.occupiedBytes();
-		auto first = cpu.createTable(3, 4);
+		auto first = bmsx::test::allocateTableReference(cpu, 3, 4);
 
 		const u32 bodyAddress = first.arrayAddress();
 		const u32 firstHeader = arena.allocationBytes(first.address() - GC_OBJECT_PREFIX);
@@ -283,7 +284,7 @@ int main() {
 		require(cpu.luaHeap().usedBytes() == before.first + 32,
 			"cleared tables retain only the table header charge");
 		require(arena.occupiedBytes() == physicalBefore + firstHeader, "clearing retires the first body");
-		auto second = cpu.createTable(2, 4);
+		auto second = bmsx::test::allocateTableReference(cpu, 2, 4);
 		const u32 secondHeader = arena.allocationBytes(second.address() - GC_OBJECT_PREFIX);
 		require(second.trackedHeapBytes() == secondHeader + arena.allocationBytes(second.hashAddress()) + arena.allocationBytes(second.arrayAddress()),
 			"physical accounting uses the newly owned chunks");

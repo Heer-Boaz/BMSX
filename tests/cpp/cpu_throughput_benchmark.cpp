@@ -16,6 +16,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <chrono>
@@ -233,7 +234,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("value"), valueInteger(1)); registers.set(5, valueInteger(0));
 	}
 	if (workload == Workload::FieldMiss) {
-		auto table = cpu.createTable(0, 64);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 64);
 		registers.set(0, valueTable(table.address()));
 		cpu.activeThread()->currentFrame->setTop(1);
 		const auto field = cpu.stringPool().intern("field");
@@ -255,13 +256,13 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		int slots[2];
 		for (int i = 0; i < 2; ++i) {
 			const int capacity = inherited ? 0 : std::max(64, fieldNodes) * (i == 1 && workload == Workload::FieldHitAlternatingSlot ? 2 : 1);
-			auto table = cpu.createTable(0, capacity);
+			auto table = bmsx::test::allocateTableReference(cpu, 0, capacity);
 			registers.set(i, valueTable(table.address()));
 			cpu.activeThread()->currentFrame->setTop(i + 1);
 			if (inherited) {
-				auto meta = cpu.createTable(0, 1);
+				auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 				table.setMetatableAddress(meta.address());
-				auto parent = cpu.createTable(0, 1);
+				auto parent = bmsx::test::allocateTableReference(cpu, 0, 1);
 				meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
 				parent.setStringKey(field, valueInteger(i + 1));
 				continue;
@@ -295,7 +296,7 @@ void measure(Workload workload, const char* name, int grant, int round, bool ful
 		cpu.activeThread()->currentFrame->setTop(8);
 	}
 	if (workload == Workload::Tables) {
-		TableRecord table = cpu.createTable(8, 1);
+		TableRecord table = bmsx::test::allocateTableReference(cpu, 8, 1);
 		registers.set(0, valueTable(table.address()));
 		for (int index = 1; index <= 8; ++index) table.setInteger(index, valueInteger(index));
 		table.setStringKey(cpu.stringPool().intern("field"), valueInteger(1));

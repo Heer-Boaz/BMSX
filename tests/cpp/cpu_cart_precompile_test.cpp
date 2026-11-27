@@ -15,6 +15,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -289,7 +290,7 @@ void preparedCodeUsesItsImageConstants() {
 			"only the prepared CPU has installed this entry");
 		for (auto* machine : {&prepared, &scalar}) {
 			auto& frame = *machine->cpu().activeThread()->frameAtDepth(0);
-			auto table = machine->cpu().createTable(1);
+			auto table = bmsx::test::allocateTableReference(machine->cpu(), 1);
 			table.setInteger(1, valueInteger(0));
 			frame.registers.set(2, valueInteger(0));
 			frame.registers.set(3, valueTable(table.address()));
@@ -334,11 +335,11 @@ void coldExecRecordsNumericFieldFeedback() {
 			"cold code prepares the field read, its generic continuation and the other function");
 		const auto coldRegion = cold->region;
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
-		auto receiver = cpu.createTable(0, 1);
+		auto receiver = bmsx::test::allocateTableReference(cpu, 0, 1);
 		auto holder = receiver;
 		if (inherited) {
-			holder = cpu.createTable(0, 1);
-			auto meta = cpu.createTable(0, 1);
+			holder = bmsx::test::allocateTableReference(cpu, 0, 1);
+			auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 			meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(holder.address()));
 			receiver.setMetatableAddress(meta.address());
 		}

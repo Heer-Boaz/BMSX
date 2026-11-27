@@ -21,6 +21,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <iostream>
@@ -128,7 +129,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 	const auto* indexKeyWord = machine.memory.ramData() + machine.cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
 	const StringId key = machine.cpu.stringPool().intern("native-field");
 	const StringId other = machine.cpu.stringPool().intern("other-field");
-	TableRecord table = machine.cpu.createTable(0, 2);
+	TableRecord table = bmsx::test::allocateTableReference(machine.cpu, 0, 2);
 	int slot = table.setStringKey(key, valueInteger(1));
 	const int otherSlot = table.setStringKey(other, valueInteger(2));
 	table.getStringKeyCached(key, slot);
@@ -197,7 +198,7 @@ void nativeFieldGuardsAndRawSlotAccess() {
 		slot = table.setStringKey(key, valueInteger(1));
 		hint = slot;
 		if (!store) {
-			table.setMetatableAddress(machine.cpu.createTable(0, 0).address());
+			table.setMetatableAddress(bmsx::test::allocateTableReference(machine.cpu, 0, 0).address());
 			require(block->run(registers.view(), nativeRunState = {.constants = constants.view(), .heap = &machine.cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::Continue,
 				"a live own field bypasses inheritance even when the table has a metatable");
 			table.setStringKey(key, valueNil());
@@ -226,7 +227,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 	scalar.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	for (auto* machine : {&native, &scalar}) {
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
-		TableRecord table = machine->cpu.createTable(0, 1);
+		TableRecord table = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 		frame.registers.set(0, valueTable(table.address())); frame.registers.set(1, valueInteger(1));
 		table.setStringKey(machine->cpu.stringPool().intern("field"), valueInteger(0));
 		const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)]
@@ -282,9 +283,9 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 			auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);
 			auto table = asTable(frame.registers.get(0), machine->cpu.gcHeap());
 			if (inherited) {
-				auto parent = machine->cpu.createTable(0, 1);
+				auto parent = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 				parent.setStringKey(key, valueInteger(40));
-				auto meta = machine->cpu.createTable(0, 1);
+				auto meta = bmsx::test::allocateTableReference(machine->cpu, 0, 1);
 				meta.setStringKey(machine->cpu.stringPool().intern("__index"), valueTable(parent.address()));
 				table.setMetatableAddress(meta.address());
 				table.setStringKey(key, valueNil());
@@ -321,7 +322,7 @@ void nativeFieldStoreMissKeepsSignedConstantSelectors() {
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1}};
 	image.constants = {std::string("field"), 7};
 	CpuMachine machine(image);
-	TableRecord table = machine.cpu.createTable(0, 1);
+	TableRecord table = bmsx::test::allocateTableReference(machine.cpu, 0, 1);
 	machine.cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueTable(table.address()));
 	const StringId key = machine.cpu.stringPool().intern("field");
 	table.setStringKey(key, valueInteger(1));
@@ -1192,7 +1193,7 @@ void returnRangesSurviveCallerStackGrowth() {
 			test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 			auto& cpu = machine.cpu;
 			if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-			TableRecord table = cpu.createTable(0, 0);
+			TableRecord table = bmsx::test::allocateTableReference(cpu, 0, 0);
 			cpu.activeThread()->frameAtDepth(0)->registers.set(0, valueInteger(91));
 			cpu.activeThread()->frameAtDepth(0)->registers.set(1, valueTable(table.address()));
 			require(cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]) == RunResult::Yielded && cpu.getFrameDepth() == 2, "prepare a real nested return");
@@ -1223,7 +1224,7 @@ void builtinReturnRangesSurviveDestinationGrowth() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		TableRecord table = cpu.createTable(1, 0);
+		TableRecord table = bmsx::test::allocateTableReference(cpu, 1, 0);
 		const Value text = valueString(cpu.stringPool().intern("result"));
 		if (kind == 2) table.setInteger(1, text);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;

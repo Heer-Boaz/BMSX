@@ -11,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/value_bank.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -467,7 +468,7 @@ void hotUpvalueAlias() {
 	{
 		for (auto* m : {&native, &scalar}) {
 			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
-			const auto child = valueTable(m->cpu.createTable().address());
+			const auto child = valueTable(bmsx::test::allocateTableReference(m->cpu).address());
 			m->memory.writeRamRecordByte(frame.captureAddress(1) + GC_COLOR_OFFSET, 0u);
 			frame.registers.set(12, child);
 			frame.registers.set(6, valueInteger(73));
@@ -523,7 +524,7 @@ void hotGlobalWritesForwardTheirWhiteChildren() {
 	const auto* block = page.nativeBlocks->entries[entry].get();
 	require(block && block->sourceWords == ops.size(), "the actual global setters and their continuation are generated together");
 
-	auto cart = cpu.createTable(1, 0), system = cpu.createTable(1, 0), child = cpu.createTable();
+	auto cart = bmsx::test::allocateTableReference(cpu, 1, 0), system = bmsx::test::allocateTableReference(cpu, 1, 0), child = bmsx::test::allocateTableReference(cpu);
 	cart.setInteger(1, valueTable(child.address()));
 	system.setInteger(1, valueTable(child.address()));
 	for (int step = 0; step < 256 && heap.phase() != GcPhase::MarkAgain; ++step)
@@ -582,7 +583,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[0], {})),
+		valueString(cpu.stringPool().intern("context")), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[0], {})),
 		valueThread(cpu.activeThread()->address)};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETGL, 0, 0, 0, ContextBlock::Payload::bx(1)},
 		{OpCode::SETSYS, 0, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETSYS, 1, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::K1, 2},
@@ -666,7 +667,7 @@ void rawContextValues(CpuMachine& machine) {
 		&& Upvalue::load(machine.memory, closed) == scalar
 		&& machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == (heap.white()),
 		"native scalar writes leave an unvisited closed cell unchanged");
-	const Value child = valueTable(cpu.createTable().address());
+	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	captureRegisters.set(12, child);
 	closedStore.remainingCycles = 100;
 	const auto& whiteReferenceExit = *outerRead.blocks.front()->run(captureRegisters, closedStore);
@@ -674,7 +675,7 @@ void rawContextValues(CpuMachine& machine) {
 		&& Upvalue::load(machine.memory, closed) == child && machine.memory.readRamRecordByte(closed + GC_COLOR_OFFSET) == heap.white(),
 		"an unvisited cell accepts the reference natively without a collector mutation");
 
-	const auto queued = cpu.createTable().address();
+	const auto queued = bmsx::test::allocateTableReference(cpu).address();
 	machine.memory.writeRamRecordByte(queued + GC_COLOR_OFFSET, 3u);
 	heap.writeBarrier(queued, GC_RECORD_LINK);
 	machine.memory.writeRamRecordByte(closed + GC_COLOR_OFFSET, 3u);
@@ -751,7 +752,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	ClosureRecord::initialize(memory, closure, {}, heap.white(), 1, false, false);
 	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);
 	frame.writeControl(FrameField::Closure, closure);
-	const Value child = valueTable(cpu.createTable().address());
+	const Value child = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	memory.writeRamRecordByte(control, static_cast<u8>(GcPhase::MarkAgain));
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3u);
@@ -788,7 +789,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	frame.writeControl(bmsx::FrameField::StackBase, 16);
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
-		valueTable(machine.cpu.createTable().address()), valueThread(machine.cpu.activeThread()->address)};
+		valueTable(bmsx::test::allocateTableReference(machine.cpu).address()), valueThread(machine.cpu.activeThread()->address)};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
 	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));

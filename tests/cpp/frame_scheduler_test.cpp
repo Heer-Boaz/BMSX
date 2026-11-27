@@ -20,6 +20,7 @@
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -288,9 +289,9 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	auto& budget = cpu.luaHeap();
 	budget.setCollectionTarget(budget.capacity());
-	auto owner = cpu.createTable(512, 0);
+	auto owner = bmsx::test::allocateTableReference(cpu, 512, 0);
 	for (int key = 1; key <= 512; ++key) owner.setInteger(key, valueInteger(key));
-	auto payload = cpu.createTable(1, 0);
+	auto payload = bmsx::test::allocateTableReference(cpu, 1, 0);
 	payload.setInteger(1, valueInteger(73));
 	frame.registers.set(0, valueTable(owner.address()));
 	frame.registers.set(1, valueInteger(1));
@@ -316,9 +317,9 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 #endif
 	owner.setInteger(1, valueInteger(1));
 	// Only the pending semantic operation makes the final receiver strong.
-	auto receiver = cpu.createTable();
-	auto forwarding = cpu.createTable(0, 1);
-	auto weakMode = cpu.createTable(0, 1);
+	auto receiver = bmsx::test::allocateTableReference(cpu);
+	auto forwarding = bmsx::test::allocateTableReference(cpu, 0, 1);
+	auto weakMode = bmsx::test::allocateTableReference(cpu, 0, 1);
 	weakMode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 	forwarding.setMetatableAddress(weakMode.address());
 	forwarding.setStringKey(cpu.stringPool().intern("__newindex"), valueTable(owner.address()));
@@ -327,8 +328,8 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	frame.registers.set(1, valueInteger(513));
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], entry);
 
-	frame.registers.set(3, valueTable(cpu.createTable(225280, 0).address()));
-	cpu.createTable(1024, 0); // Unreachable, with room for the replacement backing.
+	frame.registers.set(3, valueTable(bmsx::test::allocateTableReference(cpu, 225280, 0).address()));
+	bmsx::test::allocateTableReference(cpu, 1024, 0); // Unreachable, with room for the replacement backing.
 	auto& arena = cpu.heapAllocator();
 	const u32 spare = arena.allocate(4088u, true);
 	require(spare != 0u, "reserve a smaller chunk before exhausting the arena");
@@ -479,7 +480,7 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	auto& callee = *cpu.rootThread()->currentFrame;
 	auto& budget = cpu.luaHeap();
 	budget.setCollectionTarget(budget.capacity());
-	auto owner = cpu.createTable(512, 0);
+	auto owner = bmsx::test::allocateTableReference(cpu, 512, 0);
 	for (int i = 1; i <= 512; ++i) owner.setInteger(i, valueInteger(i));
 	callee.registers.set(0, valueTable(owner.address()));
 	callee.registers.set(1, valueInteger(513));
@@ -566,14 +567,14 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	auto& budget = cpu.luaHeap();
 	auto& scheduler = runtime.frameScheduler;
 	budget.setCollectionTarget(budget.capacity());
-	auto owner = cpu.createTable(512, 0);
-	auto child = cpu.createTable(1, 0);
+	auto owner = bmsx::test::allocateTableReference(cpu, 512, 0);
+	auto child = bmsx::test::allocateTableReference(cpu, 1, 0);
 	child.setInteger(1, valueInteger(73));
 	for (int i = 1; i <= 512; ++i) owner.setInteger(i, valueInteger(i));
 	owner.setInteger(1, valueTable(child.address()));
-	auto receiver = cpu.createTable();
-	auto forwarding = cpu.createTable(0, 1);
-	auto mode = cpu.createTable(0, 1);
+	auto receiver = bmsx::test::allocateTableReference(cpu);
+	auto forwarding = bmsx::test::allocateTableReference(cpu, 0, 1);
+	auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
 	mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 	forwarding.setMetatableAddress(mode.address());
 	forwarding.setStringKey(cpu.stringPool().intern("__newindex"), valueTable(owner.address()));
@@ -583,7 +584,7 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	frame.registers.set(1, valueInteger(513));
 	frame.registers.set(2, valueInteger(23));
 	frame.setTop(3);
-	cpu.createTable(1024, 0); // Release a sufficiently large body during the stopped collection.
+	bmsx::test::allocateTableReference(cpu, 1024, 0); // Release a sufficiently large body during the stopped collection.
 	const u32 spare = arena.allocate(4088u, true);
 	require(spare != 0u, "leave a small chunk that cannot hold the replacement");
 	while (arena.allocate(4088u, true)) {}
@@ -636,7 +637,7 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 	auto& scheduler = runtime.frameScheduler;
 	auto& heap = cpu.gcHeap();
 	auto& arena = cpu.heapAllocator();
-	auto retained = cpu.createTable(16384, 0);
+	auto retained = bmsx::test::allocateTableReference(cpu, 16384, 0);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(retained.address())); frame.setTop(1);
 	cpu.collectHeap();

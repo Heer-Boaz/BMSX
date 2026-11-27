@@ -13,6 +13,7 @@
 #include "support/cpu_execution_budget.h"
 #include "support/cpu_execution_parity.h"
 #include "support/number32_cpu_fixture.h"
+#include "support/table_allocation_reference.h"
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -487,7 +488,7 @@ void scalarRegions() {
 			r.set(1, valueInteger(DYNAMIC_RAM_BASE + 0x200));
 			m.memory.writeMappedF64LE(DYNAMIC_RAM_BASE + 0x100, 16777217.0);
 		} else if (std::string(name) == "table") {
-			auto table = m.cpu.createTable(1, 1);
+			auto table = bmsx::test::allocateTableReference(m.cpu, 1, 1);
 			r.set(0, valueTable(table.address()));
 			r.set(7, valueFloat(1));
 		} else if (std::string(name) == "words")
@@ -677,7 +678,7 @@ void constantsGlobalsAndRestore() {
 	Number32Machine m(image);
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueFloatBits(0xffa54321));
 	m.cpu.setSystemGlobalByKey(*m.cpu.stringPool().find("system"), valueInteger(INT32_MIN));
-	auto graph = m.cpu.createTable(), child = m.cpu.createTable();
+	auto graph = bmsx::test::allocateTableReference(m.cpu), child = bmsx::test::allocateTableReference(m.cpu);
 	const auto self = m.cpu.stringPool().intern("self"), childKey = m.cpu.stringPool().intern("child");
 	graph.setStringKey(self, valueTable(graph.address()));
 	graph.setStringKey(childKey, valueTable(child.address()));
@@ -691,7 +692,7 @@ void constantsGlobalsAndRestore() {
 	m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(8));
 	m.cpu.setGlobalByKey(*m.cpu.stringPool().find("saved"), valueInteger(7));
 	for (int i = 0; i < 10; ++i)
-		m.cpu.createTable();
+		bmsx::test::allocateTableReference(m.cpu);
 	m.memory.restoreSaveState(ram);
 	m.cpu.restoreRuntimeState(state);
 	require(m.cpu.readFrameRegister(0, 2) == valueFloatBits(0xffa12345), "frame restore preserves raw Float word");
@@ -714,7 +715,7 @@ void tableHeap() {
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
 	test::seedManagedHeapFixture(cpu);
-	auto table = cpu.createTable(), child = cpu.createTable();
+	auto table = bmsx::test::allocateTableReference(cpu), child = bmsx::test::allocateTableReference(cpu);
 	const Value root = valueTable(table.address()), key = valueTable(child.address());
 	table.set(key, valueFloatBits(0xffa12345));
 	table.set(valueFloat(2.0f), valueInteger(9));

@@ -49,7 +49,6 @@ public:
 	static constexpr u32 hashStorageBytes(size_t hash) { return hashNodeBytes(hash) + (hash > HASH_CENSUS_LIMIT ? 4u : 0u) + (hash >= HASH_BAND_CAPACITY ? 32u * 4u : 0u); }
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
-	void initialize(size_t arrayCapacity, size_t hashCapacity);
 	void freeRecord();
 	u32 address() const { return m_address; }
 	u32 hashAddress() const { return readHeader(TableHeader::HashStorage); }

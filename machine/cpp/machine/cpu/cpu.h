@@ -244,7 +244,6 @@ public:
 	size_t globalSlotCount() const { return m_globalBank.count(); }
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
-	TableRecord createTable(int arraySize = 0, int hashSize = 0);
 
 	void beginCompletionCall(u32 closure, BuiltinArgsView args = {});
 	void beginCompletionCallInExecutionDomain(

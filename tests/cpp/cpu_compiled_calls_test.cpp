@@ -14,6 +14,7 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -164,7 +165,7 @@ void inactiveFrameMetadata() {
 		auto* root = cpu.activeThread()->currentFrame;
 		cpu.beginCompletionCall(asClosure(root->registers.get(0), cpu.gcHeap()));
 		auto& frame = *cpu.activeThread()->currentFrame;
-		frame.registers.set(0, valueTable(cpu.createTable().address()));
+		frame.registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	}
 	test::runCpuParity(generated.cpu, scalar.cpu, 1, 1);
 	auto* spare = generated.cpu.activeThread()->currentFrame;

@@ -11,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -65,7 +66,7 @@ void writeRoutes(bool scalar) {
   const bool integer = op == OpCode::SETI;
   const Value key = integer ? valueInteger(1) : valueString(cpu.stringPool().intern("field"));
   auto prepare = [&](int array, int hash) {
-   auto table = cpu.createTable(array, hash);
+   auto table = bmsx::test::allocateTableReference(cpu, array, hash);
    if (op == OpCode::CALL) {
     r.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::RawSet)); r.set(1, valueTable(table.address())); r.set(2, key); r.set(3, valueInteger(73));
    } else {
@@ -112,7 +113,7 @@ void replayInFlightHash(bool scalar) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=2}};
  CpuMachine m(image, scalar);
  auto& cpu = m.cpu;
- auto table = cpu.createTable(0, 512);
+ auto table = bmsx::test::allocateTableReference(cpu, 0, 512);
  for (int i = 1; i <= 512; ++i) table.setInteger(i <= 256 ? i : -i, valueInteger(i));
  auto r = cpu.activeThread()->currentFrame->registers;
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(73));
@@ -159,7 +160,7 @@ void shrinkSparseArray(bool scalar, int prefix) {
  CpuMachine machine(image, scalar);
  auto& cpu = machine.cpu;
  constexpr int old = 2047;
- auto table = cpu.createTable(old,128);
+ auto table = bmsx::test::allocateTableReference(cpu, old,128);
  const auto base = table.arrayAddress();
  cpu.setSystemGlobalByKey(cpu.stringPool().intern("shrinking"), valueTable(table.address()));
  const auto value = [](int i) { return i%3 ? valueInteger(-i) : valueBool(false); };
@@ -214,7 +215,7 @@ void publishInPlaceArray(bool scalar) {
  const auto root = cpu.stringPool().intern("growing");
  auto& arena = cpu.heapAllocator();
  arena.free(arena.allocate(12*old, true));
- auto table = cpu.createTable(old, 0);
+ auto table = bmsx::test::allocateTableReference(cpu, old, 0);
  const u32 original = table.arrayAddress();
  cpu.setSystemGlobalByKey(root, valueTable(table.address()));
  const auto value = [](int i) { return i%3 ? valueInteger(-i) : valueBool(false); };
@@ -257,7 +258,7 @@ void publishDisplacedArray(bool scalar, bool keepHash) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
  CpuMachine machine(image, scalar);
  auto& cpu = machine.cpu;
- auto table = cpu.createTable(1024, 2);
+ auto table = bmsx::test::allocateTableReference(cpu, 1024, 2);
  const u32 original = table.arrayAddress(), originalHash = table.hashAddress();
  for (int i=1; i<=1024; ++i) if (i != 77) table.setInteger(i, valueInteger(-i));
  if (keepHash) table.setInteger(77, valueInteger(0));
@@ -304,7 +305,7 @@ void publishFirstArray(bool scalar, int dense) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=3}};
  CpuMachine machine(image, scalar);
  auto& cpu = machine.cpu;
- auto table = cpu.createTable(0, 1024);
+ auto table = bmsx::test::allocateTableReference(cpu, 0, 1024);
  for (int i=1; i<=1024; ++i) table.setInteger(i <= dense ? i : -i, valueInteger(i));
  auto r = cpu.activeThread()->currentFrame->registers;
  r.set(0, valueTable(table.address())); r.set(1, valueInteger(dense+1)); r.set(2, valueInteger(73));
@@ -343,7 +344,7 @@ void publishRawStoreBeforeReturning(bool protectedCall, bool census) {
  image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
  CpuMachine m(image, true);
  auto& cpu = m.cpu;
- auto table = cpu.createTable(census ? 2048 : 0, census ? 0 : 256);
+ auto table = bmsx::test::allocateTableReference(cpu, census ? 2048 : 0, census ? 0 : 256);
  const auto key = census ? valueInteger(2049) : valueString(cpu.stringPool().intern("new"));
  for (int i = 1; i <= (census ? 2048 : 256); ++i) table.setInteger(census ? i : -i, valueInteger(i));
  auto* frame = cpu.activeThread()->currentFrame;
@@ -381,12 +382,12 @@ void rebuildWork(bool scalar) {
   auto& cpu = machine.cpu;
   auto* frame = cpu.activeThread()->frameAtDepth(0);
   auto r = frame->registers;
-  r.set(0, valueTable(cpu.createTable(0, 1).address())); r.set(1, valueString(cpu.stringPool().intern("warm"))); r.set(2, valueInteger(73));
+  r.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 0, 1).address())); r.set(1, valueString(cpu.stringPool().intern("warm"))); r.set(2, valueInteger(73));
   machine.warm(scalar);
   const Value field = valueString(cpu.stringPool().intern("field")), other = valueString(cpu.stringPool().intern("other"));
   const int array = scenario == "array-growth" ? 2 : scenario == "array-to-hash" ? 8 : scenario == "mixed" ? 4 : 0;
   const int hash = scenario == "hash-to-array" || scenario == "mixed" || scenario == "same-capacity" || scenario == "weak-collection" ? 2 : scenario == "failed-growth" ? 1024 : 0;
-  auto table = cpu.createTable(array, hash);
+  auto table = bmsx::test::allocateTableReference(cpu, array, hash);
   r.set(0, valueTable(table.address())); r.set(2, valueInteger(73)); frame->writeControl(bmsx::FrameField::Top, 5);
   size_t capacity = 0;
   if (scenario == "array-growth") {
@@ -405,9 +406,9 @@ void rebuildWork(bool scalar) {
    table.set(field, valueInteger(55)); table.set(other, valueInteger(66)); table.set(other, valueNil());
    r.set(1, valueString(cpu.stringPool().intern("third"))); capacity = 2;
   } else if (scenario == "weak-collection") {
-   auto mode = cpu.createTable(0, 1);
+   auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
    mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v"))); table.setMetatableAddress(mode.address());
-   table.set(field, valueTable(cpu.createTable().address())); table.set(other, valueTable(cpu.createTable().address()));
+   table.set(field, valueTable(bmsx::test::allocateTableReference(cpu).address())); table.set(other, valueTable(bmsx::test::allocateTableReference(cpu).address()));
    r.set(1, valueString(cpu.stringPool().intern("third")));
    while (cpu.gcHeap().phase() != GcPhase::Atomic) cpu.stepHeap(valueNil(), valueNil(), valueNil());
    const auto bytes = cpu.luaHeap().usedBytes();
@@ -417,7 +418,7 @@ void rebuildWork(bool scalar) {
    for (int i = 0; i < 1024; ++i) table.set(valueFloat(i + 0.5f), valueInteger(i));
    r.set(1, valueFloat(1024.5f));
    const int retainedSlots = static_cast<int>((cpu.luaHeap().capacity() - cpu.luaHeap().usedBytes() - 20 * HEAP_PAGE_SIZE) / 5);
-   r.set(4, valueTable(cpu.createTable(retainedSlots).address()));
+   r.set(4, valueTable(bmsx::test::allocateTableReference(cpu, retainedSlots).address()));
    cpu.collectHeap();
    cpu.luaHeap().setCollectionTarget(cpu.luaHeap().capacity());
    // No contiguous replacement backing even after collection.
@@ -455,7 +456,7 @@ void hostGrantScratch(bool scalar) {
  auto& cpu = machine.cpu;
  DeviceScheduler scheduler(cpu); scheduler.setNowCycles(73);
  auto* frame = cpu.activeThread()->frameAtDepth(0);
- auto table = cpu.createTable();
+ auto table = bmsx::test::allocateTableReference(cpu);
  const Value key = valueString(cpu.stringPool().intern("field"));
  frame->registers.set(0, valueTable(table.address())); frame->registers.set(1, key); frame->registers.set(2, valueInteger(91)); frame->writeControl(bmsx::FrameField::Top, 3);
  cpu.instructionBudgetRemaining = 29; table.set(key, valueInteger(37));
@@ -511,7 +512,7 @@ int main() {
     if (frame->readControl(bmsx::FrameField::Pc) != rom.textAddress + INSTRUCTION_BYTES || frame->registers.get(7) != valueInteger(91))
      throw std::runtime_error("NEXT finishes the admitted primitive but stops before the next guest instruction");
    };
-   auto warm = cpu.createTable();
+   auto warm = bmsx::test::allocateTableReference(cpu);
    for (int repeat = 0; repeat < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++repeat)
     runNext(warm, valueNil(), {valueNil()});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -522,10 +523,10 @@ int main() {
    }
 #endif
    for (const auto [array, hash] : {std::array{5, 0}, std::array{0, 3}, std::array{5, 3}}) {
-    auto empty = cpu.createTable(array, hash);
+    auto empty = bmsx::test::allocateTableReference(cpu, array, hash);
     for (int repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), {valueNil()});
    }
-   auto sparse = cpu.createTable(8, 0);
+   auto sparse = bmsx::test::allocateTableReference(cpu, 8, 0);
    sparse.setInteger(3, valueInteger(33));
    sparse.setInteger(7, valueInteger(77));
    runNext(sparse, valueNil(), {valueInteger(3), valueInteger(33)});
@@ -534,7 +535,7 @@ int main() {
    runNext(sparse, valueInteger(8), {valueNil()});
    runNext(sparse, valueInteger(2), {valueInteger(3), valueInteger(33)});
 
-   auto hash = cpu.createTable(0, 8);
+   auto hash = bmsx::test::allocateTableReference(cpu, 0, 8);
    for (int index = 0; index < 8; ++index)
     hash.setStringKey(cpu.stringPool().intern("next-" + std::to_string(index)), valueInteger(index + 10));
    std::array<Value, 8> keys{}, values{};
@@ -547,7 +548,7 @@ int main() {
    runNext(hash, keys[2], {keys[4], values[4]});
    runNext(hash, keys[4], {valueNil()});
 
-   auto falseKey = cpu.createTable(0, 1);
+   auto falseKey = bmsx::test::allocateTableReference(cpu, 0, 1);
    falseKey.set(valueBool(false), valueBool(false));
    runNext(falseKey, valueNil(), {valueBool(false), valueBool(false)});
    runNext(falseKey, valueBool(false), {valueNil()});
@@ -576,7 +577,7 @@ int main() {
    std::array<StringId, 16> keys{};
    for (size_t i = 0; i < keys.size(); ++i) keys[i] = cpu.stringPool().intern("growth-" + std::to_string(i));
    auto* frame = cpu.activeThread()->frameAtDepth(0);
-   frame->registers.set(0, valueTable(cpu.createTable(0, 16).address()));
+   frame->registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 0, 16).address()));
    frame->registers.set(1, valueString(keys[0]));
    frame->registers.set(2, valueInteger(73));
    cpu.runUntilDepth(0, 10000);
@@ -586,7 +587,7 @@ int main() {
     throw std::runtime_error("table store was not warmed in native code");
 #endif
    for (const int initialCapacity : {0, 16}) {
-    auto table = cpu.createTable(0, initialCapacity);
+    auto table = bmsx::test::allocateTableReference(cpu, 0, initialCapacity);
     frame->registers.set(0, valueTable(table.address()));
     size_t previousCapacity = table.storedSlotCount(), initializedSlots = 0;
     for (size_t i = 0; i < keys.size(); ++i) {

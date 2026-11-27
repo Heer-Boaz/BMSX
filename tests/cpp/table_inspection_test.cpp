@@ -4,6 +4,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -20,8 +21,8 @@ void require(bool condition, const char* message) {
 }
 
 void inspectStoredSlots(bmsx::CPU& cpu) {
-	auto table = cpu.createTable(8, 16);
-	auto child = cpu.createTable();
+	auto table = bmsx::test::allocateTableReference(cpu, 8, 16);
+	auto child = bmsx::test::allocateTableReference(cpu);
 	const auto removed = bmsx::valueString(cpu.stringPool().intern("removed"));
 	table.setInteger(1, bmsx::valueFloatBits(0x80000000u));
 	table.setInteger(8, bmsx::valueBool(false));
@@ -46,7 +47,7 @@ void inspectStoredSlots(bmsx::CPU& cpu) {
 	require(!table.loadStoredEntry(1, key, value), "a vacant slot returns false");
 	require(std::pair{key, value} == last, "a vacant slot leaves the borrowed output untouched");
 
-	auto sparse = cpu.createTable(65536, 0);
+	auto sparse = bmsx::test::allocateTableReference(cpu, 65536, 0);
 	sparse.setInteger(65536, bmsx::valueInteger(42));
 	for (size_t slot = 0; slot < 1024; ++slot) {
 		require(!sparse.loadStoredEntry(slot, key, value), "single-slot inspection does not scan ahead");
@@ -57,7 +58,7 @@ void inspectStoredSlots(bmsx::CPU& cpu) {
 
 void refillArrayHashPrefix(bmsx::CPU& cpu) {
 	for (int route = 0; route < 4; ++route) {
-		auto table = cpu.createTable(4, 8);
+		auto table = bmsx::test::allocateTableReference(cpu, 4, 8);
 		for (int key = 1; key <= 7; ++key) {
 			table.set(bmsx::valueInteger(key), bmsx::valueInteger(key * 10));
 		}
@@ -96,7 +97,7 @@ void refillArrayHashPrefix(bmsx::CPU& cpu) {
 
 void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	using namespace bmsx;
-	auto table = cpu.createTable(4096, 8);
+	auto table = bmsx::test::allocateTableReference(cpu, 4096, 8);
 	for (int key = 4096; key >= 1; --key) table.setInteger(key, valueBool(false));
 	require(table.lengthHint() == 1, "descending writes do not scan the retained suffix");
 	require(TableRecord::length(&table) == 4096, "search finds the unique sequence boundary");
@@ -108,7 +109,7 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 	require(table.lengthHint() == 4096, "weak clearing need not rebuild the hint");
 	require(TableRecord::length(&table) == 0 && table.lengthHint() == 0, "reading length repairs a weak-cleared boundary");
 
-	auto sparse = cpu.createTable(0, 128);
+	auto sparse = bmsx::test::allocateTableReference(cpu, 0, 128);
 	for (int bit = 30; bit >= 0; --bit) sparse.setInteger(1 << bit, valueBool(false));
 		sparse.setInteger(INT32_MAX, valueBool(false));
 	sparse.set(valueFloat(2147483648.0f), valueBool(true));
@@ -133,9 +134,9 @@ void boundarySearchAndHashMix(bmsx::CPU& cpu) {
 }
 
 void continueAfterDeletedIdentityKey(bmsx::CPU& cpu) {
-	auto object = cpu.createTable();
+	auto object = bmsx::test::allocateTableReference(cpu);
 	const auto objectKey = bmsx::valueTable(object.address());
-	auto table = cpu.createTable(0, 64);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 64);
 	table.set(objectKey, bmsx::valueInteger(9));
 	table.set(bmsx::valueBool(true), bmsx::valueInteger(13));
 	bmsx::Value key = bmsx::valueNil(), value = bmsx::valueNil();

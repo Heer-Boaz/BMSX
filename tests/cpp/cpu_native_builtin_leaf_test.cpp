@@ -7,6 +7,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
@@ -80,7 +81,7 @@ struct Machine {
 			r.set(2, mode == 1 ? valueNil() : mode == 3 ? valueBool(false) : valueFloat(position));
 			expected = mode == 1 ? valueInteger(65) : position == 3 ? valueInteger(169) : position == 2 ? valueInteger(195) : valueNil();
 		} else {
-			target = cpu.createTable(0, 1); meta = cpu.createTable(0, 1);
+			target = bmsx::test::allocateTableReference(cpu, 0, 1); meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 			meta->setStringKey(cpu.stringPool().intern("field"), valueInteger(71));
 			target->setMetatableAddress(meta->address());
 			cpu.setGlobalByKey(cpu.stringPool().intern("target"), valueTable(target->address()));

@@ -11,6 +11,7 @@
 #include "machine/cpu/value_arithmetic.h"
 #include "support/value_bank.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <iostream>
@@ -109,7 +110,7 @@ void standaloneIteratorAdmitsItsFullWindow() {
 	const std::array sources{NativeBlockSource{instructions, &skipped}};
 	const auto blocks = NativeCompiler{}.compile(sources, NativeCodeBindings(memory, cpu.stringPool()));
 	const auto& block = *blocks.front();
-	auto table = cpu.createTable(2, 0);
+	auto table = bmsx::test::allocateTableReference(cpu, 2, 0);
 	table.setInteger(1, valueBool(false));
 	const std::array initial{valueBuiltinFunction(BuiltinFunctionId::Next), valueTable(table.address()),
 		valueNil(), valueInteger(3), valueInteger(4), valueInteger(5)};
@@ -296,7 +297,7 @@ void residentValuesCrossInternalComparisonBranches() {
 	const std::array constants{valueInteger(1)};
 	const auto constantsBank = test::valueBank(constants);
 	const auto alpha = valueString(cpu.stringPool().intern("alpha")), omega = valueString(cpu.stringPool().intern("omega"));
-	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()), valueFloat(-0.0),
+	const std::array values{valueFromTag(ValueTag::False, 37), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueFloat(-0.0),
 		valueFloatBits(0x7fc0002au)};
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (bool expected : {false, true}) {
 		decoded[1].op = static_cast<u8>(op); decoded[1].a = expected ? 1 : 0;
@@ -355,7 +356,7 @@ void segmentEntryPermutationsPreserveRawValuesAndDeadDefinitions() {
 	decoded[11].setBx(0x2000u);
 	const std::span source(instructions);
 	const std::array plans{NativeBlockSource{source.first(6)}, NativeBlockSource{source.subspan(6)}};
-	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(cpu.createTable().address()),
+	const std::array constants{valueFromTag(ValueTag::False, 37), valueTable(bmsx::test::allocateTableReference(cpu).address()),
 		valueFloat(-0.0), valueString(cpu.stringPool().intern("register permutation")), valueInteger(73), valueInteger(2), valueInteger(4)};
 	const auto constantsBank = test::valueBank(constants);
 	const std::array<std::array<int, 4>, 3> permutations{{{3, 2, 1, 0}, {1, 2, 3, 0}, {2, 0, 3, 1}}};
@@ -452,7 +453,7 @@ void admissionReplayPublishesOnlyThePaidPrefix() {
 }
 
 void sparseRegionSuccessorsPreserveExactPcIdentity() {
-	const std::array values{valueFloat(-0.0), valueFromTag(ValueTag::False, 73), valueTable(cpu.createTable().address())};
+	const std::array values{valueFloat(-0.0), valueFromTag(ValueTag::False, 73), valueTable(bmsx::test::allocateTableReference(cpu).address())};
 	for (const u32 page : {0x1000u, 0xfffffc00u}) {
 		std::array<DecodedInstruction, 5> decoded{};
 		const std::array ops{OpCode::MOV, OpCode::JMPIF, OpCode::JMP, OpCode::MOV, OpCode::JMP};
@@ -537,7 +538,7 @@ void diamondBackedgesPreserveFullStateFromEveryEntry() {
 		NativeBlockSource{source.subspan(10, 5)}, NativeBlockSource{source.subspan(15, 3)},
 		NativeBlockSource{source.subspan(18, 4)}, NativeBlockSource{source.subspan(22)}};
 	const std::array constants{valueInteger(2), valueInteger(3), valueFromTag(ValueTag::False, 57),
-		valueTable(cpu.createTable().address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
+		valueTable(bmsx::test::allocateTableReference(cpu).address()), valueFloat(-0.0), valueString(cpu.stringPool().intern("diamond register"))};
 	const auto constantsBank = test::valueBank(constants);
 	for (const bool helper : {false, true}) for (const bool bypassHelper : {false, true}) {
 		decoded[17].op = static_cast<u8>(helper ? OpCode::POW : OpCode::ADD);
@@ -752,7 +753,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueString(strings.intern("")), valueString(strings.intern("a")),
 		valueString(strings.intern(std::string_view("a\0b", 3))),
 		valueString(strings.intern("\xee\x80\x80")), valueString(strings.intern("\xf0\x90\x80\x80")),
-		valueTable(cpu.createTable().address()), valueTable(cpu.createTable().address()), valueClosure(firstClosure), valueClosure(secondClosure),
+		valueTable(bmsx::test::allocateTableReference(cpu).address()), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueClosure(firstClosure), valueClosure(secondClosure),
 		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, 0x80000025u),
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
 		valueThread(cpu.activeThread()->address), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
@@ -1282,7 +1283,7 @@ void typedCallExitPublishesPrefix() {
 
 void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 	const std::array constants{valueFromTag(ValueTag::False, 37), valueFloat(-0.0),
-		valueFromTag(ValueTag::Nil, 19), valueTable(cpu.createTable().address()),
+		valueFromTag(ValueTag::Nil, 19), valueTable(bmsx::test::allocateTableReference(cpu).address()),
 		valueString(cpu.stringPool().intern("field")), valueInteger(5), valueInteger(2)};
 	const auto constantsBank = test::valueBank(constants);
 	for (bool calling : {false, true}) for (int definitions = 0; definitions <= 4; ++definitions) {
@@ -1329,7 +1330,7 @@ void sharedExitMapsPublishRawValuesFromEitherRegisterBank() {
 void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 	const auto x = cpu.stringPool().intern("two-field x");
 	const auto y = cpu.stringPool().intern("two-field y");
-	auto table = cpu.createTable(0, 2);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
 	int xSlot = table.setStringKey(x, valueFloat(1.5f));
 	const int ySlot = table.setStringKey(y, valueInteger(2));
 	table.getStringKeyCached(x, xSlot);
@@ -1386,7 +1387,7 @@ void twoFieldProofsWithAliasedSlotsResumeAtTheFailedRead() {
 void reusedFieldAddressHonorsEachSite() {
 	const auto key = cpu.stringPool().intern("reused field");
 	const auto alternate = cpu.stringPool().intern("alternate field");
-	auto table = cpu.createTable(0, 2);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 2);
 	int slot = table.setStringKey(key, valueInteger(13));
 	const int alternateSlot = table.setStringKey(alternate, valueInteger(29));
 	table.getStringKeyCached(key, slot);

@@ -7,6 +7,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -49,17 +50,17 @@ struct Machine {
 };
 TableRecord makeTable(CPU& cpu,Kind kind) {
 	if (kind == Kind::ArrayEnd || kind == Kind::HashTail) {
-		auto table = cpu.createTable(2, kind == Kind::HashTail ? 4 : 0);
+		auto table = bmsx::test::allocateTableReference(cpu, 2, kind == Kind::HashTail ? 4 : 0);
 		if (kind == Kind::HashTail) table.setInteger(3, valueBool(false));
 		table.setInteger(1, valueBool(false));
 		table.setInteger(2, valueBool(false));
 		require(table.lengthHint() == 2, "both array ends start with the same hint");
 		return table;
 	}
-	auto table=cpu.createTable(kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
+	auto table=bmsx::test::allocateTableReference(cpu, kind==Kind::Sparse||kind==Kind::Terminal?0:4096,128);
 	if (kind==Kind::Ascending) for (int k=1;k<=64;++k) table.setInteger(k,valueBool(false));
 	if (kind==Kind::Descending||kind==Kind::Stale) {
-		const Value value=kind==Kind::Stale?valueTable(cpu.createTable().address()):valueBool(false);
+		const Value value=kind==Kind::Stale?valueTable(bmsx::test::allocateTableReference(cpu).address()):valueBool(false);
 		for (int k=4096;k>=1;--k) table.setInteger(k,value);
 	}
 	if (kind==Kind::Stale) table.clearWeakEntries(false,true,[](Value){return false;});
@@ -89,14 +90,14 @@ void lengthReadRepairsBoundaryCache() {
 	table.setInteger(4097,valueBool(false));require(table.lengthHint()==4097,"an adjacent append advances the cached boundary");
 	table.setInteger(4097,valueNil());require(table.lengthHint()==4096,"deleting the boundary retreats the hint");
 	table.clear();require(table.lengthHint()==0&&TableRecord::length(&table)==0,"complete clear resets seed0");
-	auto hash=m.cpu.createTable(0,16);hash.setInteger(1,valueBool(false));require(hash.lengthHint()==1,"eligible integer in hash updates seed");
+	auto hash=bmsx::test::allocateTableReference(m.cpu, 0,16);hash.setInteger(1,valueBool(false));require(hash.lengthHint()==1,"eligible integer in hash updates seed");
 	hash.setInteger(2,valueBool(false));require(hash.lengthHint()==2,"second eligible hash write advances one step");
 }
 void everyGrant() {
 	for (bool wide:{false,true}) for (const auto test:cases) {
 		Program program(wide);Machine generated(program,false),scalar(program,true);
 		for (auto* m:{&generated,&scalar}) {
-			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueTable(makeTable(m->cpu,test.kind).address()));r.set(10, valueTable(m->cpu.createTable(1).address()));
+			auto r=m->cpu.activeThread()->currentFrame->registers;r.set(0, valueTable(makeTable(m->cpu,test.kind).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m->cpu, 1).address()));
 		}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		const auto* page=generated.cpu.activeThread()->currentFrame->executionImage->nativeCodeLookup->find(generated.rom.textAddress,0);
@@ -163,7 +164,7 @@ void skippedLength() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 void oneGateFrontier() {
 	Program program(false);Machine m(program,false);auto* frame=m.cpu.activeThread()->currentFrame;auto r=frame->registers;
-	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(m.cpu.createTable(1).address()));asTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
+	r.set(0, valueTable(makeTable(m.cpu,Kind::Descending).address()));r.set(10, valueTable(bmsx::test::allocateTableReference(m.cpu, 1).address()));asTable(r.get(10), m.cpu.gcHeap()).setInteger(1,valueInteger(-1));r.set(8, valueNil());
 	const auto* page=frame->executionImage->nativeCodeLookup->find(m.rom.textAddress,0);
 	const auto& block=page->nativeBlocks->entries[(m.rom.textAddress&MAPPED_PAGE_BYTE_MASK)/INSTRUCTION_BYTES];
 	NativeBlockRunState state{};

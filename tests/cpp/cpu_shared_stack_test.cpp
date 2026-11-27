@@ -9,6 +9,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <iostream>
@@ -137,7 +138,7 @@ void formalReservationRoots(bool interpreted) {
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	auto* parent = cpu.activeThread()->currentFrame;
 	for (int index = 0; index < 6; ++index) parent->registers.set(5 + index, valueInteger(index));
-	auto table = cpu.createTable(1, 0); table.setInteger(1, valueInteger(73));
+	auto table = bmsx::test::allocateTableReference(cpu, 1, 0); table.setInteger(1, valueInteger(73));
 	parent->registers.set(11, valueTable(table.address())); parent->writeControl(bmsx::FrameField::Top, 12);
 	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CLOSURE)] + BASE_CYCLES[static_cast<u8>(OpCode::CALL)]);
 	auto* child = cpu.activeThread()->currentFrame;
@@ -171,7 +172,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); test::seedManagedFixture(cpu, addresses);
 	auto& frame = *cpu.activeThread()->currentFrame;
-	frame.registers.set(2, valueTable(cpu.createTable().address()));
+	frame.registers.set(2, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<u32, 1> cells{};
 	frame.registers.set(0, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));
 	Upvalue::bindOpen(memory, cells[0], frame.thread->address, frame.stackBase() + 2, 0u);

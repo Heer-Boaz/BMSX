@@ -10,6 +10,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -252,7 +253,7 @@ void unknownFieldStillFaultsAfterAnEarlierGuard() {
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
-		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
+		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(8)); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 900);
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0));
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "a late unknown selector still hard-halts after the earlier guard succeeds");
@@ -268,7 +269,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	const auto image = faultLoopImage(op, wide); CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
-		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
+		frame.registers.set(12, valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);

@@ -15,6 +15,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
 #include "support/string_slice_reference.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -169,7 +170,7 @@ void stringAdmissionStartsSweepDuringUnchargedRehash() {
 	auto& pool = cpu.stringPool();
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 8192;
-	auto roots = cpu.createTable(capacity, 0);
+	auto roots = bmsx::test::allocateTableReference(cpu, capacity, 0);
 	cpu.setGlobalByKey(pool.intern("String growth root"), valueTable(roots.address()));
 	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
@@ -302,7 +303,7 @@ void rehashCollisionAcrossSweepAndRewind() {
 	auto& pool = cpu.stringPool();
 	auto& memory = machine.memory;
 	constexpr u32 capacity = 4096u;
-	auto roots = cpu.createTable(4, 0);
+	auto roots = bmsx::test::allocateTableReference(cpu, 4, 0);
 	cpu.setGlobalByKey(pool.intern("collision rehash root"), valueTable(roots.address()));
 	const u32 metadata = cpu.heapAllocator().managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const auto read = [&](u32 field) { return memory.readRamRecordWord(metadata + field); };
@@ -419,11 +420,11 @@ void retainNestedMaterializationRoots() {
 		}
 		cpu.collectHeap();
 		require(!pool.find("inner string") && pool.find("outer string") == outerId, "inner roots retire without releasing the outer phase");
-		auto table = cpu.createTable();
+		auto table = bmsx::test::allocateTableReference(cpu);
 		const auto key = pool.intern("nested key");
 		table.setStringKey(key, valueInteger(7));
-		cpu.collectHeap();
-		require(table.getStringKey(key) == valueInteger(7), "the same CPU materialization phase owns tables and strings");
+		cpu.collectHeap(valueTable(table.address()));
+		require(table.getStringKey(key) == valueInteger(7), "the collector keeps explicit Values and scoped Strings");
 	}
 	cpu.collectHeap();
 	require(!pool.find("outer string") && !pool.find("nested key"), "CPU scope retirement releases string roots");
@@ -455,7 +456,7 @@ void reuseDeletedStringKeyId() {
 	auto& cpu = machine.cpu;
 	auto& pool = cpu.stringPool();
 	const auto root = pool.intern("table root");
-	auto table = cpu.createTable(0, 8);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
 	cpu.setGlobalByKey(root, valueTable(table.address()));
 	const auto removed = pool.intern("removed key");
 	table.setStringKey(removed, valueInteger(19));

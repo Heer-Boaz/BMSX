@@ -8,6 +8,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -77,7 +78,7 @@ void replayAllocationIdentities() {
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	cpu.memory().writeBytes(bmsx::DYNAMIC_RAM_BASE, machine.rom.bytes.data() + machine.rom.functionAddresses[1] - bmsx::SYSTEM_ROM_BASE,
 		bmsx::BLUA32_FUNCTION_RECORD_SIZE);
-	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	const auto anchor = cpu.captureRuntimeState();
 	const auto anchorRam = cpu.memory().captureSaveState();
 
@@ -128,7 +129,7 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		SnapshotMachine machine(image);
 		auto& cpu = machine.runtime.machine.cpu;
 		bmsx::test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
-		if (table) cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+		if (table) cpu.activeThread()->currentFrame->registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 		auto returnPc = machine.rom.textAddress + 4u * bmsx::INSTRUCTION_BYTES;
 		cpu.setExecutionHook({
 			.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) { return pc == *static_cast<bmsx::u32*>(context); },
@@ -139,8 +140,8 @@ void preserveCallerPrefixAcrossOpenResultCall() {
 		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after zero-result CALL");
 		require(cpu.getFrameRegisterCount(0) == 4, "open result top stays exact");
 		if (table) {
-			auto weak = cpu.createTable(1, 0);
-			auto mode = cpu.createTable(0, 1);
+			auto weak = bmsx::test::allocateTableReference(cpu, 1, 0);
+			auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
 			mode.setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
 			weak.setMetatableAddress(mode.address());
 			weak.setInteger(1, cpu.readFrameRegister(0, 0));
@@ -174,7 +175,7 @@ void capturesUsePhysicalRecords() {
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
 	auto& definition = *cpu.activeThread()->currentFrame;
-	definition.registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	definition.registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<bmsx::u32, 1> cells{};
 	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
 	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
@@ -201,7 +202,7 @@ void inspectOpenAndClosedClosure() {
 	SnapshotMachine machine(image, 2u * bmsx::BLUA32_FUNCTION_RECORD_SIZE);
 	auto& cpu = machine.runtime.machine.cpu;
 	auto& definition = *cpu.activeThread()->currentFrame;
-	definition.registers.set(0, bmsx::valueTable(cpu.createTable().address()));
+	definition.registers.set(0, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	std::array<bmsx::u32, 1> cells{};
 	const auto seeded = bmsx::test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[1], cells);
 	bmsx::Upvalue::bindOpen(cpu.memory(), cells[0], definition.thread->address, definition.stackBase(), 0u);
@@ -242,13 +243,13 @@ void replayWeakCollectionSchedule() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto weakKey = cpu.stringPool().intern("weak");
-	auto weak = cpu.createTable(1, 0);
-	auto metatable = cpu.createTable(0, 1);
+	auto weak = bmsx::test::allocateTableReference(cpu, 1, 0);
+	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
 	metatable.setStringKey(cpu.stringPool().intern("__mode"), bmsx::valueString(cpu.stringPool().intern("v")));
 	weak.setMetatableAddress(metatable.address());
-	weak.setInteger(1, bmsx::valueTable(cpu.createTable().address()));
+	weak.setInteger(1, bmsx::valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak.address()));
-	for (int index = 0; index < 17; ++index) cpu.createTable(256, 0);
+	for (int index = 0; index < 17; ++index) bmsx::test::allocateTableReference(cpu, 256, 0);
 	const auto savedRam = cpu.memory().captureSaveState();
 	const auto anchor = cpu.captureRuntimeState();
 	const auto anchorBytes = cpu.luaHeap().usedBytes();
@@ -257,7 +258,7 @@ void replayWeakCollectionSchedule() {
 		auto current = bmsx::asTable(cpu.getGlobalByKey(weakKey), cpu.gcHeap());
 		require(bmsx::valueIsTable(current.getInteger(1)), "restore must not collect a weak referent");
 		for (int count = 1; count < 4096; ++count) {
-			cpu.createTable(256, 0);
+			bmsx::test::allocateTableReference(cpu, 256, 0);
 			if (bmsx::isNil(current.getInteger(1))) return count;
 		}
 		throw std::runtime_error("allocation did not reach the guest collection threshold");
@@ -402,11 +403,11 @@ void saveLayoutDoesNotScaleWithHeapObjects() {
 	const auto key = cpu.stringPool().intern("graph");
 	cpu.setGlobalByKey(key, bmsx::valueNil()); // Keep the same global-bank extent.
 	const size_t emptySize = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)).size();
-	auto root = cpu.createTable(1024, 0);
+	auto root = bmsx::test::allocateTableReference(cpu, 1024, 0);
 	const auto rootValue = bmsx::valueTable(root.address());
 	cpu.setGlobalByKey(key, rootValue);
 	for (int index = 1; index <= 1024; ++index) {
-		auto child = cpu.createTable(1, 0);
+		auto child = bmsx::test::allocateTableReference(cpu, 1, 0);
 		child.setInteger(1, rootValue);
 		root.setInteger(index, bmsx::valueTable(child.address()));
 	}
@@ -440,7 +441,7 @@ void preserveSnapshotValueBits() {
 		bmsx::valueString(cpu.stringPool().intern("saved")),
 		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::Next), bmsx::valueNil(),
 	};
-	auto table = cpu.createTable(values.size(), 0);
+	auto table = bmsx::test::allocateTableReference(cpu, values.size(), 0);
 	cpu.setGlobalByKey(key, bmsx::valueTable(table.address()));
 	for (size_t index = 0; index < values.size(); ++index) table.setInteger(index + 1, values[index]);
 	const auto state = cpu.captureRuntimeState();
@@ -455,11 +456,11 @@ void preserveDeepGraph() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto key = cpu.stringPool().intern("deep");
-	auto root = cpu.createTable(1, 0);
+	auto root = bmsx::test::allocateTableReference(cpu, 1, 0);
 	cpu.setGlobalByKey(key, bmsx::valueTable(root.address()));
 	auto tail = root;
 	for (int index = 1; index < 4096; ++index) {
-		auto child = cpu.createTable(1, 0);
+		auto child = bmsx::test::allocateTableReference(cpu, 1, 0);
 		tail.setInteger(1, bmsx::valueTable(child.address()));
 		tail = child;
 	}
@@ -494,7 +495,7 @@ void preserveDynamicGlobalRegisters() {
 	}
 	require(grewBank, "the names cross an actual capacity boundary");
 	const auto key = cpu.stringPool().intern("held");
-	auto object = cpu.createTable(1, 0);
+	auto object = bmsx::test::allocateTableReference(cpu, 1, 0);
 	object.setInteger(1, bmsx::valueInteger(42));
 	cpu.setGlobalByKey(key, bmsx::valueTable(object.address()));
 	const auto nilKey = cpu.stringPool().intern("nil-name");
@@ -528,11 +529,11 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 	auto& cpu = machine.runtime.machine.cpu;
 	auto& strings = cpu.stringPool();
 	const auto weakKey = strings.intern("weak");
-	auto weak = cpu.createTable(1, 0);
-	auto mode = cpu.createTable(0, 1);
+	auto weak = bmsx::test::allocateTableReference(cpu, 1, 0);
+	auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
 	mode.setStringKey(strings.intern("__mode"), bmsx::valueString(strings.intern("v")));
 	weak.setMetatableAddress(mode.address());
-	weak.setInteger(1, bmsx::valueTable(cpu.createTable(64, 0).address()));
+	weak.setInteger(1, bmsx::valueTable(bmsx::test::allocateTableReference(cpu, 64, 0).address()));
 	cpu.setGlobalByKey(weakKey, bmsx::valueTable(weak.address()));
 	strings.intern("unrooted diagnostic text");
 	const auto anchor = cpu.captureRuntimeState();

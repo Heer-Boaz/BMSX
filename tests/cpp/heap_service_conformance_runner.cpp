@@ -16,6 +16,7 @@
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
 #include "support/string_slice_reference.h"
+#include "support/table_allocation_reference.h"
 
 namespace {
 using namespace bmsx;
@@ -487,7 +488,7 @@ int main(int argc, char** argv) {
 				case 'Y': {
 					int array, hash;
 					trace >> array >> hash;
-					std::cout << cpu.createTable(array, hash).address() << '\n';
+					std::cout << bmsx::test::allocateTableReference(cpu, array, hash).address() << '\n';
 					break;
 				}
 				case 'z': {

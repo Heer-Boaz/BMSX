@@ -3,6 +3,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <chrono>
@@ -41,7 +42,7 @@ struct Fixture {
 		}
 		tables.reserve(TableCount);
 		for (size_t t = 0; t < TableCount; ++t) {
-			auto& table = tables.emplace_back(cpu.createTable(0, 64));
+			auto& table = tables.emplace_back(bmsx::test::allocateTableReference(cpu, 0, 64));
 			for (size_t i = 0; i < KeyCount; ++i) {
 				const size_t k = (i + t) & (KeyCount - 1);
 				table.setStringKey(keys[k], valueInteger(k + 1));
@@ -50,9 +51,9 @@ struct Fixture {
 		indexKey = cpu.stringPool().intern("__index");
 		inherited = tables[0];
 		for (int depth = 0; depth < 4; ++depth) {
-			auto metatable = cpu.createTable(0, 1);
+			auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
 			metatable.setStringKey(indexKey, valueTable(inherited->address()));
-			auto child = cpu.createTable();
+			auto child = bmsx::test::allocateTableReference(cpu);
 			child.setMetatableAddress(metatable.address());
 			inherited = child;
 		}

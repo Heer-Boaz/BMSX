@@ -4,6 +4,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <iostream>
@@ -20,7 +21,7 @@ void require(bool condition, const char* message) {
 }
 
 void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
-	auto table = cpu.createTable(0, 8);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
 	std::array<std::array<StringId, 2>, 8> keys{};
 	for (int i = 10; i < 90; ++i) {
 		const auto key = cpu.stringPool().intern("table-home-key-" + std::to_string(i));
@@ -49,7 +50,7 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	const auto absent = keys[1][1];
 	require(table.readOwnStringField(absent, prediction) == valueNil() && prediction == slot,
 		"plain absence resolves to nil without poisoning the prediction");
-	table.setMetatableAddress(cpu.createTable().address());
+	table.setMetatableAddress(bmsx::test::allocateTableReference(cpu).address());
 	require(!table.readOwnStringField(absent, prediction) && prediction == slot,
 		"absence with a metatable leaves the lookup to __index resolution");
 	require(table.readOwnStringField(collided, prediction) == valueInteger(22) && prediction != slot,
@@ -86,9 +87,9 @@ void collisionAndMutationParity(CPU& cpu) {
 		const auto key = cpu.stringPool().intern("collision_" + std::to_string(n));
 		if ((hashCanonicalTableKey(valueString(key)) & 31u) == 0u) keys[count++] = key;
 	}
-	auto generic = cpu.createTable(0, 4);
-	auto strings = cpu.createTable(0, 4);
-	auto object = cpu.createTable();
+	auto generic = bmsx::test::allocateTableReference(cpu, 0, 4);
+	auto strings = bmsx::test::allocateTableReference(cpu, 0, 4);
+	auto object = bmsx::test::allocateTableReference(cpu);
 
 	const std::array<Value, 8> values {
 		valueBool(false), valueFloatBits(0x80000000u), valueFloat(5.25f),
@@ -141,7 +142,7 @@ void collisionAndMutationParity(CPU& cpu) {
 
 	// All three names have the same home. The deleted head is reusable,
 	// but the live tail must still be found before inserting into the head.
-	auto chain = cpu.createTable(0, 2);
+	auto chain = bmsx::test::allocateTableReference(cpu, 0, 2);
 	const int head = chain.setStringKey(keys[0], valueInteger(11));
 	const int tail = chain.setStringKey(keys[1], valueInteger(22));
 	chain.setStringKey(keys[0], valueNil());
@@ -152,8 +153,8 @@ void collisionAndMutationParity(CPU& cpu) {
 		"a real miss can reuse the home without breaking its live link");
 
 	const auto newIndex = cpu.stringPool().intern("__newindex");
-	auto source = cpu.createTable(0, 2), holder = cpu.createTable(1, 2);
-	auto sourceMeta = cpu.createTable(0, 1), holderMeta = cpu.createTable(0, 2);
+	auto source = bmsx::test::allocateTableReference(cpu, 0, 2), holder = bmsx::test::allocateTableReference(cpu, 1, 2);
+	auto sourceMeta = bmsx::test::allocateTableReference(cpu, 0, 1), holderMeta = bmsx::test::allocateTableReference(cpu, 0, 2);
 	const int sourceSlot = source.setStringKey(keys[0], valueInteger(11));
 	source.setStringKey(keys[0], valueNil());
 	holder.setInteger(1, valueInteger(53));
@@ -208,8 +209,8 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 	constexpr std::array<StringId, 6> keys{CART_ROM_BASE, CART_ROM_BASE + 8 * step, CART_ROM_BASE + 16 * step,
 		CART_ROM_BASE + 24 * step, CART_ROM_BASE + 32 * step, CART_ROM_BASE + 4 * step};
 	for (u32 mask = 0; mask < (1u << keys.size()); ++mask) {
-		auto scalar = cpu.createTable(0, keys.size());
-		auto prepared = cpu.createTable(0, keys.size());
+		auto scalar = bmsx::test::allocateTableReference(cpu, 0, keys.size());
+		auto prepared = bmsx::test::allocateTableReference(cpu, 0, keys.size());
 		std::array<Value, keys.size()> values{};
 		for (u32 i = 0; i < keys.size(); ++i) {
 			values[i] = (mask & (1u << i)) != 0u ? valueInteger(i) : valueNil();
@@ -228,8 +229,8 @@ void preparedLayoutMatchesAllMasks(CPU& cpu, Memory& memory) {
 void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 	const auto newIndex = cpu.stringPool().intern("__newindex");
 	const auto field = cpu.stringPool().intern("unwritten");
-	auto target = cpu.createTable();
-	auto meta = cpu.createTable(0, 1);
+	auto target = bmsx::test::allocateTableReference(cpu);
+	auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	target.setMetatableAddress(meta.address());
 	TableLookupResult assignment;
 	target.resolveStringAssignment(field, assignment);
@@ -254,10 +255,10 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
 		"raw nil deletion removes the method for integer assignments");
 
-	auto weakMode = cpu.createTable(0, 1);
+	auto weakMode = bmsx::test::allocateTableReference(cpu, 0, 1);
 	weakMode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 	meta.setMetatableAddress(weakMode.address());
-	auto forwarding = cpu.createTable();
+	auto forwarding = bmsx::test::allocateTableReference(cpu);
 	meta.set(valueString(newIndex), valueTable(forwarding.address()));
 	target.resolveAssignment(valueString(field), assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == forwarding.address()
@@ -271,7 +272,7 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 
 void rebuildFullCollisionChain(CPU& cpu) {
 	for (const int capacity : {128, 256}) {
-		auto table = cpu.createTable(4, capacity);
+		auto table = bmsx::test::allocateTableReference(cpu, 4, capacity);
 		table.setInteger(1, valueBool(false));
 		std::vector<int> keys;
 		for (int i = -1; keys.size() < static_cast<size_t>(capacity + 2); --i) {
@@ -290,8 +291,8 @@ void rebuildFullCollisionChain(CPU& cpu) {
 }
 
 void compactWeakHash(CPU& cpu) {
-	auto table = cpu.createTable(0, 128);
-	const auto weak = valueTable(cpu.createTable().address());
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 128);
+	const auto weak = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	std::array<int, 129> keys;
 	for (int k = -1, i = 0; i < 129; --k) if ((hashCanonicalTableKey(valueInteger(k)) & 127u) == 0) keys[i++] = k;
 	for (int i = 0; i < 128; ++i) table.setInteger(keys[i], i < 31 ? valueInteger(i) : weak);
@@ -309,8 +310,8 @@ void compactWeakHash(CPU& cpu) {
 
 void restoredIntegerSplitsPartition(CPU& cpu) {
 	for (bool restore : {false, true}) {
-		auto table = cpu.createTable(0, 1024);
-		const auto weak = valueTable(cpu.createTable().address());
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 1024);
+		const auto weak = valueTable(bmsx::test::allocateTableReference(cpu).address());
 		for (int k = 1; k <= 1024; ++k) table.setInteger(k <= 512 ? k : -k, k == 512 ? weak : valueInteger(k));
 		table.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
 		if (restore) {
@@ -326,7 +327,7 @@ void restoredIntegerSplitsPartition(CPU& cpu) {
 }
 
 void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
-	auto table = cpu.createTable(4, 128);
+	auto table = bmsx::test::allocateTableReference(cpu, 4, 128);
 	for (int k = -1; k >= -128; --k) table.setInteger(k, valueInteger(-k));
 	const auto words = table.hashAddress();
 	const Value prior = valueInteger(static_cast<i32>(memory.readRamRecordWord(words + 4 * 128)));
@@ -336,12 +337,12 @@ void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
 }
 
 void fullHashGrowsAndRetainsMappings(CPU& cpu) {
-	auto table = cpu.createTable(0, 1);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 1);
 	const auto present = cpu.stringPool().intern("full"), missing = cpu.stringPool().intern("new");
 	table.setStringKey(present, valueInteger(73));
 	require(table.hashFree() == 0,
 		"a direct main-bucket insertion has not searched the only free-slot candidate");
-	auto reuse = cpu.createTable(0, 1);
+	auto reuse = bmsx::test::allocateTableReference(cpu, 0, 1);
 	reuse.setStringKey(present, valueInteger(73));
 	reuse.setStringKey(present, valueNil());
 	require(reuse.setStringKey(missing, valueInteger(19)) == 0 && reuse.hashSlots() == 1u,
@@ -357,11 +358,11 @@ void fullHashGrowsAndRetainsMappings(CPU& cpu) {
 void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("field");
 	const auto indexKey = cpu.stringPool().intern("__index");
-	auto parent = cpu.createTable(0, 2);
+	auto parent = bmsx::test::allocateTableReference(cpu, 0, 2);
 	parent.setStringKey(key, valueBool(false));
-	auto metatable = cpu.createTable(0, 1);
+	auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
 	metatable.setStringKey(indexKey, valueTable(parent.address()));
-	auto child = cpu.createTable();
+	auto child = bmsx::test::allocateTableReference(cpu);
 	child.setMetatableAddress(metatable.address());
 	TableLookupResult result;
 	child.resolveStringIndex(key, result);
@@ -385,7 +386,7 @@ void inheritedAndFullWordKeys(CPU& cpu, Memory& memory) {
 	require(result.value == valueBool(false) && result.extraVisits == 0,
 		"an own field stops traversal even when its value is false");
 
-	auto raw = cpu.createTable(0, 8);
+	auto raw = bmsx::test::allocateTableReference(cpu, 0, 8);
 	const Value integerKey = valueInteger(BLUA32_FLOAT_NAN);
 	raw.set(integerKey, valueInteger(14));
 	require(isNil(raw.get(valueFloatBits(0x7fa12345u))) && isNil(raw.get(valueNil())) && raw.get(integerKey) == valueInteger(14),

@@ -8,6 +8,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <iostream>
@@ -69,7 +70,7 @@ void checkReferences(CPU& cpu) {
 void markIssuedWhiteHeader() {
 	Machine machine;
 	auto& gc = machine.cpu.gcHeap();
-	const u32 table = machine.cpu.createTable().address();
+	const u32 table = bmsx::test::allocateTableReference(machine.cpu).address();
 	const u32 raw = DYNAMIC_RAM_BASE + 0x600;
 	const u32 header = static_cast<u32>(ValueTag::Table) | ((0xfcu | gc.white()) << 8u);
 	machine.memory.writeRamRecordWord(raw, header);
@@ -90,20 +91,20 @@ void liveReferencesAndReuse() {
 	require(valuePayload(captured) == closure, "the register contains the raw closure address");
 	require(cpu.gcHeap().closureRecordAddress(cell) == 0u, "a cell address cannot resolve to a closure");
 	checkReferences(cpu);
-	auto roots = cpu.createTable(512);
+	auto roots = bmsx::test::allocateTableReference(cpu, 512);
 	frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
 	ValueStorage slots(400);
 	for (size_t i = 0; i < slots.capacity(); ++i) {
-		auto table = cpu.createTable(); roots.setInteger(static_cast<int>(i + 1), valueTable(table.address()));
+		auto table = bmsx::test::allocateTableReference(cpu); roots.setInteger(static_cast<int>(i + 1), valueTable(table.address()));
 		slots.words()[i] = table.address(); slots.tags()[i] = static_cast<u8>(ValueTag::Table);
 	}
 	cpu.collectHeap();
 	for (size_t i = 0; i < slots.capacity(); ++i)
 		require(cpu.gcHeap().tableRecordAddress(slots.words()[i]) == valuePayload(roots.getInteger(static_cast<int>(i + 1))), "32-bit payloads survive allocation growth and collection");
 	checkReferences(cpu);
-	auto dead = cpu.createTable(); const u32 freeId = dead.address();
+	auto dead = bmsx::test::allocateTableReference(cpu); const u32 freeId = dead.address();
 	cpu.collectHeap();
-	auto replacement = cpu.createTable();
+	auto replacement = bmsx::test::allocateTableReference(cpu);
 	require(replacement.address() == freeId, "a freed guest record address becomes available again");
 	require(cpu.gcHeap().tableRecordAddress(freeId) == replacement.address(), "the recycled address names the new RAM record");
 	frame.registers.set(2,valueTable(replacement.address())); frame.writeControl(bmsx::FrameField::Top, 3);
@@ -112,11 +113,11 @@ void liveReferencesAndReuse() {
 void restoreRebindsWithoutRetainingDiscardedFutures() {
 	Machine machine; auto& cpu = machine.cpu;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	auto roots = cpu.createTable(4); frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
-	for (int i = 1; i <= 4; ++i) roots.setInteger(i, valueTable(cpu.createTable().address()));
+	auto roots = bmsx::test::allocateTableReference(cpu, 4); frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
+	for (int i = 1; i <= 4; ++i) roots.setInteger(i, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	// Leave holes before saving, then consume them on a discarded timeline.
-	cpu.createTable();
-	cpu.createTable();
+	bmsx::test::allocateTableReference(cpu);
+	bmsx::test::allocateTableReference(cpu);
 	cpu.collectHeap();
 	const auto saved = cpu.captureRuntimeState();
 	const auto ram = cpu.memory().captureSaveState();
@@ -124,7 +125,7 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 	const Value fourth = roots.getInteger(4);
 	for (int iteration = 0; iteration < 64; ++iteration) {
 		std::array<u32, 12> future{};
-		for (auto& address : future) address = cpu.createTable().address();
+		for (auto& address : future) address = bmsx::test::allocateTableReference(cpu).address();
 		cpu.memory().restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
 		const Value restoredRoots = cpu.rootThread()->currentFrame->registers.get(0);
@@ -136,8 +137,8 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 		const auto restored = cpu.captureRuntimeState();
 		require(saved == restored,
 			"restore preserves physical record identities");
-		auto first = cpu.createTable();
-		auto second = cpu.createTable();
+		auto first = bmsx::test::allocateTableReference(cpu);
+		auto second = bmsx::test::allocateTableReference(cpu);
 		require(first.address() == future[0] && second.address() == future[1],
 			"the allocator resumes its physical free chain from the RAM image");
 		cpu.memory().restoreSaveState(ram);
@@ -147,10 +148,10 @@ void restoreRebindsWithoutRetainingDiscardedFutures() {
 
 void incrementalRestore() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
-	auto roots = cpu.createTable(1024); frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
+	auto roots = bmsx::test::allocateTableReference(cpu, 1024); frame.registers.set(0,valueTable(roots.address())); frame.writeControl(bmsx::FrameField::Top, 2);
 	for (int i = 1; i <= 1000; ++i) {
-		roots.setInteger(i, valueTable(cpu.createTable(1, 1).address()));
-		auto dead = cpu.createTable(1); dead.setInteger(1, valueTable(cpu.createTable().address()));
+		roots.setInteger(i, valueTable(bmsx::test::allocateTableReference(cpu, 1, 1).address()));
+		auto dead = bmsx::test::allocateTableReference(cpu, 1); dead.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 	}
 	std::unordered_set<GcPhase> phases;
 	for (int step = 0; step < 1000; ++step) {
@@ -168,7 +169,7 @@ void incrementalRestore() {
 
 void builtinIdentitiesStayOutsideTheGcHeap() {
 	Machine machine; auto& cpu = machine.cpu; auto& frame = *cpu.rootThread()->currentFrame;
-	auto functions = cpu.createTable(BUILTIN_FUNCTION_COUNT);
+	auto functions = bmsx::test::allocateTableReference(cpu, BUILTIN_FUNCTION_COUNT);
 	frame.registers.set(0,valueTable(functions.address())); frame.writeControl(bmsx::FrameField::Top, 2);
 	const auto before = test::allocatedObjectRecords(cpu);
 	for (size_t i = 0; i < BUILTIN_FUNCTION_COUNT; ++i)
@@ -266,8 +267,8 @@ void sweepResumesAfterPublishingAndRestoring() {
 	Machine machine;
 	auto& cpu = machine.cpu;
 	auto& gc = cpu.gcHeap();
-	const u32 dead = cpu.createTable().address();
-	auto keep = cpu.createTable();
+	const u32 dead = bmsx::test::allocateTableReference(cpu).address();
+	auto keep = bmsx::test::allocateTableReference(cpu);
 	cpu.rootThread()->currentFrame->registers.set(0, valueTable(keep.address()));
 	while (gc.phase() != GcPhase::Sweep) gc.step(valueNil(), valueNil(), valueNil());
 
@@ -277,7 +278,7 @@ void sweepResumesAfterPublishingAndRestoring() {
 	const auto oldRam = cpu.memory().captureSaveState();
 	const auto oldState = cpu.captureRuntimeState();
 	const auto finish = [&] {
-		const auto fresh = cpu.createTable().address();
+		const auto fresh = bmsx::test::allocateTableReference(cpu).address();
 		require(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1) == 1
 			&& gc.tableRecordAddress(dead) == 0u, "a new head does not disturb the suspended sweep cursor");
 		while (gc.active()) gc.step(valueNil(), valueNil(), valueNil());
@@ -295,7 +296,7 @@ void sweepResumesAfterPublishingAndRestoring() {
 
 void isolatedHeaps() {
 	Machine first, second;
-	auto a = first.cpu.createTable(); auto b = second.cpu.createTable();
+	auto a = bmsx::test::allocateTableReference(first.cpu); auto b = bmsx::test::allocateTableReference(second.cpu);
 	const u32 ar = a.address(), br = b.address();
 	require(ar == br, "equally initialized heaps allocate the same guest addresses");
 	a.setInteger(1, valueInteger(73));

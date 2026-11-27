@@ -13,6 +13,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <array>
 #include <cstring>
@@ -754,7 +755,7 @@ void cachedValuesReachFieldMemoryAndFaultOwners() {
 	constexpr u32 address = DYNAMIC_RAM_BASE + 0x1000;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* machine : {&native, &scalar}) {
-		auto table = machine->cpu.createTable(0, 2);
+		auto table = bmsx::test::allocateTableReference(machine->cpu, 0, 2);
 		table.setStringKey(machine->cpu.stringPool().intern("stable"), valueInteger(22));
 		table.setStringKey(machine->cpu.stringPool().intern("result"), valueInteger(0));
 		auto& frame = *machine->cpu.activeThread()->frameAtDepth(0);

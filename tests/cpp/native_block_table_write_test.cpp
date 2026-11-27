@@ -9,6 +9,7 @@
 #include "support/native_region_fixture.h"
 #include "support/managed_fixture.h"
 #include "support/thread_allocation_reference.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -34,7 +35,7 @@ void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
 	const std::array keys{cpu.stringPool().intern("left"), cpu.stringPool().intern("right"), cpu.stringPool().intern("last")};
 	std::array values{valueInteger(19), valueInteger(43), valueInteger(91)};
 	ValueSlots constants(keys.size());
-	auto table = cpu.createTable(0, 4);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 4);
 	for (size_t i = 0; i < keys.size(); ++i) {
 		constants.set(i, valueString(keys[i]));
 		table.setStringKey(keys[i], values[i]);
@@ -81,7 +82,7 @@ void retainedFieldAddressesKeepIndependentLifetimes(CPU& cpu, Memory& memory) {
 
 void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 	const auto x = cpu.stringPool().intern("x");
-	auto particle = cpu.createTable(0, 1);
+	auto particle = bmsx::test::allocateTableReference(cpu, 0, 1);
 	ValueSlots constants(1); constants.set(0, valueString(x));
 	std::array<DecodedInstruction, 5> ops{};
 	std::array<NativeBlockInstruction, 5> instructions{};
@@ -148,9 +149,9 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const u32 indexKeyOffset = cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
 	const auto* indexKeyWord = memory.ramData() + indexKeyOffset;
 	const StringId key = cpu.stringPool().intern("inherited method");
-	auto root = cpu.createTable(3, 4), middle = cpu.createTable(0, 1), holder = cpu.createTable(2, 4);
+	auto root = bmsx::test::allocateTableReference(cpu, 3, 4), middle = bmsx::test::allocateTableReference(cpu, 0, 1), holder = bmsx::test::allocateTableReference(cpu, 2, 4);
 	root.setInteger(1, valueInteger(123));
-	auto firstMeta = cpu.createTable(0, 1), secondMeta = cpu.createTable(0, 1);
+	auto firstMeta = bmsx::test::allocateTableReference(cpu, 0, 1), secondMeta = bmsx::test::allocateTableReference(cpu, 0, 1);
 	firstMeta.setStringKey(indexKey, valueTable(middle.address()));
 	secondMeta.setStringKey(indexKey, valueTable(holder.address()));
 	root.setMetatableAddress(firstMeta.address());
@@ -214,7 +215,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	// A generated and already-trained GETFIELD uses the authoritative RAM
 	// selector on each actual miss, including after a RAM-only restore.
 	const auto replacement = cpu.stringPool().intern("firmware-authored __index");
-	auto alternative = cpu.createTable(0, 2);
+	auto alternative = bmsx::test::allocateTableReference(cpu, 0, 2);
 	alternative.setStringKey(key, valueInteger(81));
 	firstMeta.setStringKey(replacement, valueTable(alternative.address()));
 	memory.writeRamRecordWord(indexKeyOffset, replacement);
@@ -251,8 +252,8 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	require(cpu.gcHeap().tableRecordAddress(holder.address()) == 0, "the old holder really retired");
 	// Request only object headers: backing allocations are a different owner
 	// and could occupy the freed address before an object can reuse it.
-	auto reused = cpu.createTable();
-	for (int i = 0; i < 8 && reused.address() != holder.address(); ++i) reused = cpu.createTable();
+	auto reused = bmsx::test::allocateTableReference(cpu);
+	for (int i = 0; i < 8 && reused.address() != holder.address(); ++i) reused = bmsx::test::allocateTableReference(cpu);
 	require(reused.address() == holder.address(), "the probe actually reuses the old owner's guest address");
 	reused.setStringKey(key, valueInteger(44));
 	read(valueNil(), 1);
@@ -267,7 +268,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 	const auto other = cpu.stringPool().intern("other read field");
 	ValueSlots constants(1); constants.set(0, valueString(key));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
-		valueFloatBits(0xffa12345u), valueTable(cpu.createTable().address()), valueString(other), valueNil()};
+		valueFloatBits(0xffa12345u), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueString(other), valueNil()};
 	for (const auto op : {OpCode::GETFIELD, OpCode::SELF, OpCode::GETT}) for (bool alias : {false, true}) {
 		std::array<DecodedInstruction, 7> decoded{};
 		std::array<NativeBlockInstruction, 7> source{};
@@ -288,9 +289,9 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 		decoded[6].setBx(0x2000u);
 		const int cycles = instructionCharge(decoded);
 		auto block = test::compileNative(source, memory, cpu.stringPool());
-		auto table = cpu.createTable(0, 8);
-		auto parent = cpu.createTable(0, 1);
-		auto meta = cpu.createTable(0, 1);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 8);
+		auto parent = bmsx::test::allocateTableReference(cpu, 0, 1);
+		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		meta.setStringKey(indexKey, valueTable(parent.address())); table.setMetatableAddress(meta.address());
 		for (const Value value : values) for (const int prediction : {-1, 100000}) {
 			parent.setStringKey(key, value);
@@ -379,7 +380,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 		require(block->run(registers.view(), state) == exit, "string receivers retain the existing typed semantic path");
 	}
 
-	auto table = cpu.createTable(0, 1);
+	auto table = bmsx::test::allocateTableReference(cpu, 0, 1);
 	const auto ownSlot = table.setStringKey(key, valueInteger(59));
 	constants.resize(2);
 	for (const auto receiver : {valueTable(table.address()), valueString(other)}) {
@@ -440,8 +441,8 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		suffix.baseCycles = BASE_CYCLES[suffix.op];
 		const std::array source{NativeBlockInstruction{&lookup, 0x1000u}, NativeBlockInstruction{&suffix, 0x1004u}};
 		auto block = test::compileNative(source, memory, cpu.stringPool());
-		auto table = cpu.createTable(0, 2), meta = cpu.createTable(2, 1);
-		auto holder = cpu.createTable(3, 1), nextHolder = cpu.createTable(1, 1);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 2), meta = bmsx::test::allocateTableReference(cpu, 2, 1);
+		auto holder = bmsx::test::allocateTableReference(cpu, 3, 1), nextHolder = bmsx::test::allocateTableReference(cpu, 1, 1);
 		holder.setStringKey(key, firstResult);
 		nextHolder.setStringKey(key, secondResult);
 		meta.setStringKey(indexKey, valueTable(holder.address()));
@@ -485,13 +486,13 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 			"the stale receiver prediction is absent while the live own mapping is in a collision node");
 		run(table, 100, secondResult, 0);
 
-		auto other = cpu.createTable();
+		auto other = bmsx::test::allocateTableReference(cpu);
 		other.setMetatableAddress(meta.address());
 		run(other, 100, firstResult);
 		meta.setStringKey(indexKey, valueTable(nextHolder.address()));
 		run(other, 100, secondResult);
 		nextHolder.setStringKey(key, valueNil());
-		auto nextMeta = cpu.createTable(0, 1);
+		auto nextMeta = bmsx::test::allocateTableReference(cpu, 0, 1);
 		nextMeta.setStringKey(indexKey, valueTable(holder.address()));
 		nextHolder.setMetatableAddress(nextMeta.address());
 		run(other, 100, firstResult, 2);
@@ -500,7 +501,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueBool(false));
 		run(other, 100, valueNil(), -1);
 
-		auto wide = cpu.createTable(0, 256);
+		auto wide = bmsx::test::allocateTableReference(cpu, 0, 256);
 		const int wideHome = wide.beginStringProbe(key).node;
 		Value head;
 		for (int i = 0;; ++i) {
@@ -512,7 +513,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 		wide.setStringKey(key, secondResult);
 		run(wide, 1, valueNil(), -1);
 		run(wide, 512, secondResult, 0);
-		auto wideMeta = cpu.createTable(0, 256);
+		auto wideMeta = bmsx::test::allocateTableReference(cpu, 0, 256);
 		const int metaHome = wideMeta.beginStringProbe(indexKey).node;
 		for (int i = 0;; ++i) {
 			head = valueInteger(i);
@@ -530,7 +531,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 	const StringId key = cpu.stringPool().intern("native write field");
 	ValueSlots constants(2); constants.set(0, valueString(key)); constants.set(1, valueFromTag(ValueTag::False, 37));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
-		valueFloatBits(0xffa12345u), valueTable(cpu.createTable().address()), valueString(key), valueNil()};
+		valueFloatBits(0xffa12345u), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueString(key), valueNil()};
 	for (bool generic : {false, true}) for (bool constant : {false, true}) {
 		std::array<DecodedInstruction, 6> decoded{};
 		std::array<NativeBlockInstruction, 6> source{};
@@ -550,10 +551,10 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		decoded[5].setBx(0x2000);
 		const int cycles = instructionCharge(decoded);
 		auto block = test::compileNative(source, memory, cpu.stringPool());
-		auto parent = cpu.createTable(0, 1); parent.setStringKey(key, valueInteger(71));
-		auto meta = cpu.createTable(0, 1); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
+		auto parent = bmsx::test::allocateTableReference(cpu, 0, 1); parent.setStringKey(key, valueInteger(71));
+		auto meta = bmsx::test::allocateTableReference(cpu, 0, 1); meta.setStringKey(cpu.stringPool().intern("__index"), valueTable(parent.address()));
 		for (size_t n = 0; n < values.size(); ++n) {
-			auto table = cpu.createTable(0, 8); table.setMetatableAddress(meta.address());
+			auto table = bmsx::test::allocateTableReference(cpu, 0, 8); table.setMetatableAddress(meta.address());
 			// Different receiver layouts share this one prediction site.
 			for (size_t prior = 0; prior < n; ++prior)
 				table.setStringKey(cpu.stringPool().intern("prior_" + std::to_string(prior)), valueInteger(prior));
@@ -582,7 +583,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		}
 		// Growth is the only table-store case which can allocate. It must still
 		// leave generated code before any mutation, publishing all live roots.
-		auto empty = cpu.createTable();
+		auto empty = bmsx::test::allocateTableReference(cpu);
 		ValueSlots registers(10);
 		registers.set(0, valueTable(empty.address())); registers.set(3, values[3]); registers.set(4, values[3]);
 		NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
@@ -593,7 +594,7 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 		require(registers.get(8) == values[3] && registers.get(2) == values[3] && isNil(registers.get(9)),
 			"growth publishes the prefix roots without executing the suffix");
 
-		auto full = cpu.createTable(0, 1);
+		auto full = bmsx::test::allocateTableReference(cpu, 0, 1);
 		const auto resident = cpu.stringPool().intern("resident field");
 		full.setStringKey(resident, valueInteger(71));
 		require(full.hashSlots() == 1 && full.hashFree() == 0, "the full hash still has a live free cursor");
@@ -630,8 +631,8 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 	}
 }
 void compactArraySlots(CPU& cpu, Memory& memory) {
-	auto table = cpu.createTable(4, 2);
-	auto model = cpu.createTable(4, 2);
+	auto table = bmsx::test::allocateTableReference(cpu, 4, 2);
+	auto model = bmsx::test::allocateTableReference(cpu, 4, 2);
 	const Value ref = valueTable(table.address());
 	for (const bool generic : {false, true}) {
 		DecodedInstruction write{}, read{};
@@ -667,8 +668,8 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			}
 		}
 		if (generic) {
-			auto child = cpu.createTable();
-			auto metatable = cpu.createTable(0, 1);
+			auto child = bmsx::test::allocateTableReference(cpu);
+			auto metatable = bmsx::test::allocateTableReference(cpu, 0, 1);
 			metatable.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
 			table.setMetatableAddress(metatable.address());
 			model.setMetatableAddress(metatable.address());
@@ -684,7 +685,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			const u32 previousLink = memory.readRamRecordWord(header + GC_RECORD_LINK);
 			const u32 weakLink = previousLink & ~GC_GRAY_INDEX_MASK;
 			require(weakLink != 0, "the table is also linked to a second weak table");
-			model.setInteger(1, valueTable(cpu.createTable().address()));
+			model.setInteger(1, valueTable(bmsx::test::allocateTableReference(cpu).address()));
 			const u32 previousHead = memory.readRamRecordWord(head);
 			require(previousHead == ((model.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
 			state.remainingCycles = 100;
@@ -712,8 +713,8 @@ void remarkTableStoresForwardTheCommittedValue() {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		test::seedManagedHeapFixture(cpu);
-		auto owner = field ? cpu.createTable(0, 1) : cpu.createTable(2, 0);
-		const Value child = field ? valueThread(bmsx::test::allocateThreadRecordReference(cpu, 0u)) : valueTable(cpu.createTable().address());
+		auto owner = field ? bmsx::test::allocateTableReference(cpu, 0, 1) : bmsx::test::allocateTableReference(cpu, 2, 0);
+		const Value child = field ? valueThread(bmsx::test::allocateThreadRecordReference(cpu, 0u)) : valueTable(bmsx::test::allocateTableReference(cpu).address());
 		const auto name = cpu.stringPool().intern("remark field");
 		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
 		const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;
@@ -763,7 +764,7 @@ void remarkTableStoresForwardTheCommittedValue() {
 }
 
 void firstPrivateArrayWriteMarksAllHistoryPages(CPU& cpu, Memory& memory) {
-	auto table = cpu.createTable(4096, 0);
+	auto table = bmsx::test::allocateTableReference(cpu, 4096, 0);
 	const u32 words = table.arrayAddress(), tags = words + table.arrayCapacity() * sizeof(u32);
 	const u32 hint = table.address() + static_cast<u32>(TableHeader::Length);
 	const std::array pages{(words & RAM_RECORD_WORD_MASK) >> MAPPED_PAGE_BYTE_SHIFT,
@@ -811,11 +812,11 @@ void boundaryLengthRetainsNativeFrame(CPU& cpu, Memory& memory) {
 	decoded[2].a = 5; decoded[2].b = 6;
 	decoded[3].setBx(0x2000);
 	auto block = test::compileNative(source, memory, cpu.stringPool());
-	const Value root = valueTable(cpu.createTable().address());
+	const Value root = valueTable(bmsx::test::allocateTableReference(cpu).address());
 	const int cycles = instructionCharge(decoded);
 	const int prefixCycles = instructionCharge(std::span(decoded).first<2>());
 	for (const i32 expected : {1 << 30, INT32_MAX}) {
-		auto table = cpu.createTable(0, 128);
+		auto table = bmsx::test::allocateTableReference(cpu, 0, 128);
 		for (int bit = 30; bit >= 0; --bit) table.set(valueInteger(i32{1} << bit), valueBool(false));
 		if (expected == INT32_MAX) table.set(valueInteger(expected), valueBool(false));
 		ValueSlots registers(7);
@@ -863,7 +864,7 @@ void guardedTableFactsFollowRegisterDefinitions(CPU& cpu, Memory& memory) {
 		decoded[4].a = 5; decoded[4].b = 0; decoded[4].c = 1;
 		decoded[5].setBx(0x4000u);
 		auto block = test::compileNative(source, memory, cpu.stringPool());
-		auto table = cpu.createTable(2);
+		auto table = bmsx::test::allocateTableReference(cpu, 2);
 		table.setInteger(1, valueInteger(23));
 		for (const Value first : {valueTable(table.address()), valueNil()}) for (const Value next : {valueTable(table.address()), valueNil()}) {
 			ValueSlots registers(6);
@@ -921,7 +922,7 @@ void tableFactsAreValidatedAtIndependentRegionEntries(CPU& cpu, Memory& memory) 
 		require(block != blocks.end(), "each independent entry is published at its guest PC");
 		entries[i] = block->get();
 	}
-	auto table = cpu.createTable(2); table.setInteger(1, valueInteger(23));
+	auto table = bmsx::test::allocateTableReference(cpu, 2); table.setInteger(1, valueInteger(23));
 	for (const auto* entry : entries) for (const bool valid : {false, true}) {
 		ValueSlots registers(7);
 		for (int guest : {0, 1, 4, 6}) registers.set(guest, valid ? valueTable(table.address()) : valueNil());
@@ -995,7 +996,7 @@ void entryGuardsFollowConsumedTableFacts(CPU& cpu, Memory& memory) {
 		require(exit->exit == NativeBlockExit::ScalarBoundary && exit->nextPc == 0x5008u
 			&& !exit->operands.replay.hasCompletedInstruction && registers.get(5) == valueNil(),
 			"a copied receiver requires admission before its first downstream use");
-		auto table = cpu.createTable(2); table.setInteger(1, valueInteger(23));
+		auto table = bmsx::test::allocateTableReference(cpu, 2); table.setInteger(1, valueInteger(23));
 		registers.set(0, valueTable(table.address())); state.remainingCycles = 100;
 		const auto* hit = blocks[1]->run(registers.view(), state);
 		require(hit->exit == NativeBlockExit::Continue && hit->nextPc == decoded[5].bx() && registers.get(3) == valueInteger(23),

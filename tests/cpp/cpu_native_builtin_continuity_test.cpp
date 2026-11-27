@@ -12,6 +12,7 @@
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/table_allocation_reference.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
@@ -86,7 +87,7 @@ struct Machine {
 			r.set(13, valueFloat(position));
 			expected = position == 3 ? valueInteger(3) : valueNil();
 		} else {
-			target = cpu.createTable(); meta = cpu.createTable();
+			target = bmsx::test::allocateTableReference(cpu); meta = bmsx::test::allocateTableReference(cpu);
 			target->setMetatableAddress(meta->address());
 			r.set(13, mode == 3 ? valueInteger(17) : valueTable(target->address()));
 			r.set(14, mode == 1 ? valueNil() : mode == 2 ? valueBool(false) : valueTable(meta->address()));

@@ -3,6 +3,7 @@
 #include "support/number32_cpu_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/closure_fixture.h"
+#include "support/table_allocation_reference.h"
 
 #include <algorithm>
 #include <iostream>
@@ -107,7 +108,7 @@ void methodReceivers() {
 				for (auto* machine : {&native, &scalar}) {
 					Value base = kind == 1 ? valueInteger(-1) : kind == 2 ? valueFloatBits(0xffa12345) : valueBool(false);
 					if (kind == 0) {
-						auto table = machine->cpu.createTable();
+						auto table = bmsx::test::allocateTableReference(machine->cpu);
 						table.setStringKey(machine->cpu.stringPool().intern("method"), valueInteger(77));
 						base = valueTable(table.address());
 					}
@@ -189,7 +190,7 @@ void lengths() {
 				if (kind == 0)
 					value = valueString(m->cpu.stringPool().intern("A\xf0\x9f\x98\x80\xe2\x82\xac"));
 				else if (kind == 1 || kind == 2) {
-					auto table = m->cpu.createTable(8, 8);
+					auto table = bmsx::test::allocateTableReference(m->cpu, 8, 8);
 					for (int i = 1; i <= (kind == 1 ? 8 : 20); ++i)
 						table.setInteger(i, valueBool(true));
 					if (kind == 2)
@@ -290,10 +291,10 @@ void nativeClosedBarrierOracleAfterHeapGrowth() {
 	// The bare image is the independent native collector oracle. The linked
 	// SETUP conformance fixture exercises interpreter and generated BIOS ingress.
 	Number32Machine m(capturedChunk(true));
-	for (int n = 0; n < 600; ++n) m.cpu.createTable();
+	for (int n = 0; n < 600; ++n) bmsx::test::allocateTableReference(m.cpu);
 	const auto closure = beginCaptured(m);
 	const auto cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
-	auto child = m.cpu.createTable(1);
+	auto child = bmsx::test::allocateTableReference(m.cpu, 1);
 	child.setInteger(1, valueInteger(123));
 	m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
 	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3,
