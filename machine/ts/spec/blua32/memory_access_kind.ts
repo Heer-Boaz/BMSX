@@ -5,6 +5,7 @@ export const enum MemoryAccessKind {
 	U32LE = 3,
 	F32LE = 4,
 	F64LE = 5,
+	Value = 6, // Fixed System activation only.
 }
 
-export const MEMORY_ACCESS_KIND_ALIGNMENT_MASKS = [3, 0, 1, 3, 3, 3] as const;
+export const MEMORY_ACCESS_KIND_ALIGNMENT_MASKS = [3, 0, 1, 3, 3, 3, 3] as const;

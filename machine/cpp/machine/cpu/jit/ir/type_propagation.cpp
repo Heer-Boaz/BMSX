@@ -296,6 +296,7 @@ struct NativeTypePropagation::Transfer {
 	}
 
 	void operator()(NativeMemoryAccess& op) const {
+		if (op.format == MemoryAccessKind::Value) return; // The checked port transfers an arbitrary tag.
 		op.addressCheck = check(0, ValueTag::Integer);
 		if (op.addressCheck == NativeTagCheck::Dynamic)
 			facts.define(values.inputs[0], ValueTag::Integer);

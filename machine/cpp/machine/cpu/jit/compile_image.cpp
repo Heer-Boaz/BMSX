@@ -62,7 +62,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 			m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 			if (!binding.cacheable || binding.writeWatch.groups || (!verified && !binding.readBytes)) return nullptr;
 			if (requested && !requested->include(address)) return nullptr;
-			auto& page = image.nativeSourceDirectory(privateFirmware).bind(binding);
+			auto& page = image.decodedDirectory(privateFirmware).bind(binding);
 			source.emplace(page, address, busSignals, slot, verified);
 			source->firstPc = firstPc;
 			source->lastPc = endPc - INSTRUCTION_BYTES;

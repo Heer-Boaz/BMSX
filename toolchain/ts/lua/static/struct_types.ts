@@ -52,6 +52,7 @@ const PRIMITIVE_STRUCT_TYPES: ReadonlyMap<string, PrimitiveStructType> = new Map
 	['f64', { size: 8, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.F64LE } }],
 	['addr', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
 	['word', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.Word } }],
+	['value', { size: 8, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.Value } }],
 	['string', { size: 4, alignment: 4, access: { kind: 'const_pool' } }],
 ]);
 

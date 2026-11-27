@@ -107,7 +107,7 @@ export function deriveBlua32FixedStack(
 			if (rc < 0) admitConstant(-1 - rc, reject);
 			if (op === OpCode.LOADK) admitConstant(bx, reject);
 			if ((op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D)
-				&& c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8)
+				&& c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8 && c !== MemoryAccessKind.Value)
 				reject('not a heap-service memory format');
 			switch (op) {
 				case OpCode.CLOSURE: {

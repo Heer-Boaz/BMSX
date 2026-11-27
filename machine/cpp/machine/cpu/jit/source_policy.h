@@ -144,7 +144,8 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 			case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
 				return instruction.c == static_cast<int>(MemoryAccessKind::U8)
 					|| instruction.c == static_cast<int>(MemoryAccessKind::U32LE)
-					|| instruction.c == static_cast<int>(MemoryAccessKind::Word);
+					|| instruction.c == static_cast<int>(MemoryAccessKind::Word)
+					|| instruction.c == static_cast<int>(MemoryAccessKind::Value);
 			case OpCode::KSMI: case OpCode::K0: case OpCode::K1:
 			case OpCode::KNIL: case OpCode::KTRUE: case OpCode::KFALSE: case OpCode::LOADNIL:
 			case OpCode::LOADK: case OpCode::LOADKR:

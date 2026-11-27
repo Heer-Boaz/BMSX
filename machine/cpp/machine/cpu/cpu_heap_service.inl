@@ -25,7 +25,8 @@ static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuR
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_GC_ARGUMENTS_OFFSET);
 static_assert(HEAP_SERVICE_GC_ARGUMENTS_OFFSET + static_cast<u32>(HeapServiceGcArgumentField::PendingTop) + sizeof(u32)
-	<= HEAP_SERVICE_THREAD_OFFSET);
+	<= HEAP_SERVICE_VALUE_CELL_OFFSET);
+static_assert(HEAP_SERVICE_VALUE_CELL_OFFSET + HEAP_SERVICE_VALUE_CELL_SIZE <= HEAP_SERVICE_THREAD_OFFSET);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
@@ -177,6 +178,15 @@ void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {
 }
 
 void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
+	if (kind == MemoryAccessKind::Value) {
+		const u32 cell = RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_CELL_OFFSET;
+		if (address != cell) throw BMSX_RUNTIME_ERROR("Heap service Value access is outside its private cell.");
+		const auto word = m_memory.readRamRecordWord(address);
+		const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET));
+		frame.registers.set(destination, valueFromTag(tag, word));
+		frame.extendTop(destination + 1);
+		return;
+	}
 	admitHeapServiceAccess(kind, address);
 	u32 word;
 	if (address - RAM_BASE < m_memory.ramByteCount()) {
@@ -202,8 +212,16 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 }
 
 void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
-	admitHeapServiceAccess(kind, address);
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
+	if (kind == MemoryAccessKind::Value) {
+		if (address != management + HEAP_SERVICE_VALUE_CELL_OFFSET)
+			throw BMSX_RUNTIME_ERROR("Heap service Value access is outside its private cell.");
+		const Value value = frame.registers.get(source);
+		m_memory.writeRamRecordWord(address, valuePayload(value));
+		m_memory.writeRamRecordByte(address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET, static_cast<u8>(valueTag(value)));
+		return;
+	}
+	admitHeapServiceAccess(kind, address);
 	const u32 end = management + HEAP_SERVICE_THREAD_OFFSET;
 	if (address < m_memory.ramBusEnd() || address >= end)
 		throw BMSX_RUNTIME_ERROR("Heap service write is outside its private RAM port.");

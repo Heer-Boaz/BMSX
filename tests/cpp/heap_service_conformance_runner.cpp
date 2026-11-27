@@ -425,6 +425,17 @@ int main(int argc, char** argv) {
 					std::cout << cpu.gcHeap().step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
+				case ':': {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+					const auto& profile = cpu.nativeGateProfile();
+					std::cout << profile.privateFirmwareEntries << ' '
+						<< profile.exits[static_cast<size_t>(NativeBlockExit::ReadMemory)].entries << ' '
+						<< profile.exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries << '\n';
+#else
+					throw std::runtime_error("The native Value port proof requires the gate profile.");
+#endif
+					break;
+				}
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;
 				case 'F': std::cout << cpu.captureRuntimeState().hardHalted << '\n'; break;
 				case 'T': {

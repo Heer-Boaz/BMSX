@@ -213,6 +213,11 @@ void NativeLowering::emitRomReads() {
 void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const NativeInstruction& instruction) {
 	auto& slow = *sideExit(instruction.slow);
 	const auto kind = access.format;
+	if (kind == MemoryAccessKind::Value) {
+		// The private owner transfers both planes as one decoded instruction.
+		emitLeave(slow, Charge::Pending);
+		return;
+	}
 	const bool words = access.mode == NativeMemoryMode::StoreWords;
 	const bool load = access.mode == NativeMemoryMode::Load;
 	const u32 width = words ? static_cast<u32>(access.wordCount) * sizeof(u32)

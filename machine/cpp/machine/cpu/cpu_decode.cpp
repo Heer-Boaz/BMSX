@@ -172,7 +172,7 @@ void CPU::decodeInstructionWords(
 				decoded.setBx(usesDisp ? ext : decodedBx);
 				break;
 		}
-		if (rawC > static_cast<u32>(MemoryAccessKind::F64LE)
+		if (rawC > static_cast<u32>(page.privateFirmware ? MemoryAccessKind::Value : MemoryAccessKind::F64LE)
 			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
@@ -330,7 +330,7 @@ bool CPU::decodeBackedInstruction(
 			if (requested && !requested->include(bodyPc)) return false;
 			if (bodyBinding.readBytes) bodyWord = readLE32(bodyBinding.readBytes);
 			else if (!readPublishedWord(bodyPc, bodyWord)) return false;
-			bodyPage = &image.nativeSourceDirectory(page.privateFirmware).bind(bodyBinding);
+			bodyPage = &image.decodedDirectory(page.privateFirmware).bind(bodyBinding);
 		} else if (binding.readBytes) bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
 		else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
 	}

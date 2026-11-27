@@ -1822,12 +1822,18 @@ finite value as binary64. An F32LE Float load or store copies its 32-bit word,
 including NaN payloads and either zero sign. F64LE conversion does not promise preservation of NaN
 payload bits; a converted NaN load produces `7FC00000H`.
 
-A scalar load or store with C greater than 5 is a reserved instruction. It
-raises `ReservedInstruction` (exception code 10, Cause `00000028H`) with EPC at
-the instruction start, before address conversion, alignment checks or a data
-access. BadAddress and the Memory fault record are unchanged. The normal
-three-cycle base charge still applies. In counted word stores, C is a word count,
-not a scalar-format selector.
+A scalar load or store outside the fixed System activation with C greater than
+5 is a reserved instruction. It raises `ReservedInstruction` (exception code
+10, Cause `00000028H`) with EPC at the instruction start, before address
+conversion, alignment checks or a data access. BadAddress and the Memory fault
+record are unchanged. The normal three-cycle base charge still applies. In
+counted word stores, C is a word count, not a scalar-format selector.
+
+The fixed System activation also recognizes format 6 for transfers between a
+register and the System's dedicated Value cell. The transfer preserves the
+complete payload word and type tag without numeric conversion and does not
+perform a data-bus access. Executing ordinary code in System ROM does not make
+format 6 available.
 
 Address conversion and integer-store conversion use an Integer's raw bits.
 For a finite Float, they truncate toward zero and retain the low 32 bits.

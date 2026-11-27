@@ -37,13 +37,13 @@ DecodedInstructionPage& DecodedPageDirectory::bind(const MappedPageBinding& bind
 	return *page;
 }
 
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-DecodedPageDirectory& Blua32ExecutionImage::nativeSourceDirectory(bool privateFirmware) {
+DecodedPageDirectory& Blua32ExecutionImage::decodedDirectory(bool privateFirmware) {
 	if (!privateFirmware) return decodedPages;
 	if (!privateFirmwareCode) privateFirmwareCode = std::make_unique<PrivateFirmwareCode>();
 	return privateFirmwareCode->decoded;
 }
 
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 std::unique_ptr<NativeCodeLookup>& Blua32ExecutionImage::nativeLookup(bool privateFirmware) {
 	return privateFirmware ? privateFirmwareCode->lookup : nativeCodeLookup;
 }

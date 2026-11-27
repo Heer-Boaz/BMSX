@@ -183,6 +183,7 @@ import {
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
+	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS,
@@ -1375,16 +1376,17 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodedPageForAddress(
 		image: Blua32ExecutionImage,
-		address: number, key: number, slot: number,
+		address: number, key: number, slot: number, privateFirmware = false,
 	): DecodedInstructionPage {
-		const existing = image.decodedPages.get(key);
+		const pages = privateFirmware ? (image.privateDecodedPages ??= new Map()) : image.decodedPages;
+		const existing = pages.get(key);
 		if (existing !== undefined) {
 			return existing;
 		}
 		const binding = this.mappedPageBinding;
 		this.memory.bindMappedPage(address, mappedBusSignalsForCartridgeSlot(slot) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-		const page = createDecodedInstructionPage(binding);
-		image.decodedPages.set(binding.key, page);
+		const page = createDecodedInstructionPage(binding, privateFirmware);
+		pages.set(binding.key, page);
 		return page;
 	}
 
@@ -1486,25 +1488,31 @@ export class CPU implements MappedPageInvalidator {
 			}
 			if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE || (address >= CART_ROM_BASE && address < CART_ROM_END))
 				image.romCallBindings.invalidate();
-			for (const [key, page] of image.decodedPages) {
-				if (key >= invalidationStart && key < endKey) {
-					this.compiledCodeCache.retirePage(page);
-					this.memory.bindMappedPage(key >>> 0, mappedBusSignalsForCartridgeSlot(mappedPageDomainIndex(key) === 2 ? 1 : 0) | MAPPED_BUS_INSTRUCTION_FETCH, page);
-					page.refreshState.fill(DECODED_REFRESH_DECODE);
-				}
+			this.rebindDecodedRange(image.decodedPages, invalidationStart, endKey);
+			if (image.privateDecodedPages !== undefined && address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
+				this.rebindDecodedRange(image.privateDecodedPages, invalidationStart, endKey);
+		}
+	}
+
+	private rebindDecodedRange(pages: Map<number, DecodedInstructionPage>, firstKey: number, endKey: number): void {
+		for (const [key, page] of pages) {
+			if (key >= firstKey && key < endKey) {
+				this.compiledCodeCache.retirePage(page);
+				this.memory.bindMappedPage(key >>> 0, mappedBusSignalsForCartridgeSlot(mappedPageDomainIndex(key) === 2 ? 1 : 0) | MAPPED_BUS_INSTRUCTION_FETCH, page);
+				page.refreshState.fill(DECODED_REFRESH_DECODE);
 			}
 		}
 	}
 
-	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
+	private decodedPageForFrame(frame: CallFrame, pc: number, privateFirmware = false): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
+		const slot = privateFirmware ? 0 : this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const key = mappedPageAddressKey(pageAddress, slot);
 		const cached = frame.decodedPage;
-		if (cached !== null && cached.key === key) {
+		if (cached !== null && cached.key === key && cached.privateFirmware === privateFirmware) {
 			return cached;
 		}
-		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot);
+		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot, privateFirmware);
 		frame.decodedPage = page;
 		frame.compilationEntry = true;
 		return page;
@@ -1539,7 +1547,7 @@ export class CPU implements MappedPageInvalidator {
 		if (op === OpCode.WIDE) {
 			width = 2;
 			if (pageOffset === DECODED_PAGE_WORDS - 1) {
-				bodyPage = this.decodedPageForFrame(frame, (pc + INSTRUCTION_BYTES) >>> 0);
+				bodyPage = this.decodedPageForFrame(frame, (pc + INSTRUCTION_BYTES) >>> 0, page.privateFirmware);
 				instructionCacheable = instructionCacheable && bodyPage.cacheable;
 			}
 			wideA = (sourceWord >>> 12) & 0x3f;
@@ -1569,12 +1577,13 @@ export class CPU implements MappedPageInvalidator {
 			page.sourceWords[pageOffset] = sourceWord;
 			page.bodyWords[pageOffset] = bodyWord;
 			page.ops[pageOffset] = op;
+			const maxMemoryKind = page.privateFirmware ? MemoryAccessKind.Value : MemoryAccessKind.F64LE;
 			if (OPCODE_USES_DISP[op] !== 0) {
 				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
 				page.b[pageOffset] = (wideB << MAX_OPERAND_BITS) | bLow;
 				page.c[pageOffset] = (wideC << MAX_OPERAND_BITS) | cLow;
 				page.operandByte[pageOffset] = ext;
-				if (page.c[pageOffset] > MemoryAccessKind.F64LE
+				if (page.c[pageOffset] > maxMemoryKind
 					&& (op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				}
@@ -1612,7 +1621,7 @@ export class CPU implements MappedPageInvalidator {
 					page.tableCacheSlots[pageOffset] = -1;
 					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
-				if (rawC > MemoryAccessKind.F64LE && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
+				if (rawC > maxMemoryKind && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				} else {
 					const constantCount = image.constWords.length;
@@ -2593,7 +2602,7 @@ export class CPU implements MappedPageInvalidator {
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 						continue;
 					}
-					const page = this.decodedPageForFrame(frame, pc);
+					const page = this.decodedPageForFrame(frame, pc, service);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 						&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
@@ -2656,9 +2665,9 @@ export class CPU implements MappedPageInvalidator {
 		this.instructionBudgetRemaining -= cycles;
 	}
 
-	private skipNextInstruction(frame: CallFrame): void {
+	private skipNextInstruction(frame: CallFrame, privateFirmware = false): void {
 		const pc = frame.pc;
-		const page = this.decodedPageForFrame(frame, pc);
+		const page = this.decodedPageForFrame(frame, pc, privateFirmware);
 		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 			&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
@@ -3770,7 +3779,7 @@ export class CPU implements MappedPageInvalidator {
 					const rkC = page.c[pageOffset];
 					const eq = this.readRKEquals(frame, rkB, rkC);
 					if (eq !== (a !== 0)) {
-						this.skipNextInstruction(frame);
+						this.skipNextInstruction(frame, page.privateFirmware);
 					}
 					return;
 				}
@@ -3788,7 +3797,7 @@ export class CPU implements MappedPageInvalidator {
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) < 0;
 					}
-					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame, page.privateFirmware); return;
 				}
 
 				case OpCode.MFC0: {
@@ -3853,7 +3862,7 @@ export class CPU implements MappedPageInvalidator {
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) <= 0;
 					}
-					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame, page.privateFirmware); return;
 				}
 
 				case OpCode.JMP: {
@@ -4020,6 +4029,21 @@ export class CPU implements MappedPageInvalidator {
 
 	private executeHeapServiceAccess(frame: CallFrame, register: number, kind: MemoryAccessKind, address: number, load: boolean): void {
 		const memory = this.memory;
+		if (kind === MemoryAccessKind.Value) {
+			const cell = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_CELL_OFFSET;
+			if (address !== cell) throw new Error('Heap service Value access is outside its private cell.');
+			const tags = address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET;
+			const slots = frame.registers;
+			if (load) {
+				const word = memory.readRamRecordWord(address);
+				slots.setEncoded(register, memory.readRamRecordByte(tags), word);
+				this.bumpRegisterTop(frame, register);
+			} else {
+				memory.writeRamRecordWord(address, slots.getPayload(register));
+				memory.writeRamRecordByte(tags, slots.getTag(register));
+			}
+			return;
+		}
 		if ((kind !== MemoryAccessKind.Word && kind !== MemoryAccessKind.U32LE && kind !== MemoryAccessKind.U8)
 			|| (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			throw new Error('Heap service access requires an aligned byte or word.');

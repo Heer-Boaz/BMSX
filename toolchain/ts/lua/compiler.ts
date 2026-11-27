@@ -5341,6 +5341,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitMemoryLoad(target: number, accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, addrOffsetBytes: number | undefined): void {
+		if (accessKind === MemoryAccessKind.Value && this.program.programDomain !== 'system')
+			throw new Error('A typed Value view is only available to the fixed System activation.');
 		const byteOffset = addrOffsetBytes ?? 0;
 		if (addrReg !== undefined && this.canUseDisplacedMemoryOpcode(byteOffset)) {
 			this.emitABCd(OpCode.LOAD_MEM_D, target, addrReg, accessKind, byteOffset >> 2);
@@ -5354,6 +5356,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitMemoryStore(accessKind: MemoryAccessKind, addrConst: number | undefined, addrReg: number | undefined, addrOffsetBytes: number | undefined, valueReg: number): void {
+		if (accessKind === MemoryAccessKind.Value && this.program.programDomain !== 'system')
+			throw new Error('A typed Value view is only available to the fixed System activation.');
 		const byteOffset = addrOffsetBytes ?? 0;
 		if (addrReg !== undefined && this.canUseDisplacedMemoryOpcode(byteOffset)) {
 			this.emitABCd(OpCode.STORE_MEM_D, valueReg, addrReg, accessKind, byteOffset >> 2);

@@ -764,10 +764,8 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 			}
 		};
 		rebindPages(image->decodedPages);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		if (image->privateFirmwareCode && address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
 			rebindPages(image->privateFirmwareCode->decoded);
-#endif
 	}
 }
 
@@ -778,11 +776,7 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc, bool 
 	if (frame.decodedPage && frame.decodedPage->mapping.key == key && frame.decodedPage->privateFirmware == privateFirmware) {
 		return *frame.decodedPage;
 	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& directory = frame.executionImage->nativeSourceDirectory(privateFirmware);
-#else
-	auto& directory = frame.executionImage->decodedPages;
-#endif
+	auto& directory = frame.executionImage->decodedDirectory(privateFirmware);
 	auto* page = directory.find(key);
 	if (!page) {
 		MappedPageBinding binding;
@@ -1993,8 +1987,8 @@ RunResult CPU::runLoop(
 	} \
 } while (0)
 	bool canReuseFrame = false;
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	constexpr bool privateFirmware = HeapService;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState(*this, targetDepth);
@@ -2011,8 +2005,6 @@ RunResult CPU::runLoop(
 		} \
 	} \
 } while (0)
-#else
-	constexpr bool privateFirmware = false;
 #endif
 	for (;;) {
 		try {
@@ -2157,9 +2149,7 @@ dispatch_decode:
 			m_lastExecutionDomainId = image->executionDomainId;
 			lastPc = nextPc - INSTRUCTION_BYTES;
 			uint8_t dispatchOp;
-			if constexpr (HeapService && !privateFirmware) {
-				dispatchOp = decoded->op;
-			} else if constexpr (Instrumented) {
+			if constexpr (Instrumented) {
 				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
 					? decoded->dispatchOp : decoded->op;
 			} else {

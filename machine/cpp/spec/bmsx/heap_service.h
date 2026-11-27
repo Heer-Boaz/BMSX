@@ -137,4 +137,9 @@ enum class HeapServiceProjection : uint32_t {
 constexpr uint32_t HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 enum class HeapServiceGcArgumentField : uint32_t { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 };
 
+// One reserved Value cell: the payload word, then its separate tag byte.
+constexpr uint32_t HEAP_SERVICE_VALUE_CELL_OFFSET = 0x7a0u;
+constexpr uint32_t HEAP_SERVICE_VALUE_CELL_TAG_OFFSET = 4u;
+constexpr uint32_t HEAP_SERVICE_VALUE_CELL_SIZE = 8u;
+
 } // namespace bmsx

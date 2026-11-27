@@ -199,16 +199,18 @@ struct Blua32ExecutionImage {
 	NativeImageWarmup nativeWarmup;
 	// Dispatch storage outlives the decoded descriptors which borrow its cells.
 	std::unique_ptr<NativeCodeLookup> nativeCodeLookup;
+	std::unique_ptr<NativeCodeLookup>& nativeLookup(bool privateFirmware);
+#endif
 	// An ordinary System activation and a fixed BIOS activation can share the
 	// same physical ROM PC. Their links and decoded dispatch metadata cannot.
 	struct PrivateFirmwareCode {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		std::unique_ptr<NativeCodeLookup> lookup;
+#endif
 		DecodedPageDirectory decoded{true};
 	};
 	std::unique_ptr<PrivateFirmwareCode> privateFirmwareCode;
-	DecodedPageDirectory& nativeSourceDirectory(bool privateFirmware);
-	std::unique_ptr<NativeCodeLookup>& nativeLookup(bool privateFirmware);
-#endif
+	DecodedPageDirectory& decodedDirectory(bool privateFirmware);
 	DecodedPageDirectory decodedPages;
 private:
 	RomCallBinding* loadRomFunction(const Memory&, u32 address, RomCallBinding&);

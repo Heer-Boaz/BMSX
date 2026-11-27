@@ -22,6 +22,8 @@ return {
 	trace_string_work_offset = 12,
 	effect_offset = 0x788,
 	arguments_offset = 0x790,
+	value_cell_offset = 0x7a0,
+	value_cell_tag_offset = 4,
 	remaining_device_cycles_address = 0x02c00000,
 	management_address = 0x02c00004,
 	publish_roots = 0,

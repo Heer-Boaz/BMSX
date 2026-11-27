@@ -53,6 +53,7 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			m_memory.writeMappedF64LE(address, valueIsInteger(value) ? static_cast<double>(asInteger(value)) : static_cast<double>(asFloat(value))); break;
+		case MemoryAccessKind::Value: BMSX_UNREACHABLE(); // The ordinary decoder rejects this format.
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
