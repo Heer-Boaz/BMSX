@@ -4,7 +4,7 @@ import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -28,7 +28,8 @@ import {
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
-	COP0_EXEC, COP0_CONTEXT, COP0_RAM_END, COP0_SYSTEM_VECTOR, COP0_PREVIOUS_ACTIVE,
+	COP0_EXEC, COP0_CONTEXT, COP0_RAM_END, COP0_SYSTEM_VECTOR, COP0_PREVIOUS_ACTIVE, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR,
+	CPU_EXCEPTION_TARGET_ADDRESS_MASK, CPU_EXCEPTION_TARGET_SOCKET_SHIFT, CPU_INTERRUPT_STATE_HALT,
 	COP0_LUA_FAULT_REASON,
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
@@ -304,6 +305,7 @@ export class CPU implements MappedPageInvalidator {
 	public activeThread: Thread;
 	private unpublishedRomMask: ExecutionDomainMask = 0;
 	private readonly threadBanks: readonly Thread[];
+	private readonly irqThread: Thread;
 	private completionThread = 0;
 	private readonly inspectionThreadLayout = new ThreadLayout();
 	private readonly inspectionThreadValues = new ValueSlots(0);
@@ -444,6 +446,7 @@ export class CPU implements MappedPageInvalidator {
 		this.irqPreludeArgs = [management, 0, 0];
 		this.rootThread = new Thread(this.gc);
 		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
+		this.irqThread = new Thread(this.gc);
 		this.activeThread = this.rootThread;
 		this.memory.attachMappedPageInvalidator(this);
 	}
@@ -465,9 +468,18 @@ export class CPU implements MappedPageInvalidator {
 		this.rootThread.bindAddress(CPU_RESET_BANK_ADDRESS);
 		this.rootThread.bindStack();
 		this.rootThread.reserveFrameViews(CPU_FIXED_FRAME_COUNT);
+		memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0, 0);
+		memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, 0);
+		this.irqThread.bindAddress(0);
 		this.rootThread.status = ThreadStatus.Running;
 		this.activeThread = this.rootThread;
 		this.completionThread = CPU_RESET_BANK_ADDRESS;
+	}
+
+	private bindFixedIrqBank(): void {
+		this.irqThread.bindAddress(CPU_RESET_BANK_ADDRESS);
+		this.irqThread.bindStack();
+		this.irqThread.reserveFrameViews(CPU_FIXED_FRAME_COUNT);
 	}
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): number {
@@ -872,13 +884,15 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public reset(): void {
+		if (this.fixedInterruptDefersReset()) throw new Error('System IRQ must retire before reset.');
 		if (this.heapServiceActive()) throw new Error('Heap service must retire before CPU reset.');
 		// Publish the last admitted execution context before detaching views.
 		// A second reset in the board bank has not admitted another context.
 		const previousRoot = this.rootThread.address;
 		if (previousRoot !== 0 && previousRoot !== CPU_RESET_BANK_ADDRESS) {
 			this.cop0Words[COP0_CONTEXT] = previousRoot;
-			this.cop0Words[COP0_PREVIOUS_ACTIVE] = this.activeThread.address;
+			this.cop0Words[COP0_PREVIOUS_ACTIVE] = this.fixedInterruptActive()
+				? this.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) : this.activeThread.address;
 		}
 		this.compiledCodeCache.retireAll();
 		const systemBoot = this.executionAddressSpace.resolveSystemDomain();
@@ -1267,7 +1281,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
 		if (executionBoots.length === 0) return;
-		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
 		const replacements = new Array<Blua32ExecutionImage['romFunctions'] | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 		for (let i = 0; i < executionBoots.length; ++i)
@@ -1423,7 +1437,12 @@ export class CPU implements MappedPageInvalidator {
 
 	/** A borrowed bank, not retained across a Thread switch or fixed activation. */
 	public bindThread(address: number): Thread {
-		for (const bank of this.threadBanks) if (bank.address === address) return bank;
+		if (address === this.rootThread.address) return this.rootThread;
+		if (address === CPU_RESET_BANK_ADDRESS) return this.irqThread;
+		for (let i = 1; i < this.threadBanks.length; ++i) {
+			const bank = this.threadBanks[i];
+			if (bank.address === address) return bank;
+		}
 		const bank = this.threadBanks[1] !== this.activeThread ? this.threadBanks[1] : this.threadBanks[2];
 		bank.bindAddress(address);
 		this.bindPhysicalFrames(bank);
@@ -1824,7 +1843,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public systemResetInhibited(): boolean {
-		return this.heapServiceActive() || (this.cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) !== 0;
+		return this.fixedInterruptDefersReset() || this.heapServiceActive() || (this.cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) !== 0;
 	}
 
 	public isCartridgeExecutionActive(): boolean {
@@ -1842,6 +1861,14 @@ export class CPU implements MappedPageInvalidator {
 	// The existing physical root address is the bank selector carried in snapshots.
 	private resetBankSelected(): boolean {
 		return this.activeThread.address === CPU_RESET_BANK_ADDRESS;
+	}
+
+	public fixedInterruptActive(): boolean {
+		return this.activeThread === this.irqThread;
+	}
+
+	public fixedInterruptDefersReset(): boolean {
+		return this.fixedInterruptActive() && !this.hardHalted;
 	}
 
 	// The scalar and generated backends retire the same control write.
@@ -1865,7 +1892,9 @@ export class CPU implements MappedPageInvalidator {
 			case COP0_EXEC: this.executeFunctionAddress(value); return;
 			case COP0_CONTEXT: this.activateRootContext(value); return;
 			case COP0_RAM_END: this.selectRamEnd(frame, value); return;
-			case COP0_SYSTEM_VECTOR: this.installSystemVector(frame, value); return;
+			case COP0_SYSTEM_VECTOR:
+			case COP0_IRQ_VECTOR: this.installSystemVector(frame, value, field); return;
+			case COP0_EXCEPTION_TARGET: this.transferExceptionVector(frame, value); return;
 			case COP0_PREVIOUS_ACTIVE:
 			case COP0_BAD_ADDRESS:
 			case COP0_LUA_FAULT_REASON:
@@ -1891,7 +1920,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private activateRootContext(address: number): void {
 		const memory = this.memory;
-		if (!this.resetBankSelected() || this.isUserMode() || this.activeThread.frameDepth !== 1
+		if (this.fixedInterruptActive() || !this.resetBankSelected() || this.isUserMode() || this.activeThread.frameDepth !== 1
 			|| (address & 3) !== 0 || address < memory.ramBusEnd() || !memory.isRamRange(address, THREAD_HEAP_BYTES, true)) {
 			this.hardHalt();
 			return;
@@ -1941,7 +1970,7 @@ export class CPU implements MappedPageInvalidator {
 		this.requestYield();
 	}
 
-	private installSystemVector(frame: CallFrame, address: number): void {
+	private installSystemVector(frame: CallFrame, address: number, field: number): void {
 		// Supervisor status alone is not authority: the cartridge vector also
 		// executes with the current user bit clear.
 		if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
@@ -1957,7 +1986,49 @@ export class CPU implements MappedPageInvalidator {
 				? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, address);
 			return;
 		}
-		this.cop0Words[COP0_SYSTEM_VECTOR] = address;
+		if (field === COP0_IRQ_VECTOR) {
+			if (this.irqThread.address !== CPU_RESET_BANK_ADDRESS) this.bindFixedIrqBank();
+			this.memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
+		}
+		else this.cop0Words[COP0_SYSTEM_VECTOR] = address;
+	}
+
+	private transferExceptionVector(frame: CallFrame, target: number): void {
+		if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
+			|| ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+			return;
+		}
+		if (!frame.isExceptionFrame) {
+			this.hardHalt();
+			return;
+		}
+		const address = target & CPU_EXCEPTION_TARGET_ADDRESS_MASK;
+		const signals = mappedBusSignalsForCartridgeSlot(target >>> CPU_EXCEPTION_TARGET_SOCKET_SHIFT);
+		if (!this.readFunctionRecordOnBus(this.systemImage, address, signals)
+			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
+			this.hardHalt();
+			return;
+		}
+		// Only the outer fixed exception can transfer into the retained frame bank.
+		const leavesFixedBank = this.resetBankSelected() && this.functionRecordLatch.executionDomainId >= 0;
+		if (leavesFixedBank && (!this.fixedInterruptActive() || frame.previous !== null)) {
+			this.hardHalt();
+			return;
+		}
+		const nmi = frame.isNonMaskableExceptionFrame;
+		this.charge(this.closeUpvalues(frame));
+		this.activeThread.leaveFrame();
+		if (leavesFixedBank) this.resumeInterruptedContext();
+		this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);
+	}
+
+	private resumeInterruptedContext(): void {
+		const context = this.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+		this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0, 0);
+		this.activeThread = this.bindThread(context);
+		this.activeThread.bindStack(true);
+		this.threadSwitchRequested = this.yieldRequested = true;
 	}
 
 	private executeFunctionAddress(functionAddress: number): void {
@@ -1993,7 +2064,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
-		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
@@ -2017,7 +2088,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		const image = this.executionImageForDomain(executionDomainId);
@@ -2132,7 +2203,13 @@ export class CPU implements MappedPageInvalidator {
 			&& this.irqController.hasAssertedMaskableInterruptLine();
 	}
 
+	public hasFramesAbove(context: number, depth: number): boolean {
+		return (this.fixedInterruptActive() && this.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) === context)
+			|| this.readThreadFrameDepth(context) > depth;
+	}
+
 	public peekPendingInterrupt(): AcceptedInterruptKind {
+		if (this.fixedInterruptActive()) return AcceptedInterruptKind.None;
 		if (this.nonMaskableInterruptPending) {
 			return AcceptedInterruptKind.NonMaskable;
 		}
@@ -2143,7 +2220,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.heapServiceActive()) return false;
+		if (this.fixedInterruptActive() || this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.heapServiceActive()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2169,6 +2246,18 @@ export class CPU implements MappedPageInvalidator {
 		const enabledFlags = (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 			? this.irqController.enabledPendingFlags() : 0;
 		if (enabledFlags !== 0) {
+			// The reset execution bank cannot also hold a detached IRQ activation.
+			const irqVector = this.isUserMode() && !this.resetBankSelected() ? this.memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0;
+			if (irqVector !== 0) {
+				const interrupted = this.activeThread.address, epc = this.activeThread.currentFrame!.pc;
+				const accepted = enabledFlags | (this.isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0);
+				if (this.haltedUntilIrqFrameDepth < 0) this.interruptEventPending = true;
+				this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+				this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, interrupted, accepted);
+				this.activeThread = this.irqThread;
+				this.placeExceptionVector(this.systemImage, irqVector, false, epc);
+				return true;
+			}
 			const domain = this.isUserMode() ? this.programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
 			const image = this.executionImageForDomain(domain)!;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2225,9 +2314,10 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const returnFromNmi = frame.isNonMaskableExceptionFrame;
 		const returnPc = this.cop0Words[COP0_EPC];
-		const caller = frame.previous;
 		this.charge(this.closeUpvalues(frame));
 		frame.thread.leaveFrame();
+		if (this.fixedInterruptActive() && this.irqThread.frameDepth === 0) this.resumeInterruptedContext();
+		const caller = this.activeThread.currentFrame;
 		this.resumeFrameBank();
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 			| ((this.cop0Words[COP0_STATUS] >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
@@ -2274,6 +2364,10 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return null;
 		}
+		return this.enterLatchedExceptionFrame(nmi, epcWord);
+	}
+
+	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number): CallFrame | null {
 		try {
 			return this.enterDirectFrame(epcWord, nmi);
 		} catch (error) {
@@ -2453,7 +2547,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		const thread = this.activeThread;
+		const thread = this.activeThread, canInterrupt = !this.fixedInterruptActive();
 		let scalarFrame: CallFrame | null = null, nextPc = 0;
 		try {
 			while (thread.frameDepth > targetDepth) {
@@ -2481,13 +2575,14 @@ export class CPU implements MappedPageInvalidator {
 						const frame = scalarFrame ?? thread.currentFrame!;
 						const image = frame.executionImage;
 						if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
-						if (this.nonMaskableInterruptPending
-							|| ((this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-								&& this.irqController.hasAssertedMaskableInterruptLine())
-						) {
+						if (canInterrupt && (this.nonMaskableInterruptPending || this.canAcceptMaskableInterruptLine())) {
 								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.enterPendingInterrupt();
 							if (this.heapServiceActive()) return RunResult.CollectionProgress;
+							if (thread !== this.activeThread) {
+								this.threadSwitchRequested = true;
+								return RunResult.Yielded;
+							}
 							continue;
 						}
 						let pc = scalarFrame === null ? frame.pc : nextPc;
@@ -2568,6 +2663,7 @@ export class CPU implements MappedPageInvalidator {
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number, service = false): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const thread = service ? this.heapService.thread : this.activeThread;
+		const canInterrupt = !service && !this.fixedInterruptActive();
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
@@ -2596,12 +2692,11 @@ export class CPU implements MappedPageInvalidator {
 					const frame = thread.currentFrame!;
 					const image = frame.executionImage;
 					if (!service && image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
-					if (!service && this.nonMaskableInterruptPending) {
+					if (canInterrupt && this.nonMaskableInterruptPending) {
 						this.enterPendingInterrupt();
 						continue;
 					}
-					if (!service && (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
-						&& this.irqController.hasAssertedMaskableInterruptLine()) {
+					if (canInterrupt && this.canAcceptMaskableInterruptLine()) {
 						const interruptedFrame = thread.currentFrame!;
 						if ((preMaskableInterruptExecutionDomainMask
 							& executionDomainBit(this.activeExecutionDomainId)) !== 0
@@ -2610,6 +2705,10 @@ export class CPU implements MappedPageInvalidator {
 						}
 						this.enterPendingInterrupt();
 						if (this.heapServiceActive()) return RunResult.CollectionProgress;
+						if (thread !== this.activeThread) {
+							this.threadSwitchRequested = true;
+							return RunResult.Yielded;
+						}
 						continue;
 					}
 					const pc = frame.pc;
@@ -2747,6 +2846,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public abortCompletionCall(frameIndex: number): void {
+		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		this.unwindToDepth(frameIndex, false);
 		this.clearCompletionValues();
 	}
@@ -2833,7 +2933,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.heapServiceActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.fixedInterruptActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId);
 		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -5215,6 +5315,13 @@ export class CPU implements MappedPageInvalidator {
 		this.bindPhysicalFrames(this.rootThread);
 		this.activeThread = this.rootThread;
 		this.activeThread = this.bindThread(state.activeThreadAddress);
+		if (this.memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) !== 0) {
+			this.bindFixedIrqBank();
+			if (this.fixedInterruptActive()) this.bindPhysicalFrames(this.irqThread);
+		} else {
+			this.irqThread.bindAddress(0);
+			this.irqThread.dropParkedFrameViews();
+		}
 		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
 		this.completionThread = state.completionThreadAddress;
 		this.threadSwitchRequested = false;

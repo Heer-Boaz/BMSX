@@ -10,13 +10,14 @@ import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { CPU_CAUSE_IRQ, CPU_STATUS_USER_MODE_CURRENT } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_IRQ_VECTOR_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { HEAP_SERVICE_MODULES } from '../../../toolchain/ts/rompack/blua32_heap_service';
@@ -36,6 +37,12 @@ const authored = [
 	[exceptionPath, readFileSync('machine/bios/' + exceptionPath + '.lua', 'utf8')],
 	[eventsPath, readFileSync('machine/bios/' + eventsPath + '.lua', 'utf8')],
 ].map(([path, source]) => ({ path, source, displayPath: path + '.lua', chunk: parseLuaChunk(source, path) }));
+const armedReset = `
+cop0.irq_vector = cop0.system_vector
+cop0.status = cop0.status | ${CPU_STATUS_USER_MODE_CURRENT}
+halt_until_irq
+do return 37 end
+`;
 const library = loadHeapServiceTestModules().map(module => ({ ...module, displayPath: module.path + '.lua' }));
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const handled = IRQ_DMA0_DONE | IRQ_VBLANK;
@@ -45,9 +52,11 @@ mkdirSync('tmp', { recursive: true });
 const dir = mkdtempSync(join('tmp', 'authored-system-irq-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
-	for (const optLevel of [0, 3] as const) {
+	for (const optLevel of [0, 3] as const) for (const armed of [false, true]) {
+		const sources = armed ? authored.map(module => module.path === resetPath
+			? { ...module, source: armedReset, chunk: parseLuaChunk(armedReset, resetPath) } : module) : authored;
 		const built = buildBlua32Image({
-			domain: 'system', luaModules: [...authored, ...library], generatedLuaModules: [], loadAddress: 0x100,
+			domain: 'system', luaModules: [...sources, ...library], generatedLuaModules: [], loadAddress: 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
 			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, preloadModules: HEAP_SERVICE_MODULES, biosExports: [],
 		});
@@ -103,19 +112,36 @@ try {
 			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0 0`);
 			return result;
 		}
-		const resetPc = cpu.readFramePc(0);
 		assert.equal(scheduler.nowCycles, 0);
 		assert.equal(arena.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
 		assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 		observe(`H ${heapFirst} ${heapEnd}`, heapHash);
+		if (armed) {
+			assert.equal(grant(64), RunResult.Halted);
+			assert.equal(cpu.isHaltedUntilIrq(), true);
+			assert.equal(cpu.isUserMode(), true);
+			const installed = readLE32(rom, BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET);
+			assert.notEqual(installed, irq.address);
+			assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), installed);
+			const offset = CPU_IRQ_VECTOR_ADDRESS - RAM_BASE;
+			observe(`H ${offset} ${offset + 4}`, hashBytes(memory.ramData(), offset, 4));
+		}
+		const resetPc = cpu.readFramePc(0), resetFunction = cpu.readFrameFunctionAddress(0);
 		memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 		irqController.raise(flags);
 		observe(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`);
 		observe(`i ${flags}`);
 		assert.equal(cpu.enterPendingInterrupt(), true);
 		observe('I', 1);
+		assert.equal(cpu.fixedInterruptActive(), false, 'the fixed IRQ context cannot borrow the live reset bank');
+		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
+		assert.equal(cpu.getFrameDepth(), 2);
+		assert.equal(cpu.readFramePc(0), resetPc);
+		assert.equal(cpu.readFrameFunctionAddress(0), resetFunction);
 		assert.equal(cpu.readFramePc(1), irq.codeAddress);
+		assert.equal(cpu.readEpcWord(), resetPc);
+		observe('Z', `${CPU_CAUSE_IRQ} 0 ${resetPc}`);
 		assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
 		observe('P', `2 ${irq.codeAddress}`);
 		assert.equal(arena.occupiedBytes(), 0, 'vector admission uses the fixed board bank');
@@ -142,7 +168,10 @@ try {
 				assert.equal(grant(1), RunResult.Yielded);
 			}
 			assert.equal(cpu.getFrameDepth(), 1);
-			assert.equal(cpu.readFramePc(0), resetPc, 'RFE resumes the never-executed first instruction');
+			assert.equal(cpu.readFramePc(0), resetPc, 'RFE resumes the same raw reset instruction stream');
+			assert.equal(cpu.readFrameFunctionAddress(0), resetFunction);
+			assert.equal(cpu.isUserMode(), armed);
+			observe('P', `1 ${resetPc}`);
 			assert.equal(memory.readRamRecordWord(dma), 1);
 			assert.equal(memory.readRamRecordWord(vblank), 1);
 			assert.equal(memory.readIoU32(IO_IRQ_FLAGS), IRQ_DMA1_DONE, 'only handled bits are acknowledged');
@@ -162,7 +191,7 @@ try {
 		assert.deepEqual(execFileSync(native, [romPath, script, state], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		finish();
-		console.log(`SYSTEM-IRQ:PASS O${optLevel} installed two raw counters and acknowledged only handled bits before first reset instruction; portable checkpoint between stores`);
+		console.log(`SYSTEM-IRQ:PASS O${optLevel} ${armed ? 'installed user IRQ while raw reset bank is live' : 'before first reset instruction'}; original reset frame survives IRQ and portable restore`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

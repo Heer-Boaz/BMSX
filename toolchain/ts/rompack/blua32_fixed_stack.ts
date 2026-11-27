@@ -1,4 +1,4 @@
-import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_STATUS, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -19,10 +19,10 @@ export type Blua32FixedStack = {
 export type Blua32FixedStackBoundary = {
 	readonly functions: ReadonlySet<number>;
 	readonly lateConstants: ReadonlySet<number>;
-	readonly ordinaryReset?: {
-		readonly reset: number;
-		readonly irq: number;
-		readonly exception: number;
+	readonly ordinaryCode?: {
+		readonly reset?: number;
+		readonly exceptionVectors: ReadonlySet<number>;
+		readonly interruptible: boolean;
 		readonly codeTargets: Set<number>;
 	};
 };
@@ -58,7 +58,7 @@ export function deriveBlua32FixedStack(
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
 		if (boundary !== undefined && !boundary.functions.has(index))
-			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the ${boundary.ordinaryReset ? 'permitted ROM function set' : 'heap service module'}.`);
+			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the ${boundary.ordinaryCode ? 'permitted ROM function set' : 'heap service module'}.`);
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
 		if (!fn.staticClosure || fn.isVararg || fn.upvalues.length !== 0)
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static, fixed-arity and capture-free.`);
@@ -114,7 +114,7 @@ export function deriveBlua32FixedStack(
 			if (rc < 0) admitConstant(-1 - rc, reject);
 			if (op === OpCode.LOADK) admitConstant(bx, reject);
 			if (op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D) {
-				if (boundary?.ordinaryReset !== undefined) {
+				if (boundary?.ordinaryCode !== undefined) {
 					if (c > MemoryAccessKind.F64LE) reject('not an ordinary CPU memory format');
 				} else if (c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8 && c !== MemoryAccessKind.Value)
 					reject('not a heap-service memory format');
@@ -126,12 +126,12 @@ export function deriveBlua32FixedStack(
 					if ((c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0 || target < 0 || a >= width)
 						reject('requires a local ROM function record');
 					if (boundary !== undefined && !boundary.functions.has(target))
-						reject(boundary.ordinaryReset ? 'static target leaves the permitted ROM function set' : 'static target leaves the heap service module');
+						reject(boundary.ordinaryCode ? 'static target leaves the permitted ROM function set' : 'static target leaves the heap service module');
 					const record = image.functions[target];
 					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
 						reject('callee must be static, fixed-arity and capture-free');
 					registers[a] = address;
-					boundary?.ordinaryReset?.codeTargets.add(target);
+					boundary?.ordinaryCode?.codeTargets.add(target);
 					break;
 				}
 				case OpCode.CALL:
@@ -141,28 +141,34 @@ export function deriveBlua32FixedStack(
 					registers.fill(0, a);
 					break;
 				case OpCode.RET:
+					if (boundary?.ordinaryCode?.exceptionVectors.has(index))
+						reject('exception vector ends with RFE or an exception transfer');
 					if (b === 0) reject('open return window');
 					if (a + b - 1 > width) reject('return window exceeds the function record');
 					continue;
 				case OpCode.HALT:
-					if (boundary?.ordinaryReset === undefined) reject('HALT requires an ordinary interruptible frame');
+					if (boundary?.ordinaryCode?.interruptible !== true) reject('HALT requires an ordinary interruptible frame');
 					break;
 				case OpCode.RFE:
-					if (boundary?.ordinaryReset === undefined
-						|| (index !== boundary.ordinaryReset.irq && index !== boundary.ordinaryReset.exception)) reject('not an authored exception vector');
+					if (!boundary?.ordinaryCode?.exceptionVectors.has(index)) reject('not an authored exception vector');
 					continue;
 				case OpCode.MFC0:
-					if (boundary?.ordinaryReset === undefined || !cop0FieldImplemented(b) || a >= width)
+					if (boundary?.ordinaryCode === undefined || !cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control read');
 					registers[a] = 0;
 					break;
 				case OpCode.MTC0:
-					if (boundary?.ordinaryReset === undefined || !cop0FieldImplemented(b) || a >= width)
+					if (boundary?.ordinaryCode === undefined || !cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control write');
+					if (b === COP0_EXCEPTION_TARGET) {
+						if (!boundary.ordinaryCode.exceptionVectors.has(index))
+							reject('not an authored exception vector');
+						continue;
+					}
 					if (b === COP0_CONTEXT || b === COP0_RAM_END) {
-						if (index !== boundary.ordinaryReset.reset) reject('context and RAM aperture belong to the reset root');
+						if (index !== boundary.ordinaryCode.reset) reject('context and RAM aperture belong to the reset root');
 						if (b === COP0_CONTEXT) continue;
-					} else if (b !== COP0_STATUS && b !== COP0_EPC) reject('not a bounded direct-vector control write');
+					} else if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR) reject('not a bounded direct-vector control write');
 					break;
 				case OpCode.MOV:
 					if (a >= width || c !== ValueMoveKind.Copy) reject('not a scalar register copy');

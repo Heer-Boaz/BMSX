@@ -6,7 +6,7 @@ import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
-import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { buildBlua32Image, type Blua32StaticExport } from '../../toolchain/ts/rompack/blua32_image_builder';
 import type { Blua32BiosFunctionExport } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { LinkedSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
@@ -31,15 +31,19 @@ function systemModule(path: string, source: string, linkValues?: ReadonlyMap<str
 /** A test program that receives the ordinary, firmware-prepared machine, not a host-created language environment. */
 export function linkManagedTestSystem(source: string, optLevel: OptimizationLevel,
 	extraModules: readonly { path: string; source: string; linkValues?: ReadonlyMap<string, number> }[] = [],
-	biosExports: readonly Blua32BiosFunctionExport[] = [], entryPath = 'main') {
+	biosExports: readonly Blua32BiosFunctionExport[] = [], entryPath = 'main',
+	options: { irqSource?: string; exceptionSource?: string; userIrqEntry?: Blua32StaticExport } = {}) {
 	const luaModules = Array.from(new Set([...firmware, ...HEAP_SERVICE_MODULES]), path =>
-		systemModule(path, readFileSync('machine/bios/' + path + '.lua', 'utf8')));
+		systemModule(path, path === irqModule && options.irqSource !== undefined ? options.irqSource
+			: path === exceptionModule && options.exceptionSource !== undefined ? options.exceptionSource
+				: readFileSync('machine/bios/' + path + '.lua', 'utf8')));
 	for (const { path, source, linkValues } of extraModules) luaModules.push(systemModule(path, source, linkValues));
 	luaModules.push(systemModule(entryPath, 'module<entry>\n' + source));
 	const { linked, object } = buildBlua32Image({
 		domain: 'system', luaModules, generatedLuaModules: [], loadAddress: 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
-		resetModule, irqModule, exceptionModule, preparedEntry: BIOS_PREPARED_ENTRY, preloadModules: HEAP_SERVICE_MODULES, biosExports,
+		resetModule, irqModule, exceptionModule, preparedEntry: BIOS_PREPARED_ENTRY, userIrqEntry: options.userIrqEntry,
+		preloadModules: HEAP_SERVICE_MODULES, biosExports,
 	});
 	return Object.assign(linked, { object });
 }

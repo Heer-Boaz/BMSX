@@ -55,6 +55,7 @@ export class Runtime {
 	}
 
 	public resetForSystemBoot(): void {
+		if (this.machine.cpu.fixedInterruptDefersReset()) throw new Error('System IRQ must retire before reset.');
 		if (this.machine.cpu.heapServiceActive()) throw new Error('Heap service must retire before system boot.');
 		this.frameLoop.resetFrameState();
 		this.pendingCall = null;
@@ -90,7 +91,7 @@ export class Runtime {
 	public admitExternalCpuMutation(): boolean {
 		const { scheduler, gxGpu, cpu } = this.machine;
 		return scheduler.acceptedCpuCycles === 0 && !scheduler.isCpuSliceActive()
-			&& !gxGpu.backendServiceBlocksMachine() && !cpu.heapServiceActive();
+			&& !gxGpu.backendServiceBlocksMachine() && !cpu.heapServiceActive() && !cpu.fixedInterruptActive();
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

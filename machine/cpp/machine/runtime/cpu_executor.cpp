@@ -156,7 +156,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	runDueRuntimeTimers(runtime);
 	// A fixed service can own the next grant without a deeper guest frame.
 	while (cpu.heapServiceActive()
-		|| static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) > targetDepth) {
+		|| cpu.hasFramesAbove(targetThread, targetDepth)) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
@@ -205,7 +205,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				if (result == RunResult::ExecutionStopped) return CpuSuspendedRunResult::ExecutionStopped;
 				continue;
 			}
-			if (static_cast<int>(ThreadRecord::count(machine.memory, targetThread, ThreadField::FrameDepth)) <= targetDepth)
+			if (!cpu.hasFramesAbove(targetThread, targetDepth))
 				return CpuSuspendedRunResult::Completed;
 			if (cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 		}

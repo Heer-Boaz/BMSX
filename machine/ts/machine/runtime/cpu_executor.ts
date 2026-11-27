@@ -159,7 +159,7 @@ export class CpuExecutionState {
 		cpu.admitFixedWork(CpuRunKind.Direct);
 		runDueRuntimeTimers(runtime);
 		// A fixed service can own the next grant without a deeper guest frame.
-		while (cpu.heapServiceActive() || cpu.readThreadFrameDepth(targetThread) > targetDepth) {
+		while (cpu.heapServiceActive() || cpu.hasFramesAbove(targetThread, targetDepth)) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
@@ -206,7 +206,7 @@ export class CpuExecutionState {
 					if (result === RunResult.ExecutionStopped) return CpuSuspendedRunResult.ExecutionStopped;
 					continue;
 				}
-				if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) return CpuSuspendedRunResult.Completed;
+				if (!cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
 				if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			}
 			if (result === RunResult.ExecutionStopped) {

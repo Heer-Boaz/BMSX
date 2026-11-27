@@ -138,3 +138,19 @@ test('an authored interrupt vector is not callable as a module initializer and h
 		programDomain: 'system', entrySource: managedSource, irqModule: path,
 	}), /interrupt vector cannot return values/);
 });
+
+test('a fixed User IRQ cannot leave its bank via ordinary RET or HALT', () => {
+	const path = 'fixture/user-irq';
+	const link = (body: string) => {
+		const source = `module<const>\nlocal vector<const> = function() ${body} end\nreturn { vector = vector }`;
+		const module = { path, source, displayPath: path + '.lua', chunk: parseLuaChunk(source, path) };
+		return buildBlua32Image({
+			domain: 'system', luaModules: [...authored, module], generatedLuaModules: [], loadAddress: 0x100,
+			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel: 0, traceStatements: 'erase',
+			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, biosExports: [],
+			userIrqEntry: { path, exportPathKey: 'vector' },
+		});
+	};
+	assert.throws(() => link('return'), /exception vector ends with RFE or an exception transfer/);
+	assert.throws(() => link('halt_until_irq'), /HALT requires an ordinary interruptible frame/);
+});

@@ -254,8 +254,10 @@ public:
 	// Trusted entry to an immutable, link-verified system routine.
 	bool beginHeapService(u32 functionAddress, std::span<const u32> args);
 	bool heapServiceActive() const;
+	bool fixedInterruptActive() const { return m_activeThread == &m_irqView; }
+	bool fixedInterruptDefersReset() const { return fixedInterruptActive() && (m_runSignals & RunHardHalted) == 0u; }
 	bool systemResetInhibited() const {
-		return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u || heapServiceActive();
+		return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u || heapServiceActive() || fixedInterruptDefersReset();
 	}
 	u32 heapServiceResult() const;
 	// Move an evicted snapshot here to reuse its storage without copying it.
@@ -319,6 +321,7 @@ public:
 	Thread* rootThread() { return &m_rootView; }
 	const Thread* rootThread() const { return &m_rootView; }
 	int getFrameDepth() const { return static_cast<int>(m_activeThread->frameDepth()); }
+	bool hasFramesAbove(u32 context, int depth) const;
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
 	// Instruction start (including WIDE), inspected only during CPU execution.
@@ -601,8 +604,12 @@ private:
 	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
 	void selectRamEnd(CallFrame& frame, u32 address);
 	void activateRootContext(u32 address);
-	void installSystemVector(CallFrame& frame, u32 address);
+	void installSystemVector(CallFrame& frame, u32 address, int field);
+	void transferExceptionVector(CallFrame& frame, u32 target);
+	void resumeInterruptedContext();
+	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc);
 	void initializeResetBank();
+	void bindFixedIrqBank();
 	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
 	Value luaFaultValue(u32 reason) const;
@@ -684,6 +691,7 @@ private:
 	StringPool m_stringPool;
 	GcHeap m_heap;
 	Thread m_rootView;
+	Thread m_irqView;
 	Thread m_heapServiceView;
 	std::array<Thread, 2> m_transferViews;
 	StaticClosureIndex m_staticClosuresByAddress;

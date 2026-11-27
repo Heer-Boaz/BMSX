@@ -42,8 +42,11 @@ export type GeneratedLuaModule = {
 	linkValues?: ReadonlyMap<string, number>;
 };
 
-function systemStartupLayoutModule(prepared: boolean): GeneratedLuaModule {
-	const entries = prepared ? ['managed_entry', 'prepared_entry', 'managed_exception'] : ['managed_entry', 'managed_exception'];
+function systemStartupLayoutModule(prepared: boolean, userIrq: boolean): GeneratedLuaModule {
+	const entries = ['managed_entry'];
+	if (prepared) entries.push('prepared_entry');
+	entries.push('managed_exception');
+	if (userIrq) entries.push('user_irq');
 	return {
 		path: SYSTEM_STARTUP_MODULE_PATH,
 		source: 'module<const>\nreturn { ' + entries.map(entry => entry + ' = 0').join(', ') + ' }',
@@ -51,10 +54,13 @@ function systemStartupLayoutModule(prepared: boolean): GeneratedLuaModule {
 	};
 }
 
-/** Static function selected by the firmware recipe for its prepared execution frame. */
-export type Blua32PreparedEntry = {
+export type Blua32StaticExport = {
 	readonly path: string;
 	readonly exportPathKey: string;
+};
+
+/** Static function selected by the firmware recipe for its prepared execution frame. */
+export type Blua32PreparedEntry = Blua32StaticExport & {
 	readonly valueSlots: number;
 };
 
@@ -84,6 +90,7 @@ type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	irqModule?: string;
 	exceptionModule?: string;
 	preparedEntry?: Blua32PreparedEntry;
+	userIrqEntry?: Blua32StaticExport;
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 };
 
@@ -189,7 +196,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	const authoredReset = options.domain === 'system' && options.resetModule !== undefined;
 	const generatedModules = authoredReset
-		? [...options.generatedLuaModules, systemStartupLayoutModule(options.preparedEntry !== undefined)]
+		? [...options.generatedLuaModules, systemStartupLayoutModule(options.preparedEntry !== undefined, options.userIrqEntry !== undefined)]
 		: options.generatedLuaModules;
 	for (const generated of generatedModules) {
 		if (modulePaths.has(generated.path)) {
@@ -217,6 +224,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	if (options.domain === 'system') {
 		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
 		if (options.preparedEntry !== undefined) moduleRoots.push(options.preparedEntry.path);
+		if (options.userIrqEntry !== undefined) moduleRoots.push(options.userIrqEntry.path);
 		if (options.irqModule !== undefined) moduleRoots.push(options.irqModule);
 		if (options.exceptionModule !== undefined) moduleRoots.push(options.exceptionModule);
 		for (const exported of options.biosExports) moduleRoots.push(exported.path);
@@ -292,21 +300,27 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			const handler = linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.managedExceptionProtoIndex)];
 			values.set('managed_exception', handler.address);
 		}
+		const resolveStaticEntry = (entry: Blua32StaticExport, role: string) => {
+			const exported = object.sections.rodata.moduleExports.find(candidate =>
+				candidate.path === entry.path && candidate.exportPathKey === entry.exportPathKey);
+			const protoId = exported === undefined ? undefined : object.link.symbols.exportProtoIdBySlot[exported.slotName];
+			if (protoId === undefined)
+				throw new Error(`${role} '${entry.path}:${entry.exportPathKey}' is not a static function export.`);
+			return linked.functionProtoIndices.indexOf(compiled.metadata.protoIds.indexOf(protoId));
+		};
 		const prepared = options.preparedEntry;
 		if (prepared !== undefined) {
-			const stage = object.sections.rodata.moduleExports.find(entry =>
-				entry.path === prepared.path && entry.exportPathKey === prepared.exportPathKey);
-			const protoId = stage === undefined ? undefined : object.link.symbols.exportProtoIdBySlot[stage.slotName];
-			if (protoId === undefined)
-				throw new Error(`Prepared System entry '${prepared.path}:${prepared.exportPathKey}' is not a static function export.`);
-			const target = linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.metadata.protoIds.indexOf(protoId))];
+			const target = linked.layout.functions[resolveStaticEntry(prepared, 'Prepared System entry')];
 			if (Math.max(target.numParams, target.maxStack) > prepared.valueSlots)
 				throw new Error(`Prepared System entry '${prepared.path}:${prepared.exportPathKey}' does not fit its ${prepared.valueSlots}-slot frame.`);
 			values.set('prepared_entry', target.address);
 		}
+		const userIrq = options.userIrqEntry === undefined ? undefined
+			: resolveStaticEntry(options.userIrqEntry, 'User IRQ entry');
+		if (userIrq !== undefined) values.set('user_irq', linked.layout.functions[userIrq].address);
 		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
 		linkBlua32ResetCode(linked.layout, linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
-			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex));
+			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex), userIrq);
 	}
 	return {
 		linked,

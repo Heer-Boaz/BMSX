@@ -91,6 +91,7 @@ CPU::CPU(
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
 	, m_rootView(m_heap)
+	, m_irqView(m_heap)
 	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_staticClosuresByAddress(memory)
@@ -136,8 +137,17 @@ void CPU::initializeResetBank() {
 	m_rootView.bindStack();
 	m_rootView.reserveFixedFrameViews();
 	m_rootView.setStatus(ThreadStatus::Running);
+	m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0u, 0u);
+	m_memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, 0u);
+	m_irqView.select(0u);
 	m_activeThread = &m_rootView;
 	m_completionThreadAddress = CPU_RESET_BANK_ADDRESS;
+}
+
+void CPU::bindFixedIrqBank() {
+	m_irqView.select(CPU_RESET_BANK_ADDRESS);
+	m_irqView.bindStack();
+	m_irqView.reserveFixedFrameViews();
 }
 
 CPU::~CPU() {
@@ -163,11 +173,13 @@ u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool can
 }
 
 void CPU::reset() {
+	if (fixedInterruptDefersReset()) throw BMSX_RUNTIME_ERROR("System IRQ must retire before reset.");
 	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before CPU reset.");
 	const u32 previousRoot = m_rootView.address;
 	if (previousRoot != 0u && previousRoot != CPU_RESET_BANK_ADDRESS) {
 		m_cop0Words[COP0_CONTEXT] = previousRoot;
-		m_cop0Words[COP0_PREVIOUS_ACTIVE] = m_activeThread->address;
+		m_cop0Words[COP0_PREVIOUS_ACTIVE] = fixedInterruptActive()
+			? m_memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) : m_activeThread->address;
 	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
@@ -545,7 +557,7 @@ void CPU::resumeFrameBank() {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
-	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -701,6 +713,7 @@ void CPU::bindPhysicalFrames(Thread& thread) {
 
 Thread& CPU::bindThread(u32 address) {
 	if (address == m_rootView.address) return m_rootView;
+	if (address == CPU_RESET_BANK_ADDRESS) return m_irqView;
 	for (auto& view : m_transferViews) if (view.address == address) return view;
 	// A transfer may still borrow the current bank for arguments/results.
 	auto& view = m_activeThread == &m_transferViews[0] ? m_transferViews[1] : m_transferViews[0];
@@ -928,7 +941,7 @@ void CPU::selectRamEnd(CallFrame& frame, u32 address) {
 
 void CPU::activateRootContext(u32 address) {
 	using F = ThreadField;
-	if (!resetBankSelected() || isUserMode() || m_activeThread->frameDepth() != 1u
+	if (fixedInterruptActive() || !resetBankSelected() || isUserMode() || m_activeThread->frameDepth() != 1u
 		|| (address & 3u) != 0u || address < m_memory.ramBusEnd() || !m_memory.isRamRange(address, THREAD_HEAP_BYTES, true)) {
 		hardHalt();
 		return;
@@ -983,7 +996,7 @@ void CPU::activateRootContext(u32 address) {
 	requestYield();
 }
 
-void CPU::installSystemVector(CallFrame& frame, u32 address) {
+void CPU::installSystemVector(CallFrame& frame, u32 address, int field) {
 	// A cartridge exception frame executes in supervisor mode but cannot
 	// reprogram the System exception vector.
 	if (m_activeExecutionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
@@ -998,7 +1011,49 @@ void CPU::installSystemVector(CallFrame& frame, u32 address) {
 			? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, address);
 		return;
 	}
-	m_cop0Words[COP0_SYSTEM_VECTOR] = address;
+	if (field == COP0_IRQ_VECTOR) {
+		if (m_irqView.address != CPU_RESET_BANK_ADDRESS) bindFixedIrqBank();
+		m_memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
+	}
+	else m_cop0Words[COP0_SYSTEM_VECTOR] = address;
+}
+
+void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
+	if (m_activeExecutionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+		|| m_currentInstructionPc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	if (!frame.hasControlFlag(FRAME_EXCEPTION)) {
+		hardHalt();
+		return;
+	}
+	const u32 address = target & CPU_EXCEPTION_TARGET_ADDRESS_MASK;
+	const auto signals = mappedBusSignalsForCartridgeSlot(target >> CPU_EXCEPTION_TARGET_SOCKET_SHIFT);
+	if (!readFunctionRecordOnBus(*m_systemImage, address, signals)
+		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
+		hardHalt();
+		return;
+	}
+	// Only the outer fixed exception can transfer into the retained frame bank.
+	const bool leavesFixedBank = resetBankSelected() && m_functionRecordLatch.image->executionDomainId >= 0;
+	if (leavesFixedBank && (!fixedInterruptActive() || frame.previous)) {
+		hardHalt();
+		return;
+	}
+	const bool nmi = frame.hasControlFlag(FRAME_NMI);
+	instructionBudgetRemaining -= closeUpvalues(frame);
+	m_activeThread->leaveFrame();
+	if (leavesFixedBank) resumeInterruptedContext();
+	enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]);
+}
+
+void CPU::resumeInterruptedContext() {
+	const u32 context = m_memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+	m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0u, 0u);
+	m_activeThread = &bindThread(context);
+	m_activeThread->bindStack(true);
+	m_runSignals |= RunThreadSwitch | RunYield;
 }
 
 void CPU::executeFunctionAddress(u32 functionAddress) {
@@ -1038,7 +1093,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
-	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
@@ -1061,7 +1116,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
-	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	auto* image = executionImageForDomain(executionDomainId);
@@ -1171,6 +1226,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	bindPhysicalFrames(m_rootView);
 	bindPhysicalFrames(m_heapServiceView);
 	m_activeThread = &bindThread(state.activeThreadAddress);
+	if (m_memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) != 0u) {
+		bindFixedIrqBank();
+		if (fixedInterruptActive()) bindPhysicalFrames(m_irqView);
+	} else m_irqView.select(0u);
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThreadAddress = state.completionThreadAddress;
 
@@ -1718,7 +1777,13 @@ bool CPU::canAcceptMaskableInterruptLine() const {
 		&& m_irqController.hasAssertedMaskableInterruptLine();
 }
 
+bool CPU::hasFramesAbove(u32 context, int depth) const {
+	return (fixedInterruptActive() && m_memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) == context)
+		|| static_cast<int>(ThreadRecord::count(m_memory, context, ThreadField::FrameDepth)) > depth;
+}
+
 AcceptedInterruptKind CPU::peekPendingInterrupt() const {
+	if (fixedInterruptActive()) return AcceptedInterruptKind::None;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		return AcceptedInterruptKind::NonMaskable;
 	}
@@ -1729,7 +1794,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (heapServiceActive()) return false;
+	if (fixedInterruptActive() || heapServiceActive()) return false;
 	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
@@ -1756,6 +1821,19 @@ bool CPU::enterPendingInterrupt() {
 	const u32 enabledFlags = (m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 		? m_irqController.enabledPendingFlags() : 0u;
 	if (enabledFlags != 0u) {
+		// The reset execution bank cannot also hold a detached IRQ activation.
+		const u32 irqVector = isUserMode() && !resetBankSelected() ? m_memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0u;
+		if (irqVector != 0u) {
+			const u32 interrupted = m_activeThread->address;
+			const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
+			const u32 accepted = enabledFlags | (isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0u);
+			if (m_haltedUntilIrqFrameDepth < 0) m_interruptEventPending = true;
+			latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+			m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, interrupted, accepted);
+			m_activeThread = &m_irqView;
+			placeExceptionVector(*m_systemImage, irqVector, false, epc);
+			return true;
+		}
 		const auto domain = isUserMode() ? m_programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
 		auto& image = *executionImageForDomain(domain);
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -1823,6 +1901,7 @@ void CPU::returnFromException(CallFrame& frame) {
 	const u32 returnPc = m_cop0Words[COP0_EPC];
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
+	if (fixedInterruptActive() && m_irqView.frameDepth() == 0u) resumeInterruptedContext();
 	resumeFrameBank();
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_cop0Words[COP0_STATUS] >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
@@ -1871,6 +1950,10 @@ CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 func
 		hardHalt();
 		return nullptr;
 	}
+	return enterLatchedExceptionFrame(nmi, epcWord);
+}
+
+CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord) {
 	try {
 		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
 	} catch (const LuaOutOfMemorySignal&) {
@@ -1952,6 +2035,7 @@ RunResult CPU::runLoop(
 ) {
 	instructionBudgetRemaining = instructionBudget;
 	Thread& thread = HeapService ? m_heapServiceView : *m_activeThread;
+	const bool canInterrupt = &thread != &m_irqView;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
 		hookBinding = m_executionHookBinding;
@@ -2048,12 +2132,11 @@ RunResult CPU::runLoop(
 			}
 
 			if constexpr (Instrumented) {
-				if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
+				if (canInterrupt && (m_runSignals & RunNonMaskableInterrupt) != 0u) {
 					enterPendingInterrupt();
 					continue;
 				}
-				if ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-					&& m_irqController.hasAssertedMaskableInterruptLine()) {
+				if (canInterrupt && canAcceptMaskableInterruptLine()) {
 					CallFrame* interruptedFrame = thread.currentFrame;
 					if ((hookBinding.preMaskableInterruptDomainMask
 						& executionDomainBit(m_activeExecutionDomainId)) != 0u
@@ -2066,12 +2149,14 @@ RunResult CPU::runLoop(
 					}
 					enterPendingInterrupt();
 					if (heapServiceActive()) return RunResult::CollectionProgress;
+					if (&thread != m_activeThread) {
+						m_runSignals |= RunThreadSwitch;
+						return RunResult::Yielded;
+					}
 					continue;
 				}
 			} else if constexpr (!HeapService) {
-				if ((m_runSignals & RunNonMaskableInterrupt) != 0u
-					|| ((m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
-						&& m_irqController.hasAssertedMaskableInterruptLine())) {
+				if (canInterrupt && ((m_runSignals & RunNonMaskableInterrupt) != 0u || canAcceptMaskableInterruptLine())) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 					// The next instruction belongs to the interrupt handler; retry admission
 					// for the suspended instruction after RFE instead.
@@ -2080,6 +2165,10 @@ RunResult CPU::runLoop(
 #endif
 					enterPendingInterrupt();
 					if (heapServiceActive()) return RunResult::CollectionProgress;
+					if (&thread != m_activeThread) {
+						m_runSignals |= RunThreadSwitch;
+						return RunResult::Yielded;
+					}
 					continue;
 				}
 			}
@@ -2801,6 +2890,7 @@ bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
 }
 
 void CPU::abortCompletionCall(int frameIndex) {
+	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	unwindToDepth(frameIndex, false);
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 }
@@ -2890,7 +2980,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (heapServiceActive() || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive() || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	auto* publishedImage = executionImageForDomain(executionDomainId);
 	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))

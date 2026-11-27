@@ -115,6 +115,16 @@ in its owning RAM representation so firmware can consume it without a host
 walk of guest objects. Host caches derive from that state and are not roots or
 separate checkpoint owners.
 
+The fixed System interrupt entry uses the CPU's reserved execution bank. CPU
+state retains the sampled request and the interrupted context; firmware decides
+whether to handle the request or forward it to an installed cartridge vector.
+An interrupt during raw reset uses the current bank rather than borrowing it
+as a second context. Reset waits for a resumable fixed activation, not a
+hard-halted one.
+The linker checks the fixed entry and its calls against that bank's capacity.
+Neither interrupt entry nor return prepares collector roots or interprets
+firmware work.
+
 The remaining native language-storage paths and heap-service projections are
 migration dependencies, not new machine interfaces. Ports preserve the pinned
 source operations and policy counters while instruction execution pays the
@@ -188,9 +198,12 @@ Generated execution retains intermediate values in locals or native registers
 where possible. A physical RAM observer either admits a footprint disjoint
 from deferred writes or observes the published values and frame control.
 Returning helpers resume at the live frame PC, not at a cached destination
-when those addresses differ. Allocation,
-checked bus operations, exceptions and frame transitions use the CPU's shared
-semantic owners rather than a second implementation of the machine contract.
+when those addresses differ. Native memory lowering must preserve access
+rights, fault order, tag-and-payload retirement, and memory observation. It
+may discharge proven checks, but must not infer memory semantics from a
+firmware function's role. Checked bus operations, exceptions and frame
+transitions use the machine's shared semantic owners; guest allocation and
+collector policy are firmware execution, not backend specializations.
 Debug observation and bounded execution retain their ordinary CPU boundaries;
 hosts and Studio do not implement another instruction loop.
 

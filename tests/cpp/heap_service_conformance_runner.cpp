@@ -641,7 +641,7 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'N': cpu.requestNonMaskableInterrupt(); break;
-				case 'h': cpu.clearHaltUntilIrq(); break;
+								case 'h': cpu.clearHaltUntilIrq(); break;
 				case 'i': {
 					u32 flags;
 					trace >> flags;
@@ -649,18 +649,41 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'I': std::cout << cpu.enterPendingInterrupt() << '\n'; break;
+				case 'r': {
+					auto& controller = runtime.machine.systemController;
+					controller.requestReset();
+					const auto step = runtime.frameScheduler.stepInstruction(runtime, 1);
+					const auto state = cpu.captureRuntimeState();
+					std::cout << static_cast<int>(step) << ' ' << controller.hasResetRequest()
+						<< ' ' << state.hardHalted << ' ' << state.activeThreadAddress << ' '
+						<< state.previousActiveContextWord << '\n';
+					break;
+				}
 				case 'R': {
 					const auto before = scheduler.nowCycles();
-					try {
-						runtime.rebootSystem();
-					} catch (const std::runtime_error& error) {
-						if (std::string_view(error.what()) != "Heap service must retire before system boot.") throw;
-						if (scheduler.nowCycles() != before || !cpu.heapServiceActive())
-							throw std::runtime_error("Refused reset changed the suspended service");
-						std::cout << "reset deferred\n";
-						break;
+					const bool fixed = cpu.fixedInterruptActive();
+					const auto pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
+					const auto requireRefusal = [&](auto&& change, std::string_view refusal) {
+						try {
+							change();
+						} catch (const std::runtime_error& error) {
+							if (std::string_view(error.what()) != refusal) throw;
+							if (scheduler.nowCycles() != before || cpu.readFramePc(cpu.getFrameDepth() - 1) != pc
+								|| !(fixed ? cpu.fixedInterruptActive() : cpu.heapServiceActive()))
+								throw std::runtime_error("Refused control transfer changed suspended execution");
+							return;
+						}
+						throw std::runtime_error("Control transfer entered while fixed execution was suspended");
+					};
+					const std::string_view fixedRefusal = "System IRQ must retire before reset.";
+					requireRefusal([&] { runtime.rebootSystem(); }, fixed ? fixedRefusal : "Heap service must retire before system boot.");
+					if (fixed) {
+						requireRefusal([&] { cpu.reset(); }, fixedRefusal);
+						requireRefusal([&] { runtime.callClosure(0u); }, "External Lua closure execution requires a settled CPU and device frontier.");
+						requireRefusal([&] { cpu.abortCompletionCall(0); }, "Fixed execution must retire before replacing code execution.");
 					}
-					throw std::runtime_error("Reset entered while heap service was suspended");
+					std::cout << "reset deferred\n";
+					break;
 				}
 				case 'S': saved = captureRuntimeSaveState(runtime); break;
 				case 'U': applyRuntimeSaveState(runtime, saved); break;

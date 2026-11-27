@@ -8,18 +8,24 @@ export const COP0_CONTEXT = 16;
 export const COP0_RAM_END = 17;
 export const COP0_SYSTEM_VECTOR = 18;
 export const COP0_PREVIOUS_ACTIVE = 19;
+export const COP0_EXCEPTION_TARGET = 20;
+export const COP0_IRQ_VECTOR = 21;
+// Only the target control word carries a physical socket; execution PCs stay mapped addresses.
+export const CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31;
+export const CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffff;
+export const CPU_INTERRUPT_STATE_HALT = 0x80000000;
 
-export function cop0ReadAsZero(field: number): boolean { return field === COP0_EXEC || field === COP0_RAM_END; }
+export function cop0ReadAsZero(field: number): boolean { return field === COP0_EXEC || field === COP0_RAM_END || field === COP0_EXCEPTION_TARGET || field === COP0_IRQ_VECTOR; }
 export function cop0WriteRetiresControl(field: number): boolean {
 	return field === COP0_STATUS || field === COP0_EXEC || field === COP0_CONTEXT
-		|| field === COP0_RAM_END || field === COP0_SYSTEM_VECTOR;
+		|| field === COP0_RAM_END || field === COP0_SYSTEM_VECTOR || field === COP0_EXCEPTION_TARGET || field === COP0_IRQ_VECTOR;
 }
 
 const cop0Fields = (1 << COP0_BAD_ADDRESS) | (1 << COP0_LUA_FAULT_REASON)
-	| (1 << COP0_STATUS) | (1 << COP0_CAUSE) | (1 << COP0_EPC) | (1 << COP0_EXEC) | (1 << COP0_CONTEXT) | (1 << COP0_RAM_END) | (1 << COP0_SYSTEM_VECTOR) | (1 << COP0_PREVIOUS_ACTIVE);
+	| (1 << COP0_STATUS) | (1 << COP0_CAUSE) | (1 << COP0_EPC) | (1 << COP0_EXEC) | (1 << COP0_CONTEXT) | (1 << COP0_RAM_END) | (1 << COP0_SYSTEM_VECTOR) | (1 << COP0_PREVIOUS_ACTIVE) | (1 << COP0_EXCEPTION_TARGET) | (1 << COP0_IRQ_VECTOR);
 
 export function cop0FieldImplemented(field: number): boolean {
-	return field >= 0 && field <= COP0_PREVIOUS_ACTIVE && ((cop0Fields >>> field) & 1) !== 0;
+	return field >= 0 && field <= COP0_IRQ_VECTOR && ((cop0Fields >>> field) & 1) !== 0;
 }
 
 export const CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1 << 0;

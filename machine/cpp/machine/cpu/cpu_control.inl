@@ -30,7 +30,11 @@ inline void CPU::executeControlWrite(CallFrame& frame, int source, int field) {
 		selectRamEnd(frame, value);
 		return;
 	case COP0_SYSTEM_VECTOR:
-		installSystemVector(frame, value);
+	case COP0_IRQ_VECTOR:
+		installSystemVector(frame, value, field);
+		return;
+	case COP0_EXCEPTION_TARGET:
+		transferExceptionVector(frame, value);
 		return;
 	case COP0_PREVIOUS_ACTIVE:
 	case COP0_BAD_ADDRESS:

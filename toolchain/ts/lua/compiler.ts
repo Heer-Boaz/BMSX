@@ -147,7 +147,7 @@ import {
 	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
-import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	buildProgramDebugPoints,
 	buildProgramStatementPoints,
@@ -4044,7 +4044,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
-					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC && cop0Register !== COP0_CONTEXT && cop0Register !== COP0_RAM_END && cop0Register !== COP0_SYSTEM_VECTOR) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC && cop0Register !== COP0_CONTEXT && cop0Register !== COP0_RAM_END && cop0Register !== COP0_SYSTEM_VECTOR && cop0Register !== COP0_EXCEPTION_TARGET && cop0Register !== COP0_IRQ_VECTOR) {
 						throw new Error(`cop0.${(expr as LuaMemberExpression).member.name} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
@@ -4854,6 +4854,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case 'context': return COP0_CONTEXT;
 			case 'ram_end': return COP0_RAM_END;
 			case 'system_vector': return COP0_SYSTEM_VECTOR;
+			case 'exception_target': return COP0_EXCEPTION_TARGET;
+			case 'irq_vector': return COP0_IRQ_VECTOR;
 			case 'previous_active': return COP0_PREVIOUS_ACTIVE;
 			default: throw new Error(`Unknown cop0 register '${expression.member.name}'.`);
 		}
