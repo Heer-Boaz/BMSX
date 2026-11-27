@@ -214,25 +214,10 @@ Options:
   `cpu_slices` and `cpu_consumed_cycles` are interval deltas of the existing
   CPU-lifetime counters around `CPU::runUntilDepth`. Consumption is emulated
   budget cycles, not retired instructions or host nanoseconds.
-  `gc_collections` counts collection cycles started in the interval;
-  `gc_steps` counts full-collection increments and synchronous small collections;
-  `gc_full_collections` counts explicit or emergency full-collection requests. Continuing an incremental cycle can
-  therefore add GC time with zero new collections. Phase `gc_*_ns` values are
-  interval deltas of host monotonic timings. Total time encloses roots,
-  graph/ephemeron tracing, the second marking pass, weak cleanup, object sweep,
-  string reclamation and final heap accounting. `gc_atomic_ns` encloses the
-  final remark and overlaps its roots/trace/weak timings; do not add it to the
-  phase sum. `gc_max_step_lifetime_ns` is the absolute maximum at the sampled
-  frame, including warmup, not a delta or the sum of steps in that frame.
-  `gc_steps_over_2ms` and `gc_steps_over_8ms` count individual steps exceeding
-  those durations in the interval. A synchronous full collection can run many
-  steps back-to-back; its total pause is not the maximum individual step.
-  These fields still describe the retained slow-frame samples, not every GC
-  step in the session. Phase timers close on exception unwinding; restore-time heap
-  reconstruction is not a guest collection. CPU reset/restore never rewinds
-  these counters; loading another runtime starts a new lifetime.
-  Diagnostic builds collect these probes regardless of frontend acceptance;
-  ordinary builds contain no slice-counter or GC-timer instrumentation and do
+  Firmware runs on the CPU and contributes to the same counters. Reset and
+  restore do not rewind these counters; loading another runtime starts a
+  new lifetime. Diagnostic builds collect these probes regardless of frontend
+  acceptance; ordinary builds contain no slice-counter instrumentation and do
   not offer the interface. Keep diagnostic attribution runs separate from
   ordinary throughput comparisons. This does not expose background compiler
   time, guest-function samples or host device timing.

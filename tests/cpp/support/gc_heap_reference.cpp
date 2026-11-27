@@ -8,9 +8,6 @@
 #include <algorithm>
 #include <limits>
 #include <utility>
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-#include <chrono>
-#endif
 
 namespace bmsx {
 
@@ -28,48 +25,6 @@ void GcHeap::enqueue(u32 address, u32 link, u32 queue) {
 }
 
 namespace {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-using GcProfileClock = std::chrono::steady_clock;
-
-// Both enclosing and phase intervals close during exception unwinding, so
-// failed collections remain attributable without any per-object clocks.
-class GcPhaseMeasurement {
-public:
-	explicit GcPhaseMeasurement(u64& nanoseconds)
-		: m_nanoseconds(&nanoseconds), m_start(GcProfileClock::now()) {}
-	~GcPhaseMeasurement() {
-		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-			GcProfileClock::now() - m_start).count());
-	}
-	void phase(u64& nanoseconds) {
-		const auto now = GcProfileClock::now();
-		*m_nanoseconds += static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - m_start).count());
-		m_start = now;
-		m_nanoseconds = &nanoseconds;
-	}
-private:
-	u64* m_nanoseconds;
-	GcProfileClock::time_point m_start;
-};
-
-class GcStepMeasurement {
-public:
-	explicit GcStepMeasurement(DiagnosticGcProfile& profile)
-		: m_profile(profile), m_start(GcProfileClock::now()) {
-		++profile.steps;
-	}
-	~GcStepMeasurement() {
-		const u64 elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(GcProfileClock::now() - m_start).count());
-		m_profile.totalNanoseconds += elapsed;
-		m_profile.maxStepNanoseconds = std::max(m_profile.maxStepNanoseconds, elapsed);
-		if (elapsed > 2000000) ++m_profile.stepsOver2ms;
-		if (elapsed > 8000000) ++m_profile.stepsOver8ms;
-	}
-private:
-	DiagnosticGcProfile& m_profile;
-	GcProfileClock::time_point m_start;
-};
-#endif
 
 constexpr uint8_t kTableWeakKeys = 1, kTableWeakValues = 2;
 constexpr u8 tableRecordKind = static_cast<u8>(ValueTag::Table);
@@ -587,9 +542,6 @@ size_t GcHeap::traceRootBanks(size_t limit, size_t work, GcRootBank stop) {
 }
 
 size_t GcHeap::remarkVisits(size_t allowance) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
-#endif
 	const auto requeue = [this](u32 address) { requeueVisited(address); };
 	auto stage = remarkStage();
 	size_t visits = 0;
@@ -615,9 +567,6 @@ size_t GcHeap::remarkVisits(size_t allowance) {
 }
 
 size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t limit, size_t work, bool final) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement measurement(m_cpu.m_diagnosticGcProfile.rootsNanoseconds);
-#endif
 	markValue(root0); markValue(root1); markValue(root2);
 	work += m_stringPool.takeMarkWork();
 	if (work < limit) work = traceRootBanks(limit, work, GcRootBank::End);
@@ -630,11 +579,6 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t limit, 
 
 size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 	if (!finalMarkPending()) return 0u;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcStepMeasurement total(profile);
-	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
-#endif
 	size_t work = 0;
 	bool scopedRoots = true;
 	do {
@@ -645,11 +589,6 @@ size_t GcHeap::finishFinalMark(Value root0, Value root1, Value root2) {
 }
 
 size_t GcHeap::stepFinalMark(size_t limit) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcStepMeasurement total(profile);
-	GcPhaseMeasurement atomicTime(profile.atomicNanoseconds);
-#endif
 	const size_t work = finalMarkWork(valueNil(), valueNil(), valueNil(), false, limit);
 	return accountEpochWork(work);
 }
@@ -680,9 +619,6 @@ size_t GcHeap::finalMarkTail(size_t limit, size_t work) {
 		if (remarkStage() == RemarkStage::Roots || work >= limit) return work;
 	}
 	if (remarkStage() == RemarkStage::Trace) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		GcPhaseMeasurement traceTime(m_cpu.m_diagnosticGcProfile.traceNanoseconds);
-#endif
 		return finishAtomicTrace(limit, traceQuantum(true, limit, work));
 	}
 	return atomicWeakWork(limit, work);
@@ -711,9 +647,6 @@ size_t GcHeap::finishAtomicCollection(size_t work) {
 }
 
 size_t GcHeap::clearWeakQuantum(size_t limit) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	GcPhaseMeasurement weakTime(m_cpu.m_diagnosticGcProfile.weakNanoseconds);
-#endif
 	size_t work = 0;
 	while (work < limit) {
 		u32 record = memory.readRamRecordWord(m_controlOffset + GC_TRACE_RECORD);
@@ -909,10 +842,6 @@ size_t GcHeap::finishStepWork(u32 occupiedBefore, size_t work) {
 
 size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread, bool compactThreads,
 	size_t limit) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	auto& profile = m_cpu.m_diagnosticGcProfile;
-	GcStepMeasurement total(profile);
-#endif
 	size_t work = 0;
 	if (remarkStage() != RemarkStage::None) {
 		work += remarkVisits(limit);
@@ -920,13 +849,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 		work = remarkRoots(root0, root1, root2, limit, work, false);
 		if (phase() == GcPhase::Mark) return work;
 	} else if (phase() == GcPhase::Pause || phase() == GcPhase::Mark || phase() == GcPhase::MarkAgain) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		GcPhaseMeasurement roots(profile.rootsNanoseconds);
-#endif
 		if (phase() == GcPhase::Pause) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-			++profile.collections;
-#endif
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
 			m_stringPool.markReachable(diagnosticWord(GcDiagnosticField::Mode));
@@ -946,29 +869,18 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 		switch (phase()) {
 			case GcPhase::Mark:
 			case GcPhase::MarkAgain: {
-				{
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-					GcPhaseMeasurement traceTime(phase() == GcPhase::Mark ? profile.traceNanoseconds : profile.markAgainNanoseconds);
-#endif
-					work = traceQuantum(false, limit, work);
-				}
+				work = traceQuantum(false, limit, work);
 				work = finishMajorTrace(root0, root1, root2, limit, work);
 				if (work >= limit || phase() != GcPhase::MarkAgain) return work;
 				break;
 			}
 			case GcPhase::Atomic: return work;
 			case GcPhase::Sweep: {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-				GcPhaseMeasurement sweepTime(profile.sweepNanoseconds);
-#endif
 				work += sweepObjects(limit - work, growingThread, compactThreads);
 				if (work < limit && memory.readRamRecordWord(m_controlOffset + GC_SWEEP_LINK) == 0u) beginStrings();
 				break;
 			}
 			case GcPhase::Strings: {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-				GcPhaseMeasurement strings(profile.stringReclaimNanoseconds);
-#endif
 				work += m_stringPool.sweepStep(limit - work);
 				finishStrings();
 				return work;
@@ -1008,9 +920,6 @@ LuaAllocationRecovery GcHeap::beginAllocationRecovery(LuaAllocationRecovery next
 	if (next == LuaAllocationRecovery::Exhausted) throw LuaOutOfMemorySignal{};
 	const bool first = next == LuaAllocationRecovery::CurrentOrFresh;
 	const bool continueCurrent = first && active();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	if (first) ++m_cpu.m_diagnosticGcProfile.fullCollections;
-#endif
 	return continueCurrent ? LuaAllocationRecovery::Fresh : LuaAllocationRecovery::Exhausted;
 }
 
@@ -1037,9 +946,6 @@ void GcHeap::beginInitialBanks() {
 }
 
 size_t GcHeap::collect(Value root0, Value root1, Value root2, u32 growingThread) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	++m_cpu.m_diagnosticGcProfile.fullCollections;
-#endif
 	size_t work = 0;
 	// An explicit/full collection also removes floating garbage from an active cycle.
 	while (active()) work += step(root0, root1, root2, growingThread, true);

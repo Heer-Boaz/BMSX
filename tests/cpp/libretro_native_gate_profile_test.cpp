@@ -118,7 +118,7 @@ void realInvocations() {
 	std::filesystem::remove_all(path);
 }
 
-void cumulativeCountersAndRealGc() {
+void cumulativeGateCounters() {
 	test::Blua32TestImage source; source.text.resize(MAPPED_PAGE_BYTE_SIZE); // Cold native preparation consumes a real backed instruction page.
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	source.functions = {{.firstWord=0, .wordCount=1, .maxStack=4}};
@@ -128,35 +128,27 @@ void cumulativeCountersAndRealGc() {
 	test::seedManagedFixture(cpu, addresses);
 	cpu.prepareSystemNativeCode();
 	resetLibretroNativeGateProfile(); logs.clear();
-	const auto gcBefore = cpu.diagnosticGcProfile().collections;
 	const auto start = now();
-	{ NativeGateProfileFrame frame(&cpu, logMessage); cpu.runUntilDepth(0, 2); cpu.collectHeap(); }
+	{ NativeGateProfileFrame frame(&cpu, logMessage); cpu.runUntilDepth(0, 2); }
 	const auto end = now(); interval(summary(0), start, end, 0, true);
 	const auto first = fields(summary(0).line);
-	require(first.at("dispatch_entries") == 1 && first.at("null_returns") == 1
-		&& first.at("gc_collections") == 1 && cpu.diagnosticGcProfile().collections == gcBefore + 1,
-		"the logger reports actual HALT and the existing real collection producer, not synthetic seeded counters");
-	const u64 phaseSum = first.at("gc_roots_ns") + first.at("gc_trace_ns") + first.at("gc_weak_ns")
-		+ first.at("gc_sweep_ns") + first.at("gc_string_reclaim_ns") + first.at("gc_mark_again_ns");
-	require(phaseSum <= first.at("gc_total_ns") && first.at("gc_total_ns") <= first.at("end_monotonic_ns") - first.at("begin_monotonic_ns"),
-		"real collection phase totals stay inside their enclosing collection and frame clocks");
-	require(first.at("gc_steps") >= 3 && first.at("gc_full_collections") == 1
-		&& first.at("gc_atomic_ns") <= first.at("gc_total_ns") && first.at("gc_max_step_lifetime_ns") > 0,
-		"the log distinguishes incremental calls, synchronous collections and enclosing atomic work");
+	require(first.at("dispatch_entries") == 1 && first.at("null_returns") == 1,
+		"the logger reports the actual generated HALT");
+	require(summary(0).line.find(" gc_") == std::string::npos, "the native gate log reports no firmware GC counters");
 	const auto start2 = now();
 	{ NativeGateProfileFrame frame(&cpu, logMessage); }
 	const auto end2 = now(); interval(summary(1), start2, end2, 1, true);
 	const auto second = fields(summary(1).line);
-	require(second.at("dispatch_entries") == 0 && second.at("gc_collections") == 0
-		&& second.at("gc_total_ns") == 0 && cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Halt)].entries == 1,
+	require(second.at("dispatch_entries") == 0
+		&& cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Halt)].entries == 1,
 		"empty scopes emit zero deltas without clearing the real CPU lifetime counts");
 	resetLibretroNativeGateProfile(); logs.clear(); clocks.clear();
 	const auto start3 = now(); captureClocks = true;
 	{ NativeGateProfileFrame frame(nullptr, logMessage); }
 	captureClocks = false; const auto end3 = now();
 	interval(summary(0), start3, end3, 0, false);
-	require(clocks.size() == 2 && cpu.diagnosticGcProfile().collections == gcBefore + 1,
-		"reset changes only invocation indexing and leaves live CPU/GC counters intact");
+	require(clocks.size() == 2 && cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Halt)].entries == 1,
+		"reset changes only invocation indexing and leaves live CPU counters intact");
 }
 } // namespace
 extern "C" int __wrap_clock_gettime(clockid_t id, timespec* stamp) {
@@ -165,6 +157,6 @@ extern "C" int __wrap_clock_gettime(clockid_t id, timespec* stamp) {
 	return result;
 }
 int main() {
-	try { realInvocations(); cumulativeCountersAndRealGc(); }
+	try { realInvocations(); cumulativeGateCounters(); }
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

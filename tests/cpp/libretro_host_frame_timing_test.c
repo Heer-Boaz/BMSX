@@ -168,12 +168,6 @@ int main(void) {
 		.scheduler_now_cycles = INT64_C(9007199254740995),
 		.cpu_slice_count = 100u,
 		.cpu_slice_consumed_cycles = INT64_C(9007199254740997),
-		.gc_collections = 20u, .gc_total_nanoseconds = 3000u,
-		.gc_roots_nanoseconds = 100u, .gc_trace_nanoseconds = 200u,
-		.gc_weak_nanoseconds = 300u, .gc_sweep_nanoseconds = 400u,
-		.gc_string_reclaim_nanoseconds = 500u,
-		.gc_steps = 17u, .gc_full_collections = 2u, .gc_max_step_nanoseconds = 9000000u,
-		.gc_steps_over_2ms = 5u, .gc_steps_over_8ms = 1u,
 		.cpu_native_origin_cycles = INT64_C(9007199254740999),
 		.cpu_interpreter_runtime_cycles = INT64_C(9007199254740997),
 		.native_call_count = UINT64_C(9007199254740995),
@@ -183,15 +177,6 @@ int main(void) {
 	execution_after.scheduler_now_cycles = -INT64_C(9007199254740993);
 	execution_after.cpu_slice_count += 3u;
 	execution_after.cpu_slice_consumed_cycles += 172u;
-	execution_after.gc_collections += 1u;
-	execution_after.gc_total_nanoseconds += 800u;
-	execution_after.gc_roots_nanoseconds += 11u;
-	execution_after.gc_trace_nanoseconds += 22u;
-	execution_after.gc_weak_nanoseconds += 33u;
-	execution_after.gc_sweep_nanoseconds += 44u;
-	execution_after.gc_string_reclaim_nanoseconds += 55u;
-	execution_after.gc_steps += 3u; execution_after.gc_steps_over_2ms += 1u;
-	execution_after.gc_mark_again_nanoseconds += 66u; execution_after.gc_atomic_nanoseconds += 77u;
 	execution_after.cpu_native_origin_cycles += 120u;
 	execution_after.cpu_interpreter_runtime_cycles += 52u;
 	execution_after.native_call_count += 2u;
@@ -207,13 +192,6 @@ int main(void) {
 	CHECK(execution.scheduler_before_cycles == INT64_C(9007199254740995));
 	CHECK(execution.scheduler_after_cycles == -INT64_C(9007199254740993));
 	CHECK(execution.cpu_slice_count == 3u && execution.cpu_slice_consumed_cycles == 172);
-	CHECK(execution.gc_collections == 1u && execution.gc_total_nanoseconds == 800u);
-	CHECK(execution.gc_roots_nanoseconds == 11u && execution.gc_trace_nanoseconds == 22u);
-	CHECK(execution.gc_weak_nanoseconds == 33u && execution.gc_sweep_nanoseconds == 44u);
-	CHECK(execution.gc_string_reclaim_nanoseconds == 55u);
-	CHECK(execution.gc_steps == 3u && execution.gc_full_collections == 0u && execution.gc_steps_over_2ms == 1u);
-	CHECK(execution.gc_steps_over_8ms == 0u && execution.gc_max_step_nanoseconds == 9000000u);
-	CHECK(execution.gc_mark_again_nanoseconds == 66u && execution.gc_atomic_nanoseconds == 77u);
 	CHECK(execution.cpu_native_origin_cycles == 120u);
 	CHECK(execution.cpu_interpreter_runtime_cycles == 52u);
 	CHECK(execution.native_call_count == 2u);
@@ -229,11 +207,6 @@ int main(void) {
 	CHECK(execution_idle.scheduler_before_cycles == execution_after.scheduler_now_cycles);
 	CHECK(execution_idle.scheduler_after_cycles == execution_after.scheduler_now_cycles);
 	CHECK(execution_idle.cpu_slice_count == 0u && execution_idle.cpu_slice_consumed_cycles == 0);
-	CHECK(execution_idle.gc_collections == 0u && execution_idle.gc_total_nanoseconds == 0u);
-	CHECK(execution_idle.gc_roots_nanoseconds == 0u && execution_idle.gc_trace_nanoseconds == 0u);
-	CHECK(execution_idle.gc_weak_nanoseconds == 0u && execution_idle.gc_sweep_nanoseconds == 0u);
-	CHECK(execution_idle.gc_string_reclaim_nanoseconds == 0u);
-	CHECK(execution_idle.gc_steps == 0u && execution_idle.gc_steps_over_2ms == 0u && execution_idle.gc_max_step_nanoseconds == 9000000u);
 	CHECK(execution_idle.cpu_native_origin_cycles == 0);
 	CHECK(execution_idle.cpu_interpreter_runtime_cycles == 0);
 	CHECK(execution_idle.native_call_count == 0);
@@ -251,7 +224,7 @@ int main(void) {
 	CHECK(execution_report.slow_frames[0].host_frame == 51u && execution_report.slow_frames[0].has_execution);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_before_cycles == execution_before.scheduler_now_cycles);
 	CHECK(execution_report.slow_frames[0].execution.scheduler_after_cycles == execution_after.scheduler_now_cycles);
-	CHECK(execution_report.slow_frames[0].execution.gc_trace_nanoseconds == 22u);
+	CHECK(execution_report.slow_frames[0].execution.cpu_native_origin_cycles == 120);
 	CHECK(execution_report.slow_frames[1].execution.cpu_slice_count == 0u);
 	for (unsigned index = 0u; index < BMSX_FRAME_TIMING_SLOW_FRAME_COUNT; ++index) {
 		bmsx_frame_timing_record(&execution_report, 53u + index, 0u, 200000000ull + index, 20000000u, 0u, 0u, false, 0u, false, false, true, NULL, NULL, NULL, 0u, 0u, NULL);
@@ -268,7 +241,7 @@ int main(void) {
 	CHECK(fgets(line, sizeof(line), output) != NULL);
 	CHECK(strstr(line, "scheduler_before_cycles=9007199254740995 scheduler_after_cycles=-9007199254740993") != NULL);
 	CHECK(strstr(line, "cpu_slices=3 cpu_consumed_cycles=172") != NULL);
-	CHECK(strstr(line, "gc_collections=1 gc_total_ns=800 gc_roots_ns=11 gc_trace_ns=22 gc_weak_ns=33 gc_sweep_ns=44 gc_string_reclaim_ns=55") != NULL);
+	CHECK(strstr(line, " gc_") == NULL);
 	CHECK(strstr(line, "cpu_native_origin_cycles=120 cpu_interpreter_runtime_cycles=52") != NULL);
 	CHECK(strstr(line, "native_call_count=2 native_setfield_count=3 native_concat_count=4 native_concatn_count=5") != NULL);
 	CHECK(strstr(line, "interpreter_call_count=2 interpreter_setfield_count=3 interpreter_concat_count=4 interpreter_concatn_count=5") != NULL);

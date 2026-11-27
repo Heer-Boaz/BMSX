@@ -471,13 +471,6 @@ int main() {
 	require(initialExecutionProfile.scheduler_now_cycles == cartridgeRuntimeState.machineState.schedulerNowCycles
 		&& initialExecutionProfile.cpu_slice_count == 0u && initialExecutionProfile.cpu_slice_consumed_cycles == 0,
 		"execution profile exports the raw scheduler position and unexecuted CPU slice counters");
-	require(initialExecutionProfile.gc_collections == 0u && initialExecutionProfile.gc_total_nanoseconds == 0u,
-		"loading this ROM performs no native collection before the first host run");
-	require(initialExecutionProfile.gc_total_nanoseconds >= initialExecutionProfile.gc_roots_nanoseconds
-		+ initialExecutionProfile.gc_trace_nanoseconds + initialExecutionProfile.gc_weak_nanoseconds
-		+ initialExecutionProfile.gc_sweep_nanoseconds + initialExecutionProfile.gc_string_reclaim_nanoseconds
-		+ initialExecutionProfile.gc_mark_again_nanoseconds,
-		"GC phase times are contained within the complete collection interval");
 	std::vector<bmsx::u8> afterProfileReads(cartridgeState.size());
 	require(retro_serialize(afterProfileReads.data(), afterProfileReads.size()) && afterProfileReads == cartridgeState,
 		"profile reads leave serialized machine state unchanged");
@@ -518,8 +511,6 @@ int main() {
 		&& runningExecutionProfile.cpu_slice_consumed_cycles == static_cast<int64_t>(runningExecutionProfile.cpu_slice_count)
 			* bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::HALT)],
 		"boot and supervisor entries contain only HALT, so each recorded CPU slice charges exactly that instruction's cost");
-	require(runningExecutionProfile.gc_collections == initialExecutionProfile.gc_collections,
-		"a nonallocating boot HALT does not fabricate a guest collection");
 #endif
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	BmsxNativeCompilationProfileV2 runningNativeProfile{};
@@ -557,9 +548,6 @@ int main() {
 	require(afterResetProfile.cpu_native_origin_cycles == beforeResetProfile.cpu_native_origin_cycles
 		&& afterResetProfile.cpu_interpreter_runtime_cycles == beforeResetProfile.cpu_interpreter_runtime_cycles,
 		"hardware reset does not rewind backend-origin diagnostic lifetime counters");
-	require(afterResetProfile.gc_collections == beforeResetProfile.gc_collections
-		&& afterResetProfile.gc_total_nanoseconds == beforeResetProfile.gc_total_nanoseconds,
-		"hardware reset performs no native collection before the first system instruction");
 #endif
 	require(geometryNotifications + systemAvNotifications == notificationsBeforeReset, "retro_reset must defer geometry publication to retro_run");
 	insideRetroRun = true;

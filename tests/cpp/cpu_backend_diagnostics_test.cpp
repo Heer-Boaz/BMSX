@@ -401,9 +401,7 @@ void statisticsAreNotCheckpointState() {
 	requireCounts(restoredProfile.nativeOpcodes,profile.nativeOpcodes,"restoring machine state retains native opcode lifetime counts");
 	requireCounts(restoredProfile.interpreterOpcodes,profile.interpreterOpcodes,"restoring machine state retains scalar opcode lifetime counts");
 	const auto before=encodeRuntimeSaveState(captureRuntimeSaveState(fixture.runtime));
-	const auto collections=fixture.runtime.machine.cpu.diagnosticGcProfile().collections;
 	(void)fixture.runtime.machine.cpu.diagnosticExecutionProfile();
-	require(fixture.runtime.machine.cpu.diagnosticGcProfile().collections==collections,"diagnostic reads do not trigger collection");
 	require(encodeRuntimeSaveState(captureRuntimeSaveState(fixture.runtime))==before,"reading backend diagnostics has no guest state, time, MMIO or GC effect");
 #endif
 }

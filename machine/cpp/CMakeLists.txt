@@ -19,7 +19,7 @@ option(BMSX_NATIVE_COMPILER_WORKER "Compile native regions on a bounded backgrou
 option(BMSX_NATIVE_PERF_MAP "Publish generated native-code symbols to Linux perf maps" OFF)
 option(BMSX_NATIVE_IR_TRACE "Enable opt-in native compilation IR diagnostics" OFF)
 option(BMSX_NATIVE_GATE_PROFILE "Report materialized native C++ gate transitions per libretro run" OFF)
-option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and GC phases in diagnostic builds" OFF)
+option(BMSX_DIAGNOSTIC_CPU_SLICES "Measure CPU-run consumption and opcode provenance in diagnostic builds" OFF)
 option(BMSX_DIAGNOSTIC_GEO "Report overlap work and thread CPU time per libretro run (Linux)" OFF)
 option(BMSX_DIAGNOSTIC_CPU_TIMING "Measure Linux CPU-slice wall/thread time without opcode probes" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)

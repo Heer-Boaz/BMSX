@@ -27,7 +27,6 @@ struct WorkRecord {
 	i64 beginMonotonicNs;
 	i64 endMonotonicNs;
 	DiagnosticCpuTiming cpu;
-	DiagnosticGcProfile gc;
 	i64 scheduledCycles;
 	i64 ticks;
 	int hostSteps;
@@ -90,7 +89,6 @@ int main(int argc, char** argv) {
 		cpu.setGlobalByKey(modeKey, valueString(cpu.stringPool().intern(mode)));
 		for (int iteration = 1; iteration <= warmup + measured; ++iteration) {
 			const auto before = scheduler.diagnosticCpuTiming;
-			const auto gcBefore = cpu.diagnosticGcProfile();
 			const auto cycleBefore = scheduler.nowCycles();
 			const auto tickBefore = runtime.frameScheduler.lastTickSequence;
 			NativeCompilationProfile compileBefore{}, compileAfter{};
@@ -109,15 +107,12 @@ int main(int argc, char** argv) {
 			r.endMonotonicNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
 				std::chrono::steady_clock::now().time_since_epoch()).count();
 			const auto after = scheduler.diagnosticCpuTiming;
-			const auto gcAfter = cpu.diagnosticGcProfile();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			compileAfter = cpu.readNativeCompilationProfile();
 #endif
 			if (cpu.getGlobalByKey(checksumKey) != valueFromNumber(4998675)) throw std::runtime_error("workload checksum mismatch");
 			r.cpu = {after.slices - before.slices, after.consumedCycles - before.consumedCycles,
 				after.wallNanoseconds - before.wallNanoseconds, after.threadNanoseconds - before.threadNanoseconds};
-			r.gc.collections = gcAfter.collections - gcBefore.collections;
-			r.gc.totalNanoseconds = gcAfter.totalNanoseconds - gcBefore.totalNanoseconds;
 			r.scheduledCycles = scheduler.nowCycles() - cycleBefore;
 			r.ticks = runtime.frameScheduler.lastTickSequence - tickBefore;
 			r.hostSteps = steps;
@@ -140,7 +135,6 @@ int main(int argc, char** argv) {
 				<< ",\"cpuThreadNs\":" << r.cpu.threadNanoseconds << ",\"cpuWallNs\":" << r.cpu.wallNanoseconds
 				<< ",\"guestCycles\":" << r.cpu.consumedCycles << ",\"cpuSlices\":" << r.cpu.slices
 				<< ",\"scheduledCycles\":" << r.scheduledCycles << ",\"ticks\":" << r.ticks << ",\"hostSteps\":" << r.hostSteps
-				<< ",\"gcCollections\":" << r.gc.collections << ",\"gcWallNs\":" << r.gc.totalNanoseconds
 				<< ",\"prepares\":" << r.prepares << ",\"prepareNs\":" << r.prepareNanoseconds
 				<< ",\"compilationNs\":" << r.compilationNanoseconds << "}\n";
 		}

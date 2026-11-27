@@ -133,13 +133,9 @@ static void RETRO_CALLCONV read_native_compilation_profile(BmsxNativeCompilation
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 static void RETRO_CALLCONV read_execution_profile(BmsxExecutionProfile* output) {
 	const auto& machine = g_content->runtime.machine;
-	const auto& gc = machine.cpu.diagnosticGcProfile();
 	*output = {
 		machine.scheduler.nowCycles(), machine.scheduler.diagnosticCpuSliceCount,
 		machine.scheduler.diagnosticCpuSliceConsumedCycles,
-		gc.collections, gc.totalNanoseconds, gc.rootsNanoseconds, gc.traceNanoseconds,
-		gc.weakNanoseconds, gc.sweepNanoseconds, gc.stringReclaimNanoseconds,
-		gc.fullCollections, gc.steps, gc.maxStepNanoseconds, gc.stepsOver2ms, gc.stepsOver8ms, gc.markAgainNanoseconds, gc.atomicNanoseconds,
 		machine.scheduler.diagnosticNativeOriginCycles, machine.scheduler.diagnosticInterpreterRuntimeCycles,
 		machine.scheduler.diagnosticNativeOpcodes.call,
 		machine.scheduler.diagnosticNativeOpcodes.setfield, machine.scheduler.diagnosticNativeOpcodes.concat,

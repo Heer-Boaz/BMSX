@@ -165,9 +165,6 @@ void tableBackingRecoveryRetriesEachEpoch() {
 		const Value initialRoot = pressure == Pressure::Floating || pressure == Pressure::Explicit ? valueTable(garbage) : valueNil();
 		gc.step(initialRoot, valueNil(), valueNil(), 0u, false, 1u);
 		require(gc.phase() == GcPhase::Mark, "recovery begins with an incomplete automatic mark");
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		const auto synchronousCollections = cpu.diagnosticGcProfile().fullCollections;
-#endif
 		cpu.instructionBudgetRemaining = 41;
 		if (pressure == Pressure::Explicit) {
 			cpu.collectHeap();
@@ -188,10 +185,6 @@ void tableBackingRecoveryRetriesEachEpoch() {
 		}
 		require(!gc.active() && cpu.instructionBudgetRemaining == 41 && frame.registers.get(0) == valueTable(table.address()),
 			"the recovery retains the live original and doesn't debit the guest instruction grant");
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-		require(cpu.diagnosticGcProfile().fullCollections == synchronousCollections + 1u,
-			"count synchronous recovery once regardless of the number of epochs it needed");
-#endif
 	}
 }
 
@@ -1815,9 +1808,6 @@ void highRetainedPacing() {
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueTable(retained.address())); frame.writeControl(bmsx::FrameField::Top, 1);
 	cpu.collectHeap();
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	const auto before = cpu.diagnosticGcProfile();
-#endif
 		int pauses = 0;
 	for (int i = 0; i < 2400; ++i) {
 		const auto before = cpu.instructionBudgetRemaining;
@@ -1831,11 +1821,6 @@ void highRetainedPacing() {
 	require(pauses >= 2, "retained data survives repeated automatically paced cycles");
 	require(cpu.luaHeap().usedBytes() <= cpu.luaHeap().capacity() && frame.registers.get(0) == valueTable(retained.address()),
 		"retained pool and transient allocation coexist inside the physical capacity");
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	const auto after = cpu.diagnosticGcProfile();
-	require(after.fullCollections == before.fullCollections && after.collections > before.collections,
-		"headroom and allocation assists complete cycles without emergency full collection");
-#endif
 }
 
 }

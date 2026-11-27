@@ -26,7 +26,7 @@ class HostExecutionProfileTest(unittest.TestCase):
         self.assertIn("requires current execution profile interface", result.stderr)
         self.assertEqual(result.stdout, "")
 
-    def test_backend_counters_and_gc_share_the_same_frame_interval(self):
+    def test_backend_counters_share_the_same_frame_interval(self):
         result = self.run_profile_core("current", max_frames=35)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "RD")
@@ -41,12 +41,11 @@ class HostExecutionProfileTest(unittest.TestCase):
             "native_concat_count": "1", "native_concatn_count": "1",
             "interpreter_call_count": "1", "interpreter_setfield_count": "1",
             "interpreter_concat_count": "1", "interpreter_concatn_count": "1",
-            "gc_collections": "1", "gc_total_ns": "1000", "gc_roots_ns": "100", "gc_trace_ns": "200",
-            "gc_weak_ns": "50", "gc_sweep_ns": "400", "gc_string_reclaim_ns": "250",
         }
         for frame in frames:
             for key, value in expected.items():
                 self.assertEqual(frame[key], value, key)
+            self.assertFalse(any(key.startswith("gc_") for key in frame))
             self.assertIn("host_main_thread_cpu_ns", frame)
             self.assertIn("host_process_cpu_ns", frame)
         reports = [dict(re.findall(r"(\w+)=([^\s]+)", line))

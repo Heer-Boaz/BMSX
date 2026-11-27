@@ -2,7 +2,6 @@
 
 #include "libretro.h"
 #include "machine/cpu/jit/runtime/gate_profile.h"
-#include "machine/cpu/diagnostic_gc_profile.h"
 
 namespace bmsx {
 
@@ -24,7 +23,6 @@ private:
 	decltype(retro_log_callback::log) m_log;
 	u64 m_index;
 	NativeGateProfile m_before;
-	DiagnosticGcProfile m_gcBefore;
 	u64 m_start;
 };
 

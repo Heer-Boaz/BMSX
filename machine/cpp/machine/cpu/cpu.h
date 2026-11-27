@@ -39,9 +39,6 @@
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
 #include "spec/bmsx/memory_map.h"
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-#include "machine/cpu/diagnostic_gc_profile.h"
-#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 #include "machine/cpu/diagnostic_execution_profile.h"
 #endif
@@ -197,9 +194,6 @@ public:
 	const HeapAllocator& heapAllocator() const { return m_heapAllocator; }
 	GcHeap& gcHeap() { return m_heap; }
 	const GcHeap& gcHeap() const { return m_heap; }
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	const DiagnosticGcProfile& diagnosticGcProfile() const { return m_diagnosticGcProfile; }
-#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const DiagnosticExecutionProfile& diagnosticExecutionProfile() const { return m_diagnosticExecutionProfile; }
 #endif
@@ -587,9 +581,6 @@ private:
 
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	DiagnosticGcProfile m_diagnosticGcProfile;
-#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	DiagnosticExecutionProfile m_diagnosticExecutionProfile;
 #endif
