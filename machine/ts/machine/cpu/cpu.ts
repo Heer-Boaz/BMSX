@@ -841,7 +841,7 @@ export class CPU implements MappedPageInvalidator {
 				return false;
 			case ValueTag.Table: {
 				const record = registers.getPayload(source);
-				const method = this.gc.tables.metafield(record, HeapServiceRemarkHeadField.Length);
+				const method = this.gc.tables.lengthMetamethod(record);
 				if (!isNil(method)) {
 					const operand = valueTable(record);
 					this.invokeTableMetamethod(frame, method, destination, SINGLE_CALL_RESULT, operand, operand);

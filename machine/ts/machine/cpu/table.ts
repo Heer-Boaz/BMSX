@@ -376,7 +376,15 @@ export class TableRecords {
 	public resolveStringIndex(record: number, key: StringId, result: TableLookupResult): void {
 		this.resolveStringIndexCached(record, key, -1, result);
 	}
-	public metafield(record: number, field: HeapServiceRemarkHeadField): Value {
+	/** A table-valued __index can be inspected without executing a guest function. */
+	public indexParentTable(record: number): number {
+		const field = this.metafield(record, HeapServiceRemarkHeadField.Index);
+		return valueTag(field) === ValueTag.Table ? valuePayload(field) : 0;
+	}
+	public lengthMetamethod(record: number): Value {
+		return this.metafield(record, HeapServiceRemarkHeadField.Length);
+	}
+	private metafield(record: number, field: HeapServiceRemarkHeadField): Value {
 		const meta = this.metatableAddress(record);
 		return meta !== 0 ? this.getStringKey(meta, this.heap.diagnosticWord(field)) : valueNil();
 	}

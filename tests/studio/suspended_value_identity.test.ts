@@ -3,7 +3,7 @@ import test from 'node:test';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
-import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, type Value } from '../../machine/ts/machine/cpu/value';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
@@ -74,4 +74,24 @@ test('table previews use the returned key, not traversal work, to detect exhaust
 	cpu.gc.tables.set(table, valueBool(false), valueNil());
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'a deleted hash node is not a preview entry');
 	assert.equal(presentation.update(value), '{}');
+});
+
+test('suspended member reads and enumeration follow the runtime index field', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const guest = new SuspendedGuestSession(runtime), { cpu } = runtime.machine;
+	const { tables } = cpu.gc, pool = cpu.stringPool;
+	const child = cpu.createTable(0, 1), parent = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
+	const shared = pool.intern('member-shadow'), inherited = pool.intern('member-inherited');
+	tables.setStringKey(child, shared, valueBool(false));
+	tables.setStringKey(parent, shared, valueInteger(13));
+	tables.setStringKey(parent, inherited, valueInteger(17));
+	tables.setStringKey(meta, pool.find('__index')!, valueTable(parent));
+	tables.setMetatableAddress(child, meta);
+	const value = valueTable(child);
+
+	assert.equal(guest.readStringMember(value, 'member-shadow'), valueBool(false));
+	assert.equal(guest.readStringMember(value, 'member-inherited'), valueInteger(17));
+	const members = new Map<string, Value>();
+	guest.visitTableStringMembers(value, (name, entry) => members.set(name, entry));
+	assert.deepEqual(members, new Map([['member-shadow', valueBool(false)], ['member-inherited', valueInteger(17)]]));
 });

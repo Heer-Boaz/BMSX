@@ -69,14 +69,12 @@ export class SuspendedGuestSession {
 	private readonly formatStoredEntry = (key: Value, entry: Value): void => {
 		this.storedParts.push(`${this.formatValue(key)}: ${this.previewValue(entry, 1, STORED_ENTRIES_PREVIEW_LIMIT)}`);
 	};
-	private readonly indexKey: StringId;
 	private readonly invalidationListeners = new Set<(reason: GuestInvalidationReason) => void>();
 	private readonly historyReviewEndListeners = new Set<() => void>();
 
 	public constructor(private readonly runtime: Runtime) {
 		this.cpu = runtime.machine.cpu;
 		this.stringPool = this.cpu.stringPool;
-		this.indexKey = this.stringPool.find('__index')!;
 	}
 
 	public global(name: string): SuspendedGuestValue {
@@ -223,7 +221,7 @@ export class SuspendedGuestSession {
 			return valueNil();
 		}
 		const table = valuePayload(value);
-		this.cpu.gc.tables.resolveStringIndex(table, this.indexKey, key, this.lookupResult);
+		this.cpu.gc.tables.resolveStringIndex(table, key, this.lookupResult);
 		if (this.lookupResult.status === TableLookupStatus.ChainExhausted) {
 			throw new Error(METATABLE_LOOP_MESSAGE);
 		}
@@ -268,11 +266,8 @@ export class SuspendedGuestSession {
 		let current = valuePayload(value);
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; depth += 1) {
 			this.cpu.gc.tables.forEachStoredEntry(current, visitEntry);
-			const next = this.cpu.gc.tables.metafield(current, this.indexKey);
-			if (valueTag(next) !== ValueTag.Table) {
-				return;
-			}
-			current = valuePayload(next);
+			current = this.cpu.gc.tables.indexParentTable(current);
+			if (current === 0) return;
 		}
 		throw new Error(METATABLE_LOOP_MESSAGE);
 	}
