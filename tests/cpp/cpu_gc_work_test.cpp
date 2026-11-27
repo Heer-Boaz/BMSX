@@ -522,25 +522,6 @@ void scheduledLogicalRefusalParks() {
 		"the reclaimed space admits the original store without executing its successor");
 }
 
-void concatRecoveryChargesIssuingInstruction() {
-	Machine generated(image(OpCode::CONCAT)), scalar(image(OpCode::CONCAT), true);
-	for (auto* m : {&generated, &scalar}) {
-		auto& frame = *m->cpu.rootThread()->currentFrame;
-		frame.registers.set(1, valueInteger(12));
-		frame.writeControl(FrameField::Top, 2);
-		bmsx::test::allocateTableReference(m->cpu, 2048, 0);
-		for (const auto bytes : {4088u, 32u, 8u}) while (m->cpu.heapAllocator().allocate(bytes, true)) {}
-	}
-	const int issue = BASE_CYCLES[static_cast<u8>(OpCode::CONCAT)] + 4;
-	require(test::runCpuParity(generated.cpu, scalar.cpu, issue + 2) == RunResult::Yielded, "recovery exhausts the CONCAT grant");
-	const int work = generated.memory.readRamRecordWord(generated.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
-	require(work > 0 && generated.cpu.instructionBudgetRemaining == 2 - 3 * work, "charge the recovered epoch exactly once");
-	require(valueIsString(generated.cpu.readFrameRegister(0, 0)) && isNil(generated.cpu.readFrameRegister(0, 7)),
-		"CONCAT completes after reclamation but its successor has not issued");
-	test::runCpuParity(generated.cpu, scalar.cpu, 2);
-	require(generated.cpu.readFrameRegister(0, 7) == valueInteger(37), "the fresh grant resumes at the successor");
-}
-
 void logicalAdmissionFailure() {
 	Machine failure(image()); auto& cpu = failure.cpu;
 	const auto doomed = bmsx::test::allocateTableReference(cpu, 16384, 0).address();
@@ -1958,7 +1939,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes();
-		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure();
+		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); logicalAdmissionFailure();
 		romLiteralsDoNotUseGuestRam(); replacementRetiresInstalledBindingSpan(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();

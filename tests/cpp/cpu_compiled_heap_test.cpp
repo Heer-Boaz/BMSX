@@ -1,6 +1,4 @@
 #include "machine/cpu/cpu.h"
-#include "common/utf8.h"
-#include "machine/common/numeric.h"
 #include "machine/cpu/jit/runtime/block.h"
 #include "machine/devices/irq/controller.h"
 #include "machine/memory/memory.h"
@@ -13,9 +11,7 @@
 #include "support/table_allocation_reference.h"
 
 #include <algorithm>
-#include <array>
 #include <iostream>
-#include <limits>
 #include <stdexcept>
 #include <tuple>
 
@@ -139,155 +135,6 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 		&& x->stackBase() == y->stackBase() && x->stackCapacity() == y->stackCapacity(), "live frame extents agree");
 }
 
-void concatKindsAndAliases(int destination) {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 8, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), destination, 0, 1);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}};
-	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
-		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(1)); frame.registers.set(1, valueInteger(2));
-		m->cpu.runUntilDepth(0, 4);
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::Concat && block->sourceWords == 2, "the allocating concatenation really terminates a native prefix");
-#endif
-	const std::array<std::pair<Value, std::string_view>, 10> values{{{valueNil(), "nil"}, {valueBool(false), "false"},
-		{valueBool(true), "true"}, {valueInteger(0), "0"}, {valueFloat(-0.f), "-0.0"},
-		{valueFloatBits(0xffa12345), "nan"}, {valueFloatBits(0x7f800000), "inf"},
-		{valueFloatBits(0xff800000), "-inf"}, {valueFloat(1.234565f), "1.234565"}, {valueBuiltinFunction(BuiltinFunctionId::Type), "function"}}};
-	const std::array extra{std::string("λ\0🍻", 7), std::string("table"), std::string("function"), std::string("thread")};
-	for (size_t kind = 0; kind < values.size() + extra.size(); ++kind) {
-		const std::string expected = std::string(kind < values.size() ? values[kind].second : std::string_view(extra[kind - values.size()])) + "!";
-		for (auto* m : {&native, &scalar}) {
-			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.writeControl(bmsx::FrameField::Top, 0);
-			if (kind < values.size()) frame.registers.set(0, values[kind].first);
-			else switch (kind - values.size()) {
-				case 0: frame.registers.set(0, valueString(m->cpu.stringPool().intern(extra[0]))); break;
-				case 1: frame.registers.set(0, valueTable(bmsx::test::allocateTableReference(m->cpu, 0, 0).address())); break;
-				case 2: frame.registers.set(0, valueClosure(test::seedTestCapturedClosure(m->cpu, m->rom.functionAddresses[0], {}))); break;
-				case 3: frame.registers.set(0, valueThread(m->cpu.activeThread()->address)); break;
-			}
-			frame.registers.set(1, valueString(m->cpu.stringPool().intern("!")));
-		}
-		require(native.cpu.runUntilDepth(0, 4) == scalar.cpu.runUntilDepth(0, 4), "aliasing concatenation consumes the same grant"); requireParity(native, scalar);
-		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, destination))) == expected, "every language kind uses the specified text conversion");
-		require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the numeric prefix top is retained");
-	}
-}
-
-void concatConstants() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 0, 63, 62, 63);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}}; image.constants = {Blua32FloatConstant{0x80000000u}, std::string("🍻")};
-	CpuMachine native(image), scalar(image, true); native.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); scalar.cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 320); requireParity(native, scalar);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::Concat && block->terminal.operands.concat.left == -1 && block->terminal.operands.concat.right == -2, "the native terminal retains signed RK constants");
-#endif
-	require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 0))) == "-0.0🍻", "numeric conversion is not u32 conversion");
-}
-
-void concatRange(int count) {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 2, 1, count >> 9);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CONCATN), 1, 0, count & 63);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 1025}, {.firstWord = 4, .wordCount = 1}};
-	image.startupFunctionIndex = 1;
-	CpuMachine native(image), scalar(image, true); std::string expected;
-	for (auto* m : {&native, &scalar}) {
-		require(m->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]) == RunResult::Halted
-			&& m->cpu.getFrameDepth() == 0, "retire the minimal managed fixture entry");
-		m->cpu.beginCompletionCall(test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[0]));
-		require(m->cpu.activeThread()->frameAtDepth(0)->registers.size() == 1025,
-			"the managed range subject owns its complete register window");
-	}
-	for (int i = 0; i < count; ++i) expected += i == 0 ? "L" : i == 1 ? "false" : std::to_string(i % 10);
-	for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
-		for (auto* m : {&native, &scalar}) {
-			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-			auto registers = m->cpu.activeThread()->frameAtDepth(0)->registers;
-			for (int i = 0; i < count; ++i) registers.set(512 + i, i == 0 ? valueString(m->cpu.stringPool().intern("L"))
-				: i == 1 ? valueBool(false) : valueInteger(i % 10));
-		}
-		require(native.cpu.runUntilDepth(0, 5) == scalar.cpu.runUntilDepth(0, 5), "WIDE ranges consume the same grant"); requireParity(native, scalar);
-		if (count == 513) {
-			require(native.cpu.readFrameRegister(0, 513) == valueBool(false), "destination remains live during assembly");
-			const auto pending = native.cpu.captureRuntimeState().concat;
-			require(pending.registersLeft == static_cast<u32>(count) && pending.length == 0u, "a base-only grant has sampled no source registers");
-			native.cpu.runUntilDepth(0, count); scalar.cpu.runUntilDepth(0, count); requireParity(native, scalar);
-			native.cpu.runUntilDepth(0, expected.size()); scalar.cpu.runUntilDepth(0, expected.size()); requireParity(native, scalar);
-		}
-		require(native.cpu.stringPool().toString(asStringId(native.cpu.readFrameRegister(0, 513))) == expected, "every source is read before the overlapping destination is written");
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::ConcatRange && block->terminal.operands.concatRange.count == count, "the full WIDE count belongs to the native terminal");
-#endif
-	require(static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 514, "counted sources do not inflate the destination top");
-}
-
-void concatAllocationRoots() {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KNIL), 9, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CONCAT), 0, 1, 2);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 16}};
-	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) {
-		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; r.set(9, valueInteger(1)); r.set(1, valueInteger(2)); r.set(2, valueInteger(3));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 400);
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == NativeBlockExit::Concat, "collection is reached from actual native code");
-#endif
-	for (auto* m : {&native, &scalar}) {
-		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto r = frame.registers;
-		TableRecord table = bmsx::test::allocateTableReference(m->cpu, 1024, 1); auto& strings = m->cpu.stringPool();
-		table.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		r.set(9, valueTable(table.address())); r.set(1, valueString(strings.intern("fresh-"))); r.set(2, valueString(strings.intern("result"))); frame.writeControl(bmsx::FrameField::Top, 0);
-		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
-		m->cpu.luaHeap().setCollectionTarget(heap.first);
-	}
-	require(native.cpu.runUntilDepth(0, 516) == scalar.cpu.runUntilDepth(0, 516), "the allocating instruction consumes the same grant"); requireParity(native, scalar);
-	for (auto* m : {&native, &scalar}) {
-		auto& strings = m->cpu.stringPool();
-		auto r = m->cpu.activeThread()->frameAtDepth(0)->registers; TableRecord retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && m->memory.readRamRecordByte(retained.address() + GC_COLOR_OFFSET) == 3, "the allocation assist traced the moved reference before returning");
-		m->cpu.collectHeap();
-		require(retained.getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")), "a moved reference remains rooted across allocation");
-		require(strings.toString(asStringId(r.get(0))) == "fresh-result", "allocation commits the entire concatenation result");
-	}
-}
-
 void canonicalImmediateClosure() {
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 7, 0, 0);
@@ -393,65 +240,6 @@ void closureAddressAlias(int source) {
 	}
 }
 
-void concatAllocationFault(bool range, int bytes) {
-	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 8, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(range ? OpCode::CONCATN : OpCode::CONCAT), 0, 1, 2);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255); writeInstruction(image.text, 32, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 16}, {.firstWord = 32, .wordCount = 1}}; image.exceptionFunctionIndex = 1;
-	image.constants = {std::string("12")}; // Loop warmup does not grow the RAM intern index.
-	CpuMachine native(image), scalar(image, true);
-	for (auto* m : {&native, &scalar}) {
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(1, valueInteger(1)); frame.registers.set(2, valueInteger(2));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * (range ? 396 : 320));
-		m->cpu.luaHeap().setCollectionTarget(m->cpu.luaHeap().capacity());
-		const StringId id = m->cpu.stringPool().intern(std::string(bytes, 'x'));
-		frame.registers.set(1, valueString(id)); frame.registers.set(2, valueString(id)); frame.registers.set(0, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block && block->terminal.exit == (range ? NativeBlockExit::ConcatRange : NativeBlockExit::Concat), "the allocation fault leaves generated code before throwing");
-#endif
-	const auto lastWorkAt = native.cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
-	const int beforeWork = native.memory.readRamRecordWord(lastWorkAt);
-	require(native.cpu.runUntilDepth(0, range ? 5 : 4) == scalar.cpu.runUntilDepth(0, range ? 5 : 4), "failed allocations consume the same grant"); requireParity(native, scalar);
-	if (2 * bytes < MAIN_RAM_SIZE) {
-		require(native.cpu.instructionBudgetRemaining == -(range ? 2 : 0), "the issue grant did not assemble payload bytes");
-		native.cpu.runUntilDepth(0, 2 * bytes); scalar.cpu.runUntilDepth(0, 2 * bytes); requireParity(native, scalar);
-	}
-	require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-		&& native.cpu.readEpcWord() == native.rom.textAddress + INSTRUCTION_BYTES, "allocation faults use the completed prefix PC");
-	const int afterWork = native.memory.readRamRecordWord(lastWorkAt);
-	const bool fitsArena = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= native.cpu.luaHeap().capacity();
-	const int work = fitsArena ? afterWork : 0;
-	require(fitsArena ? work > 0 : afterWork == beforeWork, "only a record that could fit attempts recovery");
-	require(native.cpu.instructionBudgetRemaining == (2 * bytes < MAIN_RAM_SIZE ? 0 : -static_cast<int>(MAIN_RAM_SIZE) - (range ? 2 : 0)) - 3 * work,
-		"oversized result saturates the byte debit; an ordinary allocation fault retains recovery work");
-	require(native.cpu.readFrameRegister(0, 0) == valueInteger(73) && static_cast<bmsx::i32>(native.cpu.activeThread()->frameAtDepth(0)->readControl(bmsx::FrameField::Top)) == 9, "the failed allocation preserves its destination and published top");
-}
-void concatRangeAtMixedLengthBoundary(bool over) {
-	test::Blua32TestImage image;
-	image.text.resize(2 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CONCATN), 0, 1, 32);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 1, .maxStack = 33}, {.firstWord = 1, .wordCount = 1}};
-	image.exceptionFunctionIndex = 1;
-	CpuMachine m(image);
-	auto& frame = *m.cpu.rootThread()->currentFrame;
-	// Four bytes remain: nil fits the String representation, false does not.
-	const auto repeated = valueString(m.cpu.stringPool().intern(std::string(135300, 'x')));
-	for (int i = 1; i <= 31; ++i) frame.registers.set(i, repeated);
-	frame.registers.set(32, over ? valueBool(false) : valueNil());
-	m.cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::CONCATN)]);
-	if (!over) { require(m.cpu.instructionBudgetRemaining == -32, "only the source count is charged at issue"); m.cpu.runUntilDepth(0, MAIN_RAM_SIZE - 1); }
-	require(m.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
-		&& m.cpu.instructionBudgetRemaining == (over ? -static_cast<int>(MAIN_RAM_SIZE) - 32 : 0)
-		&& isNil(frame.registers.get(0)), "converted non-String bytes participate in the saturated size fault");
-}
 } // namespace
 
 int main() {
@@ -459,11 +247,8 @@ int main() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		fixedReadContinuation();
 #endif
-		for (int destination : {0, 1, 2}) concatKindsAndAliases(destination);
-		concatConstants(); for (int count : {0, 3, 513}) concatRange(count);
-		concatAllocationRoots(); canonicalImmediateClosure(); closurePrototypeBusFault();
-		closureAddressAlias(0); closureAddressAlias(513); for (bool over : {false, true}) concatRangeAtMixedLengthBoundary(over);
-		for (int bytes : {3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1}) for (bool range : {false, true}) concatAllocationFault(range, bytes);
+		canonicalImmediateClosure(); closurePrototypeBusFault();
+		closureAddressAlias(0); closureAddressAlias(513);
 		std::cout << "Compiled CPU heap tests passed\n"; return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

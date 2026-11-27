@@ -13,8 +13,8 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valueBool, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
-import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
+import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -32,8 +32,8 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
-	for (const op of [OpCode.CONCAT, OpCode.CONCATN, OpCode.LT, OpCode.LE, OpCode.EQ]) {
-		test(`text work uses byte lengths on cold and compiled execution (${backend}, op=${op})`, () => {
+	for (const op of [OpCode.LT, OpCode.LE, OpCode.EQ]) {
+		test(`String comparisons use byte lengths on cold and compiled execution (${backend}, op=${op})`, () => {
 			const text = new Uint8Array(4 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, op, 0, 1, 2);
 			for (let i = 1; i < 4; ++i) writeInstruction(text, i, OpCode.JMP, 0, 63, 63, 255);
@@ -42,21 +42,17 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			for (let repeat = 0; repeat < 24; ++repeat) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 				const frame = cpu.rootThread.currentFrame!;
-				// Alternating unequal/equal interned operands also proves that intern
-				// hits and comparison early-outs do not determine the cycle debit.
+				// Unequal and equal operands prove that a lexicographic early-out
+				// does not determine the comparison cycle debit.
 				const right = textToByteString('a😀雪\0');
 				const left = repeat % 3 === 2 ? right : textToByteString(repeat % 3 === 1 ? 'a😀雪' : 'z😀雪');
 				frame.registers.setString(1, cpu.stringPool.intern(left));
 				frame.registers.setString(2, cpu.stringPool.intern(right));
 				cpu.runUntilDepth(0, 1);
-				const length = left.length + right.length;
-				const cycles = BASE_CYCLES[op] + (op === OpCode.CONCAT ? length : op === OpCode.CONCATN ? 2 + length : op === OpCode.EQ ? 0 : Math.min(left.length, right.length));
+				const cycles = BASE_CYCLES[op] + (op === OpCode.EQ ? 0 : Math.min(left.length, right.length));
 				assert.equal(cpu.instructionBudgetRemaining, 1 - cycles);
-				if (op === OpCode.CONCAT || op === OpCode.CONCATN) assert.equal(cpu.stringPool.bytes(frame.registers.getStringId(0)), left + right);
-				else {
-					const matched = op === OpCode.LT ? left < right : op === OpCode.LE ? left <= right : left === right;
-					assert.equal(frame.pc, image.image.functions[0].codeAddress + (matched ? 2 : 1) * INSTRUCTION_BYTES);
-				}
+				const matched = op === OpCode.LT ? left < right : op === OpCode.LE ? left <= right : left === right;
+				assert.equal(frame.pc, image.image.functions[0].codeAddress + (matched ? 2 : 1) * INSTRUCTION_BYTES);
 			}
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks, 'the warm cases actually compile');
 		});
@@ -256,112 +252,6 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		}
 	});
 }
-
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) test(`concat restores sampled bytes, operand identity and hash (${backend})`, () => {
-	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CONCATN, 1, 1, 3); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-	const { cpu, memory } = createTestHeapServiceCpu(image, backend); const frame = cpu.rootThread.currentFrame!, pool = cpu.stringPool;
-	const source = 'g'.repeat(127) + '\xff\x00' + 'g'.repeat(384);
-	const a = pool.intern(source), tail = pool.intern('tail');
-	const existing = pool.intern(source.slice(0, 200) + '!' + source.slice(201) + '-12345tail');
-	frame.registers.setString(1, a); frame.registers.setInteger(2, -12345); frame.registers.setString(3, tail);
-	frame.registers.setString(4, existing); frame.top = 5;
-	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + 3 + 129);
-	const anchor = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-	assert.equal(anchor.concat.bytes.length, 129); assert.equal(anchor.concat.hash, hashText(source.slice(0, 129)));
-	for (const grant of [1, 173]) {
-		memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor);
-		const live = cpu.activeThread.currentFrame!;
-		memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 5, 122);
-		memory.writeRamRecordByte(a + BLUA32_STRING_RECORD_HEADER_SIZE + 200, 33);
-		live.registers.setBoolean(3, true); cpu.requestNonMaskableInterrupt(); assert.equal(cpu.enterPendingInterrupt(), false);
-		for (let left = source.length + 10 - 129; left;) {
-			const n = Math.min(grant, left); cpu.runUntilDepth(0, n); left -= n;
-			assert.equal(cpu.instructionBudgetRemaining, 0);
-			assert.equal(live.registers.getStringId(1), left ? a : existing);
-		}
-		assert.equal(cpu.captureRuntimeState().concat, null);
-	}
-});
-
-test('a wide CONCATN samples each register on its own cycle across GC and restore', () => {
-	const count = 65, code = new Uint8Array(3 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CONCATN, 1, 1, 1, 1);
-	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0); writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text: code, functions: [
-		{ firstWord: 0, wordCount: 2, maxStack: count + 1 }, { firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter), pool = cpu.stringPool;
-	const frame = cpu.rootThread.currentFrame!, empty = pool.intern(''), first = pool.intern('first'), last = pool.intern('unread');
-	for (let i = 1; i <= count; ++i) frame.registers.setString(i, empty);
-	frame.registers.setString(2, first); frame.registers.setString(count, last); frame.top = 1;
-	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + 1);
-	const zero = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-	assert.equal(zero.concat!.registersLeft, 64); assert.equal(zero.concat!.nextRegister, 2); assert.equal(zero.concat!.length, 0);
-	cpu.requestNonMaskableInterrupt(); assert.equal(cpu.enterPendingInterrupt(), false);
-	frame.registers.setBoolean(1, false);
-	for (let i = 2; i <= count; ++i) frame.registers.setString(i, empty);
-	cpu.runUntilDepth(0, 63); assert.equal(frame.registers.get(1), valueBool(false));
-	cpu.runUntilDepth(0, 1); assert.equal(frame.registers.getStringId(1), empty); assert.equal(cpu.instructionBudgetRemaining, 0);
-	memory.restoreSaveState(ram); cpu.restoreRuntimeState(zero);
-	cpu.runUntilDepth(0, 1);
-	const live = cpu.activeThread.currentFrame!; live.registers.setNil(2); live.registers.setInteger(3, -7);
-	cpu.collectTrackedHeapBytes();
-	assert.equal(pool.find('first'), first); assert.equal(pool.find('unread'), last);
-	const state = cpu.captureRuntimeState(), savedRam = memory.captureSaveState();
-	cpu.runUntilDepth(0, count - 2); const expected = 'first-7unread';
-	assert.equal(cpu.instructionBudgetRemaining, 0); assert.equal(live.registers.getStringId(1), empty);
-	cpu.runUntilDepth(0, expected.length); assert.equal(pool.bytes(live.registers.getStringId(1)), expected);
-	assert.equal(cpu.instructionBudgetRemaining, 0);
-	memory.restoreSaveState(savedRam); cpu.restoreRuntimeState(state);
-	const huge = pool.intern('huge'); memory.writeRamRecordWord(huge + BLUA32_STRING_LENGTH_OFFSET, MAIN_RAM_SIZE - 1);
-	cpu.activeThread.currentFrame!.registers.setString(4, huge);
-	cpu.runUntilDepth(0, 4);
-	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(cpu.readEpcWord(), image.image.functions[0].codeAddress); assert.equal(cpu.captureRuntimeState().concat, null);
-	assert.equal(cpu.instructionBudgetRemaining, 4 - (count - 2) - MAIN_RAM_SIZE);
-});
-
-test('incremental collection budgets CONCATN roots while the input frontier advances', () => {
-	const count = 48, code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CONCATN, 0, 1, count); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
-	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32({ text: code,
-		functions: [{ firstWord: 0, wordCount: 2, maxStack: count + 1 }] }), CpuExecutionBackend.Interpreter);
-	const frame = cpu.rootThread.currentFrame!, ids: number[] = [];
-	let expected = '';
-	for (let i = 0; i < count; ++i) {
-		const text = String.fromCharCode(65 + i).repeat(16);
-		const id = cpu.stringPool.intern(text);
-		ids.push(id); expected += text; frame.registers.setString(i + 1, id);
-	}
-	frame.top = count + 1;
-	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN] + count);
-	frame.registers.clear(count + 1);
-	const step = () => cpu.gc.finalMarkPending() ? cpu.gc.stepFinalMark(2) : cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 2);
-	const color = memory.readRamRecordByte(ids[0] + 1);
-	step();
-	cpu.runUntilDepth(0, 7 * 16);
-	while (cpu.gc.active() && !cpu.gc.finalMarkPending()) {
-		assert.equal(memory.readRamRecordByte(ids[0] + 1), color, 'ordinary marking does not walk the pending operands');
-		step();
-	}
-	assert.ok(cpu.gc.finalMarkPending());
-	while (memory.readRamRecordByte(ids[7] + 1) === color && cpu.gc.finalMarkPending()) step();
-	assert.notEqual(memory.readRamRecordByte(ids[7] + 1), color);
-	assert.equal(memory.readRamRecordByte(ids[8] + 1), color, 'the stopped grant ended inside the operand bank');
-	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-	for (const grant of [2, 17]) {
-		memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-		while (cpu.gc.active()) {
-			if (cpu.gc.finalMarkPending()) cpu.gc.stepFinalMark(grant);
-			else step();
-		}
-		for (let i = 0; i < count; ++i)
-			assert.equal(cpu.stringPool.find(expected.slice(i * 16, i * 16 + 16)), i < 7 ? undefined : ids[i]);
-		cpu.runUntilDepth(0, (count - 7) * 16);
-		assert.equal(cpu.stringPool.bytes(cpu.rootThread.currentFrame!.registers.getStringId(0)), expected);
-	}
-});
 
 const portCode = new Uint8Array(INSTRUCTION_BYTES);
 writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);

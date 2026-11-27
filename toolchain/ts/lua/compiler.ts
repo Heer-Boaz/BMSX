@@ -5720,25 +5720,28 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private compileConcatExpression(expression: LuaBinaryExpression, target: number): void {
+		if (this.staticCallTargetScope) {
+			throw new Error(`Static function export '${this.protoId}' cannot construct a String by concatenation.`);
+		}
 		const operands: LuaExpression[] = [];
 		this.collectConcatOperands(expression, operands);
-		if (operands.length === 2) {
-			this.compileArithmetic(OpCode.CONCAT, operands[0], operands[1], target);
-			return;
-		}
 		const tempBase = this.tempTop;
-		const useTarget = target >= this.localCount && target === tempBase;
-		const base = useTarget ? target : this.allocTempBlock(operands.length);
-		if (useTarget) {
-			this.reserveTempRange(base, operands.length);
+		const base = target >= this.localCount && target === tempBase - 1 ? target : tempBase;
+		this.reserveTempRange(base, 2);
+		for (const operand of operands) {
+			const slot = this.allocTemp();
+			this.compileExpressionInto(operand, slot, 1);
+			this.tempTop = slot + 1;
 		}
-		for (let index = 0; index < operands.length; index += 1) {
-			this.compileExpressionInto(operands[index], base + index, 1);
-		}
-		this.emitABC(OpCode.CONCATN, target, base, operands.length);
-		if (!useTarget) {
-			this.tempTop = tempBase;
-		}
+		// The fixed entry copies the count and borrows the rest of the
+		// ordinary argument window in the still-rooted caller.
+		this.emitLoadConst(base + 1, integerConstant(operands.length));
+		this.emitModuleFunctionTargetLoad(this.program.programDomain === 'system'
+			? { kind: 'export_proto', ...BIOS_FUNCTION_SLOTS[BiosFunction.Concat] }
+			: { kind: 'bios_function', importIndex: BiosFunction.Concat }, base);
+		this.emitABC(OpCode.CALL, base, encodeFixedValueCount(operands.length + 1), encodeFixedValueCount(1));
+		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
+		this.tempTop = tempBase;
 	}
 
 	private compileRequireStatement(binding: RequireModuleBinding): void {

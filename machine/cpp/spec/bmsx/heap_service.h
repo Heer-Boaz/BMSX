@@ -82,7 +82,7 @@ enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, Source
 constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
 constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
 constexpr uint32_t HEAP_SERVICE_ROOT_BANK_SIZE = 16;
-constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 2u * HEAP_SERVICE_ROOT_BANK_SIZE;
+constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + HEAP_SERVICE_ROOT_BANK_SIZE;
 enum class HeapServiceRootBankField : uint32_t { Count = 0, Payloads = 4, Tags = 8 };
 
 // CPU-private load selectors for the existing non-RAM root storage. These
@@ -91,11 +91,11 @@ constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BASE = 0x01c00000;
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_STRIDE = 1u << HEAP_SERVICE_ROOT_PORT_SHIFT;
 enum class HeapServiceRootPlane : uint32_t {
-	CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+	CompletionPayloads, CompletionTags, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.
-constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
+constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = 0x02c00000u;
 constexpr uint32_t HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4u;
 constexpr uint32_t HEAP_SERVICE_CALL_CYCLES_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 4u;
 constexpr uint32_t HEAP_SERVICE_CALL_RUN_KIND_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 8u;
@@ -119,6 +119,5 @@ constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 enum class HeapServiceProjection : uint32_t {
 	PublishRoots = 0,
 };
-constexpr uint32_t HEAP_SERVICE_PENDING_TOP_OFFSET = 0x79c;
 
 } // namespace bmsx

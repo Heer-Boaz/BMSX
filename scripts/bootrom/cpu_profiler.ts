@@ -580,7 +580,6 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 	const memoryGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode =>
 		opcode === OpCode.LOAD_MEM || opcode === OpCode.STORE_MEM || opcode === OpCode.STORE_MEM_WORDS || opcode === OpCode.LOAD_MEM_D || opcode === OpCode.STORE_MEM_D || opcode === OpCode.STORE_MEM_WORDS_D
 	);
-	const concatGroupRows = collectCpuProfilerOpcodeGroupFunctions(snapshot, opcode => opcode === OpCode.CONCAT || opcode === OpCode.CONCATN);
 	const opcodeRows = collectTopOpcodesFromCounts(snapshot.opcodeCounts, snapshot.totalInstructions, snapshot.totalBaseCycles, topOpcodes);
 	const pcRows = collectCpuProfilerHotPcs(snapshot, topPcs);
 	const lines: string[] = [];
@@ -643,12 +642,6 @@ export function formatCpuProfilerReport(snapshot: CpuProfilerSnapshot, options: 
 	for (let index = 0; index < memoryGroupRows.length; index += 1) {
 		const row = memoryGroupRows[index];
 		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} mem_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
-	}
-	lines.push('');
-	lines.push('Concat-Heavy Functions');
-	for (let index = 0; index < concatGroupRows.length; index += 1) {
-		const row = concatGroupRows[index];
-		lines.push(`${String(index + 1).padStart(2, ' ')}. ${row.functionId} concat_ops=${row.groupCount} cycles=${row.groupCycles} cycle_share=${row.cyclePercent.toFixed(2)}% of_function=${row.ofFunctionCyclePercent.toFixed(2)}% path=${row.path}`);
 	}
 	lines.push('');
 	lines.push('Hot PCs');

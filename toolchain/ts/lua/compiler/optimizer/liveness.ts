@@ -120,7 +120,6 @@ export function visitInstructionUses<T>(
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 		case OpCode.EQ:
 		case OpCode.LT:
 		case OpCode.LE:
@@ -130,9 +129,6 @@ export function visitInstructionUses<T>(
 			if (isRegisterOperand(instruction, RK_C, instruction.c)) {
 				visitRegister(state, visitor, instruction.c);
 			}
-			break;
-		case OpCode.CONCATN:
-			visitRegisterRange(state, visitor, instruction.b, instruction.c);
 			break;
 		case OpCode.ITERN:
 			visitRegisterRange(state, visitor, instruction.a, 3);
@@ -205,8 +201,6 @@ export function visitInstructionDefs<T>(
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
 		case OpCode.UNM:
 		case OpCode.NOT:
 		case OpCode.LEN:

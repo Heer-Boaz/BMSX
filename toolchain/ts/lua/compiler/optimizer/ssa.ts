@@ -80,7 +80,6 @@ const supportsRkB = (op: OpCode): boolean => {
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 		case OpCode.EQ:
 		case OpCode.LT:
 		case OpCode.LE:
@@ -106,7 +105,6 @@ const supportsRkC = (op: OpCode): boolean => {
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 		case OpCode.EQ:
 		case OpCode.LT:
 		case OpCode.LE:
@@ -142,7 +140,6 @@ const isValueNumberable = (op: OpCode): boolean => {
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 		case OpCode.UNM:
 		case OpCode.BNOT:
 		case OpCode.NOT:
@@ -726,7 +723,6 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 		case OpCode.EQ:
 		case OpCode.LT:
 		case OpCode.LE:
@@ -1054,8 +1050,6 @@ const isHoistableInstruction = (instruction: Instruction): boolean => {
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
 		case OpCode.UNM:
 		case OpCode.NOT:
 		case OpCode.BNOT:
@@ -2104,10 +2098,7 @@ export const applyGlobalOptimizations = (
 		let replacedWithConst = false;
 		if (defValue !== null && isValueNumberable(instruction.op)) {
 			const constVal = resolveConst(defValue, valueConst, valueCopy);
-			// CONCAT is currently the only value-numberable string-producing op in this pass.
-			// If we add new string-producing opcodes, extend this exclusion so we don't
-			// materialize stale or semantically wrong constants through LOADK.
-			if (constVal && !(instruction.op === OpCode.CONCAT && constVal.kind === ConstValueKind.String)) {
+			if (constVal) {
 				replaceWithConst(instruction, instruction.a, constVal.value, context);
 				instrUses[i] = [];
 				replacedWithConst = true;
@@ -2124,8 +2115,6 @@ export const applyGlobalOptimizations = (
 			const slot = uses[u];
 			const constVal = resolveConst(slot.valueId, valueConst, valueCopy);
 			// Keep RK replacement for non-string constants only.
-			// If we add new string-producing opcodes, extend this exclusion too.
-			// (Currently CONCAT is the only such op in this pass.)
 			// When burst memory-store sources become string constants,
 			// that would encode the constant literal directly instead of the register
 			// and produces the wrong text.

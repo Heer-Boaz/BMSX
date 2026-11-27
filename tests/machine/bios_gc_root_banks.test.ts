@@ -6,7 +6,7 @@ import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
 import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
-import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
@@ -47,6 +47,7 @@ return { read_byte = read_byte, write_word = write_word }
 modules.push({ path: PORT, source: portSource, chunk: parseLuaChunk(portSource, PORT) });
 
 const CURSOR_BITS = 20;
+const RETAINED_CART_STRINGS = ['retained cart0 one', 'retained cart0 two', 'retained cart1'];
 function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.Globals | null = null) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
@@ -72,6 +73,10 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		const cpu = new CPU(memory, new IrqController(memory), addressSpace);
 		cpu.reset();
 		admitTestHeapServiceCpu(cpu, addressSpace);
+		// Intern the retained Strings before admitting either mounted image: its
+		// constant binding reuses the existing RAM identity, not the ROM literal.
+		for (const literal of RETAINED_CART_STRINGS) cpu.stringPool.intern(literal);
+		cpu.replaceExecutionImages([addressSpace.resolveDomain(0)!, addressSpace.resolveDomain(1)!]);
 		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}
@@ -95,7 +100,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		assert.ok(id >= RAM_BASE);
 		return id;
 	}
-	const constants = ['retained cart0 one', 'retained cart0 two', 'retained cart1'].map(string);
+	const constants = RETAINED_CART_STRINGS.map(string);
 	for (const slot of [0, 1] as const)
 		assert.deepEqual(equal(target => {
 			assert.ok(target['executionImageForDomain'](slot));
@@ -126,10 +131,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 			return slot;
 		});
 	}
-	const finished = [valueString(string('returned String')), valueTable(table), valueInteger(19)];
-	const consumed = string('already consumed'), unread = string('unread concat');
-	const unreadTable = equal(target => target.createTable(0, 0));
-	const concat = [valueString(consumed), valueTable(unreadTable), valueString(unread), valueInteger(5)];
+	const returned = string('returned String');
+	const finished = [valueString(returned), valueTable(table), valueInteger(19)];
 
 	const descriptor = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 	const namespace = management + (moved === GcRootBank.SystemGlobals ? SYSTEM_GLOBAL_BANK_OFFSET : GLOBAL_BANK_OFFSET);
@@ -143,10 +146,6 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		const result = new ValueSlots(finished.length);
 		for (const [slot, value] of finished.entries()) result.setEncoded(slot, valueTag(value), valuePayload(value));
 		target['latchCompletionValues'](result, 0, finished.length);
-		target['concat'].restore({
-			nextRegister: 0, registersLeft: 0, length: 3, instructionPc: 0, destination: 0, source: 1, offset: 0,
-			hash: 0, values: concat, lengths: [1, 1, 1, 1], bytes: new Uint8Array(1),
-		});
 		const occupied = target.heapAllocator.occupiedBytes(), charged = target.luaHeap.usedBytes();
 		const descriptorEnd = descriptor + HEAP_SERVICE_ROOT_BANKS_SIZE;
 		const before = ram.ramData().slice(floor, descriptor);
@@ -204,8 +203,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		const index = operation === 'read_byte' ? readByte : writeWord;
 		assert.ok(cpu.beginHeapService(linked.image.functions[index].address, [address]));
 	}
-	return { cpu, oracle, memory, cursor, depth, index, marked, name, nameSlot, first, consumed, unread, halted,
-		unreadTable, constants, lateName, lateValue, lateSlot, setCursor, begin, beginPort, grant, finish, step, compare };
+	return { cpu, oracle, memory, cursor, depth, index, marked, name, nameSlot, first, returned, halted,
+		constants, lateName, lateValue, lateSlot, setCursor, begin, beginPort, grant, finish, step, compare };
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -222,28 +221,18 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua root banks match native name/Value order, counts, and overshooting work at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		f.setCursor(GcRootBank.SystemGlobals, f.nameSlot);
-		f.step(2, 2, GcRootBank.ConcatOperands);
+		f.step(2, 2, GcRootBank.End);
 		assert.equal(f.cursor(), (GcRootBank.SystemGlobals << CURSOR_BITS) | f.nameSlot);
 		assert.equal(f.marked(f.name), false);
-		f.step(1, 0, GcRootBank.ConcatOperands);
+		f.step(1, 0, GcRootBank.End);
 		assert.equal(f.cpu.heapServiceResult(), 5, 'one global name and one String Value cross the one-word allowance');
 		assert.ok(f.marked(f.name) && f.marked(f.first));
 		assert.equal(f.cursor(), (GcRootBank.SystemGlobals << CURSOR_BITS) | (f.nameSlot + 1));
-		for (let i = 0; i < 64 && f.cursor() !== 0; ++i) f.step(4 + i % 4, i % 3, GcRootBank.ConcatOperands);
+		for (let i = 0; i < 64 && f.cursor() !== 0; ++i) f.step(4 + i % 4, i % 3, GcRootBank.End);
 		assert.equal(f.cursor(), 0);
 		assert.equal(f.depth(), f.index(f.halted), 'halted Thread is marked after root, active, and completion Threads');
 		assert.ok(f.constants.every(f.marked));
-		assert.equal(f.marked(f.consumed), false);
-		assert.equal(f.marked(f.unread), false, 'nonfinal pass stops before unread concat');
-		f.setCursor(GcRootBank.ConcatOperands);
-		f.step(1, 0, GcRootBank.End);
-		assert.equal(f.cursor(), (GcRootBank.ConcatOperands << CURSOR_BITS) | 1);
-		assert.equal(f.cpu.heapServiceResult(), 1, 'unread numeric/non-String slots still count');
-		assert.equal(f.memory.readRamRecordByte(f.unreadTable + GC_COLOR_OFFSET) & 3, f.cpu.gc.white());
-		f.step(16, 4, GcRootBank.End);
-		assert.equal(f.cursor(), 0);
-		assert.equal(f.marked(f.consumed), false);
-		assert.equal(f.marked(f.unread), true);
+		assert.ok(f.marked(f.returned), 'the Completion String remains a root');
 	});
 
 	test(`BLua root banks resume between the name mark and Value mark at O${optLevel}`, () => {
@@ -265,24 +254,25 @@ for (const optLevel of [0, 3] as const) {
 		f.compare('restored name → Value');
 	});
 
-	test(`BLua root-bank rewind reloads the live Concat operand owner at O${optLevel}`, () => {
+	test(`BLua root-bank rewind reloads the Completion owner at O${optLevel}`, () => {
 		const f = fixture(optLevel);
-		f.setCursor(GcRootBank.ConcatOperands, 1);
+		f.setCursor(GcRootBank.Completion);
 		f.begin(1, 0, GcRootBank.End);
 		f.grant(1);
 		assert.equal(f.cpu.heapServiceActive(), true);
-		assert.equal(f.marked(f.unread), false);
+		assert.equal(f.marked(f.returned), false);
 		const checkpoint = captureCpuCheckpoint(f.cpu);
 		const cycles = f.finish();
 		assert.equal(f.cpu.heapServiceResult(), f.oracle.gc['traceRootBanks'](1, 0, GcRootBank.End));
-		assert.equal(f.marked(f.unread), true);
-		assert.equal(f.marked(f.consumed), false);
-		f.compare('borrowed Concat operand');
+		assert.equal(f.marked(f.returned), true);
+		f.compare('borrowed Completion slot');
 
-		f.cpu['concat'].restore(null);
+		f.cpu['clearCompletionValues']();
+		assert.equal(f.cpu.rootBankSlots(GcRootBank.Completion), 0);
 		restoreCpuCheckpoint(f.cpu, checkpoint);
+		assert.equal(f.cpu.rootBankSlots(GcRootBank.Completion), 3);
 		assert.equal(f.finish(), cycles);
-		f.compare('restored Concat operand');
+		f.compare('restored Completion slot');
 	});
 }
 

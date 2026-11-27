@@ -1,6 +1,5 @@
 import { ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
-import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -22,7 +21,7 @@ import {
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
 import type { DeviceScheduler } from '../scheduler/device';
-import { BASE_CYCLES, INLINE_CONCAT_BYTES, INLINE_CONCAT_OPERANDS, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
+import { BASE_CYCLES, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented, cop0ReadAsZero,
 	COP0_BAD_ADDRESS,
@@ -125,7 +124,7 @@ import { BuiltinFunctionId, BUILTIN_FUNCTION_COUNT } from '../../spec/blua32/bui
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
-	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString, MAX_NON_STRING_TEXT_BYTES,
+	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread, asThread,
 	isNil, valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
@@ -182,7 +181,6 @@ import {
 	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
 	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_PENDING_TOP_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceProjection, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
@@ -190,7 +188,7 @@ import {
 	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
 	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
-	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
+	HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS, HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
 	HeapServiceRootBankField, HeapServiceRootPlane,
 } from '../../spec/bmsx/heap_service';
@@ -227,7 +225,6 @@ export type CpuRuntimeState = {
 	memoryWriteBlockedAddress: number;
 	stringComparison: StringComparisonLatch;
 	rebuild: TableRebuild | null;
-	concat: ConcatAssemblyState | null;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
 	statusWord: number;
@@ -326,7 +323,6 @@ export class CPU implements MappedPageInvalidator {
 	private pendingAllocation: PendingAllocation | null = null;
 	private runKind = CpuRunKind.Idle;
 	private deviceClock: DeviceScheduler | null = null;
-	private readonly concat = new ConcatAssembly();
 	public readonly tableRebuild = new TableRebuild();
 	private stringComparison = new StringComparisonLatch();
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
@@ -915,7 +911,6 @@ export class CPU implements MappedPageInvalidator {
 			if (this.tableRebuild.arrayStorage) this.heapAllocator.free(this.tableRebuild.arrayStorage);
 		}
 		this.tableRebuild.record = 0;
-		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
@@ -2053,7 +2048,6 @@ export class CPU implements MappedPageInvalidator {
 		this.memoryWriteBlockedAddress = 0;
 		this.pendingMemory.kind = PendingMemoryKind.None;
 		this.stringComparison = new StringComparisonLatch();
-		this.concat.registersLeft = this.concat.length = 0;
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.yieldRequested = false;
@@ -2062,7 +2056,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
 		this.localRoots.push(valueClosure(closure));
@@ -2086,7 +2080,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 	): void {
 		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
-		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		const image = this.executionImageForDomain(executionDomainId);
 		if (image === null || !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
@@ -2217,7 +2211,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.fixedInterruptActive() || this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record || this.heapServiceActive()) return false;
+		if (this.fixedInterruptActive() || this.pendingMemory.kind !== PendingMemoryKind.None || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.tableRebuild.record || this.heapServiceActive()) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2542,7 +2536,6 @@ export class CPU implements MappedPageInvalidator {
 						&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 						this.resumePendingMemoryOperation();
 						if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
-						if (this.concat.active) this.advanceConcat(thread.currentFrame!);
 						if (this.tableRebuild.record && !this.advanceTableStore(thread.currentFrame!)) return RunResult.ParkedAllocation;
 					}
 					while (scalarFrame !== null || thread.frameDepth > targetDepth) {
@@ -2660,7 +2653,6 @@ export class CPU implements MappedPageInvalidator {
 					&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
-					if (this.concat.active) this.advanceConcat(thread.currentFrame!);
 					if (this.tableRebuild.record && !this.advanceTableStore(thread.currentFrame!)) return RunResult.ParkedAllocation;
 				}
 				while (thread.frameDepth > targetDepth) {
@@ -2919,7 +2911,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.heapServiceActive() || this.fixedInterruptActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.heapServiceActive() || this.fixedInterruptActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId);
 		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -3023,86 +3015,6 @@ export class CPU implements MappedPageInvalidator {
 		const secondRight = integerOperand(this.readRKValue(frame, secondRkC));
 		const secondResult = isAddShl ? luaShiftLeft(secondLeft, secondRight) : secondLeft ^ secondRight;
 		this.setRegisterIntegerFast(frame, registers, secondPage.a[secondPageOffset], secondResult);
-	}
-
-	private advanceConcat(frame: CallFrame): void {
-		const job = this.concat;
-		if (job.registersLeft) {
-			const count = Math.min(job.registersLeft, this.instructionBudgetRemaining);
-			this.charge(count); job.registersLeft -= count;
-			for (const stop = job.nextRegister + count; job.nextRegister < stop; ++job.nextRegister) {
-				const v = frame.registers.get(job.nextRegister);
-				const n = valueTag(v) === ValueTag.String ? this.stringPool.byteLength(valuePayload(v)) >>> 0
-					: valueToByteString(v, this.stringPool).length;
-				if (n >= MAIN_RAM_SIZE - job.length) {
-					this.charge(MAIN_RAM_SIZE + job.registersLeft);
-					this.currentInstructionPc = job.instructionPc;
-					job.length = job.registersLeft = 0;
-					throw LUA_OUT_OF_MEMORY_SIGNAL;
-				}
-				job.length += n;
-				if (n) { job.values.push(v); job.lengths.push(n); }
-			}
-			if (job.registersLeft) return;
-			if (job.length > job.bytes.length) job.bytes = new Uint8Array(job.length);
-		}
-		const amount = Math.min(this.instructionBudgetRemaining, job.length - job.cursor);
-		this.charge(amount);
-		job.append(this.stringPool, amount);
-		if (job.cursor !== job.length) return;
-		const length = job.length;
-		job.length = 0;
-		this.currentInstructionPc = job.instructionPc;
-		this.setRegisterStringFast(frame, frame.registers, job.destination, this.stringPool.internHashedBytes(job.bytes, length, job.hash));
-	}
-
-	private executeConcat(frame: CallFrame, a: number, b: number, c: number, range = false): void {
-		const count = range ? c : 2;
-		if (range && count > INLINE_CONCAT_OPERANDS) {
-			const job = this.concat;
-			job.values.length = job.lengths.length = 0;
-			job.start(0, this.currentInstructionPc, a);
-			job.nextRegister = b; job.registersLeft = count;
-			if (this.instructionBudgetRemaining > 0) this.advanceConcat(frame);
-			return;
-		}
-		if (range) this.charge(count);
-		const strings = this.stringPool;
-		let length = 0, conversions = 0;
-		for (let i = 0; i < count; ++i) {
-			const v = range ? frame.registers.get(b + i) : this.readRKValue(frame, i ? c : b);
-			if (valueTag(v) === ValueTag.String) {
-				length += strings.byteLength(valuePayload(v)) >>> 0;
-				if (length >= MAIN_RAM_SIZE) { this.charge(MAIN_RAM_SIZE); throw LUA_OUT_OF_MEMORY_SIGNAL; }
-			} else ++conversions;
-		}
-		const directBytes = Math.min(MAIN_RAM_SIZE - 1, Math.max(INLINE_CONCAT_BYTES, this.instructionBudgetRemaining));
-		if (length + conversions * MAX_NON_STRING_TEXT_BYTES > directBytes) {
-			const job = this.concat;
-			job.values.length = job.lengths.length = 0;
-			for (let i = 0; i < count; ++i) {
-				const v = range ? frame.registers.get(b + i) : this.readRKValue(frame, i ? c : b);
-				let n: number;
-				if (valueTag(v) === ValueTag.String) n = strings.byteLength(valuePayload(v)) >>> 0;
-				else {
-					n = valueToByteString(v, strings).length; length += n;
-					if (length >= MAIN_RAM_SIZE) { this.charge(MAIN_RAM_SIZE); throw LUA_OUT_OF_MEMORY_SIGNAL; }
-				}
-				if (n) { job.values.push(v); job.lengths.push(n); }
-			}
-			if (length > directBytes) {
-				job.start(length, this.currentInstructionPc, a);
-				if (this.instructionBudgetRemaining > 0) this.advanceConcat(frame);
-				return;
-			}
-		}
-		let text = '';
-		for (let i = 0; i < count; ++i) {
-			const v = range ? frame.registers.get(b + i) : this.readRKValue(frame, i ? c : b);
-			text += valueToByteString(v, strings);
-		}
-		this.charge(text.length);
-		this.setRegisterStringFast(frame, frame.registers, a, strings.intern(text));
 	}
 
 	private executeClosure(frame: CallFrame, a: number, bx: number, c: number): void {
@@ -3626,10 +3538,6 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
 					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
-				case CompiledBlockExit.Concat:
-					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC); break;
-				case CompiledBlockExit.ConcatRange:
-					this.executeConcat(frame, exit.exitA, exit.exitB, exit.exitC, true); break;
 				case CompiledBlockExit.Call:
 					redispatch = !this.executeCall(frame, exit.exitA, exit.exitB, exit.exitC);
 					break;
@@ -3888,6 +3796,8 @@ export class CPU implements MappedPageInvalidator {
 					if (this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))
 						&& this.pendingAllocation !== null) return ALLOCATION_PARKED;
 					return;
+				case OpCode.RESERVED_1D:
+				case OpCode.RESERVED_1E:
 				case OpCode.RESERVED_10:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 					return;
@@ -3925,10 +3835,6 @@ export class CPU implements MappedPageInvalidator {
 					const left = integerOperand(this.readRKValue(frame, page.b[pageOffset])), right = integerOperand(this.readRKValue(frame, page.c[pageOffset]));
 					this.setRegisterIntegerFast(frame, registers, a, luaShiftRight(left, right)); return;
 				}
-				case OpCode.CONCAT:
-					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset]); return;
-				case OpCode.CONCATN:
-					this.executeConcat(frame, a, page.b[pageOffset], page.c[pageOffset], true); return;
 				case OpCode.UNM: {
 					this.setRegisterValueFast(frame, registers, a, valueNegate(registers.get(page.b[pageOffset])));
 					return;
@@ -4308,8 +4214,6 @@ export class CPU implements MappedPageInvalidator {
 		if (word !== HeapServiceProjection.PublishRoots) throw new Error('Unknown heap projection store command.');
 		this.publishHeapRemarkHead();
 		this.publishHeapRootBanks();
-		const memory = this.memory, management = this.heapAllocator.managementOffset();
-		memory.writeRamRecordWord(management + HEAP_SERVICE_PENDING_TOP_OFFSET, this.pendingOperandTop(this.activeThread.address));
 	}
 
 	private pushFrame(
@@ -4555,11 +4459,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private setRegisterIntegerFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
 		registers.setInteger(index, value);
-		this.bumpRegisterTop(frame, index);
-	}
-
-	private setRegisterStringFast(frame: CallFrame, registers: ValueSlots, index: number, value: StringId): void {
-		registers.setString(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
@@ -5222,7 +5121,6 @@ export class CPU implements MappedPageInvalidator {
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
 			stringComparison: { ...this.stringComparison },
 			rebuild: this.tableRebuild.record ? { ...this.tableRebuild } : null,
-			concat: this.concat.capture(),
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
 			statusWord: this.cop0Words[COP0_STATUS],
@@ -5312,7 +5210,6 @@ export class CPU implements MappedPageInvalidator {
 		Object.assign(this.stringComparison, state.stringComparison);
 		if (state.rebuild) Object.assign(this.tableRebuild, state.rebuild);
 		else this.tableRebuild.record = 0;
-		this.concat.restore(state.concat);
 		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.pendingAllocation = state.pendingAllocation === null ? null : { ...state.pendingAllocation };
 		this.cop0Words[COP0_STATUS] = state.statusWord;
@@ -5499,27 +5396,16 @@ export class CPU implements MappedPageInvalidator {
 		for (const value of this.localRoots) heap.markValue(value);
 	}
 
-	public pendingOperandTop(thread: number): number {
-		return this.concat.registersLeft && this.activeThread.address === thread ? this.concat.nextRegister + this.concat.registersLeft : 0;
-	}
-
 	/** Publish addresses and extents only. Root data stays with its CPU owner. */
 	public publishHeapRootBanks(): void {
 		const memory = this.memory, descriptor = this.heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 		memory.writeRamRecordPair(descriptor, this.rootThread.address, this.activeThread.address);
 		memory.writeRamRecordPair(descriptor + 8, this.completionThread, this.haltedUntilIrqThread);
-		let destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
+		const destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
 		memory.writeRamRecordPair(destination, this.completionValueCount,
 			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE);
 		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
 			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionTags * HEAP_SERVICE_ROOT_PORT_STRIDE);
-		const count = this.rootBankSlots(GcRootBank.ConcatOperands);
-		const source = count === 0 ? 0 : this.concat.source;
-		destination += HEAP_SERVICE_ROOT_BANK_SIZE;
-		memory.writeRamRecordPair(destination, count,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE + 4 * source);
-		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatTags * HEAP_SERVICE_ROOT_PORT_STRIDE + source);
 	}
 
 	private readHeapServiceRoot(offset: number, kind: MemoryAccessKind): number {
@@ -5527,22 +5413,8 @@ export class CPU implements MappedPageInvalidator {
 		const address = offset & (HEAP_SERVICE_ROOT_PORT_STRIDE - 1);
 		const byte = kind === MemoryAccessKind.U8;
 		const slot = byte ? address : address >>> 2;
-		switch (plane) {
-			case HeapServiceRootPlane.CompletionPayloads:
-			case HeapServiceRootPlane.CompletionTags:
-				if (byte === (plane === HeapServiceRootPlane.CompletionTags) && slot < this.completionValueCount)
-					return byte ? this.completionValueSlots.getTag(slot) : this.completionValueSlots.getPayload(slot);
-				break;
-			case HeapServiceRootPlane.ConcatPayloads:
-			case HeapServiceRootPlane.ConcatTags: {
-				const concat = this.concat;
-				if (byte === (plane === HeapServiceRootPlane.ConcatTags) && concat.active && slot >= concat.source && slot < concat.values.length) {
-					const value = concat.values[slot];
-					return byte ? valueTag(value) : valuePayload(value);
-				}
-				break;
-			}
-		}
+		if (byte === (plane === HeapServiceRootPlane.CompletionTags) && slot < this.completionValueCount)
+			return byte ? this.completionValueSlots.getTag(slot) : this.completionValueSlots.getPayload(slot);
 		throw new Error('Heap service read is outside its root port.');
 	}
 
@@ -5550,7 +5422,6 @@ export class CPU implements MappedPageInvalidator {
 		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
 		if (bank === GcRootBank.Globals) return this.globalBank.count;
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
-		if (bank === GcRootBank.ConcatOperands) return this.concat.active ? this.concat.values.length - this.concat.source : 0;
 		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
 		return this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
 	}
@@ -5566,14 +5437,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (bank === GcRootBank.Completion) {
 			for (let slot = first; slot < end; ++slot) heap.markSlot(this.completionValueSlots, slot);
-			return;
-		}
-		if (bank === GcRootBank.ConcatOperands) {
-			const values = this.concat.values;
-			for (let slot = first; slot < end; ++slot) {
-				const v = values[this.concat.source + slot];
-				if (valueTag(v) === ValueTag.String) heap.markString(valuePayload(v));
-			}
 			return;
 		}
 		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);

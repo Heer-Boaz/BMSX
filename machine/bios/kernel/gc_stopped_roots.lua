@@ -25,10 +25,7 @@ local publish<const> = function(management, previous_root) -- T:858-880,893-929,
 	-- Literal roots are still visible in the installed operand records.
 
 	roots.banks[0].count = 0 -- T:893,5440 C:187,3336; no prior completion values
-	roots.banks[1].count = 0 -- T:909,5441 C:199,3337; no in-flight concatenation
 	root_inputs.borrow_string_work(management) -- T:4153 F:332 S:452-455 R:442-445
-	local pending_top<const>: *u32 = state + layout.pending_top_offset -- T:4157,909 F:334,337 C:199
-	*pending_top = 0 -- T:4157,909 F:334,337 C:199
 end
 
 return { publish = publish }

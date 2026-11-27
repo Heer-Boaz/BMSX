@@ -123,21 +123,6 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
-struct ConcatSource {
-	Value value;
-	u32 bytes;
-	bool operator==(const ConcatSource&) const = default;
-};
-
-struct ConcatAssembly {
-	u32 length = 0, instructionPc = 0, destination = 0, source = 0, offset = 0, hash = 0;
-	u32 nextRegister = 0, registersLeft = 0;
-	bool active() const { return length || registersLeft; }
-	std::vector<ConcatSource> sources;
-	std::string bytes;
-	bool operator==(const ConcatAssembly&) const = default;
-};
-
 struct StringComparisonLatch {
 	StringId left = 0, right = 0;
 	u32 offset = 0, remaining = 0;
@@ -166,7 +151,6 @@ struct CpuRuntimeState {
 	PendingMemoryOperation pendingMemory;
 	StringComparisonLatch stringComparison;
 	TableRebuild rebuild;
-	ConcatAssembly concat;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 systemVectorWord = 0u;
@@ -486,13 +470,9 @@ private:
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
-	template<class Operand> void concatenateValues(CallFrame& frame, int destination, int count, Operand operand);
-	void advanceConcat(CallFrame& frame);
 	void advanceTableStore(CallFrame& frame);
 	friend class TableRecord;
 	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion);
-	void executeConcat(CallFrame& frame, int destination, int left, int right);
-	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced);
@@ -647,7 +627,6 @@ private:
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
 	StringComparisonLatch m_stringComparison;
-	ConcatAssembly m_concat;
 	PendingAllocation m_pendingAllocation;
 	int remainingDeviceCycles() const;
 	CpuRunKind m_runKind = CpuRunKind::Idle;

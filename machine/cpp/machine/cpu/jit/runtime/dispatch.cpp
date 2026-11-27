@@ -272,16 +272,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
-		case NativeBlockExit::Concat: {
-			const auto& concat = exit->operands.concat;
-			cpu.executeConcat(*frame, concat.result, concat.left, concat.right);
-			break;
-		}
-		case NativeBlockExit::ConcatRange: {
-			const auto& concat = exit->operands.concatRange;
-			cpu.executeConcatRange(*frame, concat.result, concat.first, concat.count);
-			break;
-		}
 		case NativeBlockExit::SkipInstruction:
 			cpu.skipNextInstruction(*frame);
 			transition = NativeBlockTransition::Redispatch;

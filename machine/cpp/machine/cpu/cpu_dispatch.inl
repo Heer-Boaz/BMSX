@@ -262,6 +262,8 @@ DISPATCH_LABEL(SETT) {
 	DISPATCH_NEXT();
 }
 
+DISPATCH_LABEL(RESERVED_1D)
+DISPATCH_LABEL(RESERVED_1E)
 DISPATCH_LABEL(RESERVED_10) {
 	PUBLISH_SCALAR_FRONTIER();
 	enterSynchronousException(FRAME, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -361,26 +363,6 @@ DISPATCH_LABEL(SHR) {
 	const i32 left = integerOperand(readRK(IMAGE, FRAME.registers, decoded->b));
 	const i32 right = integerOperand(readRK(IMAGE, FRAME.registers, decoded->c));
 	SET_REGISTER_FAST(decoded->a, valueInteger(luaShiftRight(left, right)));
-	DISPATCH_NEXT();
-}
-
-DISPATCH_LABEL(CONCAT) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	++m_diagnosticExecutionProfile.interpreterOpcodes.concat;
-#endif
-	PUBLISH_SCALAR_FRONTIER();
-	executeConcat(FRAME, decoded->a, decoded->b, decoded->c);
-	RESUME_SCALAR_FRONTIER();
-	DISPATCH_NEXT();
-}
-
-DISPATCH_LABEL(CONCATN) {
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	++m_diagnosticExecutionProfile.interpreterOpcodes.concatn;
-#endif
-	PUBLISH_SCALAR_FRONTIER();
-	executeConcatRange(FRAME, decoded->a, decoded->b, decoded->c);
-	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
 

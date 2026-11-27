@@ -66,7 +66,6 @@ int main() {
 	machine.geometry.pendingCycles = 17;
 	machine.memory.busFaultAddr = 0xffffffff;
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
-	state.cpuState.concat = {600, 0x1014, 31, 0, 3, 0xfaced00d, 0, 0, {{valueInteger(-7), 600}}, std::string("\0\xff\x80", 3)};
 	state.cpuState.stringComparison = {0x80000100u, 0x1000u, 129, 199, -1, true, false};
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
 	state.cpuState.rebuild = {.record=0x8100u, .key=valueInteger(8193), .value=valueInteger(-9),
@@ -95,7 +94,6 @@ int main() {
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
 	require(decoded.cpuState.rebuild == state.cpuState.rebuild, "the partial band and recovery phase survive a binary checkpoint");
-	require(decoded.cpuState.concat == state.cpuState.concat, "concat prefix and hash survive the binary CPU codec");
 	require(decoded.cpuState.stringComparison == state.cpuState.stringComparison, "String comparison restores both ROM socket identity and scan progress");
 	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation,
 		"a parked assignment keeps its exact issue, growth hint and raw guest operands");

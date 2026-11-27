@@ -6,7 +6,7 @@ module<const>
 -- A/B word arithmetic.
 -- The caller admits and pops a Thread gray head, or resumes its saved
 -- frontier. pending_operand_top is the original CPU CONCATN sample (zero
--- for another Thread); this block does not own the CPU's pending operands.
+-- for another Thread).
 local control_layout<const> = require('kernel/gc_control') -- T:416 C:413
 local captures<const> = require('kernel/gc_capture_trace') -- T:436,442 C:435,442
 local mark<const> = require('kernel/gc_mark') -- T:413,417-419,431,453,474 C:414-416,430,456,482
@@ -64,7 +64,9 @@ end
 struct frame_record
 	function_call_site: u32[2] -- F:19 G:33
 	open_head: addr -- F:19 G:33
-	before_top: u32[7] -- F:19 G:33
+	before_return: u32[5] -- F:19 G:33
+	return_base: u32 -- F:19 G:33
+	return_count: u32 -- F:19 G:33
 	top: u32 -- F:19 G:33
 	closure: addr -- F:19 G:33
 	stack_base: u32 -- F:19 G:33
@@ -107,7 +109,7 @@ local clear_stack_range<const> = function(offset, capacity, first, stop) -- I:14
 	end
 end
 
-local trace_thread<const> = function(control, arena, metadata, address, atomic, limit, resumed, pending_operand_top, pending_string_work, replace_color_byte) -- T:410-411 C:410
+local trace_thread<const> = function(control, arena, metadata, address, atomic, limit, resumed, pending_string_work, replace_color_byte) -- T:410-411 C:410
 	local thread<const>: *thread_record = ram_base + (address & word_mask) -- T:412,417-422 C:414-419 I:118-120 J:51-52
 	local work = 0 -- T:414 C:411
 	if resumed == 0 then -- T:415 C:412
@@ -182,9 +184,7 @@ local trace_thread<const> = function(control, arena, metadata, address, atomic, 
 			local base<const> = frame.stack_base & frame_window_mask -- T:462 C:466
 			local top<const> = frame.top & frame_window_mask -- T:463 C:467
 			local window<const> = frame.stack_capacity & frame_window_mask -- T:464 C:468
-			local pending<const> = atomic ~= 0 and pending_operand_top or 0 -- T:466 Q:5055-5056 C:471-473; CPU samples the active pending window
 			local upper = top -- T:467 C:474
-			if (pending ~ sign_bit) > (upper ~ sign_bit) then upper = pending end -- T:467 C:474
 			if (upper ~ sign_bit) > (window ~ sign_bit) then upper = window end -- T:467 C:474
 			if ((base + upper) ~ sign_bit) > (live_top ~ sign_bit) then live_top = base + upper end -- T:467 C:474
 		end

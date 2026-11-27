@@ -80,10 +80,10 @@ local resolve_initial_string<const> = function(management, address, socket, syst
 	local payload<const> = source + sizeof(rom_string) -- S:152,251 R:167,251
 	if size < 0 or size > available - sizeof(rom_string) then return 0, invalid_payload end -- S:153-154 R:169-171
 	local metadata<const> = management + layout.metadata_offset -- S:65
-	local id = slices.lookup_ram(metadata, payload, size, size, hash) -- S:233-234,252 R:239,252
+	local id = slices.lookup_ram(metadata, payload, size, size, hash, nil, nil) -- S:233-234,252 R:239,252
 	if id == 0 then -- S:235-236 R:240
 		local fault -- S:217-224 R:227-232
-		id, fault = slices.lookup_rom_directories(metadata, payload, size, size, hash, system_bytes, cart0_bytes, cart1_bytes) -- S:235 R:240
+		id, fault = slices.lookup_rom_directories(metadata, payload, size, size, hash, system_bytes, cart0_bytes, cart1_bytes, nil, nil) -- S:235 R:240
 		if fault ~= 0 then return 0, fault end -- S:217-224 R:227-232
 	end
 	if id == 0 then return 0, missing_string end -- S:253 R:253
@@ -192,6 +192,8 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	view.ram_strings = ram_count -- T:1005-1006 C:282,291
 	view.base = base -- T:1178 C:421; the actual installed operand block
 	view.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
+	local media<const>: *bound_media_extents = layout.ram_base + management + string_bindings.media_extents_offset
+	media.system, media.cart0, media.cart1 = system_bytes, cart0_bytes, cart1_bytes
 	return 0, source_cycles -- T:1167-1181 C:441
 end
 

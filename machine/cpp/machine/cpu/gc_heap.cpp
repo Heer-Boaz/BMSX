@@ -458,12 +458,7 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			const u32 base = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackBase)) & FRAME_WINDOW_MASK;
 			const u32 top = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Top)) & FRAME_WINDOW_MASK;
 			const u32 capacity = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::StackCapacity)) & FRAME_WINDOW_MASK;
-			// Unadmitted CONCATN sources still reside in this frame. The final
-			// pass must not clear its live operand window above the published top.
-			const auto& job = m_cpu.m_concat;
-			const u32 pending = atomic && job.registersLeft && address == m_cpu.activeThread()->address
-				? job.nextRegister + job.registersLeft : 0u;
-			liveTop = std::max(liveTop, base + std::min(std::max(top, pending), capacity));
+			liveTop = std::max(liveTop, base + std::min(top, capacity));
 		}
 		auto slots = layout.slots(memory, liveTop > layout.valueCapacity);
 		while (next < liveTop && work < limit) {
@@ -668,9 +663,7 @@ size_t GcHeap::remarkRoots(Value root0, Value root1, Value root2, size_t limit, 
 #endif
 	markValue(root0); markValue(root1); markValue(root2);
 	work += m_stringPool.takeMarkWork();
-	// Pending String operands have no outgoing edges. Only the stopped final
-	// pass needs their unread suffix before the intern pool can sweep.
-	if (work < limit) work = traceRootBanks(limit, work, final ? GcRootBank::End : GcRootBank::ConcatOperands);
+	if (work < limit) work = traceRootBanks(limit, work, GcRootBank::End);
 	if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) == 0u) {
 		setRemarkStage(final ? RemarkStage::Trace : RemarkStage::None);
 		if (!final) setPhase(GcPhase::MarkAgain);
@@ -988,7 +981,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 		if (memory.readRamRecordWord(m_controlOffset + GC_ROOT_CURSOR) != 0u) {
 			work += m_stringPool.takeMarkWork();
 			if (work < limit) {
-				work = traceRootBanks(limit, work, GcRootBank::ConcatOperands);
+				work = traceRootBanks(limit, work, GcRootBank::End);
 			}
 		}
 		markValue(root0); markValue(root1); markValue(root2);

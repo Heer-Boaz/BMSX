@@ -45,8 +45,6 @@ export const enum CompiledBlockExit {
 	ControlFault,
 	WriteControl,
 	ExceptionReturn,
-	Concat,
-	ConcatRange,
 	CreateClosure,
 	WriteWords,
 	InvalidOperand,
@@ -78,7 +76,6 @@ function compiledBlockExitResumesFrame(exit: CompiledBlockExit): boolean {
 		case CompiledBlockExit.ReadField: case CompiledBlockExit.ReadIndex:
 		case CompiledBlockExit.ReadInteger: case CompiledBlockExit.Length:
 		case CompiledBlockExit.ReadUpvalue: case CompiledBlockExit.WriteUpvalue: case CompiledBlockExit.Vararg:
-		case CompiledBlockExit.Concat: case CompiledBlockExit.ConcatRange:
 			return true;
 		default:
 			return false;
@@ -151,8 +148,6 @@ emitters[OpCode.LE] = emitters[OpCode.JMP];
 emitters[OpCode.HALT] = emitters[OpCode.JMP];
 emitters[OpCode.CALL] = emitters[OpCode.JMP];
 emitters[OpCode.RET] = emitters[OpCode.JMP];
-emitters[OpCode.CONCAT] = emitters[OpCode.JMP];
-emitters[OpCode.CONCATN] = emitters[OpCode.JMP];
 emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
@@ -168,7 +163,7 @@ export function compiledBlockSupports(op: number, a: number, c: number): boolean
 
 const blockBoundaryOps = new Uint8Array(256);
 for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
-	OpCode.CALL, OpCode.RET, OpCode.CLOSURE, OpCode.CONCAT, OpCode.CONCATN,
+	OpCode.CALL, OpCode.RET, OpCode.CLOSURE,
 	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.RFE, OpCode.EQ, OpCode.LT, OpCode.LE, OpCode.ITERN]) {
 	blockBoundaryOps[op] = 1;
 }
@@ -181,7 +176,7 @@ export function compiledBlockEndsBlock(op: number, field: number): boolean {
 const continuationOps = new Uint8Array(256);
 for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, OpCode.SETT, OpCode.GETI, OpCode.SETI,
 	OpCode.SETUP, OpCode.VARARG, OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D,
-	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D, OpCode.CONCAT, OpCode.CONCATN,
+	OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D,
 	OpCode.CLOSURE, OpCode.CALL, OpCode.LEN]) continuationOps[op] = 1;
 
 /** Returning semantic operations have a statically known continuation PC. */
@@ -332,8 +327,6 @@ export function emitJavaScriptBlock(
 		case OpCode.CALL: terminalExit = CompiledBlockExit.Call; break;
 		case OpCode.RET: terminalExit = CompiledBlockExit.Return; break;
 		case OpCode.ITERN: terminalExit = CompiledBlockExit.IterateTable; sourceWords += skippedInstructionWidth; break;
-		case OpCode.CONCAT: terminalExit = CompiledBlockExit.Concat; break;
-		case OpCode.CONCATN: terminalExit = CompiledBlockExit.ConcatRange; break;
 		case OpCode.CLOSURE: terminalExit = CompiledBlockExit.CreateClosure; break;
 		case OpCode.MTC0: terminalExit = cop0WriteRetiresControl(page.b[finalWord])
 			? CompiledBlockExit.WriteControl : CompiledBlockExit.Continue; break;

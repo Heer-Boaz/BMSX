@@ -301,8 +301,6 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 			return cop0FieldImplemented(b) ? a + 1 : 0;
 		case OpCode.LOADNIL:
 			return b === 0 ? 0 : a + b;
-		case OpCode.CONCATN:
-			return c === 0 ? a + 1 : Math.max(a + 1, b + c);
 	}
 	const reads = OPCODE_SCALAR_REGISTER_READS[op];
 	let end = (reads & REGISTER_OPERAND_A) !== 0 || OPCODE_WRITES_REGISTER_A[op] !== 0 ? a + 1 : 0;

@@ -22,8 +22,7 @@ static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResiden
 	<= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
-static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_PENDING_TOP_OFFSET);
-static_assert(HEAP_SERVICE_PENDING_TOP_OFFSET + sizeof(u32) <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
+static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_BUS_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
 static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
@@ -330,7 +329,5 @@ void CPU::writeHeapServiceProjection(u32 word) {
 		throw BMSX_RUNTIME_ERROR("Unknown heap projection store command.");
 	publishHeapRemarkHead();
 	publishHeapRootBanks();
-	const u32 management = m_heapAllocator.managementOffset();
-	const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
-	m_memory.writeRamRecordWord(management + HEAP_SERVICE_PENDING_TOP_OFFSET, pendingTop);
+
 }

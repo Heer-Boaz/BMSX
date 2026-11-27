@@ -27,8 +27,8 @@ const enum Stage { Frames, Protected, Values, Clear }
 const openHead = 1;
 const probeSource = `module<const>
 local thread<const> = require('${TRACE}')
-local trace<const> = function(control, arena, metadata, address, atomic, limit, resumed, pending_top, pending_strings, replace, output)
-	local work<const>, strings<const> = thread.trace_thread(control, arena, metadata, address, atomic, limit, resumed, pending_top, pending_strings, replace)
+local trace<const> = function(control, arena, metadata, address, atomic, limit, resumed, pending_strings, replace, output)
+	local work<const>, strings<const> = thread.trace_thread(control, arena, metadata, address, atomic, limit, resumed, pending_strings, replace)
 	local latch<const>: *u32 = ${RAM_BASE} + output
 	*latch = strings
 	return work
@@ -95,9 +95,9 @@ function fixture(optLevel: 0 | 3) {
 			mem.writeRamRecordByte(block + 4 * capacity + slot, tag);
 		}
 	}
-	function begin(address: number, atomic: boolean, limit: number, resumed: boolean, pendingTop = 0, pendingStrings = 0) {
+	function begin(address: number, atomic: boolean, limit: number, resumed: boolean, pendingStrings = 0) {
 		assert.ok(cpu.beginHeapService(linked.image.functions[entry].address,
-			[control, arena, metadata, address, +atomic, limit, +resumed, pendingTop, pendingStrings, 0, output]));
+			[control, arena, metadata, address, +atomic, limit, +resumed, pendingStrings, 0, output]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -115,9 +115,9 @@ function fixture(optLevel: 0 | 3) {
 			resumed ? mem.readRamRecordWord(control + GC_THREAD_TRACE_OPEN) : openHead,
 			resumed ? mem.readRamRecordWord(control + GC_THREAD_TRACE_OPEN + 4) : 0, resumed);
 	}
-	function step(address: number, atomic: boolean, limit: number, resumed: boolean, pendingTop = 0, pendingStrings = 0) {
+	function step(address: number, atomic: boolean, limit: number, resumed: boolean, pendingStrings = 0) {
 		const work = traceNative(address, atomic, limit, resumed);
-		begin(address, atomic, limit, resumed, pendingTop, pendingStrings);
+		begin(address, atomic, limit, resumed, pendingStrings);
 		assert.deepEqual(finish(), [work, oracle.stringPool.takeMarkWork()]);
 		compare();
 		return work;
@@ -168,7 +168,7 @@ for (const optLevel of [0, 3] as const) {
 			target.stringPool.markReachable(prior);
 		}
 		assert.equal(cpu.stringPool.takeMarkWork(), 1);
-		assert.equal(step(thread, false, 1, false, 0, 1), 22, 'header drains pending and error string work');
+		assert.equal(step(thread, false, 1, false, 1), 22, 'header drains pending and error string work');
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 1);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0);
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_TRACE_OPEN), openHead);
@@ -199,31 +199,27 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_TRACE_OPEN + 4), 0);
 	});
 
-	test(`BLua atomic Thread trace preserves pending operands and rewinds between cleared planes at O${optLevel}`, () => {
+	test(`BLua atomic Thread trace preserves live frame slots and rewinds between cleared planes at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, word, value, traceNative, begin, grant, finish, step, compare } = fixture(optLevel);
 		const thread = cpu.rootThread.address;
 		const depth = memory.readRamRecordWord(thread + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
 		assert.ok(depth > 0);
 		const frame = memory.readRamRecordWord(thread + ThreadField.FrameBlock) + (depth - 1) * FRAME_CONTROL_BYTES;
 		const stack = memory.readRamRecordWord(thread + ThreadField.StackBlock), capacity = memory.readRamRecordWord(thread + ThreadField.StackCapacity);
-		const pendingTop = 4;
+		const liveTop = 4;
 		word(frame + FrameField.StackBase, 0);
-		word(frame + FrameField.Top, 1);
+		word(frame + FrameField.Top, liveTop);
 		word(frame + FrameField.StackCapacity, capacity);
-		const concat = oracle['concat'];
-		concat.nextRegister = 2;
-		concat.registersLeft = pendingTop - 2;
-		assert.equal(oracle.pendingOperandTop(thread), pendingTop);
 		for (let index = 0; index < capacity; ++index) value(thread, index, ValueTag.Integer, 0x6d000000 + index);
-		assert.equal(step(thread, true, 1, false, pendingTop), 20);
+		assert.equal(step(thread, true, 1, false), 20);
 		for (let i = 0; i < 16 && (memory.readRamRecordWord(control + GC_TRACE_CURSOR) >>> cursorBits) !== Stage.Clear; ++i)
-			step(thread, true, 1, true, pendingTop);
-		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), (Stage.Clear << cursorBits) | pendingTop);
+			step(thread, true, 1, true);
+		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), (Stage.Clear << cursorBits) | liveTop);
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 0);
 
-		const payload = stack + 4 * pendingTop, tag = stack + 4 * capacity + pendingTop;
+		const payload = stack + 4 * liveTop, tag = stack + 4 * capacity + liveTop;
 		const work = traceNative(thread, true, 4, true);
-		begin(thread, true, 4, true, pendingTop);
+		begin(thread, true, 4, true);
 		for (let i = 0; i < 512 && memory.readRamRecordWord(payload + 4) !== 0; ++i) grant(1);
 		assert.ok(cpu.heapServiceActive());
 		assert.equal(memory.readRamRecordWord(payload), 0);
@@ -235,11 +231,11 @@ for (const optLevel of [0, 3] as const) {
 		restoreCpuCheckpoint(cpu, partial);
 		assert.deepEqual(finish(), [work, 0]);
 		compare();
-		for (let i = 0; i < 16 && memory.readRamRecordWord(control + GC_TRACE_RECORD) !== 0; ++i) step(thread, true, 3, true, pendingTop);
+		for (let i = 0; i < 16 && memory.readRamRecordWord(control + GC_TRACE_RECORD) !== 0; ++i) step(thread, true, 3, true);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
 		for (let index = 0; index < capacity; ++index) {
-			assert.equal(memory.readRamRecordWord(stack + 4 * index), index < pendingTop ? 0x6d000000 + index : 0);
-			assert.equal(memory.readRamRecordByte(stack + 4 * capacity + index), index < pendingTop ? ValueTag.Integer : ValueTag.Nil);
+			assert.equal(memory.readRamRecordWord(stack + 4 * index), index < liveTop ? 0x6d000000 + index : 0);
+			assert.equal(memory.readRamRecordByte(stack + 4 * capacity + index), index < liveTop ? ValueTag.Integer : ValueTag.Nil);
 		}
 	});
 }

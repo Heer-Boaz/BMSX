@@ -62,7 +62,7 @@ export const GC_VISIT_MEMBER = 0x40;
 const VISIT_LINK_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 const VISIT_LINK_HIGH_MASK = GC_GRAY_INDEX_MASK >>> VISIT_LINK_LOW_BITS;
 export const enum GcPhase { Pause, Mark, MarkAgain, Atomic, Sweep, Strings }
-export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, ConcatOperands, End }
+export const enum GcRootBank { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End }
 // Two unconnected selector inputs do not clock the collector.
 const GC_PHASE_SELECTOR = [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic,
 	GcPhase.Sweep, GcPhase.Strings, GcPhase.Pause, GcPhase.Pause];
@@ -442,9 +442,7 @@ export class GcHeap {
 				const base = memory.readRamRecordWord(current + FrameField.StackBase) & FRAME_WINDOW_MASK;
 				const top = memory.readRamRecordWord(current + FrameField.Top) & FRAME_WINDOW_MASK;
 				const capacity = memory.readRamRecordWord(current + FrameField.StackCapacity) & FRAME_WINDOW_MASK;
-				// Unadmitted CONCATN sources still reside in this frame during final marking.
-				const pending = atomic ? this.cpu.pendingOperandTop(address) : 0;
-				liveTop = Math.max(liveTop, base + Math.min(Math.max(top, pending), capacity));
+				liveTop = Math.max(liveTop, base + Math.min(top, capacity));
 			}
 			const tags = layout.offset + layout.capacity * 4;
 			while (next < liveTop && work < limit) {
@@ -621,8 +619,7 @@ export class GcHeap {
 		this.diagnostics?.phase('rootsNanoseconds');
 		this.markValue(t0); this.markValue(t1); this.markValue(t2);
 		work += this.cpu.stringPool.takeMarkWork();
-		// Pending Strings are leaves; only the stopped final pass needs their unread suffix.
-		if (work < limit) work = this.traceRootBanks(limit, work, final ? GcRootBank.End : GcRootBank.ConcatOperands);
+		if (work < limit) work = this.traceRootBanks(limit, work, GcRootBank.End);
 		if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) === 0) {
 			this.setRemarkStage(final ? RemarkStage.Trace : RemarkStage.None);
 			if (!final) this.setPhase(GcPhase.MarkAgain);
@@ -921,7 +918,7 @@ export class GcHeap {
 			if (this.memory.readRamRecordWord(this.controlOffset + GC_ROOT_CURSOR) !== 0) {
 				work += this.cpu.stringPool.takeMarkWork();
 				if (work < limit) {
-					work = this.traceRootBanks(limit, work, GcRootBank.ConcatOperands);
+					work = this.traceRootBanks(limit, work, GcRootBank.End);
 				}
 			}
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);

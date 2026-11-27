@@ -1,22 +1,15 @@
-import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
-import { textToByteString } from '../../machine/ts/common/byte_string';
-import { numberConstantFromHost } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valuePayload, valueString, valueTable, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valuePayload, valueString, valueTable, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
-import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -90,132 +83,6 @@ test('a warm JavaScript CALL to the resident constructor yields to the bound BIO
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	assert.deepEqual(values, [valueInteger(42)]);
-});
-
-for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value kind before an overlapping write (A=${destination})`, () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
-	writeInstruction(text, 1, OpCode.CONCAT, destination, 0, 1);
-	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }] });
-	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const pc = image.image.functions[0].codeAddress, entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	for (const cpu of [js, ref]) for (let warm = 0; warm < 12; ++warm) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 2);
-		cpu.runUntilDepth(0, 4);
-	}
-	const frame = js.rootThread.frameAtDepth(0), block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
-	assert.equal(block.terminal.exit, CompiledBlockExit.Concat); assert.equal(block.sourceWords, 2);
-	const primitives: [Value, string][] = [[valueNil(), 'nil'], [valueBool(false), 'false'], [valueBool(true), 'true'],
-		[valueInteger(0), '0'], [valueFloat(-0), '-0.0'], [valueFloatBits(0xffa12345), 'nan'],
-		[valueFloat(Infinity), 'inf'], [valueFloat(-Infinity), '-inf'], [valueFloat(1.234565), '1.234565'],
-		[valueBuiltinFunction(BuiltinFunctionId.Type), 'function']];
-	for (let kind = 0; kind < primitives.length + 4; ++kind) {
-		const expected = kind < primitives.length ? primitives[kind][1]
-			: ['λ\0🍻', 'table', 'function', 'thread'][kind - primitives.length];
-		for (const cpu of [js, ref]) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			const root = cpu.rootThread.frameAtDepth(0), r = root.registers; root.top = 0;
-			if (kind < primitives.length) r.set(0, primitives[kind][0]);
-			else switch (kind - primitives.length) {
-				case 0: r.setString(0, cpu.stringPool.intern(textToByteString('λ\0🍻'))); break;
-				case 1: r.setTable(0, cpu.createTable(0, 0)); break;
-				case 2: r.setClosure(0, root.closure); break;
-				case 3: r.setThread(0, cpu.rootThread.address); break;
-			}
-			r.setString(1, cpu.stringPool.intern('!'));
-		}
-		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(js.stringPool.toString(frame.registers.getStringId(destination)), expected + '!');
-		assert.equal(frame.top, 9);
-	}
-});
-
-test('compiled CONCAT preserves signed RK constants and Unicode without numeric-word conversion', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 1, OpCode.CONCAT, 0, 63, 62, 63); // K[0], K[1].
-	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }], constants: [numberConstantFromHost(-0), textToByteString('🍻')] });
-	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	js.runUntilDepth(0, 320); ref.runUntilDepth(0, 320); assertParity(js, ref);
-	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const terminal = frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal;
-	assert.equal(terminal.exit, CompiledBlockExit.Concat); assert.equal(terminal.exitB, -1); assert.equal(terminal.exitC, -2);
-	assert.equal(js.stringPool.toString(frame.registers.getStringId(0)), '-0.0🍻');
-});
-
-for (const count of [0, 3, 513]) test(`compiled WIDE CONCATN reads exactly its register range before overwriting it (C=${count})`, () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 2, 1, count >> 9);
-	writeInstruction(text, 2, OpCode.CONCATN, 1, 0, count & 63);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 1025 }] });
-	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const pc = image.image.functions[0].codeAddress;
-	let expected = '';
-	for (let i = 0; i < count; ++i) expected += i === 0 ? 'L' : i === 1 ? 'false' : String(i % 10);
-	for (let warm = 0; warm < 12; ++warm) {
-		for (const cpu of [js, ref]) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			const r = cpu.rootThread.frameAtDepth(0).registers;
-			for (let i = 0; i < count; ++i) {
-				if (i === 0) r.setString(512, cpu.stringPool.intern('L'));
-				else if (i === 1) r.setBoolean(513, false); else r.setInteger(512 + i, i % 10);
-			}
-		}
-		assert.equal(js.runUntilDepth(0, 5), ref.runUntilDepth(0, 5)); assertParity(js, ref);
-		if (count === 513) {
-			assert.equal(js.rootThread.frameAtDepth(0).registers.get(513), valueBool(false));
-			const pending = js.captureRuntimeState().concat!;
-			assert.equal(pending.registersLeft, count);
-			assert.equal(pending.length, 0);
-			js.runUntilDepth(0, count); ref.runUntilDepth(0, count); assertParity(js, ref);
-			js.runUntilDepth(0, expected.length); ref.runUntilDepth(0, expected.length); assertParity(js, ref);
-		}
-		assert.equal(js.stringPool.toString(js.rootThread.frameAtDepth(0).registers.getStringId(513)), expected);
-	}
-	const frame = js.rootThread.frameAtDepth(0), entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal.exitC, count);
-	assert.equal(frame.top, 514, 'reading the sources does not extend top through the counted range');
-});
-
-test('compiled CONCAT publishes moved reference roots before collection', () => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.MOV, 7, 9, 0);
-	writeInstruction(text, 1, OpCode.KNIL, 9, 0, 0);
-	writeInstruction(text, 2, OpCode.CONCAT, 0, 1, 2);
-	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 16 }] });
-	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const pc = image.image.functions[0].codeAddress;
-	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(9, 1); r.setInteger(1, 2); r.setInteger(2, 3);
-		cpu.runUntilDepth(0, 400);
-	}
-	const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.terminal.exit,
-		CompiledBlockExit.Concat);
-	for (const cpu of [js, ref]) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		const root = cpu.rootThread.frameAtDepth(0), r = root.registers, table = cpu.createTable(1024, 1);
-		cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
-		r.setTable(9, table); r.setString(1, cpu.stringPool.intern('fresh-')); r.setString(2, cpu.stringPool.intern('result'));
-		root.top = 0;
-		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.setCollectionTarget(trackedBytes);
-	}
-	assert.equal(js.runUntilDepth(0, 516), ref.runUntilDepth(0, 516)); assertParity(js, ref);
-	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);
-		assert.ok(cpu.gc.active(), 'allocation started the configured collection assist');
-		assert.equal(cpu.gc.memory.readRamRecordByte(retained + GC_COLOR_OFFSET), 3, 'the allocating operation traced the published reference before returning');
-		cpu.gc.collect();
-		assert.equal(cpu.gc.tables.getStringKey(retained, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
-		assert.equal(cpu.stringPool.toString(r.getStringId(0)), 'fresh-result');
-	}
 });
 
 test('compiled captured CLOSURE publishes the live moved reference to BIOS collection', () => {
@@ -346,61 +213,4 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
 		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, address);
 	}
-});
-
-for (const range of [false, true]) for (const bytes of [3 << 19, (2 << 20) - 1, 2 << 20, (2 << 20) + 1])
-test(`compiled concatenation retains the exact fault prefix (range=${range}, operand bytes=${bytes})`, t => {
-	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(text, 0, OpCode.K1, 8, 0, 0);
-	writeInstruction(text, 1, range ? OpCode.CONCATN : OpCode.CONCAT, 0, 1, 2);
-	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255); writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }, { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1, constants: ['12'] });
-	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) {
-		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2);
-		cpu.runUntilDepth(0, range ? 396 : 320);
-		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		const r = cpu.rootThread.frameAtDepth(0).registers, id = cpu.stringPool.intern('x'.repeat(bytes));
-		r.setString(1, id); r.setString(2, id); r.setInteger(0, 73); cpu.rootThread.frameAtDepth(0).top = 0;
-	}
-	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
-	assert.equal(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
-		range ? CompiledBlockExit.ConcatRange : CompiledBlockExit.Concat);
-	const lastWorkAt = js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
-	const beforeWork = js.memory.readRamRecordWord(lastWorkAt);
-	const reads = 2 * bytes >= MAIN_RAM_SIZE ? t.mock.method(js.stringPool, 'copyBytes') : null;
-	assert.equal(js.runUntilDepth(0, range ? 5 : 4), ref.runUntilDepth(0, range ? 5 : 4)); assertParity(js, ref);
-	if (reads !== null) assert.equal(reads.mock.callCount(), 0, 'no payload reads before the size fault');
-	else {
-		assert.equal(js.instructionBudgetRemaining, range ? -2 : 0);
-		js.runUntilDepth(0, 2 * bytes); ref.runUntilDepth(0, 2 * bytes); assertParity(js, ref);
-	}
-	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY); assert.equal(js.readEpcWord(), pc + INSTRUCTION_BYTES);
-	const afterWork = js.memory.readRamRecordWord(lastWorkAt);
-	const recoverableSize = 2 * bytes + BLUA32_STRING_RECORD_HEADER_SIZE <= js.luaHeap.capacity();
-	const work = recoverableSize ? afterWork : 0;
-	if (recoverableSize) assert.ok(work > 0);
-	else assert.equal(afterWork, beforeWork, 'size fault does not run a recovery epoch');
-	assert.equal(js.instructionBudgetRemaining, (2 * bytes < MAIN_RAM_SIZE ? 0 : -MAIN_RAM_SIZE - (range ? 2 : 0)) - 3 * work);
-	assert.equal(frame.registers.getInteger(0), 73); assert.equal(frame.top, 9);
-});
-
-for (const over of [false, true]) test(`CONCATN admits the exact mixed byte length before reading payloads (over=${over})`, t => {
-	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.CONCATN, 0, 1, 32);
-	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 33 },
-		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const { cpu } = createTestHeapServiceCpu(image);
-	const frame = cpu.rootThread.currentFrame!, id = cpu.stringPool.intern('x'.repeat(135300));
-	for (let i = 1; i <= 31; ++i) frame.registers.setString(i, id);
-	// Four bytes remain: nil fits, false does not.
-	frame.registers.set(32, over ? valueBool(false) : valueNil());
-	const reads = t.mock.method(cpu.stringPool, 'copyBytes');
-	cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CONCATN]);
-	if (!over) { assert.equal(cpu.instructionBudgetRemaining, -32); cpu.runUntilDepth(0, MAIN_RAM_SIZE - 1); }
-	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(cpu.instructionBudgetRemaining, over ? -MAIN_RAM_SIZE - 32 : 0);
-	if (over) assert.equal(reads.mock.callCount(), 0);
-	assert.equal(frame.registers.get(0), valueNil());
 });

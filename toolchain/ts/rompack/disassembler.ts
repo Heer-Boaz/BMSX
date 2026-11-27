@@ -281,10 +281,7 @@ const buildInstructionOperands = (
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
 			return [registerOperand('a', 'dst', a), sourceRkOperand('b', 'left', source, b, decoded.rkBitsB, options), sourceRkOperand('c', 'right', source, c, decoded.rkBitsC, options)];
-		case OpCode.CONCATN:
-			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'count', c.toString())];
 		case OpCode.UNM:
 		case OpCode.NOT:
 		case OpCode.LEN:
@@ -486,10 +483,6 @@ const formatInstruction = (
 			return `SHL r${a}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
 		case OpCode.SHR:
 			return `SHR r${a}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
-		case OpCode.CONCAT:
-			return `CONCAT r${a}, ${formatSourceRK(source, b, decoded.rkBitsB, options)}, ${formatSourceRK(source, c, decoded.rkBitsC, options)}`;
-		case OpCode.CONCATN:
-			return `CONCATN r${a}, r${b}, ${c}`;
 		case OpCode.UNM:
 			return `UNM r${a}, r${b}`;
 		case OpCode.NOT:

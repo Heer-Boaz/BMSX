@@ -18,17 +18,13 @@ local cursor_mask<const> = (1 << cursor_bits) - 1 -- T:59 C:72
 local system_globals<const> = 1 -- T:69 H:20
 local system_constants<const> = 3 -- T:69,594 H:20 C:626
 local completion<const> = 6 -- T:69 U:5076,5091 H:20 P:3146,3162
-local concat<const> = 7 -- T:69 U:5077,5095 H:20 P:3147,3166
-local string_tag<const> = 5 -- V:9-10 W:21-22 U:5099 P:3169
 local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
 -- GlobalBank owns the physical Base/Capacity/Count and its b, b+12*c,
 -- b+16*c backing planes. No global root descriptor is published.
 -- Installed operand records own the compact RAM-String prefix, in pool
--- ordinal order, not all constant slots. Completion counts its live RET Values;
--- Concat counts every unread captured slot (but traces only Strings).
--- The last two planes begin at the start of the live span. The descriptors
--- are a private read contract; this module does not materialize those spans.
+-- ordinal order, not all constant slots. Completion reads the live
+-- host-return observation through its private descriptor.
 struct root_bank
 	count: u32 -- U:5073-5079 P:3143-3149
 	payloads: addr -- U:5085,5092,5096-5099,5103-5104 P:3155,3163,3168-3169,3173-3174 G:21 B:23
@@ -41,7 +37,7 @@ struct root_descriptors
 	active: addr -- U:5108 P:3179
 	completion_thread: addr -- U:5108 P:3180
 	halted: addr -- U:5109 P:3181
-	banks: root_bank[2] -- T:69 H:20
+	banks: root_bank[1] -- T:69 H:20
 end
 
 local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_base, names_base, kind, first, stop, replace_color_byte) -- U:5082 P:3152
@@ -66,16 +62,6 @@ local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_
 			first = first + 1 -- U:5092 P:3163
 		end
 		return work -- U:5093 P:3164 T:603 C:636
-	end
-	if kind == concat then -- U:5095 P:3166
-		local tags<const>: *u8 = tags_base -- U:5096-5099 P:3168-3169; the producer's plane base already includes source
-		while first < stop do -- U:5097 P:3167
-			if tags[first] == string_tag then -- U:5098-5099 P:3168-3169
-				work = work + strings.mark(metadata, words[first]) -- U:5099 P:3169
-			end
-			first = first + 1 -- U:5097 P:3167
-		end
-		return work -- U:5101 P:3171 T:603 C:636
 	end
 	while first < stop do -- U:5104 P:3174
 		work = work + strings.mark(metadata, words[first] & ~string_bindings.ordinal_ram_bit) -- U:5104 P:3174

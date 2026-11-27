@@ -71,7 +71,7 @@ export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase
 export const HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
 export const HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
 export const HEAP_SERVICE_ROOT_BANK_SIZE = 16;
-export const HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 2 * HEAP_SERVICE_ROOT_BANK_SIZE;
+export const HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + HEAP_SERVICE_ROOT_BANK_SIZE;
 export const enum HeapServiceRootBankField { Count = 0, Payloads = 4, Tags = 8 }
 
 // CPU-private load selectors for the existing non-RAM root storage. These
@@ -80,11 +80,11 @@ export const HEAP_SERVICE_ROOT_PORT_BASE = 0x01c00000;
 export const HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
 export const HEAP_SERVICE_ROOT_PORT_STRIDE = 1 << HEAP_SERVICE_ROOT_PORT_SHIFT;
 export const enum HeapServiceRootPlane {
-	CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+	CompletionPayloads, CompletionTags, Count,
 }
 export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.
-export const HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
+export const HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = 0x02c00000;
 export const HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4;
 export const HEAP_SERVICE_CALL_CYCLES_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 4;
 export const HEAP_SERVICE_CALL_RUN_KIND_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 8;
@@ -109,4 +109,3 @@ export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 export const enum HeapServiceProjection {
 	PublishRoots = 0,
 }
-export const HEAP_SERVICE_PENDING_TOP_OFFSET = 0x79c;

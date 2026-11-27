@@ -6,6 +6,7 @@ module<const>
 -- unchanged. The exact mounted bank extents are ordinary scalar inputs,
 -- not invented firmware memory ports. A ROM read failure is returned
 -- to the owner, never rewritten as a miss or an allocation failure.
+local number_bytes<const> = require('kernel/number_bytes') -- V:135-136
 local strings<const> = require('kernel/gc_strings') -- T:379-388,431-436 C:369-377,418-425
 local records<const> = require('kernel/dlmalloc_record') -- T:393 C:383
 local allocator<const> = require('kernel/dlmalloc') -- T:384 C:374 A:57-59 B:54-56
@@ -85,7 +86,95 @@ local matches_slice<const> = function(bank, offset, mask, start, head, length) -
 	return false -- T:54,56 C:87,92
 end
 
-local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, length) -- T:161 C:176
+-- Replay the admitted Value window. A candidate hit does not reserve a new
+-- record, even when the arena is full. Only one bounded Number spelling
+-- needs work RAM; Strings continue to borrow the existing payload spans.
+rodata scalar_spelling: u8[31] = { -- V:130-141
+	110, 105, 108, 102, 97, 108, 115, 101, 116, 114, 117, 101, -- V:132-134
+	116, 97, 98, 108, 101, 116, 104, 114, 101, 97, 100, 102, 117, 110, 99, 116, 105, 111, 110, -- V:138-140
+} -- V:9-15,132-141
+rodata scalar_index: u8[13] = { 0, 3, 8, 0, 0, 0, 12, 23, 23, 17, 0, 23, 23 } -- V:9-15,132-141
+rodata scalar_width: u8[13] = { 3, 5, 4, 0, 0, 0, 5, 8, 8, 6, 0, 8, 8 } -- V:9-15,132-141
+local integer_tag<const> = 3 -- V:9-10,135-137
+local float_tag<const> = 4 -- V:9-10,135-137
+local string_tag<const> = 5 -- V:9-10,135-137
+
+local concat_part<const> = function(tag, word, workspace) -- V:130-137 W:17-19,103
+	if tag == string_tag then -- V:130-137 W:17-19,103
+		local length -- V:130-137 W:17-19,103
+		if strings.internal.is_ram_string_id(word) then -- T:352-355 I:61
+			local lane<const>: *u32 = ram_base + ((word + offsetof(mutable_string_record.length)) & word_mask) -- T:352-355 I:61
+			length = *lane & byte_mask -- T:352-355 I:61
+		else -- T:352-355 I:61
+			local lane<const>: *u32 = word + offsetof(mutable_string_record.length) -- T:352-355 I:61
+			length = *lane -- T:352-355 I:61
+		end
+		local start<const>, head<const> = slice_head(word, 0, length) -- C:332-335 V:137
+		return start, head, length -- C:332-335 V:137
+	elseif tag == integer_tag or tag == float_tag then -- V:135-136
+		local start, length -- V:135-136
+		if tag == integer_tag then start, length = number_bytes.format_integer(word, workspace) -- V:135-136
+		else start, length = number_bytes.format_float(word, workspace) end -- V:135-136
+		return start, length, length -- V:135-136
+	end
+	local offsets<const>: *u8 = &scalar_index[0] -- V:9-15,131-141
+	local widths<const>: *u8 = &scalar_width[0] -- V:9-15,131-141
+	local length<const> = widths[tag] -- V:9-15,131-141
+	return &scalar_spelling[0] + offsets[tag], length, length -- V:9-15,131-141
+end
+
+local hash_concat<const> = function(words_address, tags_address, count, workspace) -- W:16-19,135-136
+	local words<const>: *u32 = words_address -- W:16-19,135-136
+	local tags<const>: *u8 = tags_address -- W:16-19,135-136
+	local length, hash = 0, 0x811c9dc5 -- C:335-337 W:131
+	for i = 0, count - 1 do -- W:16-19 C:333-337
+		local start<const>, head<const>, size<const> = concat_part(tags[i], words[i], workspace) -- W:16-19 C:333-337
+		if size >= ram_size - length then return ram_size, 0 end -- W:20-24 P:3059-3063
+		length = length + size -- W:26 P:3065
+		hash = fnv_segment(hash, start, head) -- C:333-337 W:48
+		if head ~= size then hash = fnv_segment(hash, ram_base, size - head) end -- C:333-337 W:48
+	end
+	return length, hash -- C:335-337 W:48-54
+end
+
+local matches_concat<const> = function(bank, offset, mask, words_address, tags_address, count, workspace) -- C:332-338
+	local words<const>: *u32 = words_address -- C:332-338
+	local tags<const>: *u8 = tags_address -- C:332-338
+	for i = 0, count - 1 do -- C:333-337 W:16-19
+		local start<const>, head<const>, size<const> = concat_part(tags[i], words[i], workspace) -- C:333-337 W:16-19
+		if not matches_slice(bank, offset, mask, start, head, size) then return false end -- C:84-101,338
+		offset = offset + size -- C:84-101,338
+	end
+	return true -- C:95-101,338
+end
+
+local copy_span<const> = function(target_address, start, head, length) -- T:414-424 C:407-411
+	local prefix<const>: *u8 = start -- T:419,422 C:409
+	local tail<const>: *u8 = ram_base -- T:420 C:410
+	local target<const>: *u8 = target_address -- T:414 C:407-408
+	for i = 0, head - 1 do target[i] = prefix[i] end -- T:419,422,424 C:409,411
+	for i = head, length - 1 do target[i] = tail[i - head] end -- T:420,424 C:410-411
+end
+
+local copy_concat<const> = function(target, words_address, tags_address, count, workspace) -- W:35-43,109 C:332-335,342-343
+	local words<const>: *u32 = words_address -- W:35-43,109 C:332-335,342-343
+	local tags<const>: *u8 = tags_address -- W:35-43,109 C:332-335,342-343
+	for i = 0, count - 1 do -- W:35-43,109 C:332-335,342-343
+		local start<const>, head<const>, size<const> = concat_part(tags[i], words[i], workspace) -- W:35-43,109 C:332-335,342-343
+		copy_span(target, start, head, size) -- C:342-344,407-411 T:414-424
+		target = target + size -- C:342-344,407-411 T:414-424
+	end
+end
+
+local retain_concat_sources<const> = function(metadata, words_address, tags_address, count) -- C:339-344 W:16-27
+	local words<const>: *u32 = words_address -- C:339-344 W:16-27
+	local tags<const>: *u8 = tags_address -- C:339-344 W:16-27
+	for i = 0, count - 1 do -- C:339-344 W:16-27
+		if tags[i] == string_tag then strings.mark(metadata, words[i]) end -- T:430-436 C:339-344
+	end
+end
+
+local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, length, source_count, workspace) -- T:161 C:176
 	local state<const>: *string_metadata = ram_base + metadata -- T:166 C:179
 	local link<const>: *u32 = ram_base + (bucket & word_mask) -- T:164 C:177 M:9
 	local id = *link -- T:164 C:177
@@ -100,7 +189,9 @@ local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, le
 			if (*length_word & byte_mask) == length then -- T:169 C:182
 				local offset<const> = (id + header_bytes) & byte_mask -- T:170 C:74,183
 				local mask<const> = length > ram_size - offset and byte_mask or -1 -- T:171 C:74-77,183
-				if matches_slice(ram_base, offset, mask, start, head, length) then return id end -- T:172 C:183
+				if source_count then -- C:176-187,338
+					if matches_concat(ram_base, offset, mask, start, head, source_count, workspace) then return id end -- C:176-187,338
+				elseif matches_slice(ram_base, offset, mask, start, head, length) then return id end -- T:172 C:183
 			end
 		end
 		local next_word<const>: *u32 = ram_base + ((id + offsetof(mutable_string_record.next)) & word_mask) -- T:174 C:185 M:9 I:62
@@ -109,7 +200,7 @@ local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, le
 	return 0 -- T:176 C:187
 end
 
-local lookup_ram<const> = function(metadata, start, head, length, hash) -- T:179,233,351-356 C:190,239,347-350
+local lookup_ram<const> = function(metadata, start, head, length, hash, source_count, workspace) -- T:179,233,351-356 C:190,239,347-350
 	local state<const>: *string_metadata = ram_base + metadata -- T:180 C:191
 	local control<const> = state.capacity -- T:180 C:191
 	local count<const> = control & bucket_extent -- T:180 C:191
@@ -120,7 +211,7 @@ local lookup_ram<const> = function(metadata, start, head, length, hash) -- T:179
 		if (control & growing) ~= 0 then -- T:185 C:196
 			if (index ~ sign_bit) < (ready ~ sign_bit) then -- T:186 C:197
 				local bucket<const> = state.rehash_base + 4 * (hash & (2 * count - 1)) -- T:187 C:198
-				local found<const> = lookup_ram_chain(metadata, bucket, hash, start, head, length) -- T:188 C:199
+				local found<const> = lookup_ram_chain(metadata, bucket, hash, start, head, length, source_count, workspace) -- T:188 C:199
 				if found ~= 0 then return found end -- T:189 C:199
 				if ((index + 1) ~ sign_bit) < (ready ~ sign_bit) then return 0 end -- T:190 C:200
 			end
@@ -128,21 +219,21 @@ local lookup_ram<const> = function(metadata, start, head, length, hash) -- T:179
 			local lower<const> = index - (count >> 1) -- T:193 C:203
 			if lower >= 0 and (lower ~ sign_bit) <= (ready ~ sign_bit) then -- T:194 C:204; count cannot exceed bucket_extent
 				local base<const> = state.buckets -- T:195 C:205
-				local found<const> = lookup_ram_chain(metadata, base + 4 * lower, hash, start, head, length) -- T:196 C:206
+				local found<const> = lookup_ram_chain(metadata, base + 4 * lower, hash, start, head, length, source_count, workspace) -- T:196 C:206
 				if found ~= 0 or (lower ~ sign_bit) < (ready ~ sign_bit) then return found end -- T:197 C:207
-				local upper<const> = lookup_ram_chain(metadata, base + 4 * index, hash, start, head, length) -- T:198 C:208
+				local upper<const> = lookup_ram_chain(metadata, base + 4 * index, hash, start, head, length, source_count, workspace) -- T:198 C:208
 				return upper -- T:198 C:208
 			end
 		end
 	end
-	local found<const> = lookup_ram_chain(metadata, state.buckets + 4 * index, hash, start, head, length) -- T:202 C:212
+	local found<const> = lookup_ram_chain(metadata, state.buckets + 4 * index, hash, start, head, length, source_count, workspace) -- T:202 C:212
 	return found -- T:202 C:212
 end
 
 -- The published ROM bucket table has already been validated at activation.
 -- Individual chains remain external records, so check their full header and
 -- candidate extent lazily at exactly the old lookup boundary.
-local lookup_rom<const> = function(metadata, directory, hash, start, head, length, system, cart) -- T:142-159,205-230 C:156-174,215-235
+local lookup_rom<const> = function(metadata, directory, hash, start, head, length, system, cart, source_count, workspace) -- T:142-159,205-230 C:156-174,215-235
 	local state<const>: *string_metadata = ram_base + metadata -- T:206-207 C:216-217
 	local table<const> = 2 * directory -- T:206 C:216; index into 4-byte entries
 	local count<const> = state.rom_tables[table + 1] -- T:207 C:217
@@ -172,22 +263,24 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 			if (size ~ socket_bit) > ((cart_extent - header_bytes) ~ socket_bit) or size > extent - offset - header_bytes then -- T:153-154,222 C:169-171,232
 				return 0, truncated_payload -- T:154 C:171
 			end
-			if matches_slice(0, address + header_bytes, -1, start, head, length) then return address, 0 end -- T:222-224 C:232
+			if source_count then -- C:228-239,338
+					if matches_concat(0, address + header_bytes, -1, start, head, source_count, workspace) then return address, 0 end -- C:228-239,338
+				elseif matches_slice(0, address + header_bytes, -1, start, head, length) then return address, 0 end -- T:222-224 C:232
 		end
 		id = record.next -- T:227 C:233
 	end
 	return 0, 0 -- T:229 C:235
 end
 
-local lookup_rom_directories<const> = function(metadata, start, head, length, hash, system, cart0, cart1) -- T:235-241 C:240-244
-	local match, fault = lookup_rom(metadata, 0, hash, start, head, length, system, cart0) -- T:235 C:240
+local lookup_rom_directories<const> = function(metadata, start, head, length, hash, system, cart0, cart1, source_count, workspace) -- T:235-241 C:240-244
+	local match, fault = lookup_rom(metadata, 0, hash, start, head, length, system, cart0, source_count, workspace) -- T:235 C:240
 	if fault ~= 0 or match ~= 0 then return match, fault end -- T:236 C:240; preserve external fault, not a miss
 	local state<const>: *string_metadata = ram_base + metadata -- T:237 C:241
 	local directory<const> = state.first_cart -- T:237 C:241
 	if directory == 0 then return 0, 0 end -- T:238 C:242
-	match, fault = lookup_rom(metadata, directory, hash, start, head, length, system, directory == 2 and cart1 or cart0) -- T:239 C:243
+	match, fault = lookup_rom(metadata, directory, hash, start, head, length, system, directory == 2 and cart1 or cart0, source_count, workspace) -- T:239 C:243
 	if fault ~= 0 or match ~= 0 then return match, fault end -- T:240 C:243
-	match, fault = lookup_rom(metadata, 3 - directory, hash, start, head, length, system, directory == 1 and cart1 or cart0) -- T:241 C:244
+	match, fault = lookup_rom(metadata, 3 - directory, hash, start, head, length, system, directory == 1 and cart1 or cart0, source_count, workspace) -- T:241 C:244
 	return match, fault -- T:241 C:244
 end
 
@@ -217,7 +310,7 @@ end
 -- The logical charge and record reservation have already succeeded. A
 -- collector may have replaced the directory, so do not reuse any of the
 -- pre-admission cursor/base values. id is the absolute issued address.
-local publish<const> = function(metadata, id, start, head, length, hash) -- T:393-428 C:383-415
+local begin_record<const> = function(metadata, id, length, hash) -- T:393-428 C:383-415
 	local state<const>: *string_metadata = ram_base + metadata -- T:394 C:384
 	local control<const> = state.capacity -- T:394 C:384
 	local count<const> = control & bucket_extent -- T:394 C:384
@@ -240,17 +333,30 @@ local publish<const> = function(metadata, id, start, head, length, hash) -- T:39
 	record.hash = hash -- T:410 C:403
 	record.length = length -- T:411 C:404; successful admission precludes the clamp changing this length
 	record.next = *bucket -- T:412 C:405
-	if length ~= 0 then -- T:413 C:406
-		local prefix<const>: *u8 = start -- T:419,422 C:409
-		local tail<const>: *u8 = ram_base -- T:420 C:410
-		local target<const>: *u8 = ram_base + ((id + header_bytes) & byte_mask) -- T:414 C:407-408
-		for i = 0, head - 1 do target[i] = prefix[i] end -- T:419,422,424 C:409,411; per-store decode invalidation accompanies copied bytes
-		for i = head, length - 1 do target[i] = tail[i - head] end -- T:420,424 C:410-411
-	end
+	return bucket -- T:408,426 C:404,413
+end
+
+local finish_record<const> = function(metadata, bucket_address, id) -- T:426-428 C:413-415
+	local bucket<const>: *u32 = bucket_address -- T:426-428 C:413-415
+	local state<const>: *string_metadata = ram_base + metadata -- T:426-428 C:413-415
 	*bucket = id -- T:426 C:413
 	state.used = state.used + 1 -- T:427 C:414
 	strings.mark(metadata, id) -- T:428,440 C:415,428; local-root host-call scopes are excluded from this firmware leaf
 	return id -- T:428,442 C:415,430
+end
+
+local publish<const> = function(metadata, id, start, head, length, hash) -- T:393-428 C:383-415
+	local bucket<const> = begin_record(metadata, id, length, hash) -- T:408-412 C:404-406
+	if length ~= 0 then -- T:413 C:406
+		copy_span(ram_base + ((id + header_bytes) & byte_mask), start, head, length) -- T:414-424 C:407-411
+	end
+	return (finish_record(metadata, bucket, id)) -- T:426-428 C:413-415
+end
+
+local publish_concat<const> = function(metadata, id, words, tags, count, length, hash, workspace) -- C:328-344 T:409-412
+	local bucket<const> = begin_record(metadata, id, length, hash) -- C:328-344 T:409-412
+	copy_concat(ram_base + ((id + header_bytes) & byte_mask), words, tags, count, workspace) -- C:342-344,407-411 T:414-424
+	return (finish_record(metadata, bucket, id)) -- T:426-428 C:413-415
 end
 
 local initial_buckets<const> = 16 -- T:24 C:25
@@ -270,7 +376,7 @@ end
 -- extents, fit the first page. There is no earlier object to reclaim.
 local intern_cold_span<const> = function(metadata, arena, occupied, start, length) -- T:331-332,358-393 C:327-329,353-383
 	local hash<const> = hash_span(start, length, length) -- T:332,351-356 C:325-327
-	local prior<const> = lookup_ram(metadata, start, length, length, hash) -- T:233-234,361 C:239,328
+	local prior<const> = lookup_ram(metadata, start, length, length, hash, nil, nil) -- T:233-234,361 C:239,328
 	if prior ~= 0 then -- T:362 C:328
 		strings.mark(metadata, prior) -- T:362,439-442 C:328,427-430
 		return prior -- T:362 C:328
@@ -291,7 +397,11 @@ local intern_cold_span<const> = function(metadata, arena, occupied, start, lengt
 end
 
 return {
-	internal = { fnv_segment = fnv_segment, matches_slice = matches_slice, lookup_ram_chain = lookup_ram_chain, lookup_rom = lookup_rom },
+	internal = {
+		fnv_segment = fnv_segment, matches_slice = matches_slice, lookup_ram_chain = lookup_ram_chain, lookup_rom = lookup_rom,
+		concat_part = concat_part, matches_concat = matches_concat, copy_span = copy_span, copy_concat = copy_concat,
+		begin_record = begin_record, finish_record = finish_record,
+	},
 	initial_buckets = initial_buckets, publish_initial_directory = publish_initial_directory, intern_cold_span = intern_cold_span,
 	slice_head = slice_head,
 	lookup_rom_directories = lookup_rom_directories,
@@ -299,4 +409,5 @@ return {
 	lookup_ram = lookup_ram,
 	prepare_existing_directory = prepare_existing_directory,
 	publish = publish,
+	hash_concat = hash_concat, publish_concat = publish_concat, retain_concat_sources = retain_concat_sources,
 }

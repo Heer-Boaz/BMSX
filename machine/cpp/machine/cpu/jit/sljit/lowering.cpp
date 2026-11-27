@@ -224,10 +224,9 @@ void NativeLowering::lower(const NativeInstruction& source) {
 	m_cache.applyConstraints(m_constraints[m_instruction - 1]);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	// The translator selects the events; here only emit the actual counter.
-	constexpr std::array<sljit_sw, 5> counters{
+	constexpr std::array<sljit_sw, 3> counters{
 		-1, offsetof(DiagnosticNativeOpcodeCounts, call),
-		offsetof(DiagnosticNativeOpcodeCounts, setfield), offsetof(DiagnosticNativeOpcodeCounts, concat),
-		offsetof(DiagnosticNativeOpcodeCounts, concatn),
+		offsetof(DiagnosticNativeOpcodeCounts, setfield),
 	};
 	sljit_sw offset = counters[static_cast<size_t>(source.attempt)];
 	if (offset >= 0) {

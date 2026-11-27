@@ -1,5 +1,3 @@
-export const INLINE_CONCAT_OPERANDS = 64;
-export const INLINE_CONCAT_BYTES = 256;
 export const INLINE_STRING_COMPARE_BYTES = 64;
 
 export const enum OpCode {
@@ -32,8 +30,8 @@ export const enum OpCode {
 	BXOR,
 	SHL,
 	SHR,
-	CONCAT,
-	CONCATN,
+	RESERVED_1D,
+	RESERVED_1E,
 	UNM,
 	NOT,
 	LEN,
@@ -87,7 +85,7 @@ export const BASE_CYCLES = new Uint8Array([
 	0, 2, 2, 2, 3, 2, 2, 2,
 	2, 2, 8, 2, 3, 3, 16, 16,
 	2, 2, 2, 2, 32, 34, 33, 128,
-	2, 2, 2, 2, 2, 2, 3, 2,
+	2, 2, 2, 2, 2, 2, 2, 2,
 	2, 3, 2, 2, 2, 2, 2, 2,
 	2, 2, 2, 8, 3, 4, 3, 32,
 	16, 3, 3, 3, 2, 2, 3, 4,
@@ -122,7 +120,7 @@ export const OPCODE_RK_OPERANDS = new Uint8Array([
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 2, 3,
 	0, 3, 3, 3, 3, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 0, 0,
+	3, 3, 3, 3, 3, 0, 0, 0,
 	0, 0, 0, 3, 3, 3, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 1, 1, 1, 0, 0, 0, 0,
@@ -137,7 +135,7 @@ export const OPCODE_SCALAR_REGISTER_READS = new Uint8Array([
 	0, 2, 0, 0, 2, 0, 0, 0,
 	0, 0, 1, 0, 3, 2, 6, 7,
 	0, 6, 6, 6, 6, 6, 6, 6,
-	6, 6, 6, 6, 6, 6, 0, 2,
+	6, 6, 6, 6, 6, 0, 0, 2,
 	2, 2, 2, 6, 6, 6, 0, 1,
 	0, 1, 1, 0, 0, 1, 0, 1,
 	0, 2, 3, 2, 0, 2, 0, 1,
@@ -147,7 +145,7 @@ export const OPCODE_WRITES_REGISTER_A = new Uint8Array([
 	0, 1, 1, 0, 1, 1, 1, 1,
 	1, 1, 0, 1, 0, 0, 1, 0,
 	0, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 0, 0, 1,
 	1, 1, 1, 0, 0, 0, 1, 0,
 	0, 0, 0, 1, 1, 0, 0, 0,
 	0, 1, 0, 0, 0, 1, 1, 0,

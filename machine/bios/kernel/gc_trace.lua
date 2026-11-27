@@ -69,7 +69,7 @@ local admit_head<const> = function(arena, offset, address, replace_color_byte) -
 	return kind -- T:395-408 C:393-407
 end
 
-local trace_quantum<const> = function(control, arena, metadata, quantum, mode_key, active_thread, pending_top, replace_color_byte) -- T:528 C:546
+local trace_quantum<const> = function(control, arena, metadata, quantum, mode_key, replace_color_byte) -- T:528 C:546
 	local state<const>: *trace_quantum_state = ram_base + quantum -- T:528 C:546
 	local frontier<const>: *trace_frontier = ram_base + control + trace_frontier_offset -- T:529 C:547
 	local head<const>: *u32 = ram_base + control + trace_head_offset -- T:534-535 C:551-553
@@ -92,8 +92,7 @@ local trace_quantum<const> = function(control, arena, metadata, quantum, mode_ke
 				added, pending = table_trace.trace_table_entries(control, arena, metadata, record, mode, cursor & cursor_mask, 0, allowance, pending, replace_color_byte) -- T:521 C:534-535
 			end
 		elseif kind == thread_kind then -- T:522 C:537
-			local top<const> = record == active_thread and pending_top or 0 -- T:466 C:471-473; CPU sample remains stable throughout the grant
-			added, pending = threads.trace_thread(control, arena, metadata, record, atomic, allowance, 1, top, pending, replace_color_byte) -- T:522-524 C:538-540
+			added, pending = threads.trace_thread(control, arena, metadata, record, atomic, allowance, 1, pending, replace_color_byte) -- T:522-524 C:538-540
 		else -- T:525 C:541
 			local count<const> = capture.internal.capture_count(record) -- T:525 C:542
 			added, pending = capture.internal.trace_captures(control, arena, metadata, record, cursor, count, 0, allowance, pending, replace_color_byte) -- T:525 C:542
@@ -120,8 +119,7 @@ local trace_quantum<const> = function(control, arena, metadata, quantum, mode_ke
 			added, pending = table_head.trace_table(control, arena, metadata, record, mode_key, allowance, 0, pending, replace_color_byte) -- T:395 C:393
 		elseif kind == thread_kind then -- T:408 C:407
 			capture.internal.pop_admitted(control, record, false, replace_color_byte) -- T:390-394 C:388-392
-			local top<const> = record == active_thread and pending_top or 0 -- T:466 C:471-473; same originating Thread comparison
-			added, pending = threads.trace_thread(control, arena, metadata, record, atomic, allowance, 0, top, pending, replace_color_byte) -- T:408 C:407
+			added, pending = threads.trace_thread(control, arena, metadata, record, atomic, allowance, 0, pending, replace_color_byte) -- T:408 C:407
 		else -- T:396,400 C:394,398; only an admitted closed Upvalue or Closure
 			added, pending = capture.trace_admitted(control, arena, metadata, record, kind, allowance, pending, replace_color_byte) -- T:390-406 C:388-405
 		end

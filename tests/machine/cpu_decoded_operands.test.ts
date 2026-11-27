@@ -14,7 +14,7 @@ test('every opcode selects the specified raw or signed RK operands', () => {
 	const expected = new Uint8Array(OPCODE_COUNT);
 	for (const op of [OpCode.SETT, OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV,
 		OpCode.MOD, OpCode.FLOORDIV, OpCode.POW, OpCode.BAND, OpCode.BOR, OpCode.BXOR,
-		OpCode.SHL, OpCode.SHR, OpCode.CONCAT, OpCode.EQ, OpCode.LT, OpCode.LE]) expected[op] = 3;
+		OpCode.SHL, OpCode.SHR, OpCode.EQ, OpCode.LT, OpCode.LE]) expected[op] = 3;
 	for (const op of [OpCode.LOAD_MEM, OpCode.STORE_MEM, OpCode.STORE_MEM_WORDS]) expected[op] = 1;
 	for (const op of [OpCode.GETT, OpCode.SETI, OpCode.SETFIELD]) expected[op] = 2;
 	assert.deepEqual(OPCODE_RK_OPERANDS, expected);

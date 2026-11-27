@@ -1234,7 +1234,6 @@ void fixedWindowCountsOnlyAdmittedAccesses() {
 		Case{OpCode::STORE_MEM_WORDS, 5, 2, 4, true, 9},
 		Case{OpCode::VARARG, 31, 0, 0, true, 0},
 		Case{OpCode::VARARG, 31, 5, 0, true, 0},
-		Case{OpCode::CONCAT, 31, 21, 22, true, 32},
 		Case{OpCode::RET, 31, 9, 0, true, 0},
 		Case{OpCode::CALL, 9, 7, 9, true, 10},
 		Case{OpCode::CALL, 9, 3, 2, true, 12},

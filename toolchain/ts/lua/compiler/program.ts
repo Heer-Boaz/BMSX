@@ -29,6 +29,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
 	{ path: 'kernel/thread_create', exportPathKey: 'create_coroutine', numParams: 1 },
 	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },
+	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.Concat], numParams: 1 },
 ] as const;
 
 export type ProgramInitParticipant = {

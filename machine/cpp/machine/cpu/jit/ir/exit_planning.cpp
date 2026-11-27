@@ -105,8 +105,6 @@ struct NativeTerminalExit {
 	NativeExitPlan operator()(const NativeReturnSite& ret) const {
 		return {privateFirmware ? NativeBlockExit::PrivateReturn : ret.terminalExit, {.returned = ret}};
 	}
-	NativeExitPlan operator()(const NativeConcat& concat) const { return {concat.terminalExit, {.concat = concat}}; }
-	NativeExitPlan operator()(const NativeConcatRange& concat) const { return {concat.terminalExit, {.concatRange = concat}}; }
 	NativeExitPlan operator()(const NativeClosure& closure) const { return {closure.terminalExit, {.closure = closure}}; }
 
 	NativeExitPlan operator()(const NativeControlAccess& access) const {
@@ -164,8 +162,6 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		switch (static_cast<OpCode>(decoded.op)) {
 		case OpCode::CALL: instruction.attempt = NativeAttempt::Call; break;
 		case OpCode::SETFIELD: instruction.attempt = NativeAttempt::AssignField; break;
-		case OpCode::CONCAT: instruction.attempt = NativeAttempt::Concat; break;
-		case OpCode::CONCATN: instruction.attempt = NativeAttempt::ConcatRange; break;
 		default: break;
 		}
 #endif

@@ -43,7 +43,7 @@ void opcodeOperandInterpretations() {
 	std::array<u8, OPCODE_COUNT> expected{};
 	for (const OpCode op : {OpCode::SETT, OpCode::ADD, OpCode::SUB, OpCode::MUL,
 		OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW, OpCode::BAND,
-		OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR, OpCode::CONCAT,
+		OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR,
 		OpCode::EQ, OpCode::LT, OpCode::LE}) expected[static_cast<u8>(op)] = 3u;
 	for (const OpCode op : {OpCode::LOAD_MEM, OpCode::STORE_MEM, OpCode::STORE_MEM_WORDS}) expected[static_cast<u8>(op)] = 1u;
 	for (const OpCode op : {OpCode::GETT, OpCode::SETI, OpCode::SETFIELD}) expected[static_cast<u8>(op)] = 2u;

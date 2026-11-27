@@ -22,7 +22,7 @@ local mark_again<const> = 2 -- H:20
 local atomic<const> = 3 -- H:20
 local threads<const> = 1 -- H:157
 local root_stage<const> = 3 -- H:157
-local concat_operands<const> = 7 -- H:21 C:681,1135
+local end_bank<const> = 7 -- H:21 C:681,1135
 -- This common entry fixes the C++ issuance/read/recolor order; no
 -- mutable policy selector is part of the ABI.
 local cpp_policy<const> = 1 -- C:1266 H:160-163
@@ -53,7 +53,7 @@ local visit_and_remark_roots<const> = function(control, arena, metadata, head, d
 	end
 	work = work + state.pending_string_work -- C:678
 	state.pending_string_work = 0 -- C:678 S:438-440
-	if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, concat_operands, cpp_policy) end -- C:681
+	if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, end_bank, cpp_policy) end -- C:681
 	local root_cursor<const>: *u32 = ram_base + control + root_cursor_offset -- C:682
 	if *root_cursor == 0 then -- C:682
 		local remark_state<const>: *u32 = ram_base + control + remark_state_offset -- C:683 H:217
@@ -87,7 +87,7 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 		if *root_cursor ~= 0 then -- C:1127
 			work = work + state.pending_string_work -- C:1128 S:438-440
 			state.pending_string_work = 0 -- C:1128 S:438-440
-			if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, concat_operands, cpp_policy) end -- C:1129,1135
+			if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, end_bank, cpp_policy) end -- C:1129,1135
 		end
 		if scope ~= 0 then -- C:1138; no guard on the remaining root-bank allowance
 			local added<const> = operands.mark_operand_roots(control, arena, metadata, scope, false) -- C:1138
@@ -99,7 +99,7 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 	while work < limit do -- C:1141,1157
 		state.work = work -- C:546,1154,1272
 		state.atomic = 0 -- C:1154; this entry stops at Atomic admission
-		work = trace.trace_quantum(control, arena, metadata, quantum, mode_key, 0, 0, cpp_policy) -- C:1154
+		work = trace.trace_quantum(control, arena, metadata, quantum, mode_key, cpp_policy) -- C:1154
 		if work >= limit then break end -- C:1157,1185-1187
 		if control_layout.internal.phase(control) == mark_again then -- C:1188
 			local phase<const>: *u8 = ram_base + control + phase_offset -- C:1189 H:229

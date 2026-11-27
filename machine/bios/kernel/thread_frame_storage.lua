@@ -31,6 +31,12 @@ struct thread_storage_record
 	frame_block: addr -- I:24,182 H:23 J:125
 end
 
+local value_planes<const> = function(address, first)
+	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask)
+	local base<const> = layout.ram_base + (thread.stack_block & word_mask)
+	return base + 4 * first, base + 4 * thread.stack_capacity + first
+end
+
 local update_charge<const> = function(occupied, previous, requested) -- T:304-306 C:307-310
 	if previous ~= requested then -- T:305 C:308
 		local charged<const>: *u32 = layout.ram_base + occupied -- T:284-285,305 C:309-310
@@ -242,7 +248,10 @@ local reserve_system_entry<const> = function(value_end) -- W:181-189; firmware a
 end
 
 return {
-	internal = { update_charge = update_charge, resize_value_stack = resize_value_stack, grow_frame_controls = grow_frame_controls },
+	internal = {
+		update_charge = update_charge, resize_value_stack = resize_value_stack,
+		grow_frame_controls = grow_frame_controls, value_planes = value_planes,
+	},
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
 	prepare_frame_space = prepare_frame_space, reserve_frame_space = reserve_frame_space,
 	reserve_system_entry = reserve_system_entry,

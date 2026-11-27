@@ -104,7 +104,7 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(context + HeapServiceTraceField.Atomic, 0);
 		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, pending);
 		assert.ok(cpu.beginHeapService(linked.image.functions[index].address,
-			[control, arena, metadata, context, modeKey, cpu.rootThread.address, 0, policy]));
+			[control, arena, metadata, context, modeKey, policy]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);

@@ -553,8 +553,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				arrayStorage: 0x9100, arraySlots: 256, arrayCleared: 1280, cleared: 7168, homes: 256, cursor: 7, free: 498, collisions: 19, key: valueInteger(-9), value: valueTable(0x8500),
 				census: 0, recovery: 0, scanned: 0, live: 0, slots: 0, kept: 0, result: 1, destination: 2, wanted: 3, instructionPc: 0x5020 },
 			stringComparison: { left: 0x80000100, right: 0x1000, offset: 129, remaining: 199, order: -1, skipLess: true, skipTie: false },
-			concat: { registersLeft: 0, nextRegister: 0, length: 600, source: 0, offset: 3, instructionPc: 0x1014, destination: 31, hash: 0xfaced00d,
-				values: [valueInteger(-7)], lengths: [600], bytes: new Uint8Array([0, 0xff, 0x80]) },
 			pendingAllocation: null,
 			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,

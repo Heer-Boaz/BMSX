@@ -26,7 +26,6 @@ return {
 	trace_context_offset = 0x740,
 	trace_string_work_offset = 12,
 	effect_offset = 0x788,
-	pending_top_offset = 0x79c,
 	value_cell_offset = 0x7a0, -- firmware scratch; only this module owns the placement
 	value_cell_tag_offset = 4,
 	fixed_work_offset = 0x7f0,

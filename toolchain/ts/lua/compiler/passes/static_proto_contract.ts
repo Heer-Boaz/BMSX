@@ -29,8 +29,6 @@ export const staticLaneForbiddenOpcodeReason = (op: OpCode): string | null => {
 			return 'runtime closure allocation';
 		case OpCode.VARARG:
 			return 'vararg dispatch';
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
 			return 'dynamic string concatenation';
 		default:
 			return null;

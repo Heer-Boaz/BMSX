@@ -31,8 +31,6 @@ enum class NativeBlockExit : u8 {
 	Length,
 	ControlFault,
 	ExceptionReturn,
-	Concat,
-	ConcatRange,
 	CreateClosure,
 	WriteWords,
 	WriteControl,
@@ -88,8 +86,6 @@ union NativeExitOperands {
 	struct Control { u16 slot, field; } control;
 	struct Upvalue { u16 slot, capture; } upvalue;
 	struct Global { u32 index; u16 slot; } global;
-	struct Concat { u16 result; i16 left, right; } concat;
-	struct ConcatRange { u16 result, first, count; } concatRange;
 	struct Closure { u32 address; u16 result, flags; } closure;
 };
 

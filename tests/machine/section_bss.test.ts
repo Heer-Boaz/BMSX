@@ -451,7 +451,7 @@ return { first = first }
 	);
 });
 
-test('const module function call targets reject dynamic concat opcodes', () => {
+test('const module function call targets reject allocating string concatenation', () => {
 	const moduleSource = `
 local function suffix(prefix)
 	return prefix .. "_x"
@@ -460,7 +460,7 @@ return { suffix = suffix }
 `;
 	assert.throws(
 		() => compileWithConstModule('local state<const> = require("state")\nreturn state.suffix("a")', 'state', moduleSource),
-		/forbidden static opcode CONCAT \(dynamic string concatenation\)/,
+		/cannot construct a String by concatenation/,
 	);
 });
 

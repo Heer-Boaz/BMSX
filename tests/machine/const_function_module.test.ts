@@ -23,7 +23,7 @@ const ROUND_TO_NEAREST_PATH = 'system/round_to_nearest';
 const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
 const SIN_TURN32_PATH = 'math/sin';
-const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
+const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG)\b/;
 const ROUND_TO_NEAREST_SOURCE = `module<const>
 return function(value)
 	if value >= 0 then

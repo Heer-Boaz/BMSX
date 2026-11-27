@@ -14,6 +14,22 @@ struct StringSliceReference {
 		if (const auto match = pool.lookup(hash, {bytes.first, {&bytes.wrapped, 1}, count})) return pool.retain(match);
 		return pool.insert(bytes, hash, id);
 	}
+
+	// Frozen concatenation oracle; include wrapped source segments before allocation.
+	static StringId concat(StringPool& pool, StringId left, u32 leftBytes, StringId right, u32 rightBytes) {
+		const auto a = pool.readBytes(left, 0, leftBytes), b = pool.readBytes(right, 0, rightBytes);
+		const std::string_view tail[]{a.wrapped, b.first, b.wrapped};
+		const StringPool::InternKey key{a.first, tail, a.size() + b.size()};
+		u32 hash = fnv1a32(key.head);
+		for (const auto part : tail) hash = fnv1a32(part, hash);
+		if (const auto match = pool.lookup(hash, key)) return pool.retain(match);
+		// Snapshot the source before allocation can collect or reuse an operand.
+		std::string text;
+		text.reserve(key.length);
+		text.append(key.head);
+		for (const auto part : tail) text.append(part);
+		return pool.insert({text, {}}, hash, 0u);
+	}
 };
 
 } // namespace bmsx::test

@@ -457,46 +457,6 @@ void nativeCodeUsesCachedWordsAtPartialRomTails() {
 		"cached native admission never probes the unbacked ROM tail");
 }
 
-void nativeWarmAdmitsAllocatingBodies() {
-	test::Blua32TestImage image;
-	image.mappedCode = false;
-	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::CONCAT), 1, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
-	CpuMachine machine(image);
-	auto& cpu = machine.cpu;
-	cpu.setNativeCompilationProfiling(true);
-	// CONCAT additionally charges the two bytes in its "11" result.
-	const int loopCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::CONCAT)]
-		+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)] + 2;
-	require(cpu.runUntilDepth(0, (NATIVE_BLOCK_COMPILATION_THRESHOLD - 1) * loopCycles) == RunResult::Yielded, "a mixed loop warms without compiling yet");
-	const auto& page = *cpu.activeThread()->frameAtDepth(0)->decodedPage;
-	const u32 word = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) >> 2u;
-	require(!page.nativeBlocks && page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD - 1,
-		"hotness counting never allocates an executable-entry page before code exists");
-	require(page.nativeVisits[word + 1u] == 0, "fallthrough within the warm block does not heat a compilation root");
-	require(cpu.readNativeCompilationProfile().prepareRequests == 0,
-		"no native compilation is requested below the admission threshold");
-	require(cpu.runUntilDepth(0, loopCycles) == RunResult::Yielded,
-		"the threshold visit executes the same complete loop");
-	require(page.nativeVisits[word] == NATIVE_BLOCK_COMPILATION_THRESHOLD
-		&& cpu.readNativeCompilationProfile().prepareRequests == 1,
-		"the threshold visit requests compilation at the actual warm entry");
-#if !defined(BMSX_NATIVE_COMPILER_WORKER)
-	require(page.nativeBlocks && page.nativeBlocks->entries[word],
-		"synchronous compilation publishes the warm entry on the threshold visit");
-#endif
-	test::waitForNativeEntry(cpu, page, word);
-	require(cpu.runUntilDepth(0, 279) == RunResult::Yielded, "a mixed loop remains runnable");
-	test::waitForNativeEntry(cpu, page, word + 2u);
-	require(page.words[word].dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock)
-		&& page.nativeBlocks->entries[word]->terminal.exit == NativeBlockExit::Concat
-		&& page.nativeBlocks->entries[word + 2u],
-		"an allocating terminal admits its register prefix and the successor jump compiles independently");
-}
-
 void nativeCodeRetiresOnWritesAndObservation() {
 	test::Blua32TestImage image;
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
@@ -1078,7 +1038,6 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 	const OperandCase cases[]{
 		{OpCode::MOV, 0, 1, 0},
 		{OpCode::LOADNIL, 0, 2, 0},
-		{OpCode::CONCATN, 0, 0, 2},
 		{OpCode::SELF, 0, 0, 0},
 		{OpCode::CALL, 1, 1, 1},
 		{OpCode::RET, 1, 2, 0},
@@ -1113,6 +1072,32 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 			+ (op == OpCode::LOAD_MEM_D ? F64_ACCESS_EXTRA_CYCLES : 0);
 		require(cpu.instructionBudgetRemaining == 1 - cycles && frame.registers.get(0) == valueInteger(1)
 			&& cpu.heapAllocator().occupiedBytes() == allocationBefore, "the fault follows its charged prefix and precedes other effects");
+	}
+}
+
+void reservedEncodingsTrapBeforeEffects() {
+	for (const auto op : {OpCode::RESERVED_10, OpCode::RESERVED_1D, OpCode::RESERVED_1E}) {
+		auto image = returnImage();
+		image.text.resize(3 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(op), 63, 63, 63);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+		image.functions[0].wordCount = 3;
+		for (const bool scalar : {false, true}) {
+			CpuMachine machine(image);
+			auto& cpu = machine.cpu;
+			if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (!scalar) cpu.prepareSystemNativeCode();
+#endif
+			const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + 1;
+			require(cpu.runUntilDepth(0, grant) == RunResult::Yielded, "the reserved word consumes the grant after the prefix");
+			require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
+				&& cpu.readEpcWord() == machine.rom.textAddress + INSTRUCTION_BYTES,
+				"reserved encodings trap generically at their own PC without interpreting the operand bits");
+			require(cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RESERVED_10)]
+				&& cpu.readFrameRegister(0, 0) == valueInteger(1), "the trap preserves the retired prefix");
+		}
 	}
 }
 
@@ -2078,7 +2063,6 @@ int main() {
 		nativeFieldStoreMissKeepsSignedConstantSelectors();
 		nativeCodeWarmsWithinOneCpuSlice();
 		nativeCodeUsesCachedWordsAtPartialRomTails();
-		nativeWarmAdmitsAllocatingBodies();
 		nativeCodeRetiresOnWritesAndObservation();
 		nativeHaltCommitsItsThreadAndFrameLatch();
 		nativeTerminalAtPageBoundaryTracksItsBody();
@@ -2088,7 +2072,7 @@ int main() {
 #endif
 		stringBytePositions(); loadKrIndices(); invalidImageOperandsTrapAtExecution(); skippedImageOperandRemainsUnobserved();
 		fusionRequiresBothImageOperandsAdmitted(); fixedWindowAndCaptureOperandsTrapBeforeEffects(); capturedClosureRequiresFirmware();
-		functionReservationIsAdmittedBeforeActivation();
+		reservedEncodingsTrapBeforeEffects(); functionReservationIsAdmittedBeforeActivation();
 		zeroLoadNil(); successorFetchOrdering(); reservedMoveKindIgnoresUnusedRegisterOperands(); reservedMemoryKinds(); zeroStackReuse();
 		returnRangesSurviveCallerStackGrowth(); builtinReturnRangesSurviveDestinationGrowth();
 		wideSignedImmediatesKeepTheirRange();

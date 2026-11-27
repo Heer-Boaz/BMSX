@@ -495,8 +495,6 @@ const computeBlockConstantIn = (
 					case OpCode.GETT:
 					case OpCode.GETI:
 					case OpCode.GETFIELD:
-					case OpCode.CONCAT:
-					case OpCode.CONCATN:
 					case OpCode.CLOSURE:
 					case OpCode.GETUP:
 					case OpCode.LOAD_MEM:
@@ -673,8 +671,6 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 			case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.CONCAT:
-				case OpCode.CONCATN:
 				case OpCode.CLOSURE:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
@@ -810,9 +806,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 		if (
 			constant
 			&& constant.constIndex <= MAX_EXT_CONST
-			// Keep RK replacement for non-string constants only.
-			// While the string-producing path in this pass is currently limited (notably CONCAT),
-			// don't emit RK string constants for STORE_MEM_WORDS; those must stay register-based.
+			// The burst store takes register values rather than RK string literals.
 			&& !(instruction.op === OpCode.STORE_MEM_WORDS && constant.kind === ConstValueKind.String)
 		) {
 			return -1 - constant.constIndex;
@@ -904,7 +898,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.BXOR:
 				case OpCode.SHL:
 				case OpCode.SHR:
-				case OpCode.CONCAT:
 					case OpCode.EQ:
 					case OpCode.LT:
 					case OpCode.LE: {
@@ -1039,8 +1032,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETT:
 				case OpCode.GETI:
 				case OpCode.GETFIELD:
-				case OpCode.CONCAT:
-				case OpCode.CONCATN:
 				case OpCode.CLOSURE:
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
@@ -1418,8 +1409,6 @@ const applyClosureTransferForInlining = (
 		case OpCode.BXOR:
 		case OpCode.SHL:
 		case OpCode.SHR:
-		case OpCode.CONCAT:
-		case OpCode.CONCATN:
 		case OpCode.UNM:
 		case OpCode.NOT:
 		case OpCode.LEN:
@@ -1752,7 +1741,6 @@ const buildInlineExpansion = (
 			case OpCode.BXOR:
 			case OpCode.SHL:
 			case OpCode.SHR:
-			case OpCode.CONCAT:
 				mapped.a = mapRegister(mapped.a);
 				mapped.b = remapRkOperand(mapped.b);
 				mapped.c = remapRkOperand(mapped.c);
@@ -1763,10 +1751,7 @@ const buildInlineExpansion = (
 				mapped.b = remapRkOperand(mapped.b);
 				mapped.c = remapRkOperand(mapped.c);
 				break;
-			case OpCode.CONCATN:
-				mapped.a = mapRegister(mapped.a);
-				mapped.b = mapRegister(mapped.b);
-				break;
+
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
 				mapped.a = mapRegister(mapped.a);

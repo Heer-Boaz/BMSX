@@ -42,9 +42,6 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::SELF:
 			extent = std::max(extent, row.a + 2);
 			break;
-		case OpCode::CONCATN:
-			if (row.c != 0) extent = std::max(extent, row.b + row.c);
-			break;
 		default: break;
 	}
 	static_assert(2 * MAX_EXT_REGISTER_BC <= UINT16_MAX);

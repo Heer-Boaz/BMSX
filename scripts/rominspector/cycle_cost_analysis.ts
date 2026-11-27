@@ -305,14 +305,7 @@ export function generateCycleCostReport(image: Blua32ImageLayout, symbols: Blua3
 		'MemOps', 'MemCycles', '%Mem',
 	);
 
-	// ── Section 9: CONCAT heavy functions ──────────────────────────
-	printOpcodeGroupTable(
-		'TOP 15 FUNCTIONS WITH MOST STRING CONCAT CYCLES',
-		op => op === OpCode.CONCAT || op === OpCode.CONCATN, 15,
-		'ConcatOps', 'ConcatCyc', '%Concat',
-	);
-
-	// ── Section 10: Summary ────────────────────────────────────────
+	// ── Section 9: Summary ────────────────────────────────────────
 	w('');
 	w(BANNER);
 	w('SUMMARY: FANTASY CPU BOTTLENECK ANALYSIS');

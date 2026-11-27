@@ -10,14 +10,14 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { IMAGE_STRING_RAM_ORDINAL } from '../../machine/ts/machine/cpu/execution_image';
-import { GcPhase, GC_LAST_EPOCH_WORK, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
-import { ValueTag, valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueFloatBits, valueNil, valueInteger, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
@@ -32,7 +32,7 @@ import {
 	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
-import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CART_ROM_BASE, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -391,25 +391,6 @@ test('scheduled SETT yields on a logical refusal before collecting the dead back
 	assert.equal(cpu.instructionBudgetRemaining, 0);
 	assert.equal(gc.tables.getInteger(owner, slots + 1), valueInteger(slots + 1));
 	assert.equal(frame.registers.get(7), valueNil());
-});
-
-test('CONCAT pays for synchronous recovery of a refused String record before its successor', () => {
-	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source(OpCode.CONCAT)));
-	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setInteger(1, 12); frame.top = 2;
-	const garbage = cpu.createTable(2048, 0);
-	// Leave no extent for the String until sweep releases the unreachable Table.
-	for (const bytes of [4088, 32, 8]) while (cpu.heapAllocator.allocate(bytes, true)) {}
-	const issue = BASE_CYCLES[OpCode.CONCAT] + 4; // "12" concatenated twice
-	assert.equal(cpu.runUntilDepth(0, issue + 2), RunResult.Yielded);
-	const work = memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK);
-	assert.ok(work > 0);
-	assert.equal(cpu.instructionBudgetRemaining, 2 - 3 * work);
-	assert.equal(cpu.gc.tableRecordAddress(garbage), 0);
-	assert.equal(frame.registers.getTag(0), ValueTag.String);
-	assert.equal(frame.registers.get(7), valueNil());
-	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
-	assert.equal(frame.registers.get(7), valueInteger(37));
 });
 
 test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {

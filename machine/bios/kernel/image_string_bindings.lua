@@ -7,6 +7,16 @@ module<const>
 local strings<const> = require('kernel/string_record')
 local ordinal_ram_bit<const> = 1 -- image_format.{h,ts}: String records align to 8 bytes
 
+-- Media extents are established at ordinary image admission, not read
+-- through MMIO from a private System activation.
+local media_extents_offset<const> = 0x250
+
+struct bound_media_extents
+	system: u32
+	cart0: u32
+	cart1: u32
+end
+
 struct installed_image_binding
 	base: addr
 	bytes: u32
@@ -35,4 +45,6 @@ local store_binding<const> = function(base, count, slot, ram_count, id)
 	return ram_count + ram
 end
 
-return { store_binding = store_binding, ordinal_ram_bit = ordinal_ram_bit }
+return {
+	store_binding = store_binding, ordinal_ram_bit = ordinal_ram_bit, media_extents_offset = media_extents_offset,
+}

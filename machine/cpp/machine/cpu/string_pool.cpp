@@ -329,21 +329,6 @@ StringId StringPool::intern(std::string_view value, u32 hash) {
 	return insert({value, {}}, hash, 0u);
 }
 
-StringId StringPool::internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes) {
-	const auto a = readBytes(left, 0, leftBytes), b = readBytes(right, 0, rightBytes);
-	const std::string_view tail[]{a.wrapped, b.first, b.wrapped};
-	const InternKey key{a.first, tail, a.size() + b.size()};
-	u32 hash = fnv1a32(key.head);
-	for (const auto part : tail) hash = fnv1a32(part, hash);
-	if (const auto match = lookup(hash, key)) return retain(match);
-	// Snapshot the source before allocation can collect or reuse an operand.
-	std::string text;
-	text.reserve(key.length);
-	text.append(key.head);
-	for (const auto part : tail) text.append(part);
-	return insert({text, {}}, hash, 0u);
-}
-
 StringId StringPool::insert(const ByteSpan& bytes, u32 hash, StringId source) {
 	Value root = valueNil();
 	if (source != 0u) {

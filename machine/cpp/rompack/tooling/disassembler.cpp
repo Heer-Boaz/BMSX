@@ -310,10 +310,7 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::BXOR:
 		case OpCode::SHL:
 		case OpCode::SHR:
-		case OpCode::CONCAT:
 			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]) + " r" + std::to_string(decoded.a) + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB).text + ", " + describeRkValue(image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC).text;
-		case OpCode::CONCATN:
-			return "CONCATN r" + std::to_string(decoded.a) + ", r" + std::to_string(decoded.b) + ", " + std::to_string(decoded.c);
 		case OpCode::UNM:
 		case OpCode::NOT:
 		case OpCode::LEN:
@@ -367,6 +364,10 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "STORE_MEM_WORDS r" + std::to_string(decoded.a) + ", " + formatRKOperand(image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB) + ", " + std::to_string(decoded.c);
 		case OpCode::HALT:
 			return "HALT";
+		case OpCode::RESERVED_10:
+		case OpCode::RESERVED_1D:
+		case OpCode::RESERVED_1E:
+			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]);
 		case OpCode::WIDE:
 			break;
 	}
@@ -436,10 +437,7 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::BXOR:
 		case OpCode::SHL:
 		case OpCode::SHR:
-		case OpCode::CONCAT:
 			return {registerOperand("dst", decoded.a), rkOperand("left", image, static_cast<uint32_t>(decoded.b), decoded.rkBitsB), rkOperand("right", image, static_cast<uint32_t>(decoded.c), decoded.rkBitsC)};
-		case OpCode::CONCATN:
-			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("count", std::to_string(decoded.c))};
 		case OpCode::UNM:
 		case OpCode::NOT:
 		case OpCode::LEN:
@@ -500,6 +498,10 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::RFE:
 			return {};
 		case OpCode::HALT:
+			return {};
+		case OpCode::RESERVED_10:
+		case OpCode::RESERVED_1D:
+		case OpCode::RESERVED_1E:
 			return {};
 		case OpCode::WIDE:
 			break;

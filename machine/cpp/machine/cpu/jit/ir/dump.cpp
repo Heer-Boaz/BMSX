@@ -24,8 +24,6 @@ struct OperationName {
 	const char* operator()(const NativeInvalidOperand&) const { return "invalid-operand"; }
 	const char* operator()(const NativeExceptionReturn&) const { return "exception-return"; }
 	const char* operator()(const NativeReturnSite&) const { return "return"; }
-	const char* operator()(const NativeConcat&) const { return "concat"; }
-	const char* operator()(const NativeConcatRange&) const { return "concat-range"; }
 	const char* operator()(const NativeClosure&) const { return "create-closure"; }
 	const char* operator()(const NativeLiteral&) const { return "literal"; }
 	const char* operator()(const NativeConstantLoad&) const { return "load-constant"; }

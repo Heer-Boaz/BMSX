@@ -39,12 +39,9 @@ local publish_interrupt<const> = function(management)
 	roots.completion_thread = 0
 	roots.halted = 0
 	roots.banks[0].count = 0 -- no completed host observations
-	roots.banks[1].count = 0 -- no in-flight concatenation
 	local head<const>: *root_head_input = state + layout.remark_head_offset
 	head.comparison_remaining = 0
 	head.has_pending_assignment = 0
-	local pending_top<const>: *u32 = state + layout.pending_top_offset
-	*pending_top = 0
 	borrow_string_work(management)
 end
 

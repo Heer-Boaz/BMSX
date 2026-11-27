@@ -5,7 +5,7 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_PENDING_TOP_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
 	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
 	HeapServiceProjection, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
@@ -84,7 +84,6 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(markWork), 0);
 		assert.equal(memory.readRamRecordWord(traceWork), 4, 'save between clearing the old word and publishing the borrowed credit');
 		assert.equal(memory.readRamRecordWord(activeRoot), active);
-		assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_PENDING_TOP_OFFSET), 0);
 
 		const borrowed = captureCpuCheckpoint(cpu);
 		const finish = () => {

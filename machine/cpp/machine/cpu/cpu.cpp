@@ -208,7 +208,6 @@ void CPU::reset() {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
 	m_stringComparison = {};
-	m_concat = {};
 	if (tableRebuild.record) {
 		if (tableRebuild.storage) m_heapAllocator.free(tableRebuild.storage);
 		if (tableRebuild.arrayStorage) m_heapAllocator.free(tableRebuild.arrayStorage);
@@ -1082,7 +1081,6 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_pendingMemory.kind = PendingMemoryKind::None;
 	m_pendingAllocation = {};
 	m_stringComparison = {};
-	m_concat = {};
 	[[maybe_unused]] const auto* entry = enterDirectFrame(0u);
 	if (!entry) return;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -1095,7 +1093,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -1118,7 +1116,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	u32 functionAddress
 ) {
 	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	auto* image = executionImageForDomain(executionDomainId);
 	if (!image || !readFunctionRecord(*image, functionAddress, executionBusSignalsForDomain(executionDomainId))) {
@@ -1155,7 +1153,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.pendingMemory = m_pendingMemory;
 	state.stringComparison = m_stringComparison;
 	if (tableRebuild.record) state.rebuild = tableRebuild;
-	if (m_concat.active()) state.concat = m_concat;
 	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.systemVectorWord = m_cop0Words[COP0_SYSTEM_VECTOR];
@@ -1246,9 +1243,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_pendingMemory = state.pendingMemory;
 	m_stringComparison = state.stringComparison;
 	tableRebuild = state.rebuild;
-	m_concat = state.concat;
-	if (m_concat.registersLeft) m_concat.sources.reserve(m_concat.sources.size() + m_concat.registersLeft);
-	else m_concat.bytes.reserve(m_concat.length);
 	m_pendingAllocation = state.pendingAllocation;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
 	m_cop0Words[COP0_SYSTEM_VECTOR] = state.systemVectorWord;
@@ -1785,7 +1779,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 
 bool CPU::enterPendingInterrupt() {
 	if (fixedInterruptActive() || heapServiceActive()) return false;
-	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || tableRebuild.record) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -2089,10 +2083,6 @@ RunResult CPU::runLoop(
 				}
 				if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
 					advanceStringComparison(*thread.currentFrame);
-					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-				}
-				if (admission == GrantAdmission::Admitted && m_concat.active()) {
-					advanceConcat(*thread.currentFrame);
 					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
 				}
 				if (admission == GrantAdmission::Admitted && tableRebuild.record) {
@@ -2737,7 +2727,7 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc
 		&& cpu.admitGrant(*cpu.m_activeThread, targetDepth, instructionBudget) == GrantAdmission::Admitted
 		&& cpu.m_activeThread->currentFrame->executionImage == image
-		&& !cpu.tableRebuild.record && !cpu.m_concat.active() && !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
+		&& !cpu.tableRebuild.record && !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
 		&& cpu.peekPendingInterrupt() == AcceptedInterruptKind::None) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		// Preserve the request until no worker snapshot can overlap it.
@@ -2959,7 +2949,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (heapServiceActive() || fixedInterruptActive() || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive() || allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	auto* publishedImage = executionImageForDomain(executionDomainId);
 	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))
@@ -3383,18 +3373,12 @@ void CPU::publishHeapRootBanks() {
 	const u32 descriptor = m_heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 	m_memory.writeRamRecordPair(descriptor, m_rootView.address, m_activeThread ? m_activeThread->address : 0u);
 	m_memory.writeRamRecordPair(descriptor + 8u, m_completionThreadAddress, m_haltedUntilIrqThreadAddress);
-	u32 destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
+	const u32 destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
 	m_memory.writeRamRecordPair(destination, static_cast<u32>(m_completionValueCount),
 		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE);
 	m_memory.writeRamRecordWord(destination + static_cast<u32>(Field::Tags),
 		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionTags) * HEAP_SERVICE_ROOT_PORT_STRIDE);
-	const u32 count = static_cast<u32>(rootBankSlots(GcRootBank::ConcatOperands));
-	const u32 source = count == 0u ? 0u : m_concat.source;
-	destination += HEAP_SERVICE_ROOT_BANK_SIZE;
-	m_memory.writeRamRecordPair(destination, count,
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE + 4u * source);
-	m_memory.writeRamRecordWord(destination + static_cast<u32>(Field::Tags),
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatTags) * HEAP_SERVICE_ROOT_PORT_STRIDE + source);
+
 }
 
 u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {
@@ -3408,14 +3392,6 @@ u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {
 			if (byte == (plane == HeapServiceRootPlane::CompletionTags) && slot < m_completionValueCount)
 				return byte ? m_completionValues.tags()[slot] : m_completionValues.words()[slot];
 			break;
-		case HeapServiceRootPlane::ConcatPayloads:
-		case HeapServiceRootPlane::ConcatTags:
-			if (byte == (plane == HeapServiceRootPlane::ConcatTags) && m_concat.active()
-				&& slot >= m_concat.source && slot < m_concat.sources.size()) {
-				const Value value = m_concat.sources[slot].value;
-				return byte ? static_cast<u32>(valueTag(value)) : valuePayload(value);
-			}
-			break;
 		case HeapServiceRootPlane::Count:
 			break;
 	}
@@ -3426,7 +3402,6 @@ size_t CPU::rootBankSlots(GcRootBank bank) const {
 	if (bank == GcRootBank::SystemGlobals) return m_systemGlobalBank.count();
 	if (bank == GcRootBank::Globals) return m_globalBank.count();
 	if (bank == GcRootBank::Completion) return m_completionValueCount;
-	if (bank == GcRootBank::ConcatOperands) return m_concat.active() ? m_concat.sources.size() - m_concat.source : 0u;
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(),
 		static_cast<i32>(bank) - static_cast<i32>(GcRootBank::Cart0Constants));
 	return m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
@@ -3444,13 +3419,6 @@ void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) 
 	}
 	if (bank == GcRootBank::Completion) {
 		for (size_t slot = first; slot < end; ++slot) heap.markValue(m_completionValues.get(slot));
-		return;
-	}
-	if (bank == GcRootBank::ConcatOperands) {
-		for (size_t slot = first; slot < end; ++slot) {
-			const Value v = m_concat.sources[m_concat.source + slot].value;
-			if (valueIsString(v)) heap.markString(asStringId(v));
-		}
 		return;
 	}
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(),

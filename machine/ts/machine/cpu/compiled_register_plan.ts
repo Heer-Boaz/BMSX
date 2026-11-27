@@ -14,7 +14,7 @@ export type JavaScriptRegisterPlan = {
 // Semantic-only exits consume their own operands after generated code leaves.
 function generatedRegisterReads(op: OpCode, b: number): number {
 	switch (op) {
-		case OpCode.CALL: case OpCode.CONCAT: case OpCode.ITERN: return 0;
+		case OpCode.CALL: case OpCode.ITERN: return 0;
 		case OpCode.MTC0: return (b !== COP0_STATUS && cop0WriteRetiresControl(b)) ? 0 : REGISTER_OPERAND_A;
 		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}
@@ -84,7 +84,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 		if (plan.fallthrough) successors[index].add(index + 1);
 		else switch (page.ops[finalWord]) {
 			case OpCode.HALT: case OpCode.CALL: case OpCode.RET:
-			case OpCode.CLOSURE: case OpCode.CONCAT: case OpCode.CONCATN: case OpCode.RFE: case OpCode.ITERN: break;
+			case OpCode.CLOSURE: case OpCode.RFE: case OpCode.ITERN: break;
 			case OpCode.MTC0:
 				if (!cop0WriteRetiresControl(page.b[finalWord])) addSuccessor(nextPc);
 				break;

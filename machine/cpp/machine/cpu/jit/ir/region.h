@@ -15,7 +15,7 @@ namespace bmsx {
 class NativeRegisterUses;
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-enum class NativeAttempt : u8 { None, Call, AssignField, Concat, ConcatRange };
+enum class NativeAttempt : u8 { None, Call, AssignField };
 #endif
 
 // Compile-time description only. Publication materializes runtime sites and

@@ -33,7 +33,7 @@ const probeSource = `module<const>
 local trace<const> = require('${TRACE}')
 local resume<const> = function(control, arena, metadata)
 	local record<const>: *u32 = ${RAM_BASE} + control + ${GC_TRACE_RECORD}
-	local work<const>, strings<const> = trace.trace_thread(control, arena, metadata, *record, 0, 1, 1, 0, 0, 1)
+	local work<const>, strings<const> = trace.trace_thread(control, arena, metadata, *record, 0, 1, 1, 0, 1)
 	return work + strings
 end
 return { resume = resume }`;

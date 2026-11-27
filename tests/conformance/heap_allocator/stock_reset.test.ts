@@ -11,7 +11,7 @@ import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
-import { THREAD_HEAP_BYTES } from '../../../machine/ts/machine/cpu/thread_record';
+import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -19,7 +19,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC, COP0_RAM_END, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
-import { BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
@@ -74,6 +74,48 @@ class Trace {
 		assert.equal(mismatch, -1, `${label}, observation ${mismatch}: TS=${this.expected[mismatch]}, C++=${actual[mismatch]}`);
 		assert.equal(actual.length, this.expected.length, label);
 	}
+}
+
+function verifySystemExec(rom: string, native: string, out: string): void {
+	const system = readFileSync(rom);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+	const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+	let target = 0;
+	runtime.boot();
+	cpu.setExecutionHook((_domain, pc) => {
+		const word = readLE32(system, pc);
+		if (instructionOpcode(word) !== OpCode.MTC0 || instructionLowB(word) !== COP0_EXEC) return false;
+		target = asInteger(cpu.activeThread.currentFrame!.registers.get((word >>> (2 * MAX_OPERAND_BITS)) & MAX_LOW_OPERAND));
+		return true;
+	}, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
+	for (let i = 0; target === 0 && i < 4096; ++i) scheduler.runCpuSlice(0, 1024, 0, CpuRunKind.Scheduled);
+	assert.ok(target > 0 && target < CART_ROM_BASE, 'the installed firmware reached its System EXEC');
+	cpu.setExecutionHook(null, 0, 0);
+	const root = cpu.rootThread.address;
+	assert.notEqual(root, CPU_RESET_BANK_ADDRESS);
+	const stack = memory.readRamRecordWord(root + ThreadField.StackCapacity);
+	assert.ok(stack >= readLE32(system, target + BLUA32_FUNCTION_MAX_STACK_OFFSET),
+		'the BIOS allocated startup backing before handing off the instruction');
+	const wire = join(out, 'system-exec-before.state');
+	writeFileSync(wire, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	const first = arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET;
+	const end = arena.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const ledger = memory.ramData().slice(first, end);
+	const digest = hashBytes(ledger, 0, ledger.length);
+	const trace = new Trace(native, join(out, 'system-exec.trace'));
+	trace.observe('X');
+	trace.observe(`H ${first} ${end}`, digest);
+	const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
+	assert.equal(result, RunResult.Yielded);
+	const pc = cpu.readFramePc(0);
+	assert.equal(pc, readLE32(system, target + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET));
+	assert.equal(cpu.getFrameDepth(), 1);
+	assert.deepEqual(memory.ramData().subarray(first, end), ledger, 'EXEC did not reserve or collect');
+	trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining, 0,
+		cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+	trace.observe('P', `1 ${pc}`);
+	trace.observe(`H ${first} ${end}`, digest);
+	trace.replay('System EXEC consumption of firmware backing', rom, wire);
 }
 
 function verifyColdRefusal(rom: string, native: string, dir: string): void {
@@ -823,6 +865,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 				'--output-dir', output, '--store-dir', join(dir, 'store')], { stdio: 'inherit' });
 			const rom = join(output, 'system', 'bmsx-bios.debug.rom');
 			const cases = [
+				['System EXEC consumes its existing frame backing', () => verifySystemExec(rom, native, output)],
 				['selected socket 1 supplies its own DATA/BSS extent', () => verifySelectedCartFloor(rom, native, output, optLevel)],
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],

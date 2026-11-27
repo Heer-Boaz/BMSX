@@ -24,7 +24,7 @@ local hash_slice<const> = function(source, first, length)
 end
 local lookup_ram_slice<const> = function(metadata, source, first, length, hash)
 	local start<const>, head<const> = slice.slice_head(source, first, length)
-	return (slice.lookup_ram(metadata, start, head, length, hash))
+	return (slice.lookup_ram(metadata, start, head, length, hash, nil, nil))
 end
 local publish<const> = function(metadata, arena, occupied, source, first, length, hash)
 	local bytes<const> = 16 + length

@@ -80,17 +80,13 @@ struct Run {
 
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 DiagnosticOpcodeCounts difference(const DiagnosticOpcodeCounts& end, const DiagnosticOpcodeCounts& begin) {
-	return {end.call-begin.call, end.setfield-begin.setfield,
-		end.concat-begin.concat, end.concatn-begin.concatn};
+	return {end.call-begin.call, end.setfield-begin.setfield};
 }
 void requireCounts(const DiagnosticOpcodeCounts& actual, DiagnosticOpcodeCounts expected, const char* message) {
-	require(actual.call == expected.call && actual.setfield == expected.setfield
-		&& actual.concat == expected.concat && actual.concatn == expected.concatn, message);
+	require(actual.call == expected.call && actual.setfield == expected.setfield, message);
 }
 DiagnosticOpcodeCounts total(const Run& run) {
-	return {run.native.call+run.interpreter.call,
-		run.native.setfield+run.interpreter.setfield, run.native.concat+run.interpreter.concat,
-		run.native.concatn+run.interpreter.concatn};
+	return {run.native.call+run.interpreter.call, run.native.setfield+run.interpreter.setfield};
 }
 #endif
 
@@ -163,24 +159,20 @@ test::Blua32TestImage imageWithHandler(u32 words) {
 }
 
 test::Blua32TestImage mixedImage() {
-	auto image=imageWithHandler(8);
+	auto image=imageWithHandler(6);
 	image.constants={std::string{"field"}};
 	writeInstruction(image.text,0,static_cast<u8>(OpCode::MOV),0,0,0);
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::K1),2,0,0);
 	writeInstruction(image.text,2,static_cast<u8>(OpCode::SETFIELD),0,0,2);
-	writeInstruction(image.text,3,static_cast<u8>(OpCode::CONCAT),3,4,5);
-	writeInstruction(image.text,4,static_cast<u8>(OpCode::CONCATN),6,4,2);
-	writeInstruction(image.text,5,static_cast<u8>(OpCode::JMPIF),7,0,1);
-	writeInstruction(image.text,6,static_cast<u8>(OpCode::CALL),8,1,2);
-	writeInstruction(image.text,7,static_cast<u8>(OpCode::HALT),0,0,0);
+	writeInstruction(image.text,3,static_cast<u8>(OpCode::JMPIF),7,0,1);
+	writeInstruction(image.text,4,static_cast<u8>(OpCode::CALL),8,1,2);
+	writeInstruction(image.text,5,static_cast<u8>(OpCode::HALT),0,0,0);
 	return image;
 }
 
 void initializeMixedRoots(Fixture& fixture) {
 	auto& cpu=fixture.runtime.machine.cpu;
 	fixture.frame().registers.set(0, valueTable(bmsx::test::allocateTableReference(cpu, 3, 2).address()));
-	fixture.frame().registers.set(4, valueString(cpu.stringPool().intern(std::string("a\0雪",5))));
-	fixture.frame().registers.set(5, valueString(cpu.stringPool().intern("tail")));
 	fixture.frame().registers.set(7, valueBool(true));
 }
 
@@ -194,13 +186,11 @@ std::vector<u8> mixedGrants() {
 	}
 	require(asTable(generated.frame().registers.get(0), generated.runtime.machine.cpu.gcHeap()).getStringKey(*generated.runtime.machine.cpu.stringPool().find("field"))==valueInteger(1),
 		"mixed work actually performs the field write");
-	require(generated.frame().registers.get(3)==generated.frame().registers.get(6),"CONCAT and CONCATN produce identical complete strings");
 	require(isNil(generated.frame().registers.get(8)),"an untaken CALL never changes its destination");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	const auto& p=generated.runtime.machine.cpu.diagnosticExecutionProfile();
 	requireCounts({p.nativeOpcodes.call+p.interpreterOpcodes.call,
-		p.nativeOpcodes.setfield+p.interpreterOpcodes.setfield,p.nativeOpcodes.concat+p.interpreterOpcodes.concat,
-		p.nativeOpcodes.concatn+p.interpreterOpcodes.concatn},{0,1,1,1},
+		p.nativeOpcodes.setfield+p.interpreterOpcodes.setfield},{0,1},
 		"each completed mixed instruction counts once, excluding the untaken CALL suffix");
 #endif
 	return encodeRuntimeSaveState(captureRuntimeSaveState(generated.runtime));
@@ -224,7 +214,7 @@ void scalarBoundaryRetry() {
 	const auto retry=runPair(generated,scalar,1);
 	require(retry.consumed==BASE_CYCLES[static_cast<u8>(OpCode::CALL)],"the admitted CALL pays its fixed cost");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(retry),{1,0,0,0},"the successor retry admits and counts CALL exactly once");
+	requireCounts(total(retry),{1,0},"the successor retry admits and counts CALL exactly once");
 #endif
 	[[maybe_unused]] const auto finish=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
@@ -255,7 +245,7 @@ void tableWrites() {
 		}
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{0,1,0,0},"cached, allocating-miss and faulting SETFIELD each count one admitted attempt");
+		requireCounts(total(measured),{0,1},"cached, allocating-miss and faulting SETFIELD each count one admitted attempt");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(measured.native.setfield==1 && measured.nativeCycles>0,"all three field routes retain native origin through shared semantic helpers");
 #endif
@@ -304,7 +294,7 @@ void directCalls() {
 		if(pass) { generated.restart(); scalar.restart(); }
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,512);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{4,0,0,0},"nested calls and linked continuations count actual CALL instructions, not native entries");
+		requireCounts(total(measured),{4,0},"nested calls and linked continuations count actual CALL instructions, not native entries");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		require(measured.native.call==4 && measured.nativeCycles>0,"precompiled direct-call and return chains retain native-origin counts");
 #endif
@@ -325,7 +315,7 @@ void fetchAndCallFaults() {
 		}
 		[[maybe_unused]] const auto measured=runPair(generated,scalar,32);
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-		requireCounts(total(measured),{fetch?0u:1u,0,0,0},"fetch fault admits no opcode; faulting non-callable CALL counts one attempt before unwind");
+		requireCounts(total(measured),{fetch?0u:1u,0},"fetch fault admits no opcode; faulting non-callable CALL counts one attempt before unwind");
 #endif
 		require(fetch ? generated.runtime.machine.memory.readBusFaultSequence()>0
 			: generated.runtime.machine.cpu.readLuaFaultReasonWord()!=0,"the selected actual fetch or language fault was exercised");
@@ -335,11 +325,13 @@ void fetchAndCallFaults() {
 void interruptBoundary() {
  for(bool nmi : {false,true}) {
 	auto image=imageWithHandler(2);
-	writeInstruction(image.text,0,static_cast<u8>(OpCode::CONCATN),0,0,0);
+	image.constants = {Blua32BuiltinConstant{static_cast<u32>(BuiltinFunctionId::ToInteger)}};
+	writeInstruction(image.text,0,static_cast<u8>(OpCode::K1),0,0,0);
 	writeInstruction(image.text,1,static_cast<u8>(OpCode::JMP),0,63,63,255);
-	writeInstruction(image.text,96,static_cast<u8>(OpCode::CONCATN),2,0,0);
-	writeInstruction(image.text,97,static_cast<u8>(OpCode::RFE),0,0,0);
-	image.functions[2].wordCount=2;
+	writeInstruction(image.text,96,static_cast<u8>(OpCode::LOADK),2,0,0);
+	writeInstruction(image.text,97,static_cast<u8>(OpCode::CALL),2,1,2);
+	writeInstruction(image.text,98,static_cast<u8>(OpCode::RFE),0,0,0);
+	image.functions[2].wordCount=3;
 	image.exceptionFunctionIndex=2;
 	Fixture generated(image,false),scalar(image,true);
 	runPair(generated,scalar,1);
@@ -347,13 +339,13 @@ void interruptBoundary() {
 		if(nmi) fixture->runtime.machine.cpu.requestNonMaskableInterrupt();
 		else { fixture->runtime.machine.memory.writeMappedU32LE(IO_IRQ_MASK,IRQ_GPU); fixture->runtime.machine.irqController.raise(IRQ_GPU); }
 	}
-	[[maybe_unused]] const auto handler=runPair(generated,scalar,1);
+	[[maybe_unused]] const auto handler=runPair(generated,scalar,BASE_CYCLES[static_cast<u8>(OpCode::LOADK)]+1);
 	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==2,"the short grant executes the actual interrupt handler in its own frame");
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
-	requireCounts(total(handler),{0,0,0,1},"an interrupt entry counts the handler CONCATN, not a second root opcode");
+	requireCounts(total(handler),{1,0},"an interrupt entry counts the handler CALL, not a second root opcode");
 #endif
 	if(!nmi) for(auto* fixture : {&generated,&scalar}) fixture->runtime.machine.irqController.acknowledge(IRQ_GPU);
-	runPair(generated,scalar,64);
+	runPair(generated,scalar,BASE_CYCLES[static_cast<u8>(OpCode::RFE)]);
 	require(generated.runtime.machine.cpu.activeThread()->frameDepth()==1
 		&& generated.runtime.machine.cpu.readFramePc(0)==generated.rom.textAddress+INSTRUCTION_BYTES,"RFE resumes the interrupted root at its real successor");
  }

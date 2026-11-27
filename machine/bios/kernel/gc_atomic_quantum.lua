@@ -20,7 +20,7 @@ local weak_visits<const> = 2 -- H:157
 local roots<const> = 3 -- H:157
 local gray<const> = 4 -- H:157
 local clear_weak<const> = 5 -- H:157
-local end_bank<const> = 8 -- H:21 C:681,748
+local end_bank<const> = 7 -- H:21 C:681,748
 local trace_head<const> = 4 -- C:765 H:23
 local cpp_policy<const> = 1 -- C:740,1266 H:160-163
 
@@ -73,13 +73,10 @@ local atomic_work<const> = function(state, limit, scope) -- C:716-724,731
 	end
 	local head<const>: *root_head_input = layout.ram_base + state + layout.remark_head_offset -- C:781,1276
 	if work < limit and stage == gray then -- C:742,749,751
-		local threads<const>: *root_descriptors = layout.ram_base + state + layout.root_banks_offset -- C:1277
-		local pending_top<const>: *u32 = layout.ram_base + state + layout.pending_top_offset -- C:1274-1277
 		quantum.work = work -- C:759,1272
 		quantum.limit = limit -- C:759,1264
 		quantum.atomic = 1 -- C:759,1265
-		work = trace.trace_quantum(control, arena, metadata, context, head.mode, -- C:759,1276
-			threads.active, *pending_top, cpp_policy) -- C:759,1274-1277
+		work = trace.trace_quantum(control, arena, metadata, context, head.mode, cpp_policy) -- C:759,1274-1277
 		local frontier<const>: *u32 = layout.ram_base + control + control_layout.internal.trace_record_offset -- C:765
 		if *frontier ~= 0 or control_layout.internal.index_word(control, trace_head) ~= 0 then -- C:765
 			return work -- C:766

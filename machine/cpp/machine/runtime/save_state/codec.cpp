@@ -1189,15 +1189,6 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 			writer.u32(j.density.slots); writer.u32(j.density.kept);
 		}
 	}
-	const auto& concat = state.concat;
-	writer.u8(static_cast<u8>(concat.active()));
-	if (concat.active()) {
-		writer.u32(concat.length); writer.u32(concat.registersLeft); writer.u32(concat.nextRegister);
-		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
-		writer.u32(static_cast<u32>(concat.sources.size()));
-		for (const auto& part : concat.sources) { writer.u64(part.value); writer.u32(part.bytes); }
-		writer.string(concat.bytes);
-	}
 	const auto& pending = state.pendingAllocation;
 	writer.u32(static_cast<u32>(pending.recovery));
 	if (pending.recovery != AllocationRecovery::None) {
@@ -1266,14 +1257,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 			j.recovery = static_cast<LuaAllocationRecovery>(reader.u32());
 			j.density = {reader.u32(), reader.u32(), reader.u32(), reader.u32()};
 		}
-	}
-	auto& concat = state.concat;
-	if (reader.u8() != 0u) {
-		concat.length = reader.u32(); concat.registersLeft = reader.u32(); concat.nextRegister = reader.u32();
-		concat.instructionPc = reader.u32(); concat.destination = reader.u32(); concat.source = reader.u32(); concat.offset = reader.u32(); concat.hash = reader.u32();
-		concat.sources.resize(reader.u32());
-		for (auto& part : concat.sources) { part.value = reader.u64(); part.bytes = reader.u32(); }
-		concat.bytes = reader.string();
 	}
 	auto& pending = state.pendingAllocation;
 	pending.recovery = static_cast<AllocationRecovery>(reader.u32());

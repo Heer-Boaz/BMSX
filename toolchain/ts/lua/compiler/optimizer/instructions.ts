@@ -145,7 +145,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.BXOR:
 			case OpCode.SHL:
 			case OpCode.SHR:
-			case OpCode.CONCAT:
 			case OpCode.EQ:
 			case OpCode.LT:
 			case OpCode.LE:
@@ -170,11 +169,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(instruction.a);
 				updateMax(instruction.a + 1);
 				updateMax(instruction.b);
-				break;
-			case OpCode.CONCATN:
-				updateMax(instruction.a);
-				updateMax(instruction.b);
-				updateMax(lastRegisterInRange(instruction.b, instruction.c));
 				break;
 			case OpCode.ITERN:
 				updateMax(instruction.a + 2);

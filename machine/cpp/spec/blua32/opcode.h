@@ -13,8 +13,6 @@ enum class OpCode : uint8_t {
 };
 
 inline constexpr size_t OPCODE_COUNT = 64U;
-inline constexpr int INLINE_CONCAT_OPERANDS = 64;
-inline constexpr int INLINE_CONCAT_BYTES = 256;
 inline constexpr int INLINE_STRING_COMPARE_BYTES = 64;
 
 // Select the next Table-valued __index target and test its own mapping.

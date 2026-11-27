@@ -28,8 +28,6 @@ public:
 	StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena);
 	StringId intern(std::string_view value);
 	StringId intern(std::string_view value, u32 hash);
-	// Concatenation supplies the two lengths it admitted against the result limit.
-	StringId internConcat(StringId left, u32 leftBytes, StringId right, u32 rightBytes);
 	std::optional<StringId> find(std::string_view value) const;
 	int byteLength(StringId id) const;
 	u32 byteAt(StringId id, size_t index) const;

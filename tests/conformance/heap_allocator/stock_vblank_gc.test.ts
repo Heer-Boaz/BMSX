@@ -107,8 +107,12 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 		observe(`p ${cycles}`, [Number(done), scheduler.nowCycles - before, frames.lastTickSequence - tick,
 			Number(cpu.heapServiceActive()), Number(cpu.isHaltedUntilIrq())].join(' '));
 	}
-	for (let i = 0; i < 1024 && report(Report.Ready) !== length; ++i) grant(65536);
-	assert.equal(report(Report.Ready), length, 'the stock ROM booted and the cartridge allocated a new String');
+	// Preparing the pressure fixture itself concatenates several MiB of
+	// String data in the BIOS. Only IRQ delivery below is under test here.
+	const readyDeadline = 20 * PSX_MACHINE_SPEC.cpuFreqHz;
+	for (let offered = 0; offered < readyDeadline && report(Report.Ready) !== length; offered += 65536) grant(65536);
+	assert.equal(report(Report.Ready), length,
+		`pressure fixture not ready at cycle ${scheduler.nowCycles} (Lua fault ${cpu.readLuaFaultReasonWord()})`);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const interruptedThread = cpu.activeThread.address;
 	assert.notEqual(interruptedThread, cpu.rootThread.address, 'the coroutine is not the system root context');
