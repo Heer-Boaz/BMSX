@@ -50,8 +50,9 @@ struct NativeCpuRunState {
 	i32 haltedCallDepth = -1;
 	u32 closureDomain = 0;
 	CallFrame* firstPendingFrame = nullptr;
-	// MMIO, semantic calls, resumable faults and the end of the grant all
-	// observe real RAM records. Pure compiled transfers do not.
+	// Materialize in the admitted RAM extent. Even a frame that returns
+	// entirely within the native grant leaves the ordinary retired words.
+	void writePendingFrame(CallFrame& frame, u32 pc, i32 top) const noexcept;
 	void publishActivation(u32 pc) noexcept;
 	std::exception_ptr error;
 	std::optional<Replay> replay{};

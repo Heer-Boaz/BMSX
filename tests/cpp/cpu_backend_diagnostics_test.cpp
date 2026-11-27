@@ -284,9 +284,16 @@ void directCalls() {
 		{4,test::blua32TestFunctionAddress(RomImageDomain::System,3)},
 		{33,test::blua32TestFunctionAddress(RomImageDomain::System,4)}};
 	Fixture generated(image,false,false),scalar(image,true);
-	// Allocation is not the subject of this bare ROM diagnostic fixture.
-	for (auto* fixture : {&generated, &scalar}) for (auto index : {3u, 4u})
-		test::seedTestRomClosure(fixture->runtime.machine.cpu, fixture->rom.functionAddresses[index]);
+	// Both runs start with the same admitted backing. In the generated run
+	// the entire nested CALL/RET chain can retire within one native grant.
+	for (auto* fixture : {&generated, &scalar}) {
+		auto& cpu = fixture->runtime.machine.cpu;
+		auto& thread = *cpu.rootThread();
+		cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0u, 4u, valueNil());
+		thread.bindStack();
+		thread.reserveFixedFrameViews();
+		for (auto index : {3u, 4u}) test::seedTestRomClosure(cpu, fixture->rom.functionAddresses[index]);
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	generated.runtime.machine.cpu.prepareSystemNativeCode();
 #endif

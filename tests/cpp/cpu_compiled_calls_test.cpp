@@ -680,17 +680,17 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 		&& fixed.fixedCall.plan.copied == supplied && fixed.fixedCall.plan.padded == padded
 		&& fixed.fixedCall.entryCells[0] && *fixed.fixedCall.entryCells[0],
 		"the installed call learns its guarded layout and entry cell without eviction or recompilation");
-	auto& retired = *generated.cpu.activeThread()->currentFrame->next;
-	std::array<u32, FRAME_CONTROL_BYTES / sizeof(u32)> retiredWords;
-	for (size_t i = 0; i < retiredWords.size(); ++i)
-		retiredWords[i] = retired.readControl(static_cast<FrameField>(i * sizeof(u32)));
+	const auto& retired = *generated.cpu.activeThread()->currentFrame->next;
+	const auto& scalarRetired = *scalar.cpu.activeThread()->currentFrame->next;
 	restart(2);
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted
 		&& generated.cpu.readFrameRegister(0, 4) == valueInteger(27),
 		"a warmed closure with its own captures calls and returns within one native grant");
-	for (size_t i = 0; i < retiredWords.size(); ++i)
-		require(retired.readControl(static_cast<FrameField>(i * sizeof(u32))) == retiredWords[i],
-			"a fully native call never writes its inactive architectural frame record");
+	for (u32 offset = 0; offset < FRAME_CONTROL_BYTES; offset += sizeof(u32)) {
+		const auto field = static_cast<FrameField>(offset);
+		require(retired.readControl(field) == scalarRetired.readControl(field),
+			"a fully native call leaves the same retired architectural frame words as scalar dispatch");
+	}
 	requireParity(generated, scalar);
 	const int callCycles = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + padded;
 	const int throughGetup = callCycles + BASE_CYCLES[static_cast<u8>(OpCode::GETUP)];
@@ -899,7 +899,7 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	const auto& coldCalls = generated.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::Call)].entries;
 	const u64 before = coldCalls;
 #endif
-	// Without a mapped observer, neither callee needs its private frame words.
+	// Returning within one native grant still writes the retired RAM records.
 	auto& parkedMiddle = *generated.cpu.activeThread()->currentFrame->next;
 	auto& parkedLeaf = *parkedMiddle.next;
 	const u32 inactiveCallSite = generated.rom.textAddress;
@@ -909,9 +909,9 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 200) == RunResult::Halted
 		&& generated.memory.readU32(DYNAMIC_RAM_BASE) == 73u && scalar.memory.readU32(DYNAMIC_RAM_BASE) == 73u
 		&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73)
-		&& parkedMiddle.readControl(FrameField::CallSite) == inactiveCallSite
-		&& parkedLeaf.readControl(FrameField::CallSite) == inactiveCallSite,
-		"the complete native chain writes public RAM without materializing either retired frame");
+		&& parkedMiddle.readControl(FrameField::CallSite) == generated.rom.textAddress + parentCall * INSTRUCTION_BYTES
+		&& parkedLeaf.readControl(FrameField::CallSite) == generated.rom.textAddress + middle * INSTRUCTION_BYTES,
+		"the complete native chain leaves both retired call records without publishing an extra live frame");
 	requireParity(generated, scalar);
 	restart();
 	for (auto& device : devices) device.ready = false;
@@ -970,8 +970,8 @@ void nativeCallChainIsRestorableAtBlockedMmio(bool openOuter) {
 		&& generated.cpu.readFrameRegister(0, 0) == valueInteger(73)
 		&& thread.currentFrame->next->readControl(FrameField::CallSite)
 			== generated.rom.textAddress + parentCall * INSTRUCTION_BYTES
-		&& retiredLeaf.readControl(FrameField::CallSite) == inactiveCallSite,
-		"the admitted cold RET publishes its still-live parent, not the retired leaf, and places the result once");
+		&& retiredLeaf.readControl(FrameField::CallSite) == generated.rom.textAddress + middle * INSTRUCTION_BYTES,
+		"the admitted cold RET publishes its still-live parent, writes the retired leaf and places the result once");
 	requireParity(generated, scalar);
 }
 
@@ -1002,14 +1002,16 @@ void pendingReturnPlacement(int produced, int requested, int first) {
 	generated.cpu.prepareSystemNativeCode();
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 120) == RunResult::Halted, "warm the actual CALL");
 	auto* child = generated.cpu.activeThread()->currentFrame->next;
-	const u32 inactive = 0x12345678u;
-	child->writeControl(FrameField::CallSite, inactive);
+	child->writeControl(FrameField::CallSite, 0x12345678u);
 	for (auto* m : {&generated, &scalar}) {
 		m->cpu.clearHaltUntilIrq();
 		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 	}
 	require(test::runCpuParity(generated.cpu, scalar.cpu, 120) == RunResult::Halted
-		&& child->readControl(FrameField::CallSite) == inactive, "pending RET does not publish an inactive child");
+		&& generated.cpu.getFrameDepth() == 1
+		&& child->readControl(FrameField::CallSite) == generated.rom.textAddress + 5u * INSTRUCTION_BYTES
+		&& child->readControl(FrameField::Pc) == generated.rom.textAddress + 9u * INSTRUCTION_BYTES,
+		"pending RET retires its RAM record without increasing the live frame depth");
 	const int available = produced < 0 ? std::max(3 - first, 0) : produced;
 	const int count = requested < 0 ? available : requested;
 	const std::array values{valueInteger(23), valueBool(false), valueBool(true)};

@@ -1,6 +1,7 @@
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
 
+#include "machine/cpu/closure.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/jit/runtime/execution.h"
 
@@ -131,6 +132,7 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	constexpr auto cells = offsetof(NativeBlockExitSite, continuationCells);
 	constexpr auto slot = offsetof(NativeCpuRunState, cartridgeSlot);
 	constexpr auto ptrShift = std::countr_zero(sizeof(void*));
+	constexpr auto nextPc = NativeBlockAbi::stackBytes - sizeof(u32);
 
 	// The existing gate owns an already published register cache. Until
 	// every guard succeeds R0 is the original RET and the grant is unchanged.
@@ -164,7 +166,45 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), returnContinuation, SLJIT_R2, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), nextPc, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, nextPc));
 	emitReturnResults<false>(c, semanticReturn);
+	// Top for the receiving frame is in R3. Write the retired words from
+	// the admitted CALL and RET sources even if no scalar boundary was hit.
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(state), frame);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, nativeControl));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::VarargBase),
+		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeVarargBase));
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase),
+		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeVarargBase));
+	auto* nonnegative = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_set_label(nonnegative, sljit_emit_label(c));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::VarargCount), SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), pending);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::CallSite),
+		SLJIT_MEM1(SLJIT_R1), offsetof(NativeBlockExitSite, lastPc));
+	constexpr auto callOperands = offsetof(NativeBlockExitSite, operands);
+	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), callOperands + offsetof(NativeExitOperands::Call, callee));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::ReturnBase), SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV32_S16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), callOperands + offsetof(NativeExitOperands::Call, requested));
+	// The native CALL site encodes open as -1; the physical count is biased by one.
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::ReturnCount), SLJIT_R0, 0, SLJIT_IMM, 1);
+	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, closure));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Closure), SLJIT_R0, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R1, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, ram), SLJIT_R0, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Function), SLJIT_MEM1(SLJIT_R1), CLOSURE_PROTOTYPE_ADDRESS);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::OpenHead), SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Protected), SLJIT_IMM, -1);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Flags),
+		SLJIT_MEM1(state), offsetof(NativeCpuRunState, frameBank));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Pc), SLJIT_MEM1(SLJIT_SP), nextPc);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::Top),
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerTop));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::StackBase),
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase));
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::StackCapacity),
+		SLJIT_MEM1(state), offsetof(NativeBlockRunState, registerCapacity));
 	auto* retire = sljit_emit_jump(c, SLJIT_JUMP);
 
 	sljit_set_label(physical, sljit_emit_label(c));
@@ -189,7 +229,6 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), 0);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_R2, 0, SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_MEM1(SLJIT_SP), returnContinuation, SLJIT_R2, 0);
-	constexpr auto nextPc = NativeBlockAbi::stackBytes - sizeof(u32);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), nextPc, SLJIT_MEM1(SLJIT_R0), offsetof(NativeBlockExitSite, nextPc));
 	emitReturnResults<true>(c, semanticReturn);
 

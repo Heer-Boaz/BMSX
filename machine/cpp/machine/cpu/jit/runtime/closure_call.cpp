@@ -31,6 +31,19 @@ inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitS
 
 } // namespace
 
+void NativeCpuRunState::writePendingFrame(CallFrame& frame, u32 pc, i32 top) const noexcept {
+	const auto& site = *frame.pendingNativeCall;
+	const auto& call = site.operands.call;
+	const auto base = frame.pendingNativeStackBase;
+	const auto varargBase = frame.pendingNativeVarargBase;
+	const auto closure = frame.pendingNativeClosure;
+	const auto prototype = cpu->memory().readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+	const FrameEntryControl entry{prototype, pc, site.lastPc, frameBank,
+		varargBase, std::max(base - varargBase, 0), CallResultPlacement::call(call.callee, call.requested),
+		top, closure, base, static_cast<i32>(frame.registers.size())};
+	entry.writeWords([&frame](FrameField field, u32 word) { frame.writeAdmittedControl(field, word); });
+}
+
 void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 	if (!firstPendingFrame) {
 		state.frame->writeAdmittedControl(FrameField::Pc, pc);
@@ -49,19 +62,11 @@ void NativeCpuRunState::publishActivation(u32 pc) noexcept {
 	parent.compilationEntry = true;
 	for (;;) {
 		const auto& site = *callee->pendingNativeCall;
-		const auto& call = site.operands.call;
 		const bool current = callee == state.frame;
 		const auto* nextCall = current ? nullptr : callee->next->pendingNativeCall;
 		const auto resume = current ? pc : nextCall->nextPc;
 		const auto top = current ? state.registerTop : callee->next->pendingNativeCallerTop;
-		const auto base = callee->pendingNativeStackBase;
-		const auto varargBase = callee->pendingNativeVarargBase;
-		const auto closure = callee->pendingNativeClosure;
-		const auto prototype = cpu->memory().readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-		const FrameEntryControl entry{prototype, resume, site.lastPc, frameBank,
-			varargBase, std::max(base - varargBase, 0), CallResultPlacement::call(call.callee, call.requested),
-			top, closure, base, static_cast<i32>(callee->registers.size())};
-		entry.writeWords([callee](FrameField field, u32 word) { callee->writeAdmittedControl(field, word); });
+		writePendingFrame(*callee, resume, top);
 		callee->pendingNativeCall = nullptr;
 		callee->compilationEntry = true;
 		callee->nativeContinuationPc = resume;

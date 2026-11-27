@@ -1446,17 +1446,25 @@ void resolvedFieldKeepsPendingFixedCallsUntilAnObserver() {
 	require(fieldExit != leafBlock->sideExits.end() && fieldExit->currentPc == leafPc
 		&& fieldExit->continuationCells[0] && *fieldExit->continuationCells[0], "the WIDE semantic lookup has a live native successor");
 
-	// Physical control words outside frameDepth are private scratch. An
-	// activation that returns before a real observer never writes that record.
-	constexpr u32 middleScratchPc = 0x10203040, leafScratchPc = 0x20304050;
+	// A resolved read can keep both callers pending, but both RETs must
+	// replace stale inactive words even when nothing materializes a live frame.
 	restart();
-	thread.frameAtDepth(1)->writeControl(FrameField::Pc, middleScratchPc);
-	thread.frameAtDepth(2)->writeControl(FrameField::Pc, leafScratchPc);
+	thread.frameAtDepth(1)->writeControl(FrameField::Pc, 0x10203040u);
+	thread.frameAtDepth(2)->writeControl(FrameField::Pc, 0x20304050u);
 	require(test::runCpuParity(cpu, scalar.cpu, 200) == RunResult::Halted && thread.frameDepth() == 1
 		&& cpu.readFrameRegister(0, 0) == valueInteger(41), "the result crosses both native returns before the caller halts");
-	require(thread.frameAtDepth(1)->readControl(FrameField::Pc) == middleScratchPc
-		&& thread.frameAtDepth(2)->readControl(FrameField::Pc) == leafScratchPc,
-		"the resolved native read did not publish either frame before it returned");
+	require(thread.frameAtDepth(1)->readControl(FrameField::Pc) == text + (middle + 2) * INSTRUCTION_BYTES
+		&& thread.frameAtDepth(2)->readControl(FrameField::Pc) == leafPc + 3 * INSTRUCTION_BYTES,
+		"both retired frame PCs record completed RETs rather than stale inactive words");
+	for (const u32 depth : {1u, 2u}) {
+		const auto& retired = *thread.frameAtDepth(depth);
+		const auto& scalarRetired = *scalar.cpu.activeThread()->frameAtDepth(depth);
+		for (u32 offset = 0; offset < FRAME_CONTROL_BYTES; offset += sizeof(u32)) {
+			const auto field = static_cast<FrameField>(offset);
+			require(retired.readControl(field) == scalarRetired.readControl(field),
+				"the retired words from both native returns match scalar dispatch");
+		}
+	}
 	requireParity(native, scalar);
 
 	const int calls = 2 * BASE_CYCLES[static_cast<u8>(OpCode::CALL)];

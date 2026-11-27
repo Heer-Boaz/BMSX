@@ -172,7 +172,7 @@ void hotVarargFrames(int fixed) {
 			"open return preserves every argument, including trailing nil");
 }
 
-void nativeGenericVarargCallLeavesInactiveControlUntouched() {
+void nativeGenericVarargCallRetiresPhysicalControl() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
 	image.mappedCode = false;
@@ -220,10 +220,9 @@ void nativeGenericVarargCallLeavesInactiveControlUntouched() {
 	const std::array arguments{valueInteger(91), valueBool(false), valueFloatBits(0xffa12345u), valueNil()};
 	run(std::span(arguments).first(1));
 	requireParity(generated, scalar);
-	auto& inactive = *cpu.activeThread()->currentFrame->next;
-	std::array<u32, FRAME_CONTROL_BYTES / sizeof(u32)> words;
-	for (size_t i = 0; i < words.size(); ++i) words[i] = inactive.readControl(static_cast<FrameField>(i * sizeof(u32)));
-	require(inactive.readWindow(FrameField::VarargCount) == 0, "the earlier real call left an inactive no-extras frame record");
+	const auto& retired = *cpu.activeThread()->currentFrame->next;
+	const auto& scalarRetired = *scalar.cpu.activeThread()->currentFrame->next;
+	require(retired.readWindow(FrameField::VarargCount) == 0, "the earlier real call left a retired no-extras frame record");
 
 	cpu.prepareSystemNativeCode();
 	const u32 callPc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
@@ -251,11 +250,15 @@ void nativeGenericVarargCallLeavesInactiveControlUntouched() {
 		"the returned caller publishes its exact open receiving top and halt continuation");
 	for (size_t i = 0; i < arguments.size(); ++i)
 		require(cpu.readFrameRegister(0, static_cast<int>(i)) == arguments[i], "open results retain every raw Value, including trailing nil");
-	for (size_t i = 0; i < words.size(); ++i)
-		require(inactive.readControl(static_cast<FrameField>(i * sizeof(u32))) == words[i],
-			"an entirely native generic call never writes the inactive architectural frame");
-	require(cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState() && test::sameActiveLanguageRam(cpu, scalar.cpu),
-		"only the retired frame record may differ from scalar execution");
+	require(retired.readWindow(FrameField::VarargCount) == static_cast<int>(arguments.size()) - 1
+		&& retired.readControl(FrameField::Pc) == calleePc + 2 * INSTRUCTION_BYTES,
+		"the retired record describes this call's extras and completed RET");
+	for (u32 offset = 0; offset < FRAME_CONTROL_BYTES; offset += sizeof(u32)) {
+		const auto field = static_cast<FrameField>(offset);
+		require(retired.readControl(field) == scalarRetired.readControl(field),
+			"the fully native call writes the same retired frame words as scalar dispatch");
+	}
+	requireParity(generated, scalar);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	const auto& after = cpu.nativeGateProfile().exits;
 	for (const auto kind : {NativeBlockExit::Call, NativeBlockExit::Vararg, NativeBlockExit::Return, NativeBlockExit::ScalarBoundary}) {
@@ -842,7 +845,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 int main() {
 	try {
 		physicalVarargWindow(); hotVarargFrames(0); hotVarargFrames(5); hotEmptyVararg(); freshVarargActivationGrowsBeforeWarmContinuation();
-		nativeGenericVarargCallLeavesInactiveControlUntouched();
+		nativeGenericVarargCallRetiresPhysicalControl();
 		hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		hotGlobalWritesForwardTheirWhiteChildren();

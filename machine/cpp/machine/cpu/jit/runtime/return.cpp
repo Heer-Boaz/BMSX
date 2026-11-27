@@ -58,6 +58,7 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 	const int nextTop = result.extendsTop()
 		? result.topAfter(caller->readAdmittedWindow(FrameField::Top), count) : extent;
 	if (pending) {
+		run->writePendingFrame(leaving, exit->nextPc, state.registerTop);
 		if (run->firstPendingFrame == &leaving) run->firstPendingFrame = nullptr;
 		thread.discardPendingFrame(leaving);
 	} else {
