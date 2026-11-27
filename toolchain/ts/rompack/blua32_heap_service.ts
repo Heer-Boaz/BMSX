@@ -45,17 +45,7 @@ export const HEAP_SERVICE_MODULES = [
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
-	[HeapServiceOperation.Reset]: ['bmsx_dlmalloc_reset', 3],
 	[HeapServiceOperation.SetFloor]: ['bmsx_dlmalloc_set_floor', 2],
-	[HeapServiceOperation.Floor]: ['bmsx_dlmalloc_floor', 1],
-	[HeapServiceOperation.Allocate]: ['bmsx_dlmalloc_allocate', 3],
-	[HeapServiceOperation.Free]: ['bmsx_dlmalloc_free', 2],
-	[HeapServiceOperation.ReserveBacking]: ['bmsx_dlmalloc_reserve_backing', 3],
-	[HeapServiceOperation.ResizeBacking]: ['bmsx_dlmalloc_resize_backing', 3],
-	[HeapServiceOperation.Shrink]: ['bmsx_dlmalloc_shrink', 3],
-	[HeapServiceOperation.AllocationBytes]: ['bmsx_dlmalloc_allocation_bytes', 2],
-	[HeapServiceOperation.OccupiedBytes]: ['bmsx_dlmalloc_occupied_bytes', 1],
-	[HeapServiceOperation.IsObject]: ['bmsx_dlmalloc_is_object', 2],
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
 	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],

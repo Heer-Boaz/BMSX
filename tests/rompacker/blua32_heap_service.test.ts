@@ -64,8 +64,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	})));
 
 	const entryBindings = [
-		...['reset', 'set_floor', 'floor', 'allocate', 'free', 'reserve_backing', 'resize_backing', 'shrink',
-			'allocation_bytes', 'occupied_bytes', 'is_object'].map(name => [HEAP_SERVICE_MODULE_PATH, 'bmsx_dlmalloc_' + name]),
+		[HEAP_SERVICE_MODULE_PATH, 'bmsx_dlmalloc_set_floor'],
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
 		['kernel/vblank_irq', 'before_cart_irq'],
@@ -118,12 +117,12 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE));
 });
 
-test('the ROM linker rejects a missing allocator entry and a call out of its verified module', () => {
-	const missing = compile(3, allocator.replace('reset = bmsx_dlmalloc_reset', 'old_reset = bmsx_dlmalloc_reset'));
+test('the ROM linker rejects a missing floor-control entry and a call out of its verified module', () => {
+	const missing = compile(3, allocator.replace('bmsx_dlmalloc_set_floor = bmsx_dlmalloc_set_floor', 'omitted = bmsx_dlmalloc_set_floor'));
 	assert.throws(() => linkSystemBlua32Image(missing.object, missing.program.metadata, loadAddress, MAIN_RAM_SIZE,
-		BIOS_FUNCTION_EXPORTS), /bmsx_dlmalloc_reset.*not a linked static function/);
+		BIOS_FUNCTION_EXPORTS), /bmsx_dlmalloc_set_floor.*not a linked static function/);
 	const source = allocator.replace('module<const>', "module<const>\nlocal foreign<const> = require('test/foreign')")
-		.replace(/(function\(a\) -- C:581\n)[\s\S]*?\nend/, '$1\treturn foreign.floor(a)\nend');
+		.replace('return 1 -- C:548', 'return foreign.floor(floor)');
 	assert.notEqual(source, allocator);
 	const escaped = compile(0, source, [{ path: 'test/foreign', source: `module<const>
 local floor<const> = function(value) return value end
@@ -135,7 +134,7 @@ return { floor = floor }
 
 test('the ROM linker excludes constants that the final asset layout can repatch', () => {
 	const word = 0x87654321;
-	const source = allocator.replace(/(function\(a\) -- C:581\n)[\s\S]*?\nend/, `$1\treturn 0x${word.toString(16)}\nend`);
+	const source = allocator.replace('return 1 -- C:548', `return 0x${word.toString(16)}`);
 	const { program, object } = compile(0, source);
 	const { bytes, layout } = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS);
 	const table = layout.header.constantTableAddress - layout.address;

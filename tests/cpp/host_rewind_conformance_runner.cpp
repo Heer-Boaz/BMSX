@@ -430,13 +430,19 @@ int main(int argc, char** argv) {
 		const i64 oldest = history.earliestCycles();
 		const auto lastVideoTick = runtime.frameScheduler.lastTickSequence;
 		const auto journalEnd = history.inputJournal.endSequence;
+		i64 settledEnd = 0;
 		for (int index = 0; index < 3; ++index) {
 			press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
 			require(runtime.frameScheduler.lastTickSequence == lastVideoTick - 1, "LB selects the previous recorded video boundary");
 			const auto restores = restoredStates;
-			press(1u << RETRO_DEVICE_ID_JOYPAD_R); settle();
-			require(runtime.frameScheduler.lastTickSequence == lastVideoTick && runtime.machine.scheduler.currentNowCycles() == latest,
-				"RB replays exactly one recorded frame without rounding drift");
+			press(1u << RETRO_DEVICE_ID_JOYPAD_R);
+			const i64 settled = settle();
+			// The journal names the video edge, not the cycle at which an
+			// instruction already retired across the edge settles.
+			require(runtime.frameScheduler.lastTickSequence == lastVideoTick && rewind.positionCycles() == latest && settled >= latest,
+				"RB replays exactly one recorded frame and retains the journal coordinate");
+			if (index == 0) settledEnd = settled;
+			require(settled == settledEnd, "forward replay settles at the same machine cycle every time");
 			require(restoredStates == restores && history.inputJournal.endSequence == journalEnd && history.latestCycles() == latest,
 				"forward stepping neither restores a checkpoint nor branches recorded future");
 		}
@@ -452,7 +458,7 @@ int main(int argc, char** argv) {
 			require(audioFrames == reviewAudio && runtime.machine.scheduler.currentNowCycles() == selected, "review holds machine time and mutes audio");
 			snapshot("rewind");
 			press(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
-			require(settle() == latest && rewind.positionCycles() == latest, "Left/Right round trip has no rounding drift");
+			require(settle() == settledEnd && rewind.positionCycles() == latest, "Left/Right round trip reproduces the settled recorded frame");
 		}
 		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_LEFT;
 		for (int index = 0; index < 150 && rewind.positionCycles() != oldest; ++index) frame();
@@ -485,7 +491,7 @@ int main(int argc, char** argv) {
 		snapshot("playback-paused");
 		press(menuKeyboard);
 		for (int index = 0; index < 4000 && rewind.playing(); ++index) frame();
-		require(runtime.machine.scheduler.currentNowCycles() == latest && !rewind.playing() && menu.active() && rewind.active, "recorded end pauses, not live takeover");
+		require(runtime.machine.scheduler.currentNowCycles() == settledEnd && !rewind.playing() && menu.active() && rewind.active, "recorded end pauses, not live takeover");
 		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		const auto retained = runtime.machine.scheduler.currentNowCycles();
 		menu.dismiss(input, rewind);

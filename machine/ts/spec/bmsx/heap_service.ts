@@ -5,8 +5,7 @@ export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
 export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
-	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject,
+	SetFloor,
 	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 }
 
