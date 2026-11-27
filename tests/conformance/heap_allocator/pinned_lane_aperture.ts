@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
-import { HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { writeLE32 } from '../../../machine/ts/common/endian';
@@ -95,7 +95,7 @@ try {
 		const arena = Number(block) - RAM_BASE;
 		const management = PSX_MACHINE_SPEC.ramBytes - RUNTIME_MANAGEMENT_SIZE;
 		const projection = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
-		const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
+		const activeRoot = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + 4;
 		const sentinel = 0x71da8afd;
 		const raw = new Uint8Array(8);
 		writeLE32(raw, 0, sentinel);
@@ -106,15 +106,15 @@ try {
 		const finalHash = hashBytes(raw, 0, 8);
 		const results = run('store-rewind', [...seed,
 			`W ${projection} ${sentinel}`, `W ${arena + 4} ${sentinel}`,
-			`W ${args} 0`, `H ${args} ${args + 4}`,
+			`W ${activeRoot} 0`, `H ${activeRoot} ${activeRoot + 4}`,
 			`B ${entry.address} 2 ${RAM_BASE + arena} ${RAM_BASE + projection}`, 'L 12000', 'n',
 			`H ${arena} ${arena + 8}`, 'l', 's',
-			'L 500000', 'n', `H ${arena} ${arena + 8}`, `H ${projection} ${projection + 4}`, `H ${args} ${args + 4}`,
+			'L 500000', 'n', `H ${arena} ${arena + 8}`, `H ${projection} ${projection + 4}`, `H ${activeRoot} ${activeRoot + 4}`,
 			'u', `H ${arena} ${arena + 8}`, 'L 500000', 'n',
-			`H ${arena} ${arena + 8}`, `H ${projection} ${projection + 4}`, `H ${args} ${args + 4}`,
+			`H ${arena} ${arena + 8}`, `H ${projection} ${projection + 4}`, `H ${activeRoot} ${activeRoot + 4}`,
 		]);
-		const [, , beforeArgs, began, midGrant, midProfile, partial, endGrant, endProfile, final, savedProjection, publishedArgs,
-			rewound, replayGrant, , replayed, replayedProjection, replayedArgs] = results;
+		const [, , beforeRoot, began, midGrant, midProfile, partial, endGrant, endProfile, final, savedProjection, publishedRoot,
+			rewound, replayGrant, , replayed, replayedProjection, replayedRoot] = results;
 		const [, midEntries, midNativeCycles, midNativePc, , midWriteExits] = midProfile.split(' ').map(Number);
 		const [, , nativeCycles, , result, writeExits] = endProfile.split(' ').map(Number);
 		const [, tailCycles, active] = endGrant.split(' ').map(Number);
@@ -125,16 +125,16 @@ try {
 		// would leave native execution on every store instead of this hot tail.
 		assert.ok(nativeCycles - midNativeCycles > tailCycles * 0.8);
 		assert.ok(writeExits > midWriteExits && writeExits - midWriteExits < iterations / 32,
-			'the hot RAM writes are generated, while projection/history writes take bounded exits');
+			`the hot RAM writes are generated, while projection/history writes take bounded exits (O${optLevel}: ${midWriteExits} → ${writeExits})`);
 		assert.equal(active, 0);
 		assert.equal(result, iterations);
 		assert.equal(final, String(finalHash));
 		assert.equal(savedProjection, String(projectionHash), 'the command is a notification, not a RAM write');
-		assert.notEqual(publishedArgs, beforeArgs, 'the command publishes roots through the private owner');
+		assert.notEqual(publishedRoot, beforeRoot, 'the command publishes roots through the private owner');
 		assert.notEqual(partial, final);
 		assert.equal(rewound, partial, 'arming history in the hot fixed service preserves its older store page');
 		assert.equal(replayGrant, endGrant);
-		assert.deepEqual([replayed, replayedProjection, replayedArgs], [final, savedProjection, publishedArgs]);
+		assert.deepEqual([replayed, replayedProjection, replayedRoot], [final, savedProjection, publishedRoot]);
 		console.log(`PINNED-NATIVE-STORE:PASS O${optLevel} (byte/word, watched history, projection and exact replay)`);
 	}
 } finally {

@@ -24,13 +24,6 @@ local end_bank<const> = 8 -- H:21 C:681,748
 local trace_head<const> = 4 -- C:765 H:23
 local cpp_policy<const> = 1 -- C:740,1266 H:160-163
 
-struct atomic_arguments
-	mode_key: u32 -- C:781,1276
-	new_index_key: u32 -- C:781
-	active_thread: addr -- C:1277
-	pending_top: u32 -- C:1274-1277
-end
-
 struct atomic_context
 	work: u32 -- C:546,770,1272
 	limit: u32 -- C:546,771,1264
@@ -78,13 +71,15 @@ local atomic_work<const> = function(state, limit, scope) -- C:716-724,731
 		*remark_state = gray << remark_shift -- C:683 H:217
 		stage = gray -- C:751
 	end
-	local arguments<const>: *atomic_arguments = layout.ram_base + state + layout.arguments_offset -- C:1274-1277,781
+	local head<const>: *root_head_input = layout.ram_base + state + layout.remark_head_offset -- C:781,1276
 	if work < limit and stage == gray then -- C:742,749,751
+		local threads<const>: *root_descriptors = layout.ram_base + state + layout.root_banks_offset -- C:1277
+		local pending_top<const>: *u32 = layout.ram_base + state + layout.pending_top_offset -- C:1274-1277
 		quantum.work = work -- C:759,1272
 		quantum.limit = limit -- C:759,1264
 		quantum.atomic = 1 -- C:759,1265
-		work = trace.trace_quantum(control, arena, metadata, context, arguments.mode_key, -- C:759,1276
-			arguments.active_thread, arguments.pending_top, cpp_policy) -- C:759,1274-1277
+		work = trace.trace_quantum(control, arena, metadata, context, head.mode, -- C:759,1276
+			threads.active, *pending_top, cpp_policy) -- C:759,1274-1277
 		local frontier<const>: *u32 = layout.ram_base + control + control_layout.internal.trace_record_offset -- C:765
 		if *frontier ~= 0 or control_layout.internal.index_word(control, trace_head) ~= 0 then -- C:765
 			return work -- C:766
@@ -94,7 +89,7 @@ local atomic_work<const> = function(state, limit, scope) -- C:716-724,731
 	if work < limit then -- C:742,749,761,768
 		quantum.work = work -- C:770
 		quantum.limit = limit -- C:771
-		work = weak.clear_weak_step(control, arena, metadata, context, arguments.mode_key, arguments.new_index_key, cpp_policy) -- C:784
+		work = weak.clear_weak_step(control, arena, metadata, context, head.mode, head.new_index, cpp_policy) -- C:781,784
 		local floor<const> = allocator.bmsx_dlmalloc_floor(arena) -- C:793 A:49-50
 		work = epoch.finish_atomic_collection(control, arena, metadata, state - floor, work) -- C:784,787-795 A:50
 	end

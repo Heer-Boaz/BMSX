@@ -127,8 +127,7 @@ constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 enum class HeapServiceProjection : uint32_t {
 	PublishRoots = 0,
 };
-constexpr uint32_t HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
-enum class HeapServiceGcArgumentField : uint32_t { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 };
+constexpr uint32_t HEAP_SERVICE_PENDING_TOP_OFFSET = 0x79c;
 
 // One reserved Value cell: the payload word, then its separate tag byte.
 constexpr uint32_t HEAP_SERVICE_VALUE_CELL_OFFSET = 0x7a0u;

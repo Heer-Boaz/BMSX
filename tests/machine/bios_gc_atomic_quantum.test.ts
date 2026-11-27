@@ -8,8 +8,8 @@ import { GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceGcArgumentField, HeapServiceRemarkHeadField, HeapServiceTraceField,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_PENDING_TOP_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -43,7 +43,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET, args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
+	const context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET, pendingTop = management + HEAP_SERVICE_PENDING_TOP_OFFSET;
 	const roots = management + HEAP_SERVICE_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;
 	const beforeWork = control + GC_LAST_EPOCH_WORK - 4;
 	const records: number[][] = [];
@@ -63,10 +63,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(gc.phase(), GcPhase.Atomic);
 		target.publishHeapRemarkHead();
 		target.publishHeapRootBanks();
-		for (const [field, word] of [[HeapServiceGcArgumentField.ModeKey, modeKey],
-			[HeapServiceGcArgumentField.NewIndexKey, gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)],
-			[HeapServiceGcArgumentField.ActiveThread, target.rootThread.address],
-			[HeapServiceGcArgumentField.PendingTop, 0]]) target.memory.writeRamRecordWord(args + field, word);
+		target.memory.writeRamRecordWord(pendingTop, 0);
 		records.push([weak, gc.tables.arrayAddress(weak), firstDead, secondDead, retained]);
 	}
 	assert.deepEqual(records[0], records[1]);

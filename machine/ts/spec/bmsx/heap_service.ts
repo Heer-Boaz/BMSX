@@ -117,8 +117,7 @@ export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 export const enum HeapServiceProjection {
 	PublishRoots = 0,
 }
-export const HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
-export const enum HeapServiceGcArgumentField { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 }
+export const HEAP_SERVICE_PENDING_TOP_OFFSET = 0x79c;
 
 // One reserved Value cell: the payload word, then its separate tag byte.
 export const HEAP_SERVICE_VALUE_CELL_OFFSET = 0x7a0;

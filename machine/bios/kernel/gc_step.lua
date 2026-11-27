@@ -50,11 +50,11 @@ local step<const> = function(management, limit, growing_thread, compact_threads,
 	end
 	local arena<const> = management + layout.arena_offset -- C:1257
 	local trace<const>: *mark_quantum_context = layout.ram_base + management + layout.trace_context_offset -- C:1261-1262
-	local mode_key<const>: *u32 = layout.ram_base + management + layout.arguments_offset -- C:1276; first projected word
+	local head<const>: *root_head_input = layout.ram_base + management + layout.remark_head_offset -- C:1276; diagnostic String owner
 	local capacity<const> = admission.heap_capacity(arena) -- C:1257
 	trace.limit = limit -- C:1264
 	local work<const> = mark.mark_quantum(control, arena, management + layout.metadata_offset, management + layout.remark_head_offset,
-		management + layout.root_banks_offset, management + layout.trace_context_offset, *mode_key, capacity, scope) -- C:1093-1158,1250-1258
+		management + layout.root_banks_offset, management + layout.trace_context_offset, head.mode, capacity, scope) -- C:1093-1158,1250-1258
 	return work -- C:1045
 end
 

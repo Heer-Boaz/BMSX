@@ -225,7 +225,7 @@ for (const opt of [0, 3] as const) {
 			const slots = 4096;
 			const weak = target.createTable(slots, 0), mode = target.createTable(0, 2), removed = target.createTable(0, 0);
 			const value = target.stringPool.intern('v');
-			target.gc.tables.set(mode, valueString(target.gc['modeKey']), valueString(value));
+			target.gc.tables.set(mode, valueString(target.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode)), valueString(value));
 			target.gc.tables.setMetatableAddress(weak, mode);
 			target.gc.tables.set(weak, valueInteger(1), valueTable(f.garbage));
 			target.gc.tables.set(weak, valueInteger(2), valueTable(removed));
