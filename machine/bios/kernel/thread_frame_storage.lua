@@ -234,8 +234,16 @@ local reserve_frame_space<const> = function(address, value_end, frame_end, root)
 	return -- V:166 W:189; acquisition has no language results
 end
 
+-- The firmware owns the root bank's next zero-based EXEC window.
+local reserve_system_entry<const> = function(value_end) -- W:181-189; firmware admits the entry before EXEC
+	local port<const>: *u32 = layout.management_address -- T:227 A:25 C:234 B:20
+	local roots<const>: *root_descriptors = layout.ram_base + *port + layout.root_banks_offset -- X:5274; the root is already firmware-published
+	reserve_frame_space(roots.root, value_end, 2, 0) -- W:182-189 V:159-166
+end
+
 return {
 	internal = { update_charge = update_charge, resize_value_stack = resize_value_stack, grow_frame_controls = grow_frame_controls },
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
 	prepare_frame_space = prepare_frame_space, reserve_frame_space = reserve_frame_space,
+	reserve_system_entry = reserve_system_entry,
 }

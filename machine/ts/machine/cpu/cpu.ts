@@ -2369,17 +2369,17 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.activeThread, base = thread.stackTop;
 		const capacity = Math.max(1, numParams, maxStack);
 		const end = base + capacity;
-		const preparedCartridge = epcWord === undefined && executionDomainId >= 0;
-		if (preparedCartridge && !thread.frameSpaceFits(end)) {
+		const exception = epcWord !== undefined, boardBank = thread.address === CPU_RESET_BANK_ADDRESS;
+		if (!exception && !boardBank && !thread.frameSpaceFits(end)) {
 			this.hardHalt();
 			return null;
 		}
 		if (end > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		const image = entry.image!;
-		if (thread.address === CPU_RESET_BANK_ADDRESS) {
-			const frames = epcWord === undefined ? thread.frameDepth + 2 : thread.frameDepth + 1;
+		if (boardBank) {
+			const frames = exception ? thread.frameDepth + 1 : thread.frameDepth + 2;
 			if (end > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		} else if (!preparedCartridge) this.ensureStackCapacity(end, valueNil(), true, epcWord !== undefined);
+		} else if (exception) this.ensureStackCapacity(end, valueNil(), true, true);
 		const frame = thread.acquireFrame();
 		frame.executionImage = image;
 		frame.decodedPage = null;

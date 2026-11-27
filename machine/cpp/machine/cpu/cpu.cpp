@@ -1949,19 +1949,19 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
 	auto* image = record.image;
 	const auto domain = image->executionDomainId;
 	const bool exception = (flags & FRAME_EXCEPTION) != 0u;
-	const bool preparedCartridge = !exception && domain >= 0;
+	const bool boardBank = m_activeThread->address == CPU_RESET_BANK_ADDRESS;
 	const auto admitted = ArgumentPlacement::forEntry(m_activeThread->stackTop(), 0, entry);
-	if (preparedCartridge && (!admitted || !m_activeThread->frameSpaceFits(admitted->stackEnd()))) {
+	if (!exception && !boardBank && (!admitted || !m_activeThread->frameSpaceFits(admitted->stackEnd()))) {
 		hardHalt();
 		return nullptr;
 	}
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
 	const u32 address = record.address;
-	if (m_activeThread->address == CPU_RESET_BANK_ADDRESS) {
+	if (boardBank) {
 		const auto frames = m_activeThread->frameDepth() + (exception ? 1u : 2u);
 		if (placement.stackEnd() > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LuaOutOfMemorySignal{};
-	} else if (!preparedCartridge) m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), exception);
+	} else if (exception) m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), true);
 	auto* frame = m_activeThread->acquireFrame();
 	frame->executionImage = image;
 	frame->initializeControl({

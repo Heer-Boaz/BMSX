@@ -44,7 +44,7 @@ export type GeneratedLuaModule = {
 
 function systemStartupLayoutModule(prepared: boolean, userIrq: boolean): GeneratedLuaModule {
 	const entries = ['managed_entry'];
-	if (prepared) entries.push('prepared_entry');
+	if (prepared) entries.push('prepared_entry', 'managed_entry_slots');
 	entries.push('managed_exception');
 	if (userIrq) entries.push('user_irq');
 	return {
@@ -314,6 +314,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			if (Math.max(target.numParams, target.maxStack) > prepared.valueSlots)
 				throw new Error(`Prepared System entry '${prepared.path}:${prepared.exportPathKey}' does not fit its ${prepared.valueSlots}-slot frame.`);
 			values.set('prepared_entry', target.address);
+			values.set('managed_entry_slots', Math.max(1, managed.numParams, managed.maxStack));
 		}
 		const userIrq = options.userIrqEntry === undefined ? undefined
 			: resolveStaticEntry(options.userIrqEntry, 'User IRQ entry');

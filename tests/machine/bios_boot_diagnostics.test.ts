@@ -1,3 +1,4 @@
+import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -76,7 +77,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(nativeIds.every(id => id >= RAM_BASE));
 		// Independent C/WASM allocator and TS StringPool with the exact original
 		// bytes, not restored arena metadata or injected addresses.
-		oracle.heapAllocator.reset(DYNAMIC_RAM_BASE);
+		resetAllocatorReference(oracle.memory, oracle.heapAllocator, DYNAMIC_RAM_BASE);
 		oracle.luaHeap.setCollectionTarget(1024 * 1024);
 		assert.deepEqual(startupTexts.map(text => oracle.stringPool.intern(text)), nativeIds);
 

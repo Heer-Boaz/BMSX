@@ -35,7 +35,7 @@ export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
 	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, TABLE_GROW_MODULE, 'kernel/table_plan', 'kernel/table_insert_existing',
-	STOPPED_FINAL_MARK_MODULE, THREAD_FRAME_STORAGE_MODULE,
+	STOPPED_FINAL_MARK_MODULE,
 	CAPTURED_CLOSURE_MODULE, 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
 	'kernel/gc_runtime_layout', 'kernel/global_bank', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',

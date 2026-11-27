@@ -1,3 +1,4 @@
+import { resetAllocatorReference } from '../../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -27,7 +28,7 @@ const expected: string[] = ['R'];
 type Live = { address: number; bytes: number; owned: boolean };
 let live: Live[] = [];
 let seed = 0x5eed4ea9, exhausted = 0, refused = 0;
-allocator.reset(initialFloor);
+resetAllocatorReference(memory, allocator, initialFloor);
 
 function next(bound: number): number {
 	seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

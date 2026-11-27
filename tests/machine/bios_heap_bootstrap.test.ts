@@ -1,3 +1,4 @@
+import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -61,7 +62,7 @@ for (const optLevel of [0, 3] as const) {
 			memory.writeRamRecordWord(end, 0xdecafbad);
 			// Mechanical bus state comes from reset independent of the algorithm.
 			memory.setRamBusEnd(RAM_BASE + floor);
-			oracle.heapAllocator.reset(staticEnd);
+			resetAllocatorReference(oracle.memory, oracle.heapAllocator, staticEnd);
 			const nativeBudget = new LuaHeap(oracle);
 			oracle.stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, bucketAddress, bucketCount);
 

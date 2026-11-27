@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -26,7 +27,12 @@ int main(int argc, char** argv) {
 		else if (op == "A" || op == "T" || op == "G" || op == "P") input >> a >> b;
 		else if (op == "W") input >> a >> b >> c;
 		if (op == "R") {
-			allocator.reset(a);
+			// Frozen native startup, used only by this allocator reference.
+			const u32 management = allocator.managementOffset(), floor = allocator.floorOffset(a);
+			std::memset(memory.ramData() + management, 0, RUNTIME_MANAGEMENT_SIZE);
+			memory.invalidateRamWrite(management, RUNTIME_MANAGEMENT_SIZE);
+			bmsx_dlmalloc_reset({memory.ramData(), allocator.stateOffset(), memory.ramWriteWatches().groupData()}, floor, management);
+			memory.setRamBusEnd(RAM_BASE + floor);
 			addresses.clear();
 			std::cout << "R\n";
 		} else if (op == "S") {

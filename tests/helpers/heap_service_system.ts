@@ -111,7 +111,7 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	const boot = executionAddressSpace.resolveSystemDomain();
 	const management = arena.managementOffset(), floor = arena.floorOffset(boot.staticEnd);
 	memory.bindDlmalloc(arena.allocatorStateOffset()).reset(floor, management);
-	arena.publishFloor(floor);
+	memory.setRamBusEnd(RAM_BASE + floor);
 	luaHeap.setCollectionTarget(1024 * 1024);
 
 	// These are the native reference's original permanent roots, in allocation order.

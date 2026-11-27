@@ -1,7 +1,6 @@
 #include "machine/cpu/heap_allocator.h"
 
 #include <algorithm>
-#include <cstring>
 
 #include "machine/memory/memory.h"
 #include "spec/bmsx/memory_map.h"
@@ -25,23 +24,11 @@ u32 HeapAllocator::floorOffset(u32 address) const {
 	return (offset + PAGE_MASK) & ~PAGE_MASK;
 }
 
-void HeapAllocator::reset(u32 floorAddress) {
-	std::memset(m_memory.ramData() + m_management, 0, RUNTIME_MANAGEMENT_SIZE);
-	m_memory.invalidateRamWrite(m_management, RUNTIME_MANAGEMENT_SIZE);
-	const u32 floor = floorOffset(floorAddress);
-	bmsx_dlmalloc_reset(m_arena, floor, m_management);
-	publishFloor(floor);
-}
-
 bool HeapAllocator::setFloor(u32 floorAddress) {
 	const u32 floor = floorOffset(floorAddress);
 	if (!bmsx_dlmalloc_set_floor(m_arena, floor)) return false;
-	publishFloor(floor);
+	m_memory.setRamBusEnd(RAM_BASE + floor);
 	return true;
-}
-
-void HeapAllocator::publishFloor(u32 offset) {
-	m_memory.setRamBusEnd(RAM_BASE + offset);
 }
 
 u32 HeapAllocator::floorAddress() const { return m_memory.ramBusEnd(); }

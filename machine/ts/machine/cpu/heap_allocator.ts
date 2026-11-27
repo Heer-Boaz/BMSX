@@ -28,23 +28,12 @@ export class HeapAllocator {
 		return (offset + PAGE_MASK) & ~PAGE_MASK;
 	}
 
-	public reset(floorAddress: number): void {
-		this.memory.ramData().fill(0, this.management, this.management + RUNTIME_MANAGEMENT_SIZE);
-		this.memory.invalidateRamWrite(this.management, RUNTIME_MANAGEMENT_SIZE);
-		const floor = this.floorOffset(floorAddress);
-		this.arena.reset(floor, this.management);
-		this.publishFloor(floor);
-	}
-
 	public setFloor(floorAddress: number): boolean {
 		const floor = this.floorOffset(floorAddress);
 		if (this.arena.setFloor(floor) === 0) return false;
-		this.publishFloor(floor);
+		this.memory.setRamBusEnd(RAM_BASE + floor);
 		return true;
 	}
-
-	/** The allocator has accepted this offset; now publish the system bus decode. */
-	public publishFloor(offset: number): void { this.memory.setRamBusEnd(RAM_BASE + offset); }
 
 	public floorAddress(): number { return this.memory.ramBusEnd(); }
 	public capacityBytes(): number { return RAM_BASE + this.management - this.floorAddress(); }

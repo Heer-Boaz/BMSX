@@ -23,8 +23,6 @@ public:
 	u32 managementOffset() const { return m_management; }
 	u32 stateOffset() const { return m_arena.state; }
 	u32 floorOffset(u32 address) const;
-	void publishFloor(u32 offset);
-	void reset(u32 floorAddress);
 	bool setFloor(u32 floorAddress);
 	u32 floorAddress() const;
 	u32 capacityBytes() const;

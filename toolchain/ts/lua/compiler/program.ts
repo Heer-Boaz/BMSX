@@ -23,6 +23,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/set_global', exportPathKey: 'set_global', numParams: 2 },
 	{ path: 'kernel/frame_upvalue', exportPathKey: 'set_frame_upvalue', numParams: 4 },
 	{ path: 'kernel/heap_floor', exportPathKey: 'admit_static_end', numParams: 1 },
+	{ path: 'kernel/thread_frame_storage', exportPathKey: 'reserve_system_entry', numParams: 1 },
 	{ path: 'kernel/system_image_bind', exportPathKey: 'bind_cartridge', numParams: 7 },
 	{ path: 'kernel/string_index', exportPathKey: 'install', numParams: 1 },
 	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
