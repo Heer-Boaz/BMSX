@@ -8,6 +8,7 @@ return {
 	ram_base = 0x08000000,
 	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
 	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request
+	system_global_bank_offset = 0x218,
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,

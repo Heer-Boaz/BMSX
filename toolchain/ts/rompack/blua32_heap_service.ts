@@ -39,7 +39,7 @@ export const HEAP_SERVICE_MODULES = [
 	INTERRUPT_PRELUDE_MODULE, STOPPED_FINAL_MARK_MODULE, THREAD_FRAME_STORAGE_MODULE,
 	CAPTURED_CLOSURE_MODULE, 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
-	'kernel/gc_runtime_layout', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
+	'kernel/gc_runtime_layout', 'kernel/global_bank', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
 ] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 

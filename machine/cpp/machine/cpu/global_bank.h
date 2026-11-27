@@ -27,7 +27,6 @@ public:
 	const ValueSpan& values() { return m_values; }
 	std::optional<u32> find(StringId key) const;
 	u32 registerName(StringId key, Value pending = valueNil());
-	void publishHeapRootBank(u32 descriptor) const;
 	void bind();
 	void clear();
 

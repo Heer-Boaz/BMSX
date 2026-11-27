@@ -9,7 +9,7 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceGcArgumentField, HeapServiceTraceField,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceGcArgumentField, HeapServiceRemarkHeadField, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -49,7 +49,7 @@ function fixture(optLevel: 0 | 3) {
 	const records: number[][] = [];
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		const { gc, stringPool } = target, modeKey = gc['modeKey'];
+		const { gc, stringPool } = target, modeKey = gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
 		const weak = target.createTable(arraySlots, 0), meta = target.createTable(0, 2);
 		const firstDead = target.createTable(0, 0), secondDead = target.createTable(0, 0), retained = target.createTable(0, 0);
 		gc.tables.set(meta, valueString(modeKey), valueString(stringPool.intern('v')));
@@ -64,7 +64,7 @@ function fixture(optLevel: 0 | 3) {
 		target.publishHeapRemarkHead();
 		target.publishHeapRootBanks();
 		for (const [field, word] of [[HeapServiceGcArgumentField.ModeKey, modeKey],
-			[HeapServiceGcArgumentField.NewIndexKey, target['newIndexKey']],
+			[HeapServiceGcArgumentField.NewIndexKey, gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)],
 			[HeapServiceGcArgumentField.ActiveThread, target.rootThread.address],
 			[HeapServiceGcArgumentField.PendingTop, 0]]) target.memory.writeRamRecordWord(args + field, word);
 		records.push([weak, gc.tables.arrayAddress(weak), firstDead, secondDead, retained]);

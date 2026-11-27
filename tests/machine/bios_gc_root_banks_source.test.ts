@@ -31,8 +31,8 @@ test('root bank and Thread root descriptors bind the exact raw publication layou
 	const span = file.chunk.body.get(file.chunk.body.length - 1).span;
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	for (const [name, size, fields] of [
-		['root_bank', 16, [['count', 0, 4], ['payloads', 4, 4], ['tags', 8, 4], ['names', 12, 4]]],
-		['root_descriptors', 128, [['root', 0, 4], ['active', 4, 4], ['completion_thread', 8, 4], ['halted', 12, 4], ['banks', 16, 112]]],
+		['root_bank', 16, [['count', 0, 4], ['payloads', 4, 4], ['tags', 8, 4], ['padding', 12, 4]]],
+		['root_descriptors', 96, [['root', 0, 4], ['active', 4, 4], ['completion_thread', 8, 4], ['halted', 12, 4], ['banks', 16, 80]]],
 	] as const) {
 		const type = types.resolve(path, { name, arrayLengths: [], span });
 		assert.equal(type.size, size, name);

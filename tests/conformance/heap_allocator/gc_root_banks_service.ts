@@ -13,6 +13,7 @@ import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GcRootBank } from '../../../machine
 import { GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueString } from '../../../machine/ts/machine/cpu/value';
+import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
 import { HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET,
 	HeapServiceRootBankField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
@@ -59,16 +60,17 @@ try {
 
 		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress({ image: system.systemImage, symbols: system.systemSymbols }, 'kernel/gc_full', 'collect_full'), cartRom);
 		driver.launch();
-		const globals = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + HEAP_SERVICE_ROOT_BANK_SIZE;
-		// A hardware-clock allowance may reach Globals before another
-		// cursor spill. Observe the actual publication, not that spill.
-		driver.reach(() => rootCursor() !== 0 && memory.readRamRecordWord(globals + HeapServiceRootBankField.Count) > 0, 'published root banks');
+		const globals = management + GLOBAL_BANK_OFFSET;
+		driver.reach(() => rootCursor() !== 0, 'root scan admitted');
 		const globalSlot = cpu['globalBank'].find(name)!;
-		assert.equal(memory.readRamRecordWord(globals + HeapServiceRootBankField.Count), cpu.globalSlotCount);
-		assert.equal(memory.readRamRecordWord(memory.readRamRecordWord(globals + HeapServiceRootBankField.Names) + 4 * globalSlot), name);
-		assert.equal(memory.readRamRecordWord(memory.readRamRecordWord(globals + HeapServiceRootBankField.Payloads) + 4 * globalSlot), value);
-		assert.equal(memory.readRamRecordByte(memory.readRamRecordWord(globals + HeapServiceRootBankField.Tags) + globalSlot), ValueTag.String);
-		const constantBank = globals + (GcRootBank.Cart0Constants - GcRootBank.Globals) * HEAP_SERVICE_ROOT_BANK_SIZE;
+		const globalBase = memory.readRamRecordWord(globals + GlobalBankField.Base);
+		const capacity = memory.readRamRecordWord(globals + GlobalBankField.Capacity);
+		assert.equal(memory.readRamRecordWord(globals + GlobalBankField.Count), cpu.globalSlotCount);
+		assert.equal(memory.readRamRecordWord(globalBase + 4 * globalSlot), name);
+		assert.equal(memory.readRamRecordWord(globalBase + 12 * capacity + 4 * globalSlot), value);
+		assert.equal(memory.readRamRecordByte(globalBase + 16 * capacity + globalSlot), ValueTag.String);
+		const constantBank = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE
+			+ (GcRootBank.Cart0Constants - GcRootBank.SystemConstants) * HEAP_SERVICE_ROOT_BANK_SIZE;
 		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Count), constants.length);
 		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Payloads),
 			image.constantStringBase);

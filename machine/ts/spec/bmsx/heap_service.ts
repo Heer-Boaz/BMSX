@@ -75,12 +75,12 @@ export const enum PreparedWindowField { Destination = 0, SourceSlot = 4, Copied 
 export const HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 }
 
-// Four Thread addresses followed by the seven root-bank descriptors.
+// Four Thread addresses followed by the five remaining root-bank descriptors.
 export const HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
 export const HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
 export const HEAP_SERVICE_ROOT_BANK_SIZE = 16;
-export const HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 7 * HEAP_SERVICE_ROOT_BANK_SIZE;
-export const enum HeapServiceRootBankField { Count = 0, Payloads = 4, Tags = 8, Names = 12 }
+export const HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 5 * HEAP_SERVICE_ROOT_BANK_SIZE;
+export const enum HeapServiceRootBankField { Count = 0, Payloads = 4, Tags = 8 }
 
 // CPU-private load selectors for the existing non-RAM root storage. These
 // logical planes do not occupy memory or participate in ordinary bus decode.

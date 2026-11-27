@@ -3274,27 +3274,23 @@ void CPU::publishHeapRootBanks() {
 	const u32 descriptor = m_heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 	m_memory.writeRamRecordPair(descriptor, m_rootView.address, m_activeThread ? m_activeThread->address : 0u);
 	m_memory.writeRamRecordPair(descriptor + 8u, m_completionThreadAddress, m_haltedUntilIrqThreadAddress);
-	const auto publish = [this](u32 address, u32 count, u32 payloads, u32 tags, u32 names) {
-		m_memory.writeRamRecordPair(address + static_cast<u32>(Field::Count), count, payloads);
-		m_memory.writeRamRecordPair(address + static_cast<u32>(Field::Tags), tags, names);
-	};
-	const u32 banks = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
-	m_systemGlobalBank.publishHeapRootBank(banks);
-	m_globalBank.publishHeapRootBank(banks + HEAP_SERVICE_ROOT_BANK_SIZE);
-	u32 destination = banks + 2u * HEAP_SERVICE_ROOT_BANK_SIZE;
+	u32 destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
 	for (u32 plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
 		const auto& image = m_executionImagesByDomain[plane];
-		publish(destination, image ? image->constantStringRootCount : 0u,
-			image ? image->constantStringBase : 0u, 0u, 0u);
+		m_memory.writeRamRecordPair(destination, image ? image->constantStringRootCount : 0u,
+			image ? image->constantStringBase : 0u);
 	}
-	publish(destination, static_cast<u32>(m_completionValueCount),
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE,
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionTags) * HEAP_SERVICE_ROOT_PORT_STRIDE, 0u);
+	m_memory.writeRamRecordPair(destination, static_cast<u32>(m_completionValueCount),
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE);
+	m_memory.writeRamRecordWord(destination + static_cast<u32>(Field::Tags),
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionTags) * HEAP_SERVICE_ROOT_PORT_STRIDE);
 	const u32 count = static_cast<u32>(rootBankSlots(GcRootBank::ConcatOperands));
 	const u32 source = count == 0u ? 0u : m_concat.source;
-	publish(destination + HEAP_SERVICE_ROOT_BANK_SIZE, count,
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE + 4u * source,
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatTags) * HEAP_SERVICE_ROOT_PORT_STRIDE + source, 0u);
+	destination += HEAP_SERVICE_ROOT_BANK_SIZE;
+	m_memory.writeRamRecordPair(destination, count,
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE + 4u * source);
+	m_memory.writeRamRecordWord(destination + static_cast<u32>(Field::Tags),
+		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::ConcatTags) * HEAP_SERVICE_ROOT_PORT_STRIDE + source);
 }
 
 u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {

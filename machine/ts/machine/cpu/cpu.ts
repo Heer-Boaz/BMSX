@@ -5359,33 +5359,28 @@ export class CPU implements MappedPageInvalidator {
 		return this.concat.registersLeft && this.activeThread.address === thread ? this.concat.nextRegister + this.concat.registersLeft : 0;
 	}
 
-	private writeHeapRootBank(address: number, count: number, payloads: number, tags: number, names: number): void {
-		this.memory.writeRamRecordPair(address + HeapServiceRootBankField.Count, count, payloads);
-		this.memory.writeRamRecordPair(address + HeapServiceRootBankField.Tags, tags, names);
-	}
-
 	/** Publish addresses and extents only. Root data stays with its CPU owner. */
 	public publishHeapRootBanks(): void {
 		const memory = this.memory, descriptor = this.heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 		memory.writeRamRecordPair(descriptor, this.rootThread.address, this.activeThread.address);
 		memory.writeRamRecordPair(descriptor + 8, this.completionThread, this.haltedUntilIrqThread);
-		const banks = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
-		this.systemGlobalBank.publishHeapRootBank(banks);
-		this.globalBank.publishHeapRootBank(banks + HEAP_SERVICE_ROOT_BANK_SIZE);
-		let destination = banks + 2 * HEAP_SERVICE_ROOT_BANK_SIZE;
+		let destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
 		for (let plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
 			const image = this.executionImagesByDomain[plane];
-			this.writeHeapRootBank(destination, image === null ? 0 : image.constantStringRootCount,
-				image === null ? 0 : image.constantStringBase, 0, 0);
+			memory.writeRamRecordPair(destination, image === null ? 0 : image.constantStringRootCount,
+				image === null ? 0 : image.constantStringBase);
 		}
-		this.writeHeapRootBank(destination, this.completionValueCount,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionTags * HEAP_SERVICE_ROOT_PORT_STRIDE, 0);
+		memory.writeRamRecordPair(destination, this.completionValueCount,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE);
+		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionTags * HEAP_SERVICE_ROOT_PORT_STRIDE);
 		const count = this.rootBankSlots(GcRootBank.ConcatOperands);
 		const source = count === 0 ? 0 : this.concat.source;
-		this.writeHeapRootBank(destination + HEAP_SERVICE_ROOT_BANK_SIZE, count,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE + 4 * source,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatTags * HEAP_SERVICE_ROOT_PORT_STRIDE + source, 0);
+		destination += HEAP_SERVICE_ROOT_BANK_SIZE;
+		memory.writeRamRecordPair(destination, count,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE + 4 * source);
+		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
+			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.ConcatTags * HEAP_SERVICE_ROOT_PORT_STRIDE + source);
 	}
 
 	private readHeapServiceRoot(offset: number, kind: MemoryAccessKind): number {

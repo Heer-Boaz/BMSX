@@ -86,12 +86,12 @@ enum class PreparedWindowField : uint32_t { Destination = 0, SourceSlot = 4, Cop
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };
 
-// Four Thread addresses followed by the seven root-bank descriptors.
+// Four Thread addresses followed by the five remaining root-bank descriptors.
 constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;
 constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE = 16;
 constexpr uint32_t HEAP_SERVICE_ROOT_BANK_SIZE = 16;
-constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 7u * HEAP_SERVICE_ROOT_BANK_SIZE;
-enum class HeapServiceRootBankField : uint32_t { Count = 0, Payloads = 4, Tags = 8, Names = 12 };
+constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_SIZE = HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + 5u * HEAP_SERVICE_ROOT_BANK_SIZE;
+enum class HeapServiceRootBankField : uint32_t { Count = 0, Payloads = 4, Tags = 8 };
 
 // CPU-private load selectors for the existing non-RAM root storage. These
 // logical planes do not occupy memory or participate in ordinary bus decode.

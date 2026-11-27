@@ -9,7 +9,7 @@ import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machi
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation, HeapServiceTraceField,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation, HeapServiceRemarkHeadField, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -60,7 +60,7 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
 			[control, cpu.heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
-				cpu.gc['modeKey'], cpu.heapAllocator.capacityBytes(), 0]));
+				cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);

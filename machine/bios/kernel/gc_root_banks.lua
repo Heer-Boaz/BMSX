@@ -6,7 +6,11 @@ module<const>
 local mark<const> = require('kernel/gc_mark') -- T:307-309,331-338 U:5087,5092,5108-5109 P:3157-3158,3163,3178-3181
 local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5099,5104 P:3157,3169,3174 C:636
 local string_bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; peel the ordinal bit from the physical payload
+local layout<const> = require('kernel/gc_runtime_layout') -- O:6; addresses are relative to the existing System management region
+local _global_bank<const> = require('kernel/global_bank') -- G:21-22,31 B:23-24,34; reuse the namespace owner
 local ram_base<const> = 0x08000000 -- O:6
+local ram_word_mask<const> = 0x003ffffc -- G:21 B:23; preserve record address normalization
+local ram_byte_mask<const> = 0x003fffff -- G:22 B:24
 local trace_head<const> = 4 -- T:25,313 H:23
 local root_cursor<const> = 0x58 -- T:43 H:42
 local cursor_bits<const> = 20 -- T:58 C:71
@@ -18,8 +22,8 @@ local concat<const> = 7 -- T:69 U:5077,5095 H:20 P:3147,3166
 local string_tag<const> = 5 -- V:9-10 W:21-22 U:5099 P:3169
 local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
--- The stopped caller publishes descriptors, not copied global Values.
--- GlobalBank planes are the existing b, b+12*c, b+16*c (c is capacity).
+-- GlobalBank owns the physical Base/Capacity/Count and its b, b+12*c,
+-- b+16*c backing planes. No global root descriptor is published.
 -- Constant planes borrow the resolved RAM String prefix of the physical
 -- binding backing, in pool ordinal order, not all constant slots. Completion counts its live RET Values;
 -- Concat counts every unread captured slot (but traces only Strings).
@@ -29,7 +33,7 @@ struct root_bank
 	count: u32 -- U:5073-5079 P:3143-3149
 	payloads: addr -- U:5085,5092,5096-5099,5103-5104 P:3155,3163,3168-3169,3173-3174 G:21 B:23
 	tags: addr -- U:5085,5092,5099 P:3155,3163,3169 G:22 B:24
-	names: addr -- U:5087 P:3157 G:31 B:34
+	padding: u32 -- U:5073-5079 P:3143-3149; align each Count+Payload pair
 end
 
 struct root_descriptors
@@ -37,16 +41,15 @@ struct root_descriptors
 	active: addr -- U:5108 P:3179
 	completion_thread: addr -- U:5108 P:3180
 	halted: addr -- U:5109 P:3181
-	banks: root_bank[7] -- T:69 H:20
+	banks: root_bank[5] -- T:69 H:20
 end
 
-local mark_root_bank<const> = function(control, arena, metadata, bank_address, kind, first, stop, replace_color_byte) -- U:5082 P:3152
-	local bank<const>: *root_bank = bank_address -- U:5084,5096,5103 P:3154,3168,3173
-	local words<const>: *u32 = bank.payloads -- U:5085,5092,5096,5104 P:3155,3163,3168,3174
+local mark_root_bank<const> = function(control, arena, metadata, payloads, tags_base, names_base, kind, first, stop, replace_color_byte) -- U:5082 P:3152
+	local words<const>: *u32 = payloads -- U:5084-5085,5092,5096,5103-5104 P:3154-3155,3163,3168,3173-3174
 	local work = 0 -- T:591,603 C:636; String work replaces the drained host latch
 	if kind < system_constants then -- U:5083 P:3153
-		local names<const>: *u32 = bank.names -- U:5084,5087 P:3154,3157 G:31 B:34
-		local tags<const>: *u8 = bank.tags -- U:5085,5087 P:3155,3158
+		local names<const>: *u32 = names_base -- U:5084,5087 P:3154,3157 G:31 B:34
+		local tags<const>: *u8 = tags_base -- U:5085,5087 P:3155,3158
 		while first < stop do -- U:5086 P:3156
 			work = work + strings.mark(metadata, names[first]) -- U:5087 P:3157
 			local _<const>, string_work<const> = mark.mark_value(control, arena, metadata, tags[first], words[first], trace_head, replace_color_byte) -- U:5087 P:3158
@@ -56,7 +59,7 @@ local mark_root_bank<const> = function(control, arena, metadata, bank_address, k
 		return work -- U:5089 P:3160 T:603 C:636
 	end
 	if kind == completion then -- U:5091 P:3162
-		local tags<const>: *u8 = bank.tags -- U:5092 P:3163
+		local tags<const>: *u8 = tags_base -- U:5092 P:3163
 		while first < stop do -- U:5092 P:3163
 			local _<const>, string_work<const> = mark.mark_value(control, arena, metadata, tags[first], words[first], trace_head, replace_color_byte) -- U:5092 P:3163
 			work = work + string_work -- T:603 C:636
@@ -65,7 +68,7 @@ local mark_root_bank<const> = function(control, arena, metadata, bank_address, k
 		return work -- U:5093 P:3164 T:603 C:636
 	end
 	if kind == concat then -- U:5095 P:3166
-		local tags<const>: *u8 = bank.tags -- U:5096-5099 P:3168-3169; the producer's plane base already includes source
+		local tags<const>: *u8 = tags_base -- U:5096-5099 P:3168-3169; the producer's plane base already includes source
 		while first < stop do -- U:5097 P:3167
 			if tags[first] == string_tag then -- U:5098-5099 P:3168-3169
 				work = work + strings.mark(metadata, words[first]) -- U:5099 P:3169
@@ -87,9 +90,20 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 	local saved<const> = *cursor -- T:589 C:620
 	local kind, next = saved >> cursor_bits, saved & cursor_mask -- T:590,592 C:621-622
 	while kind < stop do -- T:592 C:623
-		local bank<const>: *root_bank = &roots.banks[kind - system_globals] -- T:593 C:624-625; one record per live ordinal
-		local bank_end<const> = bank.count -- T:593 C:625 U:5073-5079 P:3143-3149
 		local globals<const> = kind < system_constants -- T:594 C:626
+		local bank_end, payloads, tags, names -- T:593 C:624-625 U:5073-5079 P:3143-3149
+		if globals then -- U:5083 P:3153
+			local namespace<const>: *namespace_bank = ram_base + control - layout.control_offset + layout.system_global_bank_offset + (kind - system_globals) * sizeof(namespace_bank) -- U:5074-5075,5084 P:3144-3145,3154
+			local base<const>, capacity<const> = namespace.base, namespace.capacity -- U:5084 P:3154 G:21-22,31 B:23-24,34
+			bank_end = namespace.count -- U:5074-5075 P:3144-3145
+			names = ram_base + (base & ram_word_mask) -- U:5087 P:3157 G:31 B:34
+			payloads = ram_base + ((base + 12 * capacity) & ram_word_mask) -- U:5085,5087 P:3155,3158 G:21 B:23
+			tags = ram_base + ((base + 16 * capacity) & ram_byte_mask) -- U:5085,5087 P:3155,3158 G:22 B:24
+		else -- U:5076-5079 P:3146-3149
+			local bank<const>: *root_bank = &roots.banks[kind - system_constants] -- T:593 C:624-625
+			bank_end, payloads = bank.count, bank.payloads -- T:593 C:625 U:5076-5079,5092,5096,5104 P:3146-3149,3163,3168,3174
+			if kind >= completion then tags = bank.tags end -- U:5091-5092,5095-5099 P:3162-3163,3166-3169
+		end
 		local words<const> = globals and 3 or 1 -- T:595 C:627
 		local worst<const> = words + (globals and 2 or 1) -- T:595 C:627
 		while next < bank_end do -- T:596 C:628
@@ -101,7 +115,7 @@ local trace_root_banks<const> = function(control, arena, metadata, descriptor, l
 			if amount < 1 then amount = 1 end -- T:601 C:633
 			local next_stop = next + amount -- T:601 C:633
 			if next_stop > bank_end then next_stop = bank_end end -- T:601 C:633
-			local string_work<const> = mark_root_bank(control, arena, metadata, bank, kind, next, next_stop, replace_color_byte) -- T:602 C:634
+			local string_work<const> = mark_root_bank(control, arena, metadata, payloads, tags, names, kind, next, next_stop, replace_color_byte) -- T:602 C:634
 			work = work + (next_stop - next) * words + string_work -- T:603 C:635-636
 			next = next_stop -- T:604 C:637
 		end

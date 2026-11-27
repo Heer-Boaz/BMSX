@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding, storeImageStringBinding } from '../../machine/ts/machine/cpu/execution_image';
 import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
+import { GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
@@ -45,7 +46,7 @@ return { read_byte = read_byte, write_word = write_word }
 modules.push({ path: PORT, source: portSource, chunk: parseLuaChunk(portSource, PORT) });
 
 const CURSOR_BITS = 20;
-function fixture(optLevel: 0 | 3) {
+function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.Globals | null = null) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 	function entryIndex(path: string, key: string) {
@@ -125,6 +126,9 @@ function fixture(optLevel: 0 | 3) {
 	const concat = [valueString(consumed), valueTable(unreadTable), valueString(unread), valueInteger(5)];
 
 	const descriptor = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const namespace = management + (moved === GcRootBank.SystemGlobals ? SYSTEM_GLOBAL_BANK_OFFSET : GLOBAL_BANK_OFFSET);
+	const lateName = moved === null ? 0 : string('late root name');
+	const lateValue = moved === null ? 0 : string('late root value');
 	equal(target => {
 		const ram = target.memory;
 		target.activeThread = target.bindThread(active);
@@ -146,6 +150,14 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(target.luaHeap.usedBytes(), charged);
 		assert.deepEqual(ram.ramData().subarray(floor, descriptor), before);
 		assert.deepEqual(ram.ramData().subarray(descriptorEnd, last), after);
+		if (moved !== null) {
+			const bank = moved === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
+			const previous = ram.readRamRecordWord(namespace + GlobalBankField.Base);
+			const capacity = ram.readRamRecordWord(namespace + GlobalBankField.Capacity);
+			for (let i = bank.count; i < capacity; ++i) bank.registerName(target.stringPool.intern(`namespace filler ${i}`));
+			bank.writeSlot(bank.registerName(lateName), valueString(lateValue));
+			assert.notEqual(ram.readRamRecordWord(namespace + GlobalBankField.Base), previous);
+		}
 		target.stringPool.takeMarkWork();
 		target.stringPool.beginReachabilityEpoch();
 	});
@@ -175,6 +187,7 @@ function fixture(optLevel: 0 | 3) {
 		compare(`limit=${limit}, initial=${work}, stop=${stop}`);
 	}
 	const nameSlot = cpu['systemGlobalBank'].find(name)!;
+	const lateSlot = moved === null ? 0 : (moved === GcRootBank.SystemGlobals ? cpu['systemGlobalBank'] : cpu['globalBank']).find(lateName)!;
 	const cursor = () => memory.readRamRecordWord(control + GC_ROOT_CURSOR);
 	const depth = () => memory.readRamRecordWord(control + GC_TRACE_HEAD);
 	const index = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT;
@@ -186,10 +199,20 @@ function fixture(optLevel: 0 | 3) {
 		assert.ok(cpu.beginHeapService(linked.image.functions[index].address, [address]));
 	}
 	return { cpu, oracle, memory, cursor, depth, index, marked, name, nameSlot, first, consumed, unread, halted,
-		unreadTable, constants, setCursor, begin, beginPort, grant, finish, step, compare };
+		unreadTable, constants, lateName, lateValue, lateSlot, setCursor, begin, beginPort, grant, finish, step, compare };
 }
 
 for (const optLevel of [0, 3] as const) {
+	for (const [kind, name] of [[GcRootBank.SystemGlobals, 'System'], [GcRootBank.Globals, 'ordinary']] as const) {
+		test(`the BIOS reloads the relocated ${name} namespace without publishing its roots at O${optLevel}`, () => {
+			const f = fixture(optLevel, kind);
+			f.setCursor(kind, f.lateSlot);
+			assert.ok(!f.marked(f.lateName) && !f.marked(f.lateValue));
+			f.step(1, 0, GcRootBank.End);
+			assert.equal(f.cpu.heapServiceResult(), 5);
+			assert.ok(f.marked(f.lateName) && f.marked(f.lateValue));
+		});
+	}
 	test(`BLua root banks match native name/Value order, counts, and overshooting work at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		f.setCursor(GcRootBank.SystemGlobals, f.nameSlot);

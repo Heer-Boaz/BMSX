@@ -1,6 +1,5 @@
 import { GlobalBankField } from '../../spec/blua32/execution_domain';
-import { HeapServiceRootBankField } from '../../spec/bmsx/heap_service';
-import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
@@ -24,17 +23,6 @@ export class GlobalBank {
 		const tag = valueTag(value), word = valuePayload(value);
 		this.slots.setEncoded(slot, tag, word);
 		if (valueTagHasGcEdge(tag)) this.gc.writeGlobalRoot(tag, word);
-	}
-
-	public publishHeapRootBank(descriptor: number): void {
-		const memory = this.memory;
-		const base = memory.readRamRecordWord(this.descriptor + GlobalBankField.Base);
-		const capacity = memory.readRamRecordWord(this.descriptor + GlobalBankField.Capacity);
-		const names = RAM_BASE + (base & RAM_RECORD_WORD_MASK);
-		const payloads = RAM_BASE + ((base + 12 * capacity) & RAM_RECORD_WORD_MASK);
-		const tags = RAM_BASE + ((base + 16 * capacity) & (MAIN_RAM_SIZE - 1));
-		memory.writeRamRecordPair(descriptor + HeapServiceRootBankField.Count, this.count, payloads);
-		memory.writeRamRecordPair(descriptor + HeapServiceRootBankField.Tags, tags, names);
 	}
 
 	// RAM has already been restored by the machine; reconstruct only the borrowed view.

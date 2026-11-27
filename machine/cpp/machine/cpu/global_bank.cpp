@@ -1,5 +1,4 @@
 #include "machine/cpu/global_bank.h"
-#include "spec/bmsx/heap_service.h"
 
 #include <cstring>
 
@@ -20,17 +19,6 @@ void GlobalBank::bind() {
 	const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
 	const u32 payloads = base + 12u * capacity;
 	m_values = ValueSpan(m_memory, payloads, payloads + 4u * capacity, capacity);
-}
-
-void GlobalBank::publishHeapRootBank(u32 descriptor) const {
-	using Field = HeapServiceRootBankField;
-	const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
-	const u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
-	const u32 names = RAM_BASE + (base & RAM_RECORD_WORD_MASK);
-	const u32 payloads = RAM_BASE + ((base + 12u * capacity) & RAM_RECORD_WORD_MASK);
-	const u32 tags = RAM_BASE + ((base + 16u * capacity) & (MAIN_RAM_SIZE - 1u));
-	m_memory.writeRamRecordPair(descriptor + static_cast<u32>(Field::Count), count(), payloads);
-	m_memory.writeRamRecordPair(descriptor + static_cast<u32>(Field::Tags), tags, names);
 }
 
 void GlobalBank::clear() {
