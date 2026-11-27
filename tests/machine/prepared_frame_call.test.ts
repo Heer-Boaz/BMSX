@@ -2,7 +2,7 @@ import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField, PreparedFrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueInteger, valuePayload, valueTable } from '../../machine/ts/machine/cpu/value';
@@ -15,7 +15,7 @@ import { BASE_CYCLES, OpCode, encodeFixedValueCount } from '../../machine/ts/spe
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET,
 	HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_RESULT_FAULT,
-	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceOperation, HeapServiceResidentField, PreparedFrameField,
+	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceOperation, HeapServiceResidentField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

@@ -58,6 +58,7 @@ struct Machine {
 #endif
 	}
 	Value bindHandler() {
+		cpu.activeThread()->reserveFrame(32); // These raw fixtures exercise placement after admission.
 		return valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[2], {}));
 	}
 };

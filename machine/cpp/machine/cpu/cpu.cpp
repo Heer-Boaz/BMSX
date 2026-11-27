@@ -3030,13 +3030,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	if (ordinaryCall && !fits) {
 		const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
 		if (function) {
-			const u32 management = m_heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-			entry.writeWords([&](FrameField field, u32 word) {
-				m_memory.writeRamRecordWord(prepared + static_cast<u32>(field), word);
-			});
-			m_memory.writeRamRecordPair(prepared + static_cast<u32>(PreparedFrameField::SourceSlot), callerArgBase, argCount);
-			m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals), placement.relocatesFormals);
-			beginFrameSpaceAcquisition(function, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, closure, FRAME_RESIDENT_PREPARED_ENTRY);
+			prepareFrameEntry(function, entry, callerArgBase, argCount, placement.relocatesFormals);
 			return nullptr;
 		}
 	}
@@ -3067,6 +3061,29 @@ void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded
 	instructionBudgetRemaining -= relocate ? copied + padded : padded;
 }
 
+void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, u32 sourceSlot,
+	u32 supplied, bool relocate, BuiltinArgsView detached) {
+	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+	entry.writeWords([&](FrameField field, u32 word) {
+		m_memory.writeRamRecordWord(prepared + static_cast<u32>(field), word);
+	});
+	m_memory.writeRamRecordPair(prepared + static_cast<u32>(PreparedFrameField::SourceSlot), sourceSlot, supplied);
+	m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals), relocate);
+	u32 roots = entry.closure;
+	if (sourceSlot == PREPARED_FRAME_DETACHED_SOURCE) {
+		const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
+		const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
+		for (u32 slot = 0; slot < supplied; ++slot) {
+			const Value value = detached[slot];
+			m_memory.writeRamRecordWord(words + 4u * slot, valuePayload(value));
+			m_memory.writeRamRecordByte(tags + slot, static_cast<u8>(valueTag(value)));
+		}
+		roots = prepared | PREPARED_FRAME_SCOPE_TAG;
+	}
+	beginFrameSpaceAcquisition(function, entry.stackBase + entry.capacity, static_cast<u32>(m_activeThread->frameDepth()) + 2u,
+		roots, FRAME_RESIDENT_PREPARED_ENTRY);
+}
+
 void CPU::enterPreparedFrame() {
 	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 	auto& thread = *m_activeThread;
@@ -3077,30 +3094,55 @@ void CPU::enterPreparedFrame() {
 	const int params = frame.readWindow(FrameField::Top);
 	const int supplied = static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied)));
 	const int copied = std::min(params, supplied);
-	placeSharedFormals(frame, static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::SourceSlot))),
-		copied, params - copied, m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
+	const u32 sourceSlot = m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::SourceSlot));
+	if (sourceSlot == PREPARED_FRAME_DETACHED_SOURCE) {
+		const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
+		const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
+		const auto source = [&](int index) {
+			return valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tags + index)), m_memory.readRamRecordWord(words + 4u * index));
+		};
+		for (int slot = 0; slot < copied; ++slot) frame.registers.set(slot, source(slot));
+		frame.registers.clear(copied, params - copied);
+		const int extras = frame.readWindow(FrameField::VarargCount), base = frame.readWindow(FrameField::VarargBase);
+		for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
+		instructionBudgetRemaining -= params + extras;
+	} else {
+		placeSharedFormals(frame, static_cast<int>(sourceSlot), copied, params - copied,
+			m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
+	}
 	thread.setStackTop(frame.stackBase() + frame.stackCapacity());
 	thread.enterFrame(&frame);
 	latchActiveExecutionImage(domain, frame.executionImage);
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
-	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc) {
+	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall) {
 	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const size_t argCount = args.size();
-	auto* frame = m_activeThread->acquireFrame();
-	const int argumentBase = m_activeThread->stackTop();
+	auto& thread = *m_activeThread;
+	const int argumentBase = thread.stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
-	m_activeThread->reserveFrame(placement.stackEnd(), valueClosure(closure), (flags & FRAME_EXCEPTION) != 0u);
-	frame->executionImage = image;
-	frame->initializeControl({
+	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
 		frameBankWord(image->executionDomainId) | flags,
 		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
-	});
+	};
+	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
+		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
+		if (function == 0u) {
+			enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return nullptr;
+		}
+		prepareFrameEntry(function, entry, PREPARED_FRAME_DETACHED_SOURCE, static_cast<u32>(argCount), placement.relocatesFormals, args);
+		return nullptr;
+	}
+	auto* frame = thread.acquireFrame();
+	if (!instructionCall) thread.reserveFrame(placement.stackEnd(), valueClosure(closure), (flags & FRAME_EXCEPTION) != 0u);
+	frame->executionImage = image;
+	frame->initializeControl(entry);
 	const auto [copied, padded] = placement.formals;
 	for (int i = 0; i < copied; ++i) frame->registers.set(i, args[i]);
 	frame->registers.clear(copied, padded);

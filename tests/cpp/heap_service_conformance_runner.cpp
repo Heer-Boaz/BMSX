@@ -96,6 +96,14 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'g': {
+					int cycles, target;
+					trace >> cycles >> target;
+					const auto result = scheduler.runCpuSlice(target, cycles, 0u, CpuRunKind::Scheduled);
+					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
+						<< cpu.heapServiceActive() << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
 				case 'L': {
 					int cycles;
 					trace >> cycles;
@@ -214,14 +222,15 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y' && opcode != 'A' && opcode != 'V')
-						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET, coroutine.create, prepared CALL or VARARG");
+					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y' && opcode != 'A' && opcode != 'V' && opcode != 'M')
+						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET, coroutine.create, prepared CALL, VARARG or implicit GETFIELD");
 					const bool growField = opcode == 'F';
 					const bool rawSet = opcode == 'R';
 					const bool coroutine = opcode == 'Y';
 					const bool prepared = opcode == 'A', vararg = opcode == 'V';
-					const bool acquiresFrameSpace = prepared || vararg;
-					const auto gate = vararg ? NativeBlockExit::Vararg : rawSet || coroutine || prepared ? NativeBlockExit::Call
+					const bool metamethod = opcode == 'M';
+					const bool acquiresFrameSpace = prepared || vararg || metamethod;
+					const auto gate = metamethod ? NativeBlockExit::ReadField : vararg ? NativeBlockExit::Vararg : rawSet || coroutine || prepared ? NativeBlockExit::Call
 						: growField ? NativeBlockExit::WriteField : NativeBlockExit::CreateClosure;
 					if (rawSet) {
 						auto& frame = *cpu.activeThread()->currentFrame;
@@ -278,6 +287,21 @@ int main(int argc, char** argv) {
 							auto warm = scheduler.runCpuSlice(parentDepth, 65536, 0u, CpuRunKind::Scheduled);
 							if (warm != RunResult::Halted || cpu.heapServiceActive() || cpu.getFrameDepth() != parentDepth)
 								throw std::runtime_error("Warm prepared CALL site changed its parent frontier");
+						}
+						cpu.beginCompletionCall(closure, {original.data(), original.size()});
+					}
+					if (metamethod) {
+						auto& frame = *cpu.activeThread()->currentFrame;
+						const int parentDepth = cpu.getFrameDepth() - 1;
+						const u32 closure = frame.readControl(FrameField::Closure);
+						const std::array original{frame.registers.get(0), frame.registers.get(1)};
+						const std::array warmArgs{original[1], original[1]};
+						frame.registers.set(0, warmArgs[0]);
+						for (int visit = 0; visit < 128; ++visit) {
+							if (visit != 0) cpu.beginCompletionCall(closure, {warmArgs.data(), warmArgs.size()});
+							const auto warm = scheduler.runCpuSlice(parentDepth, 65536, 0u, CpuRunKind::Scheduled);
+							if (warm != RunResult::Halted || cpu.heapServiceActive() || cpu.getFrameDepth() != parentDepth)
+								throw std::runtime_error("Warm GETFIELD did not stay on its owned-slot path");
 						}
 						cpu.beginCompletionCall(closure, {original.data(), original.size()});
 					}

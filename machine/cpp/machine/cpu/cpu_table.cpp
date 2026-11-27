@@ -11,14 +11,16 @@ u32 CPU::tableIndexAddress(Value base) const {
 }
 
 void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value method, std::span<const Value> args) {
-	auto roots = acquireLocalRoots();
-	trackLocalRoot(method);
-	for (const Value arg : args) trackLocalRoot(arg);
 	if (valueIsClosure(method)) {
 		const u32 closure = asClosure(method, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc);
-	} else if (valueTag(method) == ValueTag::ResidentFunction) {
+		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true);
+		return;
+	}
+	auto roots = acquireLocalRoots();
+	trackLocalRoot(method);
+	for (const Value arg : args) trackLocalRoot(arg);
+	if (valueTag(method) == ValueTag::ResidentFunction) {
 		beginResidentCall(valuePayload(method), {args.data(), args.size()}, placement);
 	} else if (valueIsBuiltinFunction(method)) {
 		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(method))], frame, placement,

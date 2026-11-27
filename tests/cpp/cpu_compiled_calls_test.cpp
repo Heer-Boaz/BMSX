@@ -1358,8 +1358,8 @@ void failedCallAdmission() {
 			catch (const LuaOutOfMemorySignal&) { rejected = true; }
 			require(rejected && thread->frameDepth() == 1 && thread->stackTop() == 8,
 				"failed completion admission never publishes an unallocated stack extent");
-			require(caller->next->executionImage == nullptr,
-				"the unadmitted reusable node retains no callee references");
+			require(caller->next == nullptr,
+				"rejecting the frame extent does not construct or bind a callee node");
 		} else {
 			machine.cpu.runUntilDepth(0, 2);
 			require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY

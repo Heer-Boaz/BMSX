@@ -69,8 +69,6 @@ export const HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 export const HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
-// Entry: 56 bytes of canonical control words followed by the argument plan.
-export const enum PreparedFrameField { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 }
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.
 export const enum PreparedWindowField { Destination = 0, SourceSlot = 4, Copied = 8, Padded = 12, Capacity = 16, Top = 20 }
 

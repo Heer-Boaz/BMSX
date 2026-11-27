@@ -476,11 +476,12 @@ private:
 		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
+	void prepareFrameEntry(u32 function, const FrameEntryControl&, u32 sourceSlot, u32 supplied, bool relocate, BuiltinArgsView detached = {});
 	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
-		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
+		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false);
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
 	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);

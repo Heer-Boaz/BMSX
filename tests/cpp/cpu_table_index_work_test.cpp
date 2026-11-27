@@ -505,6 +505,8 @@ void callableIndexUsesARealDetachedActivation() {
 			auto& cpu = m->cpu;
 			const Value key = op == OpCode::GETI ? valueInteger(1) : op == OpCode::GETT ? valueFloat(1.0f) : keyFor(cpu, KeyKind::String);
 			const u32 closure = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[2], {});
+			auto& thread = *cpu.activeThread();
+			thread.reserveFrame(thread.stackTop() + 8); // The exact grant measures placement, not acquiring storage.
 			auto* frame = cpu.activeThread()->currentFrame;
 			frame->registers.set(3, valueClosure(closure));
 			frame->writeControl(FrameField::Top, 0x4900000bu);

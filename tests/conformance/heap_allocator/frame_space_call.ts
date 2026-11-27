@@ -7,7 +7,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState, decodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
-import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField, PreparedFrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueInteger, valuePayload, valueTable } from '../../../machine/ts/machine/cpu/value';
@@ -17,7 +17,7 @@ import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/b
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET,
-	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceResidentField, PreparedFrameField,
+	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceResidentField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';

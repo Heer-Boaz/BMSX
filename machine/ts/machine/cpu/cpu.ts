@@ -167,7 +167,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -186,7 +186,7 @@ import {
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedFrameField, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
@@ -601,15 +601,18 @@ export class CPU implements MappedPageInvalidator {
 		receiver: Value, operand: Value, assignment?: Value): void {
 		const args = this.acquireRegisterBuiltinArgs();
 		const rootBase = this.localRoots.length;
-		this.localRoots.push(method, receiver, operand);
-		if (assignment !== undefined) this.localRoots.push(assignment);
 		args.bindDetached(receiver, operand, assignment);
 		try {
-			switch (valueTag(method)) {
+			const tag = valueTag(method);
+			if (tag !== ValueTag.Closure) {
+				this.localRoots.push(method, receiver, operand);
+				if (assignment !== undefined) this.localRoots.push(assignment);
+			}
+			switch (tag) {
 				case ValueTag.Closure: {
 					const closure = this.gc.closureRecordAddress(valuePayload(method));
 					if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length);
+					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length, true);
 					break;
 				}
 				case ValueTag.ResidentFunction:
@@ -4170,7 +4173,7 @@ export class CPU implements MappedPageInvalidator {
 		exception?: boolean, callSitePc?: number, argBase?: number, supplied?: number,
 	): CallFrame;
 	private pushFrame(
-		closure: number, args: CallFrame,
+		closure: number, args: CallFrame | ValueSlots,
 		returnBase: number, returnCount: number, returnToCompletionLatch: false,
 		exception: false, callSitePc: number, argBase: number, supplied: number, ordinaryCall: true,
 	): CallFrame | null;
@@ -4205,14 +4208,27 @@ export class CPU implements MappedPageInvalidator {
 		const varargBase = argumentBase + numParams;
 		const fits = ordinaryCall && thread.frameSpaceFits(end);
 		if (ordinaryCall && !fits) {
+			const detached = args instanceof ValueSlots;
 			const services = this.systemImage.heapServiceFunctions;
 			if (services !== null) {
 				const management = this.heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 				writeFrameEntryControl(this.memory, prepared, prototype, codeAddress, callSitePc!, false, domain,
 					varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity);
-				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, first, supplied);
+				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, detached ? PREPARED_FRAME_DETACHED_SOURCE : first, supplied);
 				this.memory.writeRamRecordWord(prepared + PreparedFrameField.RelocateFormals, +vararg);
-				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], end, thread.frameDepth + 2, closure, FRAME_RESIDENT_PREPARED_ENTRY);
+				let roots = closure;
+				if (detached) {
+					for (let slot = 0; slot < supplied; ++slot) {
+						this.memory.writeRamRecordWord(prepared + PreparedFrameField.Payloads + 4 * slot, args.getPayload(first + slot));
+						this.memory.writeRamRecordByte(prepared + PreparedFrameField.Tags + slot, args.getTag(first + slot));
+					}
+					roots = prepared | PREPARED_FRAME_SCOPE_TAG;
+				}
+				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], end, thread.frameDepth + 2, roots, FRAME_RESIDENT_PREPARED_ENTRY);
+				return null;
+			}
+			if (detached) {
+				this.enterSynchronousException(thread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return null;
 			}
 		}
@@ -4261,8 +4277,22 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		const params = frame.top, copied = Math.min(params, memory.readRamRecordWord(prepared + PreparedFrameField.Supplied));
-		this.placeSharedFormals(frame, memory.readRamRecordWord(prepared + PreparedFrameField.SourceSlot),
-			copied, params - copied, memory.readRamRecordWord(prepared + PreparedFrameField.RelocateFormals) !== 0);
+		const sourceSlot = memory.readRamRecordWord(prepared + PreparedFrameField.SourceSlot);
+		if (sourceSlot === PREPARED_FRAME_DETACHED_SOURCE) {
+			const words = prepared + PreparedFrameField.Payloads, tags = prepared + PreparedFrameField.Tags;
+			for (let slot = 0; slot < copied; ++slot)
+				frame.registers.setEncoded(slot, memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + 4 * slot));
+			frame.registers.clear(params - copied, copied);
+			for (let slot = 0; slot < frame.varargCount; ++slot) {
+				const source = params + slot;
+				thread.stackRegisters.setEncoded(frame.varargBase + slot,
+					memory.readRamRecordByte(tags + source), memory.readRamRecordWord(words + 4 * source));
+			}
+			this.charge(params + frame.varargCount);
+		} else {
+			this.placeSharedFormals(frame, sourceSlot, copied, params - copied,
+				memory.readRamRecordWord(prepared + PreparedFrameField.RelocateFormals) !== 0);
+		}
 		thread.stackTop = frame.stackBase + frame.stackCapacity;
 		thread.enterFrame(frame);
 		this.latchActiveExecutionImage(domain, image);

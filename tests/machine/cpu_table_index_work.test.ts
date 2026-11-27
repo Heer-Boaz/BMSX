@@ -38,6 +38,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				{ firstWord: 7, wordCount: 1, numParams: 2, maxStack: 8 },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
+			cpu.rootThread.reserveFrame(24); // Measure the call once its Value and frame space is available.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, read = base + 3 * INSTRUCTION_BYTES;
 			const indexKey = cpu.stringPool.intern('__index');

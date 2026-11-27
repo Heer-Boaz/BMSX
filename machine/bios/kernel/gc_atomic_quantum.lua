@@ -61,7 +61,7 @@ local atomic_work<const> = function(state, limit, scope) -- C:716-724,731
 		end
 	end
 	if scope ~= 0 and stage < clear_weak then -- C:731; after completed visits, even if work already reached limit
-		local added<const> = operands.mark_operand_roots(control, arena, metadata, scope) -- C:732-735; exact resolved operation roots, no ambient host scope
+		local added<const> = operands.mark_operand_roots(control, arena, metadata, scope, true) -- C:732-735; exact resolved operation roots, no ambient host scope
 		work = work + quantum.pending_string_work + added -- C:735
 		quantum.pending_string_work = 0 -- C:735 S:440
 	end

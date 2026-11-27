@@ -40,6 +40,12 @@ constexpr u32 PROTECTED_CALL_HANDLER_IMMUTABLE = PROTECTED_CALL_HANDLER_BUILTIN 
 
 enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
+// Entry: canonical frame control followed by the argument source. A detached
+// instruction call has no shared source slot; its three Value lanes follow.
+constexpr uint32_t PREPARED_FRAME_DETACHED_SOURCE = 0xffffffffu;
+constexpr uint32_t PREPARED_FRAME_SCOPE_TAG = 1u;
+enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64, Payloads = 68, Tags = 80, End = 83 };
+
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
 constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;
 constexpr u32 FRAME_COMPLETION = 1u;

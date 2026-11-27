@@ -48,7 +48,7 @@ local visit_and_remark_roots<const> = function(control, arena, metadata, head, d
 	state.pending_string_work = *pending -- C:666 S:438-440; keep credit if visits stopped
 	if remark_stage(control) ~= root_stage then return work end -- C:1105,1198
 	if scope ~= 0 then -- C:677; mark the operation's explicit operands
-		local added<const> = operands.mark_operand_roots(control, arena, metadata, scope) -- C:677
+		local added<const> = operands.mark_operand_roots(control, arena, metadata, scope, false) -- C:677
 		work = work + added -- C:678; new String work joins the existing latch drain
 	end
 	work = work + state.pending_string_work -- C:678
@@ -90,7 +90,7 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 			if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, concat_operands, cpp_policy) end -- C:1129,1135
 		end
 		if scope ~= 0 then -- C:1138; no guard on the remaining root-bank allowance
-			local added<const> = operands.mark_operand_roots(control, arena, metadata, scope) -- C:1138
+			local added<const> = operands.mark_operand_roots(control, arena, metadata, scope, false) -- C:1138
 			work = work + added -- C:1139; new String work joins the existing latch drain
 		end
 		work = work + state.pending_string_work -- C:1139

@@ -32,6 +32,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				{ firstWord: 7, wordCount: 1, numParams: length ? 2 : 3, maxStack: 8 },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
+			cpu.rootThread.reserveFrame(32); // This raw WIDE fixture exercises placement after admission.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, opcodePc = base + 3 * INSTRUCTION_BYTES;
 			const tables = cpu.gc.tables, source = cpu.createTable(2, 2), forwarded = cpu.createTable();

@@ -80,8 +80,6 @@ constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
-// Entry: 56 bytes of canonical control words followed by the argument plan.
-enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 };
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.
 enum class PreparedWindowField : uint32_t { Destination = 0, SourceSlot = 4, Copied = 8, Padded = 12, Capacity = 16, Top = 20 };
 

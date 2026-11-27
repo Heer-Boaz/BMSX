@@ -23,18 +23,53 @@ local table_kind<const> = 6 -- V:10-11 W:21-22
 local closure_kind<const> = 7 -- V:10-11 W:21-22 E:173-175 F:253-256 L:174 N:186
 local trace_head<const> = control_layout.internal.trace_head_offset -- T:27 H:24
 
+-- Detached frame basis: 3f062191f262da02ea9cf8746b36481aa7e0c2a6.
+-- D/I/J = native CPU/implicit call/GC; X/Y = TS CPU/GC;
+-- U/K = native canonical Frame control and prepared argument source.
+struct detached_frame_roots
+	before_closure: u32[11] -- U:41-42
+	closure: addr -- U:41,124 I:17-20
+	before_supplied: u32[3] -- U:41 K:84
+	supplied: u32 -- K:84 I:16,20 X:606,612
+	relocate_formals: u32 -- K:84
+	payloads: u32[3] -- I:15-20 X:604-606,612; detached Value words now in physical continuation
+	tags: u8[3] -- I:15-20 X:604-606,612; matching Value byte tags
+end
+
+local detached_scope_tag<const> = 1 -- I:15-20; tagged relative descriptor, not a Table tuple or absolute Closure
+
+-- Only synchronous Atomic marked the temporary method/argument scope;
+-- ordinary Mark and major remark mark the explicit Closure alone.
+local mark_detached_frame_roots<const> = function(control, arena, metadata, scope, atomic) -- I:15-20 X:604-612 J:724-730
+	local roots<const>: *detached_frame_roots = layout.ram_base + (scope & ~detached_scope_tag) -- I:15-20 U:41 K:84
+	local work = 0 -- J:717,730
+	if atomic then -- J:724-730 Y:675-679; stored operand scope only at synchronous final mark
+		mark.mark_record(control, arena, roots.closure, closure_kind, trace_head, 1) -- I:15 D:3259-3260 X:604,5395
+		for slot = 0, roots.supplied - 1 do -- I:16 D:3259-3260 X:604-605,5395
+			local _<const>, added<const> = mark.mark_value(control, arena, metadata, roots.tags[slot], roots.payloads[slot], trace_head, 1) -- J:727,730 I:16 D:3259-3260 X:604-605,5395
+			work = work + added -- J:730 Y:679
+		end
+	end
+	mark.mark_record(control, arena, roots.closure, closure_kind, trace_head, 1) -- I:18-20 X:610-612 J:678,729,1032 Y:630,678,964
+	return work -- J:730,1033 Y:679,965
+end
+
 -- This is the explicit operand suffix, not the ordinary root head or the
 -- scope of an unrelated synchronous builtin. Mark invokes it after initial
 -- banks, major remark on reaching Roots before its banks, and scoped Atomic
 -- after the visits and before the final tail. The caller drains incoming
 -- String work at the original phase boundary.
-local mark_operand_roots<const> = function(control, arena, metadata, scope) -- T:656-657,710-711,1060-1061 C:677-678,734-735,1136-1137
+local mark_operand_roots<const> = function(control, arena, metadata, scope, atomic) -- T:656-657,710-711,1060-1061 C:677-678,734-735,1136-1137
 	-- Issued Closure references are canonical absolute RAM addresses; the
 	-- published Table tuple is a physical RAM offset. The caller handles
 	-- absent scope (zero). Both are known machine representations.
 	if scope >= layout.ram_base then -- M:6 E:164-168,173-175 F:253-256 L:174 N:186
 		mark.mark_record(control, arena, scope, closure_kind, trace_head, 1) -- T:324-325,348,656,710,1060 C:81-82,100,677,734,1136
 		return 0 -- L:174 N:186; Closure root and two nil roots produce no String work
+	end
+	if (scope & detached_scope_tag) ~= 0 then -- I:15-20; decode the prepared-frame argument source
+		local work<const> = mark_detached_frame_roots(control, arena, metadata, scope, atomic) -- J:724-730 I:15-20
+		return work -- J:730,1033
 	end
 	local roots<const>: *table_operand_roots = layout.ram_base + scope -- A:761,788,793 B:255 M:6; published operand lanes
 	mark.mark_record(control, arena, roots.receiver, table_kind, trace_head, 1) -- T:324-325,347,656,710,1060 C:81-82,100,297-298,677,734,1136
@@ -57,4 +92,8 @@ local table_copy_scope<const> = function(management, source) -- P:35-36 Q:71-72
 	return offset -- P:35-36 Q:71-72
 end
 
-return { mark_operand_roots = mark_operand_roots, table_copy_scope = table_copy_scope }
+return {
+	internal = { mark_detached_frame_roots = mark_detached_frame_roots }, -- I:15-20
+	mark_operand_roots = mark_operand_roots, -- T:656-657 C:677-678
+	table_copy_scope = table_copy_scope, -- P:35-36 Q:71-72
+} -- I:15-20 P:35-36
