@@ -63,8 +63,15 @@ export class Blua32RomStringLayout {
 
 	public add(value: string): void {
 		if (this.addresses.has(value)) return;
+		const bytes = alignBlua32ImageOffset(BLUA32_STRING_RECORD_HEADER_SIZE + value.length, 0, BLUA32_STRING_RECORD_ALIGNMENT);
+		const directory = this.previous?.header;
+		if (directory !== undefined) {
+			const start = directory.stringBucketAddress, end = start + 4 * directory.stringBucketCount;
+			if (this.endAddress < end && this.endAddress + bytes > start)
+				this.endAddress = alignBlua32ImageOffset(end, 0, BLUA32_STRING_RECORD_ALIGNMENT);
+		}
 		this.addresses.set(value, this.endAddress);
-		this.endAddress = alignBlua32ImageOffset(this.endAddress + BLUA32_STRING_RECORD_HEADER_SIZE + value.length, 0, BLUA32_STRING_RECORD_ALIGNMENT);
+		this.endAddress = alignBlua32ImageOffset(this.endAddress + bytes, 0, BLUA32_STRING_RECORD_ALIGNMENT);
 	}
 
 	public addressOf(value: string): number { return this.addresses.get(value)!; }

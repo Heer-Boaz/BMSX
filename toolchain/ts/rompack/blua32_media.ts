@@ -1,4 +1,5 @@
 import {
+	alignBlua32ImageOffset,
 	decodeBlua32RomImage,
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -9,7 +10,8 @@ import {
 	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
-import type { ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
+import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import type { RomImage } from '../../../machine/ts/rompack/image';
 import { decodeRomToc, type RomTocEntry } from '../../../machine/ts/rompack/toc';
 
@@ -25,6 +27,21 @@ export type Blua32ToolingMedia = {
 		Blua32ToolingImage | null,
 	];
 };
+
+/** A second executable can be read as data while the mounted image remains executable. */
+export function stageBlua32Executable(installedRom: Uint8Array, image: Blua32ImageLayout,
+	domain: ExecutionDomainId): { bytes: Uint8Array; imageAddress: number } {
+	const system = domain === SYSTEM_EXECUTION_DOMAIN_ID;
+	const base = system ? SYSTEM_ROM_BASE : CART_ROM_BASE;
+	const limit = system ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
+	const offset = alignBlua32ImageOffset(installedRom.byteLength, base, 4);
+	const extent = offset + image.bytes.byteLength;
+	if (extent > limit) throw new Error('Staged executable exceeds the physical ROM aperture.');
+	const bytes = new Uint8Array(extent);
+	bytes.set(installedRom);
+	bytes.set(image.bytes, offset);
+	return { bytes, imageAddress: base + offset };
+}
 
 /** Omitted entries decode the ROM TOC; supplied entries (including empty) are authoritative. */
 export function loadBlua32ToolingImage(

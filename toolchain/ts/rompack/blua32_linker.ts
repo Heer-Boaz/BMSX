@@ -732,7 +732,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const strings = new Blua32RomStringLayout(input.loadAddress + offset, input.previous?.image);
 	const cartTableRelocated = input.domain === 'cart'
 		&& !strings.reservePrefix(input.loadAddress + functionTableOffset + functionCount * BLUA32_FUNCTION_RECORD_SIZE);
-	const installedStringEnd = strings.endAddress;
 	for (const value of rodata.constPool) {
 		if (typeof value === 'string') strings.add(value);
 	}
@@ -758,14 +757,13 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	offset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_UPVALUE_RECORD_SIZE);
 	const stringBucketCount = strings.bucketCount();
 	const installedHeader = input.previous?.image.header;
-	const stringBucketOffset = installedHeader !== undefined && strings.endAddress === installedStringEnd
-		&& strings.endAddress <= installedHeader.stringBucketAddress
+	const stringBucketOffset = installedHeader !== undefined
 		? installedHeader.stringBucketAddress - input.loadAddress
 		: offset + tableBytes;
 	const bucketEnd = stringBucketOffset + 4 * stringBucketCount;
 	// The installed firmware still addresses this directory. Cross its one
 	// reserved span by moving the relocatable tables, not the directory.
-	if (offset + tableBytes > stringBucketOffset) {
+	if ((cartTableRelocated ? functionTableOffset : offset) < bucketEnd && offset + tableBytes > stringBucketOffset) {
 		offset = bucketEnd;
 		if (cartTableRelocated) {
 			functionTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_FUNCTION_ALIGNMENT);

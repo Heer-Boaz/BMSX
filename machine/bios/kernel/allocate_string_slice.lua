@@ -9,7 +9,6 @@ local layout<const> = require('kernel/gc_runtime_layout') -- T:371,395 C:361,386
 local root_inputs<const> = require('kernel/gc_root_inputs') -- X:4116-4132 Z:295-314
 local roots<const> = require('kernel/gc_operand_roots') -- T:366-368 C:356-359
 local chars<const> = require('kernel/string_char_bytes') -- J:1729-1736 K:5072-5077
-local media_binding<const> = require('kernel/image_string_bindings') -- J:1739 K:5080 C:240-244
 local slices<const> = require('kernel/string_slice') -- T:351-428 C:347-415
 local strings<const> = require('kernel/gc_strings') -- T:367,378-380,428,431-441 C:358,368-370,415,418-429
 local admission<const> = require('kernel/heap_admission') -- L:42-106,134-144,160-167 N:41-116,147-183
@@ -165,7 +164,6 @@ local intern_value_window<const> = function(management, owner, first, count, mod
 	local words<const>, tags<const> = thread_storage.internal.value_planes(owner, first) -- W:16-19,135-136
 	local metadata<const> = management + layout.metadata_offset -- T:65,370 C:42,361
 	local state<const> = layout.ram_base + management -- J:1729-1736 K:5072-5077
-	local media<const>: *bound_media_extents = state + media_binding.media_extents_offset -- J:1739 K:5080 C:240-244
 	local workspace<const> = state + layout.firmware_data_offset -- J:1729-1736 K:5072-5077
 	local length, hash -- J:1729-1736 K:5072-5077
 	if mode == slices.concat_source then -- J:1735-1739 K:5076-5080 W:17-19
@@ -180,7 +178,11 @@ local intern_value_window<const> = function(management, owner, first, count, mod
 	local id = slices.lookup_ram(metadata, words, tags, length, hash, mode, count, workspace) -- C:328,332-338 T:232-235
 	if id == 0 then -- C:328,332-338 T:232-235
 		local fault -- C:328,332-338 T:232-235
-		id, fault = slices.lookup_rom_directories(metadata, words, tags, length, hash, media.system, media.cart0, media.cart1, mode, count, workspace) -- C:228-244,338 T:217-222,235-241
+		local system<const>: *word = 0x080101f4
+		local cart0<const>: *word = 0x080101f8
+		local cart1<const>: *word = 0x080101fc
+		id, fault = slices.lookup_rom_directories(metadata, words, tags, length, hash,
+			*system, *cart0, *cart1, mode, count, workspace) -- C:228-244,338 T:217-222,235-241
 		if fault ~= 0 then return 0, fault end -- C:228-244,338 T:217-222,235-241
 	end
 	if id ~= 0 then -- C:338 T:362,439-442

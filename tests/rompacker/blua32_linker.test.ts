@@ -310,13 +310,13 @@ test('incremental linking adds String operands without rehashing installed Strin
 
 	let installed = initial;
 	for (const [constants, globals] of [
-		[['e', 'brand-new literal'], ['c', 'fresh_global']],
+		[['e', 'brand-new literal'.repeat(8)], ['c', 'fresh_global']],
 		[['fresh literal'], ['c', 'fresh_global', 'next_global']],
 	]) {
 		const { layout } = link(constants, globals);
 		assert.deepEqual(layout.constants, constants);
 		assert.deepEqual(layout.globalNames, globals);
-		assert.notEqual(layout.header.stringBucketAddress, installed.header.stringBucketAddress);
+		assert.equal(layout.header.stringBucketAddress, installed.header.stringBucketAddress);
 		assert.equal(layout.header.stringBucketCount, count);
 		const retained = Array.from(blua32RomStrings(installed));
 		const records = Array.from(blua32RomStrings(layout));
@@ -324,6 +324,12 @@ test('incremental linking adds String operands without rehashing installed Strin
 		assert.equal(records.length, values.size);
 		assert.deepEqual(new Set(records.map(({ value }) => value)), values);
 		const directory = layout.header.stringBucketAddress - layout.address;
+		const directoryEnd = directory + 4 * count;
+		for (const { value, address } of records) {
+			const start = address - layout.address;
+			assert.ok(start >= directoryEnd || start + BLUA32_STRING_RECORD_HEADER_SIZE + value.length <= directory,
+				'record does not overlap its pinned bucket heads');
+		}
 		for (let bucket = 0; bucket < count; ++bucket) {
 			let address = readLE32(layout.bytes, directory + 4 * bucket);
 			while (address !== 0) {

@@ -195,8 +195,6 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	view.ram_strings = ram_count -- T:1005-1006 C:282,291
 	view.base = base -- T:1178 C:421; the actual installed operand block
 	view.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
-	local media<const>: *bound_media_extents = layout.ram_base + management + string_bindings.media_extents_offset
-	media.system, media.cart0, media.cart1 = system_bytes, cart0_bytes, cart1_bytes
 	return 0, source_cycles -- T:1167-1181 C:441
 end
 

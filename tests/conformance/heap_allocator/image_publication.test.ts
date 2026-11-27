@@ -15,8 +15,12 @@ import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import {
 	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, executionImageBindingOffset,
 } from '../../../machine/ts/spec/blua32/execution_domain';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import {
+	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_MAGIC, BLUA32_IMAGE_MAGIC_OFFSET,
+} from '../../../machine/ts/spec/blua32/image_format';
+import { RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { stageBlua32Executable } from '../../../toolchain/ts/rompack/blua32_media';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
@@ -35,7 +39,7 @@ return
 test('replacement ROM execution reads the same firmware-installed operands without writing RAM', t => {
 	const initial = linkManagedTestSystem(source(17), 3);
 	const edited = linkManagedTestSystem(source(19), 3);
-	const different = linkManagedTestSystem('new_namespace_entry = false\n' + source(19, 'new_namespace_entry or publication_amount'), 3);
+	const different = linkManagedTestSystem("new_namespace_entry = 'replacement-only literal'\n" + source(19, 'new_namespace_entry or publication_amount'), 3);
 	const span = (image: typeof initial) => 4 * (image.layout.globalNames.length + image.layout.systemGlobalNames.length
 		+ image.layout.constants.filter(constant => typeof constant === 'string').length);
 	assert.equal(span(edited), span(initial));
@@ -45,6 +49,10 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const probe = initial.symbols.functionAddresses[probeIndex];
 	assert.equal(edited.symbols.functionAddresses[edited.symbols.metadata.functionDisplayNames.indexOf('publication_probe')], probe);
 	const initialRom = writeTestBlua32Rom(initial), editedRom = writeTestBlua32Rom(edited), differentRom = writeTestBlua32Rom(different);
+	const staged = stageBlua32Executable(initialRom, different.layout, SYSTEM_EXECUTION_DOMAIN_ID);
+	const stagedOffset = staged.imageAddress - SYSTEM_ROM_BASE;
+	assert.deepEqual(staged.bytes.subarray(0, initialRom.length), initialRom);
+	assert.deepEqual(staged.bytes.subarray(stagedOffset), different.layout.bytes);
 	const runtime = new Runtime({ systemRomBytes: initialRom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
@@ -104,13 +112,22 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	}
 	const dir = mkdtempSync(join(tmpdir(), 'bmsx-image-publication-'));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	const rom = join(dir, 'initial.rom'), replacement = join(dir, 'edited.rom'), mismatch = join(dir, 'mismatch.rom');
+	const rom = join(dir, 'initial.rom'), stage = join(dir, 'staged.rom'), replacement = join(dir, 'edited.rom'), mismatch = join(dir, 'mismatch.rom');
 	const trace = join(dir, 'trace'), seedFile = join(dir, 'initial.state');
 	writeFileSync(rom, initialRom);
+	writeFileSync(stage, staged.bytes);
 	writeFileSync(replacement, editedRom);
 	writeFileSync(mismatch, differentRom);
 	writeFileSync(seedFile, seed);
 
+	runProbe(17);
+	publish(stage, staged.bytes, true);
+	const magic = staged.imageAddress + BLUA32_IMAGE_MAGIC_OFFSET;
+	const count = staged.imageAddress + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET;
+	assert.equal(memory.readMappedU32LE(magic), BLUA32_IMAGE_MAGIC);
+	assert.equal(memory.readMappedU32LE(count), different.layout.header.globalNameCount);
+	observe(`M ${magic}`, `${BLUA32_IMAGE_MAGIC} 0`);
+	observe(`M ${count}`, `${different.layout.header.globalNameCount} 0`);
 	runProbe(17);
 	publish(replacement, editedRom, true);
 	commands.push('S');
