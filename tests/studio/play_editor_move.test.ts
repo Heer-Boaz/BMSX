@@ -47,7 +47,7 @@ async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-editor-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SCENE }], {
-		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
+		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')", launchCartridge: true,
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=require([[kernel/gc_barrier]]).set_metatable' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: `module<entry>
 local game<const> = require('game')

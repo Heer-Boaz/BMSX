@@ -141,9 +141,15 @@ async function main(): Promise<void> {
 	branched = true;
 	for (let index = 0; index < 3; index += 1) tick();
 	assert.equal(history.inputJournal.endSequence, 22);
-	const branch = observe();
+	let branch = observe();
 	assert.equal(branch.buttons, 2, 'live branch samples new input instead of retaining the recording');
-	assert.notEqual(branch.background, references.get(22)!.background);
+	// host_rewind.lua encodes the pad in the background's green channel.
+	// The guest can be suspended in collectgarbage across device ticks.
+	for (let wait = 0; wait < 8 && ((branch.background >>> 8) & 0x7f) !== 2; ++wait) {
+		tick();
+		branch = observe();
+	}
+	assert.equal((branch.background >>> 8) & 0x7f, 2, 'the guest displays the newly sampled input');
 	writeFileSync(outputPrefix, JSON.stringify({ forward, replay, branch }));
 	let compiledBlocks = 0;
 	for (let frame = runtime.machine.cpu.rootThread.currentFrame; frame !== null; frame = frame.previous) {

@@ -728,6 +728,8 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
+	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
 	bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
 	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
@@ -828,6 +830,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);
 
@@ -882,6 +885,8 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
+	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
 	bmsx::test::seedTestRomClosure(cpu, fixture.cart1Rom.functionAddresses[1], 1);
 	const bmsx::StringId publishedClosureName =
 		cpu.stringPool().intern(TEST_CARTRIDGE_CLOSURE_GLOBAL);

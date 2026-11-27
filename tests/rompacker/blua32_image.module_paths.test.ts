@@ -18,7 +18,7 @@ import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builde
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -29,7 +29,7 @@ for (const optLevel of [3] as const) {
 		const firmwarePaths = new Set<string>(HEAP_SERVICE_MODULES);
 		const systemSources = [
 			['entry', `module<entry>
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`],
+${MANAGED_CART_LAUNCH}`],
 			['public', `module<const>
 local delta<const> = require('dependency')
 return function(value) return value + delta.amount end`],

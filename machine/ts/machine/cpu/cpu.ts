@@ -929,15 +929,14 @@ export class CPU implements MappedPageInvalidator {
 			this.luaHeap.collectRuntime();
 			if (!this.heapAllocator.setFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
 		}
-		for (const image of this.executionImagesByDomain) {
-			if (image === null) continue;
-			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), image.executionDomainId);
+		for (let lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane) {
+			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (lane - 1) as ExecutionDomainId);
 			const base = this.memory.readRamRecordWord(binding);
-			if (base !== 0) {
-				this.memory.writeRamRecordWord(binding, 0);
-				this.memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0, 0);
-			}
-			this.releaseImageData(base, this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
+			if (base === 0) continue;
+			const span = this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+			this.memory.writeRamRecordPair(binding, 0, 0);
+			this.memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0, 0);
+			this.releaseImageData(base, span);
 		}
 		this.executionImagesByDomain.fill(null);
 		this.unpublishedRomMask = 0;
@@ -1190,7 +1189,7 @@ export class CPU implements MappedPageInvalidator {
 		return image;
 	}
 
-	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
+	private executionImageForDomain(executionDomainId: ExecutionDomainId, installedOnly = false): Blua32ExecutionImage | null {
 		const imageIndex = executionDomainId + 1;
 		const residentImage = this.executionImagesByDomain[imageIndex];
 		if (residentImage) {
@@ -1200,7 +1199,13 @@ export class CPU implements MappedPageInvalidator {
 		if (!executionBoot) {
 			return null;
 		}
-		const image = this.activateExecutionImage(executionBoot);
+		let image: Blua32ExecutionImage;
+		if (installedOnly) {
+			const header = this.readExecutionImageHeader(executionBoot);
+			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
+			if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes) return null;
+			image = this.materializeExecutionImage(executionBoot, header, true);
+		} else image = this.activateExecutionImage(executionBoot);
 		this.executionImagesByDomain[imageIndex] = image;
 		return image;
 	}
@@ -1832,11 +1837,12 @@ export class CPU implements MappedPageInvalidator {
 		ambientExecutionImage: Blua32ExecutionImage,
 		address: number,
 		busSignals: MappedBusSignals,
+		installedOnly = false,
 	): boolean {
 		const executionDomainId = this.executionAddressSpace.domainIdOnBus(address, busSignals);
 		const image = executionDomainId === null
 			? ambientExecutionImage
-			: this.executionImageForDomain(executionDomainId);
+			: this.executionImageForDomain(executionDomainId, installedOnly);
 		return image !== null && this.readFunctionRecord(image, address, busSignals);
 	}
 
@@ -1901,6 +1907,7 @@ export class CPU implements MappedPageInvalidator {
 			this.activeExecutionImage,
 			functionAddress,
 			MAPPED_BUS_MASTER_CPU,
+			true,
 		)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
@@ -1911,6 +1918,10 @@ export class CPU implements MappedPageInvalidator {
 		this.latchActiveExecutionImage(image.executionDomainId, image);
 		this.programExecutionDomainId = image.executionDomainId;
 		const cartridgeEntry = image.executionDomainId >= 0;
+		if (cartridgeEntry) {
+			this.systemGlobalBank.bind();
+			this.globalBank.bind();
+		}
 		this.cop0Words[COP0_STATUS] = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = 0;

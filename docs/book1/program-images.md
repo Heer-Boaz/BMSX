@@ -159,10 +159,12 @@ count, and its BSS address and byte count. For sections that fit in RAM, it
 rounds the larger exclusive end up to a 4 KiB boundary, using at least
 `08040000H` even when the cartridge has no mapped sections. With system
 reset inhibited, it makes the range available and writes
-[`RAM_END`](cpu.md#sec-cpu-ram-end).
-It releases reset inhibition before writing the startup-function address to
-[`EXEC`](cpu.md#sec-cpu-exec). If the firmware cannot make the range available,
-it does not start the cartridge.
+[`RAM_END`](cpu.md#sec-cpu-ram-end). The BIOS also prepares the selected
+program's global-name and String operands while reset is inhibited.
+If the range or operands cannot be prepared, the BIOS does not start the
+cartridge. Otherwise it releases reset inhibition and writes the
+startup-function address to [`EXEC`](cpu.md#sec-cpu-exec). EXEC uses those
+operands; it does not prepare them.
 The section contents are copied or cleared by the cartridge's own startup
 instructions, not by either CP0 write.
 

@@ -167,9 +167,15 @@ int main(int argc, char** argv) {
 		input.rejectLiveInput = false;
 		input.branched = true;
 		for (int index = 0; index < 3; ++index) tick();
-		const auto branch = observeReplay(runtime);
+		auto branch = observeReplay(runtime);
 		require(history.inputJournal.endSequence == 22 && branch.buttons == 2, "branch records the new live input");
-		require(branch.background != references.at(22).background, "new input changes the guest scanout");
+		// The fixture writes the input into the green channel when its
+		// collectgarbage continuation returns, not on each device tick.
+		for (int wait = 0; wait < 8 && ((branch.background >> 8u) & 0x7fu) != 2u; ++wait) {
+			tick();
+			branch = observeReplay(runtime);
+		}
+		require(((branch.background >> 8u) & 0x7fu) == 2u, "the guest displays the newly sampled input");
 		std::ofstream output;
 		output.exceptions(std::ios::failbit | std::ios::badbit);
 		output.open(argv[3]);

@@ -202,6 +202,8 @@ struct Machine {
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
 		cpu.reset();
+		// This probe starts with firmware-prepared operands and measures EXEC and CALL.
+		cpu.replaceExecutionImage(*addresses.resolveDomain(slot));
 		test::seedTestRomClosure(cpu, images.system.functionAddresses[1]);
 		memory.writeMappedU32LE(IO_CART_SELECT, slot);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});

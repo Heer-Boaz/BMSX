@@ -23,7 +23,10 @@ import { COP0_EXEC, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/bl
 import {
 	HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
-import { IO_CART_SELECT, IO_SYS_CONTROL, SYS_CONTROL_RESET } from '../../../machine/ts/spec/bmsx/io';
+import {
+	IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT, IO_CART_SELECT, IO_SYS_CONTROL,
+	IO_SYS_ROM_BYTE_COUNT, SYS_CONTROL_RESET,
+} from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import {
@@ -41,6 +44,7 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const biosSource = `
 local floor<const> = require('kernel/heap_floor')
+local bind<const> = require('kernel/system_image_bind')
 cop0.status = cop0.status | ${CPU_STATUS_INHIBIT_RESET}
 local image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
 local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
@@ -52,6 +56,12 @@ if end_address == 0 then
 	while true do halt_until_irq end
 end
 cop0.ram_end = end_address
+if bind.bind_cartridge(mem[${IO_CART_SELECT}], image, mem[${IO_SYS_ROM_BYTE_COUNT}],
+	mem[${IO_CART0_ROM_BYTE_COUNT}], mem[${IO_CART1_ROM_BYTE_COUNT}]) ~= 0 then
+	cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
+	mem[${IO_SYS_CONTROL}] = 8
+	while true do halt_until_irq end
+end
 cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
@@ -331,7 +341,7 @@ try {
 				} else {
 					assert.equal(memory.ramBusEnd(), oldFloor, 'ordinary CALL does not change the machine aperture');
 					assert.equal(cpu.systemResetInhibited(), true, 'Status still inhibits RESET after the resident CALL has retired');
-					for (let i = 0; i < 64; ++i) {
+					for (let i = 0; i < 8192; ++i) {
 						const instruction = decodeBlua32InstructionAtPc(pair.systemImage.textBytes, pair.systemImage.header.textAddress,
 							cpu.readFramePc(cpu.getFrameDepth() - 1));
 						if (instruction.op === OpCode.MTC0 && instruction.b === COP0_EXEC) break;

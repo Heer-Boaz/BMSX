@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
@@ -40,7 +41,7 @@ test('new AEM sources save without applying absent guest modules or unbuilt asse
 	await openWorkspaceRecords(files);
 	afterTest(t, async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const media = await buildScenarioMediaFixture(directory, [], {
-		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [],
+		systemSource: 'module<entry>', launchCartridge: true, systemModules: [],
 		cartSource: "module<entry>\nlocal aem<const> = require('cartlib/aem')\nwhile true do halt_until_irq end",
 		cartModules: [{ path: 'cartlib/aem', source: 'module<const>\nreturn {}' }],
 	});
@@ -94,7 +95,7 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const asset = { resid: 'events', type: 'aem' as const, buffer: encodeBinary({}), source_path: 'events.aem.yaml', sourcemeta: { text: aemSource } };
 	const mapSource = '# authored map\r\nx: 3\r\n', mapBytes = encodeBinary({ x: 3 });
 	const mapAsset = { resid: 'map', type: 'data' as const, buffer: mapBytes, source_path: 'map.yaml', sourcemeta: { text: mapSource } };
-	const systemSource = 'module<entry>\ncop0.exec = mem[0x10000028]';
+	const systemSource = `module<entry>${MANAGED_CART_LAUNCH}`;
 	const cartSource = 'module<entry>\nwhile true do halt_until_irq end';
 	const media = await buildScenarioMediaFixture(directory, [], {
 		systemSource,

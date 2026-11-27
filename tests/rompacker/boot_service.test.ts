@@ -32,7 +32,7 @@ async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-boot-'));
 	const source = 'module<entry>\nwhile true do halt_until_irq end';
 	const media = await buildScenarioMediaFixture(directory, [], {
-		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [], cartSource: source,
+		systemSource: 'module<entry>', launchCartridge: true, systemModules: [], cartSource: source,
 	});
 	const decoded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);

@@ -13,7 +13,9 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT, IO_SYS_ROM_BYTE_COUNT } from '../../machine/ts/spec/bmsx/io';
 import {
 	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
@@ -126,20 +128,26 @@ for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33])
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
 	const launcher = `local floor<const> = require('kernel/heap_floor')
+local bind<const> = require('kernel/system_image_bind')
 bss system_scratch: word[9]\nlocal image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
 local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
 local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
 cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
+if bind.bind_cartridge(0, image, mem[${IO_SYS_ROM_BYTE_COUNT}],
+	mem[${IO_CART0_ROM_BYTE_COUNT}], mem[${IO_CART1_ROM_BYTE_COUNT}]) ~= 0 then return false end
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 	const cartridge = `data prefix: word = 305419896\nbss scratch: word[17]\nreturn *prefix`;
 	const system = compileTestSystemWithHeap(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
 	const cart = compileLuaChunkToProgram(parseSource(cartridge, 'cart_bss.lua'), [], { entrySource: cartridge, programDomain: 'cart', optLevel });
 	const images = linkTestBlua32Pair(system, cart);
-	const memory = new Memory({ systemRom: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
+	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes),
+		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: backend }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	const { cpu, memory } = runtime.machine;
 	const cartBss = images.cartImage.header.bssAddress;
-	for (let address = DYNAMIC_RAM_BASE; address <= cartBss + 17 * 4; address += 4) memory.writeMappedU32LE(address, 0xfeedface);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
-	cpu.reset();
+	for (let address = DYNAMIC_RAM_BASE; address <= cartBss + 17 * 4; address += 4) memory.writeRamRecordWord(address - RAM_BASE, 0xfeedface);
+	runtime.boot();
 	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(305419896)]);

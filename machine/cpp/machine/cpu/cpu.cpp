@@ -226,16 +226,15 @@ void CPU::reset() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
-	for (auto& image : m_executionImagesByDomain) {
-		if (image) {
-			const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), image->executionDomainId);
-			if (const u32 base = m_memory.readRamRecordWord(binding)) {
-				m_memory.writeRamRecordWord(binding, 0u);
-				m_memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0u, 0u);
-				m_luaHeap.releaseRecord(base, m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
-			}
+	for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane) {
+		const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), static_cast<i32>(lane) - 1);
+		if (const u32 base = m_memory.readRamRecordWord(binding)) {
+			const u32 span = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+			m_memory.writeRamRecordPair(binding, 0u, 0u);
+			m_memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0u, 0u);
+			m_luaHeap.releaseRecord(base, span);
 		}
-		image.reset();
+		m_executionImagesByDomain[lane].reset();
 	}
 	m_unpublishedRomMask = 0u;
 	m_stringPool.clearRomTables();
@@ -329,7 +328,7 @@ void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 na
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	Blua32ExecutionBoot executionBoot, ExecutionImageUpdate update
 ) {
-	const bool restoring = update == ExecutionImageUpdate::Restore;
+	const bool restoring = update == ExecutionImageUpdate::Restore || update == ExecutionImageUpdate::UseInstalled;
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -432,6 +431,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	image->systemNameCount = systemGlobalNameCount;
 	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionDomainId);
 	const u32 bytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
+	if (update == ExecutionImageUpdate::UseInstalled &&
+		m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) != bytes) return nullptr;
 	const u32 base = restoring ? m_memory.readRamRecordWord(binding)
 		: bytes == 0u ? 0u : m_luaHeap.allocateRecord(bytes, false, 0, 0);
 	if (!restoring && bytes != 0u) {
@@ -507,7 +508,7 @@ void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
 }
 
 Blua32ExecutionImage* CPU::executionImageForDomain(
-	ExecutionDomainId executionDomainId
+	ExecutionDomainId executionDomainId, bool installedOnly
 ) {
 	const size_t imageIndex = static_cast<size_t>(executionDomainId + 1);
 	if (Blua32ExecutionImage* image = m_executionImagesByDomain[imageIndex].get()) {
@@ -519,7 +520,7 @@ Blua32ExecutionImage* CPU::executionImageForDomain(
 		return nullptr;
 	}
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(*executionBoot);
+		activateExecutionImage(*executionBoot, installedOnly ? ExecutionImageUpdate::UseInstalled : ExecutionImageUpdate::Install);
 	Blua32ExecutionImage* activatedImage = image.get();
 	m_executionImagesByDomain[imageIndex] = std::move(image);
 	return activatedImage;
@@ -919,12 +920,13 @@ bool CPU::readFunctionRecord(
 bool CPU::readFunctionRecordOnBus(
 	Blua32ExecutionImage& ambientExecutionImage,
 	u32 address,
-	MappedBusSignals busSignals
+	MappedBusSignals busSignals,
+	bool installedOnly
 ) {
 	const std::optional<ExecutionDomainId> executionDomainId =
 		m_executionAddressSpace.domainIdOnBus(address, busSignals);
 	Blua32ExecutionImage* image = executionDomainId
-		? executionImageForDomain(*executionDomainId)
+		? executionImageForDomain(*executionDomainId, installedOnly)
 		: &ambientExecutionImage;
 	return image && readFunctionRecord(*image, address, busSignals);
 }
@@ -933,7 +935,8 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
 		functionAddress,
-		MAPPED_BUS_MASTER_CPU
+		MAPPED_BUS_MASTER_CPU,
+		true
 	)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
@@ -942,6 +945,10 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	clearCallStack();
 	latchActiveExecutionImage(m_functionRecordLatch.image->executionDomainId, m_functionRecordLatch.image);
 	m_programExecutionDomainId = m_functionRecordLatch.image->executionDomainId;
+	if (m_programExecutionDomainId >= 0) {
+		m_systemGlobalBank.bind();
+		m_globalBank.bind();
+	}
 	m_cop0Words[COP0_STATUS] = m_functionRecordLatch.image->executionDomainId >= 0
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;

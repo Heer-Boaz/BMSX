@@ -85,7 +85,7 @@ test('failed explicit AEM application preserves the exact installed acknowledgem
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-aem-acknowledgement-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const media = await buildScenarioMediaFixture(directory, [], {
-		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [],
+		systemSource: 'module<entry>', launchCartridge: true, systemModules: [],
 		cartSource: "module<entry>\nlocal aem<const> = require('cartlib/aem')\naem.reload_from_rom()\nwhile true do halt_until_irq end",
 		cartModules: [{ path: 'cartlib/aem', source: 'local aem = {}\nfunction aem.reload_from_rom() end\nreturn aem' }],
 		cartAssets: [{ type: 'aem', resid: 'events', source_path: 'events.aem.yaml', sourcemeta: { text: AEM }, buffer: encodeBinary({}) }],
@@ -119,7 +119,7 @@ test('failed explicit AEM application preserves the exact installed acknowledgem
 	assert.equal(model.dirty, false, 'runtime rejection does not roll back or dirty a completed source Save');
 	const replacementSource = '# a different installed asset generation\nevents: {}\n';
 	const replacement = await buildScenarioMediaFixture(join(directory, 'replacement'), [], {
-		systemSource: 'module<entry>\ncop0.exec = mem[0x10000028]', systemModules: [],
+		systemSource: 'module<entry>', launchCartridge: true, systemModules: [],
 		cartSource: "module<entry>\nlocal aem<const> = require('cartlib/aem')\naem.reload_from_rom()\nwhile true do halt_until_irq end",
 		cartModules: [{ path: 'cartlib/aem', source: 'local aem = {}\nfunction aem.reload_from_rom() end\nreturn aem' }],
 		cartAssets: [{ type: 'aem', resid: 'events', source_path: 'events.aem.yaml', sourcemeta: { text: replacementSource }, buffer: encodeBinary({}) }],

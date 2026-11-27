@@ -27,7 +27,7 @@ export const HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 export const enum HeapServiceIrqForwardField { CartLane = 0, Vector = 4 }
 export const HEAP_SERVICE_FRAME_OFFSET = 0x880;
 export const HEAP_SERVICE_VALUE_OFFSET = 0x1000;
-export const HEAP_SERVICE_FRAME_COUNT = 16;
+export const HEAP_SERVICE_FRAME_COUNT = 20;
 export const HEAP_SERVICE_VALUE_COUNT = 384;
 
 

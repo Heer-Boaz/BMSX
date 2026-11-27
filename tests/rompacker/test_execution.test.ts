@@ -66,8 +66,7 @@ function exception()
  mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_FAULT}
  mem[${IO_SYS_CONTROL}] = ${SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH}
  halt_until_irq
-end
-cop0.exec = mem[0x10000028]`,
+end`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `setmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,
@@ -153,7 +152,7 @@ test(`O${optLevel}: named cases preserve fixture hooks, failure inspection and b
 	try {
 		const testSource = { path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source };
 		const fixture = await buildScenarioMediaFixture(directory, [testSource], {
-			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,
@@ -254,7 +253,7 @@ return { kind = 'integration', tests = {
  end,
 } }`;
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
-			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,
@@ -319,7 +318,7 @@ test(`O${optLevel}: cooperative and uncooperative cancellation have bounded, ind
  }
 }`;
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
-			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,

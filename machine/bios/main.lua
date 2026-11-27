@@ -24,6 +24,7 @@ local terminal_layout<const> = require('tty/layout')
 local vblank<const> = require('kernel/vblank')
 local vblank_irq<const> = require('kernel/vblank_irq')
 local heap_floor<const> = require('kernel/heap_floor')
+local image_bind<const> = require('kernel/system_image_bind')
 
 local irq_mask<const>: *word = 0x08000008
 local input_control<const>: *word = 0x08000064
@@ -37,6 +38,9 @@ local cart_blua32_startup_index<const> = 10
 local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
 local cart_rom_byte_count<const>: *word = 0x08010440
+local system_rom_bytes<const>: *u32 = 0x080101f4
+local cart0_rom_bytes<const>: *u32 = 0x080101f8
+local cart1_rom_bytes<const>: *u32 = 0x080101fc
 local cart_rom_base<const> = 0x10000000
 local cart_rom<const>: *word = cart_rom_base
 local image_header_size<const> = 92
@@ -82,12 +86,12 @@ local scan_cartridges<const> = function()
 				local startup<const> = cart_rom[cart_blua32_startup_index]
 				if startup ~= 0 and image_offset >= cart_rom_boot_header_size
 					and image_offset <= cart_bytes - image_header_size and (image_offset & 3) == 0 then
-					return cart_state_ready, startup, cart_rom_base + image_offset
+					return cart_state_ready, startup, cart_rom_base + image_offset, slot
 				end
 			end
 		end
 	end
-	return state, 0, 0
+	return state, 0, 0, 0
 end
 
 local initialize_boot_output<const> = function()
@@ -120,7 +124,7 @@ local update_boot_output<const> = function(cart_state)
 end
 
 local update_boot_screen<const> = function()
-	local cart_state<const>, startup<const>, image<const> = scan_cartridges()
+	local cart_state<const>, startup<const>, image<const>, slot<const> = scan_cartridges()
 	update_boot_output(cart_state)
 	if cart_state == cart_state_ready and *boot_frame >= boot_delay_frames then
 		terminal.clear_status()
@@ -138,6 +142,11 @@ local update_boot_screen<const> = function()
 			while true do halt_until_irq end
 		end
 		cop0.ram_end = end_address
+		if image_bind.bind_cartridge(slot, image, *system_rom_bytes, *cart0_rom_bytes, *cart1_rom_bytes) ~= 0 then
+			cop0.status = cop0.status & ~inhibit_reset
+			*sys_control = 8
+			while true do halt_until_irq end
+		end
 		cop0.status = cop0.status & ~inhibit_reset
 		cop0.exec = startup
 		return

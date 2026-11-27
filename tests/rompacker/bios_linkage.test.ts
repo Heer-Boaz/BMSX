@@ -1,3 +1,4 @@
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -50,7 +51,7 @@ for (const optLevel of [3] as const) {
 		const system = buildPublicBiosFixture(`module<entry>
 data firmware_value: word = 11
 bss firmware_buffer: word[7]
-cop0.exec = mem32le[0x10000028]`, optLevel);
+${MANAGED_CART_LAUNCH}`, optLevel);
 		const imports = readBlua32BiosImports(system.rom);
 		assert.deepEqual(imports, system.linked.biosImports);
 		const source = `module<entry>

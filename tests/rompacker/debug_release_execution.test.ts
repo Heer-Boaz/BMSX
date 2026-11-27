@@ -8,7 +8,7 @@ import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { compileCart } from '../../scripts/rompacker/compile';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import { createTestBlua32PairCpu } from '../helpers/blua32';
@@ -33,7 +33,7 @@ end
 return count`);
 	const inputs = await prepareRomInputs([root], [entry], { kind: 'filesystem' });
 	const { rom: systemRom } = buildPublicBiosFixture(`module<entry>
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel);
+${MANAGED_CART_LAUNCH}`, optLevel);
 	const builds = [];
 	for (const debug of [false, true]) {
 		await compileCart({ inputs, sourceFiles: [entry], librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [],

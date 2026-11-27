@@ -427,11 +427,11 @@ private:
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
-	enum class ExecutionImageUpdate { Install, Replace, Restore };
+	enum class ExecutionImageUpdate { Install, Replace, Restore, UseInstalled };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
 		ExecutionImageUpdate update = ExecutionImageUpdate::Install);
 	void admitImageReplacement(const Blua32ExecutionImage& image);
-	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);
+	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId, bool installedOnly = false);
 	static MappedBusSignals executionBusSignalsForDomain(ExecutionDomainId executionDomainId);
 	void latchActiveExecutionImage(ExecutionDomainId domain, Blua32ExecutionImage* image);
 	void resumeFrameBank();
@@ -460,7 +460,8 @@ private:
 	bool readFunctionRecordOnBus(
 		Blua32ExecutionImage& ambientExecutionImage,
 		u32 address,
-		MappedBusSignals busSignals
+		MappedBusSignals busSignals,
+		bool installedOnly = false
 	);
 	void executeFunctionAddress(u32 functionAddress);
 	void executeControlWrite(CallFrame& frame, int source, int field);

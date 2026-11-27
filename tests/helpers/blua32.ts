@@ -36,6 +36,8 @@ import {
 } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
@@ -504,6 +506,8 @@ export function createTestBlua32PairCpu(
 	const irqController = new IrqController(memory);
 	const executionAddressSpace = new ExecutionAddressSpace(memory);
 	const cpu = new CPU(memory, irqController, executionAddressSpace, executionBackend);
+	const scheduler = new DeviceScheduler(cpu);
+	memory.cartridgeController.connect(memory, irqController, new DmaController(memory, cpu, irqController, scheduler));
 	cpu.reset();
 	return { cpu, memory, irqController, executionAddressSpace };
 }

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { MANAGED_CART_LAUNCH } from './managed_cart_launch';
 
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
@@ -55,6 +56,7 @@ export async function buildScenarioMediaFixture(
 		systemOptLevel?: 0 | 1 | 2 | 3;
 		cartOptLevel?: 0 | 1 | 2 | 3;
 		systemSource: string;
+		launchCartridge?: true;
 		systemModules: readonly { path: string; source: string }[];
 		cartSource: string;
 		cartModules?: readonly { path: string; source: string }[];
@@ -62,7 +64,8 @@ export async function buildScenarioMediaFixture(
 		cartAssets?: readonly RomAsset[];
 	},
 ): Promise<ScenarioMediaFixture> {
-	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource,
+	const systemSource = options?.systemSource ?? 'module<entry>\nreturn true';
+	const systemAssets = [luaEntry(options?.launchCartridge ? systemSource + MANAGED_CART_LAUNCH : systemSource,
 		`${SYSTEM_PROJECT_ROOT}/entry.lua`)];
 	// The executable fixture uses the real heap firmware. The public utility
 	// slots below are unrelated to the tested runtime scenario.

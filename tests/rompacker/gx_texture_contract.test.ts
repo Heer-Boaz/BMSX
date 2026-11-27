@@ -1,8 +1,8 @@
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
+import { createTestBlua32PairCpu } from '../helpers/blua32';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
@@ -12,14 +12,9 @@ import { test } from 'node:test';
 import { createCanvas } from 'canvas';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
@@ -235,7 +230,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 require('base')
 table = require('table')
 string = require('string/base')
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+${MANAGED_CART_LAUNCH}
 `;
 		const systemModuleSources = [
 			...BASE_FIRMWARE_MODULES.map(({path, source}) => [path, source] as const),
@@ -415,10 +410,7 @@ return imgdec
 		const removedView = await buildAssetModalView({ resid: first.name, type: 'image', op: 'delete' }, modalContext);
 		assert.equal(removedView.previewSections.length, 0);
 
-		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
-		const executionAddressSpace = new ExecutionAddressSpace(memory);
-		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-		cpu.reset();
+		const { cpu } = createTestBlua32PairCpu({ systemRomBytes: systemRom, cartRomBytes: rom });
 		runGuestToHalt(cpu, 10_000_000);
 		const textureDestination = gxGpuPair16(320, 0);
 		const clutDestination = gxGpuPair16(320, 16);

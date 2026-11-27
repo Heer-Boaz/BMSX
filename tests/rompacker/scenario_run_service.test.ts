@@ -44,7 +44,7 @@ return { kind = 'unit', tests = {
 			source: "return { kind = 'unit', tests = { different_image = function() assert(getglobal('carried') == nil, 'previous suite leaked state') end } }",
 		};
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, other], {
-			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable\ngetglobal = __bmsx_getglobal` },
 				...COROUTINE_FIRMWARE_MODULES,
@@ -170,7 +170,7 @@ test('Scenario compilation reads saved test-only libraries without dirtying or r
 	const source = `local helper = require('cartlib/scenario_helper')
 return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } }`;
 	const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
-		systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+		systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 		systemModules: [
 			{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value) if not value then raise('old library source') end return value end\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 			...COROUTINE_FIRMWARE_MODULES,
@@ -218,7 +218,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
  after = function() end,
 } }`;
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
-			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,

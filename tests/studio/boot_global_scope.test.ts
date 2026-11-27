@@ -1,10 +1,9 @@
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -32,7 +31,7 @@ for (const optLevel of [3] as const) {
 		const cart = compileLuaChunkToProgram(parseLuaChunk(source, 'cart.lua').chunk, [], { entrySource: source, optLevel });
 		assert.ok(cart.metadata.globalNames.includes('__bmsx_next'));
 		assert.equal(cart.metadata.systemGlobalNames.includes('__bmsx_next'), false);
-		const bootSource = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+		const bootSource = MANAGED_CART_LAUNCH;
 		const bios = compileHeapServiceSystem(bootSource, optLevel);
 		const pair = linkTestBlua32Pair(bios, cart);
 		const { cpu } = createTestBlua32PairCpu(pair);

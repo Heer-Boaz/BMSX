@@ -37,7 +37,7 @@ constexpr uint32_t HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 enum class HeapServiceIrqForwardField : uint32_t { CartLane = 0, Vector = 4 };
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
 constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0x1000;
-constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 16;
+constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 20;
 constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 384;
 
 

@@ -71,6 +71,8 @@ test::Blua32TestImage cartridgeProgram(const std::string& text) {
 	return image;
 }
 
+enum class OperandFixture { Prepared, Absent };
+
 struct Fixture {
 	test::Blua32TestRom system;
 	test::Blua32TestRom cart;
@@ -79,12 +81,16 @@ struct Fixture {
 	Runtime runtime;
 	int reads = 0;
 
-	explicit Fixture(test::Blua32TestRom cartridge, u32 slot = 0, bool warmSystem = false)
+	explicit Fixture(test::Blua32TestRom cartridge, u32 slot = 0, bool warmSystem = false,
+		OperandFixture operands = OperandFixture::Prepared)
 		: system(systemProgram(warmSystem)), cart(std::move(cartridge)),
 		other(test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("other-slot"))),
 		runtime({system.bytes, slot == 0 ? test::cartridgeSlots(cart.bytes, other.bytes)
 			: test::cartridgeSlots(other.bytes, cart.bytes), PSX_MACHINE_SPEC}, input) {
 		runtime.boot();
+		// Bind operands before measuring the exact EXEC grant; do not execute or decode the cart.
+		if (operands == OperandFixture::Prepared)
+			runtime.machine.cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(slot));
 		runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, slot);
 		runtime.machine.memory.mapIoRead(IO_IRQ_FLAGS, &reads,
 			[](void* context, u32, MappedBusSignals) {
@@ -462,7 +468,7 @@ void invalidDirectoryAndNonStaticEntryPreventCompilation() {
 	for (const u32 table : {IO_IRQ_FLAGS, CART_ROM_BASE + CART_ROM_SIZE - 32u}) {
 		auto rom = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartridgeProgram("no-backed-hints"));
 		writeLE32(rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, table);
-		Fixture machine(std::move(rom));
+		Fixture machine(std::move(rom), 0, false, OperandFixture::Absent);
 		const auto fault = machine.runtime.machine.memory.readBusFaultSequence();
 		bool rejected = false;
 		try {

@@ -60,7 +60,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-session-'));
 	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
-		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
+		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')", launchCartridge: true,
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=require([[kernel/gc_barrier]]).set_metatable' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }, ...modules],
 	});
