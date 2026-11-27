@@ -49,6 +49,7 @@ return protect(descend)
 	const entries = new Map(linked.layout.functions.map(fn => [fn.address, fn]));
 	const pcall = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_call/module')];
 	const failure = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_failure/module')];
+	const entry = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:main/entry')];
 	const commands: string[] = [], expected: string[] = [];
 	function observe(command: string, row: string | number) {
 		commands.push(command);
@@ -57,13 +58,23 @@ return protect(descend)
 	function checkRam(first: number, size: number) {
 		observe(`H ${first} ${first + size}`, hashBytes(memory.ramData(), first, size));
 	}
+	function grant(budget: number) {
+		const run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
+		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		return run;
+	}
 
-	const budget = 3072;
 	let run = RunResult.Yielded;
 	let issue = 0, required = 0, issues = 0;
-	for (let grant = 0; grant < 8192 && run !== RunResult.Halted; ++grant) {
-		run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
-		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+	const enteredFailure = () => !cpu.fixedInterruptActive() && cpu.activeThread.currentFrame?.functionAddress === failure.address;
+	for (let step = 0; step < 65536 && run !== RunResult.Halted && !enteredFailure(); ++step) {
+		// Once the terminal unwind is in reach, observe the ordinary
+		// landing before another guest instruction can replace its EPC.
+		const owner = cpu.rootThread.address;
+		const budget = memory.readRamRecordWord(owner + ThreadField.StackCapacity) >= 16384
+			? cpu.fixedInterruptActive() && cpu.readThreadFrameDepth(owner) < 24 ? 1 : 512
+			: 3072;
+		run = grant(budget);
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW) continue;
 		const interrupted = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		const depth = memory.readRamRecordWord(interrupted + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
@@ -87,7 +98,7 @@ return protect(descend)
 		checkRam(issuer - RAM_BASE, FRAME_CONTROL_BYTES);
 		checkRam(interrupted - RAM_BASE, THREAD_HEAP_BYTES);
 	}
-	assert.equal(run, RunResult.Halted);
+	assert.ok(enteredFailure(), 'the BIOS returned to its ordinary false-result landing');
 	assert.ok(issues > 1, 'real window growth happened before terminal OOM');
 	assert.ok(required > memory.readRamRecordWord(cpu.rootThread.address + ThreadField.StackCapacity),
 		'the failing recursive CALL was never given its requested window');
@@ -97,15 +108,32 @@ return protect(descend)
 	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'firmware, not the native Lua fault handler, delivered this result');
 	assert.equal(cpu.fixedInterruptActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
-	assert.equal(cpu.getFrameDepth(), 0);
 
 	const head = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 	const faults = memory.readRamRecordWord(head + GcDiagnosticField.FaultIds);
 	const diagnostic = memory.readRamRecordWord(faults + INSTRUCTION_BYTES * LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(cpu.stringPool.toString(diagnostic), 'Out of memory.');
+	const landing = cpu.activeThread.currentFrame!;
+	assert.equal(landing.pc, failure.codeAddress);
+	assert.equal(landing.argumentCount, 1);
+	assert.equal(landing.registers.get(0), valueString(diagnostic));
+	observe('P', `${cpu.getFrameDepth()} ${landing.pc}`);
+	observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${failure.codeAddress}`);
+	checkRam(landing.controlOffset, FRAME_CONTROL_BYTES);
+
+	for (let step = 0; step < 128 && run !== RunResult.Halted; ++step) run = grant(3072);
+	assert.equal(run, RunResult.Halted);
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	assert.equal(cpu.getFrameDepth(), 0);
 	const result = [valueBool(false), valueString(diagnostic)];
 	assert.deepEqual(runtime.readCompletionValues(), result);
-	observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${failure.codeAddress}`);
+	// The entry's own RET retires the open recursive capture. Its later
+	// register-window exception is not the earlier failed CALL's landing.
+	const returnPc = cpu.readEpcWord();
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
+	assert.ok(returnPc >= entry.codeAddress && returnPc < entry.codeAddress + entry.codeByteCount);
+	assert.equal(decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, returnPc).op, OpCode.RET);
+	observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${returnPc}`);
 	observe('c', [result.length, ...result.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	checkRam(cpu.rootThread.address - RAM_BASE, THREAD_HEAP_BYTES);
 
@@ -114,7 +142,7 @@ return protect(descend)
 	const romPath = join(dir, 'system.rom'), trace = join(dir, 'trace');
 	writeFileSync(romPath, rom);
 	writeFileSync(trace, commands.join('\n'));
-	const rows = execFileSync(native, [romPath, trace, trace], { encoding: 'utf8' }).trimEnd().split('\n');
+	const rows = execFileSync(native, [romPath, trace, trace], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }).trimEnd().split('\n');
 	const mismatch = rows.findIndex((row, index) => row !== expected[index]);
 	assert.equal(mismatch, -1, `row ${mismatch}: C++=${rows[mismatch]}, TS=${expected[mismatch]}`);
 	assert.equal(rows.length, expected.length);

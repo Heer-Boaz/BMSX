@@ -66,6 +66,7 @@ return ok, result, trailing
 	const counter = linked.layout.header.bssAddress + bss.offset;
 	const trampoline = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_handler/module')];
 	const body = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_body/module')];
+	const entry = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:main/entry')];
 	function boot() {
 		const rt = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		rt.boot();
@@ -165,13 +166,17 @@ return ok, result, trailing
 		assert.equal(cpu.fixedInterruptActive(), false);
 		assert.equal(cpu.isUserMode(), true);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
-		assert.equal(cpu.readEpcWord(), trampoline.codeAddress);
+		// The entry's later RET retires the recursive capture and replaces
+		// the handler's original EPC, which was sampled before it ran.
+		const returnPc = cpu.readEpcWord();
+		assert.ok(returnPc >= entry.codeAddress && returnPc < entry.codeAddress + entry.codeByteCount);
+		assert.equal(decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, returnPc).op, OpCode.RET);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 		assert.equal(memory.readRamRecordWord(counter), 1);
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('observed_error')!), diagnostic);
 		const results = parent ? [valueBool(true), valueBool(false), sentinel] : [valueBool(false), sentinel, valueNil()];
 		assert.deepEqual(rt.readCompletionValues(), results);
-		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${trampoline.codeAddress}`);
+		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${returnPc}`);
 		observe('c', [results.length, ...results.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 		hash(rt, owner, THREAD_HEAP_BYTES);
 		hash(rt, counter, INSTRUCTION_BYTES);
