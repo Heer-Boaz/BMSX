@@ -31,12 +31,6 @@ EXEC is given `10001230H`; it reads the record and starts the code at
 function-record address; see the
 [CPU linkage examples](cpu.md#sec-cpu-linkage-operands-and-encoding-examples).
 
-When a cartridge program uses global names or String constants, the BIOS
-prepares their bindings before entering the program. Reading one of its
-function records with CLOSURE or EXEC does not prepare those bindings. If the
-program needs bindings but they are not installed for that socket, the CPU
-halts instead of entering the function or forming its closure.
-
 ## Sections {#sec-memory-rom-contents-ram-sections-and-startup}
 
 | Section | In ROM | During execution |
