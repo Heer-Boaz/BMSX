@@ -175,6 +175,23 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 	}
 	record.vector(metadata.preloadModules, text);
 	record.vector(metadata.compiledModulePaths, text);
+	const recipe = symbols.systemRecipe;
+	words.push(+(recipe !== null));
+	if (recipe !== null) {
+		for (const path of [recipe.resetModule, recipe.irqModule, recipe.exceptionModule])
+			words.push(path === undefined ? 0 : tables.text(path) + 1);
+		for (const role of [recipe.preparedEntry, recipe.userIrqEntry, recipe.exceptionBridge]) {
+			words.push(role === undefined ? 0 : tables.text(role.path) + 1);
+			if (role !== undefined) text(role.exportPathKey);
+		}
+		if (recipe.preparedEntry !== undefined) words.push(recipe.preparedEntry.valueSlots);
+		record.vector(recipe.managedEntries ?? [], entry => {
+			text(entry.symbol);
+			text(entry.path);
+			words.push(+!!entry.callable);
+		});
+		record.vector(recipe.biosExports, entry => { text(entry.path); text(entry.exportPathKey); });
+	}
 	record.vector(metadata.functionIds, text);
 	record.vector(metadata.functionDisplayNames, text);
 	record.vector(metadata.functionDefinitions, range => { words.push(tables.range(range)); });
@@ -256,6 +273,29 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 	const traceStatements = traceKind === 0 ? 'erase' : traceKind === 1 ? 'emit' : record.vector(text);
 	const preloadModules = record.vector(text);
 	const compiledModulePaths = record.vector(text);
+	let systemRecipe: Blua32SymbolsImage['systemRecipe'] = null;
+	if (record.word() !== 0) {
+		const optionalText = () => {
+			const index = record.word();
+			return index === 0 ? undefined : strings[index - 1];
+		};
+		const optionalRole = () => {
+			const path = optionalText();
+			return path === undefined ? undefined : { path, exportPathKey: text() };
+		};
+		const resetModule = optionalText(), irqModule = optionalText(), exceptionModule = optionalText();
+		const prepared = optionalRole(), userIrqEntry = optionalRole(), exceptionBridge = optionalRole();
+		systemRecipe = {
+			resetModule, irqModule, exceptionModule,
+			preparedEntry: prepared === undefined ? undefined : { ...prepared, valueSlots: record.word() },
+			userIrqEntry, exceptionBridge,
+			managedEntries: record.vector(() => {
+				const symbol = text(), path = text();
+				return record.word() === 0 ? { symbol, path } : { symbol, path, callable: true as const };
+			}),
+			biosExports: record.vector(() => ({ path: text(), exportPathKey: text() })),
+		};
+	}
 	const functionIds = record.vector(text), functionDisplayNames = record.vector(text);
 	const functionDefinitions = record.vector(() => ranges[record.word()]);
 	const globalNames = record.vector(text), systemGlobalNames = record.vector(text);
@@ -299,7 +339,7 @@ export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage 
 	const bindingsByFunction = record.vector(() => record.vector(() => ({
 		declarationIndex: record.word(), inlineDepth: record.word(), visibleWordRanges: intervals[record.word()],
 	})));
-	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants,
+	return { imageAddress, staticLayoutToken, functionAddresses, moduleFunctions, initParticipants, systemRecipe,
 		metadata: { optLevel, traceStatements, preloadModules, compiledModulePaths, functionIds, functionDisplayNames, functionDefinitions,
 			globalNames, systemGlobalNames, staticFunctionIdBySlot, debugRanges, debugInlineCallSiteChains,
 			debugInlineCallSiteChainIds, statementPointsByFunction, resumePointsByFunction, localSlotsByFunction,

@@ -6579,7 +6579,10 @@ export function compileLuaChunkToProgram(
 			const exports = collectStaticFunctionExports(module.chunk, semantics, info.staticFunctionExportByPathKey);
 			for (let exportIndex = 0; exportIndex < exports.length; exportIndex += 1) {
 				const fn = exports[exportIndex];
-				const protoId = buildProtoId(moduleProtoId, `static:${fn.symbolHandle}`);
+				// Semantic handles contain parser-local span units. A physical
+				// function uses its exported linkage name, not those identities.
+				const protoId = options.captureLayout?.functionId(module.chunk.locations.range(fn.expression.span))
+					?? buildProtoId(moduleProtoId, `static:${fn.slotNames[0]}`);
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, fn.displayName, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const capturedLocal = programBuilder.lexicalDeclarations[programBuilder.protoUpvalueBindings[protoIndex][0]];

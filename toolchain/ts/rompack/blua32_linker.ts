@@ -1054,6 +1054,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		moduleFunctions,
 		initParticipants: object.link.symbols.initParticipants,
 		staticLayoutToken,
+		systemRecipe: input.domain === 'system' ? { biosExports: input.biosExports } : null,
 		metadata,
 	};
 	const layout = decodeBlua32Image(bytes, input.loadAddress);

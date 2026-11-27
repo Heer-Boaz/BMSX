@@ -135,12 +135,40 @@ struct Blua32InitParticipant {
 	bool system = false;
 };
 
+struct Blua32SystemSourceRole {
+	std::string path;
+	std::string exportPathKey;
+};
+
+struct Blua32PreparedSystemSourceRole {
+	Blua32SystemSourceRole source;
+	u32 valueSlots = 0;
+};
+
+struct Blua32ManagedSourceEntry {
+	std::string symbol;
+	std::string path;
+	bool callable = false;
+};
+
+struct Blua32SystemBuildRecipe {
+	std::optional<std::string> resetModule;
+	std::optional<std::string> irqModule;
+	std::optional<std::string> exceptionModule;
+	std::optional<Blua32PreparedSystemSourceRole> preparedEntry;
+	std::optional<Blua32SystemSourceRole> userIrqEntry;
+	std::optional<Blua32SystemSourceRole> exceptionBridge;
+	std::vector<Blua32ManagedSourceEntry> managedEntries;
+	std::vector<Blua32SystemSourceRole> biosExports;
+};
+
 struct Blua32SymbolsImage {
 	u32 imageAddress = 0;
 	std::vector<u32> functionAddresses;
 	std::vector<Blua32ModuleFunction> moduleFunctions;
 	std::vector<Blua32InitParticipant> initParticipants;
 	Blua32StaticLayoutToken staticLayoutToken;
+	std::optional<Blua32SystemBuildRecipe> systemRecipe;
 	Blua32DebugMetadata metadata;
 };
 

@@ -22,11 +22,11 @@ import {
 import {
 	applyBlua32LinkValues,
 	linkCartBlua32Image,
-	linkSystemBlua32Image,
 	type LinkedCartBlua32Image,
 	type LinkedBlua32Image,
 	type LinkedSystemBlua32Image,
 } from '../../toolchain/ts/rompack/blua32_linker';
+import { buildBlua32Image, systemBuildModuleRoots } from '../../toolchain/ts/rompack/blua32_image_builder';
 import {
 	buildBlua32Tail,
 	layoutBlua32PublicAssets,
@@ -44,10 +44,11 @@ import {
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
+	ROM_GENERATED_MODULE_PATHS,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
+	SYSTEM_STARTUP_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
-import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import type {
 	Blua32DiagnosticSource,
 	Blua32DiagnosticSourceMap,
@@ -226,10 +227,12 @@ export function buildBlua32Media(
 	if (request.system !== null) {
 		const imageOffset = sources.systemRom.header.blua32ImageOffset;
 		const imageAddress = SYSTEM_ROM_BASE + imageOffset;
-		const metadata = installedSystem.symbols!.metadata;
+		const symbols = installedSystem.symbols!;
+		const metadata = symbols.metadata;
+		const recipe = symbols.systemRecipe!;
 		const selected = request.system === 'workspace'
 			? collectProgramSources(systemRegistry, metadata.compiledModulePaths[0],
-				[...metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)])
+				[...metadata.preloadModules, ...systemBuildModuleRoots(recipe)])
 			: collectInstalledProgramSources(installedSystem.sources, metadata.compiledModulePaths);
 		const assetChanges: Blua32PublicAssetChanges = request.system === 'workspace'
 			? buildLuaSourceAssetChanges(sources.systemRom, systemRegistry, sources.systemInstalledBlua32Sources, selected.parsed, assetEdits?.[0])
@@ -250,30 +253,39 @@ export function buildBlua32Media(
 			),
 		);
 		const sourceCorrespondence = new LuaSourceCorrespondence(sources.systemInstalledBlua32Sources, programSources.sources);
-		const compiledSystem = compileLuaChunkToProgram(
-			programSources.entry.chunk,
-			programSources.modules,
-			{
-				optLevel: installedSystem.symbols!.metadata.optLevel,
-				entrySource: programSources.entry.source,
-				programDomain: 'system',
-				traceStatements: installedSystem.symbols!.metadata.traceStatements,
-				preloadModules: installedSystem.symbols!.metadata.preloadModules,
-				captureLayout: mode === 'live' ? new LuaCaptureLayout(installedSystem.symbols!.metadata, sourceCorrespondence) : undefined,
-				installedConstants: mode === 'live' ? installedSystem.layout.constants : undefined,
-			},
-		);
-		const systemObject = encodeCompiledProgramObject(compiledSystem);
-		const linked = linkSystemBlua32Image(
-			systemObject,
-			compiledSystem.metadata,
-			imageAddress,
+		// Preserve the mounted build's generated roots; a workspace may also
+		// advertise generated modules that the installed System did not use.
+		const generatedRoots = new Set(metadata.compiledModulePaths.filter(path => path !== SYSTEM_STARTUP_MODULE_PATH
+			&& ROM_GENERATED_MODULE_PATHS.includes(path)));
+		generatedRoots.add(SYSTEM_ASSET_SYMBOL_MODULE_PATH);
+		const generatedLuaModules = programSources.modules.filter(module => generatedRoots.has(module.path));
+		const luaModules = [programSources.entry, ...programSources.modules.filter(module => module.path !== SYSTEM_STARTUP_MODULE_PATH
+			&& !generatedRoots.has(module.path))]
+			.map(module => ({ ...module, displayPath: module.sourcePath }));
+		const { linked, object: systemObject, diagnosticSources } = buildBlua32Image({
+			...recipe,
+			domain: 'system',
+			luaModules,
+			generatedLuaModules,
+			entryModulePath: programSources.entry.path,
+			loadAddress: imageAddress,
 			ramByteCount,
-			BIOS_FUNCTION_EXPORTS,
-			mode === 'live'
-				? { image: installedSystem.layout, symbols: installedSystem.symbols!, captureSources: sourceCorrespondence }
-				: undefined,
-		);
+			optLevel: metadata.optLevel,
+			traceStatements: metadata.traceStatements,
+			preloadModules: metadata.preloadModules,
+			previous: mode === 'live' ? { image: installedSystem.layout, symbols, captureSources: sourceCorrespondence } : undefined,
+		});
+		const startup = diagnosticSources.get(SYSTEM_STARTUP_MODULE_PATH);
+		if (startup !== undefined) {
+			programSources.sources.set(SYSTEM_STARTUP_MODULE_PATH, startup.source);
+			programSources.diagnosticSources.set(SYSTEM_STARTUP_MODULE_PATH, startup);
+		}
+		for (const module of programSources.modules) {
+			if (!diagnosticSources.has(module.chunk.locations.path)) {
+				programSources.sources.delete(module.path);
+				programSources.diagnosticSources.delete(module.chunk.locations.path);
+			}
+		}
 		const finalAssets = layoutBlua32PublicAssets(sources.systemRom, linked.bytes.byteLength, assetChanges);
 		applyLinkedAssetModule(
 			systemObject,
@@ -291,7 +303,7 @@ export function buildBlua32Media(
 			sourceSelection: request.system,
 			sourceRevision: request.system === 'workspace' ? systemContext.programRevision : sources.systemSourceRevision,
 			previousImage: installedSystem.layout,
-			previousSymbols: installedSystem.symbols!,
+			previousSymbols: symbols,
 			sources: programSources.sources,
 			sourceCorrespondence,
 			diagnosticSources: programSources.diagnosticSources,

@@ -158,6 +158,30 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	}
 	record.vector(metadata.preloadModules, text);
 	record.vector(metadata.compiledModulePaths, text);
+	const auto& recipe = symbols.systemRecipe;
+	words.push_back(recipe.has_value());
+	if (recipe) {
+		const auto optionalText = [&](const std::optional<std::string>& path) {
+			words.push_back(path ? tables.text(*path) + 1 : 0);
+		};
+		const auto optionalRole = [&](const Blua32SystemSourceRole* role) {
+			words.push_back(role ? tables.text(role->path) + 1 : 0);
+			if (role) text(role->exportPathKey);
+		};
+		optionalText(recipe->resetModule);
+		optionalText(recipe->irqModule);
+		optionalText(recipe->exceptionModule);
+		optionalRole(recipe->preparedEntry ? &recipe->preparedEntry->source : nullptr);
+		optionalRole(recipe->userIrqEntry ? &*recipe->userIrqEntry : nullptr);
+		optionalRole(recipe->exceptionBridge ? &*recipe->exceptionBridge : nullptr);
+		if (recipe->preparedEntry) words.push_back(recipe->preparedEntry->valueSlots);
+		record.vector(recipe->managedEntries, [&](const auto& entry) {
+			text(entry.symbol);
+			text(entry.path);
+			words.push_back(entry.callable);
+		});
+		record.vector(recipe->biosExports, [&](const auto& role) { text(role.path); text(role.exportPathKey); });
+	}
 	record.vector(metadata.functionIds, text);
 	record.vector(metadata.functionDisplayNames, text);
 	record.vector(metadata.functionDefinitions, [&](const auto& range) { words.push_back(tables.range(range)); });
@@ -267,6 +291,27 @@ auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 	}
 	metadata.preloadModules = record.vector([&] { return std::string(text()); });
 	metadata.compiledModulePaths = record.vector([&] { return std::string(text()); });
+	if (record.word() != 0) {
+		const auto optionalText = [&]() -> std::optional<std::string> {
+			const auto index = record.word();
+			return index == 0 ? std::nullopt : std::optional{strings[index - 1].asString()};
+		};
+		const auto optionalRole = [&]() -> std::optional<Blua32SystemSourceRole> {
+			auto path = optionalText();
+			if (!path) return std::nullopt;
+			return Blua32SystemSourceRole{std::move(*path), text()};
+		};
+		auto& recipe = symbols.systemRecipe.emplace();
+		recipe.resetModule = optionalText();
+		recipe.irqModule = optionalText();
+		recipe.exceptionModule = optionalText();
+		auto prepared = optionalRole();
+		recipe.userIrqEntry = optionalRole();
+		recipe.exceptionBridge = optionalRole();
+		if (prepared) recipe.preparedEntry = Blua32PreparedSystemSourceRole{std::move(*prepared), record.word()};
+		recipe.managedEntries = record.vector([&] { return Blua32ManagedSourceEntry{text(), text(), record.word() != 0}; });
+		recipe.biosExports = record.vector([&] { return Blua32SystemSourceRole{text(), text()}; });
+	}
 	metadata.functionIds = record.vector([&] { return std::string(text()); });
 	metadata.functionDisplayNames = record.vector([&] { return std::string(text()); });
 	metadata.functionDefinitions = record.vector([&] { return ranges[record.word()]; });

@@ -1,5 +1,6 @@
 import type { OptimizationLevel } from '../lua/compiler/optimizer';
 import type { Blua32UpvalueRecord } from './blua32_image';
+import type { Blua32SystemBuildRecipe } from './blua32_image_builder';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
 import type { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -130,6 +131,8 @@ export type Blua32SymbolsImage = {
 	moduleFunctions: Blua32ModuleFunction[];
 	initParticipants: Blua32InitParticipant[];
 	staticLayoutToken: Blua32StaticLayoutToken;
+	/** Toolchain choices that produced the installed physical System vectors. */
+	systemRecipe: Blua32SystemBuildRecipe | null;
 	metadata: Blua32DebugMetadata;
 };
 

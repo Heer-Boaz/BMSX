@@ -5,6 +5,7 @@ import {
 } from '../../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type ManagedEntry } from '../lua/compiler';
+import { LuaCaptureLayout } from '../lua/compiler/capture_layout';
 import type { ProgramObjectImage } from '../lua/compiler/program_object';
 import { resolveLuaEntryModuleIndex } from '../lua/entry_module';
 import { selectLuaProgramModules } from '../lua/compiler/module_graph';
@@ -19,6 +20,7 @@ import {
 	applyBlua32LinkValues,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
+	type Blua32LinkBaseline,
 	type LinkedCartBlua32Image,
 	type LinkedBlua32Image,
 	type LinkedSystemBlua32Image,
@@ -73,6 +75,7 @@ type Blua32ImageBuildOptionsBase = {
 	luaModules: ReadonlyArray<Blua32SourceModule>;
 	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
 	entryComposition?: ComposedLuaSource;
+	entryModulePath?: string;
 	loadAddress: number;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
@@ -80,8 +83,7 @@ type Blua32ImageBuildOptionsBase = {
 	preloadModules?: readonly string[];
 };
 
-type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
-	domain: 'system';
+export type Blua32SystemBuildRecipe = {
 	resetModule?: string;
 	irqModule?: string;
 	exceptionModule?: string;
@@ -90,6 +92,21 @@ type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	exceptionBridge?: Blua32StaticExport;
 	managedEntries?: readonly ManagedEntry[];
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
+};
+
+export function systemBuildModuleRoots(recipe: Blua32SystemBuildRecipe): string[] {
+	const roots = (recipe.managedEntries ?? []).map(entry => entry.path);
+	for (const path of [recipe.resetModule, recipe.preparedEntry?.path, recipe.userIrqEntry?.path,
+		recipe.exceptionBridge?.path, recipe.irqModule, recipe.exceptionModule]) {
+		if (path !== undefined) roots.push(path);
+	}
+	for (const entry of recipe.biosExports) roots.push(entry.path);
+	return roots;
+}
+
+type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & Blua32SystemBuildRecipe & {
+	domain: 'system';
+	previous?: Blua32LinkBaseline;
 };
 
 type CartBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
@@ -169,7 +186,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		}
 		modulePaths.add(module.path);
 	}
-	const entryIndex = resolveLuaEntryModuleIndex(modules);
+	const entryIndex = resolveLuaEntryModuleIndex(modules, options.entryModulePath);
 	let entry = modules[entryIndex];
 	const entryOrigin = entry.chunk.locations.range(entry.chunk.span);
 	if (options.entryComposition !== undefined) {
@@ -231,16 +248,8 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[index] = modules[index + 1];
 	}
 	modules.length -= 1;
-	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path), ...managedEntries.map(entry => entry.path)];
-	if (options.domain === 'system') {
-		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
-		if (options.preparedEntry !== undefined) moduleRoots.push(options.preparedEntry.path);
-		if (options.userIrqEntry !== undefined) moduleRoots.push(options.userIrqEntry.path);
-		if (options.exceptionBridge !== undefined) moduleRoots.push(options.exceptionBridge.path);
-		if (options.irqModule !== undefined) moduleRoots.push(options.irqModule);
-		if (options.exceptionModule !== undefined) moduleRoots.push(options.exceptionModule);
-		for (const exported of options.biosExports) moduleRoots.push(exported.path);
-	}
+	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path)];
+	if (options.domain === 'system') moduleRoots.push(...systemBuildModuleRoots(options));
 	const programModules = selectLuaProgramModules(entry.chunk, modules, moduleRoots);
 	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	for (let moduleIndex = 0; moduleIndex <= programModules.length; moduleIndex += 1) {
@@ -297,6 +306,9 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		managedEntries,
 		traceStatements: options.traceStatements,
 		preloadModules: options.preloadModules,
+		captureLayout: options.previous?.captureSources === undefined
+			? undefined : new LuaCaptureLayout(options.previous.symbols.metadata, options.previous.captureSources),
+		installedConstants: options.previous?.image.constants,
 	});
 	const object = encodeCompiledProgramObject(compiled);
 	const linked = linkSystemBlua32Image(
@@ -305,7 +317,13 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			options.loadAddress,
 			options.ramByteCount,
 			options.biosExports,
+			options.previous,
 	);
+	linked.symbols.systemRecipe = {
+		resetModule: options.resetModule, irqModule: options.irqModule, exceptionModule: options.exceptionModule,
+		preparedEntry: options.preparedEntry, userIrqEntry: options.userIrqEntry, exceptionBridge: options.exceptionBridge,
+		managedEntries, biosExports: options.biosExports,
+	};
 	const values = new Map(Array.from(compiled.managedEntryProtos, ([symbol, proto]) =>
 		[symbol, linked.layout.functions[linked.functionProtoIndices.indexOf(proto)].address]));
 	let userIrq: number | undefined, bridge: number | undefined;

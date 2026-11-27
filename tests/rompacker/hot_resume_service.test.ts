@@ -1,6 +1,6 @@
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
-import { TEST_CARTRIDGE_CONTEXT_IDS, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
@@ -40,11 +40,11 @@ import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { afterTest } from '../helpers/test_cleanup';
 
-async function fixture(t: TestContext, init = '') {
+async function fixture(t: TestContext, init = '', systemSource = 'module<entry>') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
 	const source = `module<entry>\n${init}\nwhile true do halt_until_irq end`;
 	const media = await buildScenarioMediaFixture(directory, [], {
-		systemSource: 'module<entry>', launchCartridge: true, systemModules: [], cartSource: source,
+		systemSource, launchCartridge: true, systemModules: [], cartSource: source,
 	});
 	const decoded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);
 	const sources = createLoadedTestRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
@@ -80,7 +80,7 @@ async function fixture(t: TestContext, init = '') {
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });
 	});
-	return { service, sources, runtime, cpu, target, tasks, execution, debuggerState, model, source };
+	return { service, sources, runtime, cpu, target, tasks, execution, debuggerState, models, model, source };
 }
 
 test('Hot Resume captures admitted documents, not later typing; no-init installation completes explicitly', async t => {
@@ -178,6 +178,56 @@ function probe() return retained end`);
 	assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [original, literal]);
 	assert.equal(cpu.getGlobalByKey(introduced), literal);
+});
+
+test('one Hot Resume publishes new System and cartridge operands without restarting the cartridge', async t => {
+	const f = await fixture(t, 'retained = 61\nfunction cart_probe() return retained end',
+		'module<entry>\nfunction system_probe() return 38 end');
+	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
+	const oldMedia = f.sources.currentBlua32Media;
+	const systemProbe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('system_probe')!), cpu.gc);
+	const cartProbe = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('cart_probe')!), cpu.gc);
+	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources.path2lua['entry.lua'];
+	const systemModel = f.models.retain({ ...f.model.resource, contextId: TEST_SYSTEM_CONTEXT_ID }, 'lua', system.src);
+	const spelling = 'first bound by two replacement images';
+	systemModel.pushEditOperations([{ offset: system.src.indexOf('return 38'), deleteLength: 'return 38'.length,
+		text: `system_added = '${spelling}'; return system_added, 38` }]);
+	f.model.pushEditOperations([{ offset: f.source.indexOf('return retained'), deleteLength: 'return retained'.length,
+		text: `cart_added = '${spelling}'; return cart_added, retained` }]);
+	const operation = f.service.resume('workbench');
+	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
+	assert.equal(f.sources.currentBlua32Media, oldMedia);
+	assert.equal(cpu.stringPool.find(spelling), undefined);
+	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(operation.result, { status: 'completed', applied: true });
+	assert.notEqual(f.sources.currentBlua32Media.system, oldMedia.system);
+	assert.notEqual(f.sources.currentBlua32Media.cartridgeSlots[0], oldMedia.cartridgeSlots[0]);
+	assert.equal(f.sources.currentBlua32Media.system!.layout.functions.length, oldMedia.system!.layout.functions.length,
+		'body edits must not turn unedited firmware functions into tombstones');
+	assert.equal(cpu.activeThread.address, thread);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	const literal = valueString(cpu.stringPool.find(spelling)!);
+	for (const [probe, retained] of [[systemProbe, 38], [cartProbe, 61]]) {
+		cpu.beginCompletionCall(probe);
+		assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
+		assert.deepEqual(f.runtime.readCompletionValues(), [literal, valueInteger(retained)]);
+	}
+
+	// The rebuilt System still has a real reset and transfer path, not only
+	// code that happened to be callable using the old parked frames.
+	f.runtime.rebootSystem();
+	for (let grant = 0; grant < 100 && (!cpu.isCartridgeExecutionActive() || !cpu.isHaltedUntilIrq()); ++grant) {
+		f.target.advanceGame(10_000);
+	}
+	assert.equal(cpu.isCartridgeExecutionActive(), true);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
 });
 
 test('Hot Resume reorders and removes literals without replacing live String values', async t => {

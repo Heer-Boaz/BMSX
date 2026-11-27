@@ -33,6 +33,17 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		moduleFunctions: [],
 		initParticipants: [],
 		staticLayoutToken: { lo: 0, hi: 0 },
+		systemRecipe: {
+			resetModule: 'fixture/reset', irqModule: 'fixture/irq', exceptionModule: 'fixture/exception',
+			preparedEntry: { path: 'fixture/prepare', exportPathKey: 'enter', valueSlots: 8 },
+			userIrqEntry: { path: 'fixture/irq', exportPathKey: 'user' },
+			exceptionBridge: { path: 'fixture/bridge', exportPathKey: 'enter' },
+			managedEntries: [
+				{ symbol: 'call', path: 'fixture/call', callable: true },
+				{ symbol: 'land', path: 'fixture/land' },
+			],
+			biosExports: [{ path: 'fixture/identity', exportPathKey: '' }],
+		},
 		metadata: {
 			optLevel: 2,
 			traceStatements: ['fixture.compile', 'fixture.bind'],
