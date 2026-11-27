@@ -85,7 +85,7 @@
 		"test:bios-dlmalloc-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/blua.ts",
 		"test:bios-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/private_service.ts",
 		"test:bios-private-value": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/private_value.ts",
-		"test:system-rom-entry": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/conformance/heap_allocator/runtime_boot_minimal.ts tests/conformance/heap_allocator/runtime_builtin_constants.ts tests/conformance/heap_allocator/runtime_vector_frames.ts tests/conformance/heap_allocator/runtime_boot_collection.ts tests/conformance/heap_allocator/runtime_system_irq.ts",
+		"test:system-rom-entry": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/conformance/heap_allocator/runtime_boot_minimal.ts tests/conformance/heap_allocator/runtime_builtin_constants.ts tests/conformance/heap_allocator/runtime_vector_frames.ts tests/conformance/heap_allocator/runtime_boot_collection.ts tests/conformance/heap_allocator/runtime_system_irq.ts tests/conformance/heap_allocator/root_activation.ts",
 		"test:bios-frame-space-call": "bash scripts/test.sh node --import tsx --import ./tests/helpers/test_setup.ts --test --test-concurrency=1 tests/conformance/heap_allocator/frame_space_call.ts",
 		"test:bios-implicit-frame-space": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/conformance/heap_allocator/implicit_frame_space.ts",
 		"test:bios-frame-space-ret": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/ret_frame_space.ts",
