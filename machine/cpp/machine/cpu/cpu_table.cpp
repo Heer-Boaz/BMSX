@@ -127,8 +127,7 @@ bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, cons
 	} else {
 		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::Previous), previous, requested);
 		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash, hashBytes);
-		const std::array args{m_heapAllocator.stateOffset(), management + HEAP_GC_CONTROL_OFFSET, management + HEAP_LOGICAL_OCCUPIED_OFFSET,
-			receiver, array, hash, result};
+		const std::array args{management, receiver, array, hash, result};
 		beginHeapService(function, args);
 	}
 	return true;
@@ -140,25 +139,25 @@ void CPU::finishTableGrowthReservation() {
 	const u32 stageAddress = base + static_cast<u32>(HeapServiceTableGrowthField::Stage);
 	const auto stage = static_cast<HeapServiceTableGrowthStage>(m_memory.readRamRecordWord(stageAddress));
 	if (stage == HeapServiceTableGrowthStage::Idle) return;
-	const u32 receiver = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Receiver));
-	const u32 context = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
-	const Value key = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyTag))),
-		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyWord)));
-	const Value value = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag))),
-		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueWord)));
 	m_currentInstructionPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::InstructionPc));
 	lastPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::LastPc));
 	m_lastExecutionDomainId = m_activeExecutionDomainId;
 	const u32 nextPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::NextPc));
 	CallFrame& frame = *m_activeThread->currentFrame;
 	m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceTableGrowthStage::Idle));
+	const bool allocated = heapServiceResult() != 0u;
+	if (allocated && m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate)) != 0u) {
+		frame.writeControl(FrameField::Pc, nextPc);
+		return;
+	}
+	const u32 receiver = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Receiver));
+	const u32 context = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
+	const Value key = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyTag))),
+		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyWord)));
+	const Value value = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag))),
+		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueWord)));
 	TableRecord table(m_heap, receiver);
-	if (heapServiceResult() != 0u) {
-		if (m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate)) != 0u) {
-			table.finishHashInsertion(key, value);
-			frame.writeControl(FrameField::Pc, nextPc);
-			return;
-		}
+	if (allocated) {
 		const TableRecord::ResizePlan plan{
 			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ArraySlots)),
 			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::HashSlots)),

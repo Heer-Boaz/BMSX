@@ -27,7 +27,7 @@ import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const field = 'fixture_entry';
+const field = '__newindex';
 const assignments = [
 	['sett', 'owner[key]', OpCode.SETT],
 	['setfield', `owner.${field}`, OpCode.SETFIELD],
@@ -213,7 +213,16 @@ try {
 
 		function finish() {
 			held();
+			const publication = relocates ? () => memory.readRamRecordWord(owner + TableHeader.Length) === extent + 2
+				: () => memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent) === 0;
+			assert.equal(publication(), false);
 			let timed = 0;
+			for (let i = 0; i < 8192 && !publication() && cpu.heapServiceActive(); ++i) timed += grant(1);
+			assert.equal(publication(), true);
+			assert.ok(cpu.heapServiceActive(), 'the assignment tail runs before the BIOS returns');
+			assert.equal(cpu.readFramePc(caller), issue);
+			observe('P', `${caller + 1} ${issue}`);
+			observeRam(header, headerEnd);
 			for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) timed += grant(1);
 			assert.ok(timed > 0);
 			assert.equal(cpu.heapServiceActive(), false);

@@ -821,7 +821,7 @@ export class TableRecords {
 		this.finishResizedAssignment(record, key, value);
 		return slot;
 	}
-	public finishResizedAssignment(record: number, key: Value, value: Value): void {
+	private finishResizedAssignment(record: number, key: Value, value: Value): void {
 		this.publishHashInsertion(record, key, valueTag(value), valuePayload(value));
 		const index = this.getArrayIndex(key);
 		if (index >= 0) this.updateLengthHint(record, index, true);

@@ -12,6 +12,7 @@ return {
 	arena_offset = 0x400,
 	root_banks_offset = 0x600,
 	remark_head_offset = 0x680,
+	remark_new_index_offset = 12,
 	object_context_offset = 0x700,
 	trace_context_offset = 0x740,
 	effect_offset = 0x788,

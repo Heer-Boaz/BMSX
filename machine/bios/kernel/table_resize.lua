@@ -7,7 +7,9 @@ module<const>
 local reserve<const> = require('kernel/table_reserve_growth') -- T:806-817 C:255-268
 local publish<const> = require('kernel/table_publish_growth') -- T:830-834 C:383,387-390
 local finish<const> = require('kernel/table_finish_resize') -- T:840-869 C:396-424
-local ram_base<const> = 0x08000000 -- M:6
+local assignment<const> = require('kernel/table_assignment') -- T:524,564-566 C:741-742,816,857
+local layout<const> = require('kernel/gc_runtime_layout') -- M:6
+local ram_base<const> = layout.ram_base -- M:6
 local ram_word_mask<const> = 0x003ffffc -- T:120 H:240 M:7-9
 
 struct resize_source_layout
@@ -34,7 +36,10 @@ end
 -- the free cursor locally until its epilogue and writes the whole color byte
 -- on collector rescan. The leaves also expose the TS order to reference tests.
 local cpp_mirror<const> = 1 -- C:383,396-397,422,596; select the existing C++ policy, not the executing host
-local execute_table_resize<const> = function(state, control, occupied, table_address, array, hash, reservation_offset) -- T:801-804 C:249-250,280,380-382
+local execute_table_resize<const> = function(management, table_address, array, hash, reservation_offset) -- T:801-804 C:249-250,280,380-382
+	local state<const> = management + layout.arena_offset -- T:806,809 C:255,258; allocator offset from private layout
+	local control<const> = management + layout.control_offset -- T:830 C:383; collector control from private layout
+	local occupied<const> = management + layout.occupied_offset -- T:868 U:289-291 C:423 N:315-316
 	local table<const>: *resize_source_layout = ram_base + (table_address & ram_word_mask) -- T:120,803-804 H:240 M:9
 	-- Reservation can move the backing without changing these header
 	-- lanes. Keep the old extents and hash view through publication.
@@ -45,7 +50,8 @@ local execute_table_resize<const> = function(state, control, occupied, table_add
 	if reserved == 0 then return 0 end -- T:807,813-815 C:256,264-266; preserve the refused attempt, without entering publication
 	publish.publish_table_growth(control, table_address, array, hash, hash_bytes, keep_hash, reservation_offset, cpp_mirror) -- T:830-834 C:383,387-390
 	finish.finish_table_resize(state, occupied, table_address, old_array, old_hash, old_storage, reservation_offset + offsetof(resize_request.key_tag), cpp_mirror) -- T:840-869 C:396-424
-	return 1 -- T:866-869 C:420-424; completed insertion, caller derives any cache slot
+	assignment.finish_table_insertion(management, table_address, request.key_tag, request.key_word, request.value_tag, request.value_word, cpp_mirror) -- T:524,564-567 C:741-742,816,857
+	return 1 -- T:524,567 C:816-817,857; completed assignment
 end
 
 return { execute_table_resize = execute_table_resize }

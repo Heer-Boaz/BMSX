@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -20,10 +22,11 @@ import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
-const REINSERT = 'kernel/table_reinsert', FINISH = 'kernel/table_finish_resize', RESIZE = 'kernel/table_resize', entrySource = 'halt_until_irq';
+const REINSERT = 'kernel/table_reinsert', FINISH = 'kernel/table_finish_resize', RESIZE = 'kernel/table_resize';
+const ASSIGNMENT = 'kernel/table_assignment', entrySource = 'halt_until_irq';
 const basis = 'c36fafd44eea29507af392041fda24f433709f18';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark',
-	'kernel/gc_barrier', 'kernel/table_create', 'kernel/table_reserve_growth', 'kernel/table_publish_growth', REINSERT, FINISH, RESIZE].map(path => {
+	'kernel/gc_barrier', 'kernel/table_create', 'kernel/table_reserve_growth', 'kernel/table_publish_growth', REINSERT, FINISH, RESIZE, ASSIGNMENT].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
@@ -90,8 +93,10 @@ function fixture(optLevel: 0 | 3) {
 		const plan = tables['resizePlan'];
 		plan.array = array; plan.hash = hash; plan.keepHash = keepHash;
 		const expected = tables['resize'](record, key, value, previous, requested);
-		if (cppMirror) assert.ok(cpu.beginHeapService(entry, [state, control, occupied, record, array, hash, scratch]));
-		else {
+		if (cppMirror) {
+			if (expected !== HASH_STORE_DECLINED) tables['finishResizedAssignment'](record, key, value);
+			assert.ok(cpu.beginHeapService(entry, [management, record, array, hash, scratch]));
+		} else {
 			// Exercise the original TS cursor order through the same port
 			// leaves, separately from the one production entry policy.
 			const functions = linked.image.functions;
@@ -223,6 +228,35 @@ for (const opt of [0, 3] as const) {
 		}
 	});
 
+	test(`the resident resize clears method absence before its direct marking barrier at O${opt}`, () => {
+		const f = fixture(opt);
+		const owner = f.same(target => target.createTable(0, 1));
+		const id = f.same(target => target.stringPool.intern('a new collectable edge'));
+		const key = f.same(target => target.gc.tables.newIndexKey);
+		f.same(target => {
+			const pending = target.stringPool.intern('a String marked before the table write');
+			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+			target.stringPool.beginReachabilityEpoch();
+			target.stringPool.markReachable(pending);
+			target.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
+			target.memory.writeRamRecordByte(owner + GC_COLOR_OFFSET, 3);
+		});
+		const work = f.cpu.gc.epochWork();
+		const expected = f.begin(owner, 0, 2, false, key, valueString(id));
+		for (let i = 0; i < 4096 && f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent) !== 0; ++i) f.grant(1);
+		assert.equal(f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent), 0);
+		assert.ok(f.cpu.heapServiceActive());
+		assert.equal(f.cpu.gc.epochWork(), work, 'the key cache was cleared before barrier accounting');
+		const checkpoint = captureCpuCheckpoint(f.cpu);
+		const cycles = f.drain();
+		f.verify(expected);
+		assert.ok(f.cpu.gc.epochWork() > work, 'the guest accounted String work');
+		assert.equal(f.cpu.stringPool.takeMarkWork(), 0);
+		restoreCpuCheckpoint(f.cpu, checkpoint);
+		assert.equal(f.drain(), cycles);
+		f.verify(expected);
+	});
+
 	test(`combined immediate resize retires a refused hash without entering publication at O${opt}`, () => {
 		const f = fixture(opt), hash = 16;
 		const record = f.same(target => target.createTable(32, 8));
@@ -249,9 +283,9 @@ for (const opt of [0, 3] as const) {
 }
 
 const pins = [
-	['T', 'machine/ts/machine/cpu/table.ts', '39610ec36786e68a5712461b3eebd017816fba9758f1a1644b024871213e05e7', [[588, 605], [607, 629], [632, 643], [801, 804], [806, 817], [830, 834], [840, 869]]],
-	['C', 'machine/cpp/machine/cpu/table.cpp', '2b8976327da44c9c7fd5f6d5df7b01b6d2593387024fdb9e3cae19ac04403d3e', [[143, 150], [255, 268], [383, 383], [387, 390], [396, 424], [523, 562], [584, 598]]],
-	['H', 'machine/cpp/machine/cpu/table.h', 'f0f5b4a879cb6cbd33612aa64d53339a6cbb85bac8d2edb03e3d74f445b88932', [[27, 27], [44, 47], [246, 255], [262, 282], [305, 306]]],
+	['T', 'machine/ts/machine/cpu/table.ts', '39610ec36786e68a5712461b3eebd017816fba9758f1a1644b024871213e05e7', [[187, 190], [524, 524], [564, 567], [588, 605], [607, 629], [632, 643], [801, 804], [806, 817], [830, 834], [840, 869], [1104, 1105]]],
+	['C', 'machine/cpp/machine/cpu/table.cpp', '2b8976327da44c9c7fd5f6d5df7b01b6d2593387024fdb9e3cae19ac04403d3e', [[83, 85], [143, 150], [255, 268], [383, 383], [387, 390], [396, 424], [523, 562], [584, 598], [741, 742], [816, 817], [857, 857]]],
+	['H', 'machine/cpp/machine/cpu/table.h', 'f0f5b4a879cb6cbd33612aa64d53339a6cbb85bac8d2edb03e3d74f445b88932', [[27, 27], [31, 31], [44, 47], [200, 202], [212, 214], [246, 255], [262, 282], [305, 306]]],
 	['V', 'machine/ts/machine/cpu/value.ts', 'bdafe30a070405b98b673dfe76e0daad1384ccd87ee7ca26584eba734204c641', [[90, 103]]],
 	['W', 'machine/cpp/machine/cpu/value.h', 'cb211876c00637f49334db80b281d4af8a17f978bdceb736b6c9a177b9abe94e', [[109, 125]]],
 	['U', 'machine/ts/machine/cpu/lua_heap.ts', '1c9905f061ffcb9bc031196c6549981300c5281a608f14618a6117d0882e74b9', [[289, 291], [305, 311]]],
@@ -264,7 +298,7 @@ const pins = [
 ] as const;
 
 test('combined Table resize pins both native mappings, including allocation refusal and cursor publication', () => {
-	const ports = [REINSERT, FINISH, RESIZE].map(name => `machine/bios/${name}.lua`);
+	const ports = [REINSERT, FINISH, RESIZE, ASSIGNMENT].map(name => `machine/bios/${name}.lua`);
 	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
 	for (const [key, file, digest] of pins) {
 		const pinned = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
