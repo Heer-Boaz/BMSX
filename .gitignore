@@ -87,6 +87,7 @@ machine/cpp/build/
 /build-*/
 /build-win/
 /build-snesmini/
+/docs/index_files/**
 
 # System roots for cross-compilation
 .snesmini
