@@ -351,7 +351,8 @@ export class CpuExecutionState {
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
 			}
-			if (service && consumed === 0) return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
+			// A fixed activation runs machine work, not the next caller instruction.
+			if (service && (consumed === 0 || result === RunResult.Yielded)) return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
 			if (cpu.isMemoryWriteBlocked()) {
 				if (consumed > 0) {
 					return result === RunResult.Halted

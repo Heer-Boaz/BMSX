@@ -1295,24 +1295,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::CoroutineResume:
 		case BuiltinFunctionId::CoroutineYield:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		case BuiltinFunctionId::CollectGarbage: {
-			if (!args.empty() && !valueIsNumber(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			const i32 operation = args.empty() ? 0 : integerOperand(args[0]);
-			if (operation == static_cast<int>(GarbageCollectionOperation::Collect)) {
-				const u32 entry = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::FullCollection)];
-				if (entry == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-				++m_diagnosticGcProfile.fullCollections;
-#endif
-				const std::array args{m_heapAllocator.managementOffset()};
-				beginHeapService(entry, args);
-				requestYield();
-			} else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
-				out.push_back(valueInteger(m_luaHeap.usedBytes()));
-				out.push_back(valueInteger(m_luaHeap.capacity()));
-			} else throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			break;
-		}
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
@@ -2605,8 +2587,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
-		// Debugger stepping accounts a pinned full collector as machine progress,
-		// not as a second cartridge instruction. The activation owns all phases.
 		const auto& firstFrame = *m_heapServiceView.firstFrame;
 		const u32 root = firstFrame.readControl(FrameField::Function);
 		const u32 flags = firstFrame.readControl(FrameField::Flags);
@@ -2614,8 +2594,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const auto gcStage = !resident && cartLane == 0u && completion == HeapServiceBiosCallKind::Idle
 			? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		const auto& functions = m_systemImage->heapServiceFunctions;
-		const bool collection = root == functions[static_cast<size_t>(HeapServiceOperation::FullCollection)]
-			|| root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
+		const bool stoppedFinalMark = root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2694,7 +2673,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (collection || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
+		return (stoppedFinalMark || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

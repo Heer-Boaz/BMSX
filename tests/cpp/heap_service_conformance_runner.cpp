@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
 					trace >> address >> word;
 					int grants = 0;
 					while (memory.readRamRecordWord(address) != word && grants < 16384) {
-						if (scheduler.runCpuSlice(0, 1, 0u, CpuRunKind::Scheduled) != RunResult::CollectionProgress)
+						if (scheduler.runCpuSlice(0, 1, 0u, CpuRunKind::Scheduled) != RunResult::Yielded || !cpu.heapServiceActive())
 							throw std::runtime_error("Object sweep lost the CPU before the observed store");
 						++grants;
 					}

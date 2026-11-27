@@ -80,7 +80,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
 		['kernel/vblank_irq', 'before_cart_irq'],
-		['kernel/gc_full', 'collect_full'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/thread_create', 'create_coroutine'],
 		['kernel/thread_frame_storage', 'reserve_frame_space'],
@@ -103,19 +102,27 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	assert.equal(constructor.exportPathKey, 'create_table');
 	assert.equal(layout.functions[3].numParams, 2);
 	assert.ok(readLE32(bytes, constructor.functionAddress - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT);
-	const step = object.sections.rodata.moduleExports.find(entry =>
-		entry.path === 'kernel/gc_collect_step' && entry.exportPathKey === 'collect_step')!;
-	const stepIndex = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[step.slotName]);
-	assert.ok(stepIndex >= BIOS_FUNCTION_EXPORTS.length && !functions.has(stepIndex));
-	assert.equal(layout.functions[stepIndex].numParams, 0);
-	const stepFlags = layout.functions[stepIndex].address - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET;
-	assert.equal(readLE32(bytes, stepFlags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
-	assert.equal(linked.biosImports.functions.some(entry => entry.path === step.path), false);
+	const residentFlags = [
+		['kernel/gc_collect_step', 'collect_step'],
+		['kernel/gc_full', 'collect_full'],
+		['kernel/gc_full', 'heap_bytes'],
+	].map(([path, binding]) => {
+		const entry = object.sections.rodata.moduleExports.find(entry =>
+			entry.path === path && entry.exportPathKey === binding)!;
+		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
+		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length && !functions.has(index));
+		assert.equal(layout.functions[index].numParams, 0);
+		assert.equal(linked.biosImports.functions.some(entry => entry.path === path), false);
+		const flags = layout.functions[index].address - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET;
+		assert.equal(readLE32(bytes, flags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
+		return flags;
+	});
 
 	const revised = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS,
 		{ image: layout, symbols: linked.symbols });
 	assert.equal(readLE32(revised.bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET), descriptor);
-	assert.equal(readLE32(revised.bytes, stepFlags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
+	for (const flags of residentFlags)
+		assert.equal(readLE32(revised.bytes, flags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
 	assert.deepEqual(revised.bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE),
 		bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE));
 });

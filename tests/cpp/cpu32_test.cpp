@@ -727,7 +727,7 @@ void tableHeap() {
 }
 } // namespace
 int main(int argc, char** argv) {
-	const bool profileFullGc = argc == 5 && std::string_view(argv[4]) == "--profile-full-gc";
+	const bool profileFullGc = argc == 6 && std::string_view(argv[4]) == "--profile-full-gc";
 	if ((argc == 2 || ((argc == 3 || argc == 4 || profileFullGc) && std::string(argv[2]) == "--boot-primitives")) &&
 		std::string(argv[1]) == "--execute-rom") {
 		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin), {});
@@ -743,7 +743,7 @@ int main(int argc, char** argv) {
 			cpu.installBootPrimitives();
 		int fullGcCycles = 0;
 		if (test::runCpuWithinBudget(cpu, argc >= 4 ? std::stoi(argv[3]) : 100000, 0,
-			profileFullGc ? &fullGcCycles : nullptr) != RunResult::Halted) {
+			profileFullGc ? &fullGcCycles : nullptr, profileFullGc ? static_cast<u32>(std::stoul(argv[5])) : 0u) != RunResult::Halted) {
 			std::cerr << "ROM did not finish within its cycle grant\n";
 			return 1;
 		}

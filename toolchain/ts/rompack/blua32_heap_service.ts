@@ -22,13 +22,12 @@ export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
 const TABLE_GROW_MODULE = 'kernel/table_grow';
 const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
-const FULL_COLLECTION_MODULE = 'kernel/gc_full';
 const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
 const THREAD_CREATE_MODULE = 'kernel/thread_create';
 const THREAD_FRAME_STORAGE_MODULE = 'kernel/thread_frame_storage';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	ALLOCATE_RECORD_MODULE, ...SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path),
+	ALLOCATE_RECORD_MODULE, ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -37,7 +36,7 @@ export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/gc_barrier', 'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
 	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, TABLE_GROW_MODULE, 'kernel/table_plan', 'kernel/table_insert_existing',
-	INTERRUPT_PRELUDE_MODULE, FULL_COLLECTION_MODULE, STOPPED_FINAL_MARK_MODULE, THREAD_CREATE_MODULE, THREAD_FRAME_STORAGE_MODULE, 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
+	INTERRUPT_PRELUDE_MODULE, STOPPED_FINAL_MARK_MODULE, THREAD_CREATE_MODULE, THREAD_FRAME_STORAGE_MODULE, 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
 	'kernel/gc_runtime_layout', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
 ] as const;
@@ -65,7 +64,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
 	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],
-	[HeapServiceOperation.FullCollection]: ['collect_full', 1, FULL_COLLECTION_MODULE],
 	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
 	[HeapServiceOperation.CreateCoroutine]: ['create_coroutine', 3, THREAD_CREATE_MODULE],
 	[HeapServiceOperation.ReserveFrameSpace]: ['reserve_frame_space', 4, THREAD_FRAME_STORAGE_MODULE],

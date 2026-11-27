@@ -5,7 +5,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -41,7 +41,7 @@ const boot = {
 fixture_thread = __bmsx_coroutine_create
 fixture_resume = __bmsx_coroutine_resume
 fixture_yield = __bmsx_coroutine_yield
-fixture_collect = __bmsx_collect_garbage
+local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
 local make_dead_thread<const> = function(count)
 	return fixture_thread(function()
 		count = count + 1
@@ -78,7 +78,7 @@ try {
 		const deferred = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
 		const occupied = () => cpu.luaHeap.usedBytes();
 		const tail = cpu.createTable(6, 16);
-		const driver = new FullGcConformance(runtime, native, path, rom);
+		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
 		driver.launch();
 		assert.equal(gc.fullEpochs(), 1);
 		const live = cpu.getGlobalByKey(cpu.stringPool.intern('fixture_live_thread'));

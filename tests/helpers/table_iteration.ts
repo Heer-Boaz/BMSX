@@ -10,7 +10,7 @@ require('table_iteration_boot')
 coroutine = require('coroutine')
 ${body}`;
 	const modules = [
-		{ path: 'table_iteration_boot', source: 'collectgarbage = __bmsx_collect_garbage' },
+		{ path: 'table_iteration_boot', source: "local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end" },
 		...BASE_FIRMWARE_MODULES,
 		{ path: 'table', source: readFileSync('machine/bios/table.lua', 'utf8') },
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },

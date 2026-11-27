@@ -8,7 +8,7 @@ const bootSource = `local raise<const> = __bmsx_error
 assert = function(value, message) if not value then raise(message) end end
 pcall = __bmsx_pcall
 xpcall = __bmsx_xpcall
-collectgarbage = __bmsx_collect_garbage
+local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end
 select = __bmsx_select
 type = __bmsx_type
 setmetatable = __bmsx_setmetatable

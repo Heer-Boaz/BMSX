@@ -12,17 +12,17 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceOperation, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = 'fixture_collect()\nreturn 73';
-const boot = { path: 'fixture_collect_boot', source: 'fixture_collect = __bmsx_collect_garbage' };
+const boot = { path: 'fixture_collect_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
 const deadText = 'full collection must reclaim an unrooted Text value'.repeat(256);
 
 mkdirSync('tmp', { recursive: true });
@@ -73,18 +73,18 @@ try {
 				if (cycles > 0) assert.ok(used > 0, 'an admitted quantum pays ordinary instruction cycles');
 				return result;
 			}
-			const entry = cpu['systemImage'].heapServiceFunctions![HeapServiceOperation.FullCollection];
+			const entry = residentFunctionAddress(system, 'kernel/gc_full', 'collect_full');
 			const root = management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
 			const explicitCollection = () => cpu.heapServiceActive() && memory.readRamRecordWord(root) === entry;
 			for (let i = 0; i < 4096 && !explicitCollection(); ++i) grant(1);
-			assert.equal(explicitCollection(), true, 'the real builtin binds its fixed ROM activation');
-			assert.equal(gc.fullEpochs(), 0, 'the CPU did not write the epoch policy during the builtin call');
+			assert.equal(explicitCollection(), true, 'the ordinary CALL enters the linked fixed ROM function');
+			assert.equal(gc.fullEpochs(), 0, 'the CPU did not write the epoch policy during the CALL');
 			const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller), epochs = alreadyActive ? 2 : 1;
 			function held() {
 				assert.equal(cpu.readFramePc(caller), successor);
 				observe('P', `${caller + 1} ${successor}`);
 			}
-			for (let i = 0; i < 256 && !gc.fullEpochs(); ++i) assert.equal(grant(1), RunResult.CollectionProgress);
+			for (let i = 0; i < 256 && !gc.fullEpochs(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(gc.fullEpochs(), epochs);
 			held();
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(traceLimit) === 0; ++i) grant(1);
@@ -106,7 +106,7 @@ try {
 				let remaining = gc.fullEpochs(), reductions = 0;
 				while (cpu.heapServiceActive()) {
 					assert.ok(commands.length < prefix + 8192);
-					assert.equal(grant(71), RunResult.CollectionProgress);
+					assert.equal(grant(71), RunResult.Yielded);
 					if (gc.fullEpochs() < remaining) {
 						assert.equal(gc.fullEpochs(), remaining - 1);
 						if (remaining === 2) assert.equal(gc.tableRecordAddress(floating), floating, 'the current epoch retains its earlier mark');

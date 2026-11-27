@@ -7,7 +7,7 @@ local allocated_mask<const> = 0x80000000
 local block_size_mask<const> = 0x7fffffff
 local block_header_size<const> = isa.function_alignment
 local minimum_block_size<const> = block_header_size + isa.function_alignment
-local collect_garbage<const> = __bmsx_collect_garbage
+local heap<const> = require('kernel/gc_full')
 local allocation_owners<const> = setmetatable({}, { __mode = 'v' })
 
 bss runtime_code_arena: u8[arena_capacity]
@@ -93,7 +93,7 @@ function arena.allocate(byte_count, owner)
 	if address ~= nil then
 		return address
 	end
-	collect_garbage()
+	heap.collect_full()
 	local collected_address<const> = find_block(required_size, owner)
 	if collected_address == nil then
 		error('runtime compiler memory exhausted')

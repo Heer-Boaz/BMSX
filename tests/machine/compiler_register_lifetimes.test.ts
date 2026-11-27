@@ -1,6 +1,6 @@
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
 import { TABLE_CONSTRUCTOR_BINDING, tableConstructorHints } from '../helpers/table_constructor';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -147,7 +147,7 @@ return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id 
 });
 
 test('a call result can release its last table reference before the next collection', () => {
-	const boot = 'collect = __bmsx_collect_garbage; setmeta = __bmsx_setmetatable; protect = __bmsx_pcall';
+	const boot = "local heap<const> = require('kernel/gc_full'); collect = function() heap.collect_full() end; setmeta = __bmsx_setmetatable; protect = __bmsx_pcall";
 	const source = `
 require('boot')
 local function probe(make, churn)
@@ -195,10 +195,11 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 		const expected = [valueBool(true), valueInteger(37), valueBool(opt === 3), valueBool(true), valueInteger(74), valueBool(true)];
 		const budget = 1_000_000;
 		let remaining = 0, fullGcCycles = 0;
+		const functionAddress = residentFunctionAddress(image, 'kernel/gc_full', 'collect_full');
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			cpu.installBootPrimitives();
-			const profile = { fullGcCycles: 0 };
+			const profile = { functionAddress, fullGcCycles: 0 };
 			assert.equal(runCpuWithinBudget(cpu, budget, 0, profile), RunResult.Halted);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
@@ -210,7 +211,7 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget), '--profile-full-gc'],
+			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget), '--profile-full-gc', String(functionAddress)],
 				{ input: image.romBytes, encoding: 'utf8' });
 			const cost = /^budget (\d+) fault 0\nfull-gc ([1-9]\d*)\n/.exec(output);
 			assert.ok(cost, 'native execution completes without a fault and bills its explicit GC');

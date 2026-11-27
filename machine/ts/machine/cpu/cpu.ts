@@ -123,7 +123,7 @@ import {
 	MAPPED_PAGE_BYTE_SIZE,
 	mappedPageDomainIndex, mappedPageAddressKey,
 } from '../memory/mapped_page';
-import { BuiltinFunctionId, GarbageCollectionOperation, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
+import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
@@ -317,7 +317,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
-	private readonly fullCollectionArgs: readonly [number];
 	private readonly stoppedFinalMarkArgs: [number, CpuRunKind];
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
@@ -443,7 +442,6 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
-		this.fullCollectionArgs = [this.heapAllocator.managementOffset()];
 		this.stoppedFinalMarkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
@@ -2301,14 +2299,11 @@ export class CPU implements MappedPageInvalidator {
 			const irq = this.heapService.irqForwardAddress;
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
 			const completion = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Kind) as HeapServiceBiosCallKind;
-			// Debugger stepping reports paid machine progress, not a second
-			// cartridge instruction. The activation owns all collector phases.
 			const firstFrame = this.heapService.thread.firstFrame!, services = this.systemImage.heapServiceFunctions;
 			const root = firstFrame.functionAddress, flags = this.memory.readRamRecordWord(firstFrame.controlOffset + FrameField.Flags);
 			const resident = (flags & FRAME_RESIDENT_ACTIVATION) !== 0;
 			const gcStage = !resident && cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
-			const collection = root === services?.[HeapServiceOperation.FullCollection]
-				|| root === services?.[HeapServiceOperation.StoppedFinalMark];
+			const stoppedFinalMark = root === services?.[HeapServiceOperation.StoppedFinalMark];
 			this.runKind = kind;
 			this.deviceClock = deviceClock;
 			try {
@@ -2373,7 +2368,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return (collection || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
+				return (stoppedFinalMark || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
@@ -4521,25 +4516,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.CoroutineResume:
 			case BuiltinFunctionId.CoroutineYield:
 				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			case BuiltinFunctionId.CollectGarbage: {
-				const operation = args.length === 0 ? GarbageCollectionOperation.Collect : integerOperand(args.registers.get(args.base));
-				switch (operation) {
-					case GarbageCollectionOperation.Collect: {
-						const functions = this.systemImage.heapServiceFunctions;
-						if (functions === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-						if (this.gc.diagnostics !== null) ++this.gc.diagnostics.fullCollections;
-						this.beginHeapService(functions[HeapServiceOperation.FullCollection], this.fullCollectionArgs);
-						this.requestYield();
-						break;
-					}
-					case GarbageCollectionOperation.Count:
-						out.push(valueInteger(this.luaHeap.usedBytes()));
-						out.push(valueInteger(this.luaHeap.capacity()));
-						break;
-					default: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				break;
-			}
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;

@@ -24,7 +24,7 @@ get_frame_upvalue = __bmsx_get_frame_upvalue
 set_frame_upvalue = __bmsx_set_frame_upvalue
 create_thread = __bmsx_coroutine_create
 yield_thread = __bmsx_coroutine_yield
-collectgarbage = __bmsx_collect_garbage` });
+local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end` });
 	const source = `require('base')
 table = require('table')
 string = require('string/base')

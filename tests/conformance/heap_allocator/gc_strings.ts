@@ -5,7 +5,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -20,7 +20,7 @@ fixture_collect()
 return #keep
 `;
 
-const boot = { path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' };
+const boot = { path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 mkdirSync('tmp', { recursive: true });
@@ -37,7 +37,7 @@ try {
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
 		const dead = Array.from({ length: 12 }, (_, i) => cpu.stringPool.intern(`unrooted-intern-${i}`));
-		const driver = new FullGcConformance(runtime, native, path, rom);
+		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
 		driver.launch();
 		driver.reach(() => gc.phase() >= GcPhase.Sweep, 'object sweep phase', 113);
 		driver.reach(() => gc.phase() === GcPhase.Strings, 'String sweep phase');

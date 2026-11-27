@@ -11,7 +11,7 @@ import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET, HeapServiceGcStage, HeapServiceOperation } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET, HeapServiceGcStage } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
@@ -37,7 +37,7 @@ export class FullGcConformance {
 	private callerPc = 0;
 
 	constructor(private readonly runtime: Runtime, private readonly native: string,
-		private readonly directory: string, private readonly rom: string, private readonly cartridge?: string) {
+		private readonly directory: string, private readonly rom: string, private readonly functionAddress: number, private readonly cartridge?: string) {
 		const memory = runtime.machine.memory;
 		this.history.start(memory);
 		this.pages = this.history.capture(memory, null);
@@ -58,7 +58,7 @@ export class FullGcConformance {
 		assert.ok(used > 0);
 		assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the host phase chain never takes ownership');
 		if (this.caller !== -1 && active) {
-			assert.equal(result, RunResult.CollectionProgress);
+			assert.equal(result, RunResult.Yielded);
 			this.held();
 		}
 		this.trace.push(`L ${cycles}`);
@@ -69,10 +69,10 @@ export class FullGcConformance {
 	launch(): void {
 		const { cpu, memory } = this.runtime.machine;
 		const root = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
-		const fn = cpu['systemImage'].heapServiceFunctions![HeapServiceOperation.FullCollection];
+		const fn = this.functionAddress;
 		for (let n = 0; n < 256 && !(cpu.heapServiceActive() && memory.readRamRecordWord(root) === fn); ++n)
 			this.grant(16_384);
-		assert.equal(cpu.heapServiceActive(), true, 'the real builtin binds the composed root');
+		assert.equal(cpu.heapServiceActive(), true, 'ordinary CALL enters the composed root');
 		assert.equal(memory.readRamRecordWord(root), fn);
 		assert.equal(cpu.gc.fullEpochs(), 0, 'the firmware owns the epoch latch before reclamation');
 		this.caller = cpu.getFrameDepth() - 1;

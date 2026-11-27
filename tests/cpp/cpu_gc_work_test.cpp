@@ -415,25 +415,6 @@ void collectorWorkIgnoresInactiveThreadFrames() {
 		"inactive frame storage must not consume marking, atomic or sweep work");
 }
 
-void unboundExplicitCollectionDoesNotUseNativeFallback() {
-	for (const bool wide : {false, true}) {
-		Machine generated(image(OpCode::CALL, wide)), scalar(image(OpCode::CALL, wide), true);
-		for (auto* m : {&generated, &scalar}) {
-			auto& frame = *m->cpu.rootThread()->currentFrame;
-			frame.registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
-			frame.setTop(1);
-		}
-		const auto doomed = generated.cpu.createTable(16384, 0).address();
-		require(scalar.cpu.createTable(16384, 0).address() == doomed, "both backends start with the same garbage");
-		test::runCpuParity(generated.cpu, scalar.cpu, 1);
-		require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
-			&& generated.cpu.readEpcWord() == generated.rom.textAddress
-			&& !generated.cpu.heapServiceActive() && generated.cpu.gcHeap().fullEpochs() == 0
-			&& generated.cpu.gcHeap().tableRecordAddress(doomed) == doomed,
-			"an unbound narrow or WIDE CALL cannot run a native full collection");
-	}
-}
-
 void refusedCensusRetriesAtIssuePc() {
 	Machine m(image(OpCode::SETT, true));
 	auto& cpu = m.cpu;
@@ -1867,7 +1848,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Sweep);
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
-		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); unboundExplicitCollectionDoesNotUseNativeFallback();
+		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes();
 		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();

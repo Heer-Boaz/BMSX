@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -20,7 +20,7 @@ return fixture_anchor.answer
 const boot = {
 	path: 'fixture_remark_boot',
 	source: `
-fixture_collect = __bmsx_collect_garbage
+local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
 fixture_anchor = { answer = 43 }
 fixture_weak = __bmsx_setmetatable({ { answer = 17 }, fixture_anchor }, { __mode = 'v' })
 `,
@@ -44,7 +44,7 @@ try {
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
 		const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const word = (offset: number) => memory.readRamRecordWord(control + offset);
-		const driver = new FullGcConformance(runtime, native, path, rom);
+		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
 		driver.launch();
 		driver.grant(3072);
 		driver.reach(() => word(GC_REMARK_VISIT_STATE) === remarkWeak && word(GC_CHANGED_HEAD) !== 0 && word(GC_TRACE_HEAD) === 0,

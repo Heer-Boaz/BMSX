@@ -5,7 +5,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GcRootBank } from '../../../machine/ts/machine/cpu/gc_heap';
@@ -18,7 +18,7 @@ import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 const entry = 'fixture_collect()\nreturn 57';
-const boot = { path: 'fixture_roots_boot', source: 'fixture_collect = __bmsx_collect_garbage' };
+const boot = { path: 'fixture_roots_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
 const nameText = 'heap-service-young-global-name';
 const valueText = 'heap-service-young-global-value';
 const constantText = 'resident-cart-root-matches-a-young-ram-string';
@@ -55,7 +55,7 @@ try {
 		assert.deepEqual(cpu['executionImageForDomain'](0)!.constantStringRoots, [constant]);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 1);
 
-		const driver = new FullGcConformance(runtime, native, path, rom, cartRom);
+		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress({ image: system.systemImage, symbols: system.systemSymbols }, 'kernel/gc_full', 'collect_full'), cartRom);
 		driver.launch();
 		driver.reach(() => (rootCursor() >>> (GC_GRAY_INDEX_BITS + 1)) === GcRootBank.Globals, 'global bank cursor');
 		const globals = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE + HEAP_SERVICE_ROOT_BANK_SIZE;

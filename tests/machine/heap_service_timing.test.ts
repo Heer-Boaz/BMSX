@@ -154,7 +154,7 @@ test('scheduled Table constructor CALL allocates across VBlank and replays its c
 
 test('the resident full collection crosses VBlank during String reclamation', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
-		[{ path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' }]));
+		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
@@ -294,7 +294,7 @@ test('a suspended SETT retains only its published roots across a timed recovery 
 
 test('production object sweep frees records before debugger callbacks without publishing the frontier', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
-		[{ path: 'fixture_gc_boot', source: 'fixture_collect = __bmsx_collect_garbage' }]));
+		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
@@ -322,7 +322,7 @@ test('production object sweep frees records before debugger callbacks without pu
 	assert.ok(cpu.heapAllocator.issuedObjectStart(newerBlock));
 	let frontier: number[] | undefined;
 	for (let i = 0; i < 16384 && !callbacks.some(([address]) => address === newer); ++i) {
-		assert.equal(slice(1)[0], RunResult.CollectionProgress);
+		assert.equal(slice(1)[0], RunResult.Yielded);
 		if (!cpu.heapAllocator.issuedObjectStart(newerBlock) && !callbacks.some(([address]) => address === newer)) {
 			frontier ??= [count(), cursor()];
 		}

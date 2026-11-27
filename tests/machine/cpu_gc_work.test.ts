@@ -360,21 +360,6 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 });
 
-for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
-	test(`an unbound explicit collection does not enter a native fallback (${backend}, WIDE=${wide})`, () => {
-		const image = linkRawTestSystemBlua32(source(OpCode.CALL, wide));
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, pc = frame.pc;
-		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage); frame.top = 1;
-		const doomed = cpu.createTable(16384, 0);
-		cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-		assert.equal(cpu.readEpcWord(), pc);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.gc.fullEpochs(), 0);
-		assert.equal(cpu.gc.tableRecordAddress(doomed), doomed);
-	});
-}
-
 test('a WIDE table store retries physical refusal in current then fresh epochs at its issue PC', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT, true)));
 	const frame = cpu.rootThread.currentFrame!, issuePc = frame.pc;

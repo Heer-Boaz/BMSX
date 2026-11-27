@@ -2,12 +2,16 @@ module<const>
 
 -- Source basis: 000c50c1e7613d2f04f97110586c74fa58713a68.
 -- C: gc_heap.cpp; T: gc_heap.ts; X/Y: C++/TS CPU grant admission.
+-- P/Q: C++/TS CPU service boundary at 59fb80ee550356ff2fa39e57ba4944ae808b4742.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:1026,1261-1262,1270 T:1319
 local control_layout<const> = require('kernel/gc_control') -- C:1234,1241 T:1136,1142
 local collector<const> = require('kernel/gc_step') -- C:1239-1243 T:1139-1144
+local admission<const> = require('kernel/heap_admission') -- P:1312 Q:4474; budget comes from the owning layout
 local cycles_per_word<const> = 3 -- X:2645-2647 Y:2602-2605; allowance only, never a CPU charge
 
-local collect_full<const> = function(management) -- C:1230-1243 T:1134-1144
+local collect_full<const> = function() -- C:1230-1243 T:1134-1144
+	local management_port<const>: *u32 = layout.management_address -- P:1307 Q:4468; ordinary CALL carries no control arguments
+	local management<const> = *management_port -- P:1307 Q:4468
 	local device_cycles_remaining<const>: *word = layout.remaining_device_cycles_address -- X:2644-2646 Y:2602-2604; sample the hardware clock after paying for the load
 	local control<const> = management + layout.control_offset -- C:1234,1241 T:1136,1142
 	local epochs<const>: *u8 = layout.ram_base + control + control_layout.internal.full_epochs_offset -- C:1234,1241 T:1136,1142
@@ -24,4 +28,13 @@ local collect_full<const> = function(management) -- C:1230-1243 T:1134-1144
 	*effects = layout.release_string_work -- C:1284,1312-1314 T:1183,1210-1211
 end
 
-return { collect_full = collect_full }
+local heap_bytes<const> = function() -- P:1310-1312 Q:4472-4474
+	local management_port<const>: *u32 = layout.management_address -- P:1311 Q:4473; exposes the owner of both ledgers
+	local management<const> = *management_port -- P:1311 Q:4473
+	local occupied<const>: *u32 = layout.ram_base + management + layout.occupied_offset -- P:1311 Q:4473
+	local used<const> = *occupied -- P:1311 Q:4473
+	local capacity<const> = admission.heap_capacity(management + layout.arena_offset) -- P:1312 Q:4474
+	return used, capacity -- P:1311-1312 Q:4473-4474
+end
+
+return { collect_full = collect_full, heap_bytes = heap_bytes }

@@ -8,11 +8,11 @@ local vm_select<const> = __bmsx_select
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
 local vm_xpcall<const> = __bmsx_xpcall
-local vm_collect_garbage<const> = __bmsx_collect_garbage
 local console<const> = require('tty/console')
 
 local numeric_parse<const> = require('number/parse')
 local collector<const> = require('kernel/gc_collect_step')
+local heap<const> = require('kernel/gc_full')
 
 next = vm_next
 type = vm_type
@@ -110,13 +110,13 @@ end
 
 collectgarbage = function(option)
 	if option == nil or option == 'collect' then
-		vm_collect_garbage(0)
+		heap.collect_full()
 		return 0
 	elseif option == 'count' then
-		local bytes<const> = vm_collect_garbage(1)
+		local bytes<const> = heap.heap_bytes()
 		return bytes / 1024
 	elseif option == 'capacity' then
-		local _<const>, bytes<const> = vm_collect_garbage(1)
+		local _<const>, bytes<const> = heap.heap_bytes()
 		return bytes / 1024
 	elseif option == 'step' then
 		return collector.collect_step()

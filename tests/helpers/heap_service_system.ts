@@ -1,7 +1,9 @@
 import { type OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import assert from 'node:assert/strict';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import { linkTestSystemBlua32 } from './blua32';
+import { readLE32 } from '../../machine/ts/common/endian';
+import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../machine/ts/spec/blua32/image_format';
+import { linkTestSystemBlua32, type TestBlua32Image } from './blua32';
 import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram, type SystemCompileOptions } from '../../toolchain/ts/lua/compiler';
 import type { ProgramModule } from '../../toolchain/ts/lua/compiler/passes/module_contract';
@@ -66,4 +68,13 @@ export function linkHeapServiceEntry(text: Uint8Array, maxStack: number, isVarar
 	entry.maxStack = maxStack;
 	entry.isVararg = isVararg;
 	return linkTestSystemBlua32(compiled);
+}
+
+/** Resolve the actual fixed root from fixture linker symbols, not a CPU roster. */
+export function residentFunctionAddress(linked: Pick<TestBlua32Image, 'image' | 'symbols'>, module: string, member: string): number {
+	const index = linked.symbols.metadata.functionIds.findIndex(id => id.startsWith(`module:${module}/`) && id.endsWith(`|constant|${member}`));
+	assert.ok(index >= 0, `linked resident function ${module}:${member}`);
+	const record = linked.image.functions[index];
+	assert.notEqual(readLE32(linked.image.bytes, record.address - linked.image.address + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0);
+	return record.address;
 }

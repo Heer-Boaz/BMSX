@@ -1,5 +1,4 @@
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { HeapServiceOperation } from '../../machine/ts/spec/bmsx/heap_service';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -84,7 +83,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
 import { GcPhase, GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
@@ -335,7 +334,7 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 
 test('a full collection spans CPU grants and resumes its outstanding fresh epoch after restore', () => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 1', 0,
-		[{ path: 'fixture_full_timing', source: 'fixture_collect = __bmsx_collect_garbage' }]));
+		[{ path: 'fixture_full_timing', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(),
 		machineModel: PSX_MACHINE_SPEC }, new TimingInputSource());
 	runtime.boot();
@@ -346,7 +345,7 @@ test('a full collection spans CPU grants and resumes its outstanding fresh epoch
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 	runtime.frameLoop.beginFrameState(16_000_000, 0);
 	const step = () => runtime.frameScheduler.stepInstruction(0);
-	const full = cpu['systemImage'].heapServiceFunctions![HeapServiceOperation.FullCollection];
+	const full = residentFunctionAddress(image, 'kernel/gc_full', 'collect_full');
 	const explicitCollection = () => cpu.heapServiceActive() && cpu['heapService'].thread.firstFrame!.functionAddress === full;
 	for (let steps = 0; !explicitCollection() && steps < 4096; ++steps) assert.notEqual(step(), InstructionStepResult.Blocked);
 	assert.equal(explicitCollection(), true);
@@ -374,7 +373,7 @@ test('a full collection spans CPU grants and resumes its outstanding fresh epoch
 		while (cpu.heapServiceActive()) {
 			assert.ok(costs.length < 4096);
 			const grant = 911;
-			assert.equal(runtime.machine.scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled), RunResult.CollectionProgress);
+			assert.equal(runtime.machine.scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 			const paid = grant - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
 			advanceRuntimeTime(runtime, paid);

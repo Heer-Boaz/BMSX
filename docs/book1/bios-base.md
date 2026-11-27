@@ -112,10 +112,10 @@ operations can continue across CPU grants while display and timer events
 advance; neither can be interrupted by an interrupt handler. Use a full
 collection at a suitable point, such as a loading screen.
 
-The control primitive for the full collection and the two budget queries
-adds 4 base cycles beyond `CALL`, with ordinary result placement. Reading a
-count does not perform collection. Work words do not add a second charge to
-the ordinary cycles of either collection routine.
+Full collection and both budget queries also use ordinary resident calls.
+The queries read the current logical usage and capacity; they do not run
+the collector. Work words do not add a second charge to the ordinary cycles
+of either collection routine.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 
