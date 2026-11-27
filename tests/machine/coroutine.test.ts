@@ -10,7 +10,7 @@ import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_t
 test('a failed thread retains its physical error word, tag and authored frames', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.protected_and_failed, 3));
 	cpu.installBootPrimitives();
-	runGuestToHalt(cpu, 100_000);
+	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const value = cpu.getGlobalByKey(cpu.stringPool.find('failed_thread')!);
 	const failed = asThread(value, cpu.gc);

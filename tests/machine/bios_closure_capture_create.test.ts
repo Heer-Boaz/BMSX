@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS, closureRecordBytes, type FunctionPrototype, initializeRecord } from '../../machine/ts/machine/cpu/closure';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { isOpen, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
@@ -26,6 +25,7 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../h
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 const modulePath = 'kernel/closure_capture_create';
+const driverPath = 'kernel/allocate_captured_closure';
 const program = `
 local function seed(x)
   return function(a, b, c, d, e)
@@ -39,10 +39,10 @@ return seed(73)
 
 for (const level of [0, 3] as const) {
 	function fixture() {
-		const compiled = compileHeapServiceSystem(program, level, [{ path: modulePath, source: readFileSync(`machine/bios/${modulePath}.lua`, 'utf8') }]);
+		const compiled = compileHeapServiceSystem(program, level);
 		const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-		function entry(exportPathKey: string) {
-			const { slotName } = object.sections.rodata.moduleExports.find(e => e.path === modulePath && e.exportPathKey === exportPathKey)!;
+		function entry(exportPathKey: string, path = modulePath) {
+			const { slotName } = object.sections.rodata.moduleExports.find(e => e.path === path && e.exportPathKey === exportPathKey)!;
 			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
 			assert.ok(index >= 0);
 			const stack = deriveBlua32FixedStack(linked.image, [index]);
@@ -50,6 +50,7 @@ for (const level of [0, 3] as const) {
 			return linked.image.functions[index].address;
 		}
 		const prepare = entry('prepare_closure'), attempt = entry('create_prepared_closure');
+		const driver = entry('allocate_captured_closure', driverPath);
 		const target = linked.image.functions.find(f => f.upvalues.length === 6)!;
 		assert.ok(target, 'real CLOSURE has inherited, reused and newly open captures');
 		function machine() {
@@ -59,13 +60,17 @@ for (const level of [0, 3] as const) {
 			return cpu;
 		}
 		const actual = machine(), oracle = machine(), memory = actual.memory;
-		runGuestToHalt(oracle, 65_536);
+		runGuestToHalt(oracle, 100_000);
 		oracle.luaHeap.setCollectionTarget(oracle.luaHeap.capacity());
 		const completion: Value[] = [];
 		oracle.readCompletionValues(completion);
 		oracle.beginCompletionCall(valuePayload(completion[0]), [valueInteger(11), valueInteger(12), valueInteger(13), valueInteger(14), valueInteger(15)]);
 		let instruction = 0, bx = 0;
-		for (let i = 0; i < 128; ++i) {
+		for (let i = 0; i < 1024; ++i) {
+			if (oracle.heapServiceActive()) {
+				assert.equal(oracle.runUntilDepth(0, 127), RunResult.Yielded);
+				continue;
+			}
 			const frame = oracle.activeThread.currentFrame!;
 			const head = oracle.memory.readMappedU32LE(frame.pc), wide = instructionOpcode(head) === OpCode.WIDE;
 			instruction = wide ? oracle.memory.readMappedU32LE(frame.pc + INSTRUCTION_BYTES) : head;
@@ -79,7 +84,7 @@ for (const level of [0, 3] as const) {
 		const arena = actual.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
 		// Isolated test workspace: no production capture count cap or heap reservation.
-		const workspace = RAM_BASE + management + 0x100, binding = workspace + 12, descriptors = binding + 36;
+		const workspace = RAM_BASE + management + 0x200, binding = workspace + 12, descriptors = binding + 36;
 		const resolved = descriptors + 4 * target.upvalues.length, cells = resolved + 4 * target.upvalues.length;
 		memory.writeRamRecordWord(workspace, descriptors);
 		memory.writeRamRecordWord(workspace + 4, resolved);
@@ -99,7 +104,7 @@ for (const level of [0, 3] as const) {
 		}
 		function finish() {
 			let spent = 0;
-			for (let n = 0; n < 256 && actual.heapServiceActive(); ++n) spent += grant(256);
+			for (let n = 0; n < 4096 && actual.heapServiceActive(); ++n) spent += grant(256);
 			assert.equal(actual.heapServiceActive(), false);
 			return spent;
 		}
@@ -108,12 +113,23 @@ for (const level of [0, 3] as const) {
 			finish();
 			return actual.heapServiceResult() | 0;
 		}
+		// Call the unchanged native mutable-descriptor sampler as a test oracle.
+		// Its mapped reads consume the same verified prototype descriptor words.
+		function nativeCapture(frame: typeof oracle.activeThread.currentFrame & {}) {
+			assert.ok(oracle['readFunctionRecordOnBus'](frame.executionImage, target.address, oracle.readExecutionBusSignals()));
+			oracle.instructionBudgetRemaining = 0;
+			oracle['runKind'] = CpuRunKind.Direct;
+			return oracle['createClosure'](frame);
+		}
+		function startWhole() {
+			assert.ok(actual.beginHeapService(driver, [management, RAM_BASE + frame.controlOffset, owner, binding, workspace, 0]));
+		}
 		function start(missing: number) {
 			assert.ok(actual.beginHeapService(attempt, [state, control, occupied, RAM_BASE + frame.controlOffset, owner, binding, workspace, missing]));
 		}
 		const destination = (instruction >>> 12) & 0x3f;
 		return { actual, oracle, memory, frame, arena, management, control, state, occupied, cells, binding, descriptors, resolved, target,
-			destination, bind, plan, start, finish, grant };
+			destination, bind, plan, nativeCapture, start, startWhole, finish, grant };
 	}
 
 	test(`captured Closure native allocation, exact open linkage and rewind at O${level}`, () => {
@@ -129,9 +145,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(actual.luaHeap.usedBytes(), previousBytes);
 		const oracleFrame = oracle.activeThread.currentFrame!;
 		const pc = frame.pc;
-		assert.equal(oracle.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(oracle.readLuaFaultReasonWord(), 0);
-		const result = oracleFrame.registers.getPayload(f.destination);
+		const result = f.nativeCapture(oracleFrame);
 		assert.notEqual(result, 0);
 		const countAddress = control + 0x70, headAddress = control + 0x6c;
 		const countBefore = memory.readRamRecordWord(countAddress);
@@ -139,7 +153,7 @@ for (const level of [0, 3] as const) {
 		const history = new RamHistory();
 		history.start(memory);
 		const baseline = history.capture(memory, null);
-		f.start(2);
+		f.startWhole();
 		for (let n = 0; n < 12000 && memory.readRamRecordWord(countAddress) !== countBefore + 3; ++n) f.grant(1);
 		assert.ok(actual.heapServiceActive());
 		assert.equal(frame.pc, pc);
@@ -218,6 +232,43 @@ for (const level of [0, 3] as const) {
 		for (let word = 0; word < 6; ++word)
 			assert.equal(memory.readRamRecordWord(tail + word * 4), oracle.memory.readRamRecordWord(tail + word * 4));
 	});
+	test(`captured Closure BIOS owns true physical refusal and retries the same prepared edges at O${level}`, () => {
+		const f = fixture(), { actual, oracle, frame, arena, memory } = f;
+		f.bind(false);
+		const text = 'unrooted capture allocation retry '.repeat(256);
+		actual.stringPool.intern(text);
+		while (arena.allocate(4088, true)) { /* fence out the remaining arena pages */ }
+		while (arena.allocate(24, true)) { /* consume every remaining Cell-sized fit */ }
+		const before = actual.luaHeap.usedBytes();
+		const open = frame.openUpvalueHead;
+		restoreCpuCheckpoint(oracle, captureCpuCheckpoint(actual));
+		const nativeFrame = oracle.activeThread.currentFrame!;
+		const result = f.nativeCapture(nativeFrame);
+		assert.notEqual(result, 0);
+
+		f.startWhole();
+		for (let i = 0; i < 16384 && actual.heapServiceActive() && !actual.gc.active(); ++i) f.grant(3);
+		assert.ok(actual.heapServiceActive());
+		assert.ok(actual.gc.active(), 'reservation genuinely needed a collector epoch');
+		assert.equal(frame.openUpvalueHead, open);
+		const partial = captureCpuCheckpoint(actual);
+		const cycles = f.finish();
+		function compare() {
+			assert.equal(actual.stringPool.find(text), undefined);
+			assert.equal(actual.heapServiceResult(), result - RAM_BASE);
+			assert.equal(frame.openUpvalueHead, nativeFrame.openUpvalueHead);
+			assert.equal(actual.luaHeap.usedBytes(), oracle.luaHeap.usedBytes());
+			assert.equal(arena.occupiedBytes(), oracle.heapAllocator.occupiedBytes());
+			assert.ok(actual.luaHeap.usedBytes() < before);
+			assert.deepEqual(Array.from({ length: 6 }, (_, index) => memory.readRamRecordWord(result + CLOSURE_CAPTURE_WORDS + 4 * index)),
+				Array.from({ length: 6 }, (_, index) => oracle.memory.readRamRecordWord(result + CLOSURE_CAPTURE_WORDS + 4 * index)));
+		}
+		compare();
+		restoreCpuCheckpoint(actual, partial);
+		assert.equal(f.finish(), cycles);
+		compare();
+	});
+
 	test(`captured Closure third-cell refusal releases previous Cells in reverse with no publication at O${level}`, () => {
 		const f = fixture(), { actual, oracle, memory, frame, arena, control } = f;
 		f.bind(false);

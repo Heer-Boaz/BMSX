@@ -7,6 +7,7 @@ import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/ca
 import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
+import { HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
@@ -42,6 +43,9 @@ test('captured Closure storage layout and source mapping cover both native mirro
 	const span = parsed.chunk.body.get(parsed.chunk.body.length - 1).span;
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	const layouts = [
+		['closure_binding', HeapServiceCaptureBindingField.Count + 4, [['prototype', HeapServiceCaptureBindingField.Prototype], ['domain', HeapServiceCaptureBindingField.Domain], ['latched', HeapServiceCaptureBindingField.Latched],
+			['code', HeapServiceCaptureBindingField.Code], ['params', HeapServiceCaptureBindingField.Params], ['stack', HeapServiceCaptureBindingField.Stack], ['flags', HeapServiceCaptureBindingField.Flags],
+			['descriptors', HeapServiceCaptureBindingField.Descriptor], ['count', HeapServiceCaptureBindingField.Count]]],
 		['closure_record', CLOSURE_CAPTURE_WORDS, [['kind', 0], ['gray', GC_RECORD_LINK], ['prototype', CLOSURE_PROTOTYPE_ADDRESS]]],
 		['open_cell', UPVALUE_HEAP_BYTES, [['slot', UPVALUE_VALUE_WORD], ['owner', UPVALUE_OWNER], ['next', UPVALUE_NEXT]]],
 		['closure_frame', FRAME_CONTROL_BYTES, [['open_head', FrameField.OpenHead], ['closure', FrameField.Closure],
@@ -59,14 +63,19 @@ test('captured Closure storage layout and source mapping cover both native mirro
 		}
 	}
 
+	assertMappedSource(file, text, basis, reference);
+});
+
+type SourceReference = readonly [string, string, string, readonly (readonly [number, number])[]];
+function assertMappedSource(file: string, text: string, commit: string, refs: readonly SourceReference[]): void {
 	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
-	for (const [label, path, digest] of reference) {
-		const source = execFileSync('git', ['show', `${basis}:${path}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
+	for (const [label, path, digest] of refs) {
+		const source = execFileSync('git', ['show', `${commit}:${path}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
 		assert.equal(createHash('sha256').update(source).digest('hex'), digest, path);
 		sources.set(label, { lines: source.split('\n'), covered: new Set() });
 	}
-	assert.ok(text.includes(`-- Source basis: ${basis}.`));
-	const lines = text.split('\n'), exports = lines.indexOf('return {');
+	assert.ok(text.includes(`-- Source basis: ${commit}.`));
+	const lines = text.split('\n'), exports = lines.findIndex(line => line.startsWith('return {'));
 	assert.ok(exports > 0);
 	for (const [index, line] of lines.slice(0, exports).entries()) {
 		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$)/.test(line)) continue;
@@ -83,7 +92,7 @@ test('captured Closure storage layout and source mapping cover both native mirro
 			}
 		}
 	}
-	for (const [label, , , intervals] of reference) {
+	for (const [label, , , intervals] of refs) {
 		const source = sources.get(label)!;
 		for (const [first, last] of intervals) for (let n = first; n <= last; ++n) {
 			const line = source.lines[n - 1];
@@ -91,4 +100,16 @@ test('captured Closure storage layout and source mapping cover both native mirro
 			assert.ok(source.covered.has(n), `${label}:${n}: not mapped: ${line.trim()}`);
 		}
 	}
+}
+
+test('captured Closure admission and retry are mapped to both native mirrors', () => {
+	const file = 'machine/bios/kernel/allocate_captured_closure.lua';
+	assertMappedSource(file, readFileSync(file, 'utf8'), 'b6e4bb3362386c5c2cf4b7f7e0ef2b6045f340f1', [
+		['H', 'machine/ts/machine/cpu/lua_heap.ts', '90fd01485f0319193f4ca29196ea75cc00391741948d18ca7443a2ddbb7b38cf', [[75, 81], [85, 98], [104, 106], [243, 249], [272, 273]]],
+		['C', 'machine/cpp/machine/cpu/lua_heap.cpp', '0d892040e7d5e379c31545c5676060602c932ce82c521d69364290eea284079e', [[85, 93], [97, 109], [115, 116], [250, 256], [278, 279]]],
+		['G', 'machine/ts/machine/cpu/gc_heap.ts', 'f677c8ce0a75cf0a121535013677788e696a6c02eb8a5248cbc2422f7f1c65dd', [[1119, 1125]]],
+		['R', 'machine/cpp/machine/cpu/gc_heap.cpp', '5642ff30f0f11c4d573e539045e1a37fa718f246ac69f796b930d01b7eb6165c', [[1223, 1229]]],
+		['T', 'machine/ts/machine/cpu/cpu.ts', '3a1e89f106e5183e4595461f44ecd1e5e6dca9d0659bddbb3bec050089b9fbe3', [[4151, 4155], [4188, 4197]]],
+		['N', 'machine/cpp/machine/cpu/cpu.cpp', '36919b7031dc597971b652617e9fcbbe1a61181d5f32730c7ec2d080f35d3ca0', [[3012, 3013], [3055, 3068]]],
+	]);
 });

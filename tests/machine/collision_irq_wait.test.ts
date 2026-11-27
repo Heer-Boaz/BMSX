@@ -85,7 +85,7 @@ local small<const>, small_reason<const> = pcall(collision.collides, a, b)
 assert(not small and string.find(small_reason, 'GEO overlap workspace capacity exceeded', 1, true))
 return true
 `, { modules });
-	runGuestToHalt(cpu, 1_000_000);
+	runGuestToHalt(cpu, 2_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 });
 

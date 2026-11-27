@@ -431,7 +431,7 @@ end
 `, 0));
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend), { gc } = cpu;
-		runGuestToHalt(cpu, 10_000);
+		runGuestToHalt(cpu, 65_536);
 		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);

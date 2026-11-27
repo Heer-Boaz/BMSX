@@ -6,6 +6,8 @@
 namespace bmsx {
 namespace {
 
+enum class CpuOperandContinuation : u8 { Idle, Concat, CapturedClosure };
+
 template<class Writer> void writeFrameSchedulerStateSnapshot(Writer& writer, const FrameSchedulerStateSnapshot& state) {
 	writer.f64(state.accumulatedHostTimeMs);
 	writer.f64(state.cycleGrantRemainder);
@@ -1198,8 +1200,15 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 		}
 	}
 	const auto& concat = state.concat;
-	writer.boolean(concat.active());
-	if (concat.active()) {
+	const auto& captured = state.capturedClosureOperands;
+	writer.u8(static_cast<u8>(captured ? CpuOperandContinuation::CapturedClosure
+		: concat.active() ? CpuOperandContinuation::Concat : CpuOperandContinuation::Idle));
+	if (captured) {
+		for (const auto& plane : *captured) {
+			writer.u32(static_cast<u32>(plane.size()));
+			for (u32 word : plane) writer.u32(word);
+		}
+	} else if (concat.active()) {
 		writer.u32(concat.length); writer.u32(concat.registersLeft); writer.u32(concat.nextRegister);
 		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
 		writer.u32(static_cast<u32>(concat.sources.size()));
@@ -1278,12 +1287,21 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 		}
 	}
 	auto& concat = state.concat;
-	if (reader.boolean()) {
+	const auto operand = static_cast<CpuOperandContinuation>(reader.u8());
+	if (operand == CpuOperandContinuation::CapturedClosure) {
+		auto& captured = state.capturedClosureOperands.emplace();
+		for (auto& plane : captured) {
+			plane.resize(reader.u32());
+			for (u32& word : plane) word = reader.u32();
+		}
+	} else if (operand == CpuOperandContinuation::Concat) {
 		concat.length = reader.u32(); concat.registersLeft = reader.u32(); concat.nextRegister = reader.u32();
 		concat.instructionPc = reader.u32(); concat.destination = reader.u32(); concat.source = reader.u32(); concat.offset = reader.u32(); concat.hash = reader.u32();
 		concat.sources.resize(reader.u32());
 		for (auto& part : concat.sources) { part.value = reader.u64(); part.bytes = reader.u32(); }
 		concat.bytes = reader.string();
+	} else if (operand != CpuOperandContinuation::Idle) {
+		throw BMSX_RUNTIME_ERROR("Invalid saved CPU operand owner.");
 	}
 	auto& pending = state.pendingAllocation;
 	pending.recovery = static_cast<AllocationRecovery>(reader.u32());

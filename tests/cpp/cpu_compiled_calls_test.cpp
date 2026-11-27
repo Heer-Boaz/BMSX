@@ -605,18 +605,8 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	const auto instruction = [&](u32 word, OpCode op, int a = 0, int b = 0, int c = 0) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
 	};
-	instruction(0, OpCode::KSMI, 0, 0, 11);
-	instruction(1, OpCode::WIDE);
-	instruction(2, OpCode::CLOSURE, 1);
-	instruction(3, OpCode::JMP, 1); // Close R0 before taking the second capture.
-	instruction(4, OpCode::KSMI, 0, 0, 27);
-	instruction(5, OpCode::WIDE);
-	instruction(6, OpCode::CLOSURE, 2);
-	instruction(7, OpCode::JMP, 1);
-	instruction(8, OpCode::WIDE);
-	instruction(9, OpCode::CLOSURE, 3);
-	instruction(10, OpCode::HALT);
-	instruction(11, OpCode::RET, 0, 1);
+	instruction(0, OpCode::HALT);
+	instruction(1, OpCode::RET, 0, 1);
 	instruction(DECODED_PAGE_WORDS, OpCode::GETUP, 0);
 	instruction(DECODED_PAGE_WORDS + 1, OpCode::RET, 0, 2);
 	instruction(2 * DECODED_PAGE_WORDS, OpCode::KSMI, 0, 0, 39);
@@ -625,20 +615,39 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 	instruction(callWord, OpCode::CALL, 4, supplied + 1, 2);
 	instruction(callWord + 1, OpCode::HALT);
 	instruction(callWord + 2, OpCode::RET, 0, 1);
-	image.functions = {{.firstWord = 0, .wordCount = 12, .maxStack = 16},
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 16},
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 2, .numParams = formals, .maxStack = 3,
 			.staticClosure = false, .upvalues = {{true, 0}}},
 		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .numParams = 2, .maxStack = 3},
 		{.firstWord = callWord, .wordCount = 3, .maxStack = 16}};
 	const auto prototype = test::blua32TestFunctionAddress(RomImageDomain::System, 1);
-	image.closureRelocations = {{2, prototype}, {6, prototype},
-		{9, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine generated(image, false), scalar(image, true);
+	// This unit exercises compiled CALL feedback, not the CLOSURE descriptor
+	// transaction. The ROM has no BIOS; seed completed captured Values.
 	for (auto* machine : {&generated, &scalar}) {
-		test::seedTestRomClosure(machine->cpu, machine->rom.functionAddresses[2]);
+		auto& cpu = machine->cpu;
+		const auto alternate = test::seedTestRomClosure(cpu, machine->rom.functionAddresses[2]);
+		const FunctionPrototype target{
+			.functionAddress = prototype,
+			.entry = FunctionEntry::fromRom(machine->rom.bytes.data() + prototype),
+			.executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID,
+		};
+		auto& frame = *cpu.activeThread()->currentFrame;
+		auto& heap = cpu.gcHeap();
+		for (int slot : {1, 2}) {
+			std::array<u32, 1> cells{};
+			const auto closure = cpu.luaHeap().allocateClosureRecord(1u, false, cells);
+			ClosureRecord::initialize(machine->memory, closure, target, heap.white(), 1u, false, false);
+			Upvalue::store(heap, cells[0], valueInteger(slot == 1 ? 11 : 27));
+			ClosureRecord::setCaptureAddress(machine->memory, closure, 0u, cells[0]);
+			heap.publishObject(closure);
+			frame.registers.set(slot, valueClosure(closure));
+		}
+		frame.registers.set(3, valueClosure(alternate));
+		frame.setTop(4);
 	}
 	generated.cpu.prepareSystemNativeCode();
-	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "ROM constructs both actual closures");
+	require(test::runCpuParity(generated.cpu, scalar.cpu, 100) == RunResult::Halted, "arrive at the initial CALL probe boundary");
 	const u32 pc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
 	const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	const auto* owner = generated.cpu.activeThread()->currentFrame->executionImage;

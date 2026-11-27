@@ -92,6 +92,7 @@
 		"test:bios-rawset-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/rawset_service.ts",
 		"test:bios-coroutine-create": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/coroutine_create_service.ts",
 		"test:bios-closed-upvalue-store": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closed_upvalue_store.ts",
+		"test:bios-captured-closure": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/captured_closure_binding.ts",
 		"test:bios-closure-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closure_service.ts",
 		"test:bios-gc-fused-record": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_fused_record.ts",
 		"test:bios-gc-full": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_full_service.ts",

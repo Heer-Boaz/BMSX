@@ -1038,11 +1038,16 @@ operations add **1 cycle per value slot placed**:
   Include status prefixes, copied values and nil padding. The error argument
   supplied to an `xpcall` handler counts as one placed slot.
 
-`CLOSURE` additionally charges **1 cycle per upvalue descriptor bound**, whether
-it binds a newly opened cell or an existing capture. Closing captures charges
-**1 cycle per open cell actually closed**, not per closure referring to that
-cell. This applies to `RET`, `RFE`, protected error unwinding and coroutine
-close. Traversing calls without open captures adds no capture charge.
+For a published function of a non-mapped executable, with a descriptor
+range fully backed by ROM, `CLOSURE` executes capture preparation and binding
+as a BIOS routine. Its instructions consume ordinary CPU cycles, with no
+separate per-descriptor surcharge. Other captured closures charge
+**1 cycle per upvalue descriptor bound**, whether the descriptor binds a
+newly opened cell or an existing capture.
+
+Closing captures charges **1 cycle per open cell actually closed**, not per
+closure referring to that cell. This applies to `RET`, `RFE`, protected error
+unwinding and coroutine close. Traversing calls without open captures adds no capture charge.
 Register reservation size does not add a placement charge.
 
 `RET` has a base charge of **16 cycles** and uses the same receiving-range rule.
@@ -1110,9 +1115,10 @@ wait for it to finish.
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. A non-STATIC prototype constructs a distinct closure on
-each execution. To create a closure with no captures from a ROM prototype,
-one BIOS activation handles admission, any collection work and retry, and
-initialization. It uses ordinary CPU cycles while devices
+each execution. For a captureless ROM prototype, or a published function of
+a non-mapped executable whose capture descriptors all reside in ROM, one BIOS
+activation handles admission, any collection work and retry, and initialization.
+It uses ordinary CPU cycles while devices
 continue to advance. The new function becomes visible only when its record
 is ready. If the reservation still cannot be made, `CLOSURE` reports
 `OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
@@ -1557,8 +1563,11 @@ caller receives a Table only when its storage is ready. Root scanning,
 tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
-same admission and recovery procedure for a new captureless closure from
-a ROM prototype. Collection during a suspended table insertion
+same admission and recovery procedure for a new Closure from a captureless
+ROM prototype or a published function with ROM-backed capture descriptors.
+It reserves the Closure and new cells together. If a reservation fails, it
+releases its partial reservation before retrying without publishing any new
+capture links. Collection during a suspended table insertion
 uses the same time contract. A table-write instruction can pause both when
 its proposed capacity exceeds the remaining logical budget and when backing
 storage does not fit. The BIOS completes the required collection, checks
@@ -1576,8 +1585,8 @@ a partly updated table.
 
 Logical and physical assists each request at most one work word per three
 cycles in their allowance. An indivisible scan such as a record header may
-exceed the requested work. For a new Table, a captureless closure from a ROM prototype, or
-a Table insertion that cannot use its existing slots, the BIOS sizes
+exceed the requested work. For new Tables, eligible ROM Closures, or
+Table insertions that cannot use their existing slots, the BIOS sizes
 the assist from the time until the next timed hardware event after the
 issuing instruction or builtin charge. It performs the assists on
 ordinary CPU grants. Fewer than three cycles defer the assist, not the reservation.
@@ -2011,7 +2020,7 @@ are selected instruction base charges, not a complete timing table:
 | `GETT`, `GETFIELD`, `SETT`, `SETFIELD` | 16 cycles |
 | `GETI`, `SETI` | 8 cycles |
 | `SELF` | 17 cycles |
-| `CLOSURE` | 8 cycles, plus bound upvalue descriptors |
+| `CLOSURE` | 8 cycles, plus the applicable capture work |
 | `CALL` | 32 cycles, plus placed values |
 | `RET` | 16 cycles, plus placed values and closed captures |
 | `WIDE` prefix | 0 cycles |

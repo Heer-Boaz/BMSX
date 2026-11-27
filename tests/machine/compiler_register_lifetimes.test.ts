@@ -303,7 +303,7 @@ end
 return a,b,c,d,e,f,g,h,i,j,k,l,m,n,direct()
 `;
 	const expected = [21, 100, 101, 102, 103, 11, 12, 1, 2, 70, 1, 2, 50, 11, 7, 9, 8].map(valueInteger);
-	const budget = 2_000_000;
+	const budget = 8_000_000;
 	const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 	for (const opt of [0, 3] as const) {
 		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [], 'lifetime.lua'));

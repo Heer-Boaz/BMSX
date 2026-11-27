@@ -244,7 +244,12 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 	return offset -- T:4127 C:3065; capture instructions pay ordinary cycles
 end
 
+local capture_charge<const> = function(binding, missing) -- L:244-245 R:251-252
+	local proto<const>: *closure_binding = binding -- T:4076 C:3003
+	return capture_bytes(proto.count, proto.latched) + missing * cell_bytes -- L:244-245 R:251-252
+end
+
 return {
 	internal = { cell_flags_offset = cell_flags_offset, capture_bytes = capture_bytes, open_cell_address = open_cell_address, find_open = find_open, link_open = link_open },
-	prepare_closure = prepare_closure, create_prepared_closure = create_prepared_closure,
+	prepare_closure = prepare_closure, create_prepared_closure = create_prepared_closure, capture_charge = capture_charge,
 }

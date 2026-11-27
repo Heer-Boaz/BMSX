@@ -44,6 +44,7 @@ import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_
 
 // BMSX identifies the container. Only the current payload layout is accepted.
 const SAVE_STATE_SIGNATURE = 0x32534d42;
+const enum CpuOperandContinuation { Idle, Concat, CapturedClosure }
 
 function writeFrameSchedulerStateSnapshot(writer: BinarySink, state: FrameSchedulerStateSnapshot): void {
 	writer.f64(state.accumulatedHostTimeMs);
@@ -1169,8 +1170,12 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 		}
 	}
 	const concat = state.concat;
-	writer.bool(concat !== null);
-	if (concat !== null) {
+	const captured = state.capturedClosureOperands;
+	writer.u8(captured !== null ? CpuOperandContinuation.CapturedClosure
+		: concat !== null ? CpuOperandContinuation.Concat : CpuOperandContinuation.Idle);
+	if (captured !== null) {
+		for (const plane of captured) { writer.u32(plane.length); writer.u32s(plane); }
+	} else if (concat !== null) {
 		writer.u32(concat.length); writer.u32(concat.registersLeft); writer.u32(concat.nextRegister);
 		writer.u32(concat.instructionPc); writer.u32(concat.destination); writer.u32(concat.source); writer.u32(concat.offset); writer.u32(concat.hash);
 		writer.u32(concat.values.length);
@@ -1226,13 +1231,22 @@ function readTableRebuild(reader: BinaryReader) {
 	return j;
 }
 
-function readConcatAssembly(reader: BinaryReader): CpuRuntimeState['concat'] {
-	if (!reader.bool()) return null;
+function readConcatAssembly(reader: BinaryReader): NonNullable<CpuRuntimeState['concat']> {
 	const length = reader.u32(), registersLeft = reader.u32(), nextRegister = reader.u32();
 	const instructionPc = reader.u32(), destination = reader.u32(), source = reader.u32(), offset = reader.u32(), hash = reader.u32();
 	const count = reader.u32(), values: Value[] = [], lengths: number[] = [];
 	for (let i = 0; i < count; ++i) { values.push(reader.u64() as Value); lengths.push(reader.u32()); }
 	return { length, registersLeft, nextRegister, instructionPc, destination, source, offset, hash, values, lengths, bytes: reader.bytes(reader.u32()) };
+}
+
+function readCpuOperandContinuation(reader: BinaryReader): Pick<CpuRuntimeState, 'concat' | 'capturedClosureOperands'> {
+	switch (reader.u8()) {
+		case CpuOperandContinuation.Idle: return { concat: null, capturedClosureOperands: null };
+		case CpuOperandContinuation.Concat: return { concat: readConcatAssembly(reader), capturedClosureOperands: null };
+		case CpuOperandContinuation.CapturedClosure:
+			return { concat: null, capturedClosureOperands: [reader.u32Array(reader.u32()), reader.u32Array(reader.u32())] };
+	}
+	throw new Error('Invalid saved CPU operand owner.');
 }
 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
@@ -1268,7 +1282,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			order: reader.i32(), skipLess: reader.bool(), skipTie: reader.bool(),
 		},
 		rebuild: readTableRebuild(reader),
-		concat: readConcatAssembly(reader),
+		...readCpuOperandContinuation(reader),
 		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),
 		causeWord: reader.u32(),

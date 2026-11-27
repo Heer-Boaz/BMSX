@@ -73,6 +73,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/thread_create', 'create_coroutine'],
 		['kernel/thread_frame_storage', 'reserve_frame_space'],
 		['kernel/gc_barrier', 'store_closed_upvalue'],
+		['kernel/allocate_captured_closure', 'allocate_captured_closure'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HEAP_SERVICE_ENTRY_COUNT; ++operation) {

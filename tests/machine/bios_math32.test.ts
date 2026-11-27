@@ -20,10 +20,10 @@ function compile(source: string, optLevel: 0 | 3) {
 		{ entrySource: source, optLevel, programDomain: 'system' });
 	return linkTestSystemBlua32(program);
 }
-function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend) {
+function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 100_000) {
 	const image = compile(source, opt), { cpu } = createTestSystemCpu(image, backend);
 	cpu.installBootPrimitives();
-	runGuestToHalt(cpu, 100000);
+	runGuestToHalt(cpu, budget);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
 	return { image, cpu, results };
 }
@@ -82,7 +82,7 @@ return a,b,c,d,e,f,g,h,math.random(6)`, 3, backend);
 			lines.push(`math.randomseed(0x${seed.toString(16)}); local result${index}=math.random(0x${(lo >>> 0).toString(16)},0x${(hi >>> 0).toString(16)})`);
 		}
 		lines.push('return ' + names.join(','));
-		assert.deepEqual(run(lines.join('\n'), 3, backend).results, expected);
+		assert.deepEqual(run(lines.join('\n'), 3, backend, 1_000_000).results, expected);
 	});
 }
 

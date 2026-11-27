@@ -180,6 +180,8 @@ import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
+	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_WORK_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET,
+	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT, HEAP_SERVICE_CAPTURE_ISSUED_PORT, HEAP_SERVICE_CAPTURE_PORT_END,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
@@ -236,6 +238,7 @@ export type CpuRuntimeState = {
 	stringComparison: StringComparisonLatch;
 	rebuild: TableRebuild | null;
 	concat: ConcatAssemblyState | null;
+	capturedClosureOperands: readonly [Uint32Array, Uint32Array] | null;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
 	statusWord: number;
@@ -376,8 +379,9 @@ export class CPU implements MappedPageInvalidator {
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
 	private closureUpvalueWords = new Uint32Array(0);
-	private closureCellAddresses = new Uint32Array(0);
-	private captureAddresses = new Uint32Array(0);
+	private readonly capturedClosureOperands = [new Uint32Array(0), new Uint32Array(0)];
+	private readonly capturedClosureExtent = new Uint32Array(2);
+	private readonly capturedClosureArgs = [0, 0, 0, 0, 0, 0];
 	private readonly tableLookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
@@ -719,6 +723,28 @@ export class CPU implements MappedPageInvalidator {
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
+	private beginCapturedClosure(frame: CallFrame, destination: number, descriptorSlot: number): void {
+		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
+		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
+		const workspace = management + HEAP_SERVICE_CAPTURE_WORK_OFFSET;
+		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
+		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
+		frame.pc = this.currentInstructionPc;
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Prototype, record.functionAddress, record.executionDomainId);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Latched, 0, record.codeAddress);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
+		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
+		memory.writeRamRecordPair(workspace, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT);
+		memory.writeRamRecordWord(workspace + 8, HEAP_SERVICE_CAPTURE_ISSUED_PORT);
+		memory.writeRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET, mappedBusSignalsForCartridgeSlot(descriptorSlot));
+		this.capturedClosureExtent.fill(0);
+		const args = this.capturedClosureArgs;
+		args[0] = management; args[1] = RAM_BASE + frame.controlOffset; args[2] = frame.thread.address;
+		args[3] = RAM_BASE + binding; args[4] = RAM_BASE + workspace; args[5] = this.remainingDeviceCycles();
+		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CapturedClosure], args);
+	}
+
 	private finishClosureReservation(): void {
 		const base = this.heapService.closureContinuationAddress, memory = this.memory;
 		const destination = memory.readRamRecordWord(base + HeapServiceClosureField.Destination);
@@ -729,6 +755,7 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordWord(base + HeapServiceClosureField.Destination, 0);
 		const offset = this.heapServiceResult();
 		if (offset === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		if ((offset | 0) < 0) throw new LuaExecutionError(~offset);
 		const address = RAM_BASE + offset, frame = this.activeThread.currentFrame!;
 		if ((memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)
 			this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
@@ -2952,6 +2979,22 @@ export class CPU implements MappedPageInvalidator {
 			this.requestYield();
 			return;
 		}
+		// Mutable or bus-served descriptor tables still use the ordered native
+		// sampling path. A ROM prototype alone does not make its descriptors immutable.
+		if (!captureless && record.romBacked && !record.image.romFunctions.mappedCode) {
+			const bytes = Closure.closureRecordBytes(record.recordUpvalueCount, false);
+			if (bytes > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
+			const slot = this.memory.cartridgeController.selectedSlot(record.busSignals);
+			if (this.memory.bindRomByteView(record.upvalueTableAddress, record.recordUpvalueCount * BLUA32_UPVALUE_RECORD_SIZE, slot, this.executionReadView)) {
+				if (this.systemImage.heapServiceFunctions === null) {
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					return;
+				}
+				this.beginCapturedClosure(frame, a, slot);
+				this.requestYield();
+				return;
+			}
+		}
 		const closure = canonical ? this.allocateStaticClosureFromLatch() : this.createClosure(frame);
 		if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
 	}
@@ -4027,7 +4070,16 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (load) {
 			let word: number;
-			if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
+			if (((address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT) >>> 0) < MAIN_RAM_SIZE && kind !== MemoryAccessKind.U8) {
+				const management = this.heapAllocator.managementOffset();
+				const descriptor = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET + HeapServiceCaptureBindingField.Descriptor);
+				const signals = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET) as MappedBusSignals;
+				word = memory.readMappedBusU32LE(descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, signals);
+			} else if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
+				&& kind !== MemoryAccessKind.U8) {
+				const lane = +(address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT);
+				word = this.capturedClosureOperands[lane][((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2];
+			} else if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
 				// Raw records may project into the bus-visible part or beneath MMIO.
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
 			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {
@@ -4052,6 +4104,20 @@ export class CPU implements MappedPageInvalidator {
 			}
 			this.setRegisterIntegerFast(frame, frame.registers, register, word);
 		} else {
+			if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
+				&& kind !== MemoryAccessKind.U8) {
+				const lane = +(address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT);
+				const index = ((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2;
+				let words = this.capturedClosureOperands[lane];
+				if (index === words.length) {
+					const grown = new Uint32Array(Math.max(8, words.length * 2));
+					grown.set(words);
+					this.capturedClosureOperands[lane] = words = grown;
+				}
+				words[index] = wordOperand(frame.registers.get(register));
+				this.capturedClosureExtent[lane] = Math.max(this.capturedClosureExtent[lane], index + 1);
+				return;
+			}
 			if (address === HEAP_SERVICE_CALL_FAULT_ADDRESS && kind !== MemoryAccessKind.U8) {
 				const reason = wordOperand(frame.registers.get(register));
 				memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase,
@@ -4206,12 +4272,10 @@ export class CPU implements MappedPageInvalidator {
 		const count = functionRecord.recordUpvalueCount;
 		const latched = !functionRecord.romBacked;
 		if (Closure.closureRecordBytes(count, latched) > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		if (this.closureUpvalueWords.length < count) {
-			this.closureUpvalueWords = new Uint32Array(count);
-			this.closureCellAddresses = new Uint32Array(count);
-		}
+		if (this.closureUpvalueWords.length < count) this.closureUpvalueWords = new Uint32Array(count);
+		if (this.capturedClosureOperands[0].length < count) this.capturedClosureOperands[0] = new Uint32Array(count);
 		const upvalueWords = this.closureUpvalueWords;
-		const upvalues = this.closureCellAddresses;
+		const upvalues = this.capturedClosureOperands[0];
 		upvalues.fill(0, 0, count);
 		const faultSequence = this.memory.readBusFaultSequence();
 		let newUpvalueCount = 0;
@@ -4237,8 +4301,9 @@ export class CPU implements MappedPageInvalidator {
 			if (upvalueIndex >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			upvalues[index] = frame.captureAddress(upvalueIndex);
 		}
-		if (this.captureAddresses.length < newUpvalueCount) this.captureAddresses = new Uint32Array(newUpvalueCount);
-		const address = this.luaHeap.allocateClosureRecord(count, latched, this.captureAddresses, newUpvalueCount);
+		if (this.capturedClosureOperands[1].length < newUpvalueCount) this.capturedClosureOperands[1] = new Uint32Array(newUpvalueCount);
+		const cells = this.capturedClosureOperands[1];
+		const address = this.luaHeap.allocateClosureRecord(count, latched, cells, newUpvalueCount);
 		const closure = address;
 		Closure.initializeRecord(this.memory, address, functionRecord, false, this.gc.white(), count, latched);
 		let nextCell = 0;
@@ -4247,7 +4312,7 @@ export class CPU implements MappedPageInvalidator {
 				Closure.setCaptureAddress(this.memory, closure, index, upvalues[index]);
 				continue;
 			}
-			const cell = this.captureAddresses[nextCell++];
+			const cell = cells[nextCell++];
 			this.linkOpenUpvalue(frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
 			Closure.setCaptureAddress(this.memory, closure, index, cell);
 		}
@@ -5139,6 +5204,11 @@ export class CPU implements MappedPageInvalidator {
 			stringComparison: { ...this.stringComparison },
 			rebuild: this.tableRebuild.record ? { ...this.tableRebuild } : null,
 			concat: this.concat.capture(),
+			capturedClosureOperands: this.heapServiceActive() && this.heapService.thread.firstFrame!.functionAddress
+				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.CapturedClosure]
+				? [this.capturedClosureOperands[0].slice(0, this.capturedClosureExtent[0]),
+					this.capturedClosureOperands[1].slice(0, this.capturedClosureExtent[1])]
+				: null,
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
 			statusWord: this.cop0Words[COP0_STATUS],
@@ -5207,6 +5277,14 @@ export class CPU implements MappedPageInvalidator {
 		if (state.rebuild) Object.assign(this.tableRebuild, state.rebuild);
 		else this.tableRebuild.record = 0;
 		this.concat.restore(state.concat);
+		if (state.capturedClosureOperands !== null) {
+			for (let lane = 0; lane < 2; ++lane) {
+				const words = state.capturedClosureOperands[lane];
+				if (words.length > this.capturedClosureOperands[lane].length) this.capturedClosureOperands[lane] = new Uint32Array(words.length);
+				this.capturedClosureOperands[lane].set(words);
+				this.capturedClosureExtent[lane] = words.length;
+			}
+		}
 		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.pendingAllocation = state.pendingAllocation === null ? null : { ...state.pendingAllocation };
 		this.cop0Words[COP0_STATUS] = state.statusWord;

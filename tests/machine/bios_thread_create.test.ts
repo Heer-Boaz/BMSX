@@ -86,22 +86,13 @@ for (const opt of [0, 3] as const) {
 		const oldHead = memory.readRamRecordWord(control + objectHead);
 		const oldCount = memory.readRamRecordWord(control + objectCount);
 		const charge = cpu.luaHeap.usedBytes();
-		f.same(cpu => {
-			const arena = cpu.heapAllocator;
-			const extents = [[THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false], [valueBytes, true], [frameBytes, true]] as const;
-			const addresses = extents.map(([bytes, owned]) => {
-				const address = arena.allocate(bytes, owned);
-				assert.notEqual(address, 0);
-				cpu.memory.ramData().fill(dirty, address - RAM_BASE, address - RAM_BASE + bytes);
-				return address;
-			});
-			for (let index = addresses.length - 1; index >= 0; --index) arena.free(addresses[index]);
-		});
 		const record = oracle.createThread(entry);
 		const stack = oracle.memory.readRamRecordWord(record + ThreadField.StackBlock);
 		const frames = oracle.memory.readRamRecordWord(record + ThreadField.FrameBlock);
-		assert.equal(memory.readRamRecordByte(frames + frameBytes - 1), dirty);
-		assert.equal(memory.readRamRecordByte(stack + valueBytes - 1), dirty);
+		// Seed the exact payload lanes chosen by the independent allocator
+		// without adding a reserve/free sequence that can change fit order.
+		memory.writeRamRecordByte(frames + frameBytes - 1, dirty);
+		memory.writeRamRecordByte(stack + valueBytes - 1, dirty);
 		f.begin(management, entry);
 		for (let i = 0; i < 16384 && memory.readRamRecordByte(frames + frameBytes - 1) !== 0; ++i) f.grant(1);
 		assert.ok(cpu.heapServiceActive());

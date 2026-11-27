@@ -1056,6 +1056,10 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.stringComparison = m_stringComparison;
 	if (tableRebuild.record) state.rebuild = tableRebuild;
 	if (m_concat.active()) state.concat = m_concat;
+	if (heapServiceActive() && m_heapServiceView.firstFrame->readControl(FrameField::Function)
+		== m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)]) {
+		state.capturedClosureOperands = m_capturedClosureOperands;
+	}
 	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
@@ -1136,6 +1140,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_stringComparison = state.stringComparison;
 	tableRebuild = state.rebuild;
 	m_concat = state.concat;
+	if (state.capturedClosureOperands) m_capturedClosureOperands = *state.capturedClosureOperands;
 	if (m_concat.registersLeft) m_concat.sources.reserve(m_concat.sources.size() + m_concat.registersLeft);
 	else m_concat.bytes.reserve(m_concat.length);
 	m_pendingAllocation = state.pendingAllocation;
@@ -2963,10 +2968,29 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		requestYield();
 		return 0u;
 	}
+	// A catalog record does not constrain descriptor placement. Leave
+	// mutable and I/O descriptors with the original synchronous sampler.
+	if (!captureless && functionRecord.romBacked && !functionRecord.image->romFunctions.mappedCode) {
+		if (functionRecord.upvalueCount > maxClosureCaptures(false)) throw LuaOutOfMemorySignal{};
+		const u32 slot = m_memory.cartridgeController().selectedSlot(functionRecord.busSignals);
+		Span<const u8> descriptors;
+		if (m_memory.bindRomByteView(functionRecord.upvalueTableAddress,
+			static_cast<size_t>(functionRecord.upvalueCount) * BLUA32_UPVALUE_RECORD_SIZE,
+			slot, descriptors)) {
+			if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
+				enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return 0u;
+			}
+			beginCapturedClosure(frame, destination, slot);
+			requestYield();
+			return 0u;
+		}
+	}
 	if (canonical) return allocateStaticClosure(decodePrototype(functionRecord));
 	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
-	m_closureCellScratch.resize(functionRecord.upvalueCount);
-	std::fill(m_closureCellScratch.begin(), m_closureCellScratch.end(), 0u);
+	auto& [resolvedCells, issuedCells] = m_capturedClosureOperands;
+	resolvedCells.resize(functionRecord.upvalueCount);
+	std::fill(resolvedCells.begin(), resolvedCells.end(), 0u);
 	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);
 	const u32 faultSequence = m_memory.readBusFaultSequence();
 	size_t newUpvalueCount = 0;
@@ -2976,7 +3000,7 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 			functionRecord.busSignals
 		);
 		if (m_memory.readBusFaultSequence() != faultSequence) {
-			m_closureCellScratch.clear();
+			resolvedCells.clear();
 			m_closureUpvalueWordScratch.clear();
 			hardHalt();
 			return 0u;
@@ -2986,26 +3010,26 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		if ((upvalueWord & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
 			if (upvalueIndex >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const u32 cell = findOpenUpvalue(frame, static_cast<int>(upvalueIndex));
-			m_closureCellScratch[index] = cell;
+			resolvedCells[index] = cell;
 			newUpvalueCount += cell == 0u;
 		} else {
 			if (upvalueIndex >= frame.captureCount()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			m_closureCellScratch[index] = frame.captureAddress(upvalueIndex);
+			resolvedCells[index] = frame.captureAddress(upvalueIndex);
 		}
 	}
-	m_captureAddressScratch.resize(newUpvalueCount);
-	const u32 closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, m_captureAddressScratch);
+	issuedCells.resize(newUpvalueCount);
+	const u32 closure = allocateClosure(decodePrototype(functionRecord), functionRecord.upvalueCount, false, issuedCells);
 	size_t nextCell = 0;
 	for (u32 index = 0; index < functionRecord.upvalueCount; ++index) {
-		u32 address = m_closureCellScratch[index];
+		u32 address = resolvedCells[index];
 		if (address == 0u && (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_IN_STACK_MASK) != 0u) {
-			address = m_captureAddressScratch[nextCell++];
+			address = issuedCells[nextCell++];
 			linkOpenUpvalue(frame, address, static_cast<u32>(frame.stackBase())
 				+ (m_closureUpvalueWordScratch[index] & BLUA32_UPVALUE_INDEX_MASK));
 		}
 		ClosureRecord::setCaptureAddress(m_memory, closure, index, address);
 	}
-	m_closureCellScratch.clear();
+	resolvedCells.clear();
 	m_closureUpvalueWordScratch.clear();
 	instructionBudgetRemaining -= static_cast<int>(functionRecord.upvalueCount);
 	return closure;

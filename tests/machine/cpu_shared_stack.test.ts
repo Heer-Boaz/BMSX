@@ -174,7 +174,7 @@ return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 `, optLevel);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
-		runGuestToHalt(cpu, 100_000);
+		runGuestToHalt(cpu, 1_000_000);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);
 		assert.deepEqual(values, [valueInteger(0), valueInteger(0), valueInteger(1)]);

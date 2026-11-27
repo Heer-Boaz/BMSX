@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject,
-	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, Count,
+	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -42,6 +42,15 @@ export const HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
 export const enum HeapServiceClosureField {
 	Destination = 0, InstructionPc = 4, LastPc = 8, NextPc = 12,
 }
+
+export const HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
+export const enum HeapServiceCaptureBindingField { Prototype = 0, Domain = 4, Latched = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 }
+export const HEAP_SERVICE_CAPTURE_WORK_OFFSET = 0x7d8;
+export const HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e4;
+export const HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
+export const HEAP_SERVICE_CAPTURE_RESOLVED_PORT = 0x03400000;
+export const HEAP_SERVICE_CAPTURE_ISSUED_PORT = 0x03800000;
+export const HEAP_SERVICE_CAPTURE_PORT_END = 0x03c00000;
 
 export const enum HeapServiceRecordKind { Table, CanonicalClosure, DynamicClosure }
 export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
