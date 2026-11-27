@@ -147,7 +147,8 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 				registers.set(4, valueInteger(73));
 				NativeBlockRunState grant{.constants = frame.executionImage->constPool, .frame = &frame, .heap = &cpu.gcHeap(),
 					.globalValues = {}, .systemGlobalValues = {},
-					.tableIndexKey = cpu.stringPool().intern("__index"), .remainingCycles = 0};
+					.tableIndexKeyWord = cpu.memory().ramData() + cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index),
+					.remainingCycles = 0};
 				require(entry->run(registers.view(), grant)->exit == NativeBlockExit::ScalarBoundary,
 					"a short grant does not attest to an unperformed own probe");
 				grant.remainingCycles = ownGrant;
