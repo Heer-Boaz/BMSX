@@ -1564,7 +1564,7 @@ export class CPU implements MappedPageInvalidator {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 			return;
 		}
-		if (!frame.isExceptionFrame) {
+		if (!frame.isExceptionFrame || frame.openUpvalueHead !== 0) {
 			this.hardHalt();
 			return;
 		}
@@ -1582,7 +1582,6 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const nmi = frame.isNonMaskableExceptionFrame;
-		this.charge(this.closeUpvalues(frame));
 		this.activeThread.leaveFrame();
 		if (resumesContext) this.resumeInterruptedContext();
 		this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);

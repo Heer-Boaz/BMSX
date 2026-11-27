@@ -4,15 +4,17 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { load as loadCapture, UPVALUE_FLAGS, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
 import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXCEPTION_TARGET as EXCEPTION_TARGET, CPU_CAUSE_IRQ, CPU_STATUS_SYSTEM_ENTRY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -85,14 +87,14 @@ try {
 		assert.equal(built.object.sections.rodata.staticModulePaths.includes(irqPath), false);
 		assert.equal(built.object.sections.rodata.moduleProtos.some(module => module.path === irqPath), false);
 		const ops: OpCode[] = [];
-		let wroteExceptionTarget = false;
+		let transferPc = 0;
 		for (let pc = irq.codeAddress; pc < irq.codeAddress + irq.codeByteCount;) {
 			const instruction = decodeBlua32InstructionAtPc(layout.textBytes, header.textAddress, pc);
 			ops.push(instruction.op);
-			wroteExceptionTarget ||= instruction.op === OpCode.MTC0 && instruction.b === EXCEPTION_TARGET;
+			if (instruction.op === OpCode.MTC0 && instruction.b === EXCEPTION_TARGET) transferPc = pc;
 			pc = instruction.pc + INSTRUCTION_BYTES;
 		}
-		assert.ok(wroteExceptionTarget);
+		assert.ok(transferPc);
 		assert.ok(ops.includes(OpCode.RFE), 'authored IRQ fallthrough still carries normal RFE');
 		for (const op of [OpCode.RET, OpCode.CALL, OpCode.CLOSURE, OpCode.GETSYS, OpCode.GETGL]) assert.ok(!ops.includes(op), `unexpected opcode ${op}`);
 		const declarations = built.linked.symbols.metadata.staticScopes.declarations;
@@ -160,8 +162,55 @@ try {
 		assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
 		observe('P', `2 ${irq.codeAddress}`);
 		assert.equal(arena.occupiedBytes(), 0, 'vector admission uses the fixed board bank');
-		for (let step = 0; step < 64 && cpu.readFramePc(1) !== target.codeAddress; ++step)
+		for (let step = 0; step < 64 && cpu.readFramePc(1) !== transferPc; ++step)
 			assert.equal(grant(1), RunResult.Yielded);
+		assert.equal(cpu.readFramePc(1), transferPc);
+
+		// Fixed vector source cannot create captures. Author one raw open alias
+		// to check rejection of the same MTC0 without any allocator-owned object.
+		const beforeRedirect = captureRuntimeSaveState(runtime);
+		observe('S');
+		const issuer = cpu.activeThread.currentFrame!;
+		const { a: register } = decodeBlua32InstructionAtPc(layout.textBytes, header.textAddress, transferPc);
+		const capture = CPU_FIXED_STACK_BASE - 0x80, cellOffset = capture - RAM_BASE;
+		const openHead = issuer.controlOffset + FrameField.OpenHead;
+		const capturedValue = issuer.registers.get(register);
+		for (const [address, word] of [
+			[capture, UPVALUE_RECORD_KIND | (UPVALUE_OPEN << (8 * UPVALUE_FLAGS))],
+			[capture + UPVALUE_VALUE_WORD, issuer.stackBase + register],
+			[capture + UPVALUE_OWNER, cpu.activeThread.address],
+			[capture + UPVALUE_NEXT, 0],
+			[openHead, capture],
+		]) {
+			memory.writeRamRecordWord(address, word);
+			observe(`W ${address} ${word >>> 0}`);
+		}
+		assert.equal(loadCapture(memory, capture), capturedValue);
+		const cellBytes = memory.ramData().slice(cellOffset, cellOffset + UPVALUE_HEAP_BYTES);
+		assert.equal(grant(1), RunResult.Halted);
+		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MTC0]);
+		assert.equal(cpu.captureRuntimeState().hardHalted, true);
+		observe('F', 1);
+		assert.equal(cpu.getFrameDepth(), 2);
+		assert.equal(cpu.activeThread.currentFrame!.functionAddress, irq.address);
+		assert.equal(cpu.activeThread.currentFrame!.openUpvalueHead, capture);
+		assert.deepEqual(memory.ramData().subarray(cellOffset, cellOffset + UPVALUE_HEAP_BYTES), cellBytes);
+		assert.equal(loadCapture(memory, capture), capturedValue);
+		observe(`H ${openHead} ${openHead + 4}`, hashBytes(memory.ramData(), openHead, 4));
+		observe(`H ${cellOffset} ${cellOffset + UPVALUE_HEAP_BYTES}`, hashBytes(cellBytes, 0, cellBytes.length));
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);
+		assert.equal(cpu.readEpcWord(), resetPc);
+		assert.equal(cpu.captureRuntimeState().statusWord, beforeRedirect.cpuState.statusWord);
+		assert.equal(memory.readIoU32(IO_IRQ_FLAGS), flags);
+		observe('Z', `${CPU_CAUSE_IRQ} 0 ${resetPc}`);
+		observeMachine();
+
+		observe('U');
+		applyRuntimeSaveState(runtime, beforeRedirect);
+		assert.equal(cpu.readFramePc(1), transferPc);
+		assert.equal(cpu.activeThread.currentFrame!.openUpvalueHead, 0);
+		assert.equal(grant(1), RunResult.Yielded);
+		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MTC0]);
 		assert.equal(cpu.readFramePc(1), target.codeAddress, 'the vector transfer retired without executing the target');
 		observe('P', `2 ${target.codeAddress}`);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ, 'neither the transfer nor the target name creates a second exception');

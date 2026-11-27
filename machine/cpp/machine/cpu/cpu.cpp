@@ -857,7 +857,7 @@ void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		return;
 	}
-	if (!frame.hasControlFlag(FRAME_EXCEPTION)) {
+	if (!frame.hasControlFlag(FRAME_EXCEPTION) || frame.readControl(FrameField::OpenHead) != 0u) {
 		hardHalt();
 		return;
 	}
@@ -875,7 +875,6 @@ void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
 		return;
 	}
 	const bool nmi = frame.hasControlFlag(FRAME_NMI);
-	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
 	if (resumesContext) resumeInterruptedContext();
 	enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]);
