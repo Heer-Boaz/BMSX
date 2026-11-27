@@ -3,6 +3,7 @@ import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -27,6 +28,7 @@ import {
 	IO_SYS_STATUS,
 	SYS_STATUS_SUPERVISOR_ACTIVE,
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
+	IO_SYS_SUPERVISOR_FAULT_EPC,
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 } from '../../machine/ts/spec/bmsx/io';
 import type { RuntimeSourceState } from './sources';
@@ -327,18 +329,27 @@ export function admitHotResume(
 	const deferUntilUserExecution = supervisorActive || !cpu.isUserMode();
 	debuggerState.plans.pruneCompletedCompletionBatches();
 	let userFrameDepth = cpu.getFrameDepth();
+	let synchronousUserReturn = false;
 	let failedCompletionFrameIndex = -1;
 	if (deferUntilUserExecution) {
 		userFrameDepth = cpu.readExceptionReturnFrameDepth();
+		if (userFrameDepth <= 0) {
+			report({ kind: 'rejected', error: new Error('Hot Resume requires a retained User continuation.') });
+			return 'rejected';
+		}
 		if (supervisorActive) {
-			const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
 			let supervisorExceptionFrameIndex = cpu.getFrameDepth() - 1;
-			while (!cpu.isExceptionFrame(supervisorExceptionFrameIndex)
-				|| cpu.readFrameFunctionAddress(supervisorExceptionFrameIndex)
-					!== exceptionFunctionAddress) {
+			while (supervisorExceptionFrameIndex >= userFrameDepth
+				&& (!cpu.isExceptionFrame(supervisorExceptionFrameIndex)
+					|| cpu.readFrameExecutionDomain(supervisorExceptionFrameIndex) !== SYSTEM_EXECUTION_DOMAIN_ID)) {
 				supervisorExceptionFrameIndex -= 1;
 			}
+			if (supervisorExceptionFrameIndex < userFrameDepth) {
+				report({ kind: 'rejected', error: new Error('Hot Resume requires a retained System exception frame.') });
+				return 'rejected';
+			}
 			if (!cpu.isNonMaskableExceptionFrame(supervisorExceptionFrameIndex)) {
+				synchronousUserReturn = supervisorExceptionFrameIndex === userFrameDepth;
 				let completionFrameIndex = supervisorExceptionFrameIndex - 1;
 				while (completionFrameIndex >= 0
 					&& !cpu.readFrameReturnsToCompletionLatch(completionFrameIndex)) {
@@ -396,7 +407,7 @@ export function admitHotResume(
 		initCalls,
 		failedCompletionFrameIndex,
 	};
-	const installation = (windowRequested = false): HotResumeAdmission => {
+	const installation = (windowRequested = false, unwound = false): HotResumeAdmission => {
 		if ((deferUntilUserExecution || windowRequested) && !runtime.admitExternalCpuMutation()) {
 			report({ kind: 'rejected', error: new Error('Finish the active CPU/device frontier before installing an image revision.') });
 			return 'rejected';
@@ -406,6 +417,7 @@ export function admitHotResume(
 			: cpu.getFrameDepth();
 		const thread = cpu.activeThread;
 		let relocation: HotResumeRelocation | null;
+		let unwindFunctionAddress = 0;
 		let valueEnd = 0, frameEnd = 0;
 		try {
 			relocation = prepared.built === null
@@ -424,6 +436,19 @@ export function admitHotResume(
 					valueEnd += Math.max(1, fn.maxStack, fn.numParams);
 				}
 				frameEnd = retainedFrameCount + prepared.initCalls.length + 1;
+			}
+			if (prepared.failedCompletionFrameIndex >= 0 && !unwound) {
+				const system = sources.currentBlua32Media.system!;
+				const unwind = system.symbols?.metadata.functionIds.indexOf('module:kernel/frame_unwind/module');
+				if (unwind === undefined || unwind < 0 || retainedFrameCount === 0)
+					throw new Error('The installed System ROM cannot unwind the failed initializer.');
+				const fn = system.layout.functions[unwind];
+				unwindFunctionAddress = fn.address;
+				let tail = thread.stackTop;
+				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
+				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));
+				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
 			}
 		} catch (error) {
 			// Unsupported live edits reject before any media/CPU write. They
@@ -444,12 +469,29 @@ export function admitHotResume(
 					return;
 				}
 				void runtimeTasks.schedule(() => {
-					if (isCurrent()) installation(true);
+					if (isCurrent()) installation(true, unwound);
 				}, error => report({ kind: 'failed', error }));
 			});
 			runtime.history.stop();
 			guest.invalidate();
 			cpu.requestRegisterWindow(valueEnd, frameEnd, runtime.machine.scheduler.cyclesUntilDeadline());
+			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
+			return 'deferred';
+		}
+		if (unwindFunctionAddress !== 0) {
+			const plan = new RuntimeGuestCallPlan(runtime, retainedFrameCount, 'exception', false, completed => {
+				if (!completed) {
+					report({ kind: 'discarded' });
+					return;
+				}
+				void runtimeTasks.schedule(() => {
+					if (isCurrent()) installation(false, true);
+				}, error => report({ kind: 'failed', error }));
+			});
+			retireRuntimeFrameScopes(runtime, sources, guest, thread.address, retainedFrameCount);
+			runtime.history.stop();
+			guest.invalidate();
+			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, unwindFunctionAddress, [valueInteger(retainedFrameCount)]);
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}
@@ -480,7 +522,7 @@ export function admitHotResume(
 				runtimeTasks,
 				userFrameDepth,
 				cpu.readFrameExecutionDomain(targetFrameIndex),
-				cpu.readFramePc(targetFrameIndex),
+				synchronousUserReturn ? runtime.machine.memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC) : cpu.readFramePc(targetFrameIndex),
 				supervisorActive,
 				installation,
 				isCurrent,
@@ -509,8 +551,6 @@ function applyPreparedHotResume(
 	// A no-source-change resume still mutates the heap through its init calls.
 	if (prepared.built === null) runtime.history.stop();
 	if (prepared.failedCompletionFrameIndex >= 0) {
-		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread.address, prepared.failedCompletionFrameIndex);
-		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
 			cpu.activeThread.address,
 			prepared.failedCompletionFrameIndex,

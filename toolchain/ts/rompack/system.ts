@@ -28,6 +28,7 @@ export const BIOS_EXCEPTION_BRIDGE: Blua32StaticExport = {
 };
 
 export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
+	{ symbol: 'frame_unwind', path: 'kernel/frame_unwind', callable: true },
 	{ symbol: 'protected_call', path: 'kernel/protected_call', callable: true },
 	{ symbol: 'protected_xcall', path: 'kernel/protected_xcall', callable: true },
 	{ symbol: 'protected_body', path: 'kernel/protected_body', callable: true },

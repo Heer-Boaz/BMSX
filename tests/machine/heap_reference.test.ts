@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_RECORD_KIND, UPVALUE_FLAGS, UPVALUE_OPEN, UPVALUE_OWNER, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD, bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { asClosure, valueFloatBits, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
-import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { abortFixtureCompletionCall, allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { test } from 'node:test';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread';
@@ -189,7 +189,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345), 'a raw open cell needs no host attachment');
 	memory.writeRamRecordWord(closure + CLOSURE_CAPTURE_WORDS, address);
 	resizeThreadStackReference(cpu, frame.thread, oldCapacity);
-	cpu.abortCompletionCall(0);
+	abortFixtureCompletionCall(cpu, 0);
 	assert.equal(isOpen(memory, address), false);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_VALUE_WORD), 0xffa12345);
 	assert.equal(memory.readRamRecordByte(address + UPVALUE_VALUE_TAG), ValueTag.Float);

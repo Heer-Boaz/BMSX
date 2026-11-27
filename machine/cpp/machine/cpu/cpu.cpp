@@ -898,7 +898,8 @@ void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 
 void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
-	u32 functionAddress
+	u32 functionAddress,
+	BuiltinArgsView args
 ) {
 	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
@@ -909,7 +910,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	const auto* record = image->romFunctions.find(functionAddress);
 	if (!record || record->upvalueCount != 0u || (record->entry.flags & BLUA32_FUNCTION_STATIC) == 0u)
 		throw BMSX_RUNTIME_ERROR("External call requires a static capture-free Function.");
-	pushDetachedFrame({image, {functionAddress, record->entry}}, 0u, {}, {});
+	pushDetachedFrame({image, {functionAddress, record->entry}}, 0u, args, {});
 }
 
 CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
@@ -2141,17 +2142,6 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 		: &CPU::runUntilDepthInstrumented;
 }
 
-void CPU::unwindToDepth(int targetDepth) {
-	const bool unwinding = static_cast<int>(m_activeThread->frameDepth()) > targetDepth;
-	if (unwinding) abortStalledMemoryWrite();
-	while (static_cast<int>(m_activeThread->frameDepth()) > targetDepth) {
-		auto* finished = m_activeThread->currentFrame;
-		closeUpvalues(*finished);
-		m_activeThread->leaveFrame();
-	}
-	if (unwinding) resumeFrameBank();
-}
-
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
 	return frameExecutionBank(ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Flags));
 }
@@ -2188,12 +2178,6 @@ bool CPU::completionCallPending() const {
 
 bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
 	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->hasControlFlag(FRAME_COMPLETION);
-}
-
-void CPU::abortCompletionCall(int frameIndex) {
-	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	unwindToDepth(frameIndex);
-	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 }
 
 auto CPU::readCompletionValues() const -> ConstValueSpan {

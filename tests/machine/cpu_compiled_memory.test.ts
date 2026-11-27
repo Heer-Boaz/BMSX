@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { runCpuParity } from '../helpers/cpu_execution';
+import { abortFixtureCompletionCall, runCpuParity } from '../helpers/cpu_execution';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
@@ -777,7 +777,7 @@ test('external call entry and active-PC redirection flush an unaccepted physical
 				cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[2]);
 				cpu.runUntilDepth(1, 20);
 				assert.equal(cpu.isMemoryWriteBlocked(), true);
-				cpu.abortCompletionCall(1);
+				abortFixtureCompletionCall(cpu, 1);
 				device.ready = true;
 				cpu.runUntilDepth(0, 20);
 				assert.deepEqual(device.writes, [0x12345678], 'unwinding abandons the callee wait, not the caller instruction');

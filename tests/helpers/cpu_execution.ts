@@ -36,6 +36,21 @@ export function runGuestToHalt(cpu: CPU, budget: number, depth = 0): void {
 	assert.ok(exception === -1 || (exception === existingException && exception < depth), 'no new exception is active');
 }
 
+/** Tear down injected frames in raw fixtures that do not install a guest unwind handler. */
+export function abortFixtureCompletionCall(cpu: CPU, frameIndex: number): void {
+	if (cpu.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
+	const thread = cpu.activeThread;
+	if (thread.frameDepth > frameIndex) {
+		cpu['abortStalledMemoryWrite']();
+		do {
+			cpu['closeUpvalues'](thread.currentFrame!);
+			thread.leaveFrame();
+		} while (thread.frameDepth > frameIndex);
+		cpu['resumeFrameBank']();
+	}
+	cpu['clearCompletionValues']();
+}
+
 /** Generated regions store and read registers through the `s` and `p` aliases. */
 type GeneratedRegisterBank = ValueSlots & { s: ValueSlots['setEncoded']; p: ValueSlots['getPayload'] };
 

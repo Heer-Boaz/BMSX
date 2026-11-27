@@ -107,6 +107,14 @@ test('completion calls use admitted backing and preserve borrowed Values across 
 	hash(frame.controlOffset, FRAME_CONTROL_BYTES);
 	complete(args);
 
+	admission(`T N ${variadic.address}`, () => cpu.beginCompletionCallInExecutionDomain(
+		SYSTEM_EXECUTION_DOMAIN_ID, variadic.address, runtime.readCompletionValues()), true);
+	const staticFrame = root.currentFrame!;
+	assert.equal(staticFrame.closureAddress, 0);
+	assert.equal(staticFrame.argumentCount, args.length);
+	hash(staticFrame.controlOffset, FRAME_CONTROL_BYTES);
+	complete(args);
+
 	admission(`T n ${named.address}`, () => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, named.address), true);
 	const direct = root.currentFrame!;
 	assert.equal(direct.functionAddress, named.address);

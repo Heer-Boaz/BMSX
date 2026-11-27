@@ -8,6 +8,7 @@ local exception_report<const> = require('kernel/exception_report')
 local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
 local coroutine_transfer<const> = require('kernel/coroutine_transfer')
+local retire<const> = require('kernel/thread_retire')
 local barrier<const> = require('kernel/gc_barrier')
 local globals<const> = require('kernel/global_bank')
 local table_growth<const> = require('kernel/table_grow')
@@ -36,6 +37,8 @@ local control_count_mask<const> = (1 << 18) - 1
 local frame_window_mask<const> = (1 << 20) - 1
 local ram_word_mask<const> = 0x003ffffc
 local cartridge_bank<const> = 1 << 3
+local exception_frame<const> = 1 << 1
+local invalid_argument<const> = 10
 bss monitor_ready: word
 
 struct monitor_entry_state
@@ -88,12 +91,25 @@ local take_trap_value<const> = function()
 end
 
 -- These are System program entry points, not CPU service ordinals.
-local transfer_coroutine<const> = function(address, operand)
+local transfer_context<const> = function(address, operand)
 	local context<const>: *stopped_thread = address
 	local depth<const> = context.frame_depth & control_count_mask
 	local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
 	if (frame.flags & cartridge_bank) ~= 0 then return false, nil, nil, nil end
 	local fn<const> = frame.fn
+	if fn == vectors.frame_unwind then
+		if blua32.tag(operand) ~= value_tags.integer_tag or operand < 1 or operand >= depth then
+			return true, nil, address, invalid_argument
+		end
+		local block<const>: *stopped_frame = layout.ram_base + (context.frame_block & ram_word_mask)
+		for index = operand - 1, depth - 1 do
+			if (block[index].flags & exception_frame) ~= 0 then return true, nil, address, invalid_argument end
+		end
+		local pc<const> = block[operand - 1].pc
+		local management<const> = layout.management_offset
+		retire.retire_thread_frames(management + layout.control_offset, management + layout.arena_offset, address, operand)
+		return true, pc, address, nil
+	end
 	if fn == vectors.coroutine_resume then
 		local cell_address<const> = layout.ram_base + layout.management_offset + layout.value_cell_offset
 		local value_cell<const>: *value = cell_address
@@ -164,7 +180,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			if fault == nil then blua32.rfe() end
 			transfer_fault = fault
 		else
-			local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
+			local handled<const>, pc<const>, thread<const>, reason<const> = transfer_context(*interrupted, values)
 			if handled then
 				*interrupted = thread
 				if pc then
@@ -261,5 +277,5 @@ end
 return {
 	enter = enter, prepare = prepare, frame_width = frame_width,
 	monitor_ready = monitor_ready, monitor_entry = monitor_entry, take_trap_value = take_trap_value,
-	internal = { transfer_coroutine = transfer_coroutine },
+	internal = { transfer_context = transfer_context },
 }

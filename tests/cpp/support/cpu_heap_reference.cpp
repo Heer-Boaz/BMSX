@@ -33,6 +33,19 @@ void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
 	m_systemGlobalBank.writeSlot(*slot, value);
 }
 
+void CPU::abortCompletionCall(int frameIndex) {
+	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
+	if (static_cast<int>(m_activeThread->frameDepth()) > frameIndex) {
+		abortStalledMemoryWrite();
+		do {
+			closeUpvalues(*m_activeThread->currentFrame);
+			m_activeThread->leaveFrame();
+		} while (static_cast<int>(m_activeThread->frameDepth()) > frameIndex);
+		resumeFrameBank();
+	}
+	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
+}
+
 void CPU::retireThreadView(u32 address) {
 	for (auto& view : m_transferViews) {
 		if (view.address != address) continue;

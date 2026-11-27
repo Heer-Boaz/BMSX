@@ -4,10 +4,9 @@ import { buildLuaStackFrames, readRuntimeStackFrames } from '../../ide/runtime/s
 import { createLiveStudioFixture } from '../helpers/live_studio';
 
 test('Terminal evaluates byte input in guest code and returns to a stopped IRQ', async t => {
-	const { ide, runtime, sources, until } = await createLiveStudioFixture(t, { ready: ide => ide.luaEvaluation.canEvaluate });
-	const { cpu } = runtime.machine;
+	const { ide, runtime, sources, tasks, until } = await createLiveStudioFixture(t, { ready: ide => ide.luaEvaluation.canEvaluate });
+	const { cpu, scheduler } = runtime.machine;
 	const terminal = ide.luaEvaluation;
-	t.mock.method(cpu.stringPool, 'intern', () => assert.fail('Terminal must not intern Strings in the host'));
 
 	const input = terminal.evaluate(`-- ${'x'.repeat(300)}
 counter = 40
@@ -16,7 +15,12 @@ return counter, #text, string.byte(text, 1), string.byte(text, 6), nil, false`, 
 	await until(() => input.result !== undefined);
 	assert.deepEqual(await input.completion, { status: 'completed', values: ['40', '6', '195', '173', 'nil', 'false'] });
 
+	const admittedAt = scheduler.nowCycles;
 	const invalid = terminal.evaluate('local x = ;', 'cart');
+	await tasks.join();
+	assert.equal(scheduler.nowCycles, admittedAt);
+	assert.ok(cpu.readFrameReturnsToCompletionLatch(cpu.getFrameDepth() - 1), 'the byte arguments were admitted');
+	assert.equal(cpu.stringPool.find(`=evaluation:${invalid.id}`), undefined, 'the guest has not yet constructed the chunk name');
 	await until(() => invalid.result !== undefined);
 	assert.equal(invalid.result!.status, 'lua-error');
 	assert.match(invalid.result!.values[0], new RegExp(`=evaluation:${invalid.id}\\b`));

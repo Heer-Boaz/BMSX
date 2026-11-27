@@ -1,3 +1,4 @@
+import { abortFixtureCompletionCall } from '../../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -210,7 +211,7 @@ try {
 		const beforeRefusal = scheduler.nowCycles, pausedPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 		assert.equal(runtime.admitExternalCpuMutation(), false);
 		assert.throws(() => runtime.callClosure(0), /requires a settled CPU and device frontier/);
-		assert.throws(() => cpu.abortCompletionCall(0), /Fixed execution must retire/);
+		assert.throws(() => abortFixtureCompletionCall(cpu, 0), /Fixed execution must retire/);
 		assert.throws(() => runtime.rebootSystem(), /System IRQ must retire before reset/);
 		assert.throws(() => cpu.reset(), /System IRQ must retire before reset/);
 		assert.equal(scheduler.nowCycles, beforeRefusal);

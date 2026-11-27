@@ -1,3 +1,4 @@
+import { abortFixtureCompletionCall } from '../helpers/cpu_execution';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
@@ -70,7 +71,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	const runtime = createTestRuntime(image.romBytes);
 	const cpu = runtime.machine.cpu;
 	cpu.reset();
-	cpu.abortCompletionCall(0);
+	abortFixtureCompletionCall(cpu, 0);
 
 	const functionAddress = image.image.header.bssAddress;
 	const codeAddress = functionAddress + 0x100;
@@ -144,7 +145,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.match(messages.join('\n'), /op=CALL/);
 
 	cpu.reset();
-	cpu.abortCompletionCall(0);
+	abortFixtureCompletionCall(cpu, 0);
 	const mappedCallerCode = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(mappedCallerCode, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(mappedCallerCode, 1, OpCode.CLOSURE, 0, 0, 0);

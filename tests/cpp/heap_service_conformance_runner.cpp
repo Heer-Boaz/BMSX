@@ -224,7 +224,8 @@ int main(int argc, char** argv) {
 					const auto cycle = scheduler.nowCycles();
 					bool admitted = true;
 					try {
-						if (source == 'n') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target);
+						if (source == 'N') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target, BuiltinArgsView{cpu.readCompletionValues()});
+						else if (source == 'n') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target);
 						else if (source == 'b') cpu.beginCompletionCall(target, BuiltinArgsView{cpu.readCompletionValues()});
 						else if (source == 'c') cpu.beginCompletionCall(target);
 						else throw std::runtime_error("Expected a Function or Closure completion call.");

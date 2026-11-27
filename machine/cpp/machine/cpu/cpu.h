@@ -219,7 +219,8 @@ public:
 	void beginCompletionCall(u32 closure, BuiltinArgsView args = {});
 	void beginCompletionCallInExecutionDomain(
 		ExecutionDomainId executionDomainId,
-		u32 functionAddress
+		u32 functionAddress,
+		BuiltinArgsView args = {}
 	);
 	// The issuer is a settled, non-reset activation outside exception execution.
 	void requestRegisterWindow(u32 valueEnd, u32 frameEnd, u32 deadline);
@@ -340,7 +341,6 @@ private:
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinError(BuiltinArgsView args);
-	void unwindToDepth(int targetDepth);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	void bindConstantStrings(Blua32ExecutionImage& image, u32 stringBinding);
 	enum class ExecutionImageUpdate { Restore, Select, UseInstalled };

@@ -1639,8 +1639,9 @@ export class CPU implements MappedPageInvalidator {
 		this.beginCompletionActivation(closure, args);
 	}
 
-	public beginCompletionCallInExecutionDomain(executionDomainId: ExecutionDomainId, functionAddress: number): void {
-		this.beginCompletionActivation(functionAddress, EMPTY_CALL_ARGS, executionDomainId);
+	public beginCompletionCallInExecutionDomain(executionDomainId: ExecutionDomainId, functionAddress: number,
+		args: readonly Value[] = EMPTY_CALL_ARGS): void {
+		this.beginCompletionActivation(functionAddress, args, executionDomainId);
 	}
 
 	/** Request physical window extents at a settled, non-exception activation. */
@@ -2332,17 +2333,6 @@ export class CPU implements MappedPageInvalidator {
 		} else throw error;
 	}
 
-	private unwindToDepth(targetDepth: number): void {
-		const unwinding = this.activeThread.frameDepth > targetDepth;
-		if (unwinding) this.abortStalledMemoryWrite();
-		while (this.activeThread.frameDepth > targetDepth) {
-			const frame = this.activeThread.currentFrame!;
-			this.closeUpvalues(frame);
-			frame.thread.leaveFrame();
-		}
-		if (unwinding) this.resumeFrameBank();
-	}
-
 	private charge(cycles: number): void {
 		this.instructionBudgetRemaining -= cycles;
 	}
@@ -2393,12 +2383,6 @@ export class CPU implements MappedPageInvalidator {
 
 	public readFrameReturnsToCompletionLatch(frameIndex: number): boolean {
 		return this.activeThread.frameAtDepth(frameIndex).returnToCompletionLatch;
-	}
-
-	public abortCompletionCall(frameIndex: number): void {
-		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
-		this.unwindToDepth(frameIndex);
-		this.clearCompletionValues();
 	}
 
 	public readCompletionValues(target: Value[]): void {

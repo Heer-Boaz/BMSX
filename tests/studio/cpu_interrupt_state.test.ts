@@ -1,4 +1,4 @@
-import { runCpuWithinBudget } from '../helpers/cpu_execution';
+import { abortFixtureCompletionCall, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
@@ -933,7 +933,7 @@ test('CPU aborts a physical completion call at its marked root', () => {
 	assert.equal(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex), true);
 	assert.equal(cpu.readFrameReturnsToCompletionLatch(completionFrameIndex + 1), true);
 	assert.equal(cpu.completionCallPending(), true);
-	cpu.abortCompletionCall(completionFrameIndex);
+	abortFixtureCompletionCall(cpu, completionFrameIndex);
 	assert.equal(cpu.getFrameDepth(), completionFrameIndex, 'root and later completion frames are discarded');
 	assert.equal(cpu.completionCallPending(), false);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), []);

@@ -18,7 +18,7 @@ import { asClosure, asThread, valueInteger, valueNil } from '../../machine/ts/ma
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
-import { runCpuWithinBudget } from '../helpers/cpu_execution';
+import { abortFixtureCompletionCall, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
@@ -124,7 +124,7 @@ test('retiring a suppressed activation releases instrumentation even while its f
 	resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
 	f.state.breakpoints.set(RESOURCE, []);
 	assert.notEqual(f.state.source.domainMask, 0, 'the stopped instruction owns resume suppression');
-	f.cpu.abortCompletionCall(depth - 1);
+	abortFixtureCompletionCall(f.cpu, depth - 1);
 	assert.equal(thread.acquireFrame(), retired, 'the retired activation remains a reusable node');
 	f.state.source.didExecute();
 	assert.equal(f.state.source.domainMask, 0, 'only active frames retain the instrumentation borrow');
