@@ -117,6 +117,7 @@
 		"test:bios-gc-mark": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_mark.ts",
 		"test:bios-gc-mark-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_mark_service.ts",
 		"test:bios-string-intern": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/string_intern.ts",
+		"test:bios-string-slice-call": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/string_slice_call.ts",
 		"test:bios-warm-bindings": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/warm_bindings.ts",
 		"test:bios-thread-retire": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/thread_retire.test.ts",
 		"test:bios-gc-remark-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_remark_service.ts",

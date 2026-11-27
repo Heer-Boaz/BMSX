@@ -34,10 +34,9 @@ enum class BuiltinFunctionId : uint8_t {
 	SetFrameUpvalue = 23,
 	FrameHeader = 24,
 	NumberType = 25,
-	StringSlice = 26,
-	StringFromBytes = 27,
+	StringFromBytes = 26,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 28u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 27u;
 
 } // namespace bmsx

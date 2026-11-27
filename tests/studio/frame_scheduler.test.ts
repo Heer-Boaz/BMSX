@@ -141,31 +141,34 @@ function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocket
 	return { input, runtime };
 }
 
-test('accepted StringSlice time retains every physical VBlank across logical grants and history seek', () => {
+test('accepted mapped String copy time retains every physical VBlank across logical grants and history seek', () => {
 	const { runtime: reference } = createTickRuntime();
 	assert.equal(reference.frameScheduler.runToNextLogicalTick(), true);
 	const firstVblank = reference.machine.scheduler.nowCycles;
 	const bytes = 2 * reference.timing.cycleBudgetPerFrame + 9;
 
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CALL, 0, 4, 2);
+	writeInstruction(code, 0, OpCode.CALL, 0, 3, 2);
 	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
 	const system = linkRawTestSystemBlua32({
-		text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }],
+		text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 	});
+	const source = system.romBytes.length;
+	const rom = new Uint8Array(source + bytes);
+	rom.set(system.romBytes);
+	rom.fill(0x71, source);
 	const input = new TickInputSource();
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler, irqController } = runtime.machine;
 	const frame = cpu.rootThread.currentFrame!;
 	const nextPc = frame.pc + INSTRUCTION_BYTES;
 	const id = cpu.stringPool.intern('q'.repeat(bytes));
-	frame.registers.setBuiltinFunction(0, BuiltinFunctionId.StringSlice);
-	frame.registers.set(1, valueString(id));
-	frame.registers.setInteger(2, 1);
-	frame.registers.setInteger(3, bytes);
-	frame.top = 4;
+	frame.registers.setBuiltinFunction(0, BuiltinFunctionId.StringFromBytes);
+	frame.registers.setInteger(1, source);
+	frame.registers.setInteger(2, bytes);
+	frame.top = 3;
 	cpu.gc.finishFinalMark();
 	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
 	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);

@@ -13,7 +13,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valueBool, valueFloat, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -122,68 +122,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		cpu.runUntilDepth(0, 1);
 		if (invalid) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied byte arguments');
-	});
-}
-
-for (const wide of [false, true]) {
-	test(`StringSlice charges the inclusive raw byte span and resumes at the next instruction (WIDE=${wide})`, () => {
-		const base = wide ? 256 : 0, callWord = wide ? 1 : 0;
-		const text = new Uint8Array((callWord + 2) * INSTRUCTION_BYTES);
-		if (wide) writeInstruction(text, 0, OpCode.WIDE, 1, 0, 0);
-		writeInstruction(text, callWord, OpCode.CALL, 0, 4, 2);
-		writeInstruction(text, callWord + 1, OpCode.HALT, 0, 0, 0);
-		const functions = [{ firstWord: 0, wordCount: callWord + 2, maxStack: base + 5 }];
-		const image = linkRawTestSystemBlua32({ text, functions });
-		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-		const pc = image.image.functions[0].codeAddress;
-		const input = 'x'.repeat(254) + 'A\x00\xf7B' + 'x'.repeat(42);
-		const inputId = cpu.stringPool.intern(input);
-		for (const [first, last, expected] of [
-			[valueInteger(255), valueInteger(258), 'A\x00\xf7B'],
-			[valueFloat(255), valueFloat(258), 'A\x00\xf7B'],
-			[valueInteger(256), valueInteger(256), '\x00'],
-			[valueInteger(1), valueInteger(300), input],
-		] as const) {
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			const f = cpu.rootThread.currentFrame!;
-			f.registers.setBuiltinFunction(base, BuiltinFunctionId.StringSlice);
-			f.registers.setString(base + 1, inputId);
-			f.registers.set(base + 2, first);
-			f.registers.set(base + 3, last);
-			f.top = base + 4;
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - expected.length - 1,
-				'CALL, tier two, inclusive byte count and one placed result');
-			assert.equal(f.pc, pc + (callWord + 1) * INSTRUCTION_BYTES);
-			assert.equal(f.top, base + 1);
-			assert.equal(cpu.stringPool.bytes(f.registers.getStringId(base)), expected);
-		}
-	});
-
-	test(`StringSlice admits endpoints even when its result is discarded (WIDE=${wide})`, () => {
-		const base = wide ? 256 : 0, callWord = wide ? 1 : 0;
-		const text = new Uint8Array((callWord + 2) * INSTRUCTION_BYTES);
-		if (wide) writeInstruction(text, 0, OpCode.WIDE, 1, 0, 0);
-		writeInstruction(text, callWord, OpCode.CALL, 0, 4, 1);
-		writeInstruction(text, callWord + 1, OpCode.HALT, 0, 0, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: callWord + 2, maxStack: base + 5 }] });
-		for (const [first, last] of [
-			[valueInteger(0), valueInteger(2)],
-			[valueInteger(2), valueInteger(1)],
-			[valueInteger(1), valueInteger(3)],
-			[valueFloat(1.5), valueInteger(2)],
-			[valueInteger(1), valueBool(true)],
-		]) {
-			const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-			const f = cpu.rootThread.currentFrame!;
-			f.registers.setBuiltinFunction(base, BuiltinFunctionId.StringSlice);
-			f.registers.setString(base + 1, cpu.stringPool.intern('ab'));
-			f.registers.set(base + 2, first);
-			f.registers.set(base + 3, last);
-			f.top = base + 4;
-			cpu.runUntilDepth(0, 1);
-			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
 	});
 }
 

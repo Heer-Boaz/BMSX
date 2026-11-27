@@ -1,9 +1,13 @@
 local byte<const> = __bmsx_string_byte
 local char<const> = __bmsx_string_char
-local slice<const> = __bmsx_string_slice
+local to_integer<const> = __bmsx_tointeger
+local slice<const> = require('kernel/bios_string_slice')
 local table<const> = require('table')
 local concat<const> = table.concat
 local string<const> = {}
+local system_rom_size<const>: *word = 0x080101f4
+local cart0_rom_size<const>: *word = 0x080101f8
+local cart1_rom_size<const>: *word = 0x080101fc
 
 string.from_bytes = __bmsx_string_from_bytes
 
@@ -72,7 +76,8 @@ string.sub = function(value, start_arg, end_arg)
 	if start_index == 1 and end_index == length then
 		return value
 	end
-	return slice(value, start_index, end_index)
+	return slice.intern_slice(value, to_integer(start_index), to_integer(end_index),
+		*system_rom_size, *cart0_rom_size, *cart1_rom_size)
 end
 
 

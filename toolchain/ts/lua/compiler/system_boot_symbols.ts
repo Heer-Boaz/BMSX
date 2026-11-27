@@ -34,7 +34,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
 	{ name: '__bmsx_number_type', id: BuiltinFunctionId.NumberType },
 	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
-	{ name: '__bmsx_string_slice', id: BuiltinFunctionId.StringSlice },
 	{ name: '__bmsx_string_from_bytes', id: BuiltinFunctionId.StringFromBytes },
 ];
 
