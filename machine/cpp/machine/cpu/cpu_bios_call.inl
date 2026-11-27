@@ -14,7 +14,7 @@ void CPU::finishBiosCall(HeapServiceBiosCallKind kind) {
 	const u32 status = m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Status));
 	if (status != 0u) {
 		const u32 reason = status - 1u;
-		const auto error = m_luaFaultErrorValues[reason];
+		const auto error = luaFaultValue(reason);
 		if (!handleThreadError(error)) enterLuaFaultException(reason, error);
 		return;
 	}

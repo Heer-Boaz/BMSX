@@ -10,7 +10,7 @@ import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -236,7 +236,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt);
 		const owner = f.same(target => target.createTable(0, 1));
 		const id = f.same(target => target.stringPool.intern('a new collectable edge'));
-		const key = f.same(target => target.gc.tables.newIndexKey);
+		const key = f.same(target => valueString(target.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)));
 		f.same(target => {
 			const pending = target.stringPool.intern('a String marked before the table write');
 			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;

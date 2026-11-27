@@ -84,6 +84,7 @@
 		"test:heap-allocator-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/run.ts",
 		"test:bios-dlmalloc-parity": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/blua.ts",
 		"test:bios-heap-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/private_service.ts",
+		"test:bios-diagnostic-roots": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/diagnostic_roots.test.ts",
 		"test:bios-private-value": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/private_value.ts",
 		"test:system-rom-entry": "bash scripts/test.sh node --import tsx --test --test-concurrency=1 tests/conformance/heap_allocator/runtime_boot_minimal.ts tests/conformance/heap_allocator/runtime_builtin_constants.ts tests/conformance/heap_allocator/runtime_vector_frames.ts tests/conformance/heap_allocator/runtime_boot_collection.ts tests/conformance/heap_allocator/runtime_system_irq.ts tests/conformance/heap_allocator/root_activation.ts tests/conformance/heap_allocator/global_bank.ts tests/conformance/heap_allocator/system_image_bind.ts",
 		"test:bios-frame-space-call": "bash scripts/test.sh node --import tsx --import ./tests/helpers/test_setup.ts --test --test-concurrency=1 tests/conformance/heap_allocator/frame_space_call.ts",

@@ -5,8 +5,8 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { ValueTag, valueFromTag, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -39,7 +39,7 @@ function fixture(optLevel: 0 | 3) {
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const firstByte = memory.ramBusEnd() - RAM_BASE, lastByte = management + HEAP_SERVICE_THREAD_OFFSET;
-	const newIndex = valuePayload(cpu.gc.tables.newIndexKey);
+	const newIndex = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex);
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(firstByte, lastByte), expected = oracle.memory.ramData().subarray(firstByte, lastByte);
 		if (Buffer.compare(actual, expected) === 0) return;

@@ -321,9 +321,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly tableGrowthArgs: number[];
 	private readonly coroutineCreateArgs: number[];
 	public readonly stringPool: StringPool;
-	private indexKey!: StringId;
-	private lengthKey!: StringId;
-	private modeKey!: StringId;
 	private haltedUntilIrqFrameDepth = -1;
 	private haltedUntilIrqThread = 0;
 	private interruptEventPending = false;
@@ -424,8 +421,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly globalBank: GlobalBank;
 	private completionValueSlots = new ValueSlots(8);
 	private completionValueCount = 0;
-	private readonly luaFaultErrorStringIds: StringId[] = [];
-	private readonly errorInErrorHandlingStringId: StringId;
 
 	constructor(
 		memory: Memory,
@@ -442,39 +437,40 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
-		this.indexKey = this.stringPool.intern('__index');
+		const indexKey = this.stringPool.intern('__index');
 		const newIndexKey = this.stringPool.intern('__newindex');
-		this.lengthKey = this.stringPool.intern('__len');
-		this.modeKey = this.stringPool.intern('__mode');
-		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
+		const lengthKey = this.stringPool.intern('__len');
+		const modeKey = this.stringPool.intern('__mode');
+		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator);
 		this.heapService = new HeapService(this.gc);
 		this.tableGrowthArgs = [this.heapAllocator.managementOffset(), 0, 0, 0];
 		this.coroutineCreateArgs = [this.heapAllocator.managementOffset(), 0, 0];
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
-		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable index chain too long.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
-		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
+		const errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
+		const faultIds: StringId[] = [];
+		faultIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.');
+		faultIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.');
+		faultIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.');
+		faultIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = this.stringPool.intern('Attempted to assign to a non-table value.');
+		faultIds[LUA_FAULT_REASON_INDEX_NIL] = this.stringPool.intern('Table index is nil.');
+		faultIds[LUA_FAULT_REASON_METATABLE_LOOP] = this.stringPool.intern('Metatable index chain too long.');
+		faultIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = this.stringPool.intern('Attempted to iterate a non-table value.');
+		faultIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.');
+		faultIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.');
+		faultIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.');
+		faultIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
+		faultIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
 		// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
 		const management = this.heapAllocator.managementOffset();
 		this.irqPreludeArgs = [management, 0, 0];
 		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
-		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, this.modeKey);
-		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Index, this.indexKey, newIndexKey);
-		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Length, this.lengthKey, this.errorInErrorHandlingStringId);
+		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, modeKey);
+		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Index, indexKey, newIndexKey);
+		memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Length, lengthKey, errorInErrorHandlingStringId);
 		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.FaultIds, RAM_BASE + faults);
-		for (let reason = 0; reason < this.luaFaultErrorStringIds.length; ++reason) {
-			const id = reason === LUA_FAULT_REASON_EXPLICIT_ERROR ? 0 : this.luaFaultErrorStringIds[reason];
+		for (let reason = 0; reason < faultIds.length; ++reason) {
+			const id = reason === LUA_FAULT_REASON_EXPLICIT_ERROR ? 0 : faultIds[reason];
 			memory.writeRamRecordWord(faults + reason * 4, id);
 		}
 		this.rootThread = new Thread(this.gc);
@@ -582,7 +578,7 @@ export class CPU implements MappedPageInvalidator {
 			const record = this.tableIndexAddress(base);
 			if (remaining === 0) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 			this.charge(TABLE_INDEX_VISIT_CYCLES);
-			this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(record, this.indexKey, key, result, remaining);
+			this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(record, key, result, remaining);
 		}
 		this.instructionBudgetRemaining -= result.extraVisits * TABLE_INDEX_VISIT_CYCLES;
 		if (result.status === TableLookupStatus.ChainExhausted) throw new LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
@@ -630,12 +626,12 @@ export class CPU implements MappedPageInvalidator {
 	}
 	private loadTableIndex(base: Value, key: Value, frame: CallFrame, targetIndex: number): boolean {
 		const result = this.tableLookupResult;
-		this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(this.tableIndexAddress(base), this.indexKey, key, result);
+		this.instructionBudgetRemaining -= this.gc.tables.resolveIndex(this.tableIndexAddress(base), key, result);
 		return this.finishTableRead(frame, targetIndex, base, key, result);
 	}
 	private resolveTableFieldIndexCached(base: Value, page: DecodedInstructionPage, pageOffset: number, key: StringId): TableLookupResult {
 		const result = this.tableLookupResult;
-		this.instructionBudgetRemaining -= this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), this.indexKey, key, page.tableCacheSlots[pageOffset], result);
+		this.instructionBudgetRemaining -= this.gc.tables.resolveStringIndexCached(this.tableIndexAddress(base), key, page.tableCacheSlots[pageOffset], result);
 		if (result.extraVisits === 0 && result.slot >= 0) page.tableCacheSlots[pageOffset] = result.slot;
 		return result;
 	}
@@ -810,7 +806,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		this.pendingAllocation = null;
-		const value = valueString(this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY]);
+		const value = this.luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
 		if (!this.handleThreadError(value)) this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
 	}
 
@@ -847,7 +843,7 @@ export class CPU implements MappedPageInvalidator {
 				return false;
 			case ValueTag.Table: {
 				const record = registers.getPayload(source);
-				const method = this.gc.tables.metafield(record, this.lengthKey);
+				const method = this.gc.tables.metafield(record, HeapServiceRemarkHeadField.Length);
 				if (!isNil(method)) {
 					const operand = valueTable(record);
 					this.invokeTableMetamethod(frame, method, destination, SINGLE_CALL_RESULT, operand, operand);
@@ -2275,7 +2271,7 @@ export class CPU implements MappedPageInvalidator {
 		const status = memory.readRamRecordWord(state + HeapServiceBiosCallField.Status);
 		if (status !== 0) {
 			const reason = status - 1;
-			const error = valueString(this.luaFaultErrorStringIds[reason]);
+			const error = this.luaFaultValue(reason);
 			if (!this.handleThreadError(error)) this.enterLuaFaultException(reason, error);
 			return;
 		}
@@ -2595,12 +2591,12 @@ export class CPU implements MappedPageInvalidator {
 
 	private handleRunLoopError(error: unknown): void {
 		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
-			const value = valueString(this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY]);
+			const value = this.luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
 			if (!this.handleThreadError(value)) this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
 		} else if (error instanceof LuaThrownValueError) {
 			if (!this.handleThreadError(error.value)) this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 		} else if (error instanceof LuaExecutionError) {
-			const value = valueString(this.luaFaultErrorStringIds[error.reason]);
+			const value = this.luaFaultValue(error.reason);
 			if (!this.handleThreadError(value)) this.enterLuaFaultException(error.reason, value);
 		} else throw error;
 	}
@@ -4150,7 +4146,8 @@ export class CPU implements MappedPageInvalidator {
 			const trace = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 			memory.writeRamRecordWord(trace + HeapServiceTraceField.PendingStringWork, this.stringPool.takeMarkWork());
 			const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, thread = this.activeThread.address;
-			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.modeKey, valuePayload(this.gc.tables.newIndexKey));
+			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode),
+				this.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ActiveThread, thread, this.pendingOperandTop(thread));
 			return;
 		}
@@ -4927,7 +4924,7 @@ export class CPU implements MappedPageInvalidator {
 			const kind = this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK;
 			if (kind !== ProtectedCallKind.XPCallBody) {
 				this.finishProtectedCallWithError(continuationIndex, kind === ProtectedCallKind.XPCallHandler
-					? valueString(this.errorInErrorHandlingStringId) : error);
+					? valueString(this.gc.diagnosticWord(HeapServiceRemarkHeadField.Error)) : error);
 				return true;
 			}
 
@@ -4958,7 +4955,7 @@ export class CPU implements MappedPageInvalidator {
 					continue;
 				}
 				if (handlerError instanceof LuaExecutionError) {
-					error = valueString(this.luaFaultErrorStringIds[handlerError.reason]);
+					error = this.luaFaultValue(handlerError.reason);
 					continue;
 				}
 				throw handlerError;
@@ -5366,14 +5363,20 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private luaFaultValue(reason: number): Value {
+		const faults = this.gc.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
+		return valueString(this.memory.readRamRecordWord(faults + reason * 4));
+	}
+
 	public markRootHead(heap: GcHeap): void {
-		heap.markString(this.modeKey);
-		heap.markString(this.indexKey);
-		heap.markValue(this.gc.tables.newIndexKey);
-		heap.markString(this.lengthKey);
-		heap.markString(this.errorInErrorHandlingStringId);
-		for (let i = 0; i < this.luaFaultErrorStringIds.length; ++i)
-			if (i !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.luaFaultErrorStringIds[i]);
+		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Mode));
+		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Index));
+		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
+		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Length));
+		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Error));
+		const faults = heap.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
+		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
+			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.memory.readRamRecordWord(faults + reason * 4));
 		heap.markValue(this.stringIndexTable);
 		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
 		const pending = this.pendingAllocation;

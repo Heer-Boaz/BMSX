@@ -603,6 +603,7 @@ private:
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
 	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
+	Value luaFaultValue(u32 reason) const;
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
@@ -686,8 +687,6 @@ private:
 	Thread m_rootView;
 	Thread m_heapServiceView;
 	std::array<Thread, 2> m_transferViews;
-	std::array<Value, LUA_FAULT_REASON_INDEX_NAN + 1u> m_luaFaultErrorValues;
-	Value m_errorInErrorHandlingValue;
 	StaticClosureIndex m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 

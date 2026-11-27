@@ -332,7 +332,8 @@ void CPU::writeHeapServiceProjection(u32 word) {
 		m_memory.writeRamRecordWord(trace + static_cast<u32>(HeapServiceTraceField::PendingStringWork), static_cast<u32>(m_stringPool.takeMarkWork()));
 		const u32 args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
 		const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
-		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.modeKey, m_heap.newIndexKey);
+		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.diagnosticWord(HeapServiceRemarkHeadField::Mode),
+		m_heap.diagnosticWord(HeapServiceRemarkHeadField::NewIndex));
 		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ActiveThread), m_activeThread->address, pendingTop);
 		return;
 	}

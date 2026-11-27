@@ -54,7 +54,7 @@ struct NativeBlockRunState {
 	const ValueSpan* globalValues = nullptr;
 	const ValueSpan* systemGlobalValues = nullptr;
 	u32* cop0Words = nullptr;
-	StringId tableIndexKey = 0;
+	const u8* tableIndexKeyWord = nullptr;
 	int remainingCycles = 0;
 	int registerTop = 0;
 	u32 closure = 0;

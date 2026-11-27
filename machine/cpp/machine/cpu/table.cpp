@@ -635,6 +635,7 @@ TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> k
 void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
 	std::span<const Value> values) noexcept {
 	const auto body = hashBody(hashSlots());
+	const StringId newIndexKey = m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex);
 	for (u32 slot = 0; slot < body.count; ++slot) {
 		const auto& node = layout.nodes[slot];
 		if (node.field < 0) continue;
@@ -642,7 +643,7 @@ void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::sp
 		const StringId key = keys[field];
 		body.slots.set(slot, valueString(key));
 		body.slots.set(slot + body.count, values[field]);
-		if (key == m_heap->newIndexKey) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
+		if (key == newIndexKey) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
 		if (node.next >= 0) body.setNext(slot, node.next);
 	}
 	if (layout.free != static_cast<i8>(body.count - 1u)) writeHeader(TableHeader::Free, static_cast<u32>(layout.free));
@@ -667,7 +668,7 @@ void TableRecord::markHashNodeDead(size_t index) {
 		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
 		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueNil());
-		if (key == valueString(m_heap->newIndexKey)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
+		if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 	}
 }
 
@@ -735,7 +736,7 @@ int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots, CP
 }
 
 void TableRecord::publishHashInsertion(Value key, Value value) {
-	if (key == valueString(m_heap->newIndexKey)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
+	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
 	m_heap->writeTableEntry(m_address, key, value);
 }
 
@@ -781,7 +782,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 	// slot (including a tombstone) for the insertion below.
 	if constexpr (returning) {
 		const u32 meta = newIndexMetatable();
-		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->newIndexKey))) return HASH_STORE_DECLINED;
+		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)))) return HASH_STORE_DECLINED;
 		if (erase) return -1;
 	}
 	if (count != 0u) {
@@ -906,9 +907,9 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* lin
 	return valueNil();
 }
 
-Value TableRecord::metatableField(StringId key) const {
+Value TableRecord::metatableField(HeapServiceRemarkHeadField field) const {
 	const u32 address = metatableAddress();
-	return address != 0u ? TableRecord(*m_heap, address).getStringKey(key) : valueNil();
+	return address != 0u ? TableRecord(*m_heap, address).getStringKey(m_heap->diagnosticWord(field)) : valueNil();
 }
 
 u32 TableRecord::newIndexMetatable() const {
@@ -920,6 +921,7 @@ template <bool Assignment, bool OwnMiss, typename Lookup>
 void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&& lookup,
 	u32 visitLimit, u32* linkCycles) const {
 	TableRecord current = *this;
+	std::optional<StringId> method;
 	u32 anchor = 0, anchorDepth = 0, anchorLinks = 0;
 	for (u32 depth = 0; depth < visitLimit; ++depth) {
 		const u32 receiver = current.address();
@@ -955,10 +957,11 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			}
 		}
 		current.m_address = metatable;
+		if (!method) method = m_heap->diagnosticWord(Assignment ? HeapServiceRemarkHeadField::NewIndex : HeapServiceRemarkHeadField::Index);
 		Value parent;
 		if constexpr (Assignment) {
-			parent = current.getStringKey(m_heap->newIndexKey);
-		} else parent = current.getStringKey(m_heap->indexKey, linkCycles);
+			parent = current.getStringKey(*method);
+		} else parent = current.getStringKey(*method, linkCycles);
 		if (!valueIsTable(parent)) {
 			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent) || valueTag(parent) == ValueTag::ResidentFunction)
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};

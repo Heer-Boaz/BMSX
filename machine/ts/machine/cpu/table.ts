@@ -1,5 +1,5 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { HeapServiceBiosCallKind, HeapServiceTableGrowthMode, HeapServiceTableGrowthStage } from '../../spec/bmsx/heap_service';
+import { HeapServiceBiosCallKind, HeapServiceRemarkHeadField, HeapServiceTableGrowthMode, HeapServiceTableGrowthStage } from '../../spec/bmsx/heap_service';
 import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
@@ -52,10 +52,7 @@ export class TableRecords {
 	private static readonly rehashIntegerCounts = new Uint32Array(32);
 	static readonly HEADER_BYTES = 36;
 	static readonly HEADER_CHARGE = 32;
-	public readonly newIndexKey: Value;
-	public constructor(private readonly heap: GcHeap, newIndexKey: StringId) {
-		this.newIndexKey = valueString(newIndexKey);
-	}
+	public constructor(private readonly heap: GcHeap) {}
 	public initialize(record: number, array: number, hash: number): void {
 		const memory = this.heap.memory;
 		const kind = ValueTag.Table | (this.heap.white() << 8) | (1 << (8 * TableHeader.NewIndexAbsent));
@@ -250,7 +247,7 @@ export class TableRecords {
 		const words = this.arrayAddress(record), tags = words + array * 4;
 		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
 			const meta = this.newIndexMetatable(record);
-			if (meta !== 0 && !isNil(this.getStringKey(meta, valuePayload(this.newIndexKey)))) return false;
+			if (meta !== 0 && !isNil(this.getStringKey(meta, this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)))) return false;
 		}
 		this.heap.writeTableAssignment(record, tag, word);
 		this.writeSlot(words, tags, slot, tag, word);
@@ -360,9 +357,9 @@ export class TableRecords {
 		}
 		result.value = valueNil(); result.slot = -1; return 0;
 	}
-	public resolveIndex(record: number, indexKey: StringId, rawKey: Value, result: TableLookupResult,
+	public resolveIndex(record: number, rawKey: Value, result: TableLookupResult,
 		visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
-		if (valueTag(rawKey) === ValueTag.String) return this.resolveStringIndexCached(record, indexKey, valuePayload(rawKey), -1, result, visitLimit);
+		if (valueTag(rawKey) === ValueTag.String) return this.resolveStringIndexCached(record, valuePayload(rawKey), -1, result, visitLimit);
 		const validKey = !isNil(rawKey) && !valueIsNaN(rawKey);
 		const key = canonicalTableKey(rawKey);
 		const arrayIndex = this.getArrayIndex(key);
@@ -371,35 +368,35 @@ export class TableRecords {
 		if (!isNil(result.value)) {
 			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return 0;
 		}
-		return this.resolveIndexMiss(record, indexKey, key, validKey, arrayIndex, result, visitLimit, 0);
+		return this.resolveIndexMiss(record, key, validKey, arrayIndex, result, visitLimit, 0);
 	}
-	public resolveIntegerIndex(record: number, indexKey: StringId, key: number, result: TableLookupResult): void {
-		this.resolveIndex(record, indexKey, valueInteger(key), result);
+	public resolveIntegerIndex(record: number, key: number, result: TableLookupResult): void {
+		this.resolveIndex(record, valueInteger(key), result);
 	}
-	public resolveStringIndex(record: number, indexKey: StringId, key: StringId, result: TableLookupResult): void {
-		this.resolveStringIndexCached(record, indexKey, key, -1, result);
+	public resolveStringIndex(record: number, key: StringId, result: TableLookupResult): void {
+		this.resolveStringIndexCached(record, key, -1, result);
 	}
-	public metafield(record: number, key: StringId): Value {
+	public metafield(record: number, field: HeapServiceRemarkHeadField): Value {
 		const meta = this.metatableAddress(record);
-		return meta !== 0 ? this.getStringKey(meta, key) : valueNil();
+		return meta !== 0 ? this.getStringKey(meta, this.heap.diagnosticWord(field)) : valueNil();
 	}
-	public resolveStringIndexCached(record: number, indexKey: StringId, key: StringId, predicted: number, result: TableLookupResult, visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
+	public resolveStringIndexCached(record: number, key: StringId, predicted: number, result: TableLookupResult, visitLimit = TABLE_INDEX_CHAIN_LIMIT): number {
 		const links = this.getStringKeyCached(record, key, predicted, result);
 		if (result.slot >= 0) {
 			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return links;
 		}
-		return this.resolveIndexMiss(record, indexKey, valueString(key), true, -1, result, visitLimit, links);
+		return this.resolveIndexMiss(record, valueString(key), true, -1, result, visitLimit, links);
 	}
-	private resolveIndexMiss(current: number, indexKey: StringId, key: Value, validKey: boolean, arrayIndex: number,
+	private resolveIndexMiss(current: number, key: Value, validKey: boolean, arrayIndex: number,
 		result: TableLookupResult, visitLimit: number, links: number): number {
+		let meta = this.metatableAddress(current);
+		if (meta === 0) {
+			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return links;
+		}
+		const indexKey = this.heap.diagnosticWord(HeapServiceRemarkHeadField.Index);
 		const stringKey = valueTag(key) === ValueTag.String;
 		let depth = 0, anchor = 0, anchorDepth = 0, anchorLinks = 0;
 		for (;;) {
-			const meta = this.metatableAddress(current);
-			if (meta === 0) {
-				if (depth !== 0) result.value = valueNil();
-				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
-			}
 			links += this.getStringKeyCached(meta, indexKey, -1, result);
 			const next = result.value;
 			result.slot = -1;
@@ -434,6 +431,11 @@ export class TableRecords {
 			if (!isNil(result.value)) {
 				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
 			}
+			meta = this.metatableAddress(current);
+			if (meta === 0) {
+				result.value = valueNil();
+				result.extraVisits = depth; result.status = TableLookupStatus.Resolved; return links;
+			}
 		}
 	}
 	public resolveAssignment(record: number, rawKey: Value, result: TableLookupResult,
@@ -441,6 +443,7 @@ export class TableRecords {
 		const validKey = fixedString || (!isNil(rawKey) && !valueIsNaN(rawKey));
 		const key = fixedString ? rawKey : canonicalTableKey(rawKey);
 		const arrayIndex = fixedString ? -1 : this.getArrayIndex(key);
+		let newIndexKey: StringId | undefined;
 		for (let depth = 0; depth < TABLE_INDEX_CHAIN_LIMIT; ++depth) {
 			const meta = this.newIndexMetatable(record);
 			let slot = meta === 0 ? TABLE_HASH_UNPROBED : -1;
@@ -455,9 +458,9 @@ export class TableRecords {
 						slot = this.findStringNodeIndex(valuePayload(key), hashCanonicalTableKey(key) & (hash - 1), hash, words, tags);
 						own = slot >= 0 && this.heap.memory.readRamRecordByte(tags + hash + slot) !== ValueTag.Nil;
 					}
-					if (!own) next = this.getStringKey(meta, valuePayload(this.newIndexKey));
+					if (!own) next = this.getStringKey(meta, newIndexKey ??= this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 				} else if (!validKey || isNil(this.getCanonical(record, key, arrayIndex))) {
-					next = this.getStringKey(meta, valuePayload(this.newIndexKey));
+					next = this.getStringKey(meta, newIndexKey ??= this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 				}
 			}
 			const tag = valueTag(next);
@@ -548,7 +551,7 @@ export class TableRecords {
 		return index;
 	}
 	private publishHashInsertion(record: number, key: Value, tag: ValueTag, word: number): void {
-		if (key === this.newIndexKey) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
+		if (valueTag(key) === ValueTag.String && valuePayload(key) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		this.heap.writeTableAssignment(record, tag, word, key);
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
@@ -638,7 +641,7 @@ export class TableRecords {
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
 		} else {
 			this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
-			if (tag === ValueTag.String && this.wordAt(record, keySlot) === valuePayload(this.newIndexKey))
+			if (tag === ValueTag.String && this.wordAt(record, keySlot) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex))
 				this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
 		}
 	}
@@ -1047,7 +1050,7 @@ export class TableRecords {
 			if (j.free !== mask) this.writeHeader(j.record, TableHeader.Free, j.free);
 		}
 		this.heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(oldArray, oldHash), TableRecords.allocationCharge(array, this.hashSize(j.record)));
-		if (j.key === this.newIndexKey) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
+		if (valueTag(j.key) === ValueTag.String && valuePayload(j.key) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
 		this.heap.writeTableAssignment(j.record, valueTag(j.value), valuePayload(j.value), j.key);
 		const index = this.getArrayIndex(j.key);
 		if (index >= 0) this.updateLengthHint(j.record, index, true);

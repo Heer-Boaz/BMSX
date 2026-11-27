@@ -6,8 +6,8 @@ import { GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { ValueTag, hashCanonicalTableKey, valuePayload, valueString } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField } from '../../machine/ts/spec/bmsx/heap_service';
+import { ValueTag, hashCanonicalTableKey, valueString } from '../../machine/ts/machine/cpu/value';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -53,8 +53,8 @@ function fixture(optLevel: 0 | 3) {
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const quantum = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, output = management + HEAP_SERVICE_THREAD_OFFSET - 4;
-	const modeKey = cpu.gc['modeKey'], newIndex = valuePayload(cpu.gc.tables.newIndexKey);
-	assert.equal(modeKey, oracle.gc['modeKey']);
+	const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode), newIndex = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex);
+	assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
 		if (Buffer.compare(actual, expected) === 0) return;

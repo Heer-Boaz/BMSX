@@ -143,6 +143,8 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 
 void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const StringId indexKey = cpu.stringPool().intern("__index");
+	const u32 indexKeyOffset = cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	const auto* indexKeyWord = memory.ramData() + indexKeyOffset;
 	const StringId key = cpu.stringPool().intern("inherited method");
 	auto root = cpu.createTable(3, 4), middle = cpu.createTable(0, 1), holder = cpu.createTable(2, 4);
 	root.setInteger(1, valueInteger(123));
@@ -163,7 +165,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	registers.set(1, receiver);
 	auto block = test::compileNative(instructions, memory, cpu.stringPool());
 	auto& hint = block->sideExits[0].tableRead;
-	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKey = indexKey};
+	NativeBlockRunState grant{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord};
 	const auto read = [&](Value want, int hops, TableLookupStatus status = TableLookupStatus::Resolved) {
 		grant.remainingCycles = 100;
 		registers.set(0, valueInteger(73));
@@ -207,6 +209,17 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const auto ram = memory.captureSaveState();
 	const auto state = cpu.captureRuntimeState();
 
+	// A generated and already-trained GETFIELD uses the authoritative RAM
+	// selector on each actual miss, including after a RAM-only restore.
+	const auto replacement = cpu.stringPool().intern("firmware-authored __index");
+	auto alternative = cpu.createTable(0, 2);
+	alternative.setStringKey(key, valueInteger(81));
+	firstMeta.setStringKey(replacement, valueTable(alternative.address()));
+	memory.writeRamRecordWord(indexKeyOffset, replacement);
+	read(valueInteger(81), 1);
+	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	read(valueInteger(41), 2);
+
 	holder.setStringKey(key, valueInteger(42));
 	read(valueInteger(42), 2);
 	for (int i = 0; i < 32; ++i) {
@@ -248,6 +261,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("native read field");
 	const auto indexKey = cpu.stringPool().intern("__index");
+	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
 	const auto other = cpu.stringPool().intern("other read field");
 	ValueSlots constants(1); constants.set(0, valueString(key));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
@@ -283,7 +297,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			registers.set(0, valueTable(table.address())); registers.set(3, values[3]);
 			registers.set(4, values[0]); registers.set(5, valueString(key));
 			const auto heap = std::pair{cpu.luaHeap().usedBytes(), cpu.luaHeap().collectionTarget()};
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			require(exit->exit == NativeBlockExit::Continue && registers.get(destination) == value
 				&& registers.get(9) == values[3] && registers.get(10) == values[0],
@@ -304,7 +318,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			if (mutation == 3) { meta.setStringKey(indexKey, valueBool(false)); }
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address())); registers.set(5, valueString(key));
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			const bool hit = exit->exit == NativeBlockExit::Continue;
 			require(hit == (mutation != 3), "only the non-table __index requires a semantic exit");
@@ -325,7 +339,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			ValueSlots stringRegisters(11);
 			stringRegisters.set(0, valueTable(table.address()));
 			stringRegisters.set(5, valueString(key));
-			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+			NativeBlockRunState stringState{.heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 			const auto* stringExit = block->run(stringRegisters.view(), stringState);
 			require(stringExit->exit == NativeBlockExit::Continue && stringRegisters.get(destination) == valueInteger(91),
 				"the mixed site resolves its inherited string key");
@@ -335,7 +349,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 				ValueSlots registers(11);
 				registers.set(0, valueTable(table.address()));
 				registers.set(5, key);
-				NativeBlockRunState state{.heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+				NativeBlockRunState state{.heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 				const auto* exit = block->run(registers.view(), state);
 				require(exit->exit == NativeBlockExit::ReadIndex && exit->nextPc == source[4].pc
 					&& state.remainingCycles == 100 - instructionCharge(std::span(decoded).first<4>()),
@@ -345,7 +359,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			ValueSlots registers(11);
 			registers.set(0, valueTable(table.address()));
 			registers.set(3, valueInteger(73));
-			NativeBlockRunState state{.heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+			NativeBlockRunState state{.heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 			require(block->run(registers.view(), state)->exit == NativeBlockExit::ReadIndex && registers.get(9) == valueNil(),
 				"a nil key still takes the precise side exit without executing the suffix");
 		}
@@ -353,7 +367,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 		meta.setStringKey(indexKey, valueTable(table.address()));
 		ValueSlots registers(11); for (size_t i = 0; i < registers.capacity(); ++i) registers.set(i, valueInteger(73));
 		registers.set(0, valueTable(table.address())); registers.set(5, valueString(key));
-		NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+		NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 		const auto* exit = block->run(registers.view(), state);
 		require(exit->exit == (op == OpCode::GETT ? NativeBlockExit::ReadIndex : NativeBlockExit::ReadField)
 			&& exit->currentPc == 0x100cu && registers.get(destination) == (destination == 0 ? valueTable(table.address()) : destination == 1 ? valueString(key) : valueInteger(73)),
@@ -383,7 +397,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 			decoded[3].setBx(0x2000);
 			auto block = test::compileNative(source, memory, cpu.stringPool());
 			ValueSlots registers(3);
-			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKey = indexKey, .remainingCycles = 100};
+			NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = 100};
 			const auto* exit = block->run(registers.view(), state);
 			const bool tableReceiver = valueIsTable(receiver);
 			require((tableReceiver ? exit->exit == NativeBlockExit::Continue && exit->nextPc == decoded[3].bx()
@@ -402,6 +416,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("bounded lookup");
 	const auto indexKey = cpu.stringPool().intern("__index");
+	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
 	const u32 home = hashCanonicalTableKey(valueString(key)) & 1u;
 	StringId collision = 0;
 	for (int i = 0; i < 64 && !collision; ++i) {
@@ -440,7 +455,7 @@ void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 			registers.set(4, valueInteger(33));
 			// A trained hit uses only the admitted RAM and native frame,
 			// not the C++ heap owner needed by the semantic lookup.
-			NativeBlockRunState state{.constants = constants.view(), .tableIndexKey = indexKey, .remainingCycles = grant};
+			NativeBlockRunState state{.constants = constants.view(), .tableIndexKeyWord = indexKeyWord, .remainingCycles = grant};
 			const auto* exit = block->run(registers.view(), state);
 			require(registers.get(3) == (op == OpCode::SELF ? registers.get(0) : valueInteger(32)),
 				"SELF keeps its original receiver independently of a one-hop hit");

@@ -269,7 +269,7 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	cpu.gc.tables.setStringKey(meta, index, inherited); cpu.gc.tables.setMetatableAddress(table, meta);
 	cpu.gc.tables.setStringKey(parent, key, v.valueBool(false));
 	const result = { value: v.valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
-	cpu.gc.tables.resolveStringIndexCached(table, index, key, -1, result);
+	cpu.gc.tables.resolveStringIndexCached(table, key, -1, result);
 	assert.equal(result.value, v.valueBool(false)); assert.equal(result.extraVisits, 1);
 	for (let i = 1; i <= 512; ++i) { cpu.gc.tables.setInteger(table, i, v.valueInteger(i * -3)); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('key' + i), v.valueInteger(i)); }
 	for (let i = 1; i <= 512; ++i) { assert.equal(cpu.gc.tables.getInteger(table, i), v.valueInteger(i * -3)); assert.equal(cpu.gc.tables.getStringKey(table, cpu.stringPool.find('key' + i)!), v.valueInteger(i)); }

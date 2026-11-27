@@ -93,33 +93,37 @@ CPU::CPU(
 	, m_rootView(m_heap)
 	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
-	, m_errorInErrorHandlingValue(valueString(m_stringPool.intern("error in error handling")))
 	, m_systemGlobalBank(memory, m_heap)
 	, m_globalBank(memory, m_heap) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
-	m_luaFaultErrorValues.fill(valueNil());
-	m_luaFaultErrorValues[LUA_FAULT_REASON_UNKNOWN] = valueString(m_stringPool.intern("Attempted to get length of an unsupported value."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_CALL_NON_FUNCTION] = valueString(m_stringPool.intern("Attempted to call a non-function value."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NON_TABLE] = valueString(m_stringPool.intern("Attempted to index field on a non-table value."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = valueString(m_stringPool.intern("Attempted to assign to a non-table value."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NIL] = valueString(m_stringPool.intern("Table index is nil."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_METATABLE_LOOP] = valueString(m_stringPool.intern("Metatable index chain too long."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_ITERATE_NON_TABLE] = valueString(m_stringPool.intern("Attempted to iterate a non-table value."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = valueString(m_stringPool.intern("xpcall error handler must be a function."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY] = valueString(m_stringPool.intern("Out of memory."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_ARGUMENT] = valueString(m_stringPool.intern("Invalid argument."));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INVALID_NEXT_KEY] = valueString(m_stringPool.intern("invalid key to 'next'"));
-	m_luaFaultErrorValues[LUA_FAULT_REASON_INDEX_NAN] = valueString(m_stringPool.intern("Table index is NaN."));
+	const StringId indexKey = m_stringPool.intern("__index");
+	const StringId newIndexKey = m_stringPool.intern("__newindex");
+	const StringId lengthKey = m_stringPool.intern("__len");
+	const StringId modeKey = m_stringPool.intern("__mode");
+	const StringId errorInErrorHandling = m_stringPool.intern("error in error handling");
+	std::array<StringId, LUA_FAULT_REASON_INDEX_NAN + 1u> faultIds{};
+	faultIds[LUA_FAULT_REASON_UNKNOWN] = m_stringPool.intern("Attempted to get length of an unsupported value.");
+	faultIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = m_stringPool.intern("Attempted to call a non-function value.");
+	faultIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = m_stringPool.intern("Attempted to index field on a non-table value.");
+	faultIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = m_stringPool.intern("Attempted to assign to a non-table value.");
+	faultIds[LUA_FAULT_REASON_INDEX_NIL] = m_stringPool.intern("Table index is nil.");
+	faultIds[LUA_FAULT_REASON_METATABLE_LOOP] = m_stringPool.intern("Metatable index chain too long.");
+	faultIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = m_stringPool.intern("Attempted to iterate a non-table value.");
+	faultIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = m_stringPool.intern("xpcall error handler must be a function.");
+	faultIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = m_stringPool.intern("Out of memory.");
+	faultIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = m_stringPool.intern("Invalid argument.");
+	faultIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = m_stringPool.intern("invalid key to 'next'");
+	faultIds[LUA_FAULT_REASON_INDEX_NAN] = m_stringPool.intern("Table index is NaN.");
 	// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
 	using Remark = HeapServiceRemarkHeadField;
 	const u32 management = m_heapAllocator.managementOffset();
 	const u32 remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
-	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::Mode), m_heap.modeKey);
-	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Index), m_heap.indexKey, m_heap.newIndexKey);
-	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Length), m_heap.lengthKey, valuePayload(m_errorInErrorHandlingValue));
+	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::Mode), modeKey);
+	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Index), indexKey, newIndexKey);
+	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Length), lengthKey, errorInErrorHandling);
 	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::FaultIds), RAM_BASE + faults);
-	for (u32 reason = 0; reason < m_luaFaultErrorValues.size(); ++reason) {
-		m_memory.writeRamRecordWord(faults + reason * sizeof(u32), valuePayload(m_luaFaultErrorValues[reason]));
+	for (u32 reason = 0; reason < faultIds.size(); ++reason) {
+		m_memory.writeRamRecordWord(faults + reason * sizeof(u32), faultIds[reason]);
 	}
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
@@ -1608,7 +1612,7 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		const auto kind = static_cast<ProtectedCallKind>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags)
 			& PROTECTED_CALL_KIND_MASK);
 		if (kind != ProtectedCallKind::XPCallBody) {
-			const Value result = kind == ProtectedCallKind::XPCallHandler ? m_errorInErrorHandlingValue : errorValue;
+			const Value result = kind == ProtectedCallKind::XPCallHandler ? valueString(m_heap.diagnosticWord(HeapServiceRemarkHeadField::Error)) : errorValue;
 			finishProtectedCallWithError(continuationIndex, result);
 			return true;
 		}
@@ -1630,7 +1634,7 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 		} catch (const LuaThrownValueError& handlerError) {
 			errorValue = handlerError.value;
 		} catch (const LuaExecutionError& handlerError) {
-			errorValue = m_luaFaultErrorValues[handlerError.reason];
+			errorValue = luaFaultValue(handlerError.reason);
 		}
 	}
 }
@@ -2561,12 +2565,8 @@ dispatch_continue:
 		} catch (const LuaOutOfMemorySignal&) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
-			if (!handleThreadError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
-				enterLuaFaultException(
-					LUA_FAULT_REASON_OUT_OF_MEMORY,
-					m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY]
-				);
-			}
+			const Value error = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
+			if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
 		} catch (const LuaThrownValueError& error) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
@@ -2579,7 +2579,7 @@ dispatch_continue:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
-			const Value errorValue = m_luaFaultErrorValues[error.reason];
+			const Value errorValue = luaFaultValue(error.reason);
 			if (!handleThreadError(errorValue)) {
 				enterLuaFaultException(error.reason, errorValue);
 			}
@@ -2640,12 +2640,12 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					finishClosureReservation();
 				}
 			} catch (const LuaOutOfMemorySignal&) {
-				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
+				const auto value = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
 				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
 			} catch (const LuaThrownValueError& error) {
 				if (!handleThreadError(error.value)) enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			} catch (const LuaExecutionError& error) {
-				const auto value = m_luaFaultErrorValues[error.reason];
+				const auto value = luaFaultValue(error.reason);
 				if (!handleThreadError(value)) enterLuaFaultException(error.reason, value);
 			}
 		}
@@ -3259,13 +3259,22 @@ void CPU::publishHeapRemarkHead() {
 	}
 }
 
+Value CPU::luaFaultValue(u32 reason) const {
+	if (reason == LUA_FAULT_REASON_EXPLICIT_ERROR) return valueNil();
+	const u32 faults = m_heap.diagnosticWord(HeapServiceRemarkHeadField::FaultIds);
+	return valueString(m_memory.readRamRecordWord(faults + reason * sizeof(u32)));
+}
+
 void CPU::markRootHead(GcHeap& heap) {
+	using Field = HeapServiceRemarkHeadField;
 	// Opcode metamethod selectors stay interned independently of guest tables.
-	heap.markString(heap.indexKey);
-	heap.markString(heap.newIndexKey);
-	heap.markString(heap.lengthKey);
-	heap.markValue(m_errorInErrorHandlingValue);
-	for (const Value value : m_luaFaultErrorValues) heap.markValue(value);
+	heap.markString(heap.diagnosticWord(Field::Index));
+	heap.markString(heap.diagnosticWord(Field::NewIndex));
+	heap.markString(heap.diagnosticWord(Field::Length));
+	heap.markString(heap.diagnosticWord(Field::Error));
+	const u32 faults = heap.diagnosticWord(Field::FaultIds);
+	for (u32 reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
+		if (reason != LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(m_memory.readRamRecordWord(faults + reason * sizeof(u32)));
 	heap.markValue(m_stringIndexTable);
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
 	if (allocationParked()) {

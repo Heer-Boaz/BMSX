@@ -9,7 +9,7 @@ import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRebuild, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -359,7 +359,7 @@ for (const opt of [0, 3] as const) {
 		const oldHash = 128, hash = 256, record = f.same(cpu => cpu.createTable(0, oldHash));
 		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
 		const storage = f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
-		const key = f.cpu.gc.tables.newIndexKey, value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
+		const key = valueString(f.cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)), value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
 		f.same(cpu => {
 			cpu.gc.tables.set(record, valueInteger(-10), valueInteger(40));
 			cpu.stringPool.beginReachabilityEpoch();

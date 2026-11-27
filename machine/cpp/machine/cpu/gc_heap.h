@@ -69,10 +69,12 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
-	const StringId indexKey;
-	const StringId newIndexKey;
-	const StringId lengthKey;
-	const StringId modeKey;
+	u32 diagnosticOffset(HeapServiceRemarkHeadField field) const {
+		return arena.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(field);
+	}
+	u32 diagnosticWord(HeapServiceRemarkHeadField field) const {
+		return memory.readRamRecordWord(diagnosticOffset(field));
+	}
 	void publishObject(u32 address);
 	using ObjectVisitor = void (*)(void*, u32);
 	void visitObjectRecords(void* context, ObjectVisitor visit) const;

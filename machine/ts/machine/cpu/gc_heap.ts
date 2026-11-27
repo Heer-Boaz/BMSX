@@ -1,5 +1,5 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
-import { HEAP_SERVICE_FIXED_WORK_OFFSET, HeapServiceOperation } from '../../spec/bmsx/heap_service';
+import { HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceOperation, HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -8,7 +8,6 @@ import * as Closure from './closure';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_RECORD_KIND, UPVALUE_VALUE_WORD } from './upvalue';
 import * as Upvalue from './upvalue';
 import { TableRecords, type TableStringProbe } from './table';
-import type { StringId } from './string_pool';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
@@ -81,6 +80,10 @@ export class GcHeap {
 	// creates host identities. A replacement invalidates the whole view.
 	public onRecordRetirement: ((address: number | null) => void) | null = null;
 	private readonly controlOffset: number;
+	private readonly diagnosticOffset: number;
+	public diagnosticWord(field: HeapServiceRemarkHeadField): number {
+		return this.memory.readRamRecordWord(this.diagnosticOffset + field);
+	}
 	public phase(): GcPhase {
 		return decodeGcPhase(this.memory.readRamRecordByte(this.controlOffset));
 	}
@@ -109,11 +112,12 @@ export class GcHeap {
 		}
 	};
 	public constructor(private readonly cpu: CPU, public readonly budget: LuaHeap, public readonly memory: Memory,
-		public readonly arena: HeapAllocator, private readonly modeKey: StringId, newIndexKey: StringId) {
+		public readonly arena: HeapAllocator) {
 		const management = arena.managementOffset();
 		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
+		this.diagnosticOffset = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 		this.threads = new ThreadRecords(memory, arena, budget);
-		this.tables = new TableRecords(this, newIndexKey);
+		this.tables = new TableRecords(this);
 	}
 	public readonly tables: TableRecords;
 	public readonly threads: ThreadRecords;
@@ -344,12 +348,13 @@ export class GcHeap {
 		const current = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_META);
 		const probe = this.modeProbe;
 		if (address !== 0) {
+			const modeKey = this.diagnosticWord(HeapServiceRemarkHeadField.Mode);
 			if (address === current) {
 				probe.node = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_NODE) | 0;
 				probe.remaining = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_REMAINING);
 				probe.value = valueNil();
-			} else this.tables.beginStringProbe(address, this.modeKey, probe);
-			probe.work = this.tables.advanceStringProbe(address, this.modeKey, probe, limit);
+			} else this.tables.beginStringProbe(address, modeKey, probe);
+			probe.work = this.tables.advanceStringProbe(address, modeKey, probe, limit);
 			if (probe.node >= 0 && probe.remaining !== 0) {
 				this.memory.writeRamRecordPair(this.controlOffset + GC_MODE_META, address, probe.node);
 				this.memory.writeRamRecordWord(this.controlOffset + GC_MODE_REMAINING, probe.remaining);

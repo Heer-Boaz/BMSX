@@ -7,7 +7,7 @@ import { MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } f
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
 	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
-	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
+	HeapServiceGcArgumentField, HeapServiceRemarkHeadField, HeapServiceProjection, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -85,7 +85,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(roots + 4), active);
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.ActiveThread), active);
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.ModeKey), cpu.stringPool.intern('__mode'));
-		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.NewIndexKey), valuePayload(cpu.gc.tables.newIndexKey));
+		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.NewIndexKey), cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.PendingTop), 0);
 		assert.equal(memory.readRamRecordWord(pinned + ThreadField.FrameDepth), 1);
 		assert.equal(cpu.stringPool.takeMarkWork(), 0);

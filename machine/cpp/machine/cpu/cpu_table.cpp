@@ -178,7 +178,7 @@ void CPU::resumeAllocation() {
 	}
 
 	m_pendingAllocation = {};
-	const Value error = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
+	const Value error = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
 	if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
 }
 
@@ -255,7 +255,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 
 bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {
 	if (valueIsTable(operand)) {
-		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(m_heap.lengthKey);
+		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(HeapServiceRemarkHeadField::Length);
 		if (!isNil(method)) {
 			const std::array args{operand, operand};
 			invokeImplicit(frame, CallResultPlacement::single(destination), method, args);

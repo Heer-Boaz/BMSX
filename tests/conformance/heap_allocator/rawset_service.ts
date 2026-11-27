@@ -87,7 +87,7 @@ try {
 			const value = valueInteger(183), rawset = valueBuiltinFunction(BuiltinFunctionId.RawSet);
 			if (spec.name === 'implicit') {
 				const meta = cpu.createTable(0, 1);
-				tables.set(meta, tables.newIndexKey, rawset);
+				tables.set(meta, valueString(cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)), rawset);
 				tables.setMetatableAddress(target, meta);
 			}
 			// In the failure case the handler must remain live throughout a real

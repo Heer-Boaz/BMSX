@@ -17,7 +17,6 @@ namespace bmsx {
 
 GcHeap::GcHeap(CPU& cpu, LuaHeap& budget, Memory& memory, HeapAllocator& arena, StringPool& strings)
 	: budget(budget), memory(memory), arena(arena)
-	, indexKey(strings.intern("__index")), newIndexKey(strings.intern("__newindex")), lengthKey(strings.intern("__len")), modeKey(strings.intern("__mode"))
 	, m_cpu(cpu), m_stringPool(strings)
 	, m_controlOffset(arena.managementOffset() + HEAP_GC_CONTROL_OFFSET) {}
 
@@ -331,6 +330,7 @@ std::pair<int, size_t> GcHeap::probeTableMode(const TableRecord& table, size_t l
 	const u32 current = memory.readRamRecordWord(m_controlOffset + GC_MODE_META);
 	if (address != 0u) {
 		const TableRecord meta(*this, address);
+		const StringId modeKey = diagnosticWord(HeapServiceRemarkHeadField::Mode);
 		auto probe = address == current
 			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
 				memory.readRamRecordWord(m_controlOffset + GC_MODE_REMAINING)}
@@ -1019,7 +1019,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 #endif
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
-			m_stringPool.markReachable(modeKey);
+			m_stringPool.markReachable(diagnosticWord(HeapServiceRemarkHeadField::Mode));
 			m_cpu.markRootHead(*this);
 			beginInitialBanks();
 		}

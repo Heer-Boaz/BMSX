@@ -149,26 +149,26 @@ test('known string lookup follows changing inherited fields and preserves false 
 	cpu.gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
 	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
-	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
+	cpu.gc.tables.resolveStringIndex(child, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueBool(false));
-	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, -1, result);
+	cpu.gc.tables.resolveStringIndexCached(child, key, -1, result);
 	let prediction = result.slot;
 	assert.equal(result.extraVisits, 1);
 	assert.ok(prediction >= 0);
 	assert.equal(result.value, valueBool(false));
 	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Nil, 0);
-	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, prediction, result);
+	cpu.gc.tables.resolveStringIndexCached(child, key, prediction, result);
 	prediction = result.slot;
 	assert.equal(prediction, -1);
 	assert.equal(result.value, valueNil());
 	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Float, 0x80000000);
-	cpu.gc.tables.resolveStringIndex(child, indexKey, key, result);
+	cpu.gc.tables.resolveStringIndex(child, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueFloatBits(0x80000000));
 
 	cpu.gc.tables.setStringKey(child, key, valueBool(false));
-	cpu.gc.tables.resolveStringIndexCached(child, indexKey, key, result.slot, result);
+	cpu.gc.tables.resolveStringIndexCached(child, key, result.slot, result);
 	assert.equal(result.value, valueBool(false));
 	assert.equal(result.extraVisits, 0, 'an own field stops traversal even when its value is false');
 
@@ -261,7 +261,7 @@ test('a periodic __index path retains the cost of its prefix and last incomplete
 	for (let limit = 1; limit <= 32; ++limit) {
 		links += 1 + position;
 		position = next[position];
-		assert.equal(tables.resolveIndex(roots[0], indexKey, key, result, limit), links);
+		assert.equal(tables.resolveIndex(roots[0], key, result, limit), links);
 		assert.equal(result.extraVisits, limit - 1);
 		assert.equal(result.status, TableLookupStatus.ChainExhausted);
 	}
