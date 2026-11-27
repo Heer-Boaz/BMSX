@@ -89,11 +89,37 @@ source annotations and convenience library objects are not substitutes for
 machine values. The books define the observable behavior; device methods and
 state records implement it.
 
-The CPU owns guest value representation, heap identity, allocation accounting,
-execution frames and collection. Compiler and debugger metadata remain with
-their tooling owners. Diagnostic presentation resolves raw machine observations
-against installed symbols outside the core; it does not store formatted source
-errors in CPU state.
+The CPU owns execution frames and the datapaths for guest values. Compiler and
+debugger metadata remain with their tooling owners. Diagnostic presentation
+resolves raw machine observations against installed symbols outside the core; it
+does not store formatted source errors in CPU state.
+
+### Firmware execution and language storage
+
+The BIOS is guest software. CPU reset enters System ROM through the fixed
+execution bank, independently of the stock firmware's allocator, collector and
+language storage. The stock BIOS initializes that storage and hands the CPU a
+prepared ordinary context. On a warm restart the firmware retires the previous
+context and its operand bindings.
+
+Firmware also prepares an image's name and String bindings before ordinary
+execution can use them. The cores can construct or discard derived image views,
+but a guest Function lookup does not install missing bindings or allocate guest
+storage. Explicit authoring-time image replacement is a separate operation, not
+an alternative guest loading path.
+
+Allocator and collection policy belong to the BIOS, not to the CPU, host
+scheduler or generated-code backend. Privilege, interrupt admission, resumable
+execution and cycle accounting belong to the machine. Publish execution state
+in its owning RAM representation so firmware can consume it without a host
+walk of guest objects. Host caches derive from that state and are not roots or
+separate checkpoint owners.
+
+The remaining native language-storage paths and heap-service projections are
+migration dependencies, not new machine interfaces. Ports preserve the pinned
+source operations and policy counters while instruction execution pays the
+actual guest cycles. Verify the port against the independent reference, then
+verify its production entry, interruption and continuation on both cores.
 
 ### CPU execution backends
 
