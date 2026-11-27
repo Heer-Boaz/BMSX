@@ -472,9 +472,13 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!;
 		if (completion) {
+			const values = cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
+			const frames = cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameBlock);
 			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, cpu.gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			assert.equal(thread.frameDepth, 1); assert.equal(thread.stackTop, 8);
-			assert.equal(caller.next!.executionImage, null);
+			assert.equal(caller.next, null, 'an impossible extent is rejected before a frame view is acquired');
+			assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock), values);
+			assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameBlock), frames);
 		} else {
 			cpu.runUntilDepth(0, 2);
 			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);

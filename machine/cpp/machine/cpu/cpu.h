@@ -380,7 +380,7 @@ private:
 	void armBiosCall(HeapServiceBiosCallKind kind, u32 target, u32 resultWord);
 	void finishBiosCall(HeapServiceBiosCallKind kind);
 	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result, i32 protectedIndex = -1);
-	void finishResidentCall();
+	void finishResidentCall(u32 flags);
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
@@ -472,7 +472,10 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		CallResultPlacement result, u32 callSitePc);
+		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false);
+	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
+	void enterPreparedFrame();
+	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});

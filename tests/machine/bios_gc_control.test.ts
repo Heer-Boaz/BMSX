@@ -10,7 +10,7 @@ import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
@@ -27,6 +27,7 @@ const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 const entrySource = `
 local gc<const> = require("${path}")
 local mailbox<const>: *u32 = ${MAILBOX}
+halt_until_irq
 while true do
 	local op<const> = mailbox[0]
 	if op == ${Operation.Publish} then gc.publish_object(${CONTROL}, mailbox[1])
@@ -43,6 +44,11 @@ function fixture(backend: CpuExecutionBackend) {
 	const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const ref = reference.memory, gc = reference.gc;
 	const referenceControl = reference.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	// Finish startup and admit the mailbox's frame before narrowing the bus
+	// to the synthetic records; startup uses the production backing service.
+	runGuestToHalt(cpu, 65_536);
+	cpu.activeThread.reserveFrame(128);
+	cpu.clearHaltUntilIrq();
 	memory.setRamBusEnd(RAM_BASE + END);
 	const expected = ref.ramData().subarray(referenceControl, referenceControl + CONTROL_BYTES);
 	const actual = memory.ramData().subarray(CONTROL, CONTROL + CONTROL_BYTES);

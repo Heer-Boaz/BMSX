@@ -44,6 +44,9 @@ constexpr u32 FRAME_BANK_CART = 1u << 3;
 constexpr u32 FRAME_BANK_SECOND = 1u << 4;
 constexpr u32 FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 constexpr u32 FRAME_EXTEND_RESULT_TOP = 1u << 5;
+// The fixed root returns into a prepared ordinary frame, not Value slots.
+constexpr u32 FRAME_RESIDENT_ACTIVATION = 1u << 6;
+constexpr u32 FRAME_RESIDENT_PREPARED_ENTRY = 1u << 7;
 constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
 }
@@ -158,6 +161,7 @@ struct CallFrame {
 		writeControl(FrameField::Flags, (readControl(FrameField::Flags) & ~FRAME_BANK_MASK) | frameBankWord(domain));
 	}
 	void initializeControl(const FrameEntryControl& entry);
+	void applyPreparedControl(u32 source);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// Only used inside a grant that already admitted the linear frame/stack
 	// backing and recorded those ranges for history.

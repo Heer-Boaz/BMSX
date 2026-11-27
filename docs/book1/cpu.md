@@ -972,7 +972,16 @@ Scratch registers are not initialized at
 function entry; initialize a local without an initializer with `LOADNIL` before
 reading it. Missing parameters and missing requested results are always nil.
 
-Only closure and builtin-function values are callable. A number is not callable merely because its numeric value is a function-record address. Calling any other value category raises `CALL_NON_FUNCTION`.
+When an ordinary `CALL` to a closure needs more room for its frame or value
+slots, the BIOS reserves that space before the callee begins. The supplied
+arguments remain live while the reservation runs. The BIOS uses ordinary CPU
+cycles and may finish the reservation across several grants, including any
+collection and retry. If it cannot obtain the space, `CALL` raises
+`OUT_OF_MEMORY` at the issuing instruction without entering the callee.
+
+Closure, builtin-function, and resident System function values are callable.
+A Number is not callable merely because it holds a function-record address.
+Calling any other value category raises `CALL_NON_FUNCTION`.
 
 
 All count operands in the call/return family use the same encoding: zero

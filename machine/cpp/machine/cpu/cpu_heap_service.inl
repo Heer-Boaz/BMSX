@@ -5,7 +5,9 @@ static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFF
 static_assert(HEAP_SERVICE_EXEC_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_IRQ_FORWARD_OFFSET);
 static_assert(HEAP_SERVICE_IRQ_FORWARD_OFFSET + static_cast<u32>(HeapServiceIrqForwardField::Vector) + sizeof(u32) <= HEAP_SERVICE_FRAME_OFFSET);
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
-static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= RUNTIME_MANAGEMENT_SIZE);
+static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_PREPARED_FRAME_OFFSET);
+static_assert(static_cast<u32>(PreparedFrameField::SourceSlot) == FRAME_CONTROL_BYTES);
+static_assert(HEAP_SERVICE_PREPARED_FRAME_OFFSET + static_cast<u32>(PreparedFrameField::RelocateFormals) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
@@ -97,12 +99,17 @@ void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPla
 	auto& callee = prepareHeapServiceFrame(address, 0, static_cast<int>(supplied.size()), result, m_currentInstructionPc);
 	supplied.placeInto(callee.registers, 0, copied, 0);
 	callee.writeControl(FrameField::Protected, static_cast<u32>(protectedIndex));
+	instructionBudgetRemaining -= callee.readWindow(FrameField::Top);
+	enterResidentFrame(callee);
+}
+
+void CPU::enterResidentFrame(CallFrame& frame, u32 receiverFlags) {
+	frame.addControlFlags(FRAME_RESIDENT_ACTIVATION | receiverFlags);
 	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
 	m_memory.writeRamRecordPair(context, m_currentInstructionPc, lastPc);
-	instructionBudgetRemaining -= callee.readWindow(FrameField::Top);
 	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceResidentField::SourceCycles),
 		static_cast<u32>(remainingDeviceCycles()), static_cast<u32>(m_runKind));
-	callee.thread->enterFrame(&callee);
+	frame.thread->enterFrame(&frame);
 	requestYield();
 }
 
@@ -124,7 +131,7 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 		caller.registers.copyFrom(frame.registers, result.base, base, placement.copied, placement.padded);
 		caller.placeResultTop(result, placement.count());
 		instructionBudgetRemaining -= placement.count();
-	} else if ((m_systemImage->romFunctions.find(frame.readControl(FrameField::Function))->entry.flags & BLUA32_FUNCTION_RESIDENT) != 0u) {
+	} else if (frame.hasControlFlag(FRAME_RESIDENT_ACTIVATION)) {
 		const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
 		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceResidentField::SourceBase), base, produced);
 	} else {
@@ -143,7 +150,7 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 	m_heapServiceView.leaveFrame();
 }
 
-void CPU::finishResidentCall() {
+void CPU::finishResidentCall(u32 flags) {
 	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
 	using Field = HeapServiceResidentField;
 	m_currentInstructionPc = m_memory.readRamRecordWord(context + static_cast<u32>(Field::IssuePc));
@@ -154,9 +161,13 @@ void CPU::finishResidentCall() {
 	if (produced == HEAP_SERVICE_RESULT_FAULT) throw LuaExecutionError(source);
 	const int base = static_cast<int>(source), count = static_cast<int>(produced);
 	const auto& frame = *m_heapServiceView.firstFrame;
+	if ((flags & FRAME_RESIDENT_PREPARED_ENTRY) != 0u) {
+		enterPreparedFrame();
+		return;
+	}
 	const i32 protectedIndex = static_cast<i32>(frame.readControl(FrameField::Protected));
 	const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
-		frame.readWindow(FrameField::ReturnCount), frame.readControl(FrameField::Flags));
+		frame.readWindow(FrameField::ReturnCount), flags);
 	auto& caller = *m_activeThread->currentFrame;
 	const auto placement = ValuePlacement::fit(count, result.selected(count));
 	if (protectedIndex < 0 && caller.registers.containsRange(result.base, placement.count())) {

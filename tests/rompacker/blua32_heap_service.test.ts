@@ -83,6 +83,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/gc_full', 'collect_full'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/thread_create', 'create_coroutine'],
+		['kernel/thread_frame_storage', 'reserve_frame_space'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HEAP_SERVICE_ENTRY_COUNT; ++operation) {
@@ -92,6 +93,8 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === binding)!;
 		assert.equal(linked.symbols.metadata.functionIds[index], object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length);
+		assert.equal(readLE32(bytes, address - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0,
+			'CPU-only code is not a public callable');
 		functions.add(index);
 	}
 	assert.equal(functions.size, HEAP_SERVICE_ENTRY_COUNT);

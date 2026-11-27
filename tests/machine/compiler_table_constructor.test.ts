@@ -237,7 +237,7 @@ test('a constructor above 4100 locals materializes both tagged capacities in the
 			const pc = fn.codeAddress + (call.pc - proto.entryPC) - INSTRUCTION_BYTES; // WIDE head
 			const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 			cpu.setExecutionHook((_domain, at) => at === pc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			assert.equal(runCpuWithinBudget(cpu, 40_000), RunResult.ExecutionStopped);
+			assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.ExecutionStopped);
 			const frame = cpu.getFrameDepth() - 1;
 			assert.equal(cpu.readFramePc(frame), pc);
 			assert.equal(valueTag(cpu.readFrameRegister(frame, call.a)), ValueTag.ResidentFunction);

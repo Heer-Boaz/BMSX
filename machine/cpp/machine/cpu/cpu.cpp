@@ -2607,8 +2607,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
 		// Debugger stepping accounts a pinned full collector as machine progress,
 		// not as a second cartridge instruction. The activation owns all phases.
-		const u32 root = m_heapServiceView.firstFrame->readControl(FrameField::Function);
-		const bool resident = (m_systemImage->romFunctions.find(root)->entry.flags & BLUA32_FUNCTION_RESIDENT) != 0u;
+		const auto& firstFrame = *m_heapServiceView.firstFrame;
+		const u32 root = firstFrame.readControl(FrameField::Function);
+		const u32 flags = firstFrame.readControl(FrameField::Flags);
+		const bool resident = (flags & FRAME_RESIDENT_ACTIVATION) != 0u;
 		const auto gcStage = !resident && cartLane == 0u && completion == HeapServiceBiosCallKind::Idle
 			? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		const auto& functions = m_systemImage->heapServiceFunctions;
@@ -2626,7 +2628,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				if (resident) finishResidentCall();
+				if (resident) finishResidentCall(flags);
 				else switch (gcStage) {
 					case HeapServiceGcStage::FullTrace:
 					case HeapServiceGcStage::MaintenanceTrace: {
@@ -3103,7 +3105,7 @@ CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	CallResultPlacement result, u32 callSitePc) {
+	CallResultPlacement result, u32 callSitePc, bool ordinaryCall) {
 	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
@@ -3111,30 +3113,73 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, argCount, functionRecord.entry);
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
-	auto* frame = m_activeThread->acquireFrame();
-	m_activeThread->reserveFrame(placement.stackEnd(), valueClosure(closure));
-	frame->executionImage = image;
-	frame->initializeControl({
+	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
 		frameBankWord(image->executionDomainId),
 		placement.varargBase, placement.varargCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity),
-	});
-	const auto [copied, padded] = placement.formals;
-	if (placement.relocatesFormals || !sharedStack)
-		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied, padded);
-	else frame->registers.clear(copied, padded);
-	if (placement.relocatesFormals) {
-		if (sharedStack)
-			m_activeThread->stack.clear(placement.argumentBase, copied);
-		else
-			m_activeThread->stack.copyFrom(caller.thread->stack, placement.varargBase, callerArgBase + placement.top(), placement.varargCount);
+	};
+	auto& thread = *m_activeThread;
+	const size_t end = placement.stackEnd();
+	const bool fits = ordinaryCall && thread.frameSpaceFits(end);
+	if (ordinaryCall && !fits) {
+		const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
+		if (function) {
+			const u32 management = m_heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+			entry.writeWords([&](FrameField field, u32 word) {
+				m_memory.writeRamRecordWord(prepared + static_cast<u32>(field), word);
+			});
+			m_memory.writeRamRecordPair(prepared + static_cast<u32>(PreparedFrameField::SourceSlot), callerArgBase, argCount);
+			m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals), placement.relocatesFormals);
+			const std::array args{thread.address, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, closure};
+			auto& firmware = prepareHeapServiceFrame(function, 0, static_cast<int>(args.size()), {}, m_currentInstructionPc);
+			for (size_t i = 0; i < args.size(); ++i) firmware.registers.set(i, valueInteger(static_cast<i32>(args[i])));
+			enterResidentFrame(firmware, FRAME_RESIDENT_PREPARED_ENTRY);
+			return nullptr;
+		}
 	}
-	instructionBudgetRemaining -= placement.cycles(sharedStack);
+	auto* frame = thread.acquireFrame();
+	if (!fits) thread.reserveFrame(end, valueClosure(closure));
+	frame->executionImage = image;
+	frame->initializeControl(entry);
+	const auto [copied, padded] = placement.formals;
+	if (sharedStack) placeSharedFormals(*frame, callerArgBase, copied, padded, placement.relocatesFormals);
+	else {
+		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied, padded);
+		if (placement.relocatesFormals)
+			thread.stack.copyFrom(caller.thread->stack, placement.varargBase, callerArgBase + placement.top(), placement.varargCount);
+		instructionBudgetRemaining -= placement.cycles(false);
+	}
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
 	return frame;
+}
+
+void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded, bool relocate) {
+	auto& stack = frame.thread->stack;
+	if (relocate) {
+		frame.registers.copyFrom(stack, 0, first, copied, padded);
+		stack.clear(first, copied);
+	} else frame.registers.clear(copied, padded);
+	instructionBudgetRemaining -= relocate ? copied + padded : padded;
+}
+
+void CPU::enterPreparedFrame() {
+	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+	auto& thread = *m_activeThread;
+	auto& frame = *thread.acquireFrame();
+	frame.applyPreparedControl(prepared);
+	const auto domain = frame.savedExecutionBank();
+	frame.executionImage = executionImageForDomain(domain);
+	const int params = frame.readWindow(FrameField::Top);
+	const int supplied = static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied)));
+	const int copied = std::min(params, supplied);
+	placeSharedFormals(frame, static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::SourceSlot))),
+		copied, params - copied, m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
+	thread.setStackTop(frame.stackBase() + frame.stackCapacity());
+	thread.enterFrame(&frame);
+	latchActiveExecutionImage(domain, frame.executionImage);
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,

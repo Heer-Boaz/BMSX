@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, CreateCoroutine, Count,
+	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -57,6 +57,10 @@ export const enum HeapServiceBiosCallField {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 }
+
+// Cold CPU frame entry: 56 bytes of canonical control words + argument plan.
+export const HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
+export const enum PreparedFrameField { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 }
 
 export const HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 }

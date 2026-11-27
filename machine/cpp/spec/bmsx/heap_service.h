@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, CreateCoroutine, Count,
+	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -68,6 +68,10 @@ enum class HeapServiceBiosCallField : uint32_t {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 };
+
+// Cold CPU frame entry: 56 bytes of canonical control words + argument plan.
+constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
+enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 };
 
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };

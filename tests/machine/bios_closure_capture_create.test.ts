@@ -59,7 +59,7 @@ for (const level of [0, 3] as const) {
 			return cpu;
 		}
 		const actual = machine(), oracle = machine(), memory = actual.memory;
-		runGuestToHalt(oracle, 10_000);
+		runGuestToHalt(oracle, 65_536);
 		oracle.luaHeap.setCollectionTarget(oracle.luaHeap.capacity());
 		const completion: Value[] = [];
 		oracle.readCompletionValues(completion);

@@ -33,12 +33,40 @@ const FRAME_BANK_CART = 1 << 3;
 const FRAME_BANK_SECOND = 1 << 4;
 const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 const FRAME_EXTEND_RESULT_TOP = 1 << 5;
+// Fixed-root activation takes the ordinary VM return/fault path.
+export const FRAME_RESIDENT_ACTIVATION = 1 << 6;
+// The fixed root returns into a prepared ordinary frame, not Value slots.
+export const FRAME_RESIDENT_PREPARED_ENTRY = 1 << 7;
 
 export function frameExecutionBank(flags: number): ExecutionDomainId {
 	return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;
 }
 function frameBankWord(domain: ExecutionDomainId): number {
 	return domain === SYSTEM_EXECUTION_DOMAIN_ID ? 0 : FRAME_BANK_CART | (domain << 4);
+}
+
+export function writeFrameEntryControl(memory: Memory, offset: number, fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
+	varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
+	const ram = memory.ramData();
+	writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
+	writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
+	writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
+	writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
+	const bank = frameBankWord(domain);
+	const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
+	writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
+	writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
+	writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
+	writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);
+	writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
+	writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount & ~CALL_RESULT_EXTEND_TOP);
+	writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
+	writeLE32(ram, (offset + FrameField.Closure) & RAM_RECORD_WORD_MASK, closureAddress);
+	writeLE32(ram, (offset + FrameField.StackBase) & RAM_RECORD_WORD_MASK, base);
+	writeLE32(ram, (offset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK, capacity);
+	const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
+	memory.invalidateRamWrite(offset, first);
+	if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 }
 
 export class CallFrame {
@@ -70,27 +98,15 @@ export class CallFrame {
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
 		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
-		const memory = this.controlMemory, ram = memory.ramData(), offset = this.controlOffset;
-		writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
-		writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
-		writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
-		writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
-		const bank = frameBankWord(domain);
-		const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
-		writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
-		writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
-		writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
-		writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);
-		writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
-		writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount & ~CALL_RESULT_EXTEND_TOP);
-		writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
-		writeLE32(ram, (offset + FrameField.Closure) & RAM_RECORD_WORD_MASK, closureAddress);
-		writeLE32(ram, (offset + FrameField.StackBase) & RAM_RECORD_WORD_MASK, base);
-		writeLE32(ram, (offset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK, capacity);
+		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, varargCount,
+			returnBase, returnCount, top, closureAddress, base, capacity);
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
-		const first = Math.min(FRAME_CONTROL_BYTES, MAIN_RAM_SIZE - offset);
-		memory.invalidateRamWrite(offset, first);
-		if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
+	}
+	public applyPreparedControl(source: number): void {
+		const memory = this.controlMemory;
+		memory.ramData().copyWithin(this.controlOffset, source, source + FRAME_CONTROL_BYTES);
+		this.registers.rebind(this.thread.stackRegisters, this.stackBase, this.stackCapacity);
+		memory.invalidateRamWrite(this.controlOffset, FRAME_CONTROL_BYTES);
 	}
 	public growRegisterWindow(capacity: number): void {
 		const memory = this.controlMemory, address = (this.controlOffset + FrameField.StackCapacity) & RAM_RECORD_WORD_MASK;

@@ -208,7 +208,29 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 	return out_of_memory + 1, 0, 0 -- L:1111 N:1214 E:43
 end
 
+-- The CPU supplies architectural extents (including its exception spare).
+-- Rounding the two reservations is part of backing policy, not CALL decode.
+local reserve_frame_space<const> = function(address, value_end, frame_end, root) -- X:517-521 V:159-166 W:181-189
+	local management_port<const>: *u32 = layout.management_address -- T:227 A:25 C:234 B:20; ordinary resident context
+	local cycles_port<const>: *u32 = layout.call_cycles_address -- X:5201-5207 Y:2809-2815; issuing allowance
+	local fault_port<const>: *u32 = layout.call_fault_address -- L:1111 N:1214; ordinary resident fault
+	local management<const> = *management_port -- T:227 A:25 C:234 B:20
+	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- V:161-164 W:183-188 H:21-22
+	local previous_frames<const> = thread.frame_capacity & control_count_mask -- V:161,164 W:183,185,188 H:27
+	local frames = previous_frames < 2 and 2 or previous_frames -- V:161 W:185 H:17
+	while frames < frame_end do frames = frames * 2 end -- V:162 W:186
+	if frames == previous_frames then frames = 0 end -- V:164 W:188
+	local values = 0 -- X:519 V:163 W:187
+	if value_end > thread.stack_capacity then -- X:518-519 V:163 W:187
+		values = value_end <= 8 and 8 or 1 << (allocator.internal.highest_bit(value_end - 1) + 1) -- X:519 W:187 H:16
+	end
+	local status<const> = grow_thread_frame_storage(management, address, values, frames, root, *cycles_port) -- V:166 W:189
+	if status ~= 0 then *fault_port = status - 1 end -- L:1111 N:1214; same Lua exception, after rollback/recovery
+	return -- V:166 W:189; acquisition has no language results
+end
+
 return {
 	internal = { update_charge = update_charge, resize_value_stack = resize_value_stack, grow_frame_controls = grow_frame_controls },
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
+	reserve_frame_space = reserve_frame_space,
 }

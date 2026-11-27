@@ -32,7 +32,7 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 		const u32 closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, result,
-			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
+			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true);
 		return pushed != nullptr;
 	}
 	if (valueTag(callee) == ValueTag::ResidentFunction) {

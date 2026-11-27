@@ -40,7 +40,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, [fn, whole]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
 	const { cpu, memory } = createTestSystemCpu(image), oracle = createTestSystemCpu(image).cpu;
-	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 65_536);
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);

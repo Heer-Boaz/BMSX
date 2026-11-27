@@ -159,6 +159,10 @@ export class Thread {
 		this.rebindFrames();
 	}
 
+	public frameSpaceFits(valueEnd: number): boolean {
+		return valueEnd <= this.stackRegisters.capacity() && this.frameDepth + 2 <= this.boundFrameCapacity;
+	}
+
 	public reserveFrame(values: number, root = valueNil(), exception = false): void {
 		const wanted = this.frameDepth + (exception ? 1 : 2);
 		let frames = Math.max(THREAD_INITIAL_FRAMES, this.boundFrameCapacity);

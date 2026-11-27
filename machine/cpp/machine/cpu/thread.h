@@ -29,6 +29,9 @@ struct Thread {
 	void setStackTop(i32 top) { write(ThreadField::StackTop, static_cast<u32>(top)); }
 	CallFrame* frameAtDepth(size_t depth) const;
 	void resizeStack(size_t capacity, Value root = valueNil());
+	bool frameSpaceFits(size_t valueEnd) const {
+		return valueEnd <= stackCapacity && frameDepth() + 2u <= boundFrameCapacity;
+	}
 	void reserveFrame(size_t valueEnd, Value root = valueNil(), bool exception = false);
 	void bindStack();
 	u32 stackOffset() const;

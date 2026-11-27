@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS, initializeRecord } from '../../machine/ts/machine/cpu/closure';
@@ -26,7 +25,7 @@ const source = `local function hold(a, b) halt_until_irq; return a,b end; return
 
 for (const level of [0, 3] as const) {
 	function fixture() {
-		const compiled = compileHeapServiceSystem(source, level, [{ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }]);
+		const compiled = compileHeapServiceSystem(source, level);
 		const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
 		function entry(exportPathKey: string) {
 			const { slotName } = object.sections.rodata.moduleExports.find(e => e.path === path && e.exportPathKey === exportPathKey)!;
@@ -42,7 +41,7 @@ for (const level of [0, 3] as const) {
 			const memory = new Memory({ systemRom: linked.romBytes, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
 			const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 			cpu.reset();
-			runGuestToHalt(cpu, 10_000);
+			runGuestToHalt(cpu, 65_536);
 			return cpu;
 		}
 		const cpu = machine(), oracle = machine(), { memory, heapAllocator: arena } = cpu;

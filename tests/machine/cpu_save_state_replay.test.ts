@@ -90,12 +90,15 @@ return {}, cached, dynamic
 	runGuestToHalt(cpu, 100_000);
 	const expected = cpu.captureRuntimeState();
 	for (const budget of [1001, 2001, 4001, 8001]) {
-
 		cpu.memory.restoreSaveState(anchorRam);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded, 'the next call consumes only its newly supplied grant');
-		runGuestToHalt(cpu, budget + 10_000);
+		let result = cpu.runUntilDepth(0, 1);
+		assert.equal(result, RunResult.Yielded, 'the next call consumes only its newly supplied grant');
+		for (let grant = 0; grant < 128 && result === RunResult.Yielded; ++grant)
+			result = cpu.runUntilDepth(0, budget);
+		assert.equal(result, RunResult.Halted);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
 	}
 });
