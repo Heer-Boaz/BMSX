@@ -179,20 +179,8 @@ void CPU::finishResidentCall(u32 flags) {
 	const auto& frame = *m_heapServiceView.firstFrame;
 	const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
 		frame.readWindow(FrameField::ReturnCount), flags);
-	auto& caller = *m_activeThread->currentFrame;
-	const auto placement = ValuePlacement::fit(count, result.selected(count));
-	if (caller.registers.containsRange(result.base, placement.count())) {
-		caller.registers.copyFrom(m_heapServiceView.stack, result.base, base, placement.copied, placement.padded);
-		caller.placeResultTop(result, placement.count());
-		instructionBudgetRemaining -= placement.count();
-		return;
-	}
-	// The fixed activation has retired. Keep results rooted if ordinary
-	// placement needs to grow the receiving thread.
-	auto scratch = acquireBuiltinResultScratch();
-	auto& values = scratch.get();
-	for (int slot = 0; slot < placement.copied; ++slot) values.push_back(m_heapServiceView.stack.get(base + slot));
-	writeReturnValues(caller, result, {values.data(), values.size()});
+	const int copied = std::min(count, result.selected(count));
+	writeReturnValues(*m_activeThread->currentFrame, result, BuiltinArgsView(m_heapServiceView.stack.subspan(base, copied)));
 }
 
 void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {

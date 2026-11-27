@@ -100,8 +100,7 @@ end
 
 -- The direct entry reserves the full architectural call-overflow argument
 -- prefix. Ordinary traps still supply their original shorter argument list.
-local enter<const> = function(values, depth, instruction, source_cycles,
-	fn, entry_pc, closure, flags, params, base, return_base, return_count, a, b, c)
+local enter<const> = function(values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14)
 	local cause<const> = cop0.cause
 	local denied_window<const> = cause == register_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
@@ -121,7 +120,15 @@ local enter<const> = function(values, depth, instruction, source_cycles,
 		if instruction == 0 then
 			local count<const> = blua32.argument_count() - 12
 			local pc<const> = window.land_call(values, depth, source_cycles, count,
-				fn, entry_pc, closure, flags, params, base, return_base, return_count, a, b, c)
+				r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14)
+			if pc then
+				cop0.epc = pc
+				blua32.rfe()
+			end
+		elseif instruction == -1 then
+			local available<const> = blua32.argument_count() - 6
+			local pc<const> = window.land_results(values, depth, source_cycles, r4, r5, available,
+				r6, r7, r8, r9, r10, r11, r12, r13, r14)
 			if pc then
 				cop0.epc = pc
 				blua32.rfe()

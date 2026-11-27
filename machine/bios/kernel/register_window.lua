@@ -103,4 +103,47 @@ local land_call<const> = function(values, depth, deadline, count,
 	return pc
 end
 
-return { recover = recover, land_call = land_call }
+-- The producer has already completed. Keep its actual Values rooted while
+-- admitting the physical window; selection and any nil padding occur once.
+local land_results<const> = function(values, top, deadline, base, selected, available, a, b, c, d, e, f, g, h, i)
+	local interrupted_port<const>: *addr = layout.interrupted_context_address
+	local interrupted<const> = *interrupted_port
+	local thread<const>: *thread_storage_record = interrupted
+	local depth<const> = thread.frame_depth & control_count_mask
+	local frame<const>: *stopped_frame = layout.ram_base + ((thread.frame_block + (depth - 1) * sizeof(stopped_frame)) & word_mask)
+	local inputs<const>: *exception_argument_roots = call_operands
+	local arguments<const>: *value = call_operands + offsetof(exception_argument_roots.values)
+	inputs.closure, inputs.supplied = frame.closure, available
+	if available > 0 then arguments[0] = a end
+	if available > 1 then arguments[1] = b end
+	if available > 2 then arguments[2] = c end
+	if available > 3 then arguments[3] = d end
+	if available > 4 then arguments[4] = e end
+	if available > 5 then arguments[5] = f end
+	if available > 6 then arguments[6] = g end
+	if available > 7 then arguments[7] = h end
+	if available > 8 then arguments[8] = i end
+	local scope<const> = (call_operands - layout.ram_base) | roots.exception_result_scope
+	if frames.prepare_frame_space(layout.management_offset, interrupted, values, 0, scope, deadline, true) ~= 0 then
+		return nil
+	end
+
+	local stack_base<const> = frame.stack_base & frame_window_mask
+	local output_words<const>, output_tags<const> = frames.internal.value_planes(interrupted, stack_base + base)
+	local words<const>: *u32 = output_words
+	local tags<const>: *u8 = output_tags
+	local copied<const> = available < selected and available or selected
+	for slot = 0, copied - 1 do
+		local address<const> = &arguments[slot]
+		local word<const>: *u32 = address
+		local tag<const>: *u8 = address + layout.value_cell_tag_offset
+		words[slot], tags[slot] = *word, *tag
+	end
+	for slot = copied, selected - 1 do words[slot], tags[slot] = 0, 0 end
+	frame.stack_capacity = (frame.stack_capacity & ~frame_window_mask) | (values - stack_base)
+	frame.top = (frame.top & ~frame_window_mask) | top
+	thread.stack_top = values
+	return frame.pc
+end
+
+return { recover = recover, land_call = land_call, land_results = land_results }

@@ -2383,6 +2383,9 @@ export class CPU implements MappedPageInvalidator {
 		thirdArgument?: Value,
 		fourthArgument?: Value,
 		supplied?: number,
+		tail?: ValueSlots,
+		tailSource = 0,
+		tailDestination = 0,
 	): CallFrame | null {
 		this.latchExceptionEntry(causeWord, epcWord);
 		if (this.fixedInterruptActive()) {
@@ -2396,7 +2399,7 @@ export class CPU implements MappedPageInvalidator {
 			this.threadSwitchRequested = this.yieldRequested = true;
 		}
 		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord,
-			argument, secondArgument, thirdArgument, fourthArgument, supplied);
+			argument, secondArgument, thirdArgument, fourthArgument, supplied, tail, tailSource, tailDestination);
 	}
 
 	private latchExceptionEntry(causeWord: number, epcWord: number): void {
@@ -2409,18 +2412,22 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number,
-		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number): CallFrame | null {
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number,
+		tail?: ValueSlots, tailSource = 0, tailDestination = 0): CallFrame | null {
 		if (!this.readFunctionRecordOnBus(vectorImage, functionAddress, CPU.executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 			this.hardHalt();
 			return null;
 		}
-		return this.enterLatchedExceptionFrame(nmi, epcWord, argument, secondArgument, thirdArgument, fourthArgument, supplied);
+		return this.enterLatchedExceptionFrame(nmi, epcWord, argument, secondArgument, thirdArgument, fourthArgument,
+			supplied, tail, tailSource, tailDestination);
 	}
 
 	private enterLatchedExceptionFrame(nmi: boolean, epcWord: number,
-		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number): CallFrame | null {
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number,
+		tail?: ValueSlots, tailSource = 0, tailDestination = 0): CallFrame | null {
 		try {
-			return this.enterDirectFrame(epcWord, nmi, argument, secondArgument, thirdArgument, fourthArgument, supplied);
+			return this.enterDirectFrame(epcWord, nmi, argument, secondArgument, thirdArgument, fourthArgument,
+				supplied, tail, tailSource, tailDestination);
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
 			this.hardHalt();
@@ -2430,7 +2437,8 @@ export class CPU implements MappedPageInvalidator {
 
 	// Direct machine entry binds the sampled Function and no capture environment.
 	private enterDirectFrame(epcWord?: number, nmi = false,
-		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number): CallFrame | null {
+		argument?: Value, secondArgument?: Value, thirdArgument?: Value, fourthArgument?: Value, supplied?: number,
+		tail?: ValueSlots, tailSource = 0, tailDestination = 0): CallFrame | null {
 		const entry = this.functionRecordLatch;
 		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
 		const thread = this.activeThread, base = thread.stackTop;
@@ -2456,7 +2464,14 @@ export class CPU implements MappedPageInvalidator {
 		frame.decodedPage = null;
 		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,
 			base + numParams, argumentCount, 0, 0, Math.max(numParams, argumentCount), 0, base, capacity);
-		frame.registers.clear(exception ? Math.max(1, numParams) : numParams);
+		const initialized = exception ? Math.max(1, numParams) : numParams;
+		if (tail === undefined) frame.registers.clear(initialized);
+		else {
+			// The exception bank can overlap the source. Move the actual Value
+			// window before writing its prefix; only absent formals are nilled.
+			frame.registers.copyRangeFrom(tail, tailDestination, tailSource, argumentCount - tailDestination,
+				Math.max(0, initialized - argumentCount));
+		}
 		if (argument !== undefined) frame.registers.set(0, argument);
 		if (secondArgument !== undefined) frame.registers.set(1, secondArgument);
 		if (thirdArgument !== undefined) frame.registers.set(2, thirdArgument);
@@ -4124,19 +4139,9 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
 		const caller = this.activeThread.currentFrame!;
-		const base = frame.returnBase, result = frame.returnCount, selected = selectedCallResultCount(result, count);
-		if (base + selected <= caller.stackCapacity) {
-			this.writeReturnValuesFromRegisters(caller, base, result, source, sourceBase, count, true);
-			return;
-		}
-		const values = this.acquireBuiltinResults();
-		try {
-			const copied = Math.min(count, selected);
-			for (let slot = 0; slot < copied; ++slot) values.push(source.get(sourceBase + slot));
-			this.writeReturnValuesFromRegisters(caller, base, result, values.slots, 0, values.length);
-		} finally {
-			this.releaseBuiltinResults(values);
-		}
+		const result = frame.returnCount;
+		const copied = Math.min(count, selectedCallResultCount(result, count));
+		this.writeReturnValuesFromRegisters(caller, frame.returnBase, result, source, sourceBase, copied);
 	}
 
 	private prepareHeapServiceFrame(functionAddress: number, stackBase: number, supplied: number, returnBase: number, returnCount: number, callSite?: number): CallFrame {
@@ -4303,7 +4308,7 @@ export class CPU implements MappedPageInvalidator {
 			// and leave the interrupted PC at the instruction's successor.
 			const vector = this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
 				this.currentInstructionPc, valueInteger(end), valueInteger(thread.frameDepth + 2), valueInteger(0),
-				valueInteger(this.remainingDeviceCycles()), 12 + count);
+				valueInteger(this.remainingDeviceCycles()), 12 + count, args as ValueSlots, first, 12);
 			if (vector !== null) {
 				const registers = vector.registers;
 				const frameFlags = frameBankWord(domain) | ((returnCount & CALL_RESULT_EXTEND_TOP) === 0 ? 0 : FRAME_EXTEND_RESULT_TOP);
@@ -4315,7 +4320,6 @@ export class CPU implements MappedPageInvalidator {
 				registers.setInteger(9, stackBase);
 				registers.setInteger(10, returnBase);
 				registers.setInteger(11, returnCount & ~CALL_RESULT_EXTEND_TOP);
-				registers.copyRangeFrom(args as ValueSlots, 12, first, count);
 			}
 			return null;
 		}
@@ -4402,12 +4406,28 @@ export class CPU implements MappedPageInvalidator {
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number, fixedStack = false): void {
 		const targetCount = selectedCallResultCount(count, sourceCount);
+		const end = base + targetCount;
 		if (targetCount > 0) {
-			const registers = fixedStack ? frame.registers : this.ensureRegisterCapacity(frame, base + targetCount - 1);
+			if (!fixedStack && end > frame.stackCapacity) {
+				const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
+				if (extent > frame.thread.stackRegisters.capacity()) {
+					if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
+					const top = (count & CALL_RESULT_EXTEND_TOP) === 0 ? end : Math.max(end, frame.top);
+					const vector = this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+						this.currentInstructionPc, valueInteger(extent), valueInteger(top), valueInteger(-1),
+						valueInteger(this.remainingDeviceCycles()), 6 + sourceCount, source, sourceBase, 6);
+					if (vector !== null) {
+						vector.registers.setInteger(4, base);
+						vector.registers.setInteger(5, targetCount);
+					}
+					return;
+				}
+				frame.growRegisterWindow(capacity);
+			}
 			const copiedCount = Math.min(sourceCount, targetCount);
-			registers.copyRangeFrom(source, base, sourceBase, copiedCount, targetCount - copiedCount);
+			frame.registers.copyRangeFrom(source, base, sourceBase, copiedCount, targetCount - copiedCount);
 		}
-		frame.setCallResultTop(base + targetCount, count);
+		frame.setCallResultTop(end, count);
 		this.charge(targetCount);
 	}
 

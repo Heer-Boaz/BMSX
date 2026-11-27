@@ -30,17 +30,19 @@ local trace_head<const> = control_layout.internal.trace_head_offset -- T:27 H:24
 struct exception_argument_roots
 	closure: addr -- U:41-42,124 I:17-20
 	supplied: u32 -- K:84 I:16,20 X:606,612
-	values: value[3] -- I:15-20 X:604-606,610-612
+	values: value[9] -- I:15-20 X:604-606,610-612; the result vector borrows the same storage
 end
 local detached_scope_tag<const> = 1 -- I:15-20; not a Table tuple or absolute Closure
+local result_scope_tag<const> = 3 -- I:15-20; already produced results remain live throughout admission
 
 -- Only synchronous Atomic marked the temporary method/argument scope;
 -- ordinary Mark and major remark mark the explicit Closure alone.
 local mark_detached_frame_roots<const> = function(control, arena, metadata, scope, atomic) -- I:15-20 X:604-612 J:724-730
-	local source<const> = layout.ram_base + (scope & ~detached_scope_tag) -- I:15-20 K:84
+	local source<const> = layout.ram_base + (scope & ~3) -- I:15-20 K:84
 	local roots<const>: *exception_argument_roots = source -- I:15-20 K:84
 	local work = 0 -- J:717,730
-	if atomic then -- J:724-730 Y:675-679; stored operand scope only at synchronous final mark
+	local results<const> = (scope & 3) == result_scope_tag -- I:15-20
+	if atomic or results then -- J:724-730 Y:675-679; detached operands enter only at synchronous final mark
 		mark.mark_record(control, arena, roots.closure, closure_kind, trace_head, 1) -- I:15 D:3259-3260 X:604,5395
 		local inputs<const>: *value = source + offsetof(exception_argument_roots.values) -- I:16 X:604-605
 		for slot = 0, roots.supplied - 1 do -- I:16 D:3259-3260 X:604-605,5395
@@ -51,7 +53,9 @@ local mark_detached_frame_roots<const> = function(control, arena, metadata, scop
 			work = work + added -- J:730 Y:679
 		end
 	end
-	mark.mark_record(control, arena, roots.closure, closure_kind, trace_head, 1) -- I:18-20 X:610-612 J:678,729,1032 Y:630,678,964
+	if not results then -- I:18-20 X:610-612
+		mark.mark_record(control, arena, roots.closure, closure_kind, trace_head, 1) -- I:18-20 X:610-612 J:678,729,1032 Y:630,678,964
+	end
 	return work -- J:730,1033 Y:679,965
 end
 
@@ -135,6 +139,7 @@ end
 return {
 	internal = { mark_detached_frame_roots = mark_detached_frame_roots }, -- I:15-20
 	exception_argument_scope = detached_scope_tag, -- I:15-20
+	exception_result_scope = result_scope_tag, -- I:15-20
 	mark_operand_roots = mark_operand_roots, -- T:656-657 C:677-678
 	single_value_scope = single_value_scope, -- Z:368
 	global_write_scope = global_write_scope,

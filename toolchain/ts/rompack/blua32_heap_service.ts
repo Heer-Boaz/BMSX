@@ -89,7 +89,12 @@ export function linkBlua32HeapService(
 	for (const reloc of constValueRelocs) {
 		if (reloc.kind === 'link_value') lateConstants.add(reloc.constIndex);
 	}
-	const { valueSlots, frames } = deriveBlua32FixedStack(image, [...roots, ...residentRoots], { functions: localFunctions, lateConstants });
+	// The stock System vector receives six result-placement words followed
+	// by the already produced Values in its fifteen architectural arguments.
+	// This is a property of the linked resident producers, not a limit on RET.
+	const { valueSlots, frames } = deriveBlua32FixedStack(image, [...roots, ...residentRoots], {
+		functions: localFunctions, lateConstants, resultWindow: { roots: residentRoots, slots: 15 - 6 },
+	});
 	if (valueSlots > HEAP_SERVICE_VALUE_COUNT || frames > HEAP_SERVICE_FRAME_COUNT)
 		throw new Error(`Heap service requires ${valueSlots} Value slots and ${frames} frames, beyond its fixed stack.`);
 

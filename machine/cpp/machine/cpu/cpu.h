@@ -547,7 +547,7 @@ private:
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord,
-		std::span<const Value> arguments = {});
+		std::span<const Value> arguments = {}, const BuiltinArgsView& suffix = {});
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
 	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
 	bool supervisorSystemInstruction() const {
@@ -560,12 +560,13 @@ private:
 	void installSystemVector(CallFrame& frame, u32 address, int field);
 	void transferExceptionVector(CallFrame& frame, u32 target);
 	void resumeInterruptedContext();
-	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::span<const Value> arguments = {});
+	CallFrame* enterLatchedExceptionFrame(bool nmi, u32 epc, std::span<const Value> arguments = {}, const BuiltinArgsView& suffix = {});
 	void initializeResetBank();
 	void bindFixedIrqBank();
-	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::span<const Value> arguments = {});
+	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::span<const Value> arguments = {},
+		const BuiltinArgsView& suffix = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
-		std::span<const Value> arguments);
+		std::span<const Value> arguments, const BuiltinArgsView& suffix);
 	void enterLuaFaultException(Value errorValue);
 	void retireNumericLuaFault(u32 reason);
 	void hardHalt();

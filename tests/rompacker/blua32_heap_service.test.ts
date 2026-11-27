@@ -151,3 +151,14 @@ test('the ROM linker excludes constants that the final asset layout can repatch'
 	assert.throws(() => linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS),
 		/constant is relocated after heap service verification/);
 });
+
+test('linked resident returns fit after the architectural result-fault header', () => {
+	const path = 'kernel/gc_full';
+	const { object, program } = compile(0, allocator, [{ path, source: `module<const>
+local collect_full<const> = function() end
+local heap_bytes<const> = function() return 0,1,2,3,4,5,6,7,8,9 end
+return { collect_full = collect_full, heap_bytes = heap_bytes }`,
+	}]);
+	assert.throws(() => linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS),
+		/return values exceed the BIOS result-fault arguments/);
+});

@@ -19,6 +19,7 @@ export type Blua32FixedStack = {
 export type Blua32FixedStackBoundary = {
 	readonly functions: ReadonlySet<number>;
 	readonly lateConstants: ReadonlySet<number>;
+	readonly resultWindow?: { readonly roots: ReadonlySet<number>; readonly slots: number };
 	readonly ordinaryCode?: {
 		readonly reset?: number;
 		readonly exceptionVectors: ReadonlySet<number>;
@@ -146,6 +147,9 @@ export function deriveBlua32FixedStack(
 					if (c !== 0) reject('return from a variadic window requires an ordinary activation');
 					if (b === 0) reject('open return window');
 					if (a + b - 1 > width) reject('return window exceeds the function record');
+					const resultWindow = boundary?.resultWindow;
+					if (resultWindow?.roots.has(index) && b - 1 > resultWindow.slots)
+						reject('return values exceed the BIOS result-fault arguments');
 					continue;
 				case OpCode.HALT:
 					if (boundary?.ordinaryCode?.interruptible !== true) reject('HALT requires an ordinary interruptible frame');

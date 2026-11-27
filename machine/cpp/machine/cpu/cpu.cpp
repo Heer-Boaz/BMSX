@@ -1592,7 +1592,8 @@ CallFrame* CPU::enterException(
 	u32 functionAddress,
 	u32 causeWord,
 	u32 epcWord,
-	std::span<const Value> arguments
+	std::span<const Value> arguments,
+	const BuiltinArgsView& suffix
 ) {
 	latchExceptionEntry(causeWord, epcWord);
 	if (fixedInterruptActive()) {
@@ -1605,7 +1606,7 @@ CallFrame* CPU::enterException(
 		m_activeThread = &m_irqView;
 		m_runSignals |= RunThreadSwitch | RunYield;
 	}
-	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord, arguments);
+	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord, arguments, suffix);
 }
 
 void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
@@ -1618,17 +1619,17 @@ void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
 }
 
 CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
-	std::span<const Value> arguments) {
+	std::span<const Value> arguments, const BuiltinArgsView& suffix) {
 	if (!readFunctionRecordOnBus(vectorImage, functionAddress, executionBusSignalsForDomain(vectorImage.executionDomainId))) {
 		hardHalt();
 		return nullptr;
 	}
-	return enterLatchedExceptionFrame(nmi, epcWord, arguments);
+	return enterLatchedExceptionFrame(nmi, epcWord, arguments, suffix);
 }
 
-CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord, std::span<const Value> arguments) {
+CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord, std::span<const Value> arguments, const BuiltinArgsView& suffix) {
 	try {
-		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord, arguments);
+		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord, arguments, suffix);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
@@ -1636,10 +1637,10 @@ CallFrame* CPU::enterLatchedExceptionFrame(bool nmi, u32 epcWord, std::span<cons
 	}
 }
 
-CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord, std::span<const Value> arguments) {
+CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord, std::span<const Value> arguments, const BuiltinArgsView& suffix) {
 	// Direct machine entry binds the sampled Function and no capture environment.
 	const auto& record = m_functionRecordLatch;
-	const auto argc = static_cast<u32>(arguments.size());
+	const auto argc = static_cast<u32>(arguments.size() + suffix.size());
 	const FunctionEntry entry{record.codeAddress, record.numParams, std::max(record.maxStack, argc), record.flags};
 	auto* image = record.image;
 	const auto domain = image->executionDomainId;
@@ -1664,8 +1665,12 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord, std::spa
 		placement.varargBase, static_cast<int>(argc), {}, std::max(placement.top(), static_cast<int>(argc)),
 		0u, placement.stackBase, static_cast<int>(placement.capacity),
 	});
-	frame->registers.clear(0, exception ? std::max(1, placement.top()) : placement.top());
-	for (u32 index = 0; index < argc; ++index) frame->registers.set(index, arguments[index]);
+	// A detached register-window exception may take its Value suffix from
+	// the same physical fixed stack. Move that range before writing R0...
+	if (!suffix.empty()) suffix.placeInto(frame->registers, arguments.size(), suffix.size(), 0);
+	const auto initialized = static_cast<u32>(exception ? std::max(1, placement.top()) : placement.top());
+	if (argc < initialized) frame->registers.clear(argc, initialized - argc);
+	for (size_t index = 0; index < arguments.size(); ++index) frame->registers.set(index, arguments[index]);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(domain, image);
@@ -2838,14 +2843,33 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, BuiltinArgsView values) {
 	const int base = result.base;
 	const int valueCount = static_cast<int>(values.size());
-	const int targetCount = result.selected(valueCount);
-	if (targetCount > 0) {
-		ValueSpan& registers = ensureRegisterCapacity(frame, base + targetCount - 1);
-		const int copiedCount = std::min(valueCount, targetCount);
-		values.placeInto(registers, base, copiedCount, targetCount - copiedCount);
+	const auto placement = ValuePlacement::fit(valueCount, result.selected(valueCount));
+	const int count = placement.count();
+	const int end = base + count;
+	if (count != 0) {
+		if (end > frame.stackCapacity()) {
+			const auto capacity = registerWindowBucket(static_cast<size_t>(end));
+			const auto extent = static_cast<size_t>(frame.stackBase()) + capacity;
+			if (extent > frame.thread->stackCapacity) {
+				if (resetBankSelected()) throw LuaOutOfMemorySignal{};
+				// The instruction has already completed. The vector owns
+				// the otherwise unplaced Values and the caller's next PC.
+				const std::array operands{
+					valueInteger(static_cast<i32>(extent)),
+					valueInteger(result.topAfter(frame.readWindow(FrameField::Top), count)),
+					valueInteger(-1), valueInteger(remainingDeviceCycles()),
+					valueInteger(base), valueInteger(count),
+				};
+				enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+					m_currentInstructionPc, operands, values);
+				return;
+			}
+			frame.growRegisterWindow(static_cast<int>(capacity));
+		}
+		values.placeInto(frame.registers, base, placement.copied, placement.padded);
 	}
-	frame.placeResultTop(result, targetCount);
-	instructionBudgetRemaining -= targetCount;
+	frame.placeResultTop(result, count);
+	instructionBudgetRemaining -= count;
 }
 
 ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {

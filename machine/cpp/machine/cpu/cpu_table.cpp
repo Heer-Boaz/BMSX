@@ -194,13 +194,10 @@ void CPU::advanceTableStore(CallFrame& frame) {
 		}
 	}
 	if (tableRebuild.record || tableRebuild.result == TableStoreReturn::None) return;
-	// Result placement can grow a frame and collect. Do it only after both
-	// the replacement and its new edge have been published.
+	// Retire the result only after publishing the replacement and its edge.
 	m_currentInstructionPc = tableRebuild.instructionPc;
-	auto scratch = acquireBuiltinResultScratch();
-	auto& out = scratch.get();
-	out.push_back(valueTable(receiver));
-	writeReturnValues(frame, {static_cast<int>(tableRebuild.destination), tableRebuild.wanted}, BuiltinArgsView(out.data(), 1));
+	const auto value = valueTable(receiver);
+	writeReturnValues(frame, {static_cast<int>(tableRebuild.destination), tableRebuild.wanted}, {&value, 1});
 }
 
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {

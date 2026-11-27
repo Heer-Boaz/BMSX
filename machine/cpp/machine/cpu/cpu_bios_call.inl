@@ -21,11 +21,6 @@ void CPU::finishBiosCall(HeapServiceBiosCallKind kind) {
 	const auto tag = static_cast<ValueTag>(m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Tag)));
 	const u32 word = m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Word));
 	const auto value = valueFromTag(tag, word);
-	// Result placement can grow the caller's stack. Keep the tagged value
-	// rooted through that existing synchronous owner, as for builtin returns.
-	auto scratch = acquireBuiltinResultScratch();
-	auto& results = scratch.get();
-	results.push_back(value);
 	const u32 resultWord = m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::ResultWord));
-	writeReturnValues(*m_activeThread->currentFrame, {static_cast<i32>(target), resultWord}, {results.data(), 1});
+	writeReturnValues(*m_activeThread->currentFrame, {static_cast<i32>(target), resultWord}, {&value, 1});
 }
