@@ -287,6 +287,7 @@ try {
 			const issuePc = irqAdmission();
 			finishPrelude();
 			assert.notEqual(gc.phase(), GcPhase.Atomic, 'Atomic final mark is finished before cart dispatch');
+			assert.equal(cpu.queuedFixedWork(), 0, 'the IRQ-owned final mark does not post a second activation');
 			deliver(issuePc, ++count, IRQ_VBLANK, 0);
 		}
 		assert.equal(gc.phase(), GcPhase.Pause);

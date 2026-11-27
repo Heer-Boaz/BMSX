@@ -186,7 +186,7 @@ export class FrameLoopState {
 			if (this.consumeSystemReset()) return false;
 			const cpu = runtime.machine.cpu;
 			if (!cpu.heapServiceActive() && !cpu.allocationParked()
-				&& cpu.gc.stoppedFinalMarkPending()) return false;
+				&& cpu.queuedFixedWork()) return false;
 		}
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) {

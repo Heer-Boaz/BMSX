@@ -95,7 +95,6 @@ public:
 	bool active() const { return phase() != GcPhase::Pause; }
 	bool finalMarkPending() const { return phase() == GcPhase::Atomic; }
 	u32 fullEpochs() const { return memory.readRamRecordByte(m_controlOffset + GC_FULL_EPOCHS); }
-	bool stoppedFinalMarkPending() const;
 	size_t stepFullCollection(u32 epochs, size_t words);
 	bool sweepGarbage(u32 address) const {
 		return phase() == GcPhase::Sweep && markColor(address) == (white() ^ 1u);

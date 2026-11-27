@@ -9,7 +9,7 @@ import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machi
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation, HeapServiceTraceField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -105,6 +105,8 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.cpu.gc.phase(), GcPhase.Atomic);
 		assert.equal(finished[0], want);
 		assert.equal(f.memory.readRamRecordWord(f.epochWork), want);
+		assert.equal(f.cpu.queuedFixedWork(), HeapServiceOperation.StoppedFinalMark + 1);
+		assert.equal(f.cpu.queuedFixedWork(), f.oracle.queuedFixedWork());
 		f.compare();
 		restoreCpuCheckpoint(f.cpu, middle);
 		assert.deepEqual(f.finish(), finished);

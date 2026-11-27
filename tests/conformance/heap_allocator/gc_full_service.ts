@@ -115,6 +115,7 @@ try {
 				}
 				assert.equal(reductions, epochs);
 				assert.equal(gc.fullEpochs(), 0);
+				assert.equal(cpu.queuedFixedWork(), 0, 'full collection completes its own final mark without a second activation');
 				assert.equal(gc.tableRecordAddress(hidden), 0);
 				assert.equal(gc.tableRecordAddress(floating), 0);
 				assert.equal(cpu.stringPool.find(deadText), undefined);

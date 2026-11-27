@@ -26,7 +26,7 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (!cpu.heapServiceActive()) {
 		if (runtime.machine.systemController.hasResetRequest()) return true;
 		if (cpu.allocationParked()) return cpu.allocationReady();
-		if (cpu.gcHeap().stoppedFinalMarkPending()) return false;
+		if (cpu.queuedFixedWork()) return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
@@ -58,7 +58,7 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 			return Pulse::Maintenance;
 		}
 	} else if (!backendBlocked) {
-		cpu.beginStoppedFinalMark(CpuRunKind::Scheduled);
+		cpu.admitFixedWork(CpuRunKind::Scheduled);
 	}
 	return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 }

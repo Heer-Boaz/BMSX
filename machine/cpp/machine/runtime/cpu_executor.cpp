@@ -87,7 +87,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	bool running = true;
 	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive()
 		|| (cpu.allocationParked() ? cpu.allocationReady()
-			: !cpu.gcHeap().stoppedFinalMarkPending()))) {
+			: !cpu.queuedFixedWork()))) {
 		if (runtime.machine.systemController.hasResetRequest() && !cpu.heapServiceActive()
 			&& runtime.machine.scheduler.acceptedCpuCycles() == 0) break;
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
@@ -152,7 +152,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
-	cpu.beginStoppedFinalMark(CpuRunKind::Direct);
+	cpu.admitFixedWork(CpuRunKind::Direct);
 	runDueRuntimeTimers(runtime);
 	// A fixed service can own the next grant without a deeper guest frame.
 	while (cpu.heapServiceActive()
@@ -201,7 +201,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			}
 		}
 		if (!cpu.heapServiceActive()) {
-			if (cpu.beginStoppedFinalMark(CpuRunKind::Direct)) {
+			if (cpu.admitFixedWork(CpuRunKind::Direct)) {
 				if (result == RunResult::ExecutionStopped) return CpuSuspendedRunResult::ExecutionStopped;
 				continue;
 			}

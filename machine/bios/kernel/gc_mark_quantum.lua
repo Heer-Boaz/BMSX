@@ -5,6 +5,7 @@ module<const>
 -- M: RAM. The caller publishes the ordinary roots, limit and pending String
 -- work once. Only a resolved Table operation supplies explicit operands.
 local allocator<const> = require('kernel/dlmalloc') -- C:1008,1257
+local layout<const> = require('kernel/gc_runtime_layout') -- C:1189; post-retirement fixed-work latch
 local control_layout<const> = require('kernel/gc_control') -- H:93,213-229
 local epoch<const> = require('kernel/gc_epoch') -- C:1008,1045,1072-1082,1116-1117,1252-1258
 local trace<const> = require('kernel/gc_trace') -- C:546-555,1154
@@ -103,6 +104,10 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 		if control_layout.internal.phase(control) == mark_again then -- C:1188
 			local phase<const>: *u8 = ram_base + control + phase_offset -- C:1189 H:229
 			*phase = atomic -- C:1189
+			-- Post work now, but admit it only after this activation has
+			-- committed its results and made the receiving roots visible.
+			local pending<const>: *u32 = ram_base + control - layout.control_offset + layout.fixed_work_offset -- C:1189; CPU continuation boundary
+			*pending = layout.stopped_final_mark_work -- C:1189; posts the work formerly inferred from the phase
 			break -- C:1190
 		end
 		local remark_state<const>: *u32 = ram_base + control + remark_state_offset -- C:1192 H:217

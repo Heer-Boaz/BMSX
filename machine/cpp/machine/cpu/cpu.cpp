@@ -2592,12 +2592,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
-		const auto& firstFrame = *m_heapServiceView.firstFrame;
-		const u32 root = firstFrame.readControl(FrameField::Function);
-		const u32 flags = firstFrame.readControl(FrameField::Flags);
+		const u32 flags = m_heapServiceView.firstFrame->readControl(FrameField::Flags);
 		const bool resident = (flags & FRAME_RESIDENT_ACTIVATION) != 0u;
-		const auto& functions = m_systemImage->heapServiceFunctions;
-		const bool stoppedFinalMark = root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2633,7 +2629,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (stoppedFinalMark || cartLane != 0u) && kind == CpuRunKind::Scheduled
+		return ((flags & FRAME_FIXED_WORK) != 0u || cartLane != 0u) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

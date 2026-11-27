@@ -24,6 +24,8 @@ return {
 	arguments_offset = 0x790,
 	value_cell_offset = 0x7a0,
 	value_cell_tag_offset = 4,
+	fixed_work_offset = 0x7f0,
+	stopped_final_mark_work = 15, -- fixed System descriptor ordinal plus one
 	remaining_device_cycles_address = 0x02c00000,
 	management_address = 0x02c00004,
 	call_cycles_address = 0x02c00008,

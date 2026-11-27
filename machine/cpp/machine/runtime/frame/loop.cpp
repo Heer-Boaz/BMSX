@@ -85,7 +85,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 		if (consumeSystemReset(runtime)) return false;
 		const auto& cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive() && !cpu.allocationParked()
-			&& cpu.gcHeap().stoppedFinalMarkPending()) return false;
+			&& cpu.queuedFixedWork()) return false;
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) {
 		const bool executionStopped = runUpdatePhase(runtime);

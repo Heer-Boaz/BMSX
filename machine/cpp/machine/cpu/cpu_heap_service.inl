@@ -31,7 +31,8 @@ static_assert(HEAP_SERVICE_VALUE_CELL_OFFSET + HEAP_SERVICE_VALUE_CELL_SIZE <= H
 static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_WORK_OFFSET);
 static_assert((HEAP_SERVICE_CAPTURE_WORK_OFFSET & 7u) == 0u);
 static_assert(HEAP_SERVICE_CAPTURE_WORK_OFFSET + 4 * sizeof(u32) == HEAP_SERVICE_CAPTURE_BUS_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
+static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
+static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT >= HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32));
 static_assert(HEAP_SERVICE_CAPTURE_PORT_END <= RAM_BASE);
 static_assert((1u << HEAP_SERVICE_CAPTURE_PLANE_SHIFT) == MAIN_RAM_SIZE);
@@ -57,11 +58,19 @@ u32 CPU::heapServiceResult() const {
 	return m_memory.readRamRecordWord(RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_RESULT_OFFSET);
 }
 
-bool CPU::beginStoppedFinalMark(CpuRunKind kind) {
-	if (heapServiceActive() || allocationParked() || !m_heap.stoppedFinalMarkPending()) return false;
-	const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
+u32 CPU::queuedFixedWork() const {
+	// Do not publish a partially committed table as a new input root.
+	return tableRebuild.record ? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
+}
+
+bool CPU::admitFixedWork(CpuRunKind kind) {
+	const u32 work = queuedFixedWork();
+	if (work == 0u || allocationParked()) return false;
+	const auto function = m_systemImage->heapServiceFunctions[work - 1u];
 	const std::array args{m_heapAllocator.managementOffset(), static_cast<u32>(kind)};
-	return beginHeapService(function, args);
+	if (!beginHeapService(function, args)) return false;
+	m_heapServiceView.firstFrame->writeControl(FrameField::Flags, FRAME_FIXED_WORK);
+	return true;
 }
 
 bool CPU::beginHeapService(u32 functionAddress, std::span<const u32> args) {

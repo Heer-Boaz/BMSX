@@ -170,7 +170,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -180,7 +180,7 @@ import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_WORK_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET,
+	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_WORK_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET,
 	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT, HEAP_SERVICE_CAPTURE_ISSUED_PORT,
 	HEAP_SERVICE_CAPTURE_MISSING_PORT, HEAP_SERVICE_CAPTURE_PLANE_SHIFT, HEAP_SERVICE_CAPTURE_PORT_END,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
@@ -321,7 +321,7 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
-	private readonly stoppedFinalMarkArgs: [number, CpuRunKind];
+	private readonly fixedWorkArgs: [number, CpuRunKind];
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
@@ -447,7 +447,7 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
-		this.stoppedFinalMarkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
+		this.fixedWorkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
@@ -801,11 +801,19 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	public beginStoppedFinalMark(kind: CpuRunKind): boolean {
-		if (this.heapServiceActive() || this.allocationParked() || !this.gc.stoppedFinalMarkPending()) return false;
-		this.stoppedFinalMarkArgs[1] = kind;
-		return this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.StoppedFinalMark],
-			this.stoppedFinalMarkArgs);
+	public queuedFixedWork(): number {
+		// Do not publish a partially committed table as a new input root.
+		return this.tableRebuild.record ? 0
+			: this.memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
+	}
+
+	public admitFixedWork(kind: CpuRunKind): boolean {
+		const work = this.queuedFixedWork();
+		if (work === 0 || this.allocationParked()) return false;
+		this.fixedWorkArgs[1] = kind;
+		if (!this.beginHeapService(this.systemImage.heapServiceFunctions![work - 1], this.fixedWorkArgs)) return false;
+		this.memory.writeRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags, FRAME_FIXED_WORK);
+		return true;
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2333,10 +2341,8 @@ export class CPU implements MappedPageInvalidator {
 			const irq = this.heapService.irqForwardAddress;
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
 			const completion = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Kind) as HeapServiceBiosCallKind;
-			const firstFrame = this.heapService.thread.firstFrame!, services = this.systemImage.heapServiceFunctions;
-			const root = firstFrame.functionAddress, flags = this.memory.readRamRecordWord(firstFrame.controlOffset + FrameField.Flags);
+			const flags = this.memory.readRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags);
 			const resident = (flags & FRAME_RESIDENT_ACTIVATION) !== 0;
-			const stoppedFinalMark = root === services?.[HeapServiceOperation.StoppedFinalMark];
 			this.runKind = kind;
 			this.deviceClock = deviceClock;
 			try {
@@ -2360,7 +2366,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return (stoppedFinalMark || cartLane !== 0) && kind === CpuRunKind.Scheduled
+				return ((flags & FRAME_FIXED_WORK) !== 0 || cartLane !== 0) && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;

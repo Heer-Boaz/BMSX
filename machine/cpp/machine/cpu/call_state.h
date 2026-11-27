@@ -49,6 +49,7 @@ constexpr u32 FRAME_RESIDENT_ACTIVATION = 1u << 6;
 constexpr u32 FRAME_RESIDENT_PREPARED_ENTRY = 1u << 7;
 constexpr u32 FRAME_RESIDENT_PLACE_WINDOW = 1u << 8;
 constexpr u32 FRAME_RESIDENT_RETIRE_WINDOW_SOURCE = 1u << 9;
+constexpr u32 FRAME_FIXED_WORK = 1u << 10;
 constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
 }

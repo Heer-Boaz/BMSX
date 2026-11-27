@@ -14,7 +14,7 @@ import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
 	HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
-	HeapServiceClosureField, HeapServiceRemarkHeadField, HeapServiceResidentField, HeapServiceTableGrowthMode,
+	HeapServiceClosureField, HeapServiceOperation, HeapServiceRemarkHeadField, HeapServiceResidentField, HeapServiceTableGrowthMode,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -49,7 +49,7 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 	const callerPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 16);
 	for (let i = 0; i < 32 && !cpu.gc.finalMarkPending(); ++i) cpu.gc.step();
-	assert.equal(cpu.gc.stoppedFinalMarkPending(), true);
+	assert.equal(cpu.queuedFixedWork(), HeapServiceOperation.StoppedFinalMark + 1);
 
 	const floor = 0x80000;
 	const limit = floor + 0x10000;

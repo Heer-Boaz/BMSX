@@ -79,7 +79,7 @@ export class FrameSchedulerState {
 		if (!cpu.heapServiceActive()) {
 			if (runtime.machine.systemController.hasResetRequest()) return true;
 			if (cpu.allocationParked()) return cpu.allocationReady();
-			if (cpu.gc.stoppedFinalMarkPending()) return false;
+			if (cpu.queuedFixedWork()) return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
@@ -110,7 +110,7 @@ export class FrameSchedulerState {
 			// device edge occurred during the timed part of that recovery.
 			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
 		} else if (!backendBlocked) {
-			cpu.beginStoppedFinalMark(CpuRunKind.Scheduled);
+			cpu.admitFixedWork(CpuRunKind.Scheduled);
 		}
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}
