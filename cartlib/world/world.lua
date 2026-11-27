@@ -169,6 +169,7 @@ function world_class.new()
 	self.gameplay_clock_running = true
 	self.gameplay_time_ms = 0
 	self._mutation_barrier_open = false
+	self._mutation_boundary_sequence = 0
 	self._clearing = false
 	self._update_revision = 0
 	self._executing_tick_group = nil
@@ -1146,11 +1147,12 @@ function world_class:request_mutation_boundary()
 	-- atomic to a debugger: no unfinished queue traversal survives admission.
 	local pending<const> = self._mutation_boundary_request
 	if pending ~= nil then
-		return pending
+		return pending, pending.ticket
 	end
-	local receipt<const> = { reached = false }
+	local ticket<const> = self._mutation_boundary_sequence + 1
+	local receipt<const> = { reached = false, ticket = ticket }
 	self._mutation_boundary_request = receipt
-	return receipt
+	return receipt, ticket
 end
 
 -- Only the scheduled update/render owner publishes a boundary. A nested scene
@@ -1159,8 +1161,11 @@ end
 function world_class:_publish_mutation_boundary()
 	local receipt<const> = self._mutation_boundary_request
 	if receipt ~= nil then
-		self._mutation_boundary_request = nil
 		receipt.reached = true
+		self._mutation_boundary_sequence = receipt.ticket
+		-- Retire the request after committing its sequence. An observer can
+		-- wait for retirement without keeping the receipt itself alive.
+		self._mutation_boundary_request = nil
 	end
 end
 

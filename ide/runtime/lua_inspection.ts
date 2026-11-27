@@ -110,15 +110,29 @@ const NOT_IN_SCOPE: RuntimeLuaInspectionValue = { kind: 'unavailable', reason: '
 const NOT_RUNTIME_VALUE: RuntimeLuaInspectionValue = { kind: 'unavailable', reason: 'not_runtime_value' };
 
 /** The compiler owns export-slot names; an installed slot is not evidence that its initializer ran. */
+function installedLuaExportRegisterFile(sources: RuntimeInstalledSourceState, domain: ResourceDomain, name: string) {
+	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+	return image?.globalRegisterFileByName.get(name);
+}
+
 export function readRuntimeLuaModuleExport(
 	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string,
 ): RuntimeLuaInspectionValue {
-	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
-	if (image === null) return NOT_LOADED;
 	const name = buildModuleExportSlotName(modulePath, []);
-	const registerFile = image.globalRegisterFileByName.get(name);
+	const registerFile = installedLuaExportRegisterFile(sources, domain, name);
 	if (registerFile === undefined) return NOT_LOADED;
 	return { kind: 'value', value: registerFile === Blua32GlobalRegisterFile.System ? guest.systemGlobal(name) : guest.global(name) };
+}
+
+/** Resolve the installed register name once for an instruction-boundary poll. Each read still checks the live register. */
+export function bindRuntimeLuaModuleExport(
+	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string,
+): (() => SuspendedGuestValue) | undefined {
+	const name = buildModuleExportSlotName(modulePath, []);
+	const registerFile = installedLuaExportRegisterFile(sources, domain, name);
+	if (registerFile === undefined) return;
+	const cpu = guest.cpu, key = cpu.stringPool.find(name)!;
+	return registerFile === Blua32GlobalRegisterFile.System ? () => cpu.getSystemGlobalByKey(key) : () => cpu.getGlobalByKey(key);
 }
 
 export type RuntimeLuaFunctionSource = {

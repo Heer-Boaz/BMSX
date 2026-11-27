@@ -1,5 +1,5 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { asClosure, isNil, numberToHost, valueFloat, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { asClosure, asInteger, isNil, numberToHost, valueFloat, valueIsTable, valueNil, valuePayload, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -11,7 +11,7 @@ import { pushRuntimeDebuggerControlPlan, resumeRuntimeDebugger, RuntimeDebuggerR
 import { RuntimeDeviceSettlementPlan } from '../../../runtime/device_settlement';
 import { scheduleRuntimeGuestCall, type RuntimeGuestCall } from '../../../runtime/guest_call';
 import type { PreparedLuaLiteral } from '../../../runtime/lua_literal';
-import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
+import { bindRuntimeLuaModuleExport, readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from './runtime';
 import { resolveActorPath, type ActorTarget } from './target';
@@ -89,6 +89,7 @@ export class ActorExecutionService {
 		const worldHashId = request.kind === 'spawn' ? request.worldHashId : request.target.worldHashId;
 		if (domain !== this.runtime.machine.cpu.activeCartridgeSlot()) throw new Error('Actor operation does not belong to the active cartridge.');
 		const operation = new ActorExecutionOperation(++this.serial, this.execution.revision), generation = this.generation;
+		let boundaryWorld: SuspendedValueIdentity | undefined;
 		this.active = operation;
 		// A pause may settle the tool waiter before admission. Its original prompt
 		// still owns the uninvoked request, unless a newer controller took over.
@@ -102,14 +103,28 @@ export class ActorExecutionService {
 			admission: 'quiescent', honorUserStops: true,
 			isCurrent: () => generation === this.generation && operation.result === undefined && !operation.revoked && (lifetime?.isCurrent?.() ?? true),
 			boundary: () => {
-				const world = this.world(domain, worldHashId);
-				if (world === undefined) {
+				const cpu = this.runtime.machine.cpu, guest = this.guest;
+				const readWorld = bindRuntimeLuaModuleExport(this.sources, guest, domain, 'cartlib/world/world');
+				const world = readWorld === undefined ? valueNil() : readWorld();
+				if (readWorld === undefined || !valueIsTable(world) || valuePayload(world) !== worldHashId) {
 					this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'World changed before actor invocation.' }); return;
 				}
-				return { request: { domain, closure: asClosure(this.guest.readStringMember(world, 'request_mutation_boundary'), this.runtime.machine.cpu.gc), args: () => [world] },
+				const identity = boundaryWorld = guest.identity(world);
+				const sequence = cpu.stringPool.find('_mutation_boundary_sequence')!;
+				const requestKey = cpu.stringPool.find('_mutation_boundary_request')!;
+				const ticketKey = cpu.stringPool.find('ticket')!;
+				return { request: { domain, closure: asClosure(guest.readStringMember(world, 'request_mutation_boundary'), cpu.gc), args: () => [world] },
 					condition: values => {
-						const receipt = values[0];
-						return () => this.guest.isTruthy(this.guest.readStringMember(receipt, 'reached'));
+						const ticket = asInteger(values[1]);
+						return () => {
+							const current = readWorld();
+							if (!guest.matchesIdentity(current, identity)) return true;
+							// A single wait stays on one timeline; signed subtraction also spans u32 wrap.
+							const published = asInteger(cpu.gc.tables.getStringKey(valuePayload(current), sequence));
+							if (((published - ticket) | 0) < 0) return false;
+							const pending = cpu.gc.tables.getStringKey(valuePayload(current), requestKey);
+							return isNil(pending) || asInteger(cpu.gc.tables.getStringKey(valuePayload(pending), ticketKey)) !== ticket;
+						};
 					} };
 			},
 			prepare: () => {
@@ -117,7 +132,11 @@ export class ActorExecutionService {
 				if (lifetime?.canInvoke?.() === false) return;
 				const world = this.world(domain, worldHashId);
 				let call: RuntimeGuestCall | undefined;
-				try { if (world !== undefined) call = this.prepare(request, world); }
+				try {
+					if (world !== undefined && (boundaryWorld === undefined || this.guest.matchesIdentity(world, boundaryWorld))) {
+						call = this.prepare(request, world);
+					}
+				}
 				finally { this.tree.release(); }
 				if (call === undefined) { this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'Actor target or operation changed before invocation.' }); return; }
 				return call;
