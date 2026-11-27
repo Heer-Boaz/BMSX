@@ -13,7 +13,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
-	HeapServiceBiosCallField, HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage,
+	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -105,7 +105,7 @@ test('scheduled BIOSCALL allocates across VBlank and replays its continuation fr
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
 	const latch = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
-	const pendingDestination = () => memory.readRamRecordWord(latch + HeapServiceBiosCallField.Destination);
+	const completion = () => memory.readRamRecordWord(latch + HeapServiceBiosCallField.Kind);
 	// The startup itself allocates via the same resident BIOS. Retire it
 	// before timing the independently selected constructor at the edge.
 	const entry = system.image.functions.find(fn => fn.address === system.vectors.entryFunctionAddress)!;
@@ -116,15 +116,15 @@ test('scheduled BIOSCALL allocates across VBlank and replays its continuation fr
 	cpu.setExecutionHook((_domain, pc) => pc === issuePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	assert.equal(runCpuWithinBudget(cpu, 10_000), RunResult.ExecutionStopped);
 	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	assert.equal(pendingDestination(), 0);
+	assert.equal(completion(), HeapServiceBiosCallKind.Idle);
 	assert.equal(cpu.heapServiceActive(), false);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - BASE_CYCLES[OpCode.BIOSCALL] - 32);
 	assert.equal(frames.runCyclesToNextLogicalTick(96), true);
 	assert.ok(scheduler.nowCycles >= edge);
 	assert.ok(frames.lastTickCpuUsedCycles > 0);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	const destination = pendingDestination() - 1;
-	assert.ok(destination >= 0);
+	assert.equal(completion(), HeapServiceBiosCallKind.Opcode);
+	const destination = memory.readRamRecordWord(latch + HeapServiceBiosCallField.ResultBaseOrProtectedIndex);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
@@ -133,7 +133,7 @@ test('scheduled BIOSCALL allocates across VBlank and replays its continuation fr
 	const retire = () => {
 		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(pendingDestination(), 0);
+		assert.equal(completion(), HeapServiceBiosCallKind.Idle);
 		assert.equal(cpu.readFramePc(caller), successor);
 		assert.equal(valueTag(cpu.readFrameRegister(caller, destination)), ValueTag.Table);
 		assert.deepEqual(runtime.readCompletionValues(), [], 'the BIOS grant retires before the successor executes');

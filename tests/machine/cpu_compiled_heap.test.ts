@@ -18,7 +18,7 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BiosCall } from '../../machine/ts/spec/bmsx/bios';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -72,16 +72,23 @@ test('a warm JavaScript BIOSCALL exit yields to the bound BIOS before its compil
 	assert.equal(returnedExit, CompiledBlockExit.BiosCall);
 	assert.equal(cpu.heapServiceActive(), true);
 	const state = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Opcode);
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex), terminal.exitA);
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultWord), 0);
 	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc), terminal.currentPc);
 	assert.equal(frame.pc, terminal.nextPc, 'the successor is published but fenced until BIOS RET');
 	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
 		[valueInteger(1), valueInteger(1)], 'the actual compiled exit publishes its argument window');
 	assert.equal(frame.registers.getInteger(terminal.exitA), 73, 'destination was not committed at launch');
+	const callerTop = frame.top;
 	retireService();
 	assert.equal(compiled.mock.callCount(), 1, 'allocator grants ran only the pinned BIOS lane');
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Destination), 0);
+	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Idle);
 	assert.equal(frame.pc, terminal.nextPc);
 	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.Table);
+	assert.equal(frame.top, callerTop, 'generic BIOSCALL replaces only its destination, not the CALL window');
+	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
+		[valueInteger(1), valueInteger(1)]);
 	assert.equal(grant(), RunResult.Halted);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);

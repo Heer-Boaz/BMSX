@@ -14,7 +14,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { instructionLowB, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { BiosCall } from '../../../machine/ts/spec/bmsx/bios';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -55,7 +55,7 @@ try {
 			const { cpu, memory, scheduler } = runtime.machine, { gc, luaHeap: budget, heapAllocator: arena } = cpu;
 			const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 			const state = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-			const destination = () => memory.readRamRecordWord(state + HeapServiceBiosCallField.Destination);
+			const completion = () => memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind);
 			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			function atStep() {
@@ -105,8 +105,8 @@ try {
 			assert.ok(cpu.heapServiceActive());
 			assert.equal(cpu.readFramePc(caller), next);
 			assert.equal(memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc), origin);
-			assert.notEqual(destination(), 0);
-			const resultTop = destination();
+			assert.equal(completion(), HeapServiceBiosCallKind.Opcode);
+			const resultTop = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex) + 1;
 			assert.equal(cpu.getFrameRegisterCount(caller), originalTop, 'zero operands leave the caller root window unchanged');
 			const oldTarget = budget.collectionTarget();
 			for (let n = 0; n < 32768 && budget.collectionTarget() === oldTarget; ++n) {
@@ -118,7 +118,7 @@ try {
 			assert.equal(gc.phase(), ref.gc.phase());
 			if (finished) assert.equal(gc.epochWork(), before, 'String completion reprices before the epoch-accounting epilogue');
 			else assert.equal(gc.epochWork(), ref.gc.epochWork());
-			assert.ok(cpu.heapServiceActive() && destination() !== 0, 'target publication precedes the Boolean return');
+			assert.ok(cpu.heapServiceActive() && completion() === HeapServiceBiosCallKind.Opcode, 'target publication precedes the Boolean return');
 			assert.equal(cpu.readFramePc(caller), next);
 			const partial = captureRuntimeSaveState(runtime), partialFile = join(directory, `${id}.partial`);
 			const fromCpp = join(directory, `${id}.cpp`);
@@ -127,7 +127,7 @@ try {
 			function drain() {
 				for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) grant(1);
 				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(destination(), 0);
+				assert.equal(completion(), HeapServiceBiosCallKind.Idle);
 				assert.equal(cpu.getFrameRegisterCount(caller), Math.max(originalTop, resultTop));
 				assert.equal(gc.epochWork(), ref.gc.epochWork());
 				assert.equal(memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK), ref.memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK));

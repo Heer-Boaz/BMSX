@@ -183,7 +183,7 @@ import {
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
@@ -2289,16 +2289,21 @@ export class CPU implements MappedPageInvalidator {
 			frame.registers.setInteger(BIOS_CALL_CONTEXT_WORDS + 2 * index, caller.registers.getTag(input));
 			frame.registers.setInteger(BIOS_CALL_CONTEXT_WORDS + 2 * index + 1, caller.registers.getPayload(input));
 		}
-		const state = this.heapService.biosCallAddress;
-		this.memory.writeRamRecordPair(state + HeapServiceBiosCallField.Destination, destination + 1, this.currentInstructionPc);
-		this.memory.writeRamRecordWord(state + HeapServiceBiosCallField.LastPc, this.lastPc);
+		this.armBiosCall(HeapServiceBiosCallKind.Opcode, destination, 0);
 		frame.thread.enterFrame(frame);
 		this.requestYield();
 	}
 
-	private finishBiosCall(destination: number): void {
+	private armBiosCall(kind: HeapServiceBiosCallKind, target: number, resultWord: number): void {
 		const memory = this.memory, state = this.heapService.biosCallAddress;
-		memory.writeRamRecordWord(state + HeapServiceBiosCallField.Destination, 0);
+		memory.writeRamRecordPair(state + HeapServiceBiosCallField.Kind, kind, this.currentInstructionPc);
+		memory.writeRamRecordWord(state + HeapServiceBiosCallField.LastPc, this.lastPc);
+		memory.writeRamRecordPair(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex, target, resultWord);
+	}
+
+	private finishBiosCall(kind: HeapServiceBiosCallKind): void {
+		const memory = this.memory, state = this.heapService.biosCallAddress;
+		memory.writeRamRecordWord(state + HeapServiceBiosCallField.Kind, HeapServiceBiosCallKind.Idle);
 		this.currentInstructionPc = memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc);
 		this.lastPc = memory.readRamRecordWord(state + HeapServiceBiosCallField.LastPc);
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
@@ -2309,11 +2314,29 @@ export class CPU implements MappedPageInvalidator {
 			if (!this.handleThreadError(error)) this.enterLuaFaultException(reason, error);
 			return;
 		}
+		if (kind === HeapServiceBiosCallKind.Discard) return;
+		const target = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex);
 		const tag = memory.readRamRecordWord(state + HeapServiceBiosCallField.Tag) as ValueTag;
 		const word = memory.readRamRecordWord(state + HeapServiceBiosCallField.Word);
-		const caller = this.activeThread.currentFrame!;
-		caller.registers.setEncoded(destination - 1, tag, word);
-		this.bumpRegisterTop(caller, destination - 1);
+		if (kind === HeapServiceBiosCallKind.Opcode) {
+			const caller = this.activeThread.currentFrame!;
+			caller.registers.setEncoded(target, tag, word);
+			this.bumpRegisterTop(caller, target);
+			return;
+		}
+		// The ordinary owner can grow the caller's stack. Builtin result
+		// scratch is a synchronous GC root until placement completes.
+		const results = this.acquireBuiltinResults();
+		try {
+			results.setEncoded(0, tag, word);
+			if (kind === HeapServiceBiosCallKind.Protected) this.finishProtectedCall(target, results.slots, 0, 1);
+			else {
+				const resultWord = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultWord);
+				this.writeReturnValuesFromRegisters(this.activeThread.currentFrame!, target, resultWord, results.slots, 0, 1);
+			}
+		} finally {
+			this.releaseBuiltinResults(results);
+		}
 	}
 
 	/** Internal CPU entry. The host supplies a linked, fixed-stack firmware function. */
@@ -2340,8 +2363,8 @@ export class CPU implements MappedPageInvalidator {
 		if (this.heapServiceActive()) {
 			const irq = this.heapService.irqForwardAddress;
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
-			const destination = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Destination);
-			const gcStage = cartLane === 0 && destination === 0 ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
+			const completion = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Kind) as HeapServiceBiosCallKind;
+			const gcStage = cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			// Debugger stepping reports paid machine progress, not a second
 			// cartridge instruction. The activation owns all collector phases.
 			const fullCollection = this.heapService.thread.firstFrame!.functionAddress
@@ -2396,8 +2419,8 @@ export class CPU implements MappedPageInvalidator {
 									this.memory.writeRamRecordWord(irq + HeapServiceIrqForwardField.CartLane, 0);
 									this.placeExceptionVector(this.executionImageForDomain((cartLane - 1) as ExecutionDomainId)!,
 										vector, false, this.cop0Words[COP0_EPC]);
-								} else if (destination !== 0) {
-									this.finishBiosCall(destination);
+								} else if (completion !== HeapServiceBiosCallKind.Idle) {
+									this.finishBiosCall(completion);
 								} else {
 									this.finishExecFloorService();
 									this.finishClosureReservation();
@@ -3926,7 +3949,7 @@ export class CPU implements MappedPageInvalidator {
 						if (caller !== null) this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, count, true);
 						else {
 							const state = this.heapService.biosCallAddress;
-							if (this.memory.readRamRecordWord(state + HeapServiceBiosCallField.Destination) !== 0) {
+							if (this.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind) !== HeapServiceBiosCallKind.Idle) {
 								this.memory.writeRamRecordWord(state + HeapServiceBiosCallField.Status, registers.getPayload(a));
 								this.memory.writeRamRecordPair(state + HeapServiceBiosCallField.Tag, registers.getPayload(a + 1), registers.getPayload(a + 2));
 							} else this.memory.writeRamRecordWord(this.heapService.resultAddress, count === 0 ? 0 : registers.getPayload(a));

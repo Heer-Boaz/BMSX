@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
 					const auto stage = memory.readRamRecordWord(management + (growField
 						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Stage)
 						: HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination)));
-					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Destination)) != 0u;
+					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Kind)) == static_cast<u32>(HeapServiceBiosCallKind::Opcode);
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once: "

@@ -56,8 +56,12 @@ export const enum HeapServiceTableGrowthField {
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
+// Opcode dispatch commits the ordinary Thread's successor before entering
+// the pinned grant. Completion targets are slot indices or Protected indices.
+export const enum HeapServiceBiosCallKind { Idle, Opcode, Discard, Call, Protected }
 export const enum HeapServiceBiosCallField {
-	Destination = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 }
 
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;

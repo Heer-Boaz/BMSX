@@ -65,8 +65,13 @@ enum class HeapServiceTableGrowthField : uint32_t {
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
+// Tagged firmware return frontier. The selected ordinary Thread and its
+// successor PC are already committed by opcode dispatch, and remain selected
+// through the pinned grant. Targets are slot indices or Protected indices.
+enum class HeapServiceBiosCallKind : uint32_t { Idle, Opcode, Discard, Call, Protected };
 enum class HeapServiceBiosCallField : uint32_t {
-	Destination = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
+	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 };
 
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;

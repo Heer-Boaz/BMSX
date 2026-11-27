@@ -13,7 +13,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HeapServiceBiosCallField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
@@ -45,7 +45,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
 			const management = arena.managementOffset(), call = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
 			const closureLatch = management + HEAP_SERVICE_CLOSURE_OFFSET;
-			const destination = () => memory.readRamRecordWord(call + HeapServiceBiosCallField.Destination);
+			const completion = () => memory.readRamRecordWord(call + HeapServiceBiosCallField.Kind);
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			for (let i = 0; i < 16384 && instructionOpcode(memory.readMappedU32LE(framePc())) !== OpCode.BIOSCALL; ++i) run(1);
@@ -72,7 +72,8 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 				return used;
 			}
 			assert.equal(grant(1), BASE_CYCLES[OpCode.BIOSCALL]);
-			assert.ok(destination() > 0 && cpu.heapServiceActive());
+			assert.equal(completion(), HeapServiceBiosCallKind.Opcode);
+			assert.ok(cpu.heapServiceActive());
 			assert.equal(framePc(), original + 4);
 			assert.equal(memory.readRamRecordWord(call + HeapServiceBiosCallField.InstructionPc), original);
 			for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Strings; ++i) {
@@ -86,10 +87,11 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			writeFileSync(partial, encodeRuntimeSaveState(interrupted));
 			const prefixLength = trace.length;
 			function finish() {
-				assert.ok(destination() > 0 && cpu.heapServiceActive());
+				assert.equal(completion(), HeapServiceBiosCallKind.Opcode);
+				assert.ok(cpu.heapServiceActive());
 				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) grant(127);
 				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(destination(), 0);
+				assert.equal(completion(), HeapServiceBiosCallKind.Idle);
 				if (scenario === 'oom') {
 					assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
 					assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);

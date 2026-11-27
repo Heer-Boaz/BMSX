@@ -2592,8 +2592,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 irq = m_heapAllocator.managementOffset() + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
-		const u32 destination = m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Destination));
-		const auto gcStage = cartLane == 0u && destination == 0u ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
+		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
+		const auto gcStage = cartLane == 0u && completion == HeapServiceBiosCallKind::Idle ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		// Debugger stepping accounts a pinned full collector as machine progress,
 		// not as a second cartridge instruction. The activation owns all phases.
 		const bool fullCollection = m_heapServiceView.firstFrame->readControl(FrameField::Function)
@@ -2656,8 +2656,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 							m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
 							placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
 								vector, false, m_cop0Words[COP0_EPC]);
-						} else if (destination != 0u) {
-							finishBiosCall(destination);
+						} else if (completion != HeapServiceBiosCallKind::Idle) {
+							finishBiosCall(completion);
 						} else {
 							finishExecutionFloor();
 							finishClosureReservation();

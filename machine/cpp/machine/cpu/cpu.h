@@ -378,7 +378,8 @@ private:
 	CallFrame& prepareHeapServiceFrame(u32 functionAddress, int base, int supplied,
 		CallResultPlacement result, std::optional<u32> callSite);
 	void enterBiosCall(CallFrame&, int destination, u32 selector, int supplied);
-	void finishBiosCall(u32 destination);
+	void armBiosCall(HeapServiceBiosCallKind kind, u32 target, u32 resultWord);
+	void finishBiosCall(HeapServiceBiosCallKind kind);
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
