@@ -10,7 +10,6 @@ import type {
 	InputControllerInputSource,
 	InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
-import { valueString } from '../../machine/ts/machine/cpu/value';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -48,7 +47,6 @@ import {
 	PSX_CPU_FREQ_HZ,
 	PSX_MACHINE_SPEC,
 } from '../../machine/ts/spec/bmsx/model';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -140,102 +138,6 @@ function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocket
 	runtime.boot();
 	return { input, runtime };
 }
-
-test('accepted mapped String copy time retains every physical VBlank across logical grants and history seek', () => {
-	const { runtime: reference } = createTickRuntime();
-	assert.equal(reference.frameScheduler.runToNextLogicalTick(), true);
-	const firstVblank = reference.machine.scheduler.nowCycles;
-	const bytes = 2 * reference.timing.cycleBudgetPerFrame + 9;
-
-	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.CALL, 0, 3, 2);
-	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
-	const system = linkRawTestSystemBlua32({
-		text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }],
-		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
-	});
-	const source = system.romBytes.length;
-	const rom = new Uint8Array(source + bytes);
-	rom.set(system.romBytes);
-	rom.fill(0x71, source);
-	const input = new TickInputSource();
-	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-	runtime.boot();
-	const { cpu, memory, scheduler, irqController } = runtime.machine;
-	const frame = cpu.rootThread.currentFrame!;
-	const nextPc = frame.pc + INSTRUCTION_BYTES;
-	const id = cpu.stringPool.intern('q'.repeat(bytes));
-	frame.registers.setBuiltinFunction(0, BuiltinFunctionId.StringFromBytes);
-	frame.registers.setInteger(1, source);
-	frame.registers.setInteger(2, bytes);
-	frame.top = 3;
-	cpu.gc.finishFinalMark();
-	memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
-	memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
-	advanceRuntimeTime(runtime, firstVblank - 1 - scheduler.nowCycles);
-	const { history, frameScheduler } = runtime;
-	const gpu = runtime.machine.gxGpu;
-	gpu.writeGp0(0x020000ff); gpu.writeGp0(0); gpu.writeGp0(0x00200020);
-	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24); gpu.writeGp0(0); gpu.writeGp0(0x00010001);
-	history.start({ checkpointCapacity: 3, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
-	history.captureCheckpoint();
-	const charged = BASE_CYCLES[OpCode.CALL] + 2 + bytes + 1;
-	assert.equal(frameScheduler.advanceLogicalTick(1), LogicalTickResult.Completed);
-	assert.equal(scheduler.nowCycles, firstVblank);
-	assert.equal(scheduler.acceptedCpuCycles, charged - 1);
-	assert.equal(frameScheduler.lastTickCpuUsedCycles, charged);
-	assert.equal(frameScheduler.lastTickBudgetRemaining, 1 - charged);
-	assert.equal(frameScheduler.lastTickSequence, 1);
-	assert.equal(input.sampleCount, 1);
-	assert.equal(frame.pc, nextPc);
-	assert.equal(frame.registers.get(0), valueString(id));
-	history.captureCheckpoint();
-
-	assert.equal(frameScheduler.advanceLogicalTick(0), LogicalTickResult.Incomplete);
-	const fence = scheduler.nowCycles;
-	const output = gpu.readDeviceOutput(), readback = output.readbackPort;
-	assert.equal(frameScheduler.lastTickSequence, 1);
-	assert.ok(fence > firstVblank && scheduler.acceptedCpuCycles === firstVblank - 1 + charged - fence);
-	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
-	assert.equal(frameScheduler.advanceLogicalTick(0), LogicalTickResult.Incomplete);
-	assert.equal(scheduler.nowCycles, fence, 'a submitted readback does not consume accepted work');
-	readback.completeReadback(readback.token);
-	assert.equal(frameScheduler.advanceLogicalTick(0), LogicalTickResult.Completed);
-	const secondVblank = scheduler.nowCycles;
-	const secondDebt = scheduler.acceptedCpuCycles;
-	assert.ok(secondDebt > 0);
-	const secondIrq = irqController.captureState();
-	assert.equal(frameScheduler.lastTickSequence, 2);
-	assert.equal(frameScheduler.lastTickCpuUsedCycles, 0);
-	assert.equal(frameScheduler.lastTickBudgetRemaining, 1 - charged);
-	assert.equal(frame.pc, nextPc);
-
-	assert.equal(frameScheduler.advanceLogicalTick(0), LogicalTickResult.Completed);
-	assert.equal(scheduler.acceptedCpuCycles, 0);
-	assert.equal(scheduler.nowCycles, firstVblank - 1 + charged);
-	assert.equal(frameScheduler.lastTickSequence, 3);
-	assert.equal(history.inputJournal.endSequence, 3, 'all three physical supervisor line observations are journaled');
-	assert.equal(input.sampleCount, 1, 'one-shot capture does not re-arm');
-	assert.equal(frame.pc, nextPc);
-
-	input.rejectLiveInput = true;
-	history.beginSeek(secondVblank);
-	assert.equal(scheduler.acceptedCpuCycles, charged - 1, 'rewind checkpoint retained hardware settlement');
-	assert.equal(history.advanceSeek(0), HistorySeekResult.BackendPending);
-	assert.equal(scheduler.nowCycles, fence, 'replay reaches the same hardware readback fence');
-	assert.equal(readback.claimReadback(gpu.readDeviceOutput().commandBuffer.executedCommandCount), true);
-	readback.completeReadback(readback.token);
-	assert.equal(history.advanceSeek(0), HistorySeekResult.Complete);
-	assert.equal(scheduler.nowCycles, secondVblank);
-	assert.equal(scheduler.acceptedCpuCycles, secondDebt);
-	assert.equal(frameScheduler.lastTickSequence, 2);
-	assert.equal(history.inputJournal.replaySequence, 2);
-	assert.deepEqual(irqController.captureState(), secondIrq);
-	assert.equal(cpu.readFrameRegister(0, 0), valueString(id));
-	assert.equal(cpu.readFramePc(0), nextPc, 'rewind did not re-execute the committed CALL');
-	assert.equal(runtime.machine.gxGpu.captureState().vramPresentationPending, true,
-		'restored output content can request a redraw without changing accepted time');
-});
 
 test('device settlement reaches real VBlank without executing the stopped CPU or pending IRQ entry', () => {
 	const { runtime, input } = createTickRuntime();

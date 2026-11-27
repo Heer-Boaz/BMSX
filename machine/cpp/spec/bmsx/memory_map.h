@@ -28,6 +28,9 @@ constexpr uint32_t CART_MMIO_BASE = CART_RAM_BASE + CART_RAM_SIZE;
 constexpr uint32_t CART_MMIO_SIZE = 0x00100000u; // 1 MB
 constexpr uint32_t CART_MMIO_END = CART_MMIO_BASE + CART_MMIO_SIZE;
 constexpr uint32_t CART_BUS_END = CART_MMIO_END;
+constexpr uint32_t CART_READ_QUALIFIER = 1u << 30u;
+constexpr uint32_t CART_READ_SLOT_SHIFT = 31u;
+constexpr uint32_t CART_READ_ADDRESS_MASK = CART_READ_QUALIFIER - 1u;
 
 constexpr uint32_t IO_WORD_SIZE = 4;
 

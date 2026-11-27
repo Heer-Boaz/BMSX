@@ -77,7 +77,7 @@ struct NativeInvalidOperand {
 struct NativeSupervisorCall : NativeExitOperands::SupervisorCall {
 	static constexpr auto terminalExit = NativeBlockExit::SupervisorCall;
 	constexpr NativeSlotAccess slots() const {
-		return {{static_cast<NativeValueRef>(source), NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}};
+		return {.readsRange = {source, std::max<u16>(1, width)}};
 	}
 };
 struct NativeExceptionReturn {

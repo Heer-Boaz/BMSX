@@ -242,7 +242,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::SupervisorCall:
-			cpu.executeSupervisorCall(*frame, exit->operands.supervisorCall.source);
+			cpu.executeSupervisorCall(*frame, exit->operands.supervisorCall.source, exit->operands.supervisorCall.width);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::ExceptionReturn:

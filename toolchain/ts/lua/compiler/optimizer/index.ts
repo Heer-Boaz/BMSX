@@ -512,6 +512,9 @@ const computeBlockConstantIn = (
 						clearRegisterRange(constants, instruction.a, countValue);
 						break;
 					}
+					case OpCode.SVC:
+						if (instruction.b !== 0) constants.delete(instruction.a);
+						break;
 					case OpCode.CALL: {
 						clearRegisterRange(constants, instruction.a, null);
 						break;
@@ -658,6 +661,9 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					clearRegisterRange(constants, instruction.a, countValue);
 					break;
 				}
+				case OpCode.SVC:
+					if (instruction.b !== 0) constants.delete(instruction.a);
+					break;
 				case OpCode.CALL: {
 					clearRegisterRange(constants, instruction.a, null);
 					break;
@@ -923,7 +929,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SETGL:
 				case OpCode.SETUP:
 				case OpCode.MTC0:
-				case OpCode.SVC:
 					case OpCode.STORE_MEM: {
 						rewriteCopyInstructionOperand(instruction, 'a', copies);
 						if (instruction.op === OpCode.STORE_MEM) {
@@ -965,6 +970,9 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 					}
 					break;
 				}
+				case OpCode.SVC:
+					if (instruction.b === 0) rewriteCopyInstructionOperand(instruction, 'a', copies);
+					break;
 				case OpCode.LOADK: {
 					const value = loadKConstValueForOptimization(instruction, context);
 					if (value) {
@@ -1046,6 +1054,9 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SELF:
 					killRegister(constants, copies, instruction.a);
 					killRegister(constants, copies, instruction.a + 1);
+					break;
+				case OpCode.SVC:
+					if (instruction.b !== 0) killRegister(constants, copies, instruction.a);
 					break;
 				case OpCode.VARARG: {
 					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);
@@ -1427,6 +1438,9 @@ const applyClosureTransferForInlining = (
 		case OpCode.SELF:
 			closures.delete(instruction.a);
 			closures.delete(instruction.a + 1);
+			return;
+		case OpCode.SVC:
+			if (instruction.b !== 0) closures.delete(instruction.a);
 			return;
 		default:
 			return;

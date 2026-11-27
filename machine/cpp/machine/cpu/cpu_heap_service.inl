@@ -199,8 +199,8 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 		word = m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET
 			+ static_cast<u32>(HeapServiceResidentField::SourceCycles) + address - HEAP_SERVICE_CALL_CYCLES_ADDRESS);
 	} else {
-		const u32 slot = address >> BLUA32_STRING_ROM_SOCKET_SHIFT;
-		const u32 busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
+		const u32 slot = address >> CART_READ_SLOT_SHIFT;
+		const u32 busAddress = address & CART_READ_ADDRESS_MASK;
 		Span<const u8> view;
 		if ((slot != 0u && busAddress < CART_ROM_BASE)
 			|| !m_memory.bindRomByteView(busAddress, kind == MemoryAccessKind::U8 ? 1u : 4u, slot, view))

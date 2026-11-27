@@ -315,7 +315,8 @@ const buildInstructionOperands = (
 		case OpCode.ARGC:
 			return [registerOperand('a', 'dst', a)];
 		case OpCode.SVC:
-			return [registerOperand('a', 'src', a)];
+			return b === 0 ? [registerOperand('a', 'src', a)]
+				: [registerOperand('a', 'base', a), plainOperand('b', 'args', formatValueCount(b))];
 		case OpCode.VARARG:
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.CALL:
@@ -521,7 +522,7 @@ const formatInstruction = (
 		case OpCode.ARGC:
 			return `ARGC r${a}`;
 		case OpCode.SVC:
-			return `SVC r${a}`;
+			return b === 0 ? `SVC r${a}` : `SVC r${a}, ${formatValueCount(b)}`;
 		case OpCode.VARARG:
 			return `VARARG r${a}, ${formatValueCount(b)}`;
 		case OpCode.CALL:

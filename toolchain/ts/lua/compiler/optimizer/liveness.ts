@@ -68,8 +68,10 @@ export function visitInstructionUses<T>(
 		case OpCode.JMPIF:
 		case OpCode.JMPIFNOT:
 		case OpCode.MTC0:
-		case OpCode.SVC:
 			visitRegister(state, visitor, instruction.a);
+			break;
+		case OpCode.SVC:
+			visitRegisterRange(state, visitor, instruction.a, Math.max(1, instruction.b));
 			break;
 		case OpCode.LOADKR:
 		case OpCode.LOAD_MEM_D:
@@ -218,6 +220,9 @@ export function visitInstructionDefs<T>(
 			break;
 		case OpCode.SELF:
 			visitRegisterRange(state, visitor, instruction.a, 2);
+			break;
+		case OpCode.SVC:
+			if (instruction.b !== 0) visitRegister(state, visitor, instruction.a);
 			break;
 		case OpCode.ITERN:
 			visitRegister(state, visitor, instruction.a + 2);

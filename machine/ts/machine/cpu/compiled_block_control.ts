@@ -1,5 +1,5 @@
 import { OpCode } from '../../spec/blua32/opcode';
-import { COP0_CURRENT, COP0_EPC, COP0_EVENT_CYCLES, COP0_STATUS, CPU_STATUS_USER_MODE_CURRENT, cop0FieldImplemented, cop0ReadAsZero, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
+import { COP0_CURRENT, COP0_EPC, COP0_EVENT_CYCLES, COP0_RAM_END, COP0_STATUS, CPU_STATUS_USER_MODE_CURRENT, cop0FieldImplemented, cop0ReadAsZero, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { ValueTag } from './value';
 import type { DecodedInstructionPage } from './execution_image';
 import type { JavaScriptRegisterCache } from './compiled_block_registers';
@@ -14,7 +14,8 @@ export function emitControl(op: OpCode.MFC0 | OpCode.MTC0, page: DecodedInstruct
 	if (op === OpCode.MFC0 && field === COP0_EVENT_CYCLES) return fault;
 	const mode = guardPrivilege ? `if((cp[${COP0_STATUS}]&${CPU_STATUS_USER_MODE_CURRENT})!==0) ${fault}` : '';
 	if (op === OpCode.MFC0) return mode + (cop0FieldImplemented(field)
-		? r.writeInteger(page.a[word], field === COP0_CURRENT ? 'F.thread.address' : cop0ReadAsZero(field) ? '0' : `cp[${field}]`) : fault);
+		? r.writeInteger(page.a[word], field === COP0_CURRENT ? 'F.thread.address' : field === COP0_RAM_END
+			? 'h.memory.ramBusEnd()' : cop0ReadAsZero(field) ? '0' : `cp[${field}]`) : fault);
 	// Control writes convert at retirement; other selectors must
 	// admit the word even when the register ignores writes.
 	if (cop0WriteRetiresControl(field)) return mode;

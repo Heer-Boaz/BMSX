@@ -4837,9 +4837,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileMemberExpression(expression: LuaMemberExpression, target: number): void {
 		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
 		if (cop0Register) {
-			if (cop0Register === COP0_EXEC || cop0Register === COP0_RAM_END) {
-				throw new Error(`cop0.${cop0Register === COP0_EXEC ? 'exec' : 'ram_end'} is write-only.`);
-			}
+			if (cop0Register === COP0_EXEC) throw new Error('cop0.exec is write-only.');
 			this.emitABC(OpCode.MFC0, target, cop0Register, 0);
 			return;
 		}
@@ -5926,6 +5924,23 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (operation === 'argument_suffix') {
 			throw new Error('blua32.argument_suffix must be the sole expression of a return statement.');
+		}
+		if (operation === 'svc_value') {
+			const count = expression.arguments.length;
+			if (count === 0) throw new Error('blua32.svc_value expects a service operand.');
+			// The vector borrows this exact window and returns into its first slot.
+			const tempBase = this.tempTop, useTarget = target >= this.localCount && target === tempBase - 1;
+			const base = useTarget ? target : this.allocTemp();
+			for (let i = 0; i < count; i += 1) {
+				this.reserveTempRange(base + i, 1);
+				this.compileExpressionInto(expression.arguments[i], base + i, 1);
+				this.tempTop = base + i + 1;
+			}
+			this.emitABC(OpCode.SVC, base, count, 0);
+			if (!useTarget && resultCount > 0) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
+			this.tempTop = tempBase;
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return true;
 		}
 		if (operation === 'argument_count') {
 			if (expression.arguments.length !== 0) throw new Error('blua32.argument_count expects 0 arguments.');

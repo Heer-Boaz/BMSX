@@ -13,7 +13,6 @@ export const enum BuiltinFunctionId {
 	SetFrameRegister = 11,
 	GetFrameUpvalue = 12,
 	FrameHeader = 13,
-	StringFromBytes = 14,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 15;
+export const BUILTIN_FUNCTION_COUNT = 14;

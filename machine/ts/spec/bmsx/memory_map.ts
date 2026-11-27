@@ -22,6 +22,9 @@ export const CART_MMIO_BASE = CART_RAM_BASE + CART_RAM_SIZE;
 export const CART_MMIO_SIZE = 0x00100000; // 1 MB
 export const CART_MMIO_END = CART_MMIO_BASE + CART_MMIO_SIZE;
 export const CART_BUS_END = CART_MMIO_END;
+export const CART_READ_QUALIFIER = 0x40000000;
+export const CART_READ_ADDRESS_MASK = 0x3fffffff;
+export const CART_READ_SLOT_SHIFT = 31;
 
 export const IO_WORD_SIZE = 4;
 

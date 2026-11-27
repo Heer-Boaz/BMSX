@@ -6,6 +6,7 @@ module<const>
 -- unchanged. The exact mounted bank extents are ordinary scalar inputs,
 -- not invented firmware memory ports. A ROM read failure is returned
 -- to the owner, never rewritten as a miss or an allocation failure.
+local string_record<const> = require('kernel/string_record')
 local chars<const> = require('kernel/string_char_bytes') -- J:1739 K:5080 C:176-187,228-235
 local number_bytes<const> = require('kernel/number_bytes') -- V:135-136
 local strings<const> = require('kernel/gc_strings') -- T:379-388,431-436 C:369-377,418-425
@@ -51,7 +52,7 @@ local slice_head<const> = function(source, first, count) -- T:352-355 C:347-348,
 		local until_wrap<const> = ram_size - offset -- T:355 C:76
 		return ram_base + offset, (count < until_wrap and count or until_wrap) -- T:354-355 C:76-77
 	end
-	return start, count -- T:353-355 C:79-81; the private read port retains the ROM socket bit
+	return string_record.rom_read_address(start), count -- T:353-355 C:79-81
 end
 
 local fnv_segment<const> = function(hash, base, count) -- H:39-45 F:9-11
@@ -104,14 +105,7 @@ local string_tag<const> = 5 -- V:9-10,135-137
 
 local concat_part<const> = function(tag, word, workspace) -- V:130-137 W:17-19,103
 	if tag == string_tag then -- V:130-137 W:17-19,103
-		local length -- V:130-137 W:17-19,103
-		if strings.internal.is_ram_string_id(word) then -- T:352-355 I:61
-			local lane<const>: *u32 = ram_base + ((word + offsetof(mutable_string_record.length)) & word_mask) -- T:352-355 I:61
-			length = *lane & byte_mask -- T:352-355 I:61
-		else -- T:352-355 I:61
-			local lane<const>: *u32 = word + offsetof(mutable_string_record.length) -- T:352-355 I:61
-			length = *lane -- T:352-355 I:61
-		end
+		local length<const> = string_record.byte_length(word) -- T:352-355 I:61
 		local start<const>, head<const> = slice_head(word, 0, length) -- C:332-335 V:137
 		return start, head, length -- C:332-335 V:137
 	elseif tag == integer_tag or tag == float_tag then -- V:135-136
@@ -243,7 +237,7 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 	local table<const> = 2 * directory -- T:206 C:216; index into 4-byte entries
 	local count<const> = state.rom_tables[table + 1] -- T:207 C:217
 	if count == 0 then return 0, 0 end -- T:208 C:218
-	local bucket<const>: *u32 = state.rom_tables[table] + 4 * (hash & (count - 1)) -- T:209 C:219
+	local bucket<const>: *u32 = string_record.rom_read_address(state.rom_tables[table] + 4 * (hash & (count - 1))) -- T:209 C:219
 	local id = *bucket -- T:209 C:219
 	if id == 0 then return 0, 0 end -- T:210 C:220
 	local socket<const> = directory == 2 and 1 or 0 -- T:211-213 C:221-224
@@ -261,7 +255,8 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 		if (id & alignment_mask) ~= 0 or offset < 0 or (offset ~ socket_bit) > ((extent - header_bytes) ~ socket_bit) or extent < header_bytes then -- T:144-146,218 C:157-161,229
 			return 0, invalid_header -- T:146 C:161; no candidate was read
 		end
-		local record<const>: *mutable_string_record = address -- T:145,219-221 C:158-160,229-231
+		local mapped<const> = string_record.rom_read_address(address)
+		local record<const>: *mutable_string_record = mapped -- T:145,219-221 C:158-160,229-231
 		if record.header ~= rom_flag_kind then return 0, invalid_header end -- T:145-146 C:160-161
 		local size<const> = record.length -- T:221 C:230; complete immutable header loads commute
 		if record.hash == hash and size == length then -- T:220-221 C:231
@@ -269,10 +264,10 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 				return 0, truncated_payload -- T:154 C:171
 			end
 			if source_kind == concat_source then -- C:228-239,338
-					if matches_concat(0, address + header_bytes, -1, start, head, source_count, workspace) then return address, 0 end -- C:228-239,338
+					if matches_concat(0, mapped + header_bytes, -1, start, head, source_count, workspace) then return address, 0 end -- C:228-239,338
 				elseif source_kind == chars_source then -- J:1739 K:5080 C:176-187,228-235
-					if chars.matches_chars(0, address + header_bytes, -1, start, head, source_count) then return address, 0 end -- J:1739 K:5080 C:176-187,228-235
-				elseif matches_slice(0, address + header_bytes, -1, start, head, length) then return address, 0 end -- T:222-224 C:232
+					if chars.matches_chars(0, mapped + header_bytes, -1, start, head, source_count) then return address, 0 end -- J:1739 K:5080 C:176-187,228-235
+				elseif matches_slice(0, mapped + header_bytes, -1, start, head, length) then return address, 0 end -- T:222-224 C:232
 		end
 		id = record.next -- T:227 C:233
 	end

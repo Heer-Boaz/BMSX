@@ -9,7 +9,7 @@ local system_rom_size<const>: *word = 0x080101f4
 local cart0_rom_size<const>: *word = 0x080101f8
 local cart1_rom_size<const>: *word = 0x080101fc
 
-string.from_bytes = __bmsx_string_from_bytes
+string.from_bytes = require('string/from_bytes')
 
 local ascii_upper_a<const> = 65
 local ascii_upper_z<const> = 90

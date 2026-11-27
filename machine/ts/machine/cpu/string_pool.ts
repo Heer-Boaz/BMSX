@@ -1,6 +1,6 @@
 import { byteStringFromBytes, byteStringToText, writeByteString } from '../../common/byte_string';
 import { readLE32 } from '../../common/endian';
-import { hashBytes, hashText } from '../../common/hash';
+import { hashText } from '../../common/hash';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import {
 	BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET,
@@ -330,10 +330,6 @@ export class StringPool {
 
 	public intern(value: string): StringId {
 		return this.internSource(hashText(value), value, 0, value.length);
-	}
-
-	public internBytes({ bytes, byteOffset, byteLength }: MemoryByteView): StringId {
-		return this.internSource(hashBytes(bytes, byteOffset, byteLength), bytes, byteOffset, byteLength);
 	}
 
 	private internSource(hash: number, source: InternSource, start: number, length: number, sourceId: StringId = 0,

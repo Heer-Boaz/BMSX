@@ -98,7 +98,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction, 
 		if (privateFirmware)
 			return NativeLiteral{a, valueInteger(static_cast<i32>(instruction.bx() * BLUA32_FUNCTION_ALIGNMENT))};
 		return NativeClosure{{instruction.bx(), a, static_cast<u16>(c)}};
-	case OpCode::SVC: return NativeSupervisorCall{{a}};
+	case OpCode::SVC: return NativeSupervisorCall{{a, static_cast<u16>(b)}};
 	case OpCode::RFE: return NativeExceptionReturn{};
 	default:
 		return NativeReplay{};

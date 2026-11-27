@@ -1,5 +1,5 @@
 -- Packed installed scope metadata. Offsets mirror spec/blua32/diagnostics.
-local from_bytes<const> = __bmsx_string_from_bytes
+local from_bytes<const> = require('string/from_bytes')
 local scopes<const> = {}
 
 local directory_header_index<const> = 15

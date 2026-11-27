@@ -11,6 +11,7 @@ local coroutine_transfer<const> = require('kernel/coroutine_transfer')
 local barrier<const> = require('kernel/gc_barrier')
 local table_growth<const> = require('kernel/table_grow')
 local binding<const> = require('kernel/function_binding')
+local byte_strings<const> = require('kernel/byte_string_input')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
@@ -132,14 +133,20 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		blua32.rfe()
 	end
 	if cause == syscall and *interrupted ~= 0 then
-		local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
-		if handled then
-			*interrupted = thread
-			if pc then
-				cop0.epc = pc
-				blua32.rfe()
-			end
+		if depth ~= nil and values == byte_strings.syscall_id then
+			local admitted<const>, reason<const> = byte_strings.receive(*interrupted, depth, instruction)
+			if admitted then blua32.rfe() end
 			transfer_fault = reason
+		else
+			local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
+			if handled then
+				*interrupted = thread
+				if pc then
+					cop0.epc = pc
+					blua32.rfe()
+				end
+				transfer_fault = reason
+			end
 		end
 	end
 	if denied_window then

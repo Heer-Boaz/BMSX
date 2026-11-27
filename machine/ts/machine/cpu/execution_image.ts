@@ -292,6 +292,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 			// Register returns admit only the range consumed by the receiver.
 			// A suffix always reads its starting index from one register.
 			return c === ReturnSource.Registers ? 0 : a + 1;
+		case OpCode.SVC:
+			return a + (b === 0 ? 1 : b);
 		case OpCode.ITERN:
 			return Math.max(a + 3, b + c);
 		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:

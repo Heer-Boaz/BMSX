@@ -98,7 +98,6 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.SETGL:
 			case OpCode.SETUP:
 			case OpCode.MTC0:
-			case OpCode.SVC:
 			case OpCode.JMPIF:
 			case OpCode.JMPIFNOT:
 			case OpCode.LOAD_MEM:
@@ -106,6 +105,9 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				if (instruction.op === OpCode.LOAD_MEM && isRegisterOperand(instruction, RK_B, instruction.b)) {
 					updateMax(instruction.b);
 				}
+				break;
+			case OpCode.SVC:
+				updateMax(instruction.a + Math.max(1, instruction.b) - 1);
 				break;
 			case OpCode.LOAD_MEM_D:
 			case OpCode.STORE_MEM_D:

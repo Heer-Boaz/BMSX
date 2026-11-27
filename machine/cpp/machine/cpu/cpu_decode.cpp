@@ -18,7 +18,7 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		// These owners admit operands after a mode check or as part of a
 		// dynamic placement, and are also reached from native exits.
 		case OpCode::MFC0: case OpCode::MTC0:
-		case OpCode::CLOSURE: case OpCode::CALL:
+		case OpCode::CLOSURE: case OpCode::CALL: case OpCode::SVC:
 			return 0;
 		case OpCode::ITERN:
 			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));

@@ -21,7 +21,6 @@
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
-#include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
@@ -33,7 +32,6 @@
 #include <functional>
 #include <limits>
 #include <stdexcept>
-#include <string_view>
 #include <vector>
 
 namespace {
@@ -118,16 +116,17 @@ void testOneDeadlinePerDevice() {
 		"each service occurs precisely once");
 }
 
-void testMappedStringCompletesBeforeVblank() {
+void testMappedWriteCompletesBeforeVblank() {
 	using namespace bmsx;
 	TickRuntimeFixture reference;
 	require(reference.runtime.frameScheduler.runToNextLogicalTick(reference.runtime), "fixture reaches first display edge");
 	const i64 edge = reference.runtime.machine.scheduler.nowCycles();
 	test::Blua32TestImage image;
 	image.text.resize(2u * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 2);
+	constexpr std::array<u32, 5> words{0x11223344u, 0x55667788u, 0u, 0xffffffffu, 0x22334455u};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_WORDS), 1, 0, words.size());
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 3}};
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1u + words.size()}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -136,48 +135,42 @@ void testMappedStringCompletesBeforeVblank() {
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
 	const u32 entry = cpu.readFramePc(0);
-	constexpr u32 source = RAM_BASE + 0x20000u;
-	constexpr std::string_view bytes("ab\0\xffz", 5);
-	for (u32 i = 0; i < bytes.size(); ++i) machine.memory.writeMappedU8(source + i, static_cast<u8>(bytes[i]));
+	constexpr u32 target = RAM_BASE + 0x20000u;
 	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringFromBytes));
-	frame.registers.set(1, valueInteger(static_cast<i32>(source)));
-	frame.registers.set(2, valueInteger(bytes.size()));
-	frame.setTop(3);
+	frame.registers.set(0, valueInteger(target));
+	for (size_t i = 0; i < words.size(); ++i) frame.registers.set(1u + i, valueInteger(words[i]));
+	frame.setTop(1u + words.size());
 	machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
 	input.observeSample = [&] {
-		const auto value = cpu.readFrameRegister(0, 0);
-		require(machine.scheduler.nowCycles() == edge && cpu.readFramePc(0) == entry + INSTRUCTION_BYTES && valueIsString(value)
-			&& cpu.stringPool().toString(asStringId(value)) == bytes, "the observer at VBlank sees the complete call before another instruction");
-		machine.memory.writeMappedU8(source, 0);
+		require(machine.scheduler.nowCycles() == edge && cpu.readFramePc(0) == entry + INSTRUCTION_BYTES,
+			"the observer at VBlank sees the retired write, before the next instruction");
+		for (size_t i = 0; i < words.size(); ++i)
+			require(machine.memory.readMappedWord(target + 4u * i) == words[i], "every word is visible at the device edge");
+		machine.memory.writeMappedWord(target, ~words[0]);
 	};
 	advanceRuntimeTime(runtime, static_cast<int>(edge - 1 - machine.scheduler.nowCycles()));
 	require(runtime.frameScheduler.advanceLogicalTick(runtime, 1) == LogicalTickResult::Completed
-		&& input.sampleCount == 1, "the completed String is published to the real input sample at VBlank");
-	const auto result = cpu.readFrameRegister(0, 0);
-	require(valueIsString(result) && cpu.stringPool().toString(asStringId(result)) == bytes,
-		"the result does not alias source storage modified at the observation edge");
-	const auto cycles = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + bytes.size() + 1;
+		&& input.sampleCount == 1, "an input sample observes the completed transfer at VBlank");
+	require(machine.memory.readMappedWord(target) == ~words[0], "settling overshoot does not repeat the transfer");
+	const auto cycles = BASE_CYCLES[static_cast<u8>(OpCode::STORE_MEM_WORDS)] + words.size();
 	require(machine.scheduler.nowCycles() == edge - 1 + static_cast<i64>(cycles)
 		&& machine.scheduler.acceptedCpuCycles() == 0
 		&& runtime.frameScheduler.lastTickCpuUsedCycles == static_cast<i64>(cycles),
-		"the scheduler charges the full completed call once and settles ordinary sub-frame overshoot");
+		"the scheduler charges the completed store once and settles ordinary sub-frame overshoot");
 }
 
-void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
+void testAcceptedCpuCyclesAcrossVblanks(bool withReadback) {
 	using namespace bmsx;
 	TickRuntimeFixture reference;
 	require(reference.runtime.frameScheduler.runToNextLogicalTick(reference.runtime), "first physical VBlank");
 	const i64 firstVblank = reference.runtime.machine.scheduler.nowCycles();
-	const i32 bytes = 2 * static_cast<i32>(reference.runtime.timing.cycleBudgetPerFrame) + 9;
+	const i64 total = 2 * reference.runtime.timing.cycleBudgetPerFrame + 9;
 	test::Blua32TestImage image;
 	image.text.resize(2u * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 2);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 3}};
-	auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
-	const auto source = static_cast<i32>(rom.bytes.size());
-	rom.bytes.resize(source + bytes, 0x71);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
@@ -186,18 +179,13 @@ void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 	auto& scheduler = runtime.machine.scheduler;
 	auto& frameScheduler = runtime.frameScheduler;
 	const u32 nextPc = cpu.readFramePc(0) + INSTRUCTION_BYTES;
-	const auto id = cpu.stringPool().intern(std::string(bytes, 'q'));
-	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::StringFromBytes));
-	frame.registers.set(1, valueInteger(source));
-	frame.registers.set(2, valueInteger(bytes));
-	frame.setTop(3);
+	cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::K1)]);
 	cpu.gcHeap().finishFinalMark();
 	runtime.machine.memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
 	input.observeSample = [&] {
-		require(cpu.readFramePc(0) == nextPc && cpu.readFrameRegister(0, 0) == valueString(id),
-			"the first device edge sees the accepted CALL result and following PC");
+		require(cpu.readFramePc(0) == nextPc && cpu.readFrameRegister(0, 0) == valueInteger(1),
+			"the first device edge sees the completed instruction's result and following PC");
 	};
 	advanceRuntimeTime(runtime, static_cast<int>(firstVblank - 1 - scheduler.nowCycles()));
 	if (withReadback) {
@@ -205,14 +193,14 @@ void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 		gpu.writeGp0(0x020000ffu); gpu.writeGp0(0u); gpu.writeGp0(0x00200020u);
 		gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u); gpu.writeGp0(0u); gpu.writeGp0(0x00010001u);
 	}
-	const i64 total = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 2 + bytes + 1;
 	const i64 end = scheduler.nowCycles() + total;
-	require(frameScheduler.advanceLogicalTick(runtime, 1) == LogicalTickResult::Completed,
-		"the call advances at most one physical VBlank and one logical tick");
+	scheduler.setAcceptedCpuCycles(total);
+	require(frameScheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::Completed,
+		"accepted time advances at most one physical VBlank and one logical tick");
 	require(scheduler.nowCycles() == firstVblank && scheduler.acceptedCpuCycles() == total - 1
-		&& frameScheduler.lastTickSequence == 1 && frameScheduler.lastTickCpuUsedCycles == total
-		&& frameScheduler.lastTickBudgetRemaining == 1 - total && input.sampleCount == 1,
-		"charge once and retain the accepted time separately from the unused grant");
+		&& frameScheduler.lastTickSequence == 1 && frameScheduler.lastTickCpuUsedCycles == 0
+		&& frameScheduler.lastTickBudgetRemaining == 0 && input.sampleCount == 1,
+		"retained time does not spend a second guest grant");
 	require(runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, static_cast<int>(total)) == CpuSuspendedRunResult::Yielded
 		&& scheduler.nowCycles() == firstVblank && cpu.readFramePc(0) == nextPc,
 		"suspended execution cannot consume scheduled device time between ticks");
@@ -233,19 +221,19 @@ void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 			readback.completeReadback(readback.token());
 			require(offer() == LogicalTickResult::Completed, "resume the same grant after GX publication");
 		} else {
-			require(frameScheduler.runScheduledToNextLogicalTick(runtime, 100.0),
-				"a paced reoffer reaches the second VBlank");
+			require(frameScheduler.runScheduledToNextLogicalTick(runtime, 0.0),
+				"a paced reoffer settles retained time without a new grant");
 		}
 		require(frameScheduler.lastTickSequence == 2 && scheduler.acceptedCpuCycles() > 0,
 			"second VBlank retains its outstanding time");
 		require(cpu.readFramePc(0) == nextPc && (runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) != 0u
 			&& frameScheduler.lastTickCpuUsedCycles == 0
-			&& frameScheduler.lastTickBudgetRemaining == 1 - total,
+			&& frameScheduler.lastTickBudgetRemaining == 0,
 			"no further CPU and no duplicated debit during settlement");
 		require(frameScheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::Completed
 			&& frameScheduler.lastTickSequence == 3 && scheduler.acceptedCpuCycles() == 0,
 			"zero grant settles the already accepted time through the third VBlank");
-		require(scheduler.nowCycles() == end && cpu.readFrameRegister(0, 0) == valueString(id)
+		require(scheduler.nowCycles() == end && cpu.readFrameRegister(0, 0) == valueInteger(1)
 			&& cpu.readFramePc(0) == nextPc && frameScheduler.lastTickCpuUsedCycles == 0,
 			"one physical edge per tick, full original elapsed time, no extra instruction");
 		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
@@ -1644,9 +1632,9 @@ void testRuntimeResetNotification() {
 }
 
 int main() {
-	testMappedStringCompletesBeforeVblank();
-	testAcceptedStringCyclesAcrossVblanks(false);
-	testAcceptedStringCyclesAcrossVblanks(true);
+	testMappedWriteCompletesBeforeVblank();
+	testAcceptedCpuCyclesAcrossVblanks(false);
+	testAcceptedCpuCyclesAcrossVblanks(true);
 	testOneDeadlinePerDevice();
 	testDeviceVblankDoesNotStartPhysicalCollection();
 	testRuntimeRestoreRearmsCpuGp0Wait();

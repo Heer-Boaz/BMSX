@@ -511,7 +511,7 @@ private:
 	NativeCompilationProfile m_nativeCompilationProfile;
 #endif
 	void clearHaltAfterAcceptedInterrupt();
-	void executeSupervisorCall(CallFrame& frame, int source);
+	void executeSupervisorCall(CallFrame& frame, int source, int width);
 	void enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a);
 	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void returnFromException(CallFrame& frame);

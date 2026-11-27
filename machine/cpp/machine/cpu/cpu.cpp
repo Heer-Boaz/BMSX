@@ -1316,19 +1316,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameUpvalue:
 			ThreadRecord::invokeDiagnostic(m_heap, fn.id, args, out);
 			break;
-		case BuiltinFunctionId::StringFromBytes: {
-			i32 address, count;
-			if (args.size() < 2 || !valueToInteger(args[0], address) || !valueToInteger(args[1], count) ||
-				count < 0)
-				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			Span<const u8> span;
-			if (count != 0 && !m_memory.bindMappedReadView(static_cast<u32>(address), static_cast<u32>(count), MAPPED_BUS_MASTER_CPU, span))
-				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			instructionBudgetRemaining -= count;
-			const auto bytes = span.empty() ? std::string_view{} : std::string_view{reinterpret_cast<const char*>(span.data()), span.size()};
-			out.push_back(valueString(m_stringPool.intern(bytes)));
-			break;
-		}
 		case BuiltinFunctionId::CoroutineRunning:
 			out.push_back(valueThread(m_activeThread->address));
 			out.push_back(valueBool(m_activeThread == &m_rootView));
@@ -1542,10 +1529,17 @@ void CPU::returnFromException(CallFrame& frame) {
 	}
 }
 
-void CPU::executeSupervisorCall(CallFrame& frame, int source) {
-	const std::array arguments{frame.registers.get(source)};
-	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL,
-		frame.readControl(FrameField::Pc), arguments);
+void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
+	if (static_cast<size_t>(source + std::max(1, width)) > frame.registers.size())
+		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const Value token = frame.registers.get(source);
+	const u32 successor = frame.readControl(FrameField::Pc);
+	if (width == 0)
+		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, successor, std::span{&token, 1u});
+	else {
+		const std::array arguments{token, valueInteger(source), valueInteger(width - 1)};
+		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, successor, arguments);
+	}
 }
 
 void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {

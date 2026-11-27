@@ -3,7 +3,7 @@ import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_READ_ADDRESS_MASK, CART_READ_SLOT_SHIFT, CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -99,8 +99,6 @@ import {
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
-	BLUA32_STRING_ROM_ADDRESS_MASK,
-	BLUA32_STRING_ROM_SOCKET_SHIFT,
 	Blua32ConstantTag,
 } from '../../spec/blua32/image_format';
 import {
@@ -2190,9 +2188,13 @@ export class CPU implements MappedPageInvalidator {
 		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], causeWord, pc);
 	}
 
-	private executeSupervisorCall(frame: CallFrame, source: number): void {
-		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_SYSCALL, frame.pc,
-			frame.registers.get(source));
+	private executeSupervisorCall(frame: CallFrame, source: number, window: number): void {
+		const vector = this.cop0Words[COP0_SYSTEM_VECTOR], token = frame.registers.get(source);
+		if (window === 0) {
+			this.enterException(this.systemImage, vector, CPU_CAUSE_CODE_SYSCALL, frame.pc, token);
+		} else {
+			this.enterException(this.systemImage, vector, CPU_CAUSE_CODE_SYSCALL, frame.pc, token, valueInteger(source), valueInteger(window - 1));
+		}
 	}
 
 	private enterRegisterWindowException(issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number): void {
@@ -3459,7 +3461,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteControl:
 					this.executeControlWrite(frame, exit.exitA, exit.exitB); redispatch = true; break;
 				case CompiledBlockExit.SupervisorCall:
-					this.executeSupervisorCall(frame, exit.exitA); redispatch = true; break;
+					this.executeSupervisorCall(frame, exit.exitA, exit.exitB); redispatch = true; break;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
 					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
@@ -3723,7 +3725,7 @@ export class CPU implements MappedPageInvalidator {
 					this.setRegisterIntegerFast(frame, registers, a, frame.argumentCount);
 					return;
 				case OpCode.SVC:
-					this.executeSupervisorCall(frame, a);
+					this.executeSupervisorCall(frame, a, page.b[pageOffset]);
 					return;
 				case OpCode.RESERVED_10:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -3816,6 +3818,7 @@ export class CPU implements MappedPageInvalidator {
 					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
 					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const value = field === COP0_CURRENT ? frame.thread.address : field === COP0_EVENT_CYCLES ? this.remainingDeviceCycles()
+						: field === COP0_RAM_END ? this.memory.ramBusEnd()
 						: cop0ReadAsZero(field) ? 0 : this.cop0Words[field];
 					this.setRegisterIntegerFast(frame, registers, a, value);
 					return;
@@ -4053,8 +4056,8 @@ export class CPU implements MappedPageInvalidator {
 				word = memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET
 					+ HeapServiceResidentField.SourceCycles + address - HEAP_SERVICE_CALL_CYCLES_ADDRESS);
 			} else {
-				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
-				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
+				const slot = address >>> CART_READ_SLOT_SHIFT;
+				const busAddress = address & CART_READ_ADDRESS_MASK;
 				const view = this.executionReadView;
 				if ((slot !== 0 && busAddress < CART_ROM_BASE)
 					|| !memory.bindRomByteView(busAddress, kind === MemoryAccessKind.U8 ? 1 : 4, slot, view)) {
@@ -4362,25 +4365,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.StringByte:
 				this.runBuiltinStringByte(args, out);
 				break;
-			case BuiltinFunctionId.StringFromBytes: {
-				if (args.length < 2) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				const { registers, base } = args;
-				const address = valueToInteger(registers.get(base)), count = valueToInteger(registers.get(base + 1));
-				if (address === null || count === null || count < 0) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				if (count === 0) {
-					out.push(valueString(this.stringPool.intern('')));
-					break;
-				}
-				const span = this.executionReadView;
-				if (!this.memory.bindMappedReadView(address >>> 0, count, MAPPED_BUS_MASTER_CPU, span)) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				this.charge(count);
-				out.push(valueString(this.stringPool.internBytes(span)));
-				break;
-			}
 			case BuiltinFunctionId.CoroutineRunning:
 				out.push(valueThread(this.activeThread.address));
 				out.push(valueBool(this.activeThread === this.rootThread));

@@ -37,7 +37,6 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // SetFrameRegister
 	{ 1, 0, 0 }, // GetFrameUpvalue
 	{ 1, 0, 0 }, // FrameHeader
-	{ 2, 0, 0 }, // StringFromBytes
 }};
 
 // Builtins consume compact register windows or temporary complete-value

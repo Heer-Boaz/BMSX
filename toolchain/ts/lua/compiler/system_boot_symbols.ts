@@ -22,7 +22,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
 	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
-	{ name: '__bmsx_string_from_bytes', id: BuiltinFunctionId.StringFromBytes },
 ];
 
 export const SYSTEM_ROM_BUILTIN_BY_NAME = new Map(LUA_BOOT_PRIMITIVES.map(({ name, id }) => [name, id]));

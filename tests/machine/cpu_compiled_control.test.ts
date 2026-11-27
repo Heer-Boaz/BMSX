@@ -3,15 +3,16 @@ import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueInteger, valueFloat } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueFloat } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS,
-	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_IRQ, CPU_STATUS_INHIBIT_RESET, CPU_STATUS_USER_MODE_CURRENT } from '../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_RAM_END, COP0_STATUS,
+	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_CODE_SYSCALL, CPU_CAUSE_IRQ, CPU_STATUS_INHIBIT_RESET, CPU_STATUS_USER_MODE_CURRENT } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
+import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
@@ -20,6 +21,55 @@ function assertParity(js: CPU, ref: CPU): void {
 	assert.equal(js.readCurrentInstructionPc(), ref.readCurrentInstructionPc());
 	assert.equal(js.lastPc, ref.lastPc);
 }
+
+test('an adopted CP0 RAM_END read uses the live physical fence', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.MFC0, 0, COP0_RAM_END, 0);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }] });
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	runCpuParity(js, ref, 256);
+	assert.ok(js.rootThread.currentFrame!.decodedPage!.compiledBlocks!.entries.some(entry => entry !== null));
+	const next = DYNAMIC_RAM_BASE + HEAP_PAGE_SIZE;
+	for (const cpu of [js, ref]) cpu.memory.setRamBusEnd(next);
+	runCpuParity(js, ref, 8);
+	assert.equal(js.readFrameRegister(0, 0), valueInteger(next));
+	assertParity(js, ref);
+});
+
+test('ordinary SVC passes a register window without moving its operands', () => {
+	const text = new Uint8Array(3 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.SVC, 3, 3, 0);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+	writeInstruction(text, 2, OpCode.RFE, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 2, maxStack: 6 }, { firstWord: 2, wordCount: 1, numParams: 3 },
+	], exceptionFunctionIndex: 1 });
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	for (const cpu of [js, ref]) {
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.set(3, valueBool(true));
+		frame.registers.setInteger(4, 89);
+		frame.registers.setFloatBits(5, 0x80000000);
+	}
+	runCpuParity(js, ref, 48 * (BASE_CYCLES[OpCode.SVC] + BASE_CYCLES[OpCode.RFE] + BASE_CYCLES[OpCode.JMP]));
+	assert.ok(js.rootThread.currentFrame!.decodedPage!.compiledBlocks!.entries.some(entry => entry !== null));
+	assert.equal(runCpuParity(js, ref, 1), RunResult.Yielded);
+	for (const cpu of [js, ref]) {
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+		assert.equal(cpu.fixedInterruptActive(), true);
+		const frame = cpu.activeThread.currentFrame!, issuer = cpu.rootThread.currentFrame!;
+		assert.equal(frame.argumentCount, 3);
+		assert.deepEqual([frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)],
+			[valueBool(true), valueInteger(3), valueInteger(2)]);
+		assert.equal(issuer.registers.getInteger(4), 89);
+		assert.equal(issuer.registers.getPayload(5), 0x80000000);
+		assert.equal(issuer.pc, cpu.readEpcWord());
+	}
+	assertParity(js, ref);
+});
 
 test('compiled CP0 loads retain raw words as Integers and consume the live registerfile', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);

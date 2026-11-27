@@ -261,7 +261,7 @@ DISPATCH_LABEL(ARGC) {
 
 DISPATCH_LABEL(SVC) {
 	PUBLISH_SCALAR_FRONTIER();
-	executeSupervisorCall(FRAME, decoded->a);
+	executeSupervisorCall(FRAME, decoded->a, decoded->b);
 	DISPATCH_CONTINUE();
 }
 
@@ -434,6 +434,7 @@ DISPATCH_LABEL(MFC0) {
 	if (!cop0FieldImplemented(b)) { PUBLISH_SCALAR_FRONTIER(); hardHalt(); DISPATCH_CONTINUE(); }
 	if (static_cast<size_t>(a) >= FRAME.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const u32 value = b == COP0_EVENT_CYCLES ? static_cast<u32>(remainingDeviceCycles())
+		: b == COP0_RAM_END ? m_memory.ramBusEnd()
 		: b == COP0_CURRENT ? FRAME.thread->address : cop0ReadAsZero(b) ? 0u : m_cop0Words[b];
 	SET_REGISTER_FAST(a, valueInteger(static_cast<i32>(value)));
 	PUBLISH_SCALAR_FRONTIER();

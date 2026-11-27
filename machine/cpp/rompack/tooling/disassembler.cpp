@@ -343,7 +343,8 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::ARGC:
 			return "ARGC r" + std::to_string(decoded.a);
 		case OpCode::SVC:
-			return "SVC r" + std::to_string(decoded.a);
+			return "SVC r" + std::to_string(decoded.a)
+				+ (decoded.b == 0 ? "" : ", " + std::to_string(decoded.b - 1));
 		case OpCode::CALL:
 			return "CALL r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b) + ", " + formatValueCountLiteral(decoded.c);
 		case OpCode::RET:
@@ -481,7 +482,8 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::ARGC:
 			return {registerOperand("dst", decoded.a)};
 		case OpCode::SVC:
-			return {registerOperand("src", decoded.a)};
+			if (decoded.b == 0) return {registerOperand("src", decoded.a)};
+			return {registerOperand("base", decoded.a), plainOperand("args", std::to_string(decoded.b - 1))};
 		case OpCode::CALL:
 			return {registerOperand("callee", decoded.a), plainOperand("args", formatValueCountLiteral(decoded.b)), plainOperand("returns", formatValueCountLiteral(decoded.c))};
 		case OpCode::RET:
