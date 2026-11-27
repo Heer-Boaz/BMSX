@@ -732,21 +732,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const strings = new Blua32RomStringLayout(input.loadAddress + offset, input.previous?.image);
 	const cartTableRelocated = input.domain === 'cart'
 		&& !strings.reservePrefix(input.loadAddress + functionTableOffset + functionCount * BLUA32_FUNCTION_RECORD_SIZE);
+	const installedStringEnd = strings.endAddress;
 	for (const value of rodata.constPool) {
 		if (typeof value === 'string') strings.add(value);
 	}
 	for (const name of globalNameLayout.names) strings.add(textToByteString(name));
 	for (const name of systemGlobalNameLayout.names) strings.add(textToByteString(name));
-	offset = strings.endAddress - input.loadAddress;
-	if (cartTableRelocated) {
-		functionTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_FUNCTION_ALIGNMENT);
-		offset = functionTableOffset + functionCount * BLUA32_FUNCTION_RECORD_SIZE;
-	}
-	const upvalueTableOffset = alignBlua32ImageOffset(
-		offset,
-		input.loadAddress,
-		BLUA32_UPVALUE_RECORD_SIZE,
-	);
 	let upvalueByteCount = 0;
 	for (let slot = 0; slot < functionCount; slot += 1) {
 		const protoIndex = functionLayout.protoIndexBySlot[slot];
@@ -755,18 +746,38 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			: text.protos[protoIndex].upvalueDescs.length;
 		upvalueByteCount += upvalueCount * BLUA32_UPVALUE_RECORD_SIZE;
 	}
-	offset = upvalueTableOffset + upvalueByteCount;
-	const constantTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
-	offset = constantTableOffset + rodata.constPool.length * BLUA32_CONSTANT_RECORD_SIZE;
-	const globalNameTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
-	offset = globalNameTableOffset + globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-	const systemGlobalNameTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
-	offset = systemGlobalNameTableOffset + systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
-
-	const stringBucketOffset = alignBlua32ImageOffset(offset, input.loadAddress, 4);
+	const constantBytes = rodata.constPool.length * BLUA32_CONSTANT_RECORD_SIZE;
+	const globalNameBytes = globalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+	const systemGlobalNameBytes = systemGlobalNameLayout.names.length * BLUA32_GLOBAL_NAME_RECORD_SIZE;
+	const tableBytes = upvalueByteCount + constantBytes + globalNameBytes + systemGlobalNameBytes;
+	offset = strings.endAddress - input.loadAddress;
+	if (cartTableRelocated) {
+		functionTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_FUNCTION_ALIGNMENT);
+		offset = functionTableOffset + functionCount * BLUA32_FUNCTION_RECORD_SIZE;
+	}
+	offset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_UPVALUE_RECORD_SIZE);
 	const stringBucketCount = strings.bucketCount();
-	offset = stringBucketOffset + 4 * stringBucketCount;
-	const textOffset = alignBlua32ImageOffset(offset, input.loadAddress, INSTRUCTION_BYTES);
+	const installedHeader = input.previous?.image.header;
+	const stringBucketOffset = installedHeader !== undefined && strings.endAddress === installedStringEnd
+		&& strings.endAddress <= installedHeader.stringBucketAddress
+		? installedHeader.stringBucketAddress - input.loadAddress
+		: offset + tableBytes;
+	const bucketEnd = stringBucketOffset + 4 * stringBucketCount;
+	// The installed firmware still addresses this directory. Cross its one
+	// reserved span by moving the relocatable tables, not the directory.
+	if (offset + tableBytes > stringBucketOffset) {
+		offset = bucketEnd;
+		if (cartTableRelocated) {
+			functionTableOffset = alignBlua32ImageOffset(offset, input.loadAddress, BLUA32_FUNCTION_ALIGNMENT);
+			offset = functionTableOffset + functionCount * BLUA32_FUNCTION_RECORD_SIZE;
+		}
+	}
+	const upvalueTableOffset = offset;
+	const constantTableOffset = upvalueTableOffset + upvalueByteCount;
+	const globalNameTableOffset = constantTableOffset + constantBytes;
+	const systemGlobalNameTableOffset = globalNameTableOffset + globalNameBytes;
+	const textOffset = alignBlua32ImageOffset(Math.max(systemGlobalNameTableOffset + systemGlobalNameBytes, bucketEnd),
+		input.loadAddress, INSTRUCTION_BYTES);
 	const imageByteCount = textOffset + textByteCount;
 
 	const functionTableAddress = input.loadAddress + functionTableOffset;

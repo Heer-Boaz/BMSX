@@ -38,6 +38,7 @@ export class Blua32RomStringLayout {
 	public constructor(firstFreeAddress: number, previous: Blua32ImageLayout | undefined) {
 		this.endAddress = alignBlua32ImageOffset(firstFreeAddress, 0, BLUA32_STRING_RECORD_ALIGNMENT);
 		if (previous !== undefined) {
+			this.firstInstalledAddress = previous.header.stringBucketAddress;
 			for (const { address, value } of blua32RomStrings(previous)) {
 				if (address < firstFreeAddress) {
 					throw new Error('Hot Resume cannot move installed String records. Rebuild and boot the ROM.');

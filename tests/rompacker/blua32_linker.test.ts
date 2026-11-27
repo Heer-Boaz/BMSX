@@ -50,6 +50,7 @@ import {
 	buildBlua32ExecutionRevision,
 	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
+import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, loadHeapServiceTestModules } from '../helpers/heap_service_system';
 import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
@@ -247,6 +248,39 @@ test('BLua32 linker emits one self-describing physical image', () => {
 		address: image.functions[0].address,
 	}]);
 	assert.equal(linked.startupFunctionAddress, image.functions[0].address);
+});
+
+test('incremental linking places grown immediate tables around the installed String directory', () => {
+	const vector = [{ op: OpCode.RET, a: 0, b: 1, c: 0 }];
+	const system = makeSystemObject(vector);
+	const bios = linkSystemBlua32Image(system.object, system.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	let previous: ReturnType<typeof linkCartBlua32Image> | undefined;
+	function link(constPool: ProgramConstant[]) {
+		const cart = makeCartObject(vector, constPool);
+		cart.object.link.symbols = runtimeSymbols(['system'], ['retained_global']);
+		cart.metadata = makeMetadata(['system'], 1, ['retained_global']);
+		return previous = linkCartBlua32Image(bios.biosImports, cart.object, cart.metadata, CART_ROM_BASE + 0x100,
+			LINK_TARGET_RAM_BYTES, previous && { image: previous.layout, symbols: previous.symbols });
+	}
+
+	const initial = link(['installed', integerConstant(1)]);
+	const directory = initial.layout.header.stringBucketAddress;
+	const count = initial.layout.header.stringBucketCount;
+	const installed = new Map(Array.from(blua32RomStrings(initial.layout), ({ address, value }) => [address, value]));
+	assert.ok(initial.layout.header.constantTableAddress < directory);
+	for (const literals of [[19, 41], [53, 67, 89], [97]]) {
+		const constants = ['installed', ...literals.map(integerConstant)];
+		const { layout, startupFunctionAddress } = link(constants);
+		assert.equal(layout.header.stringBucketAddress, directory);
+		assert.equal(layout.header.stringBucketCount, count);
+		assert.deepEqual(new Map(Array.from(blua32RomStrings(layout), ({ address, value }) => [address, value])), installed);
+		assert.deepEqual(layout.constants, constants);
+		assert.deepEqual(layout.globalNames, ['retained_global']);
+		assert.equal(startupFunctionAddress, initial.startupFunctionAddress);
+		assert.equal(layout.functions[0].codeAddress, layout.header.textAddress);
+		if (literals.length > 1) assert.ok(layout.header.constantTableAddress >= directory + count * 4);
+		else assert.equal(layout.header.constantTableAddress, initial.layout.header.constantTableAddress);
+	}
 });
 
 test('BLua32 linker structurally interns word-aligned inline call-site chains', () => {
