@@ -23,9 +23,6 @@ void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value 
 		pushDetachedFrame(resolveFunctionActivation(0u, valuePayload(method)), 0u, BuiltinArgsView(args.data(), args.size()), placement, m_currentInstructionPc);
 		return;
 	}
-	auto roots = acquireLocalRoots();
-	trackLocalRoot(method);
-	for (const Value arg : args) trackLocalRoot(arg);
 	if (valueIsBuiltinFunction(method)) {
 		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(method))], frame, placement, {args.data(), args.size()});
 	} else throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);

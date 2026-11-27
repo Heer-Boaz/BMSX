@@ -78,15 +78,7 @@ public:
 	bool getIntegerArrayKey(int key, Value& value) const {
 		return getArraySlot(arraySlot(key), value);
 	}
-	bool setIntegerArrayKey(int key, const Value& value) {
-		const u32 slot = arraySlot(key);
-		if (slot >= arrayCapacity()) {
-			return false;
-		}
-		m_heap->writeTableValue(m_address, value);
-		setArraySlot(slot, value);
-		return true;
-	}
+	bool setIntegerArrayKey(int key, const Value& value);
 	bool tryAssignIntegerArrayKey(int key, const Value& value) {
 		const u32 slot = arraySlot(key);
 		if (valueTagHasGcEdge(valueTag(value)) || slot >= arrayCapacity()
@@ -216,7 +208,7 @@ private:
 	struct ResizePlan { size_t array, hash; bool keepHash; };
 	friend class CPU;
 	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
-	enum class HashStore : u8 { General, ReturningIndex, ReturningField };
+	enum class HashStore : u8 { ReturningIndex, ReturningField };
 	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots);
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested);
 	int resize(const ResizePlan&, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested);
@@ -300,11 +292,8 @@ private:
 	int insertHashWithoutGrowth(const HashBody& body, u32 home, const Value& key, const Value& value) noexcept;
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	template <HashStore Policy>
-	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0)
-		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
-	template <HashStore Policy>
-	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots)
-		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
+	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED) noexcept;
+	int assignProbedHash(const HashBody& body, int nodeIndex, Value value) noexcept;
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;
 	void removeFromHash(const Value& key, int slot);

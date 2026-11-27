@@ -9,6 +9,7 @@
 
 #include "common/primitives.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
 
 namespace bmsx {
@@ -54,6 +55,17 @@ public:
 
 private:
 	friend struct test::StringSliceReference;
+	static constexpr u32 BUCKETS = 0x00, CAPACITY = 0x04, USED = 0x08, EPOCH = 0x0c;
+	static constexpr u32 FIRST_CART = 0x14, ROM_TABLES = 0x18;
+	static constexpr u32 REHASH_BASE = 0x38, REHASH_READY = 0x3c;
+	static constexpr u32 MAX_RAM_RECORDS = MAIN_RAM_SIZE / BLUA32_STRING_RECORD_HEADER_SIZE;
+	// The bucket extent field includes the bit for the maximum RAM string count.
+	static constexpr u32 RAM_BUCKET_EXTENT_MASK = 2u * MAX_RAM_RECORDS - 1u;
+	static constexpr u32 RAM_BUCKET_REHASH = 0x80000000u, RAM_BUCKET_SHRINK = 0x40000000u;
+	static constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
+		return address >= CART_ROM_BASE ? address | (cartridgeSlot << BLUA32_STRING_ROM_SOCKET_SHIFT) : address;
+	}
+
 	struct ByteSpan {
 		std::string_view first;
 		std::string_view wrapped;

@@ -272,7 +272,6 @@ public:
 		explicit LocalRootsScope(CPU& cpu);
 
 		CPU* m_cpu = nullptr;
-		size_t m_base = 0;
 	};
 	LocalRootsScope acquireLocalRoots();
 
@@ -423,8 +422,6 @@ private:
 	FunctionActivation resolveClosureActivation(Blua32ExecutionImage&, u32 closure, ClosureRecord::BindingFlags);
 	CallFrame* pushDetachedFrame(FunctionActivation, u32 closure, BuiltinArgsView, CallResultPlacement, std::optional<u32> callSitePc = {});
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
-	void releaseLocalRoots(size_t base);
-	void trackLocalRoot(Value value);
 
 	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -586,8 +583,6 @@ private:
 	size_t m_builtinResultScratchIndex = 0;
 	ValueSlots m_completionValues{8};
 	size_t m_completionValueCount = 0;
-	std::vector<Value> m_localRoots;
-	int m_localRootScopeDepth = 0;
 
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;

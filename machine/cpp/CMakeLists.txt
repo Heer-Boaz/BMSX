@@ -743,6 +743,18 @@ endif()
 # ======================================================================
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	add_library(bmsx_native_heap_reference STATIC
+		../../tests/cpp/support/cpu_heap_reference.cpp
+		../../tests/cpp/support/gc_heap_reference.cpp
+		../../tests/cpp/support/global_bank_reference.cpp
+		../../tests/cpp/support/heap_allocator_reference.cpp
+		../../tests/cpp/support/lua_heap_reference.cpp
+		../../tests/cpp/support/string_pool_reference.cpp
+		../../tests/cpp/support/table_reference.cpp
+		../../tests/cpp/support/thread_storage_reference.cpp
+	)
+	target_link_libraries(bmsx_native_heap_reference PUBLIC bmsx_core)
+	link_libraries(bmsx_native_heap_reference)
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		add_executable(bmsx_snesmini_input_merge_tests
 			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/snesmini_input_merge_test.c
@@ -1365,7 +1377,7 @@ if(BMSX_BUILD_TESTS)
 	add_test(NAME bmsx_cpu_gc_work_tests COMMAND bmsx_cpu_gc_work_tests)
 	# Link the instrumented allocator directly, instead of the archive's ordinary
 	# allocator object. No other test or product target enables allocation stress.
-	add_executable(bmsx_gc_stress_runner ../../tests/cpp/gc_stress_runner.cpp machine/cpu/lua_heap.cpp)
+	add_executable(bmsx_gc_stress_runner ../../tests/cpp/gc_stress_runner.cpp ../../tests/cpp/support/lua_heap_reference.cpp)
 	target_compile_definitions(bmsx_gc_stress_runner PRIVATE BMSX_GC_STRESS=1)
 	target_link_libraries(bmsx_gc_stress_runner PRIVATE bmsx_core)
 	add_executable(bmsx_cpu_string_work_tests ../../tests/cpp/cpu_string_work_test.cpp ${BMSX_TEST_ROM_OBJECTS})
