@@ -221,7 +221,13 @@ void CPU::reset() {
 	clearNativeContinuationBindings();
 #endif
 	for (auto& image : m_executionImagesByDomain) {
-		if (image) releaseImageData(*image);
+		if (image) {
+			const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), image->executionDomainId);
+			if (const u32 base = m_memory.readRamRecordWord(binding)) {
+				m_memory.writeRamRecordWord(binding, 0u);
+				m_luaHeap.releaseRecord(base, m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
+			}
+		}
 		image.reset();
 	}
 	m_unpublishedRomMask = 0u;
@@ -299,12 +305,6 @@ void CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> record
 	image.constPool = ConstValueSpan(storage.words(), storage.tags(), storage.capacity());
 }
 
-void CPU::releaseImageData(Blua32ExecutionImage& image) {
-	if (const u32 base = std::exchange(image.imageBindingBase, 0u)) {
-		m_luaHeap.releaseRecord(base, image.imageBindingBytes);
-	}
-}
-
 void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination) {
 	if (nameCount == 0u) return;
 	m_executionAddressSpace.bindReadOnlyView(domain, tableAddress,
@@ -317,9 +317,9 @@ void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 na
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32ExecutionBoot executionBoot, std::optional<u32> restoredBindingBase, ExecutionImageUpdate update
+	Blua32ExecutionBoot executionBoot, ExecutionImageUpdate update
 ) {
-	const bool restoring = restoredBindingBase.has_value();
+	const bool restoring = update == ExecutionImageUpdate::Restore;
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -420,15 +420,14 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
-	image->imageBindingBytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
-	if (const u32 bytes = image->imageBindingBytes) {
-		image->imageBindingBase = restoring ? *restoredBindingBase : m_luaHeap.allocateRecord(bytes, false, 0, 0);
-		if (!restoring) {
-			const u32 base = image->imageBindingBase;
-			registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
-			registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
-				m_systemGlobalBank, base + 4u * globalNameCount);
-		}
+	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionDomainId);
+	const u32 bytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
+	const u32 base = restoring ? m_memory.readRamRecordWord(binding)
+		: bytes == 0u ? 0u : m_luaHeap.allocateRecord(bytes, false, 0, 0);
+	if (!restoring && bytes != 0u) {
+		registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
+		registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
+			m_systemGlobalBank, base + 4u * globalNameCount);
 	}
 	image->constantSource = records;
 	if (reuseConstants) {
@@ -441,7 +440,8 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		image->constantStringSlots.reserve(stringCount);
 		decodeConstantPool(*image, records);
 	}
-	bindConstantStrings(*image, records, image->imageBindingBase + static_cast<u32>(nameCount) * sizeof(u32), restoring);
+	bindConstantStrings(*image, records, base + static_cast<u32>(nameCount) * sizeof(u32), restoring);
+	if (!restoring) m_memory.writeRamRecordPair(binding, base, bytes);
 	return image;
 }
 
@@ -546,8 +546,11 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
+	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), executionBoot.executionDomainId);
+	const u32 oldBase = m_memory.readRamRecordWord(binding);
+	const u32 oldBytes = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(executionBoot, std::nullopt, ExecutionImageUpdate::Replace);
+		activateExecutionImage(executionBoot, ExecutionImageUpdate::Replace);
 	auto previousImage = std::move(imageEntry);
 	Blua32ExecutionImage* activatedImage = image.get();
 	imageEntry = std::move(image);
@@ -566,7 +569,7 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 			}
 		});
 	}
-	if (previousImage) releaseImageData(*previousImage);
+	if (previousImage && oldBase != 0u) m_luaHeap.releaseRecord(oldBase, oldBytes);
 	if (m_activeExecutionDomainId == activatedImage->executionDomainId) {
 		latchActiveExecutionImage(m_activeExecutionDomainId, activatedImage);
 		auto* frame = m_activeThread->currentFrame;
@@ -1060,7 +1063,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
 			state.executionResidencyMask |= 1u << index;
-			state.imageBindingBases[index] = m_executionImagesByDomain[index]->imageBindingBase;
 		}
 	}
 	state.hardHalted = (m_runSignals & RunHardHalted) != 0u;
@@ -1124,7 +1126,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
-			m_executionImagesByDomain[index] = activateExecutionImage(*boot, state.imageBindingBases[index]);
+			m_executionImagesByDomain[index] = activateExecutionImage(*boot, ExecutionImageUpdate::Restore);
 		} else {
 			m_executionImagesByDomain[index].reset();
 		}

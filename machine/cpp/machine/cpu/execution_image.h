@@ -189,7 +189,6 @@ struct Blua32ExecutionImage {
 	// Derived from the String identities stored in the image bindings. Only a
 	// String resolved to a RAM record is an edge to the language heap.
 	std::vector<StringId> constantStringRoots;
-	u32 imageBindingBase = 0, imageBindingBytes = 0;
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};
 	std::array<RomCallBinding, RomCallBinding::slotCount> romCallBindings{};

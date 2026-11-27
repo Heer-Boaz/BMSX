@@ -7,7 +7,7 @@ import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT, MAPPED_PAGE_BYTE_SIZE, MappedPageWriteWatches } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -58,13 +58,14 @@ test('ordinary writes cannot mutate private image maps or embedded constants', (
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }],
 		constants: [integerConstant(7)], globalNames: ['first', 'second'] });
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const frame = cpu.rootThread.frameAtDepth(0), execution = frame.executionImage;
+	const frame = cpu.rootThread.frameAtDepth(0);
 	cpu.setGlobalByKey(cpu.stringPool.find('first')!, valueInteger(10));
 	cpu.setGlobalByKey(cpu.stringPool.find('second')!, valueInteger(20));
 	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
 	assert.equal(frame.registers.getInteger(2), 17);
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(image.image.functions[0].codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2], 'the fixture exercises a real compiled region');
-	const address = execution.imageBindingBase, before = memory.readRamRecordWord(address);
+	const descriptor = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const address = memory.readRamRecordWord(descriptor), before = memory.readRamRecordWord(address);
 	assert.ok(address >= memory.ramBusEnd());
 	memory.clearBusFault();
 	memory.writeMappedU32LE(address, memory.readRamRecordWord(address + 4));

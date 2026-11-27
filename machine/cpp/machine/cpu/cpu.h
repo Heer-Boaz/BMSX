@@ -153,7 +153,6 @@ struct CpuRuntimeState {
 	GlobalBankState systemGlobals;
 	GlobalBankState globals;
 	ExecutionDomainMask executionResidencyMask = 0;
-	std::array<u32, EXECUTION_DOMAIN_COUNT> imageBindingBases{};
 	bool hardHalted = false;
 	Value stringIndexTable = valueNil();
 	u32 rootThreadAddress = 0;
@@ -426,11 +425,9 @@ private:
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	void bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
-	void releaseImageData(Blua32ExecutionImage& image);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
-	enum class ExecutionImageUpdate { Install, Replace };
+	enum class ExecutionImageUpdate { Install, Replace, Restore };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
-		std::optional<u32> restoredBindingBase = std::nullopt,
 		ExecutionImageUpdate update = ExecutionImageUpdate::Install);
 	void admitImageReplacement(const Blua32ExecutionImage& image);
 	Blua32ExecutionImage* executionImageForDomain(ExecutionDomainId executionDomainId);

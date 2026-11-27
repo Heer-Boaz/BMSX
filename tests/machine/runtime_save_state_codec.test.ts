@@ -532,7 +532,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			},
 			cpuState: {
 				executionResidencyMask: 3,
-				imageBindingBases: [0x08080010, 0x08090010, 0],
 
 				hardHalted: true,
 

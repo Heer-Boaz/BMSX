@@ -536,7 +536,10 @@ void romLiteralsDoNotUseGuestRam() {
 		Machine machine(source, scalar), empty(bare, scalar);
 		auto& cpu = machine.cpu;
 		const auto occupied = empty.cpu.heapAllocator().occupiedBytes();
-		require(cpu.captureRuntimeState().imageBindingBases[SYSTEM_EXECUTION_DOMAIN_ID + 1] == 0u
+		const u32 installed = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		require(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID)
+			&& machine.memory.readRamRecordWord(installed) == 0u
+			&& machine.memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 0u
 			&& cpu.luaHeap().usedBytes() == empty.cpu.luaHeap().usedBytes()
 			&& cpu.heapAllocator().occupiedBytes() == occupied, "numeric ROM literals have no guest binding allocation");
 		const auto ram = machine.memory.captureSaveState();
@@ -571,6 +574,45 @@ void romLiteralsDoNotUseGuestRam() {
 		cpu.restoreRuntimeState(state);
 		cpu.runUntilDepth(0, 1000);
 		require(cpu.readFrameRegister(0, 1) == valueInteger(82), "restore decodes the newly mounted ROM");
+	}
+}
+
+void replacementRetiresInstalledBindingSpan() {
+	auto source = image();
+	writeInstruction(source.text, 0, static_cast<u8>(OpCode::GETGL), 0, 0, 0);
+	writeInstruction(source.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
+	source.functions[0].wordCount = 2;
+	source.globalNames = {"__index"};
+	source.systemGlobalNames.clear();
+	source.constants = {std::string("replacement A"), std::string("replacement B"), std::string("replacement C")};
+	const auto replacement = test::encodeBlua32TestRom(RomImageDomain::System, source);
+	auto previousMedia = replacement.bytes;
+	writeLE32(previousMedia.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1u);
+	Memory memory(MemoryInit{previousMedia, {}}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+	cpu.reset();
+	const u32 descriptor = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const u32 before = memory.readRamRecordWord(descriptor);
+	require(before != 0u && memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 8u,
+		"installed namespace and String literal have a charged two-word binding");
+	cpu.setGlobalByKey(cpu.stringPool().intern("__index"), valueInteger(73));
+	const auto used = cpu.luaHeap().usedBytes();
+
+	memory.installSystemRom(replacement.bytes);
+	require(memory.readRamRecordWord(descriptor) == before && memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 8u,
+		"mounting media does not rebind the old record");
+	cpu.replaceExecutionImage(addresses.resolveSystemDomain());
+	require(memory.readRamRecordWord(descriptor) != before
+		&& memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 16u
+		&& cpu.luaHeap().usedBytes() == used + 16 - 8, "new binding is allocated before draining the old exact span");
+	const auto ram = memory.captureSaveState();
+	const auto state = cpu.captureRuntimeState();
+	for (int replay = 0; replay < 2; ++replay) {
+		cpu.runUntilDepth(0, 4096);
+		require(cpu.readFrameRegister(0, 0) == valueInteger(73), "decoded global reads through the replacement binding");
+		memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(state);
+		require(memory.captureSaveState().ram == ram.ram, "rebinding to restored operands does not rewrite guest RAM");
 	}
 }
 
@@ -1875,7 +1917,7 @@ int main(int argc, char** argv) {
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes();
 		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure();
-		romLiteralsDoNotUseGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		romLiteralsDoNotUseGuestRam(); replacementRetiresInstalledBindingSpan(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();

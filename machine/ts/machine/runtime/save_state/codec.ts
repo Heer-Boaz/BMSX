@@ -33,7 +33,7 @@ import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { FrameState } from '../frame/state';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
-import { EXECUTION_DOMAIN_COUNT, type ExecutionDomainId } from '../../../spec/blua32/execution_domain';
+import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
 import { APU_COMMAND_FIFO_CAPACITY, APU_COMMAND_FIFO_REGISTER_WORD_COUNT, APU_PARAMETER_REGISTER_COUNT, APU_SAMPLE_RAM_BYTES, APU_SLOT_COUNT, APU_SLOT_REGISTER_WORD_COUNT, APU_TRANSFER_FIFO_WORD_CAPACITY } from '../../../spec/audio/apu';
 import { GEOMETRY_CONTROLLER_REGISTER_COUNT, GEO_OVERLAP2D_INSTANCE_WORDS, GEO_SAT2_MAX_POLY_VERTICES,
 	GEO_SAT2_RESULT_BYTES, GEO_XFORM2_AABB_BYTES, GEO_XFORM2_MAX_VERTICES, GEO_VERTEX2_BYTES } from '../../devices/geometry/contracts';
@@ -1135,7 +1135,6 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	for (const value of state.completionValues) writer.u64(value);
 	writer.i32(state.lastExecutionDomainId);
 	writer.u32(state.executionResidencyMask);
-	writer.u32s(state.imageBindingBases);
 	writer.bool(state.hardHalted);
 	writer.u32(state.lastPc);
 	writer.u32(state.haltedUntilIrqThreadAddress);
@@ -1246,7 +1245,6 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		completionValues: reader.u64s(reader.u32()) as Value[],
 		lastExecutionDomainId: reader.i32() as ExecutionDomainId,
 		executionResidencyMask: reader.u32(),
-		imageBindingBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
 		hardHalted: reader.bool(),
 		lastPc: reader.u32(),
 		haltedUntilIrqThreadAddress: reader.u32(),

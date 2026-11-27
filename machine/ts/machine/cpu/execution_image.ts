@@ -345,8 +345,6 @@ export type Blua32ExecutionImage = {
 	readonly constantStringSlots: Uint32Array;
 	// Derived from the String identities stored in the image bindings.
 	readonly constantStringRoots: StringId[];
-	imageBindingBase: number;
-	imageBindingBytes: number;
 	globalNameCount: number;
 	systemNameCount: number;
 	romFunctions: Blua32RomFunctionDirectory;

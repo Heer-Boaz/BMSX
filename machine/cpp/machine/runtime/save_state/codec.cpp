@@ -1164,7 +1164,6 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	writer.u64s(state.completionValues);
 	writer.i32(state.lastExecutionDomainId);
 	writer.u32(state.executionResidencyMask);
-	writer.u32s(state.imageBindingBases);
 	writer.boolean(state.hardHalted);
 	writer.u32(state.lastPc);
 	writer.u32(state.haltedUntilIrqThreadAddress);
@@ -1245,7 +1244,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.completionValues = reader.u64s(reader.u32());
 	state.lastExecutionDomainId = reader.i32();
 	state.executionResidencyMask = reader.u32();
-	reader.u32s(state.imageBindingBases);
 	state.hardHalted = reader.boolean();
 	state.lastPc = reader.u32();
 	state.haltedUntilIrqThreadAddress = reader.u32();

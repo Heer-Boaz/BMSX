@@ -11,7 +11,7 @@ import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../.
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, Blua32ConstantTag, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
@@ -65,7 +65,8 @@ try {
 		assert.ok(nativeState.systemGlobals.count >= 12);
 		const expectedPhysical = arena.occupiedBytes(), expectedLogical = cpu.luaHeap.usedBytes();
 		const operands = [nativeState.globals, nativeState.systemGlobals].flatMap(({ base, capacity, count }) => [base, capacity, count]);
-		const expectedBase = nativeState.imageBindingBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
+		const installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
+		const expectedBase = memory.readRamRecordWord(installed);
 		operands.push(expectedBase);
 		assert.notEqual(expectedBase, 0);
 		const { address: header } = linked.image;
@@ -82,6 +83,7 @@ try {
 				++aliasCount;
 			}
 		}
+		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 4 * (nameCount + stringCount));
 		assert.ok(aliasCount >= 2, 'literal relocation must retain the original RAM diagnostic aliases');
 
 		// Keep existing machine Frame/Value execution controls as harness only.
@@ -110,6 +112,7 @@ try {
 		};
 		const span = (basis: Uint8Array, base: number, length: number) => observed(`H ${base} ${base + length}`, hashBytes(basis, base, length));
 		const compareSpans = [
+			[installed, EXECUTION_IMAGE_BINDING_SPAN_OFFSET + 4],
 			[metadata, state + allocatorStateBytes - metadata],
 			[nativeState.globals.base & RAM_RECORD_WORD_MASK, 17 * nativeState.globals.capacity],
 			[nativeState.systemGlobals.base & RAM_RECORD_WORD_MASK, 17 * nativeState.systemGlobals.capacity],

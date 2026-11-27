@@ -22,7 +22,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
@@ -545,7 +545,10 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 		const occupied = empty.heapAllocator.occupiedBytes();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), empty.luaHeap.usedBytes());
-		assert.equal(cpu.captureRuntimeState().imageBindingBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], 0);
+		const installed = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+		assert.ok(cpu.isExecutionDomainResident(SYSTEM_EXECUTION_DOMAIN_ID));
+		assert.equal(memory.readRamRecordWord(installed), 0);
+		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 0);
 		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 		for (let replay = 0; replay < 2; ++replay) {
 			cpu.runUntilDepth(0, 4000);
@@ -637,6 +640,39 @@ test('remount invalidates a literal table in another image even when the backing
 	const results: Value[] = [];
 	cpu.readCompletionValues(results);
 	assert.deepEqual(results, [valueInteger(73)]);
+});
+
+test('replacing fitted ROM releases its old RAM binding span and binds decoded global operands to the new one', () => {
+	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.GETGL, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
+	const program = { text, functions: [{ firstWord: 0, wordCount: 2 }], globalNames: ['__index'], systemGlobalNames: [] };
+	const next = linkRawTestSystemBlua32({ ...program, constants: ['replacement A', 'replacement B', 'replacement C'] });
+	const previousMedia = next.romBytes.slice();
+	writeLE32(previousMedia, next.image.address + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu({ romBytes: previousMedia });
+	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const before = memory.readRamRecordWord(binding);
+	assert.notEqual(before, 0);
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
+	const key = cpu.stringPool.intern('__index');
+	cpu.setGlobalByKey(key, valueInteger(73));
+	const used = cpu.luaHeap.usedBytes();
+
+	memory.installSystemRom(next.romBytes);
+	assert.equal(memory.readRamRecordWord(binding), before, 'mounting new bytes alone does not change installed operand ownership');
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	assert.notEqual(memory.readRamRecordWord(binding), before, 'new storage was allocated before freeing the old block');
+	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 16);
+	assert.equal(cpu.luaHeap.usedBytes(), used + 16 - 8);
+	const replacement = captureCpuCheckpoint(cpu);
+	for (let repeat = 0; repeat < 2; ++repeat) {
+		assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
+		assert.equal(cpu.readFrameRegister(0, 0), valueInteger(73));
+		restoreCpuCheckpoint(cpu, replacement);
+		assert.deepEqual(memory.ramData(), replacement.memory.ram);
+	}
 });
 
 test('growing a fully traced strong table publishes just the inserted edges during the second pass', () => {
