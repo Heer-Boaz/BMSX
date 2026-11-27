@@ -426,9 +426,9 @@ test('warm ordinary Value accesses inline both lanes and retire watched, aliased
 	const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
 	const memory = js.memory;
 	let reads = 0, writes = 0;
-	const read = memory.readMappedValue.bind(memory), write = memory.writeMappedValue.bind(memory);
-	memory.readMappedValue = addr => { reads++; return read(addr); };
-	memory.writeMappedValue = (addr, value) => { writes++; return write(addr, value); };
+	const read = memory.readMappedValueOffset.bind(memory), write = memory.writeMappedValue.bind(memory);
+	memory.readMappedValueOffset = addr => { reads++; return read(addr); };
+	memory.writeMappedValue = (addr, payload, tag) => { writes++; return write(addr, payload, tag); };
 	for (let step = 0; step < 1024 && js.cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++step)
 		runCpuParity(js.cpu, reference.cpu, 1);
 	assert.equal(js.cpu.rootThread.address, context);

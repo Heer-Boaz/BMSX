@@ -16,7 +16,6 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
-import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag } from '../cpu/value';
 import { bindDlmalloc, DLMALLOC_WASM_PAGE_COUNT, type DlmallocArena } from './dlmalloc_wasm';
 import { RomStorage } from './rom_storage';
 import type { MemoryWordCounters } from './word_counters';
@@ -980,17 +979,15 @@ export class Memory {
 		return false;
 	}
 
-	public readMappedValue(addr: number): Value | undefined {
-		if (!this.admitMappedValue(addr, BUS_ACCESS_READ_VALUE)) return;
-		const offset = addr - RAM_BASE;
-		return valueFromTag(this.ram[offset + VALUE_MEMORY_TAG_OFFSET] as ValueTag, readLE32(this.ram, offset));
+	public readMappedValueOffset(addr: number): number | undefined {
+		if (this.admitMappedValue(addr, BUS_ACCESS_READ_VALUE)) return addr - RAM_BASE;
 	}
 
-	public writeMappedValue(addr: number, value: Value): boolean {
+	public writeMappedValue(addr: number, payload: number, tag: number): boolean {
 		if (!this.admitMappedValue(addr, BUS_ACCESS_WRITE_VALUE)) return false;
 		const offset = addr - RAM_BASE;
-		writeLE32(this.ram, offset, valuePayload(value));
-		this.ram[offset + VALUE_MEMORY_TAG_OFFSET] = valueTag(value);
+		writeLE32(this.ram, offset, payload);
+		this.ram[offset + VALUE_MEMORY_TAG_OFFSET] = tag;
 		// Physical observers see both written lanes, never a partial Value.
 		this.invalidateRamWrite(offset, VALUE_MEMORY_TAG_OFFSET + 1);
 		return true;

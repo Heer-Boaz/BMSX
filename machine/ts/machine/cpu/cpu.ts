@@ -3295,9 +3295,14 @@ export class CPU implements MappedPageInvalidator {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return;
 			}
-			const value = this.memory.readMappedValue(address);
-			if (value === undefined) this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
-			else this.setRegisterValueFast(frame, frame.registers, destination, value);
+			const offset = this.memory.readMappedValueOffset(address);
+			if (offset === undefined) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+				return;
+			}
+			const ram = this.memory.ramView;
+			frame.registers.setEncoded(destination, ram.getUint8(offset + VALUE_MEMORY_TAG_OFFSET) as ValueTag, ram.getUint32(offset, true));
+			this.bumpRegisterTop(frame, destination);
 			return;
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
@@ -3327,7 +3332,8 @@ export class CPU implements MappedPageInvalidator {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return;
 			}
-			if (!this.memory.writeMappedValue(address, frame.registers.get(source)))
+			const registers = frame.registers;
+			if (!this.memory.writeMappedValue(address, registers.getPayload(source), registers.getTag(source)))
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
 		}
