@@ -9,6 +9,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_budget.h"
 #include "support/cpu_execution_parity.h"
 #include "support/number32_cpu_fixture.h"
@@ -92,7 +93,7 @@ void scalarNumbers() {
 	for (OpCode op : {OpCode::ADD, OpCode::SUB, OpCode::MUL, OpCode::DIV, OpCode::MOD, OpCode::FLOORDIV, OpCode::POW,
 			 OpCode::BAND, OpCode::BOR, OpCode::BXOR, OpCode::SHL, OpCode::SHR}) {
 		Number32Machine m(operation(op));
-		u32 closure = m.cpu.activeThread()->currentFrame->closureAddress();
+		const u32 closure = test::seedTestCapturedClosure(m.cpu, m.rom.functionAddresses[0], {});
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {
@@ -149,7 +150,7 @@ void unaryAndCompare() {
 		valueFromTag(ValueTag::True, 1), valueFromTag(ValueTag::True, 2), valueNil()};
 	for (auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) {
 		Number32Machine m(operation(op));
-		auto closure = m.cpu.activeThread()->currentFrame->closureAddress();
+		const u32 closure = test::seedTestCapturedClosure(m.cpu, m.rom.functionAddresses[0], {});
 		bool first = true;
 		for (Value a : values)
 			for (Value b : values) {
@@ -764,7 +765,12 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 	if (argc == 3 && std::string(argv[1]) == "--rom-region") {
-		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, regionImage(argv[2]), MAPPED_PAGE_BYTE_SIZE);
+		auto source = regionImage(argv[2]);
+		// The shared TypeScript capture fixture installs an actual sampled cell,
+		// not a reinterpretation of the non-callable reset environment.
+		source.functions[0].staticClosure = false;
+		source.functions[0].upvalues = {{true, 8}};
+		const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source, MAPPED_PAGE_BYTE_SIZE);
 		std::cout.write(reinterpret_cast<const char*>(rom.bytes.data()), rom.bytes.size());
 		return 0;
 	}

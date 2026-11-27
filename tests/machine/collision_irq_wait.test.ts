@@ -114,6 +114,7 @@ mem[${IO_GEO_PARAM0}] = ${GEO_OVERLAP2D_MODE_FULL_PASS | GEO_OVERLAP2D_BROADPHAS
 mem[${IO_GEO_PARAM1}] = 0
 mem[${IO_GEO_STRIDE0}] = 20
 marker[0] = 1
+while marker[1] == 0 do end
 mem[${IO_GEO_CMD}] = ${IO_CMD_GEO_OVERLAP2D_PASS}
 while *done == 0 do halt_until_irq end
 marker[0] = 2
@@ -130,6 +131,10 @@ for (const mode of [CpuExecutionBackend.Interpreter]) test(`predicate-to-HALT ra
 	const memory = runtime.machine.memory, cpu = runtime.machine.cpu;
 	for (let step = 0; step < 100000 && memory.readU32(marker) === 0; ++step) runtime.frameScheduler.runCyclesToNextLogicalTick(16);
 	assert.equal(memory.readU32(marker), 1);
+	// Keep the main boot grant from overlapping submission. Once armed,
+	// only single-cycle grants drive the real command and predicate.
+	assert.equal(memory.readMappedWord(IO_GEO_STATUS) & GEO_STATUS_BUSY, 0);
+	memory.writeU32(marker + 4, 1);
 	let reachedHalt = false;
 	for (let step = 0; step < 100000; ++step) {
 		const status = memory.readMappedWord(IO_GEO_STATUS);

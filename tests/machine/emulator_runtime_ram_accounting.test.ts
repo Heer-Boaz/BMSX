@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -135,7 +136,8 @@ test('non-capturing const functions materialize as static proto references', () 
 	runGuestToHalt(cpu, 100000);
 
 	assert.equal(cpu.collectTrackedHeapBytes() - before,
-		logicalThreadBytes(cpu) - backingBefore);
+		logicalThreadBytes(cpu) - backingBefore + closureRecordBytes(0),
+		'the returned captureless function is one real Closure, independently of the reset activation');
 });
 
 test('restored static closures reuse the static proto cache', () => {

@@ -51,14 +51,14 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 }
 
 // The root Thread owns an 80-byte header, 40 bytes for eight Value slots
-// and 112 bytes for two reserved activations. The remainder is a
-// Closure, 17 RAM String records, two names and a map of their slots and the String binding.
+// and 112 bytes for two reserved activations. The remainder is
+// 17 RAM String records, two names and a map of their slots and the String binding.
 // Both lookup indexes are storage, not logical occupancy.
 const bootThreadBytes = 80 + 40 + 112;
-const bootBytes = bootThreadBytes + 12 + 4 + 697 + 8 + 2 * 9;
+const bootBytes = bootThreadBytes + 4 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
-const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
+const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 6 + 2 * 17 + 32;
 
 test('String mark work follows its reached records through a CPU checkpoint', () => {
 	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));

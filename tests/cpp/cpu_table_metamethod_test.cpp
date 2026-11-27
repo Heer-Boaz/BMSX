@@ -3,6 +3,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 
 #include <array>
@@ -56,11 +57,8 @@ struct Machine {
 		else cpu.prepareSystemNativeCode();
 #endif
 	}
-	Value bindHandler(u32 word) {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[2], rom.textAddress + word * INSTRUCTION_BYTES);
-		const auto closure = valueClosure(cpu.activeThread()->currentFrame->closureAddress());
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		return closure;
+	Value bindHandler() {
+		return valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[2], {}));
 	}
 };
 
@@ -297,7 +295,7 @@ void coldFieldAssignmentPublishesItsFrontierOnce() {
 	auto& cpu = machine.cpu;
 	cpu.setExecutionHook({});
 	cpu.luaHeap().setCollectionTarget(static_cast<u32>(cpu.luaHeap().capacity()));
-	const Value method = machine.bindHandler(handler);
+	const Value method = machine.bindHandler();
 	auto root = cpu.createTable(1, 0);
 	root.setInteger(1, valueInteger(17));
 	const auto field = *cpu.stringPool().find("field");
@@ -357,7 +355,7 @@ void callableNewIndexDiscardsAllResults() {
 		program.image.functions.push_back({.firstWord=handler, .wordCount=2, .numParams=3, .maxStack=8});
 		Machine generated(program, false), scalar(program, true);
 		for (auto* m : {&generated, &scalar}) {
-			const Value method = m->bindHandler(handler);
+			const Value method = m->bindHandler();
 			auto root = m->cpu.createTable(0, 1), meta = m->cpu.createTable(0, 1);
 			const auto field = m->cpu.stringPool().intern("field");
 			root.setStringKey(field, valueBool(false));
@@ -392,7 +390,7 @@ void tableLengthAllowsOrdinaryMetamethodResult() {
 	program.image.functions.push_back({.firstWord=handler, .wordCount=2, .numParams=2, .maxStack=4});
 	Machine generated(program, false), scalar(program, true);
 	for (auto* m : {&generated, &scalar}) {
-		const Value method = m->bindHandler(handler);
+		const Value method = m->bindHandler();
 		auto root = m->cpu.createTable(4, 0), meta = m->cpu.createTable(0, 1);
 		meta.setStringKey(m->cpu.stringPool().intern("__len"), method);
 		root.setInteger(1, valueInteger(27)); root.setMetatableAddress(meta.address());

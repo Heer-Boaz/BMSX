@@ -521,6 +521,20 @@ int main(int argc, char** argv) {
 					std::cout << depth << ' ' << cpu.readFramePc(depth - 1) << '\n';
 					break;
 				}
+				case '_': {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+					cpu.prepareSystemNativeCode();
+					const auto gate = static_cast<size_t>(NativeBlockExit::ScalarBoundary);
+					const auto before = cpu.nativeGateProfile().exits[gate].entries;
+					int cycles;
+					trace >> cycles;
+					cpu.runUntilDepth(0, cycles);
+					std::cout << cpu.nativeGateProfile().exits[gate].entries - before << '\n';
+#else
+					throw std::runtime_error("Vector capture admission evidence requires native profiling.");
+#endif
+					break;
+				}
 				case 'N': cpu.requestNonMaskableInterrupt(); break;
 				case 'h': cpu.clearHaltUntilIrq(); break;
 				case 'i': {

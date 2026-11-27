@@ -55,13 +55,13 @@ struct Machine {
 };
 
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
-// + Closure12, a 4-byte String binding, 17 machine Strings charged 697 bytes
+// + a 4-byte String binding, 17 machine Strings charged 697 bytes
 // and two registered globals with a 16-byte image map. Both lookup indexes
 // are uncharged. The collector visits allocated objects and intern buckets.
-constexpr int bootBytes = 232 + 12 + 4 + 697 + 16 + 2 * 9;
+constexpr int bootBytes = 232 + 4 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and a sweep visit.
-constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
+constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 6 + 2 * 17 + 32;
 
 void stringMarkWorkSurvivesCheckpoint() {
 	Machine machine(image()); auto& cpu = machine.cpu;
@@ -670,8 +670,8 @@ void incrementalStateAndBarriers() {
 		"an allocation born during sweep is retained");
 	require(!cpu.stringPool().find("dead-0" + std::string(16, 'x')), "incremental String sweep reclaims dead text");
 	cpu.collectHeap();
-	require(test::allocatedObjectRecords(cpu) == 1006,
-		"full collection retains root Thread, closure, roots Table, 1000 children and three new live Tables");
+	require(test::allocatedObjectRecords(cpu) == 1005,
+		"full collection retains root Thread, roots Table, 1000 children and three new live Tables");
 }
 
 void resumesCompletionRootBank() {

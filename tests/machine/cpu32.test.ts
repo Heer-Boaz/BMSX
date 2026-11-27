@@ -13,6 +13,7 @@ import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode, BASE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { seedTestRomClosure } from '../helpers/blua32';
 import * as v from '../../machine/ts/machine/cpu/value';
 import * as n from '../../machine/ts/machine/cpu/value_arithmetic';
 import { luaShiftLeft, luaShiftRight } from '../../machine/ts/spec/blua32/numeric';
@@ -40,7 +41,7 @@ const machine=(op: OpCode,kind?: MemoryAccessKind)=>createMachine(op,kind,backen
 test(`${backend}: real scalar CPU opcodes transport Integer/Float words through calls and returns`, { skip: !runner }, () => {
 	const values = [v.valueInteger(0),v.valueInteger(1),v.valueInteger(-1),v.valueInteger(-2147483648),v.valueInteger(2147483647),v.valueInteger(16777217),v.valueFloat(16777216),v.valueFloat(-2.5),v.valueFloatBits(1),v.valueFloatBits(0x80000000),v.valueFloatBits(0x7f800000),v.valueFloatBits(0xff800000),v.valueFloatBits(0x7fa12345)];
 	for (const [op,calculate] of operations) {
-		const cpu = machine(op), closure = cpu.activeThread.currentFrame!.closure, owner = cpu.activeThread.currentFrame!.executionImage; let first = true;
+		const cpu = machine(op), closure = seedTestRomClosure(cpu, cpu.readFrameFunctionAddress(0)), owner = cpu.activeThread.currentFrame!.executionImage; let first = true;
 		for (const a of values) for (const b of values) {
 			let expected: v.Value; try { expected=calculate(a,b); } catch { continue; }
 			if (!first) cpu.beginCompletionCall(closure); first = false;
@@ -85,7 +86,7 @@ test(`${backend}: unary Float payloads and exact mixed comparisons survive real 
 	}
 	const values=[v.valueInteger(16777217),v.valueFloat(16777216),v.valueInteger(2147483647),v.valueFloatBits(0x4f000000),v.valueFloatBits(0x7fa12345),v.valueFloatBits(0x80000000),v.valueInteger(0),v.valueFromTag(v.ValueTag.True,1),v.valueFromTag(v.ValueTag.True,2),v.valueNil()];
 	for (const op of [OpCode.EQ,OpCode.LT,OpCode.LE]) {
-		const cpu=machine(op), closure=cpu.activeThread.currentFrame!.closure;let first=true;
+		const cpu=machine(op), closure=seedTestRomClosure(cpu,cpu.readFrameFunctionAddress(0));let first=true;
 		for(const a of values)for(const b of values) {
 			if(!first)cpu.beginCompletionCall(closure);first=false;
 			const regs=cpu.activeThread.currentFrame!.registers;regs.set(0,a);regs.set(1,b);cpu.runUntilDepth(0,100);
@@ -119,7 +120,7 @@ test(`${backend}: scalar memory loads/stores retain raw words and charge the ext
 test(`${backend}: started F64 transfers retain the format charge when address conversion faults`, { skip: !runner }, () => {
 	for (const op of [OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D]) {
 		for (const bad of [v.valueNil(), v.valueBool(true), v.valueFloatBits(0x7fc00000), v.valueFloatBits(0x7f800000)]) {
-			const cpu = machine(op, MemoryAccessKind.F64LE), closure = cpu.activeThread.currentFrame!.closure;
+			const cpu = machine(op, MemoryAccessKind.F64LE), closure = seedTestRomClosure(cpu, cpu.readFrameFunctionAddress(0));
 			const owner = cpu.activeThread.currentFrame!.executionImage;
 			for (let i = 0; i < 12; ++i) {
 				if (i !== 0) cpu.beginCompletionCall(closure);

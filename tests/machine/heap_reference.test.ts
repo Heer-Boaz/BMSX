@@ -16,7 +16,7 @@ import { ValueStorage } from '../../machine/ts/machine/cpu/value_storage';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { type CPU } from '../../machine/ts/machine/cpu/cpu';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function machine(): CPU {
@@ -101,6 +101,7 @@ test('equally initialized CPUs have independent address spaces', () => {
 
 test('restore publishes physical roots and drops discarded future records', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = cpu.createTable(4);
+	frame.closureAddress = seedTestRomClosure(cpu, frame.functionAddress);
 	frame.registers.setTable(0, roots); frame.top = 2;
 	for (let i = 1; i <= 4; ++i) cpu.gc.tables.setInteger(roots, i, valueTable(cpu.createTable()));
 	cpu.createTable();

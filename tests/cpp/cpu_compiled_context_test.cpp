@@ -312,7 +312,8 @@ void freshVarargActivationGrowsBeforeWarmContinuation() {
 		auto& cpu = machine->cpu;
 		const auto& root = *cpu.activeThread()->frameAtDepth(0);
 		require(root.registers.size() == 16, "the existing activation has already grown");
-		cpu.beginCompletionCall(root.closureAddress(), BuiltinArgsView(arguments.view()));
+		const u32 closure = test::seedTestCapturedClosure(cpu, machine->rom.functionAddresses[0], {});
+		cpu.beginCompletionCall(closure, BuiltinArgsView(arguments.view()));
 		require(cpu.activeThread()->frameAtDepth(1)->registers.size() == 8,
 			"the new activation starts with the original function reservation");
 	}
@@ -409,18 +410,14 @@ void hotUpvalueAlias() {
 	const std::array<std::array<u32, 3>, 9> args{{{0, 0, 0}, {1, 0, 0}, {2, 0, 9}, {2, 0, 0},
 		{3, 0, 1}, {4, 0, 0}, {12, 1, 0}, {6, 1, 0}, {0, 63, 55}}};
 	for (u32 i = 0; i < ops.size(); ++i) writeInstruction(image.text, i, static_cast<u8>(ops[i]), args[i][0], args[i][1], args[i][2], i == 8 ? 255 : 0);
-	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 16}};
+	image.functions = {{.firstWord = 0, .wordCount = 9, .maxStack = 16, .staticClosure = false, .upvalues = {{true, 0u}, {true, 1u}}}};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
 		auto& heap = m->cpu.gcHeap();
 		std::array<u32, 2> cells{};
-		const auto prototype = m->cpu.readClosureBinding(frame.closureAddress());
-		const u32 closure = heap.budget.allocateClosureRecord(2, false, cells);
-		ClosureRecord::initialize(heap.memory, closure, prototype, heap.white(), 2, false, false);
+		const u32 closure = test::seedTestCapturedClosure(m->cpu, m->rom.functionAddresses[0], cells);
 		Upvalue::bindOpen(heap.memory, cells[0], frame.thread->address, frame.stackBase(), 0);
-		ClosureRecord::setCaptureAddress(heap.memory, closure, 0, cells[0]);
-		ClosureRecord::setCaptureAddress(heap.memory, closure, 1, cells[1]);
 		frame.writeControl(bmsx::FrameField::Closure, closure); m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 1100);
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -569,7 +566,7 @@ void rawContextValues(CpuMachine& machine) {
 	auto& cpu = machine.cpu;
 	const std::array values{valueNil(), valueFromTag(ValueTag::False, 37), valueFromTag(ValueTag::True, 37),
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueFloat(std::numeric_limits<float>::infinity()),
-		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(cpu.activeThread()->frameAtDepth(0)->closureAddress()),
+		valueString(cpu.stringPool().intern("context")), valueTable(cpu.createTable().address()), valueClosure(test::seedTestCapturedClosure(cpu, machine.rom.functionAddresses[0], {})),
 		valueThread(cpu.activeThread()->address)};
 	ContextBlock globals(machine, {{OpCode::SETGL, 12, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETGL, 0, 0, 0, ContextBlock::Payload::bx(1)},
 		{OpCode::SETSYS, 0, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::GETSYS, 1, 0, 0, ContextBlock::Payload::bx(1)}, {OpCode::K1, 2},

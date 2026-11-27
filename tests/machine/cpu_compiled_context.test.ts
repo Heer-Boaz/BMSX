@@ -20,7 +20,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -337,7 +337,8 @@ test('a generated capture access admits the currently bound closure', () => {
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	writeInstruction(text, 3, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text,
-		functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 });
+		functions: [{ firstWord: 0, wordCount: 3, maxStack: 2, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+			{ firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 });
 	const pc = image.image.functions[0].codeAddress;
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
@@ -345,10 +346,8 @@ test('a generated capture access admits the currently bound closure', () => {
 	const original = frames.map(frame => frame.closureAddress);
 	for (const [index, cpu] of [js, ref].entries()) {
 		const frame = frames[index], cells = new Uint32Array(1);
-		const replacement = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
+		const replacement = seedTestCapturedClosure(cpu, image.symbols.functionAddresses[0], cells);
 		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
-		ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(original[index]), false, cpu.gc.white(), 1);
-		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, cells[0]);
 		frame.closureAddress = replacement;
 	}
 	const loopCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.JMP];
@@ -378,18 +377,15 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	writeInstruction(text, 6, OpCode.SETUP, 12, 1, 0);
 	writeInstruction(text, 7, OpCode.GETUP, 6, 1, 0);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16 }] });
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16,
+		staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }, { inStack: true, index: 1 }] }] });
 	const loopCycles = BASE_CYCLES[OpCode.K1] + 3 * BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.KSMI] + 2 * BASE_CYCLES[OpCode.SETUP] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
-		const bound = frame.closure;
 		const cells = new Uint32Array(2);
-		const replacement = cpu.luaHeap.allocateClosureRecord(2, false, cells, cells.length);
+		const replacement = seedTestCapturedClosure(cpu, image.symbols.functionAddresses[0], cells);
 		Upvalue.bindOpen(cpu.memory, cells[0], frame.thread.address, frame.stackBase, 0);
-		ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, cpu.gc.white(), 2);
-		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 0, cells[0]);
-		ClosureRecord.setCaptureAddress(cpu.memory, replacement, 1, cells[1]);
 		frame.closureAddress = replacement;
 		cpu.runUntilDepth(0, 50 * loopCycles);
 	}
@@ -531,7 +527,8 @@ test('a fresh frame grows through scalar VARARG before using a warm generated re
 		return execute(...args);
 	} });
 	for (const cpu of [js, scalar]) {
-		cpu.beginCompletionCall(cpu.rootThread.frameAtDepth(0).closure, [11, 22, 33, 44].map(valueInteger));
+		const closure = seedTestRomClosure(cpu, image.symbols.functionAddresses[0]);
+		cpu.beginCompletionCall(closure, [11, 22, 33, 44].map(valueInteger));
 		assert.equal(cpu.rootThread.frameAtDepth(1).stackCapacity, 8);
 	}
 	const loop = BASE_CYCLES[OpCode.VARARG] + 4 + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];

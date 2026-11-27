@@ -888,8 +888,8 @@ test('snapshots preserve Mark, Atomic, Sweep and String progress without tracing
 	assert.equal(cpu.rootThread.currentFrame!.registers.getPayload(1), bornDuringSweep);
 	assert.equal(cpu.stringPool.find(`dead-0-${'x'.repeat(16)}`), undefined);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(allocatedObjectRecords(cpu).length, 1004,
-		'root thread, root closure, root table, 1000 children and one sweep-born table remain');
+	assert.equal(allocatedObjectRecords(cpu).length, 1003,
+		'root thread, root table, 1000 children and one sweep-born table remain');
 });
 
 test('allocation assists advance one graph step without debiting the pending request', () => {

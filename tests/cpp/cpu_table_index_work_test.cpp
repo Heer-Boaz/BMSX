@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 
 #include <algorithm>
@@ -503,11 +504,10 @@ void callableIndexUsesARealDetachedActivation() {
 		for (auto* m : machines) {
 			auto& cpu = m->cpu;
 			const Value key = op == OpCode::GETI ? valueInteger(1) : op == OpCode::GETT ? valueFloat(1.0f) : keyFor(cpu, KeyKind::String);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[2], m->rom.textAddress + handlerWord * INSTRUCTION_BYTES);
+			const u32 closure = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[2], {});
 			auto* frame = cpu.activeThread()->currentFrame;
-			frame->registers.set(3, valueClosure(frame->closureAddress()));
+			frame->registers.set(3, valueClosure(closure));
 			frame->writeControl(FrameField::Top, 0x4900000bu);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 			auto root = cpu.createTable(0, 2);
 			frame->registers.set(0, valueTable(root.address())); frame->registers.set(1, key);
 			auto receiver = makeChain(cpu, root, 2, key, valueNil());
@@ -639,10 +639,8 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 	const std::array machines{&generated, &scalar};
 	for (auto* m : machines) {
 		auto& cpu = m->cpu;
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 64 * INSTRUCTION_BYTES);
+		const u32 entry = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[1], {});
 		auto* frame = cpu.activeThread()->currentFrame;
-		const u32 entry = frame->closureAddress();
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		root.setMetatableAddress(meta.address());

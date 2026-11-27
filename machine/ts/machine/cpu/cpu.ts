@@ -167,7 +167,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE, FRAME_FIXED_WORK, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -941,13 +941,7 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return;
 		}
-		this.pushFrame(
-			this.staticClosureFromLatch(),
-			EMPTY_CALL_ARGS,
-			0,
-			0,
-			false,
-		);
+		this.enterVectorFrame();
 		this.collectTrackedHeapBytes();
 	}
 
@@ -2216,16 +2210,34 @@ export class CPU implements MappedPageInvalidator {
 			return null;
 		}
 		try {
-			const closure = this.staticClosureFromLatch();
-			const frame = this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false, true);
-			frame.callSitePc = epcWord;
-			frame.enterException(nmi);
-			return frame;
+			return this.enterVectorFrame(epcWord, nmi);
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
 			this.hardHalt();
 			return null;
 		}
+	}
+
+	// Hardware enters the sampled Function directly, with no capture environment.
+	private enterVectorFrame(epcWord?: number, nmi = false): CallFrame {
+		const entry = this.functionRecordLatch;
+		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
+		const thread = this.activeThread, base = thread.stackTop;
+		const capacity = Math.max(1, numParams, maxStack);
+		const end = base + capacity;
+		if (end > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		const frame = thread.acquireFrame(), image = entry.image!;
+		this.ensureStackCapacity(end, valueNil(), true, epcWord !== undefined);
+		frame.executionImage = image;
+		frame.decodedPage = null;
+		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,
+			base + numParams, 0, 0, 0, numParams, 0, base, capacity);
+		frame.registers.clear(numParams);
+		if (epcWord !== undefined) frame.enterException(nmi);
+		thread.stackTop = end;
+		thread.enterFrame(frame);
+		this.latchActiveExecutionImage(executionDomainId, image);
+		return frame;
 	}
 
 	private clearHaltAfterAcceptedInterrupt(): void {
@@ -2694,11 +2706,13 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public getFrameUpvalueCount(frameIndex: number): number {
-		return Closure.captureCount(this.memory, this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure));
+		return frameCaptureCount(this.memory, this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure));
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		return this.readClosureUpvalue(this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure), upvalueIndex);
+		const closure = this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure);
+		if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		return this.readClosureUpvalue(closure, upvalueIndex);
 	}
 
 	/** Read a retained closure without calling it or requiring an active frame. */

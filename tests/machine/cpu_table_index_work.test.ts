@@ -139,7 +139,7 @@ return true`, 0);
 	});
 }
 
-function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
+function readProgram(op: OpCode, wide: boolean, stringReceiver = false, collisionKeys: readonly string[] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), starts: number[] = [];
 	let word = 0;
 	if (stringReceiver) writeInstruction(text, word++, OpCode.CALL, 20, 2, 1);
@@ -151,7 +151,7 @@ function readProgram(op: OpCode, wide: boolean, stringReceiver = false) {
 	starts.push(word);
 	writeInstruction(text, word, OpCode.JMP, 0, 63, (starts[0] - word - 1) & 63, 255);
 	writeInstruction(text, 64, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
+	const image = linkRawTestSystemBlua32({ text, constants: ['field', ...collisionKeys], functions: [
 		{ firstWord: 0, wordCount: word + 1, maxStack: 24 }, { firstWord: 64, wordCount: 1 }], exceptionFunctionIndex: 1 });
 	return { image, starts };
 }
@@ -239,16 +239,18 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	});
 
 	test(`an exhausted eight-node String chain charges seven cycles before its successor (${backend})`, () => {
+		// Equal-sized ROM String records walk all eight homes, independently
+		// of the heap geometry or collector progress of this VM.
+		const names = Array.from({ length: 72 }, (_, index) => `chain${String(index).padStart(3, '0')}`);
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
-			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
+			const { image } = readProgram(op, false, false, names), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
 			const key = valueString(cpu.stringPool.intern('field')), root = cpu.createTable(0, 8);
-			frame.registers.setTable(0, root); frame.registers.set(1, key);
-			for (let n = 0, placed = 0; placed < 8; ++n) {
-				const candidate = valueString(cpu.stringPool.intern('chain' + n));
-				if (((hashCanonicalTableKey(candidate) ^ hashCanonicalTableKey(key)) & 7) === 0)
-					cpu.gc.tables.set(root, candidate, valueInteger(++placed));
-			}
+			frame.registers.setTable(0, root); frame.registers.set(1, key); frame.top = 2;
+			const collisions = names.map(name => valueString(cpu.stringPool.intern(name)))
+				.filter(candidate => ((hashCanonicalTableKey(candidate) ^ hashCanonicalTableKey(key)) & 7) === 0);
+			assert.ok(collisions.length >= 8);
+			for (let i = 0; i < 8; ++i) cpu.gc.tables.set(root, collisions[i], valueInteger(i + 1));
 			const total = 2 + BASE_CYCLES[op] + 7;
 			cpu.runUntilDepth(0, (total + 4) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)

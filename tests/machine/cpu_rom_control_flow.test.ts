@@ -15,7 +15,7 @@ import { BASE_BX_BITS, INSTRUCTION_BYTES, MAX_LOW_OPERAND, MAX_OPERAND_BITS, MAX
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 
 function validImage() {
 	const text = new Uint8Array(2 * MAPPED_PAGE_BYTE_SIZE);
@@ -66,14 +66,17 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	test(`live closures use the newly published entry and register layout (${backend})`, () => {
 		const { image, prefix, textAddress } = validImage();
 		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image, backend);
-		const closure = cpu.rootThread.currentFrame!.closure;
 		const record = image.symbols.functionAddresses[0];
+		const closure = seedTestRomClosure(cpu, record);
 		const nextEntry = textAddress + (prefix + 4) * INSTRUCTION_BYTES;
 		const replacement = image.romBytes.slice();
 		writeLE32(replacement, record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, nextEntry);
 		writeLE32(replacement, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, 2 * INSTRUCTION_BYTES);
 		writeLE32(replacement, record + BLUA32_FUNCTION_NUM_PARAMS_OFFSET, 1);
 		writeLE32(replacement, record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 7);
+		const frame = cpu.rootThread.currentFrame!;
+		frame.registers.setClosure(0, closure);
+		frame.top = Math.max(1, frame.top);
 		memory.installSystemRom(replacement);
 		assert.equal(cpu.captureClosureBinding(closure).codeAddress, textAddress);
 		assert.throws(() => cpu.beginCompletionCall(closure), /ROM must be published/);

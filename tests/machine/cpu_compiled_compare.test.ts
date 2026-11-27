@@ -13,7 +13,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, type TestBlua32Source } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure, type TestBlua32Source } from '../helpers/blua32';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -30,7 +30,7 @@ function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, con
 }
 
 function values(cpu: CPU): Value[] {
-	const closure = cpu.rootThread.frameAtDepth(0).closure;
+	const closure = seedTestRomClosure(cpu, cpu.rootThread.frameAtDepth(0).functionAddress);
 	return [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueInteger(1), valueInteger(-1),
 		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),

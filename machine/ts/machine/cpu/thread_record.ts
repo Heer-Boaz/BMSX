@@ -1,6 +1,6 @@
 import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
-import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank } from './call_state';
+import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { writeLE32 } from '../../common/endian';
 import { ValueSlots } from './value_slots';
@@ -91,7 +91,7 @@ export class ThreadRecords {
 			else out.push(this.values.get(slot));
 		} else {
 			const closure = memory.readRamRecordWord(frame + FrameField.Closure);
-			if (operand >= Closure.captureCount(memory, closure)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			if (operand >= frameCaptureCount(memory, closure)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const cell = Closure.captureAddress(memory, closure, operand);
 			if (writing) Upvalue.store(heap, cell, registers.getTag(base + 3), registers.getPayload(base + 3));
 			else out.push(Upvalue.load(memory, cell));

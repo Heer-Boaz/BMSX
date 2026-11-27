@@ -145,7 +145,7 @@ local prepare_closure<const> = function(state, frame, binding, descriptor_addres
 			end
 		else -- T:4107-4108 C:3045
 			local parent<const> = frame_view.closure -- T:4108-4109 F:69,103,106-108 C:3046-3047 H:33
-			if capture >= captures.internal.capture_count(parent) then return -(invalid_argument + 1) end -- T:4108 C:3046 E:44 S:37,50-53 B:68-71
+			if parent == 0 or capture >= captures.internal.capture_count(parent) then return -(invalid_argument + 1) end -- T:4108 C:3046 E:44 S:37,50-53 B:68-71; a hardware frame has no outer capture binding
 			reference = captures.internal.capture_address(parent, capture) -- T:4109 C:3047 S:55-56 B:74-75
 		end
 		if staged then resolved[index] = reference end -- T:4104,4109 C:3043,3047

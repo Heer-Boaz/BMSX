@@ -6,7 +6,7 @@ import { asThread, type Value, valueBool, valueClosure, valueInteger, valueNil }
 import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK } from '../../machine/ts/machine/cpu/call_state';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
-import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
@@ -58,6 +58,8 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1,
 		staticClosure: true, upvalueDescs: [{ inStack: true, index: 0 }] }] });
 	const { cpu, executionAddressSpace } = createTestSystemCpu(image);
+	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, image.vectors.startupFunctionAddress);
+	assert.equal(cpu.getFrameDepth(), 2);
 	const closure = cpu.activeThread.currentFrame!.closure;
 	assert.equal(cpu.captureClosureBinding(closure).recordUpvalueCount, 1);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);

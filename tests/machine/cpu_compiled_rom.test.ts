@@ -66,7 +66,7 @@ test('a retained closure samples the replaced ROM entry on its next CALL', () =>
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = machine(image.romBytes, cartridgeSlots(), backend);
 		const parent = cpu.rootThread.currentFrame!;
-		const closure = parent.closureAddress;
+		const closure = seedTestRomClosure(cpu, parent.functionAddress);
 		assert.notEqual(parent.stackCapacity, 29);
 		memory.installSystemRom(replacement);
 		cpu.beginCompletionCall(closure);

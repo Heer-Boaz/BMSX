@@ -600,6 +600,7 @@ private:
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
+	CallFrame* enterVectorFrame(u32 flags, std::optional<u32> epcWord = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
 	void enterLuaFaultException(u32 reason, Value errorValue);
 	void hardHalt();

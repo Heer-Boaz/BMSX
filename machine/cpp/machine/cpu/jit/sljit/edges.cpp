@@ -39,6 +39,7 @@ void NativeLowering::emitPublicEntry(size_t index) {
 	if (ir.requiredCaptures != 0) {
 		auto* c = m_compiler;
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, closure));
+		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), replay, m_cache.state());
 		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 		NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R2);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R2), GC_RECORD_LINK);

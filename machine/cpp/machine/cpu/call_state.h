@@ -19,6 +19,11 @@ struct DecodedInstructionPage;
 struct NativeBlockExitSite;
 struct Thread;
 
+// A hardware vector has a Function and register window but no Closure.
+inline u32 frameCaptureCount(const Memory& memory, u32 closure) {
+	return closure == 0u ? 0u : ClosureRecord::captureCount(memory, closure);
+}
+
 enum class ProtectedCallKind : uint8_t {
 	PCall,
 	XPCallBody,
@@ -155,7 +160,7 @@ struct CallFrame {
 		return controlMemory->readRamRecordWord(ClosureRecord::captureWordAddress(readControl(FrameField::Closure), index));
 	}
 	u32 captureCount() const {
-		return ClosureRecord::captureCount(*controlMemory, readControl(FrameField::Closure));
+		return frameCaptureCount(*controlMemory, readControl(FrameField::Closure));
 	}
 	ExecutionDomainId savedExecutionBank() const {
 		return frameExecutionBank(readControl(FrameField::Flags));

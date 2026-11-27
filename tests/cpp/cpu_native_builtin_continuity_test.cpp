@@ -9,6 +9,7 @@
 #include "spec/bmsx/io.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/sljit/gate.h"
@@ -92,10 +93,8 @@ struct Machine {
 		}
 	}
 	void selectClosure() {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[1], rom.textAddress + MAPPED_PAGE_BYTE_SIZE);
-		const Value closure = valueClosure(cpu.rootThread()->currentFrame->closureAddress());
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		cpu.rootThread()->currentFrame->registers.set(12, closure);
+		const auto closure = test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], {});
+		cpu.rootThread()->currentFrame->registers.set(12, valueClosure(closure));
 	}
 };
 

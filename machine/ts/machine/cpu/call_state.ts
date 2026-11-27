@@ -76,6 +76,11 @@ export function writeFrameEntryControl(memory: Memory, offset: number, fn: numbe
 	if (first !== FRAME_CONTROL_BYTES) memory.invalidateRamWrite(0, FRAME_CONTROL_BYTES - first);
 }
 
+// A hardware vector has a Function and register window but no Closure.
+export function frameCaptureCount(memory: Memory, closure: number): number {
+	return closure === 0 ? 0 : captureCount(memory, closure);
+}
+
 export class CallFrame {
 	public next: CallFrame | null = null;
 	public readonly registers = new ValueSlots(0);
@@ -126,7 +131,7 @@ export class CallFrame {
 	public get closureAddress(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Closure); }
 	public set closureAddress(address: number) { this.controlMemory.writeRamRecordWord(this.controlOffset + FrameField.Closure, address); }
 	public get closure(): number { return this.closureAddress; }
-	public get captureCount(): number { return captureCount(this.controlMemory, this.closureAddress); }
+	public get captureCount(): number { return frameCaptureCount(this.controlMemory, this.closureAddress); }
 	public captureAddress(index: number): number {
 		return this.controlMemory.readRamRecordWord(this.closureAddress + CLOSURE_CAPTURE_WORDS + index * 4);
 	}

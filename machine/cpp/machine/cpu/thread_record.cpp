@@ -55,7 +55,7 @@ void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, 
 		case BuiltinFunctionId::SetFrameUpvalue: {
 			const u32 capture = static_cast<u32>(integerOperand(args[2]));
 			const u32 closure = field(FrameField::Closure);
-			if (capture >= ClosureRecord::captureCount(memory, closure))
+			if (capture >= frameCaptureCount(memory, closure))
 				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			const u32 cell = ClosureRecord::captureAddress(memory, closure, capture);
 			if (id == BuiltinFunctionId::GetFrameUpvalue) out.push_back(Upvalue::load(memory, cell));

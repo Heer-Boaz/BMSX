@@ -233,8 +233,7 @@ void CPU::reset() {
 		hardHalt();
 		return;
 	}
-	u32 systemResetClosure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-	pushFrame(systemResetClosure, {}, {});
+	enterVectorFrame(0u);
 	collectHeap();
 }
 
@@ -1899,13 +1898,36 @@ CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 func
 		return nullptr;
 	}
 	try {
-		u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-		return pushFrame(closure, {}, {}, FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
+		return enterVectorFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
 		return nullptr;
 	}
+}
+
+CallFrame* CPU::enterVectorFrame(u32 flags, std::optional<u32> epcWord) {
+	// Hardware enters the sampled Function directly, with no capture environment.
+	const auto& record = m_functionRecordLatch;
+	const FunctionEntry entry{record.codeAddress, record.numParams, record.maxStack, record.flags};
+	const auto admitted = ArgumentPlacement::forEntry(m_activeThread->stackTop(), 0, entry);
+	if (!admitted) throw LuaOutOfMemorySignal{};
+	const auto& placement = *admitted;
+	auto* frame = m_activeThread->acquireFrame();
+	auto* image = record.image;
+	const auto domain = image->executionDomainId;
+	const u32 address = record.address;
+	m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), (flags & FRAME_EXCEPTION) != 0u);
+	frame->executionImage = image;
+	frame->initializeControl({
+		address, entry.codeAddress, epcWord.value_or(entry.codeAddress), frameBankWord(domain) | flags,
+		placement.varargBase, 0, {}, placement.top(), 0u, placement.stackBase, static_cast<int>(placement.capacity),
+	});
+	frame->registers.clear(0, placement.top());
+	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
+	m_activeThread->enterFrame(frame);
+	latchActiveExecutionImage(domain, image);
+	return frame;
 }
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
@@ -2848,11 +2870,12 @@ Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
 
 int CPU::getFrameUpvalueCount(int frameIndex) const {
 	const u32 closure = ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Closure);
-	return static_cast<int>(ClosureRecord::captureCount(m_memory, closure));
+	return static_cast<int>(frameCaptureCount(m_memory, closure));
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	const u32 closure = ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Closure);
+	if (closure == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	return readClosureUpvalue(closure, upvalueIndex);
 }
 
@@ -2912,15 +2935,18 @@ void CPU::writeFrameExecution(
 	if (registerCount > static_cast<u32>(frame.stackCapacity())) {
 		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
 	}
-	if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
-		&& functionRecord.upvalueCount == 0u) {
-		frame.writeControl(FrameField::Closure, staticClosureForRecord(prototype));
-	} else {
-		const u32 count = frame.captureCount();
-		u32 replacement = allocateClosure(prototype, count, false);
-		for (u32 index = 0; index < count; ++index)
-			ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
-		frame.writeControl(FrameField::Closure, replacement);
+	// Publishing replacement code does not introduce a capture binding on a vector frame.
+	if (frame.closureAddress() != 0u) {
+		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
+			&& functionRecord.upvalueCount == 0u) {
+			frame.writeControl(FrameField::Closure, staticClosureForRecord(prototype));
+		} else {
+			const u32 count = frame.captureCount();
+			u32 replacement = allocateClosure(prototype, count, false);
+			for (u32 index = 0; index < count; ++index)
+				ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
+			frame.writeControl(FrameField::Closure, replacement);
+		}
 	}
 	frame.writeControl(FrameField::Function, functionRecord.address);
 	frame.executionImage = functionRecord.image;

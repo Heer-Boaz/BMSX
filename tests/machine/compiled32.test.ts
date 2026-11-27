@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
+import { seedTestCapturedClosure } from '../helpers/blua32';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -21,11 +21,10 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	cpu.reset();
 	const firstFrame = cpu.activeThread.currentFrame!, owner = firstFrame.executionImage;
 	const cells = new Uint32Array(1);
-	const closure = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
-	ClosureRecord.initializeRecord(cpu.memory, closure, cpu.captureClosureBinding(firstFrame.closure), false, cpu.gc.white(), 1);
+	const closure = seedTestCapturedClosure(cpu, firstFrame.functionAddress, cells);
 	firstFrame.closureAddress = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
-	const upvalue = cells[0]; ClosureRecord.setCaptureAddress(cpu.memory, closure, 0, upvalue);
+	const upvalue = cells[0];
 	const other = cpu.bindThread(cpu.createThread(0));
 	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {

@@ -4,6 +4,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 
 #include <algorithm>
@@ -82,10 +83,8 @@ struct Machine {
 		frame.writeControl(bmsx::FrameField::Top, 3);
 	}
 	void closure() {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[2], rom.textAddress + MAPPED_PAGE_BYTE_SIZE);
-		const auto value = valueClosure(cpu.rootThread()->currentFrame->closureAddress());
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], rom.textAddress);
-		cpu.rootThread()->currentFrame->registers.set(12, value);
+		const auto closure = test::seedTestCapturedClosure(cpu, rom.functionAddresses[2], {});
+		cpu.rootThread()->currentFrame->registers.set(12, valueClosure(closure));
 	}
 };
 
