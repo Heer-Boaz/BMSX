@@ -89,9 +89,9 @@ CPU::CPU(
 	, m_luaHeap(*this)
 	, m_stringPool(m_luaHeap, memory, m_heapAllocator)
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
-	, m_rootView(m_heap)
-	, m_irqView(m_heap)
-	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
+	, m_rootView(memory)
+	, m_irqView(memory)
+	, m_transferViews{Thread{memory}, Thread{memory}}
 	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
 	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
 	m_memory.setRamBusEnd(DYNAMIC_RAM_BASE);

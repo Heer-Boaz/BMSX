@@ -1,8 +1,10 @@
 #pragma once
 
+#include "machine/common/numeric.h"
 #include "machine/cpu/cpu.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace bmsx::test {
 
@@ -52,6 +54,83 @@ inline u32 allocateThreadRecordReference(CPU& cpu, u32 entry) {
 		}
 		recovery = gc.recoverAllocation(recovery, root);
 	}
+}
+
+inline u32 growReferenceThreadFrames(GcHeap& heap, u32 address, u32 capacity, u32 staged) {
+	auto& memory = heap.memory;
+	const u32 previous = ThreadRecord::count(memory, address, ThreadField::FrameCapacity);
+	const u32 oldBlock = ThreadRecord::read(memory, address, ThreadField::FrameBlock);
+	const u32 bytes = capacity * FRAME_CONTROL_BYTES;
+	const u32 block = staged ? staged : (oldBlock ? heap.arena.resizeBacking(oldBlock, bytes) : heap.arena.allocate(bytes, true));
+	if (!block) return 0;
+	const u32 offset = block & RAM_RECORD_WORD_MASK;
+	auto* destination = memory.ramData() + offset;
+	const u32 occupied = ThreadRecord::count(memory, address, ThreadField::FrameDepth) * FRAME_CONTROL_BYTES;
+	if (staged) std::memcpy(destination, memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK), occupied);
+	std::memset(destination + occupied, 0, bytes - occupied);
+	const u32 dirty = staged ? 0u : occupied;
+	memory.invalidateRamWrite(offset + dirty, bytes - dirty);
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameBlock), block);
+	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameCapacity), capacity);
+	if (staged) heap.arena.free(oldBlock);
+	heap.budget.resizeRecordCharge(previous * FRAME_CONTROL_BYTES, bytes);
+	return block;
+}
+
+inline void reserveReferenceThreadStorage(GcHeap& heap, u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
+	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
+	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
+	const auto& memory = heap.memory;
+	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
+	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
+	if (!valueBytes && frameBytes) {
+		auto recovery = heap.budget.admit(frameBytes - previousFrames, root, valueNil(), valueNil(), address);
+		if (GcHeap::pacedPhase(heap.phase())) heap.assistBeforeReservation(frameBytes, root, valueNil(), valueNil(), address);
+		for (;;) {
+			if (growReferenceThreadFrames(heap, address, frameCapacity, 0u)) return;
+			recovery = heap.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
+		}
+	}
+	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
+	auto recovery = requested > previous
+		? heap.budget.admit(requested - previous, root, valueNil(), valueNil(), address)
+		: LuaAllocationRecovery::CurrentOrFresh;
+	if (GcHeap::pacedPhase(heap.phase())) heap.assistBeforeReservation(requested, root, valueNil(), valueNil(), address);
+	auto& arena = heap.arena;
+	for (;;) {
+		// Stage control storage first: a successful realloc can consume the
+		// old stack. There must be no fallible reservation after that point.
+		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
+		if (!frameBytes || frames) {
+			if (!valueBytes || ThreadRecord::resizeStackBacking(heap, address, valueCapacity)) {
+				if (frames) growReferenceThreadFrames(heap, address, frameCapacity, frames);
+				return;
+			}
+			if (frames) arena.free(frames);
+		}
+		recovery = heap.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
+	}
+}
+
+inline void resizeReferenceThreadStack(GcHeap& heap, Thread& thread, size_t capacity) {
+	if (capacity == thread.stackCapacity) return;
+	if (capacity < thread.stackCapacity)
+		ThreadRecord::resizeStackBacking(heap, thread.address, static_cast<u32>(capacity));
+	else reserveReferenceThreadStorage(heap, thread.address, static_cast<u32>(capacity), 0u, valueNil());
+	thread.bindStack();
+}
+
+inline void reserveReferenceThreadFrame(GcHeap& heap, Thread& thread, size_t valueEnd) {
+	// The last control slot is reserved for an exception activation.
+	const u32 currentFrames = ThreadRecord::count(heap.memory, thread.address, ThreadField::FrameCapacity);
+	const size_t wanted = std::max<size_t>(THREAD_INITIAL_FRAMES, thread.frameDepth() + 2u);
+	if (valueEnd <= thread.stackCapacity && wanted <= currentFrames) return;
+	u32 frames = std::max(THREAD_INITIAL_FRAMES, currentFrames);
+	while (frames < wanted) frames *= 2;
+	const u32 valueChange = valueEnd <= thread.stackCapacity ? 0u : static_cast<u32>(std::max<size_t>(THREAD_INITIAL_VALUES, nextPowerOfTwo(valueEnd)));
+	const u32 frameChange = frames == currentFrames ? 0u : frames;
+	reserveReferenceThreadStorage(heap, thread.address, valueChange, frameChange, valueNil());
+	thread.bindStack();
 }
 
 } // namespace bmsx::test

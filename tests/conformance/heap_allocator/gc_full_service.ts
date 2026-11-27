@@ -1,3 +1,4 @@
+import { resizeThreadStackReference } from '../../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -74,7 +75,7 @@ try {
 			const control = management + HEAP_GC_CONTROL_OFFSET;
 			luaHeap.setCollectionTarget(luaHeap.capacity());
 			const owner = cpu.activeThread.address;
-			cpu.activeThread.resizeStack(512);
+			resizeThreadStackReference(cpu, cpu.activeThread, 512);
 			const weak = cpu.createTable(4, 0), metatable = cpu.createTable(0, 1), hidden = cpu.createTable(), floating = cpu.createTable();
 			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);

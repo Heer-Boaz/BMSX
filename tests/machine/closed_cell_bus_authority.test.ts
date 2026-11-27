@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
@@ -42,7 +43,7 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	const thread = cpu.activeThread, depth = thread.frameDepth;
 	// Make the actual CALL fit; an unrelated legitimate backing request
 	// must not obscure whether the called ROM address gets private access.
-	thread.reserveFrame(128);
+	reserveThreadFrameReference(cpu, thread, 128);
 	const caller = thread.currentFrame!;
 	assert.equal(caller.pc, entry.codeAddress + INSTRUCTION_BYTES);
 	const valueCapacity = memory.readRamRecordWord(thread.address + ThreadField.StackCapacity);

@@ -21,6 +21,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 
 #include <algorithm>
@@ -75,7 +76,7 @@ void capturedClosureRequiresFirmware() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		cpu.rootThread()->resizeStack(64);
+		test::resizeReferenceThreadStack(cpu.gcHeap(), *cpu.rootThread(), 64);
 		auto& parent = *cpu.rootThread()->frameAtDepth(0);
 		require(parent.stackCapacity() == 4 && parent.captureCount() == 0,
 			"capture admission uses the parent frame's reservation and capture count, not its larger Thread backing");
@@ -1056,7 +1057,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
-		cpu.activeThread()->resizeStack(64);
+		test::resizeReferenceThreadStack(cpu.gcHeap(), *cpu.activeThread(), 64);
 		auto& frame = *cpu.activeThread()->frameAtDepth(0);
 		require(frame.registers.size() == 1 && frame.captureCount() == 0, "the Thread reserve is larger than this activation");
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

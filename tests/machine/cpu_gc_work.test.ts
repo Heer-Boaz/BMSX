@@ -39,7 +39,7 @@ import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/he
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
-import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { allocateThreadRecordReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import { assistPhysicalPressureAtTickReference } from '../helpers/gc_vblank_reference';
 
 // Native measurements deliberately assemble an image without resident GC services.
@@ -126,9 +126,9 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 		const { cpu, memory } = createTestHeapServiceCpu(image), { gc, rootThread: thread } = cpu;
 		const retained = cpu.createTable(), doomed = allocateThreadRecordReference(cpu, 0);
 		if (reservedFrames !== THREAD_INITIAL_FRAMES) {
-			cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, reservedFrames, valueNil());
+			reserveThreadStorageReference(cpu, thread.address, 0, reservedFrames, valueNil());
 			thread.bindStack();
-			cpu.luaHeap.reserveThreadFrameStorage(doomed, 0, reservedFrames, valueThread(doomed));
+			reserveThreadStorageReference(cpu, doomed, 0, reservedFrames, valueThread(doomed));
 		}
 		thread.currentFrame!.registers.setTable(0, retained);
 		thread.currentFrame!.top = 1;

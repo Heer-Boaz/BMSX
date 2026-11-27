@@ -1,13 +1,11 @@
 #include "machine/cpu/thread.h"
-#include "machine/common/numeric.h"
-#include "machine/cpu/gc_heap.h"
 #include "machine/memory/memory.h"
 
 #include <algorithm>
 
 namespace bmsx {
-Thread::Thread(GcHeap& heap, u32 address) : address(address),
-	nativeRecord(address != 0u ? heap.memory.ramData() + (address & RAM_RECORD_WORD_MASK) : nullptr), heap(heap) {}
+Thread::Thread(Memory& memory, u32 address) : address(address),
+	nativeRecord(address != 0u ? memory.ramData() + (address & RAM_RECORD_WORD_MASK) : nullptr), memory(memory) {}
 
 void Thread::select(u32 selected) {
 	if (m_lastBoundFrame) {
@@ -16,7 +14,7 @@ void Thread::select(u32 selected) {
 		firstFrame = m_lastBoundFrame = nullptr;
 	}
 	address = selected;
-	nativeRecord = selected != 0u ? heap.memory.ramData() + (selected & RAM_RECORD_WORD_MASK) : nullptr;
+	nativeRecord = selected != 0u ? memory.ramData() + (selected & RAM_RECORD_WORD_MASK) : nullptr;
 	currentFrame = nullptr;
 	stack = {};
 	stackCapacity = 0;
@@ -27,16 +25,16 @@ void Thread::select(u32 selected) {
 #endif
 }
 
-void Thread::write(ThreadField field, u32 word) { heap.memory.writeRamRecordWord(address + static_cast<u32>(field), word); }
+void Thread::write(ThreadField field, u32 word) { memory.writeRamRecordWord(address + static_cast<u32>(field), word); }
 
 ThreadStatus Thread::status() const { return static_cast<ThreadStatus>(read(ThreadField::Status)); }
 void Thread::setStatus(ThreadStatus status) { write(ThreadField::Status, static_cast<u32>(status)); }
 u32 Thread::resumer() const { return read(ThreadField::Resumer); }
 void Thread::setResumer(u32 thread) { write(ThreadField::Resumer, thread); }
 
-Value Thread::error() const { return ThreadRecord::error(heap.memory, address); }
+Value Thread::error() const { return ThreadRecord::error(memory, address); }
 void Thread::setError(Value value) {
-	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::ErrorWord), valuePayload(value), static_cast<u32>(valueTag(value)));
+	memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::ErrorWord), valuePayload(value), static_cast<u32>(valueTag(value)));
 }
 
 
@@ -56,14 +54,12 @@ u32 Thread::frameControlAddress(u32 index) const {
 	return boundFrameOffset + index * FRAME_CONTROL_BYTES;
 }
 bool Thread::stackRequiresScalar() const {
-	// The heap owns all thread storage; the instruction bus cannot watch it.
-	// A native grant only needs to admit the physical Value/control layout.
 	return stack.mirrored() || static_cast<size_t>(stackTop()) > stack.size() || frameDepth() > boundFrameCapacity
 		|| stackByteLength() > MAIN_RAM_SIZE - stackOffset();
 }
 
 void Thread::bindStack(bool ifRelocated) {
-	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
+	const auto layout = ThreadRecord::storageLayout(memory, address);
 	if (ifRelocated && layout.valueCapacity == stackCapacity && layout.offset() == stackOffset()
 		&& layout.frameCapacity == boundFrameCapacity && layout.frameAddress(0) == boundFrameOffset) return;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -76,7 +72,7 @@ void Thread::bindStack(bool ifRelocated) {
 	size_t extent = 0;
 	for (auto* frame = currentFrame; frame; frame = frame->previous)
 		extent = std::max(extent, static_cast<size_t>(frame->stackBase() + frame->stackCapacity()));
-	stack = layout.slots(heap.memory, extent > stackCapacity);
+	stack = layout.slots(memory, extent > stackCapacity);
 	rebindRegisters();
 }
 
@@ -107,47 +103,9 @@ void Thread::bindFrameControls() {
 }
 
 void Thread::bindFrameControl(CallFrame& frame, u32 address, u32 index) {
-	frame.bindControl(heap.memory, address);
+	frame.bindControl(memory, address);
 	if (index >= boundFrameCapacity || FRAME_CONTROL_BYTES > MAIN_RAM_SIZE - frame.controlOffset)
 		frame.nativeControl = nullptr;
-}
-
-void Thread::resizeStack(size_t capacity, Value root) {
-	if (capacity == stackCapacity) return;
-	if (capacity < stackCapacity) ThreadRecord::resizeStackBacking(heap, address, static_cast<u32>(capacity));
-	else heap.budget.reserveThreadFrameStorage(address, static_cast<u32>(capacity), 0u, root);
-	const u32 offset = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
-	stackCapacity = capacity;
-	stack = ValueSpan(heap.memory, offset, offset + static_cast<u32>(capacity) * sizeof(u32), capacity);
-	rebindRegisters();
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	recordedWriteEpoch = 0;
-#endif
-}
-
-void Thread::reserveFrame(size_t valueEnd, Value root, bool exception) {
-	// The last control slot is reserved for an exception activation.
-	const size_t wanted = std::max<size_t>(THREAD_INITIAL_FRAMES, frameDepth() + (exception ? 1u : 2u));
-	if (valueEnd <= stackCapacity && wanted <= boundFrameCapacity) return;
-	u32 frames = std::max(THREAD_INITIAL_FRAMES, boundFrameCapacity);
-	while (frames < wanted) frames *= 2;
-	const u32 valueChange = valueEnd <= stackCapacity ? 0u : static_cast<u32>(std::max<size_t>(8, nextPowerOfTwo(valueEnd)));
-	const u32 frameChange = frames == boundFrameCapacity ? 0u : frames;
-	heap.budget.reserveThreadFrameStorage(address, valueChange, frameChange, root);
-	if (frameChange != 0u) {
-		boundFrameCapacity = frameChange;
-		boundFrameOffset = read(ThreadField::FrameBlock) & RAM_RECORD_WORD_MASK;
-		bindFrameControls();
-	}
-	if (valueChange != 0u) {
-		stackCapacity = valueChange;
-		const u32 offset = read(ThreadField::StackBlock) & RAM_RECORD_WORD_MASK;
-		stack = ValueSpan(heap.memory, offset, offset + valueChange * sizeof(u32), valueChange);
-		rebindRegisters();
-	}
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	recordedWriteEpoch = 0;
-#endif
 }
 
 CallFrame* Thread::frameNode(CallFrame* previous) {
@@ -218,7 +176,7 @@ void Thread::reserveFixedFrameViews() {
 void Thread::publishDepth(u32 depth) {
 	const u32 offset = (address + static_cast<u32>(ThreadField::FrameDepth)) & RAM_RECORD_WORD_MASK;
 	writeLE32(nativeRecord + static_cast<u32>(ThreadField::FrameDepth), depth);
-	heap.memory.invalidateRamWrite(offset, sizeof(u32));
+	memory.invalidateRamWrite(offset, sizeof(u32));
 }
 
 void Thread::leaveFrame() {

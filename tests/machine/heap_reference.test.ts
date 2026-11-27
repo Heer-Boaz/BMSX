@@ -1,3 +1,4 @@
+import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -174,7 +175,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const open = captureCpuCheckpoint(cpu);
 	const oldStack = frame.thread.stackOffset();
 	const oldCapacity = frame.thread.stackRegisters.capacity();
-	frame.thread.resizeStack(80);
+	resizeThreadStackReference(cpu, frame.thread, 80);
 	assert.notEqual(frame.thread.stackOffset(), oldStack);
 	frame.registers.setFloatBits(0, 0xffa12345);
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345));
@@ -187,7 +188,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	assert.equal(cpu.gc.cellRecordAddress(rawCell), 0, 'a header outside the allocator does not make a live GC cell');
 	assert.equal(cpu.readClosureUpvalue(closure, 0), valueFloatBits(0xffa12345), 'a raw open cell needs no host attachment');
 	memory.writeRamRecordWord(closure + CLOSURE_CAPTURE_WORDS, address);
-	frame.thread.resizeStack(oldCapacity);
+	resizeThreadStackReference(cpu, frame.thread, oldCapacity);
 	cpu.abortCompletionCall(0);
 	assert.equal(isOpen(memory, address), false);
 	assert.equal(memory.readRamRecordWord(address + UPVALUE_VALUE_WORD), 0xffa12345);

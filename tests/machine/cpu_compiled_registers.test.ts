@@ -14,7 +14,7 @@ import { IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { observeRegisterStores } from '../helpers/cpu_execution';
-import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { allocateThreadRecordReference, resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 
 test('both open and closed upvalue paths define output-only region bindings', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -38,7 +38,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
 	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
-	other.resizeStack(22);
+	resizeThreadStackReference(cpu, other, 22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
 		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {

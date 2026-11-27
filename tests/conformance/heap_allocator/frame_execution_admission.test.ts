@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -46,7 +47,7 @@ test('frame redirection uses backed slots without occupying a suspended child wi
 	const { cpu, executionAddressSpace, memory, scheduler } = runtime.machine;
 	admitTestHeapServiceCpu(cpu, executionAddressSpace);
 	const root = cpu.rootThread, parent = root.currentFrame!;
-	root.reserveFrame(32);
+	reserveThreadFrameReference(cpu, root, 32);
 	const cells = new Uint32Array(1), closure = seedTestCapturedClosure(cpu, original.address, cells);
 	const cell = cells[0], captured = valueFloatBits(0xffa12345), extra = valueFloatBits(0x80000000);
 	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, valuePayload(captured));

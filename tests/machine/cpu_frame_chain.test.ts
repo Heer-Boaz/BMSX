@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference, resizeThreadStackReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -45,13 +46,13 @@ test('thread growth resizes only the required storage lane', () => {
 	frame.registers.setInteger(0, 73);
 	const pc = frame.pc;
 
-	thread.resizeStack(64);
+	resizeThreadStackReference(cpu, thread, 64);
 	const stack = location(ThreadField.StackBlock);
 	assert.equal(location(ThreadField.StackCapacity), 64);
 	assert.equal(location(ThreadField.FrameBlock), oldFrames);
 	assert.equal(frame.registers.get(0), valueInteger(73));
 
-	thread.reserveFrame(64);
+	reserveThreadFrameReference(cpu, thread, 64);
 	const frames = location(ThreadField.FrameBlock);
 	assert.equal(location(ThreadField.FrameCapacity), 2 * oldFrameCapacity);
 	assert.equal(location(ThreadField.StackBlock), stack);
@@ -69,7 +70,7 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	frame.registers.setInteger(0, 73); frame.top = 1;
 	let target = heap.usedBytes() + (64 - oldValueCount) * THREAD_STACK_SLOT_BYTES + oldFrameCount * FRAME_CONTROL_BYTES;
 	heap.setCollectionTarget(target);
-	thread.reserveFrame(64);
+	reserveThreadFrameReference(cpu, thread, 64);
 	assert.notEqual(read(ThreadField.StackBlock), oldValues);
 	assert.notEqual(read(ThreadField.FrameBlock), oldFrames);
 	assert.equal(read(ThreadField.StackCapacity), 64);
@@ -80,7 +81,7 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	assert.equal(frame.pc, pc); assert.equal(frame.registers.get(0), valueInteger(73));
 
 	heap.setCollectionTarget(target += (128 - 64) * THREAD_STACK_SLOT_BYTES);
-	thread.resizeStack(128);
+	resizeThreadStackReference(cpu, thread, 128);
 	assert.equal(heap.usedBytes(), target);
 	assert.equal(heap.collectionTarget(), target);
 	assert.equal(cpu.gc.active(), false);
@@ -89,7 +90,7 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 test('full collection trims both Thread execution reservations with no replacement space', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, arena = cpu.heapAllocator, frame = thread.currentFrame!;
-	cpu.luaHeap.reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
+	reserveThreadStorageReference(cpu, thread.address, 64, 8, valueNil());
 	thread.bindStack();
 	frame.registers.setInteger(0, 73); frame.top = 1;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
@@ -106,7 +107,7 @@ test('full collection trims both Thread execution reservations with no replaceme
 	assert.equal(frame.registers.get(0), valueInteger(73));
 	assert.equal(frame.pc, pc);
 	const regrow = () => {
-		cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
+		reserveThreadStorageReference(cpu, thread.address, 0, 8, valueNil());
 		thread.bindStack();
 		assert.deepEqual(blocks.map(read), before);
 		assert.equal(frame.pc, pc);
@@ -126,17 +127,17 @@ test('full collection trims both Thread execution reservations with no replaceme
 test('a stack grows when only its increment fits and rewinds to the old tag plane', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, arena = cpu.heapAllocator;
-	thread.resizeStack(1536);
+	resizeThreadStackReference(cpu, thread, 1536);
 	const base = memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
 	while (arena.allocate(4096, true) !== 0) {}
-	thread.resizeStack(1024);
+	resizeThreadStackReference(cpu, thread, 1024);
 	assert.equal(arena.allocate(1536 * THREAD_STACK_SLOT_BYTES, true), 0);
 	const raw = valueFloatBits(0xffa12345);
 	thread.stackRegisters.set(1023, raw);
 	const history = new RamHistory();
 	history.start(memory);
 	const before = history.capture(memory, null), state = cpu.captureRuntimeState();
-	thread.resizeStack(1536);
+	resizeThreadStackReference(cpu, thread, 1536);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackBlock), base);
 	assert.equal(thread.stackRegisters.get(1023), raw);
 	assert.equal(thread.stackRegisters.get(1024), valueNil());
@@ -146,7 +147,7 @@ test('a stack grows when only its increment fits and rewinds to the old tag plan
 	cpu.restoreRuntimeState(state);
 	assert.equal(thread.stackRegisters.capacity(), 1024);
 	assert.equal(thread.stackRegisters.get(1023), raw);
-	thread.resizeStack(1536);
+	resizeThreadStackReference(cpu, thread, 1536);
 	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0);
 });
 
@@ -171,7 +172,7 @@ test('second-lane physical failure does not publish either replacement or charge
 	assert.equal(arena.allocate(valueBytes, true), 0, 'after staging the controls no replacement stack fits');
 	arena.free(available);
 	const occupied = arena.occupiedBytes();
-	assert.throws(() => thread.reserveFrame(newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+	assert.throws(() => reserveThreadFrameReference(cpu, thread, newValues), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 	assert.deepEqual(fields.map(read), before);
 	assert.equal(frame.registers.get(0), valueInteger(73));
 	assert.equal(cpu.luaHeap.usedBytes(), used);
@@ -184,7 +185,7 @@ test('reusing a frame view does not publish it before activation', () => {
 	thread.leaveFrame();
 	for (let index = 0; index < 8; ++index) {
 		const frame = thread.acquireFrame();
-		thread.reserveFrame(thread.stackRegisters.capacity());
+		reserveThreadFrameReference(cpu, thread, thread.stackRegisters.capacity());
 		frame.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0, 0, 0);
 		assert.equal(thread.frameDepth, index, 'preparation does not activate a frame');
 		thread.enterFrame(frame); frames.push(frame);

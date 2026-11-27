@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -67,7 +68,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	test(`live closures use the newly published entry and register layout (${backend})`, () => {
 		const { image, prefix, textAddress } = validImage();
 		const { cpu, memory, executionAddressSpace } = createTestHeapServiceCpu(image, backend);
-		cpu.rootThread.reserveFrame(16);
+		reserveThreadFrameReference(cpu, cpu.rootThread, 16);
 		const record = image.symbols.functionAddresses[0];
 		const closure = seedTestRomClosure(cpu, record);
 		const nextEntry = textAddress + (prefix + 4) * INSTRUCTION_BYTES;

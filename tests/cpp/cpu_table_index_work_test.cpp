@@ -476,7 +476,7 @@ void callableIndexUsesARealDetachedActivation() {
 			const Value key = op == OpCode::GETI ? valueInteger(1) : op == OpCode::GETT ? valueFloat(1.0f) : keyFor(cpu, KeyKind::String);
 			const u32 closure = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[2], {});
 			auto& thread = *cpu.activeThread();
-			thread.reserveFrame(thread.stackTop() + 8); // The exact grant measures placement, not acquiring storage.
+			test::reserveReferenceThreadFrame(cpu.gcHeap(), thread, thread.stackTop() + 8); // The exact grant measures placement, not acquiring storage.
 			auto* frame = cpu.activeThread()->currentFrame;
 			frame->registers.set(3, valueClosure(closure));
 			frame->writeControl(FrameField::Top, 0x4900000bu);
@@ -590,7 +590,7 @@ void suspendedIndexRestoresItsPlacement() {
 		meta.setStringKey(cpu.stringPool().intern("__index"), valueClosure(entry));
 		root.setMetatableAddress(meta.address());
 		auto* thread = cpu.rootThread();
-		cpu.luaHeap().reserveThreadFrameStorage(thread->address, 32u, 4u, valueClosure(entry));
+		test::reserveReferenceThreadStorage(cpu.gcHeap(), thread->address, 32u, 4u, valueClosure(entry));
 		thread->bindStack();
 		thread->currentFrame->registers.set(0, valueTable(root.address()));
 		thread->currentFrame->extendTop(1);

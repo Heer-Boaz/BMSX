@@ -68,7 +68,6 @@ inline Value error(const Memory& memory, u32 address) {
 }
 void invokeDiagnostic(Memory&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
 bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
-u32 growFrames(GcHeap&, u32 address, u32 capacity, u32 staged = 0u);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);
 }
 

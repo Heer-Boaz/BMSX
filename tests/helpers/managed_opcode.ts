@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from './thread_allocation_reference';
 import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -25,7 +26,7 @@ export function createManagedTestOpcodeCpu(image: ReturnType<typeof linkManagedT
 	const thread = machine.cpu.rootThread, { subject } = image;
 	const capacity = Math.max(1, subject.numParams, subject.maxStack);
 	const backing = Math.max(8, 1 << (32 - Math.clz32(capacity - 1)));
-	thread.reserveFrame(backing);
+	reserveThreadFrameReference(machine.cpu, thread, backing);
 	thread.currentFrame!.initializeControl(subject.address, subject.codeAddress, subject.codeAddress, false,
 		SYSTEM_EXECUTION_DOMAIN_ID, subject.numParams, 0, 0, 0, subject.numParams, 0, 0, capacity);
 	thread.stackTop = capacity;

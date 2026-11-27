@@ -1,3 +1,4 @@
+import { reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
@@ -93,7 +94,7 @@ for (const level of [0, 3] as const) {
 		const pc = frame.pc, depth = thread.frameDepth, occupied = cpu.luaHeap.usedBytes();
 		const values = oldValues * 2, frames = oldFrames * 2;
 		f.seedOracle();
-		oracle.luaHeap.reserveThreadFrameStorage(address, values, frames, valueClosure(f.closure));
+		reserveThreadStorageReference(oracle, address, values, frames, valueClosure(f.closure));
 		oracle.rebindRelocatedThread(address);
 		const history = new RamHistory();
 		history.start(memory);
@@ -133,13 +134,13 @@ for (const level of [0, 3] as const) {
 		// rounds to powers of two, and this exact small native extent overlaps tags.
 		f.seedOracle();
 		const values = read(ThreadField.StackCapacity) + 1;
-		oracle.luaHeap.reserveThreadFrameStorage(address, values, 0, valueClosure(f.closure));
+		reserveThreadStorageReference(oracle, address, values, 0, valueClosure(f.closure));
 		f.start(values, 0);
 		f.finish();
 		assert.equal(cpu.heapServiceResult(), 0);
 		f.compare();
 		const frames = read(ThreadField.FrameCapacity) * 2;
-		oracle.luaHeap.reserveThreadFrameStorage(address, 0, frames, valueClosure(f.closure));
+		reserveThreadStorageReference(oracle, address, 0, frames, valueClosure(f.closure));
 		f.start(0, frames);
 		f.finish();
 		assert.equal(cpu.heapServiceResult(), 0);
@@ -199,7 +200,7 @@ for (const level of [0, 3] as const) {
 		while (arena.allocate(24, true)) { /* exhaust remaining holes */ }
 		arena.free(staged);
 		f.seedOracle();
-		oracle.luaHeap.reserveThreadFrameStorage(address, values, frames, valueClosure(detached));
+		reserveThreadStorageReference(oracle, address, values, frames, valueClosure(detached));
 		const oldStack = read(ThreadField.StackBlock);
 		f.start(values, frames, detached);
 		for (let n = 0; n < 32768 && cpu.gc.phase() !== GcPhase.Strings; ++n) f.grant(32);
@@ -227,7 +228,7 @@ for (const level of [0, 3] as const) {
 		const values = read(ThreadField.StackCapacity) * 2;
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
 		f.seedOracle();
-		oracle.luaHeap.reserveThreadFrameStorage(address, values, 0, valueClosure(f.closure));
+		reserveThreadStorageReference(oracle, address, values, 0, valueClosure(f.closure));
 		const occupied = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
 		f.start(values, 0, f.closure, 1024);
 		for (let n = 0; n < 12000 && cpu.gc.epochWork() === 0; ++n) f.grant(1);
@@ -243,7 +244,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(arena.occupiedBytes(), oracle.heapAllocator.occupiedBytes());
 		assert.equal(read(ThreadField.StackBlock), oracle.memory.readRamRecordWord(address + ThreadField.StackBlock));
 		f.seedOracle();
-		assert.throws(() => oracle.luaHeap.reserveThreadFrameStorage(address, 0x100000, 0, valueClosure(f.closure)));
+		assert.throws(() => reserveThreadStorageReference(oracle, address, 0x100000, 0, valueClosure(f.closure)));
 		f.start(0x100000, 0);
 		f.finish();
 		assert.equal(cpu.heapServiceResult(), LUA_FAULT_REASON_OUT_OF_MEMORY + 1);

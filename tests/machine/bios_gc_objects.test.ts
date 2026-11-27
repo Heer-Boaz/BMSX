@@ -16,7 +16,7 @@ import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../helpers/managed_system';
-import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { allocateThreadRecordReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const OBJECTS = 'kernel/gc_objects';
@@ -189,7 +189,7 @@ for (const optLevel of [0, 3] as const) {
 		const unchangedThread = allocate(target => allocateThreadRecordReference(target, 0));
 		const liveThread = allocate(target => {
 			const address = allocateThreadRecordReference(target, 0);
-			target.luaHeap.reserveThreadFrameStorage(address, 32, 8, valueThread(address));
+			reserveThreadStorageReference(target, address, 32, 8, valueThread(address));
 			return address;
 		});
 		const table = allocate(target => target.createTable(4, 2));
@@ -277,7 +277,7 @@ for (const optLevel of [0, 3] as const) {
 		const successor = allocate(target => target.createTable(0, 0));
 		const thread = allocate(target => {
 			const address = allocateThreadRecordReference(target, 0);
-			target.luaHeap.reserveThreadFrameStorage(address, 32, 8, valueThread(address));
+			reserveThreadStorageReference(target, address, 32, 8, valueThread(address));
 			return address;
 		});
 		const growing = cpu.rootThread.address, published = control + OBJECT_HEAD;

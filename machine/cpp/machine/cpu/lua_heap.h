@@ -50,7 +50,6 @@ public:
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
-	void reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root);
 	// Admit the closure and its new cells before publishing any frame link.
 	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void releaseRecord(u32 address, u32 bytes);

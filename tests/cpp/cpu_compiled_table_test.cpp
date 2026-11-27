@@ -12,6 +12,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 
 #include <algorithm>
@@ -1918,7 +1919,7 @@ void nativeIdentityHashStoreReturnsWithinTheGrant() {
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto& thread = *lane.activeThread();
-		thread.reserveFrame(thread.stackTop() + methodArgs);
+		test::reserveReferenceThreadFrame(lane.gcHeap(), thread, thread.stackTop() + methodArgs);
 		const auto meta = asTable(lane.readFrameRegister(0, receiverSlot), lane.gcHeap()).metatableAddress();
 		TableRecord(lane.gcHeap(), meta).setStringKey(lane.stringPool().intern("__newindex"), lane.readFrameRegister(0, methodSlot));
 	}
@@ -2323,7 +2324,7 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 	for (auto* machine : {&native, &scalar}) {
 		auto& lane = machine->cpu;
 		auto& thread = *lane.activeThread();
-		thread.reserveFrame(thread.stackTop() + methodArgs);
+		test::reserveReferenceThreadFrame(lane.gcHeap(), thread, thread.stackTop() + methodArgs);
 		asTable(lane.readFrameRegister(0, fullSlot), lane.gcHeap()).setMetatableAddress(valuePayload(lane.readFrameRegister(0, metaSlot)));
 	}
 	for (const Value value : {raw, valueNil()}) {

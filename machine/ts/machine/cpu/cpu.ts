@@ -375,9 +375,9 @@ export class CPU implements MappedPageInvalidator {
 		const management = this.heapAllocator.managementOffset();
 		this.systemGlobalBank = new GlobalBank(memory, this.gc, management + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, this.gc, management + GLOBAL_BANK_OFFSET);
-		this.rootThread = new Thread(this.gc);
-		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
-		this.irqThread = new Thread(this.gc);
+		this.rootThread = new Thread(memory);
+		this.threadBanks = [this.rootThread, new Thread(memory), new Thread(memory)];
+		this.irqThread = new Thread(memory);
 		this.activeThread = this.rootThread;
 		this.memory.attachMappedPageInvalidator(this);
 	}

@@ -437,9 +437,9 @@ void collectorWorkIgnoresInactiveThreadFrames() {
 		auto& thread = *cpu.rootThread();
 		const u32 doomed = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 		if (reservedFrames != THREAD_INITIAL_FRAMES) {
-			cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0u, reservedFrames, valueNil());
+			test::reserveReferenceThreadStorage(cpu.gcHeap(), thread.address, 0u, reservedFrames, valueNil());
 			thread.bindStack();
-			cpu.luaHeap().reserveThreadFrameStorage(doomed, 0u, reservedFrames, valueThread(doomed));
+			test::reserveReferenceThreadStorage(cpu.gcHeap(), doomed, 0u, reservedFrames, valueThread(doomed));
 		}
 		auto& frame = *thread.currentFrame;
 		frame.registers.set(0, valueTable(retained)); frame.setTop(1);
@@ -1477,7 +1477,7 @@ void collectUnattachedThreadRecord() {
 	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
 	const u32 address = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	constexpr u32 capacity = 64u;
-	cpu.luaHeap().reserveThreadFrameStorage(address, capacity, 0, valueNil());
+	test::reserveReferenceThreadStorage(cpu.gcHeap(), address, capacity, 0, valueNil());
 	const u32 block = ThreadRecord::read(memory, address, ThreadField::StackBlock);
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
 	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameDepth), 1u);
@@ -1594,7 +1594,7 @@ void sweepUnselectsSuspendedTransferFrames() {
 	const auto run = [&](u32 count) {
 		const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
 		const u32 address = bmsx::test::allocateThreadRecordReference(cpu, entry);
-		if (count > 1u) cpu.luaHeap().reserveThreadFrameStorage(address, count * width, count + 1u, valueThread(address));
+		if (count > 1u) test::reserveReferenceThreadStorage(cpu.gcHeap(), address, count * width, count + 1u, valueThread(address));
 		const auto backing = ThreadRecord::storageLayout(memory, address);
 		const u32 pc = machine.rom.textAddress + 2u * INSTRUCTION_BYTES;
 		for (u32 index = 0; index < count; ++index) {
@@ -1638,7 +1638,7 @@ void sweepUnselectsSuspendedTransferFrames() {
 void stackShrinkAndAdmission() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto* thread = cpu.rootThread(); auto& frame = *thread->currentFrame;
-	thread->resizeStack(1024);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), *thread, 1024);
 	frame.registers.set(0, valueInteger(123)); frame.writeControl(bmsx::FrameField::Top, 1);
 	const u32 values = thread->stackOffset();
 	do { cpu.stepHeap(valueNil(), valueNil(), valueNil()); } while (cpu.collecting());
@@ -1651,7 +1651,7 @@ void stackShrinkAndAdmission() {
 	frame.registers.set(0, valueInteger(456));
 	require(thread->stack.get(frame.stackBase()) == valueInteger(456), "frame register view is rebound by the Thread owner");
 	frame.writeControl(bmsx::FrameField::StackCapacity, 200);
-	thread->reserveFrame(thread->stackCapacity);
+	test::reserveReferenceThreadFrame(cpu.gcHeap(), *thread, thread->stackCapacity);
 	auto* child = thread->acquireFrame();
 	child->writeControl(bmsx::FrameField::StackBase, 2); child->writeControl(bmsx::FrameField::StackCapacity, 8); child->writeControl(bmsx::FrameField::Top, 0);
 	child->writeControl(bmsx::FrameField::Closure, frame.readControl(bmsx::FrameField::Closure)); child->executionImage = frame.executionImage;
@@ -1663,7 +1663,7 @@ void stackShrinkAndAdmission() {
 	cpu.luaHeap().collectRuntime(valueNil(), valueNil(), valueNil(), thread->address);
 	require(thread->stackCapacity == 512, "growth admission keeps the allocation being grown stable");
 	cpu.luaHeap().setCollectionTarget(0);
-	thread->resizeStack(2048);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), *thread, 2048);
 	require(frame.registers.get(0) == valueInteger(456), "growth preserves values after prior shrink");
 	const auto state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	require(state == cpu.captureRuntimeState(),
@@ -1721,7 +1721,7 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 	const u32 frameIncrease = before.frameBytes();
 	u32 target = static_cast<u32>(heap.usedBytes()) + valueIncrease + frameIncrease;
 	heap.setCollectionTarget(target);
-	thread.reserveFrame(64);
+	test::reserveReferenceThreadFrame(cpu.gcHeap(), thread, 64);
 	const auto after = ThreadRecord::storageLayout(memory, thread.address);
 	require(after.block != before.block && after.frameBlock != before.frameBlock
 		&& after.valueCapacity == 64u && after.frameCapacity == 2u * before.frameCapacity,
@@ -1732,7 +1732,7 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 		"growth preserves the published caller and its Values");
 
 	heap.setCollectionTarget(target += (128u - 64u) * THREAD_STACK_SLOT_BYTES);
-	thread.resizeStack(128);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 128);
 	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
 		"standalone Value-window growth admits just the additional slots");
 }
@@ -1741,7 +1741,7 @@ void fullCollectionTrimsWithoutFreeBacking() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
 	auto& memory = cpu.memory(); auto& frame = *thread.currentFrame;
-	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
+	test::reserveReferenceThreadStorage(cpu.gcHeap(), thread.address, 64, 8, valueNil());
 	thread.bindStack();
 	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
@@ -1755,7 +1755,7 @@ void fullCollectionTrimsWithoutFreeBacking() {
 		"full collection halves the Value and frame reservations without a replacement chunk");
 	require(frame.registers.get(0) == valueInteger(73) && frame.readControl(FrameField::Pc) == pc,
 		"the live Value and frame survive trimming");
-	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
+	test::reserveReferenceThreadStorage(cpu.gcHeap(), thread.address, 0, 8, valueNil());
 	thread.bindStack();
 	const auto grown = ThreadRecord::storageLayout(memory, thread.address);
 	require(grown.frameBlock == before.frameBlock && grown.frameCapacity == 8 && frame.readControl(FrameField::Pc) == pc,
@@ -1765,14 +1765,14 @@ void fullCollectionTrimsWithoutFreeBacking() {
 void valueStackGrowsWithOnlyTheIncrementFree() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& thread = *cpu.rootThread(); auto& arena = cpu.heapAllocator();
-	thread.resizeStack(1536);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 1536);
 	const auto base = ThreadRecord::read(cpu.memory(), thread.address, ThreadField::StackBlock);
 	while (arena.allocate(4096, true)) {}
-	thread.resizeStack(1024);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 1024);
 	require(!arena.allocate(1536 * THREAD_STACK_SLOT_BYTES, true), "no full replacement fits");
 	const auto raw = valueFloatBits(0xffa12345);
 	thread.stack.set(1023, raw);
-	thread.resizeStack(1536);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 1536);
 	require(ThreadRecord::read(cpu.memory(), thread.address, ThreadField::StackBlock) == base
 		&& thread.stack.get(1023) == raw && thread.stack.get(1024) == valueNil() && thread.stack.get(1535) == valueNil(),
 		"growth consumes only adjacent space, moves retained tags, and clears the extension");
@@ -1799,7 +1799,7 @@ void failedThreadReplacementLeavesBothOwnedLanes() {
 	arena.free(retry);
 	const auto occupied = arena.occupiedBytes();
 	bool failed = false;
-	try { thread.reserveFrame(newValues); }
+	try { test::reserveReferenceThreadFrame(cpu.gcHeap(), thread, newValues); }
 	catch (const LuaOutOfMemorySignal&) { failed = true; }
 	const auto after = ThreadRecord::storageLayout(memory, thread.address);
 	require(failed && after.block == before.block && after.frameBlock == before.frameBlock

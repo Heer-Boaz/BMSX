@@ -1,8 +1,8 @@
-import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
+import { ThreadField, ThreadStatus, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
 import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK } from './call_state';
-import type { GcHeap } from './gc_heap';
-import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
+import type { Memory } from '../memory/memory';
+import { valueFromTag, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
@@ -22,7 +22,7 @@ export class Thread {
 	private boundFrameCapacity = 0;
 	private recordWordOffset = 0;
 	public address = 0;
-	public constructor(private readonly heap: GcHeap) {}
+	public constructor(private readonly memory: Memory) {}
 	public bindAddress(address: number): void {
 		if (this.lastBoundFrame !== null) {
 			this.lastBoundFrame.next = this.parkedFrameViews;
@@ -38,8 +38,8 @@ export class Thread {
 	// Parked host references must not keep retired image catalogs alive.
 	public dropParkedFrameViews(): void { this.parkedFrameViews = null; }
 
-	private read(field: ThreadField): number { return this.heap.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
-	private write(field: ThreadField, word: number): void { this.heap.memory.writeRamRecordWord(this.address + field, word); }
+	private read(field: ThreadField): number { return this.memory.ramWords[this.recordWordOffset + (field >>> 2)]; }
+	private write(field: ThreadField, word: number): void { this.memory.writeRamRecordWord(this.address + field, word); }
 
 	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
 	public set status(status: ThreadStatus) { this.write(ThreadField.Status, status); }
@@ -47,9 +47,9 @@ export class Thread {
 	public set resumer(address: number) { this.write(ThreadField.Resumer, address); }
 	public get entry(): number { return this.read(ThreadField.Entry); }
 	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }
-	public get error(): Value { return valueFromTag(this.heap.memory.readRamRecordByte(this.address + ThreadField.ErrorKind), this.read(ThreadField.ErrorWord)); }
+	public get error(): Value { return valueFromTag(this.memory.readRamRecordByte(this.address + ThreadField.ErrorKind), this.read(ThreadField.ErrorWord)); }
 	public set error(value: Value) {
-		this.heap.memory.writeRamRecordPair(this.address + ThreadField.ErrorWord, valuePayload(value), valueTag(value));
+		this.memory.writeRamRecordPair(this.address + ThreadField.ErrorWord, valuePayload(value), valueTag(value));
 	}
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
@@ -60,8 +60,7 @@ export class Thread {
 		return this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
 	}
 	public stackRequiresScalar(): boolean {
-		// The language heap is outside the instruction bus; only the
-		// physical register window matters to the compiled path.
+		// The compiled path uses the physical register window directly.
 		return this.stackRegisters.ramMirrored() || this.stackTop > this.stackRegisters.capacity()
 			|| this.frameDepth > this.boundFrameCapacity;
 	}
@@ -78,7 +77,7 @@ export class Thread {
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
-		this.stackRegisters.bindRam(this.heap.memory, block, capacity, false, extent > capacity);
+		this.stackRegisters.bindRam(this.memory, block, capacity, false, extent > capacity);
 		this.rebindFrames();
 	}
 
@@ -104,39 +103,11 @@ export class Thread {
 		}
 	}
 
-	public resizeStack(capacity: number, root = valueNil()): void {
-		const previous = this.stackRegisters.capacity();
-		if (capacity === previous) return;
-		if (capacity < previous) this.heap.threads.resizeStackBacking(this.address, capacity);
-		else this.heap.budget.reserveThreadFrameStorage(this.address, capacity, 0, root);
-		this.stackRegisters.bindRam(this.heap.memory, this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK, capacity);
-		this.rebindFrames();
-	}
-
 	public frameSpaceFits(valueEnd: number, controls = 2): boolean {
 		return valueEnd <= this.stackRegisters.capacity() && this.frameDepth + controls <= this.boundFrameCapacity;
 	}
 
-	public reserveFrame(values: number, root = valueNil(), exception = false): void {
-		const wanted = this.frameDepth + (exception ? 1 : 2);
-		let frames = Math.max(THREAD_INITIAL_FRAMES, this.boundFrameCapacity);
-		while (frames < wanted) frames *= 2;
-		const valueChange = values === this.stackRegisters.capacity() ? 0 : values;
-		const frameChange = frames === this.boundFrameCapacity ? 0 : frames;
-		if (valueChange === 0 && frameChange === 0) return;
-		this.heap.budget.reserveThreadFrameStorage(this.address, valueChange, frameChange, root);
-		if (frameChange !== 0) {
-			this.boundFrameCapacity = frameChange;
-			this.boundFrameOffset = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
-			this.bindFrameControls(this.boundFrameOffset);
-		}
-		if (valueChange !== 0) {
-			this.stackRegisters.bindRam(this.heap.memory, this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK, valueChange);
-			this.rebindFrames();
-		}
-	}
-
-	/** Prepare the first inactive node; stack growth can collect before entry. */
+	/** Bind the first inactive view to its physical frame slot. */
 	public acquireFrame(): CallFrame {
 		const existing = this.currentFrame === null ? this.firstFrame : this.currentFrame.next;
 		if (existing !== null) return existing;
@@ -145,7 +116,7 @@ export class Thread {
 		return frame;
 	}
 
-	/** Reserve the host views of the already fitted private service frame bank. */
+	/** Reserve host views for the physical exception frame bank. */
 	public reserveFrameViews(count: number): void {
 		let previous: CallFrame | null = null;
 		for (let index = 0; index < count; ++index) {
@@ -167,7 +138,7 @@ export class Thread {
 			frame.executionImage = null!;
 			frame.decodedPage = null;
 			frame.compilationEntry = true;
-		} else frame = new CallFrame(this, previous, this.heap);
+		} else frame = new CallFrame(this, previous, this.memory);
 		if (previous === null) this.firstFrame = frame;
 		else previous.next = frame;
 		this.lastBoundFrame = frame;
@@ -180,7 +151,7 @@ export class Thread {
 	}
 
 	private publishDepth(depth: number): void {
-		const memory = this.heap.memory, offset = (this.address + ThreadField.FrameDepth) & RAM_RECORD_WORD_MASK;
+		const memory = this.memory, offset = (this.address + ThreadField.FrameDepth) & RAM_RECORD_WORD_MASK;
 		writeLE32(memory.ramData(), offset, depth);
 		memory.invalidateRamWrite(offset, 4);
 	}

@@ -8,6 +8,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/value_bank.h"
@@ -606,7 +607,7 @@ void rawContextValues(CpuMachine& machine) {
 		&& globalExit.nextPc == globals.source[1].pc && watchedGlobal.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
 		&& ordinary.get(1) == valueInteger(99), "native watched global store leaves before changing either lane");
 	auto* owner = cpu.activeThread();
-	owner->resizeStack(32);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), *owner, 32);
 	auto captureRegisters = owner->stack.subspan(0, 16);
 	auto outerRegisters = owner->stack.subspan(16, 1);
 	CallFrame frame;
@@ -773,7 +774,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 void varargAliasesAndSideExits(CpuMachine& machine) {
 	constexpr u32 stackBase = DYNAMIC_RAM_BASE - RAM_BASE + 0x800;
 	ValueSpan stack(machine.memory, stackBase, stackBase + 48 * sizeof(u32), 48);
-	Thread thread(machine.cpu.gcHeap());
+	Thread thread(machine.memory);
 	thread.stack = stack;
 	CallFrame frame;
 	frame.thread = &thread;

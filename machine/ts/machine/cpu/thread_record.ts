@@ -145,25 +145,6 @@ export class ThreadRecords {
 		this.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
 		return true;
 	}
-	public growFrameBacking(address: number, capacity: number, staged = 0): number {
-		const memory = this.memory, ram = memory.ramData();
-		const oldBlock = memory.readRamRecordWord(address + ThreadField.FrameBlock);
-		const bytes = capacity * FRAME_CONTROL_BYTES;
-		const block = staged || (oldBlock !== 0 ? this.arena.resizeBacking(oldBlock, bytes) : this.arena.allocate(bytes, true));
-		if (block === 0) return 0;
-		const offset = block & RAM_RECORD_WORD_MASK, old = oldBlock & RAM_RECORD_WORD_MASK;
-		const oldCapacity = memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK;
-		const occupied = (memory.readRamRecordWord(address + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES;
-		if (staged !== 0) ram.copyWithin(offset, old, old + occupied);
-		ram.fill(0, offset + occupied, offset + bytes);
-		const dirty = staged !== 0 ? 0 : occupied;
-		memory.invalidateRamWrite(offset + dirty, bytes - dirty);
-		memory.writeRamRecordWord(address + ThreadField.FrameBlock, block);
-		memory.writeRamRecordWord(address + ThreadField.FrameCapacity, capacity);
-		if (staged !== 0) this.arena.free(oldBlock);
-		this.budget.resizeRecordCharge(oldCapacity * FRAME_CONTROL_BYTES, bytes);
-		return block;
-	}
 	public shrinkStack(address: number, layout: ThreadLayout): number {
 		let retained = 0;
 		if (layout.capacity > 16) {

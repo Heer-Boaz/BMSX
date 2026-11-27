@@ -6,6 +6,7 @@
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 
 #include <array>
@@ -60,7 +61,7 @@ struct Machine {
 #endif
 	}
 	Value bindHandler() {
-		cpu.activeThread()->reserveFrame(32); // These raw fixtures exercise placement after admission.
+		test::reserveReferenceThreadFrame(cpu.gcHeap(), *cpu.activeThread(), 32); // These raw fixtures exercise placement after admission.
 		return valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[2], {}));
 	}
 };

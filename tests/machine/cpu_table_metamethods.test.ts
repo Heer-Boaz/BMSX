@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
@@ -34,7 +35,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				{ firstWord: 7, wordCount: 1, numParams: length ? 2 : 3, maxStack: 8 },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.rootThread.reserveFrame(32); // This raw WIDE fixture exercises placement after admission.
+			reserveThreadFrameReference(cpu, cpu.rootThread, 32); // This raw WIDE fixture exercises placement after admission.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, opcodePc = base + 3 * INSTRUCTION_BYTES;
 			const tables = cpu.gc.tables, source = cpu.createTable(2, 2), forwarded = cpu.createTable();
@@ -124,7 +125,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 17, wordCount: 1, numParams: 2, maxStack: 2 },
 		], exceptionFunctionIndex: 1 });
 		const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-		cpu.rootThread.reserveFrame(16);
+		reserveThreadFrameReference(cpu, cpu.rootThread, 16);
 		const record = cpu.createTable(), meta = cpu.createTable();
 		const stringIndex = cpu.createTable(), stringMeta = cpu.createTable();
 		const field = valueString(cpu.stringPool.intern('present')), forwarded = valueString(cpu.stringPool.intern('forward receiver'));

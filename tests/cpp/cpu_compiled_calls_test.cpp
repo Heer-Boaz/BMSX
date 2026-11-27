@@ -83,7 +83,7 @@ void ownedValueStack() {
 	for (size_t i = 0; i < std::size(words); ++i) thread.stack.set(i, words[i]);
 	thread.stack.set(7, valueInteger(63));
 	thread.setStackTop(4);
-	thread.resizeStack(32);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 32);
 	require(thread.stackCapacity == 32 && thread.stackTop() == 4, "capacity growth does not activate any stack slots");
 	for (size_t index = 0; index < std::size(words); ++index)
 		require(thread.stack.get(index) == words[index], "stack relocation preserves raw Value bits");
@@ -91,11 +91,11 @@ void ownedValueStack() {
 	for (size_t index = 8; index < thread.stackCapacity; ++index)
 		require(thread.stack.get(index) == valueNil(), "growth initializes only the added allocation");
 	auto storage = thread.stack;
-	thread.resizeStack(32);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 32);
 	require(thread.stack.words() == storage.words() && thread.stack.tags() == storage.tags(), "unchanged capacity retains the existing allocation");
 	thread.setStackTop(0);
 	thread.stack.clear(0, thread.stackCapacity);
-	thread.resizeStack(8);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), thread, 8);
 	for (size_t index = 0; index < thread.stackCapacity; ++index)
 		require(thread.stack.get(index) == valueNil(), "a cleared root can restore a smaller empty backing");
 }
@@ -114,7 +114,7 @@ void reusableFrameChain() {
 	for (int depth = 1; depth <= 8; ++depth) {
 		auto* previous = thread.currentFrame;
 		auto* frame = thread.acquireFrame();
-		thread.reserveFrame(thread.stackCapacity);
+		test::reserveReferenceThreadFrame(cpu.gcHeap(), thread, thread.stackCapacity);
 		frame->initializeControl({});
 		require(frame->previous == previous && previous->next == frame && frame->thread == &thread,
 			"reusable nodes have stable identity and belong to their thread");
@@ -302,7 +302,7 @@ void haltedReceivingFrame() {
 		state.haltedUntilIrqThreadAddress = state.activeThreadAddress;
 		state.haltedUntilIrqFrameDepth = returning ? 1 : 2;
 		cpu.restoreRuntimeState(state);
-		cpu.activeThread()->reserveFrame(cpu.activeThread()->stackCapacity);
+		test::reserveReferenceThreadFrame(cpu.gcHeap(), *cpu.activeThread(), cpu.activeThread()->stackCapacity);
 		cpu.activeThread()->acquireFrame(); // The call gate can reuse an admitted node without allocating.
 		if (!scalar) {
 			cpu.prepareSystemNativeCode();
@@ -1044,7 +1044,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	CpuMachine machine(image, false);
 	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
-	machine.cpu.luaHeap().reserveThreadFrameStorage(machine.cpu.rootThread()->address, 64, 6, valueNil());
+	test::reserveReferenceThreadStorage(machine.cpu.gcHeap(), machine.cpu.rootThread()->address, 64, 6, valueNil());
 	machine.cpu.rootThread()->bindStack();
 	// Publish all three real translations without running unrelated guest
 	// loops to make the compiler worker discover the test entry points.

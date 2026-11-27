@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -47,7 +48,7 @@ function fixture(backend: CpuExecutionBackend) {
 	// Finish startup and admit the mailbox's frame before narrowing the bus
 	// to the synthetic records; startup uses the production backing service.
 	runGuestToHalt(cpu, 65_536);
-	cpu.activeThread.reserveFrame(128);
+	reserveThreadFrameReference(cpu, cpu.activeThread, 128);
 	cpu.clearHaltUntilIrq();
 	memory.setRamBusEnd(RAM_BASE + END);
 	const expected = ref.ramData().subarray(referenceControl, referenceControl + CONTROL_BYTES);

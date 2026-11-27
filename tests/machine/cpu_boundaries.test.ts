@@ -1,3 +1,4 @@
+import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -191,7 +192,7 @@ test('captured CLOSURE without verified firmware traps before allocating or open
 			closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 		}, RAM_CODE_FIXTURE_BYTES);
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.rootThread.resizeStack(64);
+		resizeThreadStackReference(cpu, cpu.rootThread, 64);
 		const parent = cpu.rootThread.frameAtDepth(0);
 		assert.equal(parent.stackCapacity, 4);
 		assert.equal(parent.captureCount, 0);

@@ -1,3 +1,4 @@
+import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -80,7 +81,7 @@ for (const level of [0, 3] as const) {
 
 	test(`VARARG only widens the window inline when its backing already fits at O${level}`, () => {
 		const f = fixture();
-		f.thread.resizeStack(128);
+		resizeThreadStackReference(f.cpu, f.thread, 128);
 		const block = f.readThread(ThreadField.StackBlock), occupied = f.arena.occupiedBytes();
 		assert.deepEqual(f.grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.VARARG] + args.length });
 		assert.equal(f.cpu.fixedInterruptActive(), false);

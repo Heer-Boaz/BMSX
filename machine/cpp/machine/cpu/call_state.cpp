@@ -1,8 +1,5 @@
 #include "machine/cpu/call_state.h"
-#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/thread.h"
-
-#include <algorithm>
 
 namespace bmsx {
 

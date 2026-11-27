@@ -8,6 +8,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 
 #include <algorithm>
@@ -203,12 +204,12 @@ void closedCellLivesInRam() {
 	const auto openRam = memory.captureSaveState();
 	const u32 oldStack = frame.thread->stackOffset();
 	const size_t oldCapacity = frame.thread->stackCapacity;
-	frame.thread->resizeStack(80);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), *frame.thread, 80);
 	require(frame.thread->stackOffset() != oldStack, "the fixture relocates the defining Thread's stack");
 	frame.registers.set(0, valueFloatBits(0xffa12345u));
 	require(cpu.readClosureUpvalue(closure, 0) == valueFloatBits(0xffa12345u),
 		"the open record follows the new stack block without being rewritten");
-	frame.thread->resizeStack(oldCapacity);
+	test::resizeReferenceThreadStack(cpu.gcHeap(), *frame.thread, oldCapacity);
 	cpu.abortCompletionCall(0);
 	require(!Upvalue::isOpen(memory, address) && memory.readRamRecordWord(address + UPVALUE_VALUE_WORD) == 0xffa12345u
 		&& memory.readRamRecordByte(address + UPVALUE_VALUE_TAG) == static_cast<u8>(ValueTag::Float),

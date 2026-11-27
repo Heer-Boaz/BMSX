@@ -24,7 +24,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
-import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
+import { allocateThreadRecordReference, reserveThreadFrameReference, resizeThreadStackReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 // Exercise the independent native oracle from an already admitted RAM state.
@@ -427,7 +427,7 @@ test('sweeping a suspended Thread withdraws its borrowed view and rebinds only t
 		const fn = rom.symbols.functionAddresses[1], pc = rom.image.functions[1].codeAddress;
 		const entry = seedTestRomClosure(cpu, fn);
 		const address = allocateThreadRecordReference(cpu, entry);
-		if (count > 1) cpu.luaHeap.reserveThreadFrameStorage(address, count * width, count + 1, valueThread(address));
+		if (count > 1) reserveThreadStorageReference(cpu, address, count * width, count + 1, valueThread(address));
 		const layout = new ThreadLayout();
 		gc.threads.readLayout(address, layout);
 		for (let index = 0; index < count; ++index) {
@@ -1088,7 +1088,7 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 	const address = allocateThreadRecordReference(cpu, 0);
 	memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
 	const wide = 64;
-	cpu.luaHeap.reserveThreadFrameStorage(address, wide, 0, valueNil());
+	reserveThreadStorageReference(cpu, address, wide, 0, valueNil());
 	const block = memory.readRamRecordWord(address + ThreadField.StackBlock);
 	memory.writeRamRecordWord(address + ThreadField.FrameDepth, 1);
 	memory.writeRamRecordWord(address + ThreadField.StackTop, 1);
@@ -1174,7 +1174,7 @@ test('a collected coroutine releases its object and stack allocations', () => {
 
 test('sweep shrinks cold stacks with hysteresis, preserves caller windows and rebinds views', () => {
 	const cpu = machine(), thread = cpu.rootThread, frame = thread.currentFrame!;
-	thread.resizeStack(1024);
+	resizeThreadStackReference(cpu, thread, 1024);
 	frame.registers.setInteger(0, 123); frame.top = 1;
 	const values = thread.stackRegisters.ramOffset();
 	do { cpu.gc.step(); } while (cpu.gc.active());
@@ -1193,7 +1193,7 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	assert.equal(thread.stackRegisters.getInteger(frame.stackBase), 456);
 	const parentCapacity = frame.stackCapacity;
 	frame.growRegisterWindow(200);
-	thread.reserveFrame(thread.stackRegisters.capacity());
+	reserveThreadFrameReference(cpu, thread, thread.stackRegisters.capacity());
 	const child = thread.acquireFrame();
 	child.controlMemory.writeRamRecordPair(child.controlOffset + FrameField.StackBase, 2, 8);
 	child.top = 0;
@@ -1208,7 +1208,7 @@ test('sweep shrinks cold stacks with hysteresis, preserves caller windows and re
 	cpu.luaHeap.setCollectionTarget(0);
 	cpu.luaHeap.collectRuntime(valueNil(), valueNil(), valueNil(), thread.address);
 	assert.equal(thread.stackRegisters.capacity(), 512, 'growth admission keeps its old allocation size stable');
-	thread.resizeStack(grown);
+	resizeThreadStackReference(cpu, thread, grown);
 	assert.equal(frame.registers.getInteger(0), 456);
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	assert.deepEqual(cpu.captureRuntimeState(), state);

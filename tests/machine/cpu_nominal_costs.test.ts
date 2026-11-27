@@ -1,3 +1,4 @@
+import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compiledBlockSupports, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
@@ -134,7 +135,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		], exceptionFunctionIndex: 1 });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.frameAtDepth(0);
 		const pc = frame.pc;
-		cpu.rootThread.resizeStack(32); // Reserve the exception frame independently of the opcode.
+		resizeThreadStackReference(cpu, cpu.rootThread, 32); // Reserve the exception frame independently of the opcode.
 		seedTestRomClosure(cpu, image.vectors.exceptionFunctionAddress);
 		const before = cpu.heapAllocator.occupiedBytes();
 		frame.registers.setInteger(0, 17);

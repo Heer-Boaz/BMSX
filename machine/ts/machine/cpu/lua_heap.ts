@@ -6,8 +6,6 @@ import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
 import { valueNil, type Value } from './value';
-import { FRAME_CONTROL_BYTES } from './call_state';
-import { THREAD_CONTROL_COUNT_MASK, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
@@ -163,41 +161,6 @@ export class LuaHeap {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
-		}
-	}
-
-	/** A call can need both storage lanes. Acquire them before changing either raw descriptor. */
-	public reserveThreadFrameStorage(address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
-		const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
-		const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-		const memory = this.cpu.memory;
-		const previousValues = valueCapacity !== 0 ? memory.readRamRecordWord(address + ThreadField.StackCapacity) * THREAD_STACK_SLOT_BYTES : 0;
-		const previousFrames = frameCapacity !== 0
-			? (memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES : 0;
-		if (valueBytes === 0 && frameBytes !== 0) {
-			let recovery = this.admit(frameBytes - previousFrames, root, valueNil(), valueNil(), address);
-			this.assistBeforeReservation(frameBytes, root, valueNil(), valueNil(), address);
-			while (this.cpu.gc.threads.growFrameBacking(address, frameCapacity) === 0)
-				recovery = this.cpu.gc.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
-			return;
-		}
-		const requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
-		let recovery = requested > previous
-			? this.admit(requested - previous, root, valueNil(), valueNil(), address)
-			: LuaAllocationRecovery.CurrentOrFresh;
-		this.assistBeforeReservation(requested, root, valueNil(), valueNil(), address);
-		const arena = this.cpu.heapAllocator;
-		for (;;) {
-			const frames = frameBytes === 0 ? 0 : arena.allocate(frameBytes, true);
-			if (frameBytes === 0 || frames !== 0) {
-				const threads = this.cpu.gc.threads;
-				if (valueBytes === 0 || threads.resizeStackBacking(address, valueCapacity)) {
-					if (frames !== 0) threads.growFrameBacking(address, frameCapacity, frames);
-					return;
-				}
-				if (frames !== 0) arena.free(frames);
-			}
-			recovery = this.cpu.gc.recoverAllocation(recovery, root, valueNil(), valueNil(), address);
 		}
 	}
 

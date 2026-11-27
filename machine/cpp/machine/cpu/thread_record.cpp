@@ -91,27 +91,6 @@ bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	return true;
 }
 
-u32 growFrames(GcHeap& heap, u32 address, u32 capacity, u32 staged) {
-	auto& memory = heap.memory;
-	const u32 previous = count(memory, address, ThreadField::FrameCapacity);
-	const u32 oldBlock = read(memory, address, ThreadField::FrameBlock);
-	const u32 bytes = capacity * FRAME_CONTROL_BYTES;
-	const u32 block = staged ? staged : (oldBlock ? heap.arena.resizeBacking(oldBlock, bytes) : heap.arena.allocate(bytes, true));
-	if (!block) return 0;
-	const u32 offset = block & RAM_RECORD_WORD_MASK;
-	auto* destination = memory.ramData() + offset;
-	const u32 occupied = count(memory, address, ThreadField::FrameDepth) * FRAME_CONTROL_BYTES;
-	if (staged) std::memcpy(destination, memory.ramData() + (oldBlock & RAM_RECORD_WORD_MASK), occupied);
-	std::memset(destination + occupied, 0, bytes - occupied);
-	const u32 dirty = staged ? 0u : occupied;
-	memory.invalidateRamWrite(offset + dirty, bytes - dirty);
-	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameBlock), block);
-	memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameCapacity), capacity);
-	if (staged) heap.arena.free(oldBlock);
-	heap.budget.resizeRecordCharge(previous * FRAME_CONTROL_BYTES, bytes);
-	return block;
-}
-
 u32 shrinkStack(GcHeap& heap, u32 address, const ThreadStorageLayout& layout) {
 	auto& memory = heap.memory;
 	const u32 depth = count(memory, address, ThreadField::FrameDepth);

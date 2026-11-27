@@ -1,3 +1,4 @@
+import { reserveThreadFrameReference, resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
@@ -80,13 +81,13 @@ test('actual ValueSlots and Thread frame windows use five-byte backing', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] }));
 	const thread = cpu.rootThread, first = thread.currentFrame!;
 	first.growRegisterWindow(8);
-	first.registers.setFloatBits(3, 0xffc00000); thread.resizeStack(64);
+	first.registers.setFloatBits(3, 0xffc00000); resizeThreadStackReference(cpu, thread, 64);
 	assert.equal(thread.stackRegisters.byteLength(), 320); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
-	thread.reserveFrame(thread.stackRegisters.capacity());
+	reserveThreadFrameReference(cpu, thread, thread.stackRegisters.capacity());
 	const second = thread.acquireFrame();
 	second.initializeControl(0, 0, 0, false, -1, 0, 0, 0, 0, 0, 0, 4, 4);
 	thread.enterFrame(second);
-	second.registers.setInteger(0, 123); thread.resizeStack(96);
+	second.registers.setInteger(0, 123); resizeThreadStackReference(cpu, thread, 96);
 	assert.equal(second.registers.getInteger(0), 123); assert.equal(first.registers.get(3), v.valueFloatBits(0xffc00000));
 	thread.leaveFrame(); assert.equal(thread.currentFrame, first);
 });

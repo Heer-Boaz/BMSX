@@ -12,6 +12,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 #include "support/table_allocation_reference.h"
 
 #include <fstream>
@@ -282,7 +283,7 @@ void directCalls() {
 	for (auto* fixture : {&generated, &scalar}) {
 		auto& cpu = fixture->runtime.machine.cpu;
 		auto& thread = *cpu.rootThread();
-		cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0u, 4u, valueNil());
+		test::reserveReferenceThreadStorage(cpu.gcHeap(), thread.address, 0u, 4u, valueNil());
 		thread.bindStack();
 		thread.reserveFixedFrameViews();
 		for (auto index : {3u, 4u}) test::seedTestRomClosure(cpu, fixture->rom.functionAddresses[index]);

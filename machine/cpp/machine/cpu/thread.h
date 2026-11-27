@@ -5,7 +5,7 @@
 namespace bmsx {
 
 struct Thread {
-	Thread(GcHeap& heap, u32 address = 0u);
+	Thread(Memory& memory, u32 address = 0u);
 	void select(u32 address);
 	Thread(const Thread&) = delete;
 	Thread& operator=(const Thread&) = delete;
@@ -30,11 +30,9 @@ struct Thread {
 	i32 stackTop() const { return static_cast<i32>(read(ThreadField::StackTop) & FRAME_WINDOW_MASK); }
 	void setStackTop(i32 top) { write(ThreadField::StackTop, static_cast<u32>(top)); }
 	CallFrame* frameAtDepth(size_t depth) const;
-	void resizeStack(size_t capacity, Value root = valueNil());
 	bool frameSpaceFits(size_t valueEnd, size_t controls = 2u) const {
 		return valueEnd <= stackCapacity && frameDepth() + controls <= boundFrameCapacity;
 	}
-	void reserveFrame(size_t valueEnd, Value root = valueNil(), bool exception = false);
 	void bindStack(bool ifRelocated = false);
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
@@ -116,7 +114,7 @@ private:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 recordedWriteEpoch = 0;
 #endif
-	GcHeap& heap;
+	Memory& memory;
 };
 
 } // namespace bmsx

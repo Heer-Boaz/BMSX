@@ -178,41 +178,6 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	}
 }
 
-void LuaHeap::reserveThreadFrameStorage(u32 address, u32 valueCapacity, u32 frameCapacity, Value root) {
-	const u32 valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
-	const u32 frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-	const auto& memory = m_cpu.memory();
-	const u32 previousValues = valueCapacity != 0u ? ThreadRecord::read(memory, address, ThreadField::StackCapacity) * THREAD_STACK_SLOT_BYTES : 0u;
-	const u32 previousFrames = frameCapacity != 0u ? ThreadRecord::count(memory, address, ThreadField::FrameCapacity) * FRAME_CONTROL_BYTES : 0u;
-	if (!valueBytes && frameBytes) {
-		auto recovery = admit(frameBytes - previousFrames, root, valueNil(), valueNil(), address);
-		assistBeforeReservation(frameBytes, root, valueNil(), valueNil(), address);
-		for (;;) {
-			if (ThreadRecord::growFrames(m_cpu.gcHeap(), address, frameCapacity)) return;
-			recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
-		}
-	}
-	const u32 requested = valueBytes + frameBytes, previous = previousValues + previousFrames;
-	auto recovery = requested > previous
-		? admit(requested - previous, root, valueNil(), valueNil(), address)
-		: LuaAllocationRecovery::CurrentOrFresh;
-	assistBeforeReservation(requested, root, valueNil(), valueNil(), address);
-	auto& arena = m_cpu.heapAllocator();
-	for (;;) {
-		// Stage control storage first: a successful realloc can consume the
-		// old stack. There must be no fallible reservation after that point.
-		const u32 frames = frameBytes ? arena.allocate(frameBytes, true) : 0u;
-		if (!frameBytes || frames) {
-			if (!valueBytes || ThreadRecord::resizeStackBacking(m_cpu.gcHeap(), address, valueCapacity)) {
-				if (frames) ThreadRecord::growFrames(m_cpu.gcHeap(), address, frameCapacity, frames);
-				return;
-			}
-			if (frames) arena.free(frames);
-		}
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root, valueNil(), valueNil(), address);
-	}
-}
-
 u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
 	const u32 bytes = closureRecordBytes(captures, latched);
 	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;

@@ -28,7 +28,7 @@ import type { ProgramModule } from '../../toolchain/ts/lua/compiler/passes/modul
 import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
-import { allocateThreadRecordReference } from './thread_allocation_reference';
+import { allocateThreadRecordReference, reserveThreadFrameReference } from './thread_allocation_reference';
 
 const testBiosUtilityModules = ['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'];
 const testSystemAssets = {
@@ -129,13 +129,13 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	}
 
 	const raw = cpu.activeThread, root = allocateThreadRecordReference(cpu, 0);
-	const adopted = new Thread(gc);
+	const adopted = new Thread(memory);
 	adopted.bindAddress(root);
 	adopted.bindStack();
 	adopted.status = ThreadStatus.Running;
 	const end = raw.stackTop;
 	const valueCapacity = Math.max(8, 1 << (32 - Math.clz32(end - 1)));
-	adopted.reserveFrame(valueCapacity);
+	reserveThreadFrameReference(cpu, adopted, valueCapacity);
 	const first = adopted.acquireFrame().controlOffset, source = raw.currentFrame!.controlOffset;
 	memory.ramData().copyWithin(first, source, source + FRAME_CONTROL_BYTES);
 	memory.invalidateRamWrite(first, FRAME_CONTROL_BYTES);

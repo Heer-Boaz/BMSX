@@ -150,10 +150,10 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	auto& memory = cpu.memory();
 	const u32 root = provisionManagedFixture(cpu, boot.staticEnd);
 	installFixtureOperands(cpu, addresses, boot);
-	Thread prepared(cpu.gcHeap(), root);
+	Thread prepared(memory, root);
 	prepared.bindStack();
 	const int end = entry ? entry->stackBase + entry->capacity : raw.stackTop();
-	prepared.reserveFrame(end, valueNil());
+	reserveReferenceThreadFrame(cpu.gcHeap(), prepared, end);
 	const u32 control = ThreadRecord::storageLayout(memory, root).frameAddress(0u);
 	if (entry) entry->writeWords([&](FrameField field, u32 word) {
 		memory.writeRamRecordWord(control + static_cast<u32>(field), word);

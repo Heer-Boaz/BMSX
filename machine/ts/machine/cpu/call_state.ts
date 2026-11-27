@@ -6,7 +6,6 @@ import { ValueSlots } from './value_slots';
 import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
-import type { GcHeap } from './gc_heap';
 import { SYSTEM_EXECUTION_DOMAIN_ID, type ExecutionDomainId } from '../../spec/blua32/execution_domain';
 import { decodeValueCount, encodeFixedValueCount } from '../../spec/blua32/opcode';
 
@@ -78,10 +77,7 @@ export class CallFrame {
 	public get stackCapacity(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.StackCapacity) & FRAME_WINDOW_MASK; }
 	public controlOffset = 0;
 
-	public readonly controlMemory: Memory;
-	public constructor(public readonly thread: Thread, public previous: CallFrame | null, heap: GcHeap) {
-		this.controlMemory = heap.memory;
-	}
+	public constructor(public readonly thread: Thread, public previous: CallFrame | null, public readonly controlMemory: Memory) {}
 
 	public get savedExecutionBank(): ExecutionDomainId {
 		const flags = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.Flags);
