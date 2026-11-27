@@ -164,6 +164,9 @@ inline void seedManagedFixture(CPU& cpu, ExecutionAddressSpace& addresses,
 	}
 	prepared.setStackTop(end);
 	memory.writeRamRecordWord(root + static_cast<u32>(ThreadField::FrameDepth), 1u);
+	// The fixed exception bank reuses the physical reset window after handoff.
+	memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::FrameDepth), 0u);
+	memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::StackTop), 0u);
 	state.rootThreadAddress = state.activeThreadAddress = state.completionThreadAddress = root;
 	cpu.restoreRuntimeState(state);
 }
