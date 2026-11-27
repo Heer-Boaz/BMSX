@@ -166,6 +166,13 @@ or returns, the resumer becomes `running` again.
 
 **`coroutine.create(fn) → thread`** returns exactly one thread value. The entry `fn` must be a language function closure. A built-in function value is not accepted merely because it is callable. Omitting `fn`, passing nil, or passing another value raises `Invalid argument.` Creation leaves the thread unstarted and publicly `"suspended"`.
 
+The resident memory routine reserves the Thread record, its initial Value
+slots and its initial frame controls before the caller receives the Thread.
+Collection and retry during creation use ordinary CPU cycles while devices
+continue to advance. The entry closure remains reachable throughout the call.
+If space still cannot be reserved, creation raises `OUT_OF_MEMORY` without
+returning a Thread.
+
 **`coroutine.running() → thread, is_main`** returns exactly two values: the active thread and a boolean. The boolean is true in the main thread and false in a created coroutine. Keep thread values as language values; the operations below require a thread, not an address or numeric identifier.
 
 **`coroutine.status(thread) → string`** returns exactly one of these strings:

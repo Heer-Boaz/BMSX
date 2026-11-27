@@ -318,6 +318,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
+	private readonly coroutineCreateArgs: number[];
 	public readonly stringPool: StringPool;
 	private indexKey!: StringId;
 	private lengthKey!: StringId;
@@ -450,6 +451,7 @@ export class CPU implements MappedPageInvalidator {
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
 		this.heapService = new HeapService(this.gc);
 		this.tableGrowthArgs = [this.heapAllocator.managementOffset(), 0, 0, 0];
+		this.coroutineCreateArgs = [this.heapAllocator.managementOffset(), 0, 0];
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -4357,13 +4359,6 @@ export class CPU implements MappedPageInvalidator {
 				}
 				this.stringIndexTable = args.registers.get(args.base);
 				break;
-			case BuiltinFunctionId.CoroutineCreate: {
-				const closure = args.length !== 0 && args.registers.getTag(args.base) === ValueTag.Closure
-					? this.gc.closureRecordAddress(args.registers.getPayload(args.base)) : 0;
-				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				out.push(valueThread(this.createThread(closure)));
-				break;
-			}
 			case BuiltinFunctionId.CoroutineRunning:
 				out.push(valueThread(this.activeThread.address));
 				out.push(valueBool(this.activeThread === this.rootThread));
@@ -4415,6 +4410,19 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.XPCall:
 				throw new Error('Protected calls execute as Lua CPU microcode.');
 		}
+	}
+
+	private beginCoroutineCreate(entry: Value, kind: HeapServiceBiosCallKind, target: number, resultWord: number): void {
+		const closure = valueTag(entry) === ValueTag.Closure ? this.gc.closureRecordAddress(valuePayload(entry)) : 0;
+		if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const services = this.systemImage.heapServiceFunctions;
+		if (services === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const args = this.coroutineCreateArgs;
+		args[1] = closure;
+		args[2] = this.remainingDeviceCycles();
+		this.armBiosCall(kind, target, resultWord);
+		this.beginHeapService(services[HeapServiceOperation.CreateCoroutine], args);
+		this.requestYield();
 	}
 
 	public createThread(entry: number): number {
@@ -4553,6 +4561,11 @@ export class CPU implements MappedPageInvalidator {
 			this.runCoroutineTransfer(id, frame, callBase, returnCount, argumentBase, argCount, detached);
 			return;
 		}
+		if (id === BuiltinFunctionId.CoroutineCreate) {
+			const entry = argCount !== 0 ? (detached ?? frame.registers).get(argumentBase) : valueNil();
+			this.beginCoroutineCreate(entry, HeapServiceBiosCallKind.Call, callBase, returnCount);
+			return;
+		}
 		const builtinArgs = this.acquireRegisterBuiltinArgs();
 		const results = this.acquireBuiltinResults();
 		try {
@@ -4634,6 +4647,11 @@ export class CPU implements MappedPageInvalidator {
 					const base = implicit ? 0 : this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 					this.startProtectedCall(builtinId, caller, base, implicit ? DISCARD_CALL_RESULT : 0,
 						argumentBase, argumentCount, true, detached);
+					return;
+				}
+				if (builtinId === BuiltinFunctionId.CoroutineCreate) {
+					const entry = argumentCount !== 0 ? (detached ?? caller.registers).get(argumentBase) : valueNil();
+					this.beginCoroutineCreate(entry, HeapServiceBiosCallKind.Protected, continuationIndex, 0);
 					return;
 				}
 				const builtinArgs = this.acquireRegisterBuiltinArgs();

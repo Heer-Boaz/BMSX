@@ -384,15 +384,14 @@ test('a suspended Thread scan follows the real CLOSURE, closing JMP and RET life
 });
 
 test('sweeping a suspended coroutine withdraws its borrowed view and rebinds only the needed prefix', () => {
-	const depth = 8, rootWords = 9, bodyWords = 4;
+	const depth = 8, rootWords = 5, bodyWords = 4;
 	const text = new Uint8Array((rootWords + bodyWords * depth) * 4);
 	const emit = (word: number, op: OpCode, a = 0, b = 0, c = 0) => writeInstruction(text, word, op, a, b, c);
-	emit(0, OpCode.GETSYS); emit(1, OpCode.WIDE); emit(2, OpCode.CLOSURE, 1);
-	emit(3, OpCode.CALL, 0, 2, 2); emit(4, OpCode.GETSYS, 2, 0, 1); emit(5, OpCode.MOV, 3);
-	emit(6, OpCode.CALL, 2, 2, 3); emit(7, OpCode.HALT); emit(8, OpCode.RET, 0, 1);
+	emit(0, OpCode.GETSYS, 2); emit(1, OpCode.MOV, 3);
+	emit(2, OpCode.CALL, 2, 2, 3); emit(3, OpCode.HALT); emit(4, OpCode.RET, 0, 1);
 	const functions = [{ firstWord: 0, wordCount: rootWords, maxStack: 8 }];
-	const closureRelocations = [{ wordIndex: 2, functionIndex: 1 }];
-	const systemGlobalNames = ['create', 'resume', 'yield'];
+	const closureRelocations: { wordIndex: number; functionIndex: number }[] = [];
+	const systemGlobalNames = ['resume', 'yield'];
 	for (let i = 0; i < depth; ++i) {
 		const start = rootWords + i * bodyWords;
 		functions.push({ firstWord: start, wordCount: bodyWords, maxStack: 2 });
@@ -401,14 +400,14 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 			emit(start + 2, OpCode.CALL, 0, 1, 1);
 			closureRelocations.push({ wordIndex: start + 1, functionIndex: i + 2 });
 		} else {
-			emit(start, OpCode.GETSYS, 0, 0, 2); emit(start + 1, OpCode.KSMI, 1, 0, 37);
+			emit(start, OpCode.GETSYS, 0, 0, 1); emit(start + 1, OpCode.KSMI, 1, 0, 37);
 			emit(start + 2, OpCode.CALL, 0, 2, 1);
 		}
 		emit(start + 3, OpCode.RET, 0, 1);
 	}
 	const rom = linkRawTestSystemBlua32({ text, functions, systemGlobalNames, closureRelocations });
 	const { cpu } = createTestSystemCpu(rom);
-	const primitives = [BuiltinFunctionId.CoroutineCreate, BuiltinFunctionId.CoroutineResume, BuiltinFunctionId.CoroutineYield];
+	const primitives = [BuiltinFunctionId.CoroutineResume, BuiltinFunctionId.CoroutineYield];
 	for (let i = 0; i < primitives.length; ++i)
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern(systemGlobalNames[i]), valueBuiltinFunction(primitives[i]));
 	const observation: { bank?: typeof cpu.rootThread; head?: typeof cpu.rootThread.firstFrame; maxDepth: number; rebound: boolean } = {
@@ -427,6 +426,8 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 		return false;
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	const run = () => {
+		const entry = seedTestRomClosure(cpu, rom.symbols.functionAddresses[1]);
+		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 		for (const { functionIndex } of closureRelocations) seedTestRomClosure(cpu, rom.symbols.functionAddresses[functionIndex]);
 		for (let i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) === RunResult.Halted && cpu.activeThread === cpu.rootThread) return;
@@ -1128,22 +1129,15 @@ test('a rooted raw Thread frame retains its table edge and is collected without 
 });
 
 test('a collected coroutine releases its object and stack allocations', () => {
-	const text = new Uint8Array(6 * 4);
-	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
-	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const text = new Uint8Array(2 * 4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
 	const image = linkRawTestSystemBlua32({
-		text, systemGlobalNames: ['create'],
-		functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1, maxStack: 2 }],
-		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
+		text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }, { firstWord: 1, wordCount: 1, maxStack: 2 }],
 	});
 	const { cpu } = createTestSystemCpu(image);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
-	cpu.runUntilDepth(0, 1000);
+	const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+	cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
 	const address = valuePayload(frame.registers.get(0));
 	const bytes = gc.allocationBytes(address);

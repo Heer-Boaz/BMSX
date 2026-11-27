@@ -2,10 +2,9 @@ module<const>
 
 -- Source basis: 027fe97a6495926028a4cea6ef8cd15af8f5d191.
 -- C/H: C++ collector; A: native arena; S: String latch; O: object layout.
--- The stopped final mark consumes one allowance. A resolved Table write
--- may additionally supply its own three temporary roots; other local host
--- scopes are not part of this guest entry. Ordinary published roots remain
--- independent of the Table operand cut.
+-- The stopped final mark consumes one allowance. An operation can supply
+-- explicit temporary roots independently of the ordinary published roots.
+-- Ambient native scopes are not part of this guest entry.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:1261-1262,1270
 local control_layout<const> = require('kernel/gc_control') -- C:713,764-767
 local allocator<const> = require('kernel/dlmalloc') -- C:793 A:49-50
@@ -39,7 +38,7 @@ struct atomic_context
 	pending_string_work: u32 -- C:772,1273 S:438-440
 end
 
-local atomic_work<const> = function(state, limit, operands_offset) -- C:716-724,731
+local atomic_work<const> = function(state, limit, scope) -- C:716-724,731
 	local control<const>, arena<const> = state + layout.control_offset, state + layout.arena_offset -- C:1270,1276
 	local metadata<const>, context<const> = state + layout.metadata_offset, state + layout.trace_context_offset -- C:1262,1276
 	local quantum<const>: *atomic_context = layout.ram_base + context -- C:718,1264-1265
@@ -61,8 +60,8 @@ local atomic_work<const> = function(state, limit, operands_offset) -- C:716-724,
 			return work -- C:726
 		end
 	end
-	if operands_offset ~= 0 and stage < clear_weak then -- C:731; after completed visits, even if work already reached limit
-		local added<const> = operands.mark_table_operand_roots(control, arena, metadata, operands_offset) -- C:732-735; exact resolved operation roots, no ambient host scope
+	if scope ~= 0 and stage < clear_weak then -- C:731; after completed visits, even if work already reached limit
+		local added<const> = operands.mark_operand_roots(control, arena, metadata, scope) -- C:732-735; exact resolved operation roots, no ambient host scope
 		work = work + quantum.pending_string_work + added -- C:735
 		quantum.pending_string_work = 0 -- C:735 S:440
 	end

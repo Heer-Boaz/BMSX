@@ -1441,25 +1441,21 @@ void protectedReturnPlacementCycles() {
 void coroutineReturnPlacementCycles() {
 	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6}) {
 		test::Blua32TestImage image;
-		image.text.resize(9 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::GETSYS), 4, 0, 1);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::MOV), 5, 0, 0);
-		writeInstruction(image.text, 6, static_cast<u8>(OpCode::CALL), 4, 2, wanted);
-		writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 3, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 12}, {.firstWord = 8, .wordCount = 1, .maxStack = 2}};
-		image.systemGlobalNames = {"create", "resume"};
-		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+		image.text.resize(5 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 4, 0, 0);
+		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 5, 0, 0);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 4, 2, wanted);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 3, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 12}, {.firstWord = 4, .wordCount = 1, .maxStack = 2}};
+		image.systemGlobalNames = {"resume"};
 		CpuMachine machine(image, scalar);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("create"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+		const u32 entry = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
+		machine.cpu.rootThread()->currentFrame->registers.set(0, valueThread(machine.cpu.luaHeap().allocateThreadRecord(entry)));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		const u32 root = machine.cpu.activeThread()->address;
-		while (machine.cpu.activeThread()->address == root) machine.cpu.runUntilDepth(0, 1);
+		for (int step = 0; step < 8 && machine.cpu.activeThread()->address == root; ++step) machine.cpu.runUntilDepth(0, 1);
+		require(machine.cpu.activeThread()->address != root, "the prepared Thread starts its real activation");
 		machine.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(17)); machine.cpu.activeThread()->currentFrame->registers.set(1, valueInteger(29));
 		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded, "coroutine RET ends the current execution slice");
 		const int placed = wanted == 0 ? 3 : wanted - 1;

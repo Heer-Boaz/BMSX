@@ -82,6 +82,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/vblank_irq', 'before_cart_irq'],
 		['kernel/gc_full', 'collect_full'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
+		['kernel/thread_create', 'create_coroutine'],
 		['kernel/bios_create_table', 'create_table'],
 		['kernel/gc_collect_step', 'collect_step'],
 	];

@@ -13,7 +13,7 @@ namespace bmsx::test {
 // checkpoint just as a normally restored machine binds its derived index.
 // This setup must not admit a CALL, which could reserve extra stack storage
 // or intentionally fail in a stack-admission test.
-inline void seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = SYSTEM_EXECUTION_DOMAIN_ID) {
+inline u32 seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = SYSTEM_EXECUTION_DOMAIN_ID) {
 	auto& memory = cpu.memory();
 	const auto bus = domain == SYSTEM_EXECUTION_DOMAIN_ID ? MAPPED_BUS_MASTER_CPU : mappedBusSignalsForCartridgeSlot(domain);
 	Span<const u8> bytes;
@@ -27,6 +27,7 @@ inline void seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain =
 	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, true, false);
 	cpu.gcHeap().publishObject(record);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	return record;
 }
 
 } // namespace bmsx::test

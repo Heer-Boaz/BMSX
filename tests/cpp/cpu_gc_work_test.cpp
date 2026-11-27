@@ -1524,23 +1524,16 @@ void collectUnattachedThreadRecord() {
 
 void sweepCoroutineRecord() {
 	test::Blua32TestImage program;
-	program.text.resize(6 * INSTRUCTION_BYTES);
-	writeInstruction(program.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-	writeInstruction(program.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(program.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(program.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 2);
-	writeInstruction(program.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
-	writeInstruction(program.text, 5, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	program.functions = {{.firstWord=0, .wordCount=5, .maxStack=8}, {.firstWord=5, .wordCount=1, .maxStack=2}};
-	program.systemGlobalNames = {"create"};
-	program.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-	Machine machine(program);
-	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
-	cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
-	require(cpu.runUntilDepth(0, 1000) == RunResult::Halted, "coroutine fixture reaches HALT");
+	program.text.resize(2 * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	program.functions = {{.firstWord=0, .wordCount=1, .maxStack=8}, {.firstWord=1, .wordCount=1, .maxStack=2}};
+	Machine machine(program); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
+	const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+	const u32 address = cpu.luaHeap().allocateThreadRecord(entry);
 	auto& frame = *cpu.rootThread()->currentFrame;
-	const u32 address = valuePayload(frame.registers.get(0));
-	require(gc.threadRecordAddress(address) == address, "coroutine builtin published a physical Thread reference");
+	frame.registers.set(0, valueThread(address));
+	require(gc.threadRecordAddress(address) == address, "fixture published a physical Thread reference");
 	const auto bytes = gc.allocationBytes(address);
 	frame.registers.set(1, valueClosure(ThreadRecord::read(cpu.memory(), address, ThreadField::Entry)));
 	frame.writeControl(FrameField::Top, 2);
@@ -1561,18 +1554,16 @@ void sweepCoroutineRecord() {
 }
 
 void sweepUnselectsSuspendedTransferFrames() {
-	constexpr u32 depth = 8u, rootWords = 9u, bodyWords = 4u;
+	constexpr u32 depth = 8u, rootWords = 5u, bodyWords = 4u;
 	test::Blua32TestImage program;
 	program.text.resize((rootWords + bodyWords * depth) * INSTRUCTION_BYTES);
 	const auto emit = [&](u32 word, OpCode op, u32 a = 0u, u32 b = 0u, u32 c = 0u) {
 		writeInstruction(program.text, word, static_cast<u8>(op), a, b, c);
 	};
-	emit(0, OpCode::GETSYS); emit(1, OpCode::WIDE); emit(2, OpCode::CLOSURE, 1);
-	emit(3, OpCode::CALL, 0, 2, 2); emit(4, OpCode::GETSYS, 2, 0, 1); emit(5, OpCode::MOV, 3);
-	emit(6, OpCode::CALL, 2, 2, 3); emit(7, OpCode::HALT); emit(8, OpCode::RET, 0, 1);
+	emit(0, OpCode::GETSYS, 2); emit(1, OpCode::MOV, 3);
+	emit(2, OpCode::CALL, 2, 2, 3); emit(3, OpCode::HALT); emit(4, OpCode::RET, 0, 1);
 	program.functions.push_back({.firstWord=0, .wordCount=rootWords, .maxStack=8});
-	program.closureRelocations.push_back({2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)});
-	program.systemGlobalNames = {"create", "resume", "yield"};
+	program.systemGlobalNames = {"resume", "yield"};
 	for (u32 i = 0; i < depth; ++i) {
 		const u32 start = rootWords + i * bodyWords;
 		program.functions.push_back({.firstWord=start, .wordCount=bodyWords, .maxStack=2});
@@ -1581,13 +1572,13 @@ void sweepUnselectsSuspendedTransferFrames() {
 			emit(start + 2, OpCode::CALL, 0, 1, 1);
 			program.closureRelocations.push_back({start + 1, test::blua32TestFunctionAddress(RomImageDomain::System, i + 2u)});
 		} else {
-			emit(start, OpCode::GETSYS, 0, 0, 2); emit(start + 1, OpCode::KSMI, 1, 0, 37);
+			emit(start, OpCode::GETSYS, 0, 0, 1); emit(start + 1, OpCode::KSMI, 1, 0, 37);
 			emit(start + 2, OpCode::CALL, 0, 2, 1);
 		}
 		emit(start + 3, OpCode::RET, 0, 1);
 	}
 	Machine machine(program); auto& cpu = machine.cpu;
-	const std::array primitives{BuiltinFunctionId::CoroutineCreate, BuiltinFunctionId::CoroutineResume, BuiltinFunctionId::CoroutineYield};
+	const std::array primitives{BuiltinFunctionId::CoroutineResume, BuiltinFunctionId::CoroutineYield};
 	for (size_t i = 0; i < primitives.size(); ++i)
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern(program.systemGlobalNames[i]), cpu.createBuiltinFunction(primitives[i]));
 	struct Observation { CPU& cpu; Thread* bank = nullptr; CallFrame* head = nullptr; size_t maxDepth = 0; bool rebound = false; } observation{cpu};
@@ -1607,6 +1598,8 @@ void sweepUnselectsSuspendedTransferFrames() {
 		return false;
 	}, &observation, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	const auto run = [&] {
+		const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
+		cpu.rootThread()->currentFrame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
 		for (const auto& relocation : program.closureRelocations) test::seedTestRomClosure(cpu, relocation.functionAddress);
 		for (int i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread()) return;

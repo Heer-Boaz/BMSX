@@ -18,26 +18,26 @@ struct mark_quantum_context
 	limit: u32 -- C:1264
 end
 
-local finish_atomic<const> = function(management, operands_offset, account_quanta) -- C:689-712
+local finish_atomic<const> = function(management, scope, account_quanta) -- C:689-712
 	local control<const> = management + layout.control_offset -- C:1270
-	local scoped = operands_offset -- C:697; 0 means the invocation has no explicit Table roots
+	local scoped = scope -- C:697; 0 means the invocation has no explicit operand roots
 	local work = 0 -- C:696
 	repeat -- C:698
 		local chunk<const> = atomic.atomic_work(management, step_words, scoped) -- C:699,711
 		if account_quanta then gc.account_epoch_work(control, chunk) end -- C:712; scheduled maintenance publishes each source quantum
 		work = work + chunk -- C:699
-		scoped = operands_offset ~= 0 and mark.internal.remark_stage(control) <= atomic.internal.weak_visits and operands_offset or 0 -- C:700 H:157,214
+		scoped = scope ~= 0 and mark.internal.remark_stage(control) <= atomic.internal.weak_visits and scope or 0 -- C:700 H:157,214
 	until gc.internal.phase(control) ~= atomic_phase -- C:701
 	if not account_quanta then gc.account_epoch_work(control, work) end -- C:702; stopped Direct and scoped passes publish once
 	return work -- C:702,712
 end
 
-local step<const> = function(management, limit, growing_thread, compact_threads, operands_offset) -- C:1006-1010,1229,1241-1242
+local step<const> = function(management, limit, growing_thread, compact_threads, scope) -- C:1006-1010,1229,1241-1242
 	local control<const> = management + layout.control_offset -- C:1270
 	local current<const> = gc.internal.phase(control) -- C:1008,1019,1093,1108
 	if current == atomic_phase then -- C:1008,1241
-		if operands_offset ~= 0 then -- C:1007-1008; Table admission uses the synchronous source pass
-			local work<const> = finish_atomic(management, operands_offset, false) -- C:689-702,1008
+		if scope ~= 0 then -- C:1007-1008; explicit operand roots use the synchronous source pass
+			local work<const> = finish_atomic(management, scope, false) -- C:689-702,1008
 			return work -- C:702,1008
 		end
 		local work<const> = atomic.atomic_work(management, limit, 0) -- C:712,1241
@@ -54,14 +54,14 @@ local step<const> = function(management, limit, growing_thread, compact_threads,
 	local capacity<const> = admission.heap_capacity(arena) -- C:1257
 	trace.limit = limit -- C:1264
 	local work<const> = mark.mark_quantum(control, arena, management + layout.metadata_offset, management + layout.remark_head_offset,
-		management + layout.root_banks_offset, management + layout.trace_context_offset, *mode_key, capacity, operands_offset) -- C:1093-1158,1250-1258
+		management + layout.root_banks_offset, management + layout.trace_context_offset, *mode_key, capacity, scope) -- C:1093-1158,1250-1258
 	return work -- C:1045
 end
 
-local finish_epoch<const> = function(management, limit, growing_thread, compact_threads, operands_offset) -- C:1225-1229,911,918
+local finish_epoch<const> = function(management, limit, growing_thread, compact_threads, scope) -- C:1225-1229,911,918
 	local work = 0 -- C:911,915-918
 	repeat -- C:1229
-		work = work + step(management, limit, growing_thread, compact_threads, operands_offset) -- C:1229; keep work, not the former synthetic charge
+		work = work + step(management, limit, growing_thread, compact_threads, scope) -- C:1229; keep work, not the former synthetic charge
 	until not gc.internal.active(management + layout.control_offset) -- C:1229
 	return work -- C:911; unsigned difference between the final and initial epoch counters
 end

@@ -625,34 +625,33 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 	const auto put = [&](u32 word, OpCode op, int a, int b, int c) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
 	};
-	put(0, OpCode::CALL, 0, 2, 2); // create
-	put(1, OpCode::MOV, 3, 12, 0); put(2, OpCode::MOV, 4, 0, 0); put(3, OpCode::MOV, 5, 13, 0);
-	put(4, OpCode::CALL, 3, 3, 4); // resume(receiver) takes status, receiver, key
-	put(5, OpCode::MOV, 3, 12, 0); put(6, OpCode::MOV, 4, 0, 0); put(7, OpCode::K1, 5, 0, 0);
-	put(8, OpCode::CALL, 3, 3, 3); // resume(1) supplies the result of the in-flight index
-	put(9, OpCode::HALT, 0, 0, 0);
+	put(0, OpCode::MOV, 3, 12, 0); put(1, OpCode::MOV, 4, 0, 0); put(2, OpCode::MOV, 5, 13, 0);
+	put(3, OpCode::CALL, 3, 3, 4); // resume(receiver) takes status, receiver, key
+	put(4, OpCode::MOV, 3, 12, 0); put(5, OpCode::MOV, 4, 0, 0); put(6, OpCode::K1, 5, 0, 0);
+	put(7, OpCode::CALL, 3, 3, 3); // resume(1) supplies the result of the in-flight index
+	put(8, OpCode::HALT, 0, 0, 0);
 	put(64, OpCode::K1, 10, 0, 0);
 	put(65, OpCode::WIDE, 0, 0, 0); put(66, OpCode::GETFIELD, 0, 0, 0);
 	put(67, OpCode::RET, 0, 2, 0);
 	image.constants = {std::string("field")};
-	image.functions = {{.firstWord=0, .wordCount=10, .maxStack=16}, {.firstWord=64, .wordCount=4, .numParams=1, .maxStack=12}};
+	image.functions = {{.firstWord=0, .wordCount=9, .maxStack=16}, {.firstWord=64, .wordCount=4, .numParams=1, .maxStack=12}};
 	Machine generated(image, false), scalar(image, true);
 	const std::array machines{&generated, &scalar};
 	for (auto* m : machines) {
 		auto& cpu = m->cpu;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[1], m->rom.textAddress + 64 * INSTRUCTION_BYTES);
 		auto* frame = cpu.activeThread()->currentFrame;
-		frame->registers.set(1, valueClosure(frame->closureAddress()));
+		const u32 entry = frame->closureAddress();
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		root.setMetatableAddress(meta.address());
-		frame->registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+		frame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
 		frame->registers.set(12, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		frame->registers.set(13, valueTable(root.address()));
 		frame->extendTop(14);
 	}
-	for (int i = 0; i < 7; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
+	for (int i = 0; i < 6; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
 	const u32 rootThread = generated.cpu.rootThread()->address;
 	require(generated.cpu.activeThread()->address == rootThread
 		&& generated.cpu.readFrameRegister(0, 3) == valueBool(true)

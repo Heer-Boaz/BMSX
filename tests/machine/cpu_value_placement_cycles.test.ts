@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -121,26 +121,23 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`coroutine yield and resume each charge the actual receiving range (${backend})`, () => {
-		const text = new Uint8Array(13 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-		writeInstruction(text, 4, OpCode.GETSYS, 4, 0, 1);
-		writeInstruction(text, 5, OpCode.MOV, 5, 0, 0);
-		writeInstruction(text, 6, OpCode.CALL, 4, 2, 6);
-		writeInstruction(text, 7, OpCode.JMP, 0, 63, 60, 255);
-		writeInstruction(text, 8, OpCode.GETSYS, 0, 0, 2);
-		writeInstruction(text, 9, OpCode.LOADK, 1, 0, 0);
-		writeInstruction(text, 10, OpCode.LOADK, 2, 0, 1);
-		writeInstruction(text, 11, OpCode.CALL, 0, 3, 3);
-		writeInstruction(text, 12, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['create', 'resume', 'yield'], functions: [
-			{ firstWord: 0, wordCount: 8, maxStack: 12 }, { firstWord: 8, wordCount: 5, maxStack: 8 },
-		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 4, 2, 6);
+		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
+		writeInstruction(text, 4, OpCode.GETSYS, 0, 0, 1);
+		writeInstruction(text, 5, OpCode.LOADK, 1, 0, 0);
+		writeInstruction(text, 6, OpCode.LOADK, 2, 0, 1);
+		writeInstruction(text, 7, OpCode.CALL, 0, 3, 3);
+		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['resume', 'yield'], functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 12 }, { firstWord: 4, wordCount: 5, maxStack: 8 },
+		] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		for (const [name, id] of [['create', BuiltinFunctionId.CoroutineCreate], ['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
+		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+		for (const [name, id] of [['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
 		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
 		assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');
@@ -151,7 +148,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.equal(cpu.activeThread, cpu.rootThread);
 		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [valueBool(true), valueInteger(17), valueInteger(29), valueNil(), valueNil()]);
 		const root = cpu.rootThread.currentFrame!;
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, root.functionAddress, image.image.functions[0].codeAddress + 4 * INSTRUCTION_BYTES);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, root.functionAddress, image.image.functions[0].codeAddress);
 		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2, 'resuming the fixed two-result yield fills both missing values');
@@ -159,25 +156,21 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.deepEqual([child.currentFrame!.registers.get(0), child.currentFrame!.registers.get(1)], [valueNil(), valueNil()]);
 	});
 	for (const vararg of [false, true]) test(`first coroutine resume charges copied formals and retained extras (${backend}, vararg=${vararg})`, () => {
-		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-		writeInstruction(text, 4, OpCode.GETSYS, 4, 0, 1);
-		writeInstruction(text, 5, OpCode.MOV, 5, 0, 0);
-		writeInstruction(text, 6, OpCode.CALL, 4, 5, 1);
-		writeInstruction(text, 7, OpCode.JMP, 0, 63, 63, 255);
-		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['create', 'resume'], functions: [
-			{ firstWord: 0, wordCount: 8, maxStack: 16 }, { firstWord: 8, wordCount: 1, numParams: 2, maxStack: 8, isVararg: vararg },
-		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 4, 5, 1);
+		writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
+		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['resume'], functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, numParams: 2, maxStack: 8, isVararg: vararg },
+		] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
-		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
-		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 6 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
+		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
+		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
 		for (let i = 0; i < 3; ++i) cpu.rootThread.currentFrame!.registers.setInteger(6 + i, 17 + i);
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2 - (vararg ? 1 : 0));
@@ -240,31 +233,28 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`coroutine close charges open captures and its selected result range (${backend})`, () => {
-	const text = new Uint8Array(17 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-	writeInstruction(text, 4, OpCode.GETSYS, 4, 0, 1);
-	writeInstruction(text, 5, OpCode.MOV, 5, 0, 0);
-	writeInstruction(text, 6, OpCode.CALL, 4, 2, 1);
-	writeInstruction(text, 7, OpCode.GETSYS, 4, 0, 3);
-	writeInstruction(text, 8, OpCode.MOV, 5, 0, 0);
-	writeInstruction(text, 9, OpCode.CALL, 4, 2, 5);
-	writeInstruction(text, 10, OpCode.JMP, 0, 63, 63, 255);
-	writeInstruction(text, 11, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 12, OpCode.CLOSURE, 2, 0, 0);
-	writeInstruction(text, 13, OpCode.GETSYS, 4, 0, 2);
-	writeInstruction(text, 14, OpCode.CALL, 4, 1, 1);
-	writeInstruction(text, 15, OpCode.RET, 0, 1, 0);
-	writeInstruction(text, 16, OpCode.RET, 0, 1, 0);
-	const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['create', 'resume', 'yield', 'close'], functions: [
-		{ firstWord: 0, wordCount: 11, maxStack: 12 }, { firstWord: 11, wordCount: 5, maxStack: 160 },
-		{ firstWord: 16, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-	], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 12, functionIndex: 2 }] });
+	const text = new Uint8Array(13 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
+	writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
+	writeInstruction(text, 2, OpCode.CALL, 4, 2, 1);
+	writeInstruction(text, 3, OpCode.GETSYS, 4, 0, 2);
+	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
+	writeInstruction(text, 5, OpCode.CALL, 4, 2, 5);
+	writeInstruction(text, 6, OpCode.JMP, 0, 63, 63, 255);
+	writeInstruction(text, 7, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 8, OpCode.CLOSURE, 2, 0, 0);
+	writeInstruction(text, 9, OpCode.GETSYS, 4, 0, 1);
+	writeInstruction(text, 10, OpCode.CALL, 4, 1, 1);
+	writeInstruction(text, 11, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 12, OpCode.RET, 0, 1, 0);
+	const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['resume', 'yield', 'close'], functions: [
+		{ firstWord: 0, wordCount: 7, maxStack: 12 }, { firstWord: 7, wordCount: 5, maxStack: 160 },
+		{ firstWord: 12, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+	], closureRelocations: [{ wordIndex: 8, functionIndex: 2 }] });
 	const { cpu } = createTestSystemCpu(image, backend);
-	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	for (const [name, id] of [['create', BuiltinFunctionId.CoroutineCreate], ['resume', BuiltinFunctionId.CoroutineResume],
+	const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+	cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+	for (const [name, id] of [['resume', BuiltinFunctionId.CoroutineResume],
 		['yield', BuiltinFunctionId.CoroutineYield], ['close', BuiltinFunctionId.CoroutineClose]] as const)
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
 	for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);

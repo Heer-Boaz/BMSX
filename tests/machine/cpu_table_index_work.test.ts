@@ -110,7 +110,7 @@ return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
 		cpu.installBootPrimitives();
 		const targetKey = cpu.stringPool.intern('lookup_target');
-		for (let attempts = 0; attempts < 16_384 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
+		for (let attempts = 0; attempts < 65_536 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		}
@@ -119,7 +119,7 @@ return true`, 0);
 		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(valuePayload(target)), cpu.stringPool.intern('__index'),
 			valueBuiltinFunction(BuiltinFunctionId.CoroutineYield));
 		const waitKey = cpu.stringPool.intern('waiting_to_resume');
-		for (let attempts = 0; attempts < 2048 && cpu.getGlobalByKey(waitKey) !== valueBool(true); ++attempts) {
+		for (let attempts = 0; attempts < 65_536 && cpu.getGlobalByKey(waitKey) !== valueBool(true); ++attempts) {
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		}

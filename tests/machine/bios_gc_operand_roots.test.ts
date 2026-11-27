@@ -23,7 +23,7 @@ function fixture(optLevel: 0 | 3) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
 		{ entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const entry = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === 'mark_table_operand_roots');
+	const entry = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === 'mark_operand_roots');
 	assert.ok(entry);
 	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
 	assert.ok(fn >= 0);
@@ -140,6 +140,7 @@ for (const optLevel of [0, 3] as const) {
 
 test('The scoped operand leaf maps each operation to its pinned source, separately from parked roots', () => {
 	const commit = /^-- Source basis: ([0-9a-f]{40})\.$/m.exec(source)![1];
+	const coroutineBasis = /^-- Scoped CoroutineCreate basis: ([0-9a-f]{40})\.$/m.exec(source)![1];
 	const bases: Record<string, string> = {
 		T: 'machine/ts/machine/cpu/gc_heap.ts',
 		C: 'machine/cpp/machine/cpu/gc_heap.cpp',
@@ -151,9 +152,11 @@ test('The scoped operand leaf maps each operation to its pinned source, separate
 		S: 'machine/ts/machine/cpu/string_pool.ts',
 		R: 'machine/cpp/machine/cpu/string_pool.cpp',
 		M: 'machine/ts/spec/bmsx/memory_map.ts',
+		E: 'machine/ts/machine/cpu/gc_heap.ts', F: 'machine/cpp/machine/cpu/gc_heap.cpp',
+		L: 'machine/ts/machine/cpu/lua_heap.ts', N: 'machine/cpp/machine/cpu/lua_heap.cpp',
 	};
 	const lines = Object.fromEntries(Object.entries(bases).map(([key, path]) =>
-		[key, execFileSync('git', ['show', `${commit}:${path}`], { encoding: 'utf8' }).trimEnd().split('\n')]));
+		[key, execFileSync('git', ['show', `${'EFLN'.includes(key) ? coroutineBasis : commit}:${path}`], { encoding: 'utf8' }).trimEnd().split('\n')]));
 	const covered: Record<string, Set<number>> = Object.fromEntries(Object.keys(lines).map(key => [key, new Set()]));
 	for (const line of source.split('\n')) {
 		const text = line.trim();

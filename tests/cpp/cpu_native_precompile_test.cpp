@@ -97,34 +97,29 @@ const NativeBlock* entryAt(CPU& cpu, u32 pc) {
 void replacementAdmitsRetainedCoroutinesAndClosures() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	image.text.resize(12u * INSTRUCTION_BYTES);
-	image.systemGlobalNames = {"create", "resume", "yield"};
+	image.text.resize(8u * INSTRUCTION_BYTES);
+	image.systemGlobalNames = {"resume", "yield"};
 	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	image.functions = {{.firstWord = 0, .wordCount = 8, .maxStack = 6}, {.firstWord = 8, .wordCount = 4}};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 6}, {.firstWord = 4, .wordCount = 4}};
 	const auto put = [&](u32 word, OpCode op, u8 a, u8 b, u8 c, u8 ext = 0) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c, ext);
 	};
-	put(0, OpCode::GETSYS, 0, 0, 0);
-	put(1, OpCode::WIDE, 0, 0, 0);
-	put(2, OpCode::CLOSURE, 1, 0, 0);
-	put(3, OpCode::CALL, 0, 2, 2);
-	put(4, OpCode::GETSYS, 4, 0, 1);
-	put(5, OpCode::MOV, 5, 0, 0);
-	put(6, OpCode::CALL, 4, 2, 2);
-	put(7, OpCode::JMP, 0, 63, 63, 255);
-	put(8, OpCode::GETSYS, 0, 0, 2);
-	put(9, OpCode::CALL, 0, 1, 1);
-	put(10, OpCode::K0, 0, 0, 0);
-	put(11, OpCode::RET, 0, 2, 0);
+	put(0, OpCode::GETSYS, 4, 0, 0);
+	put(1, OpCode::MOV, 5, 0, 0);
+	put(2, OpCode::CALL, 4, 2, 2);
+	put(3, OpCode::JMP, 0, 63, 63, 255);
+	put(4, OpCode::GETSYS, 0, 0, 1);
+	put(5, OpCode::CALL, 0, 1, 1);
+	put(6, OpCode::K0, 0, 0, 0);
+	put(7, OpCode::RET, 0, 2, 0);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 
 	for (const bool unviewed : {false, true}) {
 		auto fixture = std::make_unique<Fixture>(rom);
 		auto& machine = fixture->runtime.machine;
 		auto& cpu = machine.cpu;
-		test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
+		const u32 entry = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+		cpu.rootThread()->currentFrame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("resume"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("yield"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		for (u32 step = 0; step < 12 && cpu.activeThread() == cpu.rootThread(); ++step) cpu.runUntilDepth(0, 1);
@@ -134,7 +129,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 		const u32 frame = ThreadRecord::storageLayout(machine.memory, thread).frameAddress(0);
 		require(cpu.activeThread() == cpu.rootThread()
 			&& ThreadRecord::read(machine.memory, thread, ThreadField::Status) == static_cast<u32>(ThreadStatus::Suspended)
-			&& machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc)) == rom.textAddress + 10u * INSTRUCTION_BYTES,
+			&& machine.memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Pc)) == rom.textAddress + 6u * INSTRUCTION_BYTES,
 			"the coroutine retains a private continuation while the root runs");
 		if (unviewed) {
 			const auto state = cpu.captureRuntimeState();
@@ -145,7 +140,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 		const auto* previous = cpu.rootThread()->currentFrame->executionImage;
 		const u32 floor = cpu.heapAllocator().floorAddress();
 		auto replacement = rom.bytes;
-		writeInstruction(replacement, rom.textAddress / INSTRUCTION_BYTES + 9u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
+		writeInstruction(replacement, rom.textAddress / INSTRUCTION_BYTES + 5u, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 		machine.memory.installSystemRom(replacement);
 		auto boot = machine.executionAddressSpace.resolveSystemDomain();
 		boot.staticEnd = floor + MAPPED_PAGE_BYTE_SIZE;
@@ -165,11 +160,10 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	auto fixture = std::make_unique<Fixture>(rom);
 	auto& machine = fixture->runtime.machine;
 	auto& cpu = machine.cpu;
-	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
-	cpu.setSystemGlobalByKey(cpu.stringPool().intern("create"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineCreate));
-	for (u32 step = 0; step < 4 && cpu.readFramePc(0) != rom.textAddress + 4u * INSTRUCTION_BYTES; ++step) cpu.runUntilDepth(0, 1);
-	require(cpu.readFramePc(0) == rom.textAddress + 4u * INSTRUCTION_BYTES, "the root reached the continuation of coroutine.create");
-	const auto thread = asThread(cpu.readFrameRegister(0, 0), cpu.gcHeap());
+	const u32 entry = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
+	const u32 thread = cpu.luaHeap().allocateThreadRecord(entry);
+	cpu.rootThread()->currentFrame->registers.set(0, valueThread(thread));
+	cpu.rootThread()->currentFrame->extendTop(1);
 	require(ThreadRecord::read(machine.memory, thread, ThreadField::Status) == static_cast<u32>(ThreadStatus::New)
 		&& ThreadRecord::count(machine.memory, thread, ThreadField::FrameDepth) == 0u,
 		"an unstarted coroutine retains the ROM closure without an activation");

@@ -645,6 +645,7 @@ private:
 	u32 m_systemExceptionFunctionAddress = 0;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
+	void beginCoroutineCreate(Value entry, BiosCallContinuation completion);
 	u32 createThread(u32 entry);
 	Thread& bindThread(u32 address);
 	void retireThreadView(u32 address);

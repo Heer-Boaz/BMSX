@@ -15,7 +15,7 @@ import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_pa
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valueThread, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
@@ -215,22 +215,18 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
 	for (const wanted of [0, 1, 2, 6]) test(`coroutine root RET counts status and selected receiver slots (${backend}, C=${wanted})`, () => {
-		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 2);
-		writeInstruction(text, 4, OpCode.GETSYS, 4, 0, 1);
-		writeInstruction(text, 5, OpCode.MOV, 5, 0, 0);
-		writeInstruction(text, 6, OpCode.CALL, 4, 2, wanted);
-		writeInstruction(text, 7, OpCode.JMP, 0, 63, 63, 255);
-		writeInstruction(text, 8, OpCode.RET, 0, 3, 0);
-		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['create', 'resume'], functions: [
-			{ firstWord: 0, wordCount: 8, maxStack: 12 }, { firstWord: 8, wordCount: 1, maxStack: 2 },
-		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
+		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+		writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
+		writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
+		writeInstruction(text, 2, OpCode.CALL, 4, 2, wanted);
+		writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
+		writeInstruction(text, 4, OpCode.RET, 0, 3, 0);
+		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['resume'], functions: [
+			{ firstWord: 0, wordCount: 4, maxStack: 12 }, { firstWord: 4, wordCount: 1, maxStack: 2 },
+		] });
 		const { cpu } = createTestSystemCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
+			cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
 		assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');
