@@ -6,6 +6,7 @@ import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
 import { LUA_FAULT_REASON_ASSIGN_NON_TABLE, LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -119,26 +120,25 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 
 	test(`non-table __index forwarding uses String's installed table and faults at other primitives (${backend})`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-		writeInstruction(text, 0, OpCode.CALL, 8, 2, 1);
-		writeInstruction(text, 1, OpCode.GETT, 3, 0, 1);
-		writeInstruction(text, 2, OpCode.JMP, 0, 63, 62, 255);
+		writeInstruction(text, 0, OpCode.GETT, 3, 0, 1);
+		writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
 		writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
-			{ firstWord: 0, wordCount: 3, maxStack: 12 }, { firstWord: 16, wordCount: 1 },
+			{ firstWord: 0, wordCount: 2, maxStack: 12 }, { firstWord: 16, wordCount: 1 },
 		], exceptionFunctionIndex: 1 });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
 		const record = cpu.createTable(), meta = cpu.createTable();
 		const stringIndex = cpu.createTable(), stringMeta = cpu.createTable();
 		const field = valueString(cpu.stringPool.intern('present')), forwarded = valueString(cpu.stringPool.intern('forward receiver'));
 		const indexKey = cpu.stringPool.intern('__index');
-		const pc = frame.pc + INSTRUCTION_BYTES, cycles = BASE_CYCLES[OpCode.GETT];
+		const pc = frame.pc, cycles = BASE_CYCLES[OpCode.GETT];
 		const tables = cpu.gc.tables;
 		frame.registers.setTable(0, record);
 		frame.registers.set(1, field);
-		frame.registers.setBuiltinFunction(8, BuiltinFunctionId.SetStringIndex);
-		frame.registers.setTable(9, stringIndex);
+		const remark = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
+		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, stringIndex);
 		tables.set(record, field, valueBool(false));
-		cpu.runUntilDepth(0, 1);
 		cpu.runUntilDepth(0, (cycles + BASE_CYCLES[OpCode.JMP]) * 68);
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);

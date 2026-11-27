@@ -1,4 +1,4 @@
-local set_string_index<const> = __bmsx_set_string_index
+local string_index<const> = require('kernel/string_index')
 local string<const> = require('string/base')
 
 local pattern<const> = require('string/pattern')
@@ -17,6 +17,6 @@ string.pack = pack.pack
 string.packsize = pack.packsize
 string.unpack = pack.unpack
 
-set_string_index(string)
+string_index.install(string)
 
 return string

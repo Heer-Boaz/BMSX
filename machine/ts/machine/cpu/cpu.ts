@@ -218,7 +218,6 @@ export type CpuRuntimeState = {
 	programExecutionDomainId: ExecutionDomainId;
 	executionResidencyMask: ExecutionDomainMask;
 	hardHalted: boolean;
-	stringIndexTable: Value;
 	rootThreadAddress: number;
 	activeThreadAddress: number;
 	completionThreadAddress: number;
@@ -415,7 +414,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly canonicalBinding: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID };
 	private readonly staticClosures: StaticClosureIndex;
 	private stateReplacementListeners: Set<() => void> | null = null;
-	private stringIndexTable: Value = valueNil();
 	private readonly systemGlobalBank: GlobalBank;
 	private readonly globalBank: GlobalBank;
 	private completionValueSlots = new ValueSlots(8);
@@ -562,9 +560,11 @@ export class CPU implements MappedPageInvalidator {
 	private tableIndexAddress(base: Value): number {
 		switch (valueTag(base)) {
 			case ValueTag.Table: return valuePayload(base);
-			case ValueTag.String:
-				if (!isNil(this.stringIndexTable)) return valuePayload(this.stringIndexTable);
+			case ValueTag.String: {
+				const address = this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord);
+				if (address !== 0) return address;
 				break;
+			}
 		}
 		throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 	}
@@ -894,7 +894,9 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCompletionValues();
 		this.clearCallStack();
 		for (let index = 1; index < this.threadBanks.length; ++index) this.threadBanks[index].bindAddress(0);
-		this.stringIndexTable = valueNil();
+		const remark = this.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		this.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Nil);
+		this.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, 0);
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = 0;
 		this.interruptEventPending = false;
@@ -4531,12 +4533,6 @@ export class CPU implements MappedPageInvalidator {
 				out.push(valueString(this.stringPool.internSlice(id, first - 1, count)));
 				break;
 			}
-			case BuiltinFunctionId.SetStringIndex:
-				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Table) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				this.stringIndexTable = args.registers.get(args.base);
-				break;
 			case BuiltinFunctionId.CoroutineRunning:
 				out.push(valueThread(this.activeThread.address));
 				out.push(valueBool(this.activeThread === this.rootThread));
@@ -5089,7 +5085,6 @@ export class CPU implements MappedPageInvalidator {
 			programExecutionDomainId: this.programExecutionDomainId,
 			executionResidencyMask,
 			hardHalted: this.hardHalted,
-			stringIndexTable: this.stringIndexTable,
 			rootThreadAddress: this.rootThread.address,
 			activeThreadAddress: this.activeThread.address,
 			completionThreadAddress: this.completionThread,
@@ -5159,7 +5154,6 @@ export class CPU implements MappedPageInvalidator {
 		if (this.activeThread.currentFrame !== null) this.activeThread.currentFrame.executionImage = this.activeExecutionImage;
 		this.completionThread = state.completionThreadAddress;
 		this.threadSwitchRequested = false;
-		this.stringIndexTable = state.stringIndexTable;
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
 			this.completionValueSlots.resizeCapacity(state.completionValues.length);
 		}
@@ -5216,7 +5210,7 @@ export class CPU implements MappedPageInvalidator {
 		addSlots(this.systemGlobalBank.slots, this.systemGlobalBank.count);
 		addSlots(this.globalBank.slots, this.globalBank.count);
 		addSlots(this.completionValueSlots, this.completionValueCount);
-		add(this.stringIndexTable);
+		add(valueFromTag(this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexTag), this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord)));
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
@@ -5313,9 +5307,8 @@ export class CPU implements MappedPageInvalidator {
 
 	public publishHeapRemarkHead(): void {
 		const memory = this.memory, head = this.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		const stringIndex = this.stringIndexTable, comparison = this.stringComparison;
-		memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.StringIndexTag, valueTag(stringIndex));
-		memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.StringIndexWord, valuePayload(stringIndex), comparison.remaining);
+		const comparison = this.stringComparison;
+		memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.ComparisonRemaining, comparison.remaining);
 		if (comparison.remaining !== 0) {
 			memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.ComparisonLeft, comparison.left, comparison.right);
 		}
@@ -5344,7 +5337,7 @@ export class CPU implements MappedPageInvalidator {
 		const faults = heap.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
 		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
 			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.memory.readRamRecordWord(faults + reason * 4));
-		heap.markValue(this.stringIndexTable);
+		heap.markValue(valueFromTag(heap.diagnosticWord(HeapServiceRemarkHeadField.StringIndexTag), heap.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord)));
 		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
 		const pending = this.pendingAllocation;
 		if (pending !== null) {

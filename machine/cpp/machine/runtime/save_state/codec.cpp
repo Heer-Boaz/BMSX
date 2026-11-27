@@ -1150,7 +1150,6 @@ RuntimeSaveMachineState readRuntimeSaveMachineState(BinaryReader& reader, size_t
 template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntimeState& state) {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
-	writer.u64(state.stringIndexTable);
 	writer.u32(state.rootThreadAddress);
 	writer.u32(state.activeThreadAddress);
 	writer.u32(state.completionThreadAddress);
@@ -1229,7 +1228,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	CpuRuntimeState state;
 	state.executionCartridgeSlot = reader.i32();
 	state.programExecutionDomainId = reader.i32();
-	state.stringIndexTable = reader.u64();
 	state.rootThreadAddress = reader.u32();
 	state.activeThreadAddress = reader.u32();
 	state.completionThreadAddress = reader.u32();

@@ -6,7 +6,9 @@ namespace bmsx {
 
 u32 CPU::tableIndexAddress(Value base) const {
 	if (valueIsTable(base)) return valuePayload(base);
-	if (valueIsString(base) && !isNil(m_stringIndexTable)) return valuePayload(m_stringIndexTable);
+	if (valueIsString(base)) {
+		if (const u32 index = m_heap.diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord)) return index;
+	}
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
 
@@ -33,7 +35,8 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 	while (result.status == TableLookupStatus::Forward) {
 		carried += result.extraVisits;
 		base = result.value;
-		if (!valueIsString(base) || isNil(m_stringIndexTable)) {
+		const u32 index = valueIsString(base) ? m_heap.diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord) : 0u;
+		if (index == 0u) {
 			instructionBudgetRemaining -= static_cast<int>(carried) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 		}
@@ -43,7 +46,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 			instructionBudgetRemaining -= (TABLE_INDEX_CHAIN_LIMIT - 1) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_METATABLE_LOOP);
 		}
-		instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, valuePayload(m_stringIndexTable)).resolveIndex(key,
+		instructionBudgetRemaining -= static_cast<int>(TableRecord(m_heap, index).resolveIndex(key,
 			result, TABLE_INDEX_CHAIN_LIMIT - carried));
 	}
 	instructionBudgetRemaining -= static_cast<int>(carried + result.extraVisits) * TABLE_INDEX_VISIT_CYCLES;

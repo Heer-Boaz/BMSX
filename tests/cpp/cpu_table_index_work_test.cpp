@@ -26,10 +26,9 @@ constexpr std::array forms{std::pair{OpCode::GETFIELD, KeyKind::String}, std::pa
 struct Program {
 	test::Blua32TestImage image;
 	std::array<u32, 4> starts;
-	Program(OpCode op, bool wide, bool stringReceiver = false) {
+	Program(OpCode op, bool wide) {
 		image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 		u32 word = 0;
-		if (stringReceiver) writeInstruction(image.text, word++, static_cast<u8>(OpCode::CALL), 20, 2, 1);
 		const std::array codes{OpCode::MOV, op, OpCode::MOV};
 		for (u32 i = 0; i < codes.size(); ++i) {
 			starts[i] = word;
@@ -685,14 +684,15 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 
 void stringReceiver() {
 	for (bool wide : {false, true}) {
-		Program program(OpCode::GETFIELD, wide, true); Machine generated(program.image, false), scalar(program.image, true);
+		Program program(OpCode::GETFIELD, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu; auto installed = cpu.createTable(0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
+			const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+			m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
+			m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), installed.address());
 			auto r = cpu.activeThread()->currentFrame->registers;
-			r.set(20, cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex)); r.set(21, valueTable(installed.address()));
 			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
-			require(cpu.runUntilDepth(0, 7) == RunResult::Yielded, "the real builtin installs the String index Table");
 		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 3);
 		require(generated.cpu.instructionBudgetRemaining == 3 - 2 - 32
@@ -704,7 +704,7 @@ void stringReceiver() {
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
-			auto installed = asTable(m->cpu.readFrameRegister(0, 21), m->cpu.gcHeap());
+			TableRecord installed(m->cpu.gcHeap(), m->cpu.gcHeap().diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord));
 			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(m->cpu.createTable().address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);

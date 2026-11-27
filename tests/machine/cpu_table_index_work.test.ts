@@ -6,9 +6,10 @@ import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 
-import { hashCanonicalTableKey, valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { hashCanonicalTableKey, ValueTag, valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -140,10 +141,9 @@ return true`, 0);
 	});
 }
 
-function readProgram(op: OpCode, wide: boolean, stringReceiver = false, collisionKeys: readonly string[] = []) {
+function readProgram(op: OpCode, wide: boolean, collisionKeys: readonly string[] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE), starts: number[] = [];
 	let word = 0;
-	if (stringReceiver) writeInstruction(text, word++, OpCode.CALL, 20, 2, 1);
 	for (const [code, a, b, c] of [[OpCode.MOV, 6, 0, 0], [op, 6, 6, op === OpCode.GETFIELD || op === OpCode.SELF ? 0 : 1],
 		[OpCode.MOV, 8, 6, 0]]) {
 		starts.push(word); if (wide) writeInstruction(text, word++, OpCode.WIDE, 0, 0, 0);
@@ -244,7 +244,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		// of the heap geometry or collector progress of this VM.
 		const names = Array.from({ length: 72 }, (_, index) => `chain${String(index).padStart(3, '0')}`);
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
-			const { image } = readProgram(op, false, false, names), { cpu } = createTestSystemCpu(image, backend);
+		const { image } = readProgram(op, false, names), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
 			const key = valueString(cpu.stringPool.intern('field')), root = cpu.createTable(0, 8);
 			frame.registers.setTable(0, root); frame.registers.set(1, key); frame.top = 2;
@@ -361,13 +361,13 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 	});
 
 	test(`String receiver starts at installed index Table and follows live prototype replacement (${backend}, WIDE=${wide})`, () => {
-		const { image, starts } = readProgram(OpCode.GETFIELD, wide, true), { cpu } = createTestSystemCpu(image, backend);
+		const { image, starts } = readProgram(OpCode.GETFIELD, wide), { cpu } = createTestSystemCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!, base = frame.pc, key = valueString(cpu.stringPool.intern('field'));
 		const installed = cpu.createTable(0, 2); cpu.gc.tables.set(installed, key, valueInteger(19));
-		frame.registers.set(20, valueBuiltinFunction(BuiltinFunctionId.SetStringIndex)); frame.registers.setTable(21, installed);
+		const remark = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
+		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, installed);
 		frame.registers.set(0, valueString(cpu.stringPool.intern('receiver')));
-		cpu.runUntilDepth(0, 7);
-		assert.equal(frame.pc, base + INSTRUCTION_BYTES);
 		cpu.runUntilDepth(0, 22 * 64);
 		cpu.gc.tables.set(installed, key, valueNil()); chain(cpu, installed, 3, key, valueInteger(73));
 		const loop = base + starts[0] * INSTRUCTION_BYTES;

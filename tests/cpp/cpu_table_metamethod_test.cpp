@@ -123,11 +123,7 @@ void rawBuiltinsDistinguishExplicitKeysFromMissingArguments() {
 }
 
 void stringForwardingUsesLiveStringReceiverAndVisitBound() {
-	constexpr u32 install = 72;
 	Program program(OpCode::GETT, false);
-	program.put(install, OpCode::CALL, 12, 2, 1);
-	program.put(install+1, OpCode::HALT, 0, 0, 0);
-	program.image.functions.push_back({.firstWord=install, .wordCount=2, .maxStack=16});
 	Machine generated(program, false), scalar(program, true);
 	for (auto* m : {&generated, &scalar}) {
 		auto& cpu = m->cpu;
@@ -136,11 +132,10 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		const Value forwarded = valueString(cpu.stringPool().intern("proxy"));
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
 		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::Type)); methods.setMetatableAddress(methodsMeta.address());
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[2], m->rom.textAddress + install * INSTRUCTION_BYTES);
+		const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
+		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), methods.address());
 		auto r = cpu.activeThread()->currentFrame->registers;
-		r.set(12, cpu.createBuiltinFunction(BuiltinFunctionId::SetStringIndex)); r.set(13, valueTable(methods.address()));
-		cpu.runUntilDepth(0, 1);
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
 		r.set(0, valueTable(root.address())); r.set(1, valueNil()); r.set(2, forwarded);
 		r.set(3, valueTable(methodsMeta.address())); r.set(4, valueTable(root.address()));
 	}
@@ -161,6 +156,40 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		&& generated.cpu.readEpcWord() == generated.rom.textAddress
 		&& generated.cpu.instructionBudgetRemaining == 1 - cycles(OpCode::GETT) - (TABLE_INDEX_CHAIN_LIMIT - 1) * TABLE_INDEX_VISIT_CYCLES,
 		"Table-to-String forwarding cannot reset the 32-visit chain bound");
+}
+
+void stringIndexUsesTheRestoredRamRoot() {
+	Machine machine(Program(OpCode::GETT, false), true);
+	auto& cpu = machine.cpu;
+	auto& gc = cpu.gcHeap();
+	auto& memory = machine.memory;
+	const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	const u32 tag = head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag);
+	const u32 word = head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord);
+	auto methods = cpu.createTable(0, 1);
+	const auto key = cpu.stringPool().intern("watched-method");
+	methods.setStringKey(key, valueInteger(73));
+	memory.writeRamRecordWord(tag, static_cast<u32>(ValueTag::Table));
+	memory.writeRamRecordWord(word, methods.address());
+	auto* frame = cpu.activeThread()->currentFrame;
+	frame->registers.set(0, valueString(cpu.stringPool().intern("receiver")));
+	frame->registers.set(1, valueString(key));
+	frame->extendTop(2);
+
+	cpu.collectHeap();
+	require(gc.tableRecordAddress(methods.address()) == methods.address(),
+		"the live RAM index is the sole root of the method Table");
+	const auto ram = memory.captureSaveState();
+	const auto control = cpu.captureRuntimeState();
+	cpu.reset();
+	require(memory.readRamRecordWord(tag) == 0u && memory.readRamRecordWord(word) == 0u,
+		"reset clears the actual String-index lanes");
+	memory.restoreSaveState(ram);
+	cpu.restoreRuntimeState(control);
+	cpu.runUntilDepth(0, 1);
+	require(cpu.readFrameRegister(0, 0) == valueInteger(73)
+		&& cpu.instructionBudgetRemaining == 1 - cycles(OpCode::GETT),
+		"restored RAM alone supplies the method lookup with the original charge");
 }
 
 void tableValuedNewIndexAndOwnOverwrite() {
@@ -416,6 +445,7 @@ int main() {
 	try {
 		rawKeysAndReadForwarding(); rawBuiltinsDistinguishExplicitKeysFromMissingArguments();
 		stringForwardingUsesLiveStringReceiverAndVisitBound(); tableValuedNewIndexAndOwnOverwrite();
+		stringIndexUsesTheRestoredRamRoot();
 		fixedFieldAssignmentReusesTheTerminalProof();
 		coldFieldAssignmentPublishesItsFrontierOnce();
 		callableNewIndexDiscardsAllResults(); tableLengthAllowsOrdinaryMetamethodResult();

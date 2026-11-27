@@ -19,7 +19,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_error', id: BuiltinFunctionId.Error },
 	{ name: '__bmsx_pcall', id: BuiltinFunctionId.PCall },
 	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
-	{ name: '__bmsx_set_string_index', id: BuiltinFunctionId.SetStringIndex },
 	{ name: '__bmsx_coroutine_resume', id: BuiltinFunctionId.CoroutineResume },
 	{ name: '__bmsx_coroutine_yield', id: BuiltinFunctionId.CoroutineYield },
 	{ name: '__bmsx_coroutine_status', id: BuiltinFunctionId.CoroutineStatus },

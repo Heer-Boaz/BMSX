@@ -8,9 +8,9 @@ import {
 } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INDEX_NAN } from '../../machine/ts/spec/blua32/cop0';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -69,7 +69,9 @@ function fixture(optLevel: 0 | 3) {
 			valueTag(valueString(key)), key, valueTag(valueTable(value)), value,
 		];
 		for (const [slot, word] of fields.entries()) ram.writeRamRecordWord(base + slot * 4, word);
-		t['stringIndexTable'] = valueTable(stringIndex);
+		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		ram.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
+		ram.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, stringIndex);
 		t['stringComparison'].left = left;
 		t['stringComparison'].right = right;
 		t['stringComparison'].remaining = 1;

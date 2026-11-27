@@ -152,7 +152,6 @@ struct CpuRuntimeState {
 	ExecutionDomainId programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	ExecutionDomainMask executionResidencyMask = 0;
 	bool hardHalted = false;
-	Value stringIndexTable = valueNil();
 	u32 rootThreadAddress = 0;
 	u32 activeThreadAddress = 0;
 	u32 completionThreadAddress = 0;
@@ -692,7 +691,6 @@ private:
 
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;
-	Value m_stringIndexTable = valueNil();
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 	DiagnosticGcProfile m_diagnosticGcProfile;
 #endif

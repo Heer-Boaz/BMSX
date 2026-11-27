@@ -188,7 +188,9 @@ void CPU::reset() {
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	clearCallStack();
 	for (auto& view : m_transferViews) view.select(0u);
-	m_stringIndexTable = valueNil();
+	const u32 head = m_heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	m_memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), 0u);
+	m_memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), 0u);
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
@@ -1055,7 +1057,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	for (size_t i = 0; i < m_completionValueCount; ++i)
 		completionStorage[i] = m_completionValues.get(i);
 	state.completionValues = std::move(completionStorage);
-	state.stringIndexTable = m_stringIndexTable;
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
 			state.executionResidencyMask |= 1u << index;
@@ -1137,7 +1138,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	if (auto* current = m_activeThread->currentFrame) current->executionImage = m_activeExecutionImage;
 	m_completionThreadAddress = state.completionThreadAddress;
 
-	m_stringIndexTable = state.stringIndexTable;
 	m_completionValues.reserveCapacity(state.completionValues.size());
 	for (Value value : state.completionValues) m_completionValues.set(m_completionValueCount++, value);
 	m_programExecutionDomainId = state.programExecutionDomainId;
@@ -1260,12 +1260,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueString(m_stringPool.internSlice(asStringId(args[0]), first - 1, count)));
 			break;
 		}
-		case BuiltinFunctionId::SetStringIndex:
-			if (!valueIsTable(args[0])) {
-				throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-			m_stringIndexTable = args[0];
-			break;
 		case BuiltinFunctionId::CoroutineRunning:
 			out.push_back(valueThread(m_activeThread->address));
 			out.push_back(valueBool(m_activeThread == &m_rootView));
@@ -3222,8 +3216,7 @@ void CPU::trackLocalRoot(Value value) {
 void CPU::publishHeapRemarkHead() {
 	using Field = HeapServiceRemarkHeadField;
 	const u32 head = m_heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::StringIndexTag), static_cast<u32>(valueTag(m_stringIndexTable)));
-	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::StringIndexWord), valuePayload(m_stringIndexTable), m_stringComparison.remaining);
+	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::ComparisonRemaining), m_stringComparison.remaining);
 	if (m_stringComparison.remaining) {
 		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ComparisonLeft), m_stringComparison.left, m_stringComparison.right);
 	}
@@ -3254,7 +3247,8 @@ void CPU::markRootHead(GcHeap& heap) {
 	const u32 faults = heap.diagnosticWord(Field::FaultIds);
 	for (u32 reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
 		if (reason != LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(m_memory.readRamRecordWord(faults + reason * sizeof(u32)));
-	heap.markValue(m_stringIndexTable);
+	heap.markValue(valueFromTag(static_cast<ValueTag>(heap.diagnosticWord(Field::StringIndexTag)),
+		heap.diagnosticWord(Field::StringIndexWord)));
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
 	if (allocationParked()) {
 		heap.markValue(valueTable(m_pendingAllocation.receiver));

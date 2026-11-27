@@ -537,7 +537,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
-				stringIndexTable: valueNil(),
 			rootThreadAddress: 0x08300000,
 			activeThreadAddress: 0x08300040,
 			completionThreadAddress: 0x08300080,
@@ -708,10 +707,9 @@ test('runtime save-state codec rejects other formats, incomplete fields and trai
 	assert.throws(() => decode(extra), /Trailing/);
 });
 
-test('CPU latches retain raw addresses, object words and all float payload bits', () => {
+test('CPU latches retain raw addresses and all float payload bits', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.activeThreadAddress = 0xfffffffc;
-	state.cpuState.stringIndexTable = valueTable(0x083fdf20);
 	state.cpuState.completionValues = [valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0x7f801234), valueFloatBits(0xffc12345)];
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.deepEqual(decoded.cpuState, state.cpuState);
