@@ -5,7 +5,7 @@ local globals<const> = require('kernel/set_global')
 local vm_getmetatable<const> = __bmsx_getmetatable
 local vm_rawget<const> = __bmsx_rawget
 local tables<const> = require('kernel/table_grow')
-local vm_select<const> = __bmsx_select
+local arguments<const> = require('kernel/bios_select')
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
 local vm_xpcall<const> = __bmsx_xpcall
@@ -15,17 +15,23 @@ local numeric_parse<const> = require('number/parse')
 local collector<const> = require('kernel/gc_collect_step')
 local heap<const> = require('kernel/gc_full')
 
+local select_arguments<const> = function(selector, ...)
+	local count<const> = arguments.select_arguments(selector)
+	if count ~= nil then return count end
+	return ...
+end
+
 next = vm_next
 type = vm_type
 setmetatable = metatables.set_metatable
 getmetatable = vm_getmetatable
 rawget = vm_rawget
 rawset = function(target, key, ...)
-	return tables.raw_set(target, key, (...), vm_select('#', ...))
+	return tables.raw_set(target, key, (...), select_arguments('#', ...))
 end
 getglobal = __bmsx_getglobal
 setglobal = globals.set_global
-select = vm_select
+select = select_arguments
 error = vm_error
 pcall = vm_pcall
 xpcall = vm_xpcall
@@ -35,8 +41,8 @@ assert = function(condition, ...)
 	if condition then
 		return condition, ...
 	end
-	if vm_select('#', ...) > 0 then
-		vm_error((vm_select(1, ...)))
+	if select_arguments('#', ...) > 0 then
+		vm_error((...))
 	end
 	vm_error('assertion failed!')
 end

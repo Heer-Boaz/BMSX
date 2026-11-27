@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { BuiltinResults } from '../../machine/ts/machine/cpu/builtin_values';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -13,7 +12,6 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { valueNil, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -57,57 +55,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks, 'the warm cases actually compile');
 		});
 	}
-
-	test(`select clips INT_MIN and materializes only demanded results (${backend})`, () => {
-		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 0, 34, 2);
-		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 40 }] });
-		const { cpu } = createTestSystemCpu(image, backend);
-		const originalPush = BuiltinResults.prototype.push;
-		let produced = 0;
-		BuiltinResults.prototype.push = function (...args: Parameters<typeof originalPush>) { produced += 1; return originalPush.apply(this, args); };
-		try {
-			for (const selector of [-2147483648, 0, -32, -1, 1, 32, 33]) {
-				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
-				const r = cpu.rootThread.currentFrame!.registers;
-				r.setBuiltinFunction(0, BuiltinFunctionId.Select);
-				r.setInteger(1, selector);
-				for (let i = 1; i <= 32; ++i) r.setInteger(i + 1, i);
-				produced = 0; cpu.runUntilDepth(0, 1);
-				assert.equal(r.get(0), selector === 33 ? valueNil() : valueInteger(selector === -1 || selector === 32 ? 32 : 1));
-				assert.equal(produced, selector === 33 ? 0 : 1, 'fixed one-result consumers must not copy the unused suffix');
-			}
-		} finally { BuiltinResults.prototype.push = originalPush; }
-	});
-
-	for (const wanted of [0, 1, 2, 6]) test(`select preserves open, discarded and padded ranges (${backend}, C=${wanted})`, () => {
-		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 0, 5, wanted);
-		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
-		r.setBuiltinFunction(0, BuiltinFunctionId.Select);
-		r.setInteger(1, -2147483648);
-		for (let i = 0; i < 3; ++i) r.setInteger(i + 2, i + 10);
-		cpu.runUntilDepth(0, 1);
-		const count = wanted === 0 ? 3 : wanted - 1;
-		assert.equal(frame.top, count);
-		assert.deepEqual(Array.from({ length: count }, (_, i) => r.get(i)), [valueInteger(10), valueInteger(11), valueInteger(12), valueNil(), valueNil()].slice(0, count));
-	});
-
-	for (const selector of ['#', 'invalid']) test(`discarded select still validates its selector (${backend}, ${selector})`, () => {
-		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 0, 2, 1);
-		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-		const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
-		frame.registers.setString(1, cpu.stringPool.intern(selector));
-		cpu.runUntilDepth(0, 1);
-		if (selector === '#') assert.equal(frame.top, 0);
-		else assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-	});
 
 }
 

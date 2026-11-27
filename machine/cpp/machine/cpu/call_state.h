@@ -91,7 +91,6 @@ struct CallResultPlacement {
 	}
 	constexpr u32 countWord() const { return word & ~extendTopBit; }
 	constexpr int selected(int available) const { return decodeValueCount(countWord(), available); }
-	constexpr int limit() const { return selected(-1); }
 	constexpr bool extendsTop() const { return (word & extendTopBit) != 0u; }
 	constexpr i32 topAfter(i32 before, int count) const {
 		return extendsTop() ? std::max(before, base + count) : base + count;

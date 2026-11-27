@@ -9,7 +9,7 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
 
-const bootSource = 'return {pcall=__bmsx_pcall,error=__bmsx_error,select=__bmsx_select}';
+const bootSource = 'return {pcall=__bmsx_pcall,error=__bmsx_error}';
 const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`).chunk };
@@ -26,7 +26,7 @@ function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
 	return { image, cpu, results };
 }
-const math = "local boot<const> = require('test/boot'); error=boot.error; select=boot.select; local math<const> = require('math')\n";
+const math = "local boot<const> = require('test/boot'); error=boot.error; local math<const> = require('math')\n";
 const numericSource = readFileSync('tests/fixtures/compiler32/math.lua', 'utf8');
 const numericExpected = [v.valueInteger(2147483647), v.valueInteger(-2147483648),
 'integer', 'float', 'float', 'float', v.valueNil(),

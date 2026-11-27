@@ -393,12 +393,10 @@ private:
 		}
 	};
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallValueSource&);
-	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit);
+	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
-	std::optional<int> selectArgumentStart(Value selector, int count) const;
-	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinError(BuiltinArgsView args);
 	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallValueSource&, bool returnsToProtectedParent);
 	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource&);

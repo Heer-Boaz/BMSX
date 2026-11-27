@@ -4510,7 +4510,7 @@ export class CPU implements MappedPageInvalidator {
 		return rk < 0 ? valueFromTag(frame.executionImage.constTags[-1 - rk], frame.executionImage.constWords[-1 - rk]) : frame.registers.get(rk);
 	}
 
-	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
+	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
 		switch (id) {
 			case BuiltinFunctionId.Next:
 				this.runBuiltinNextValue(args, out);
@@ -4547,9 +4547,6 @@ export class CPU implements MappedPageInvalidator {
 				else out.push(this.globalBank.slots.get(slot));
 				break;
 			}
-			case BuiltinFunctionId.Select:
-				this.runBuiltinSelect(args, out, resultLimit);
-				break;
 			case BuiltinFunctionId.FrameCount:
 			case BuiltinFunctionId.FrameHeader:
 			case BuiltinFunctionId.GetFrameRegister:
@@ -4723,7 +4720,7 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
-			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
+			this.callBuiltinFunction(id, builtinArgs, results);
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromRegisters(frame, callBase, returnCount, results.slots, 0, results.length);
 			}
@@ -4804,7 +4801,7 @@ export class CPU implements MappedPageInvalidator {
 				const results = this.acquireBuiltinResults();
 				try {
 					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
+					this.callBuiltinFunction(builtinId, builtinArgs, results);
 					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -5018,25 +5015,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 		return true;
 	}
-	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
-		const registers = args.registers;
-		const base = args.base;
-		const count = args.length - 1;
-		const selector = args.length > 0 ? registers.get(base) : valueNil();
-		if (valueTag(selector) === ValueTag.String && this.stringPool.byteLength(valuePayload(selector)) === 1
-			&& this.stringPool.byteAt(valuePayload(selector), 0) === 35) {
-			out.push(valueInteger(count)); return;
-		}
-		const startSelector = integerOperand(selector);
-		const start = Math.max(startSelector >= 0 ? startSelector : count + startSelector + 1, 1);
-		const available = Math.max(count - start + 1, 0);
-		const produced = resultLimit < 0 ? available : Math.min(available, resultLimit);
-		for (let index = 0; index < produced; index += 1) {
-			const valueIndex = base + start + index;
-			out.push(registers.get(valueIndex));
-		}
-	}
-
 	private runBuiltinStringByte(args: BuiltinArgsView, out: BuiltinResults): void {
 		const registers = args.registers;
 		const base = args.base;

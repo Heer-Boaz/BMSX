@@ -13,7 +13,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { createDecodedInstructionPage, DecodedDispatchOp, DECODED_PAGE_WORDS, DECODED_REFRESH_DECODE, type DecodedInstructionPage } from '../../machine/ts/machine/cpu/execution_image';
 import { mappedBusSignalsForCartridgeSlot } from '../../machine/ts/machine/memory/bus_signals';
-import { asStringId, type Value, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueIsString, valueTable, valueString, ValueTag } from '../../machine/ts/machine/cpu/value';
+import { asStringId, type Value, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueIsString, valueTable, valueString, valueThread, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { readLE16, readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
@@ -308,10 +308,10 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 test('builtin-owned result ranges survive destination growth with exact open/fixed top', () => {
 	for (const instrumented of [false, true]) for (const requested of [0, 1, 4, 48]) for (const kind of [0, 1, 2]) {
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 2, kind === 0 ? 2 : 3, requested === 0 ? 0 : requested + 1);
+		writeInstruction(text, 0, OpCode.CALL, 2, kind === 0 ? 5 : 3, requested === 0 ? 0 : requested + 1);
 		writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32({ text,
-			functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }],
+			functions: [{ firstWord: 0, wordCount: 2, maxStack: 7 }],
 		}, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = cpu.createTable(1, 0);
@@ -319,9 +319,13 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		if (kind === 2) cpu.gc.tables.setInteger(table, 1, result);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setInteger(0, 91); registers.setBoolean(1, true);
-		registers.setBuiltinFunction(2, kind === 0 ? BuiltinFunctionId.Select : BuiltinFunctionId.Next);
-		registers.set(3, kind === 0 ? valueInteger(1) : valueTable(table));
-		registers.setNil(4);
+		registers.setBuiltinFunction(2, kind === 0 ? BuiltinFunctionId.SetFrameRegister : BuiltinFunctionId.Next);
+		registers.set(3, kind === 0 ? valueThread(cpu.rootThread.address) : valueTable(table));
+		registers.set(4, kind === 0 ? valueInteger(0) : valueNil());
+		if (kind === 0) {
+			registers.setInteger(5, 1);
+			registers.setBoolean(6, true);
+		}
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 		assert.equal(cpu.readCauseWord(), 0);
 		const targetCount = requested === 0 ? kind : requested;

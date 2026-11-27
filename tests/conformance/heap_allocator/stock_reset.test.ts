@@ -153,6 +153,163 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	trace.replay('hardware RESET after cold diagnostic refusal', systemPath);
 }
 
+function verifySelect(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
+	const system = readFileSync(rom);
+	const source = `bss report: word
+mem[${IO_IRQ_MASK}] = 0
+local pick = select
+local function count(...) return pick('#', ...) end
+local function rejected(ok, why, ...)
+	assert(ok == false and why == 'Invalid argument.' and count(...) == 0)
+end
+local function suffix(n, first, middle, last, ...)
+	assert(count(...) == n)
+	local a, b, c = ...
+	assert(a == first and b == middle and c == last)
+end
+local marker = { value = 91 }
+*report = 1
+while *report == 1 do end
+assert(pick('#') == 0 and pick('#', 11, nil, marker, nil) == 4)
+assert(pick(string.sub('x#', 2), nil, marker, nil) == 3)
+assert(pick(string.char(mem[${IO_IRQ_MASK}] + 35), nil, nil) == 2)
+*report = 3
+
+suffix(4, 11, nil, marker, pick(1, 11, nil, marker, nil))
+suffix(4, 11, nil, marker, pick(0, 11, nil, marker, nil))
+suffix(4, 11, nil, marker, pick(-700, 11, nil, marker, nil))
+suffix(3, nil, marker, nil, pick(2, 11, nil, marker, nil))
+suffix(2, marker, nil, nil, pick(-2, 11, nil, marker, nil))
+suffix(1, nil, nil, nil, pick(-1, 11, nil, marker, nil))
+assert(count(pick(5, 11, nil, marker, nil)) == 0)
+assert(count(pick(2147483647, 11)) == 0)
+assert(count(pick(1)) == 0 and count(pick(0)) == 0)
+local a, b, c, d = pick(2, 11, nil, marker, nil)
+assert(a == nil and b == marker and c == nil and d == nil)
+local first, second = pick(1, marker, nil, 13, 17)
+assert(first == marker and second == nil)
+pick(2, 11, nil, marker, nil)
+*report = 4
+
+suffix(2, nil, marker, nil, pick(blua32.float_from_bits(0x40000000), 11, nil, marker))
+suffix(2, nil, marker, nil, pick(blua32.float_from_bits(0xc0000000), 11, nil, marker))
+suffix(3, 11, nil, marker, pick(blua32.float_from_bits(0x80000000), 11, nil, marker))
+suffix(3, 11, nil, marker, pick(blua32.float_from_bits(0xcf000000), 11, nil, marker))
+assert(count(pick(blua32.float_from_bits(0x4effffff), 11)) == 0)
+rejected(pcall(pick))
+rejected(pcall(pick, nil, 11))
+rejected(pcall(pick, false, 11))
+rejected(pcall(pick, marker, 11))
+rejected(pcall(pick, '2', 11))
+rejected(pcall(pick, '##', 11))
+rejected(pcall(pick, '#\\0', 11))
+rejected(pcall(pick, blua32.float_from_bits(0x3fa00000), 11))
+rejected(pcall(pick, blua32.float_from_bits(0xbf000000), 11))
+rejected(pcall(pick, blua32.float_from_bits(0x7fc12345), 11))
+rejected(pcall(pick, blua32.float_from_bits(0x7f800000), 11))
+rejected(pcall(pick, blua32.float_from_bits(0xff800000), 11))
+rejected(pcall(pick, blua32.float_from_bits(0x4f000000), 11))
+rejected(pcall(pick, blua32.float_from_bits(0xcf000001), 11))
+*report = 5
+
+local tracked = {[1] = 19, [66] = marker, [67] = 71}
+local function tail(...)
+	assert(count(...) == 3)
+	local x, y, z = ...
+	assert(x == nil and y == marker and z == 71)
+end
+tail(pick(65, table.unpack(tracked, 1, 67)))
+local function observed(ok, ...)
+	assert(ok)
+	suffix(3, nil, marker, nil, ...)
+end
+observed(pcall(pick, 2, 11, nil, marker, nil))
+*report = 42
+while *report == 42 do end
+return 43, pick(2, 99, nil, 707, nil)
+`;
+	const linked = compileCartridge(system, source, 'select.lua', optLevel);
+	const cart = writeTestBlua32Rom(linked), cartPath = join(dir, 'select.rom');
+	writeFileSync(cartPath, cart);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine, frames = runtime.frameScheduler;
+	const trace = new Trace(native, join(dir, 'select.trace'), cartPath);
+	const report = linked.layout.header.bssAddress;
+	for (let grant = 0; grant < 2048 && memory.readMappedU32LE(report) === 0; ++grant) {
+		if (gxGpu.backendCommandDrainPending()) {
+			gxGpu.retireExecutedCommands();
+			trace.observe('>');
+		}
+		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
+		const complete = frames.runCyclesToNextLogicalTick(65536);
+		trace.observe('p 65536', [
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
+			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+		].join(' '));
+	}
+	assert.equal(memory.readMappedU32LE(report), 1);
+	function grant(trace: Trace, cycles: number) {
+		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+		trace.observe(`E ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+			memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+		return result;
+	}
+	memory.writeMappedWord(report, 2);
+	trace.observe(`O ${report} 2`);
+	for (let n = 0; n < 4096 && memory.readMappedU32LE(report) !== 42; ++n)
+		if (grant(trace, 257) === RunResult.Halted) break;
+	assert.equal(cpu.readLuaFaultReasonWord(), 0, `stage ${memory.readMappedU32LE(report)}`);
+	assert.equal(memory.readMappedU32LE(report), 42);
+	memory.writeMappedWord(report, 43);
+	trace.observe(`O ${report} 43`);
+
+	// The cartridge executes only the final select after this gate. The
+	// resident helper has changed the variadic wrapper's base, but not the
+	// count yet; capture while that frame and helper are both live.
+	let first = -1, word = -1;
+	for (let n = 0; n < 4096; ++n) {
+		if (grant(trace, 1) === RunResult.Halted) break;
+		if (!cpu.heapServiceActive()) continue;
+		const frame = cpu.activeThread.currentFrame!;
+		if (frame.varargCount !== 4) continue;
+		if (first < 0) first = frame.varargBase;
+		else if (frame.varargBase === first + 1) {
+			word = frame.controlOffset + FrameField.VarargBase;
+			break;
+		}
+	}
+	assert.ok(word >= 0, 'System helper paused after rewriting the base and before rewriting the count');
+	trace.observe(`H ${word} ${word + 8}`, hashBytes(memory.ramData(), word, 8));
+	const tsState = join(dir, 'select-ts.state'), cppState = join(dir, 'select-native.state');
+	writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	trace.observe(`x ${cppState}`);
+	const cut = trace.commands.length, count = trace.expected.length;
+
+	function finish(trace: Trace) {
+		let result = RunResult.Yielded;
+		for (let n = 0; n < 4096 && result !== RunResult.Halted; ++n) result = grant(trace, 257);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		assert.equal(result, RunResult.Halted);
+		assert.equal(memory.readMappedU32LE(report), 43);
+		const expected = [valueInteger(43), valueNil(), valueInteger(707), valueNil()];
+		assert.deepEqual(runtime.readCompletionValues(), expected);
+		trace.observe('c', `${expected.length} ${expected.map(value => `${valueTag(value)} ${valuePayload(value)}`).join(' ')}`);
+	}
+	finish(trace);
+	trace.replay('stock select from cold boot', rom);
+	const fromTs = new Trace(native, join(dir, 'select-from-ts.trace'), cartPath);
+	fromTs.observe('X');
+	fromTs.commands.push(...trace.commands.slice(cut));
+	fromTs.expected.push(...trace.expected.slice(count));
+	fromTs.replay('stock select from a TS checkpoint', rom, tsState);
+	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(cppState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	const fromCpp = new Trace(native, join(dir, 'select-from-native.trace'), cartPath);
+	finish(fromCpp);
+	assert.deepEqual(fromCpp.commands, trace.commands.slice(cut));
+	assert.deepEqual(fromCpp.expected, trace.expected.slice(count));
+}
+
 function verifyStringChar(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
 	const system = readFileSync(rom);
 	const source = `bss report: word
@@ -961,6 +1118,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],
 				['string.char handles fixed, open and protected argument windows', () => verifyStringChar(rom, native, output, optLevel)],
+				['select produces exact suffixes, counts and protected errors', () => verifySelect(rom, native, output, optLevel)],
 				['fixed exception bridge preserves the original tagged Lua error', () => verifyExceptionBridge(rom, native, output, optLevel)],
 				['warm reset retires a live capture; native rewind and reissued reset', () => verifyWarmReset(rom, native, output, optLevel)],
 				['RESET waits for the active Array tag-plane move and publication', () => verifyResetDuringTableGrowth(rom, native, output, optLevel)],

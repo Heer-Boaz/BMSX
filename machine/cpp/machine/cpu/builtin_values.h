@@ -28,7 +28,6 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // ToInteger
 	{ 1, 0, 0 }, // Next
 	{ 1, 0, 0 }, // RawGet
-	{ 1, 0, 0 }, // Select
 	{ 1, 0, 0 }, // Type
 	{ 2, 0, 0 },
 	{ 4, 0, 0 },

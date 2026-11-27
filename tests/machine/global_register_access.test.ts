@@ -5,17 +5,13 @@ import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '.
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 
 
-const bootSource = `local globals<const> = require('kernel/set_global')
-getglobal = __bmsx_getglobal
-setglobal = globals.set_global
-pcall = __bmsx_pcall
-select = __bmsx_select`;
-const boot = { path: 'boot', source: bootSource };
+const modules = [...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }];
 
 for (const level of [0, 3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
-	const source = `require('boot')
+	const source = `require('base')
 local get<const> = getglobal
 local set<const> = setglobal
 counter = 7
@@ -36,7 +32,7 @@ set('counter')
 return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
  get('absent'), after_growth, returned, get('new name 78')
 `;
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, level, [boot]));
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, level, modules));
 	runGuestToHalt(cpu, 1_048_576);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil(), valueInteger(13), valueInteger(0), valueInteger(78)]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('alias')!), cpu.getGlobalByKey(cpu.stringPool.find('shared')!));
@@ -44,9 +40,9 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 });
 
 test('named access cannot alias the system bank and invalid names use guest errors', () => {
-	const source = `require('boot')
-local get<const> = getglobal
-local set<const> = setglobal
+	const source = `local get<const> = __bmsx_getglobal
+local set<const> = require('kernel/set_global').set_global
+local pcall<const> = __bmsx_pcall
 function irq(value) return value end
 local before = get('irq')
 set('irq', 99)
@@ -55,7 +51,7 @@ local invalid_write = pcall(set, false, 4)
 local missing_name = pcall(set)
 return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 `;
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, 3, [boot]));
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, 3));
 	runGuestToHalt(cpu, 65_536);
 	const values = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);

@@ -176,71 +176,6 @@ void ramStringPorts() {
 	}
 }
 
-void selectReceivingRanges(bool scalar) {
-	for (const u8 wanted : {0, 1, 2, 35}) {
-		test::Blua32TestImage image;
-		image.text.resize(2 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 34, wanted);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 40}};
-		CpuMachine machine(image, scalar);
-		for (const int selector : {-2147483647 - 1, 0, -32, -1, 1, 32, 33}) {
-			auto& frame = machine.restart();
-			frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Select));
-			frame.registers.set(1, valueInteger(selector));
-			for (int i = 1; i <= 32; ++i) frame.registers.set(i + 1, valueInteger(i));
-			machine.cpu.runUntilDepth(0, 1);
-			const auto expected = selector == 33 ? valueNil() : valueInteger(selector == -1 || selector == 32 ? 32 : 1);
-			if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers.get(0) == expected, "negative select clips to valid argument storage even at INT_MIN");
-			const int available = selector == 33 ? 0 : selector == -1 || selector == 32 ? 1 : 32;
-			const int placed = wanted == 0 ? available : wanted - 1;
-			require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == placed, "select preserves open and fixed receiving ranges");
-			for (int i = available; i < placed; ++i) require(frame.registers.get(i) == valueNil(), "select retains requested nil padding");
-		}
-	}
-}
-
-void openSelectPlacesAliasedResults(bool scalar) {
-	for (const u8 wanted : {0, 1, 2, 6}) {
-		test::Blua32TestImage image;
-		image.mappedCode = false;
-		image.text.resize(2 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 0, wanted);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 8}};
-		CpuMachine machine(image, scalar);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		if (!scalar) machine.cpu.prepareSystemNativeCode();
-#endif
-		const auto number = valueFloat(9.25f);
-		for (const bool countMode : {false, true}) {
-			auto& frame = machine.restart();
-			frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Select));
-			frame.registers.set(1, countMode ? valueString(machine.cpu.stringPool().intern("#")) : valueInteger(-2));
-			frame.registers.set(2, valueBool(true));
-			frame.registers.set(3, number);
-			frame.registers.set(4, valueBool(false));
-			frame.setTop(5);
-			const int produced = countMode ? 1 : 2;
-			const int placed = wanted ? wanted - 1 : produced;
-			const int cost = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] +
-				BUILTIN_FUNCTION_COSTS[static_cast<size_t>(BuiltinFunctionId::Select)].base + placed;
-			require(machine.cpu.runUntilDepth(0, cost) == RunResult::Yielded &&
-				machine.cpu.instructionBudgetRemaining == 0 && machine.cpu.readFramePc(0) == machine.rom.textAddress + INSTRUCTION_BYTES,
-				"select places its results before yielding on its exact grant");
-			require(frame.readWindow(FrameField::Top) == placed, "select publishes the selected top, not the argument top");
-			for (int i = 0; i < placed; ++i) {
-				const Value expected = i >= produced ? valueNil() : countMode ? valueInteger(3) : i == 0 ? number : valueBool(false);
-				require(frame.registers.get(i) == expected, "open select preserves payloads and tags and pads only the requested tail");
-			}
-		}
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-		if (!scalar) require(machine.cpu.nativeGateProfile().builtinAttempts == 2 &&
-			machine.cpu.nativeGateProfile().builtinDeclines == 0, "both open select calls complete as native leaves");
-#endif
-	}
-}
-
 void mappedStringCopiesStorage() {
 	test::Blua32TestImage image;
 	image.text.resize(2 * INSTRUCTION_BYTES);
@@ -335,10 +270,8 @@ int main() {
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			grantedStringOrder(scalar, false); grantedStringOrder(scalar, true);
-			selectReceivingRanges(scalar);
-			openSelectPlacesAliasedResults(scalar);
 		}
-		std::cout << "String operation cycles and builtin demand passed\n";
+		std::cout << "String operation cycles passed\n";
 		return 0;
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

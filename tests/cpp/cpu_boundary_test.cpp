@@ -1201,11 +1201,11 @@ void returnRangesSurviveCallerStackGrowth() {
 
 void builtinReturnRangesSurviveDestinationGrowth() {
 	for (const bool instrumented : {false, true}) for (const u8 requested : {0, 1, 4, 48}) for (int kind = 0; kind < 3; ++kind) {
-		auto image = returnImage(OpCode::CALL, 2, encodeFixedValueCount(kind == 0 ? 1 : 2), requested == 0 ? 0 : requested + 1);
+		auto image = returnImage(OpCode::CALL, 2, encodeFixedValueCount(kind == 0 ? 4 : 2), requested == 0 ? 0 : requested + 1);
 		image.text.resize(2 * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions[0].wordCount = 2;
-		image.functions[0].maxStack = 5;
+		image.functions[0].maxStack = 7;
 		CpuMachine machine(image);
 		auto& cpu = machine.cpu;
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
@@ -1214,9 +1214,13 @@ void builtinReturnRangesSurviveDestinationGrowth() {
 		if (kind == 2) table.setInteger(1, text);
 		auto registers = cpu.activeThread()->frameAtDepth(0)->registers;
 		registers.set(0, valueInteger(91)); registers.set(1, valueBool(true));
-		registers.set(2, cpu.createBuiltinFunction(kind == 0 ? BuiltinFunctionId::Select : BuiltinFunctionId::Next));
-		registers.set(3, kind == 0 ? valueInteger(1) : valueTable(table.address()));
-		registers.set(4, valueNil());
+		registers.set(2, cpu.createBuiltinFunction(kind == 0 ? BuiltinFunctionId::SetFrameRegister : BuiltinFunctionId::Next));
+		registers.set(3, kind == 0 ? valueThread(cpu.activeThread()->address) : valueTable(table.address()));
+		registers.set(4, kind == 0 ? valueInteger(0) : valueNil());
+		if (kind == 0) {
+			registers.set(5, valueInteger(1));
+			registers.set(6, valueBool(true));
+		}
 		require(cpu.runUntilDepth(0, 100) == RunResult::Halted && cpu.readCauseWord() == 0u, "builtin result transfer finishes without a machine fault");
 		const int targetCount = requested == 0 ? kind : requested;
 		require(cpu.getFrameRegisterCount(0) == 2 + targetCount, "builtin results set exact top after open and fixed calls");

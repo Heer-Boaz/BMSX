@@ -1288,7 +1288,7 @@ void CPU::hardHalt() {
 }
 
 
-void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
+void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
 	switch (fn.id) {
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
@@ -1313,9 +1313,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetGlobal:
 			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			out.push_back(getGlobalByKey(asStringId(args[0])));
-			break;
-		case BuiltinFunctionId::Select:
-			runBuiltinSelect(args, out, resultLimit);
 			break;
 		case BuiltinFunctionId::FrameCount:
 		case BuiltinFunctionId::FrameHeader:
@@ -1474,7 +1471,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPl
 	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
-	callBuiltinFunction(fn, arguments.values(), out, result.limit());
+	callBuiltinFunction(fn, arguments.values(), out);
 	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
 		writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
 	}
@@ -1522,7 +1519,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 		}
 		auto resultsScratch = acquireBuiltinResultScratch();
 		BuiltinResults& results = resultsScratch.get();
-		callBuiltinFunction(builtin, arguments.values(), results, -1);
+		callBuiltinFunction(builtin, arguments.values(), results);
 		finishProtectedCall(continuationIndex, {nullptr, results.data(), 0, static_cast<int>(results.size())});
 		return;
 	}
@@ -1666,32 +1663,6 @@ bool CPU::stepTableIterator(ValueSpan& registers, int base, int destination, int
 	// payload is a private cursor, carried by the normal frame state.
 	registers.set(base + 2, valueFromTag(ValueTag::Nil, cursor));
 	return true;
-}
-
-// Zero selects the argument count; positive offsets select an argument suffix.
-std::optional<int> CPU::selectArgumentStart(Value selector, int count) const {
-	if (valueIsString(selector)) {
-		const auto id = asStringId(selector);
-		if (m_stringPool.byteLength(id) == 1 && m_stringPool.byteAt(id, 0) == '#') return 0;
-		return std::nullopt;
-	}
-	int start;
-	if (!valueToInteger(selector, start)) return std::nullopt;
-	if (start < 0) start += count + 1;
-	return std::clamp(start, 1, count + 1);
-}
-
-void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit) {
-	const int count = static_cast<int>(args.size()) - 1;
-	const auto start = selectArgumentStart(args[0], count);
-	if (!start) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	if (*start == 0) {
-		out.push_back(valueInteger(count));
-		return;
-	}
-	const int available = count + 1 - *start;
-	const int produced = resultLimit < 0 ? available : std::min(available, resultLimit);
-	for (int index = 0; index < produced; ++index) out.push_back(args[*start + index]);
 }
 
 void CPU::runBuiltinError(BuiltinArgsView args) {

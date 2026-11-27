@@ -315,7 +315,7 @@ test('fixed operands fit the bound frame independently of its active top', () =>
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestHeapServiceCpu(image, backend);
 			const frame = cpu.rootThread.frameAtDepth(0);
-			if (op === OpCode.CALL) frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
+			if (op === OpCode.CALL) frame.registers.setBuiltinFunction(0, BuiltinFunctionId.ToInteger);
 			else frame.registers.setInteger(0, 73);
 			frame.registers.setInteger(2, 75);
 			const original = frame.registers.get(0);
