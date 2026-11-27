@@ -12,7 +12,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_type', id: BuiltinFunctionId.Type },
 	{ name: '__bmsx_getmetatable', id: BuiltinFunctionId.GetMetatable },
 	{ name: '__bmsx_rawget', id: BuiltinFunctionId.RawGet },
-	{ name: '__bmsx_rawset', id: BuiltinFunctionId.RawSet },
 	{ name: '__bmsx_select', id: BuiltinFunctionId.Select },
 	{ name: '__bmsx_string_byte', id: BuiltinFunctionId.StringByte },
 	{ name: '__bmsx_error', id: BuiltinFunctionId.Error },

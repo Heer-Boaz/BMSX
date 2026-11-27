@@ -13,12 +13,15 @@ local table_resize<const> = require('kernel/table_resize') -- T:795,840-873 C:24
 local hash_slots<const> = require('kernel/table_reinsert') -- T:530-562 P:853 C:787-838
 local existing<const> = require('kernel/table_insert_existing') -- T:553,805-809 C:636-645,835
 local assignment<const> = require('kernel/table_assignment') -- T:524-526,571-574 C:775-784
+local weak_entries<const> = require('kernel/gc_weak_table')
+local word_arithmetic<const> = require('kernel/word_arithmetic')
 local allocator<const> = require('kernel/dlmalloc') -- T:101-104 C:834; Integer bands
-local barrier<const> = require('kernel/gc_barrier') -- T:547 C:825
 local admission<const> = require('kernel/heap_admission') -- T:785-793 C:252-256,349-356
 local collection<const> = require('kernel/gc_step') -- P:828-837 Q:207-223
 local ram_base<const> = layout.ram_base -- P:4047-4049,5245 X:170-172 Y:3252; BLua private address view
 local ram_word_mask<const> = 0x003ffffc -- H:55; raw RAM address view
+local nil_tag<const>, true_tag<const>, float_tag<const> = 0, 2, 4
+local index_nil<const>, index_nan<const>, invalid_argument<const> = 4, 12, 10
 local integer_tag<const> = 3 -- T:764 C:314
 local table_tag<const> = 6 -- T:655 C:700
 local closure_tag<const> = 7 -- T:655 C:700
@@ -27,6 +30,7 @@ local dead_key<const> = 10 -- T:546,657 C:822,703
 local array_census_threshold<const> = 1024 -- T:769 C:323
 local hash_census_threshold<const> = 64 -- T:96 C:834
 local hash_band_threshold<const> = 1024 -- T:97 C:834
+local general_mode<const> = 1
 local scheduled_mode<const> = 0 -- P:669-679,852-856 Q:301-314; General covers Direct and RAWSET
 local current_or_fresh<const> = 0 -- P:806-808 Q:198
 local out_of_memory<const> = 9 -- P:867 Q:267; tag-result gate reserves zero for success
@@ -38,6 +42,8 @@ struct growth_receiver
 	array: u32 -- T:133,762 C:309 H:55
 	hash: u32 -- T:134,762 C:309 H:55
 	length: u32 -- T:135,1104 C:784 H:55
+	before_array_storage: u32
+	array_storage: addr
 end
 
 struct growth_operands
@@ -79,6 +85,29 @@ local borrow_collection_roots<const> = function(management, projected) -- P:4043
 	end
 end
 
+-- General reads probe the canonical key. Only insertion matches the
+-- identity tag and payload retained by a tombstone.
+local find_hash_node<const> = function(words, tags, hash, kt, kw, match_dead)
+	local payloads<const>: *u32 = words
+	local tag_bytes<const>: *u8 = tags
+	local links<const> = tags + 2 * hash
+	local home<const> = hash_slots.internal.hash_canonical_table_key(kt, kw) & (hash - 1)
+	local identity<const> = match_dead and (kt == table_tag or kt == closure_tag or kt == thread_tag)
+	local slot = home -- T:208,228 C:98,129
+	for remaining = hash, 1, -1 do -- T:208,228 C:99,117
+		if slot < 0 then break end -- T:208,228 C:99,117
+		local tag<const> = tag_bytes[slot] -- T:209,229 C:102
+		if tag == kt then -- T:210,230 C:103
+			if payloads[slot] == kw then return slot end -- T:210,230 C:104
+		elseif identity and tag == 0 and payloads[slot] == kt then -- T:211-213 C:105
+			local value_slot<const> = slot + hash -- T:212 C:106
+			if tag_bytes[value_slot] == dead_key and payloads[value_slot] == kw then return slot end -- T:212-213 C:107
+		end
+		slot = hash_slots.internal.hash_next(links, hash, slot) -- T:216,231 C:109
+	end
+	return -1
+end
+
 -- Retry begins at setOwn on the already-resolved receiver, not the
 -- initial-absence shortcut used by General physical recovery.
 local retry_old_hash<const> = function(management, record, hash, kt, kw, vt, vw) -- P:850-855 Q:246-250 T:509-568 C:740-761,787-845
@@ -86,39 +115,18 @@ local retry_old_hash<const> = function(management, record, hash, kt, kw, vt, vw)
 	local header<const>: *growth_receiver = ram_base + (record & ram_word_mask) -- T:138 C:793
 	local words<const> = ram_base + (header.hash_storage & ram_word_mask) -- T:536 C:792
 	local tags<const> = words + 8 * hash -- T:536 C:791
-	local payloads<const>: *u32 = words -- T:544 C:795
-	local tag_bytes<const>: *u8 = tags -- T:546 C:821
-	local links<const> = tags + 2 * hash -- T:604 C:795
-	local home<const> = hash_slots.internal.hash_canonical_table_key(kt, kw) & (hash - 1) -- T:537 C:792
-	local identity<const> = kt == table_tag or kt == closure_tag or kt == thread_tag -- T:655 C:97
-	local slot = home -- T:208,228 C:98,129
-	for remaining = hash, 1, -1 do -- T:208,228 C:99,117
-		if slot < 0 then break end -- T:208,228 C:99,117
-		local tag<const> = tag_bytes[slot] -- T:209,229 C:102
-		if tag == kt then -- T:210,230 C:103
-			if payloads[slot] == kw then goto matched end -- T:210,230 C:104
-		elseif identity and tag == 0 and payloads[slot] == kt then -- T:211-213 C:105
-			local value_slot<const> = slot + hash -- T:212 C:106
-			if tag_bytes[value_slot] == dead_key and payloads[value_slot] == kw then goto matched end -- T:212-213 C:107
-		end
-		slot = hash_slots.internal.hash_next(links, hash, slot) -- T:216,231 C:109
-	end
-	do -- T:552-562 C:829-838
+	local tag_bytes<const>: *u8 = tags
+	local slot<const> = find_hash_node(words, tags, hash, kt, kw, true)
+	if slot < 0 then -- T:552-562 C:829-838
 		local found<const> = existing.insert_hash_without_growth(management + layout.control_offset, record, kt, kw, vt, vw, cpp_policy) -- T:555 C:835
 		if found < 0 then return false end -- T:556,564 C:836,844
 		assignment.finish_table_insertion(management, record, kt, kw, vt, vw, cpp_policy) -- T:559,526 C:837,761
 		return true -- T:560 C:838
 	end
-	::matched:: -- T:542-547 C:819-825
 	local value_slot<const> = slot + hash -- T:545 C:820
 	local prior<const> = tag_bytes[value_slot] -- T:545 C:821
 	if prior ~= 0 and prior ~= dead_key then -- T:546 C:822
-		local work<const>: *u32 = ram_base + management + layout.string_mark_work_offset -- T:547 C:825
-		local pending<const> = *work -- T:547 C:825
-		local carry<const> = barrier.write_table_assignment(management + layout.control_offset, management + layout.arena_offset, -- T:547 C:825
-			management + layout.metadata_offset, record, vt, vw, 0, 0, 0, cpp_policy, pending) -- T:547 C:825
-		if carry ~= pending then *work = carry end -- T:547 C:825
-		hash_slots.internal.write_slot(words, tags, value_slot, vt, vw) -- T:548 C:826
+		assignment.overwrite_table_value(management, record, words, tags, value_slot, vt, vw) -- T:547-548 C:825-826
 		if kt == integer_tag and kw > 0 and kw - 1 == header.length then header.length = kw end -- T:526,1105 C:761,784
 		return true -- T:549 C:827
 	end
@@ -260,4 +268,78 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 	end
 end
 
-return { internal = { borrow_collection_roots = borrow_collection_roots, retry_old_hash = retry_old_hash }, grow_table = grow_table }
+-- RawSet uses the existing normal tagged CALL transport. No metamethod
+-- lookup precedes setOwn, and the bound receiver remains the return value.
+local raw_set<const> = function(target, key, value, supplied)
+	local management_port<const>: *u32 = layout.management_address
+	local fault<const>: *u32 = layout.call_fault_address
+	local management<const> = *management_port
+	local cell<const> = ram_base + management + layout.value_cell_offset
+	local argument<const>: *value = cell
+	local tag<const>: *u8 = cell + layout.value_cell_tag_offset
+	local payload<const>: *u32 = cell
+	*argument = target
+	if *tag ~= table_tag or supplied == 0 then
+		*fault = invalid_argument
+		return nil
+	end
+	local record<const> = *payload
+	*argument = key
+	local kt, kw = *tag, *payload
+	if kt == nil_tag then
+		*fault = index_nil
+		return nil
+	elseif kt <= true_tag then
+		kw = 0
+	elseif kt == float_tag then
+		if key ~= key then
+			*fault = index_nan
+			return nil
+		end
+		local integer<const> = word_arithmetic.float_to_word(kw)
+		if key == integer then kt, kw = integer_tag, integer end
+	end
+	*argument = value
+	local vt<const>, vw<const> = *tag, *payload
+	local header<const>: *growth_receiver = record
+	local positive_integer<const> = kt == integer_tag and kw > 0
+	if positive_integer and kw <= header.array then
+		local planes<const> = header.array_storage
+		assignment.overwrite_table_value(management, record, planes, planes + 4 * header.array, kw - 1, vt, vw)
+	elseif vt == nil_tag then
+		local hash<const> = header.hash
+		if hash ~= 0 then
+			local planes<const> = header.hash_storage
+			local tags<const> = planes + 8 * hash
+			local slot<const> = find_hash_node(planes, tags, hash, kt, kw, false)
+			if slot >= 0 then
+				local tags_bytes<const>: *u8 = tags
+				if tags_bytes[slot + hash] ~= nil_tag then
+					local new_index<const>: *u32 = ram_base + management + layout.remark_head_offset + layout.remark_new_index_offset
+					weak_entries.internal.mark_hash_node_dead(record, planes, tags, hash, slot, kt, kw, *new_index)
+				end
+			end
+		end
+	elseif not retry_old_hash(management, record, header.hash, kt, kw, vt, vw) then
+		local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
+		operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
+		operands.value_tag, operands.value_word = vt, vw
+		local cycles<const>: *u32 = layout.call_cycles_address
+		local status<const> = grow_table(management, *cycles, 0, general_mode)
+		if status ~= 0 then
+			*fault = status - 1
+			return nil
+		end
+	end
+	if positive_integer then
+		local hint<const> = header.length
+		if vt == nil_tag and kw == hint then header.length = kw - 1
+		elseif vt ~= nil_tag and kw - 1 == hint then header.length = kw end
+	end
+	return target
+end
+
+return {
+	internal = { borrow_collection_roots = borrow_collection_roots, retry_old_hash = retry_old_hash, find_hash_node = find_hash_node },
+	grow_table = grow_table, raw_set = raw_set,
+}

@@ -397,7 +397,6 @@ private:
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
-	bool runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out, BiosCallContinuation completion);
 	std::optional<int> selectArgumentStart(Value selector, int count) const;
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinError(BuiltinArgsView args);

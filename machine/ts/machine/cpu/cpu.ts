@@ -4723,15 +4723,7 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
-			if (id === BuiltinFunctionId.RawSet) {
-				if (this.runBuiltinRawSet(builtinArgs, results, HeapServiceBiosCallKind.Call, callBase, returnCount)) return;
-				if (this.tableRebuild.record) {
-					const j = this.tableRebuild;
-					j.result = TableStoreReturn.Call; j.destination = callBase; j.wanted = returnCount >>> 0;
-					j.instructionPc = this.currentInstructionPc;
-					return;
-				}
-			} else this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
+			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromRegisters(frame, callBase, returnCount, results.slots, 0, results.length);
 			}
@@ -4812,15 +4804,7 @@ export class CPU implements MappedPageInvalidator {
 				const results = this.acquireBuiltinResults();
 				try {
 					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
-					if (builtinId === BuiltinFunctionId.RawSet) {
-						if (this.runBuiltinRawSet(builtinArgs, results, HeapServiceBiosCallKind.Protected, continuationIndex, 0)) return;
-						if (this.tableRebuild.record) {
-							const j = this.tableRebuild;
-							j.result = TableStoreReturn.Protected; j.destination = continuationIndex;
-							j.instructionPc = this.currentInstructionPc;
-							return;
-						}
-					} else this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
+					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
 					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -5034,15 +5018,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 		return true;
 	}
-	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults, kind: HeapServiceBiosCallKind, target: number, resultWord: number): boolean {
-		const registers = args.registers, base = args.base;
-		if (args.length < 3 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const slot = this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2), this, kind, target, resultWord);
-		if (slot === HASH_STORE_PENDING && this.heapServiceActive()) return true;
-		out.push(registers.get(base));
-		return false;
-	}
-
 	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {
 		const registers = args.registers;
 		const base = args.base;

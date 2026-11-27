@@ -87,15 +87,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		}
 	});
 
-	test(`raw table builtins distinguish missing arguments from explicit nil and NaN keys (${backend})`, () => {
-		for (const [method, supplied, key, fault] of [
-			[BuiltinFunctionId.RawGet, 1, valueNil(), LUA_FAULT_REASON_INVALID_ARGUMENT],
-			[BuiltinFunctionId.RawGet, 2, valueNil(), 0],
-			[BuiltinFunctionId.RawGet, 2, valueFloatBits(0x7fa12345), 0],
-			[BuiltinFunctionId.RawSet, 2, valueInteger(1), LUA_FAULT_REASON_INVALID_ARGUMENT],
-			[BuiltinFunctionId.RawSet, 3, valueNil(), LUA_FAULT_REASON_INDEX_NIL],
-			[BuiltinFunctionId.RawSet, 3, valueFloatBits(0xffc12345), LUA_FAULT_REASON_INDEX_NAN],
-			[BuiltinFunctionId.RawSet, 3, valueInteger(1), 0],
+	test(`rawget distinguishes missing arguments from explicit nil and NaN keys (${backend})`, () => {
+		for (const [supplied, key, fault] of [
+			[1, valueNil(), LUA_FAULT_REASON_INVALID_ARGUMENT],
+			[2, valueNil(), 0],
+			[2, valueFloatBits(0x7fa12345), 0],
 		] as const) {
 			const text = new Uint8Array(3 * INSTRUCTION_BYTES);
 			writeInstruction(text, 0, OpCode.CALL, 0, supplied + 1, 2);
@@ -106,15 +102,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, table = cpu.createTable();
 			cpu.gc.tables.setInteger(table, 1, valueInteger(87));
-			frame.registers.setBuiltinFunction(0, method);
+			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.RawGet);
 			frame.registers.setTable(1, table);
 			frame.registers.set(2, key);
-			frame.registers.setNil(3);
 			cpu.runUntilDepth(0, 1);
 			assert.equal(cpu.readLuaFaultReasonWord(), fault);
-			if (fault === 0) assert.equal(frame.registers.get(0), method === BuiltinFunctionId.RawGet ? valueNil() : valueTable(table));
-			assert.equal(cpu.gc.tables.getInteger(table, 1),
-				fault === 0 && method === BuiltinFunctionId.RawSet ? valueNil() : valueInteger(87));
+			if (fault === 0) assert.equal(frame.registers.get(0), valueNil());
+			assert.equal(cpu.gc.tables.getInteger(table, 1), valueInteger(87));
 		}
 	});
 

@@ -4,7 +4,7 @@ local metatables<const> = require('kernel/gc_barrier')
 local globals<const> = require('kernel/set_global')
 local vm_getmetatable<const> = __bmsx_getmetatable
 local vm_rawget<const> = __bmsx_rawget
-local vm_rawset<const> = __bmsx_rawset
+local tables<const> = require('kernel/table_grow')
 local vm_select<const> = __bmsx_select
 local vm_error<const> = __bmsx_error
 local vm_pcall<const> = __bmsx_pcall
@@ -20,7 +20,9 @@ type = vm_type
 setmetatable = metatables.set_metatable
 getmetatable = vm_getmetatable
 rawget = vm_rawget
-rawset = vm_rawset
+rawset = function(target, key, ...)
+	return tables.raw_set(target, key, (...), vm_select('#', ...))
+end
 getglobal = __bmsx_getglobal
 setglobal = globals.set_global
 select = vm_select

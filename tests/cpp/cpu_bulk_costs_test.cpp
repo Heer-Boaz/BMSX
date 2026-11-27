@@ -52,10 +52,10 @@ struct CpuMachine {
 };
 
 void writeRoutes(bool scalar) {
- for (const auto op : {OpCode::SETT, OpCode::SETI, OpCode::SETFIELD, OpCode::CALL}) {
+ for (const auto op : {OpCode::SETT, OpCode::SETI, OpCode::SETFIELD}) {
   test::Blua32TestImage image;
   image.text.resize(2 * INSTRUCTION_BYTES);
-  writeInstruction(image.text, 0, static_cast<u8>(op), 0, op == OpCode::SETFIELD ? 0 : op == OpCode::CALL ? 4 : 1, op == OpCode::CALL ? 1 : 2);
+  writeInstruction(image.text, 0, static_cast<u8>(op), 0, op == OpCode::SETFIELD ? 0 : 1, 2);
   writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
   image.constants = {std::string{"field"}};
   image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
@@ -67,16 +67,12 @@ void writeRoutes(bool scalar) {
   const Value key = integer ? valueInteger(1) : valueString(cpu.stringPool().intern("field"));
   auto prepare = [&](int array, int hash) {
    auto table = bmsx::test::allocateTableReference(cpu, array, hash);
-   if (op == OpCode::CALL) {
-    r.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::RawSet)); r.set(1, valueTable(table.address())); r.set(2, key); r.set(3, valueInteger(73));
-   } else {
-    r.set(0, valueTable(table.address())); r.set(1, key); r.set(2, valueInteger(73));
-   }
+   r.set(0, valueTable(table.address())); r.set(1, key); r.set(2, valueInteger(73));
    return table;
   };
   prepare(integer ? 1 : 0, integer ? 0 : 1); machine.warm(scalar);
   auto table = prepare(0, 0); machine.restart();
-  const int base = BASE_CYCLES[static_cast<u8>(op)] + (op == OpCode::CALL ? 1 : 0);
+  const int base = BASE_CYCLES[static_cast<u8>(op)];
   if (cpu.runUntilDepth(0, base) != RunResult::Yielded || cpu.instructionBudgetRemaining != 0
    || frame->readControl(bmsx::FrameField::Pc) != machine.rom.textAddress + INSTRUCTION_BYTES || table.get(key) != valueInteger(73))
    throw std::runtime_error("every table-write route completes growth at its ordinary charge");
@@ -336,39 +332,6 @@ void publishFirstArray(bool scalar, int dense) {
   throw std::runtime_error("first-array restore changed retirement");
 }
 
-void publishRawStoreBeforeReturning(bool protectedCall, bool census) {
- test::Blua32TestImage image;
- image.text.resize(2 * INSTRUCTION_BYTES);
- writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, protectedCall ? 5 : 4, 17);
- writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
- image.functions = {{.firstWord=0, .wordCount=2, .maxStack=5}};
- CpuMachine m(image, true);
- auto& cpu = m.cpu;
- auto table = bmsx::test::allocateTableReference(cpu, census ? 2048 : 0, census ? 0 : 256);
- const auto key = census ? valueInteger(2049) : valueString(cpu.stringPool().intern("new"));
- for (int i = 1; i <= (census ? 2048 : 256); ++i) table.setInteger(census ? i : -i, valueInteger(i));
- auto* frame = cpu.activeThread()->currentFrame;
- const int a = protectedCall ? 1 : 0;
- if (protectedCall) frame->registers.set(0, valueBuiltinFunction(BuiltinFunctionId::PCall));
- frame->registers.set(a, valueBuiltinFunction(BuiltinFunctionId::RawSet));
- frame->registers.set(a+1, valueTable(table.address()));
- frame->registers.set(a+2, key); frame->registers.set(a+3, valueInteger(9));
- cpu.runUntilDepth(0, 40, 0, CpuRunKind::Scheduled);
- if (!valueIsBuiltinFunction(frame->registers.get(0)) || !cpu.tableRebuild.record || !isNil(table.get(key)))
-  throw std::runtime_error("rawset must not publish results before the mapping");
- const auto anchor = cpu.captureRuntimeState();
- const auto ram = m.memory.captureSaveState();
- for (bool restored : {false, true}) {
-  if (restored) { m.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor); frame = cpu.activeThread()->currentFrame; }
-  for (int n=0; cpu.tableRebuild.record; ++n) {
-   if (n>1024 || cpu.runUntilDepth(0,8,0,CpuRunKind::Scheduled) != RunResult::Yielded) throw std::runtime_error("unexpected rawset grant");
-  }
-  if (table.get(key) != valueInteger(9) || frame->registers.get(a) != valueTable(table.address())
-   || (protectedCall && frame->registers.get(0) != valueBool(true)) || !isNil(frame->registers.get(15)))
-   throw std::runtime_error("rawset must finish its saved return placement");
- }
-}
-
 void rebuildWork(bool scalar) {
  for (const std::string scenario : {"array-growth", "hash-to-array", "array-to-hash", "mixed", "same-capacity", "weak-collection", "failed-growth"}) {
   test::Blua32TestImage image;
@@ -553,7 +516,6 @@ int main() {
    runNext(falseKey, valueNil(), {valueBool(false), valueBool(false)});
    runNext(falseKey, valueBool(false), {valueNil()});
   }
-  if (scalar) for (bool census : {false, true}) { publishRawStoreBeforeReturning(false, census); publishRawStoreBeforeReturning(true, census); }
   writeRoutes(scalar);
   replayInFlightHash(scalar);
   shrinkSparseArray(scalar,0); shrinkSparseArray(scalar,256);

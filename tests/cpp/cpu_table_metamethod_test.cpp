@@ -96,30 +96,27 @@ void rawKeysAndReadForwarding() {
 	}
 }
 
-void rawBuiltinsDistinguishExplicitKeysFromMissingArguments() {
-	for (const auto id : {BuiltinFunctionId::RawGet, BuiltinFunctionId::RawSet}) {
-		for (const Value key : {valueNil(), valueFloatBits(0xffa01234u)}) for (bool supplied : {false, true}) {
-			Program program(OpCode::CALL, true);
-			Machine generated(program, false), scalar(program, true);
-			const bool write = id == BuiltinFunctionId::RawSet;
-			for (auto* m : {&generated, &scalar}) {
-				auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-				meta.setStringKey(m->cpu.stringPool().intern(write ? "__newindex" : "__index"), m->cpu.createBuiltinFunction(BuiltinFunctionId::Error));
-				root.setMetatableAddress(meta.address());
-				auto* frame = m->cpu.activeThread()->currentFrame;
-				frame->registers.set(0, m->cpu.createBuiltinFunction(id)); frame->registers.set(1, valueTable(root.address()));
-				frame->registers.set(2, key); frame->registers.set(3, valueNil());
-				frame->setTop((write ? 3 : 2) + supplied);
-			}
-			parity(generated, scalar, 1);
-			if (supplied && !write) {
-				require(generated.cpu.readCauseWord() == 0 && isNil(generated.cpu.readFrameRegister(0, 0)),
-					"rawget of explicit nil or NaN misses without invoking __index");
-			} else {
-				const u32 reason = !supplied ? LUA_FAULT_REASON_INVALID_ARGUMENT : valueIsNaN(key) ? LUA_FAULT_REASON_INDEX_NAN : LUA_FAULT_REASON_INDEX_NIL;
-				require(generated.cpu.readLuaFaultReasonWord() == reason && generated.cpu.readEpcWord() == generated.rom.textAddress,
-					"missing and explicitly invalid arguments fault from their own raw CALL contract, not __newindex");
-			}
+void rawGetDistinguishesExplicitKeysFromMissingArguments() {
+	for (const Value key : {valueNil(), valueFloatBits(0xffa01234u)}) for (bool supplied : {false, true}) {
+		Program program(OpCode::CALL, true);
+		Machine generated(program, false), scalar(program, true);
+		for (auto* m : {&generated, &scalar}) {
+			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
+			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(BuiltinFunctionId::Error));
+			root.setMetatableAddress(meta.address());
+			auto* frame = m->cpu.activeThread()->currentFrame;
+			frame->registers.set(0, m->cpu.createBuiltinFunction(BuiltinFunctionId::RawGet));
+			frame->registers.set(1, valueTable(root.address()));
+			frame->registers.set(2, key);
+			frame->setTop(2 + supplied);
+		}
+		parity(generated, scalar, 1);
+		if (supplied) {
+			require(generated.cpu.readCauseWord() == 0 && isNil(generated.cpu.readFrameRegister(0, 0)),
+				"rawget of explicit nil or NaN misses without invoking __index");
+		} else {
+			require(generated.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT
+				&& generated.cpu.readEpcWord() == generated.rom.textAddress, "rawget reports a missing key at its CALL");
 		}
 	}
 }
@@ -444,7 +441,7 @@ void tableLengthAllowsOrdinaryMetamethodResult() {
 
 int main() {
 	try {
-		rawKeysAndReadForwarding(); rawBuiltinsDistinguishExplicitKeysFromMissingArguments();
+		rawKeysAndReadForwarding(); rawGetDistinguishesExplicitKeysFromMissingArguments();
 		stringForwardingUsesLiveStringReceiverAndVisitBound(); tableValuedNewIndexAndOwnOverwrite();
 		stringIndexUsesTheRestoredRamRoot();
 		fixedFieldAssignmentReusesTheTerminalProof();

@@ -21,6 +21,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
+	{ path: 'kernel/table_grow', exportPathKey: 'raw_set', numParams: 4 },
 	{ path: 'kernel/set_global', exportPathKey: 'set_global', numParams: 2 },
 	{ path: 'kernel/frame_upvalue', exportPathKey: 'set_frame_upvalue', numParams: 4 },
 	{ path: 'kernel/heap_floor', exportPathKey: 'admit_static_end', numParams: 1 },

@@ -5,6 +5,7 @@ module<const>
 -- the mapping and allocation charge have been published before this tail.
 local layout<const> = require('kernel/gc_runtime_layout') -- M:6
 local barrier<const> = require('kernel/gc_barrier') -- T:566 C:742
+local slots<const> = require('kernel/table_reinsert')
 local ram_base<const> = layout.ram_base -- M:6
 local integer_tag<const> = 3 -- V:9-11 W:21-23
 local string_tag<const> = 5 -- V:9-11 W:21-23
@@ -30,4 +31,14 @@ local finish_table_insertion<const> = function(management, record, key_tag, key_
 	end
 end
 
-return { finish_table_insertion = finish_table_insertion }
+-- Existing entries carry only the value edge; publish it before slot RAM.
+local overwrite_table_value<const> = function(management, record, words, tags, slot, tag, word)
+	local work<const>: *u32 = ram_base + management + layout.string_mark_work_offset
+	local pending<const> = *work
+	local remaining<const> = barrier.write_table_assignment(management + layout.control_offset, management + layout.arena_offset,
+		management + layout.metadata_offset, record, tag, word, 0, 0, 0, 1, pending)
+	if remaining ~= pending then *work = remaining end
+	slots.internal.write_slot(words, tags, slot, tag, word)
+end
+
+return { finish_table_insertion = finish_table_insertion, overwrite_table_value = overwrite_table_value }

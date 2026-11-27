@@ -1356,8 +1356,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
-		case BuiltinFunctionId::RawSet:
-			BMSX_UNREACHABLE();
 		case BuiltinFunctionId::PCall:
 		case BuiltinFunctionId::XPCall:
 			throw std::runtime_error("Protected calls execute as Lua CPU microcode.");
@@ -1476,16 +1474,7 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPl
 	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
-	if (fn.id == BuiltinFunctionId::RawSet) {
-		if (runBuiltinRawSet(arguments.values(), out, {HeapServiceBiosCallKind::Call, static_cast<u32>(result.base), result.word})) return;
-		if (tableRebuild.record) {
-			tableRebuild.result = TableStoreReturn::Call;
-			tableRebuild.destination = result.base;
-			tableRebuild.wanted = result.word;
-			tableRebuild.instructionPc = m_currentInstructionPc;
-			return;
-		}
-	} else callBuiltinFunction(fn, arguments.values(), out, result.limit());
+	callBuiltinFunction(fn, arguments.values(), out, result.limit());
 	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
 		writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
 	}
@@ -1533,15 +1522,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 		}
 		auto resultsScratch = acquireBuiltinResultScratch();
 		BuiltinResults& results = resultsScratch.get();
-		if (builtin.id == BuiltinFunctionId::RawSet) {
-			if (runBuiltinRawSet(arguments.values(), results, {HeapServiceBiosCallKind::Protected, continuationIndex, 0u})) return;
-			if (tableRebuild.record) {
-				tableRebuild.result = TableStoreReturn::Protected;
-				tableRebuild.destination = continuationIndex;
-				tableRebuild.instructionPc = m_currentInstructionPc;
-				return;
-			}
-		} else callBuiltinFunction(builtin, arguments.values(), results, -1);
+		callBuiltinFunction(builtin, arguments.values(), results, -1);
 		finishProtectedCall(continuationIndex, {nullptr, results.data(), 0, static_cast<int>(results.size())});
 		return;
 	}
@@ -1685,17 +1666,6 @@ bool CPU::stepTableIterator(ValueSpan& registers, int base, int destination, int
 	// payload is a private cursor, carried by the normal frame state.
 	registers.set(base + 2, valueFromTag(ValueTag::Nil, cursor));
 	return true;
-}
-
-bool CPU::runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out, BiosCallContinuation completion) {
-	const Value target = args[0];
-	if (!valueIsTable(target) || args.size() < 3) {
-		throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	}
-	const int slot = TableRecord(m_heap, valuePayload(target)).set(args[1], args[2], this, completion);
-	if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) return true;
-	out.push_back(target);
-	return false;
 }
 
 // Zero selects the argument count; positive offsets select an argument suffix.

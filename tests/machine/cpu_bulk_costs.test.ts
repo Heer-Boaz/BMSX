@@ -333,39 +333,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   assert.equal(tables.getInteger(t, 257), valueInteger(71));
  });
 
- for (const protect of [false, true]) for (const census of [false, true]) test(`rawset publishes before growing its result window (${backend}, protected=${protect}, census=${census})`, () => {
-  const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-  writeInstruction(text, 0, OpCode.CALL, 0, protect ? 5 : 4, 17);
-  writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
-  const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
-  const t = cpu.createTable(census ? 2048 : 0, census ? 0 : 256), tables = cpu.gc.tables;
-  const key = census ? valueInteger(2049) : valueString(cpu.stringPool.intern('new'));
-  for (let i=1; i<=(census ? 2048 : 256); ++i) tables.setInteger(t, census ? i : -i, valueInteger(i));
-  const a = protect ? 1 : 0;
-  if (protect) r.setBuiltinFunction(0, BuiltinFunctionId.PCall);
-  r.setBuiltinFunction(a, BuiltinFunctionId.RawSet);
-  r.setTable(a+1, t); r.set(a+2, key); r.setInteger(a+3, 9);
-  const original = r.get(0);
-  cpu.runUntilDepth(0, 40, cpu.rootThread.address, CpuRunKind.Scheduled);
-  assert.equal(r.get(0), original); assert.ok(cpu.tableRebuild.record); assert.equal(tables.get(t, key), valueNil());
-  const anchor = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
-  for (const restored of [false, true]) {
-   if (restored) { cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(anchor); }
-   for (let n=0; cpu.tableRebuild.record; ++n) {
-    assert.ok(n<1024); assert.equal(cpu.runUntilDepth(0,8,cpu.rootThread.address,CpuRunKind.Scheduled), RunResult.Yielded);
-   }
-   assert.equal(tables.get(t, key), valueInteger(9));
-   assert.equal(cpu.rootThread.currentFrame!.registers.get(a), valueTable(t));
-   if (protect) assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueBool(true));
-   assert.equal(cpu.rootThread.currentFrame!.registers.get(15), valueNil());
-  }
- });
-
- for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD, OpCode.CALL]) {
+ for (const op of [OpCode.SETT, OpCode.SETI, OpCode.SETFIELD]) {
   test(`table-write routes charge large scans but not overwrites (${backend}, ${op})`, () => {
    const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-   writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : op === OpCode.CALL ? 4 : 1, op === OpCode.CALL ? 1 : 2);
+   writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : 1, 2);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
    const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
    const { cpu } = createTestHeapServiceCpu(image, backend);
@@ -375,12 +346,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    const key = integer ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
    const prepare = (array: number, hash: number) => {
     const table = cpu.createTable(array, hash);
-    if (op === OpCode.CALL) {
-     r.setBuiltinFunction(0, BuiltinFunctionId.RawSet); r.setTable(1, table);
-     r.set(2, key); r.setInteger(3, 73);
-    } else {
-     r.setTable(0, table); r.set(1, key); r.setInteger(2, 73);
-    }
+    r.setTable(0, table); r.set(1, key); r.setInteger(2, 73);
     return table;
    };
    prepare(integer ? 1 : 0, integer ? 0 : 1); cpu.runUntilDepth(0, 10000);
@@ -390,7 +356,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    }
    const table = prepare(0, 0);
    cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
-   const base = BASE_CYCLES[op] + (op === OpCode.CALL ? 1 : 0);
+   const base = BASE_CYCLES[op];
    assert.equal(cpu.runUntilDepth(0, base), RunResult.Yielded);
    assert.equal(cpu.instructionBudgetRemaining, 0);
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
