@@ -206,7 +206,7 @@ end
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
 			assert.equal(current(), true); assert.equal(program, valuePayload(guest.readStringMember(target, 'program')));
 			call = { domain: -1, closure: asClosure(guest.readStringMember(selected.receiver, 'scrub_time'), cpu.gc),
-				args: () => [component, selected.key, valueInteger(time)] };
+				argumentCount: 3, args: () => [component, selected.key, valueInteger(time)] };
 			observer = finished;
 		});
 	};

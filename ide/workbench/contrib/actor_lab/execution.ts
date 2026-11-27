@@ -106,7 +106,7 @@ export class ActorExecutionService {
 				if (world === undefined) {
 					this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'World changed before actor invocation.' }); return;
 				}
-				return { request: { domain, closure: asClosure(this.guest.readStringMember(world, 'request_mutation_boundary'), this.runtime.machine.cpu.gc), args: () => [world] },
+				return { request: { domain, closure: asClosure(this.guest.readStringMember(world, 'request_mutation_boundary'), this.runtime.machine.cpu.gc), argumentCount: 1, args: () => [world] },
 					condition: values => {
 						const receipt = values[0];
 						return () => this.guest.isTruthy(this.guest.readStringMember(receipt, 'reached'));
@@ -158,7 +158,7 @@ export class ActorExecutionService {
 			prepare: () => {
 				const world = this.world(domain, worldHashId);
 				if (world === undefined) return;
-				return { domain, closure: asClosure(this.guest.readStringMember(world, 'render'), this.runtime.machine.cpu.gc), args: () => [world] };
+				return { domain, closure: asClosure(this.guest.readStringMember(world, 'render'), this.runtime.machine.cpu.gc), argumentCount: 1, args: () => [world] };
 			},
 		}, () => {}, completed => {
 			if (!completed) { finished(false); return; }
@@ -183,7 +183,7 @@ export class ActorExecutionService {
 			if (object.kind !== 'value') return;
 			const setter = guest.readStringMember(actor, 'set_position');
 			if (setter !== guest.readStringMember(object.value, 'set_position')) return;
-			return { domain: request.target.domain, closure: asClosure(setter, cpu.gc), args: () => [actor, valueFloat(request.x), valueFloat(request.y)] };
+			return { domain: request.target.domain, closure: asClosure(setter, cpu.gc), argumentCount: 3, args: () => [actor, valueFloat(request.x), valueFloat(request.y)] };
 		}
 		if (request.kind === 'spawn') {
 			const module = readRuntimeLuaModuleExport(this.sources, guest, request.domain, 'cartlib/world/prefab');
@@ -196,6 +196,7 @@ export class ActorExecutionService {
 			});
 			if (isNil(id)) return;
 			return { domain: request.domain, closure: asClosure(guest.readStringMember(world, 'spawn'), cpu.gc),
+				argumentCount: 2 + request.args.length,
 				args: () => {
 					const args: Value[] = [world, id];
 					for (const literal of request.args) args.push(literal(cpu));
@@ -208,24 +209,28 @@ export class ActorExecutionService {
 		if (node === undefined) return;
 		let receiver = request.kind === 'method' ? node.value! : node.receiver!;
 		let method: string;
+		let leadingString: string | undefined;
 		const leading: Value[] = [];
 		if (request.kind === 'action') {
 			const action = actorActions(node).find(action => action.method === request.method);
 			if (action === undefined) return;
 			method = action.method;
-			if (node.kind === 'state') leading.push(valueString(cpu.stringPool.intern(node.path!)));
+			if (node.kind === 'state') leadingString = node.path!;
 			else if (action.keyed) leading.push(node.key);
 		} else if (request.kind === 'scrub') {
 			if (node.kind !== 'timeline' || guest.identityScalar(guest.readStringMember(node.value!, 'program'), ValueTag.Table) !== request.programHashId) return;
 			method = 'scrub_time'; leading.push(node.key, valueFloat(request.time));
 		} else if (request.kind === 'event') {
 			receiver = guest.readStringMember(tree.roots[0].value!, 'events');
-			method = 'emit'; leading.push(valueString(cpu.stringPool.intern(request.name)));
+			method = 'emit'; leadingString = request.name;
 		} else method = request.method;
 		const closure = guest.readStringMember(receiver, method);
 		if (valueTag(closure) !== ValueTag.Closure || request.kind === 'method' && !guest.matchesIdentity(closure, request.identity)) return;
-		return { domain: target.domain, closure: asClosure(closure, cpu.gc), args: () => {
+		const argumentCount = 1 + leading.length + +(leadingString !== undefined)
+			+ (request.kind === 'action' || request.kind === 'method' ? request.args.length : request.kind === 'event' ? 1 : 0);
+		return { domain: target.domain, closure: asClosure(closure, cpu.gc), argumentCount, args: () => {
 			const args: Value[] = [receiver, ...leading];
+			if (leadingString !== undefined) args.push(valueString(cpu.stringPool.intern(leadingString)));
 			if (request.kind === 'action' || request.kind === 'method') for (const literal of request.args) args.push(literal(cpu));
 			else if (request.kind === 'event') args.push(request.payload(cpu));
 			return args;

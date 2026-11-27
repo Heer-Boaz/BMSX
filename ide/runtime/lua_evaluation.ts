@@ -172,6 +172,7 @@ export class RuntimeLuaEvaluation {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');
 				if (module.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
 				return { domain: -1, closure: asClosure(this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame'), this.runtime.machine.cpu.gc),
+					argumentCount: selected === undefined ? 3 : 4,
 					args: () => {
 						const pool = this.runtime.machine.cpu.stringPool;
 						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=evaluation:${operation.id}`))];

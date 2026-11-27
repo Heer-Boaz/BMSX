@@ -1,8 +1,11 @@
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FrameField, FRAME_COMPLETION } from '../../machine/ts/machine/cpu/call_state';
+import { MAX_THREAD_VALUE_SLOTS } from '../../machine/ts/machine/cpu/thread_record';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+import { BLUA32_FUNCTION_VARARG } from '../../machine/ts/spec/blua32/image_format';
+import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
 import { pushRuntimeDebuggerControlPlan, type SourceExecutionState } from './debugger_state';
@@ -12,6 +15,7 @@ import type { RuntimeDebuggerSourceStop } from './source_debugger';
 export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
 	readonly closure: number;
+	readonly argumentCount: number;
 	/** Materialize new guest values only after the mutation has been admitted. */
 	readonly args: () => readonly Value[];
 };
@@ -119,7 +123,7 @@ export function scheduleRuntimeGuestCall(
 		} : finish);
 		retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', request.admission === 'at-stop' ? 'retain' : 'resume');
 	};
-	const admitCall = (checkBoundary: boolean): boolean => {
+	const admitCall = (checkBoundary: boolean, windowRequested = false): boolean => {
 		if (!request.isCurrent() || !runtime.admitExternalCpuMutation()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
 		const roots = cpu.acquireLocalRoots();
@@ -138,8 +142,47 @@ export function scheduleRuntimeGuestCall(
 				}
 			}
 			const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
+			const call = boundary === undefined ? request.prepare() : boundary.request;
+			if (call === undefined) { finished(false); return false; }
+			const thread = cpu.activeThread;
+			const { maxStack, numParams, flags } = cpu.captureClosureBinding(call.closure);
+			// An external call owns only the tail above every retained window.
+			let base = thread.stackTop;
+			for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+				base = Math.max(base, frame.stackBase + frame.stackCapacity);
+			const valueEnd = base + Math.max(1, numParams, maxStack)
+				+ ((flags & BLUA32_FUNCTION_VARARG) !== 0 ? call.argumentCount : 0);
+			if (call.argumentCount > MAX_THREAD_VALUE_SLOTS || valueEnd > MAX_THREAD_VALUE_SLOTS) {
+				failed(new Error('The call exceeds the machine register window.'));
+				return false;
+			}
+			if (!thread.frameSpaceFits(valueEnd)) {
+				if (windowRequested) {
+					failed(new Error('Not enough guest memory for the call register window.'));
+					return false;
+				}
+				const depth = thread.frameDepth;
+				if (depth === 0 || thread.address === CPU_RESET_BANK_ADDRESS
+					|| (request.admission === 'at-stop' && cpu.readExceptionReturnFrameDepth() !== -1)) {
+					failed(new Error('A register window cannot be requested without a stopped ordinary frame.'));
+					return false;
+				}
+				let retained: RuntimeDebuggerSourceStop | undefined;
+				const plan = new RuntimeGuestCallPlan(runtime, depth, 'exception', false, completed => {
+					if (!completed) { finished(false); return; }
+					if (retained !== undefined && debuggerState.source.returnToStop(retained))
+						debuggerState.stopPresentationPending = true;
+					// No closure or argument borrow crosses the firmware allocation.
+					void tasks.schedule(() => { admitCall(checkBoundary, true); }, failed);
+				});
+				guest.invalidate();
+				runtime.history.stop();
+				cpu.requestRegisterWindow(valueEnd, depth + 2, runtime.machine.scheduler.cyclesUntilDeadline());
+				retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', 'retain');
+				return true;
+			}
 			if (boundary !== undefined) {
-				beginCall(boundary.request, false, completed => {
+				beginCall(call, false, completed => {
 					if (!completed) { finished(false); return; }
 					const values: Value[] = [];
 					cpu.readCompletionValues(values);
@@ -158,8 +201,6 @@ export function scheduleRuntimeGuestCall(
 				});
 				return true;
 			}
-			const call = request.prepare();
-			if (call === undefined) { finished(false); return false; }
 			beginCall(call, request.honorUserStops, finished);
 			request.didEnter?.();
 			return true;

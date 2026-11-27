@@ -33,9 +33,11 @@ import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_ta
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
 import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
-import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
+import { linkTestSystemBlua32, writeTestBlua32Rom, type TestBlua32Image } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import {
 	createTestRuntime,
 	createTestSystemImageRuntimeSourceState,
@@ -46,14 +48,13 @@ const DEBUG_MODULE_PATH = 'debug_step';
 const DEBUG_RUN_CYCLE_BUDGET = 100_000;
 
 type DebuggerHarness = {
-	image: TestBlua32Image;
+	image: Pick<TestBlua32Image, 'image' | 'symbols' | 'biosImports' | 'romBytes'>;
 	runtime: Runtime;
 	state: RuntimeDebuggerState;
 };
 
-function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness {
-	const compiled = compileLuaSource(source, DEBUG_MODULE_PATH, optLevel);
-	const image = linkTestSystemBlua32(compiled);
+function createDebuggerHarness(source: string, optLevel: 0 | 3,
+	image: DebuggerHarness['image'] = linkTestSystemBlua32(compileLuaSource(source, DEBUG_MODULE_PATH, optLevel))): DebuggerHarness {
 	const runtime = createTestRuntime(image.romBytes);
 	const registry: LuaSourceRegistry = {
 		records: [],
@@ -123,7 +124,7 @@ for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${adm
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: asClosure(values[0], cpu.gc), args: () => [] }) },
+		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: asClosure(values[0], cpu.gc), argumentCount: 0, args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
@@ -153,7 +154,7 @@ test('at-stop evaluation cannot publish a new frame before accepted CPU time set
 			assert.equal(scheduler.acceptedCpuCycles, 0);
 			assert.equal(scheduler.nowCycles, target, 'prior work settles before looking up the new closure');
 			assert.equal(cpu.getFrameDepth(), depth);
-			return { domain: -1 as const, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] };
+			return { domain: -1 as const, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] };
 		},
 	};
 	const initialCycle = scheduler.nowCycles;
@@ -190,6 +191,62 @@ test('at-stop evaluation cannot publish a new frame before accepted CPU time set
 	cpu.readCompletionValues(results);
 	assert.deepEqual(results, [valueInteger(42)]);
 	assert.strictEqual(state.source.stop, retainedStop);
+});
+
+test('at-stop evaluation prepares physical variadic backing before materializing arguments', async () => {
+	const source = `module<entry>
+operation = function(...) return blua32.argument_count() end
+retired = 1
+return retired`;
+	const linked = linkManagedTestSystem(source, 3, [], [], DEBUG_MODULE_PATH);
+	const harness = createDebuggerHarness(source, 3, { image: linked.layout, symbols: linked.symbols,
+		biosImports: linked.biosImports, romBytes: writeTestBlua32Rom(linked) });
+	const { runtime, state } = harness, { cpu, scheduler } = runtime.machine;
+	startAtBreakpoint(harness, 3);
+	for (let grant = 0; grant < 16 && state.source.stop === undefined; ++grant)
+		assert.notEqual(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	const stop = state.source.stop, thread = cpu.activeThread, depth = thread.frameDepth;
+	assert.ok(stop);
+	assert.equal(blua32SourceRangeAtPc(linked.symbols, linked.layout.header.textAddress, stop.pc)!.start.line, 3);
+	assert.equal(cpu.getFrameDepth(), stop.depth);
+	const count = thread.stackRegisters.capacity() + 1, guest = new SuspendedGuestSession(runtime);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	let prepared = 0, constructed = 0, entered = 0, completed = false;
+	const now = scheduler.nowCycles;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission: 'at-stop', honorUserStops: false, isCurrent: () => state.source.stop === stop,
+		prepare: () => {
+			++prepared;
+			assert.strictEqual(state.source.stop, stop);
+			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: count, args: () => {
+				++constructed;
+				assert.ok(thread.stackRegisters.capacity() > count);
+				return Array.from({ length: count }, (_, i) => valueInteger(i));
+			} };
+		},
+		didEnter: () => { ++entered; },
+	}, () => {}, result => { completed = result; }, assert.fail);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(prepared, 1);
+	assert.equal(constructed, 0);
+	assert.equal(entered, 0);
+	assert.equal(runtime.cpuExecution.runSuspendedUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET, thread.address), CpuSuspendedRunResult.Completed);
+	assert.ok(scheduler.nowCycles > now);
+	assert.equal(cpu.readFramePc(depth - 1), stop.pc);
+	didExecuteRuntimeDebuggerPlan(state);
+	await tasks.join();
+	assert.equal(prepared, 2);
+	assert.equal(constructed, 1);
+	assert.equal(entered, 1);
+	assert.equal(runtime.cpuExecution.runSuspendedUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET, thread.address), CpuSuspendedRunResult.Completed);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.equal(completed, true);
+	const results: Value[] = [];
+	cpu.readCompletionValues(results);
+	assert.deepEqual(results, [valueInteger(count)]);
+	assert.strictEqual(state.source.stop, stop);
+	assert.equal(guest.global('retired'), valueNil(), 'the selected instruction never retired');
 });
 
 for (const optLevel of [3] as const) for (const pauseInCall of [false, true]) {
@@ -242,7 +299,7 @@ while true do counters[1] = counters[1] + 1 end
 				assert.equal(cpu.getFrameDepth(), depth);
 				assert.equal(cpu.readFramePc(depth - 1), pc);
 				assert.equal(state.source.stop !== undefined, true);
-				return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] };
+				return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] };
 			},
 		}, () => { started++; }, completed => { finished = completed; if (completed) cpu.readCompletionValues(values); }, assert.fail);
 		assert.equal(started, 1);
@@ -298,7 +355,7 @@ return loops
 	let finished = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, completed => { finished = completed; cpu.readCompletionValues(values); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
@@ -329,7 +386,7 @@ return work -- caller stop
 	const outcomes: boolean[] = [];
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, completed => { outcomes.push(completed); }, assert.fail);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
@@ -386,7 +443,7 @@ while true do counters[1] = counters[1] + 1 end
 			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			const first = memory.readMappedU32LE(irqCount);
 			assert.equal(first, 1, 'resolve arguments after the handler, not before it');
-			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [valueInteger(first)] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 1, args: () => [valueInteger(first)] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(result); }, assert.fail);
 	assert.equal(prepared, 0);
@@ -513,7 +570,7 @@ end
 		didEnter: () => { entered++; assert.equal(runtime.completionCallPending(), true); },
 		boundary: () => {
 			boundaryCalls++;
-			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
+			return { request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), argumentCount: 0, args: () => [] },
 				condition: values => {
 					const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
 					return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true);
@@ -523,7 +580,7 @@ end
 			prepared++;
 			const target = guest.global('actor');
 			assert.notEqual(target, before, 'resolve the replacement, never the popup borrow');
-			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [target] };
+			return { domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 1, args: () => [target] };
 		},
 	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(results); }, assert.fail);
 	const execute = async () => {
@@ -600,10 +657,10 @@ end
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
-		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), args: () => [] },
+		boundary: () => ({ request: { domain: -1, closure: asClosure(guest.global('request_boundary'), cpu.gc), argumentCount: 0, args: () => [] },
 			condition: values => { const receipt = valuePayload(values[0]), key = cpu.stringPool.find('reached')!;
 				return () => cpu.gc.tables.getStringKey(receipt, key) === valueBool(true); } }),
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, ready => { completed = ready; cpu.readCompletionValues(values); }, assert.fail);
 	for (let phase = 0; phase < 3; phase++) {
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
@@ -804,7 +861,7 @@ for (const level of [3] as const) for (const transition of ['source-install', 'h
 	let completed = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
-		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), args: () => [] }),
+		prepare: () => ({ domain: -1, closure: asClosure(guest.global('operation'), cpu.gc), argumentCount: 0, args: () => [] }),
 	}, () => {}, result => { completed = result; }, assert.fail);
 	if (transition === 'source-install') {
 		state.sources.currentBlua32Media = { ...state.sources.currentBlua32Media };
@@ -838,7 +895,7 @@ test(`guest call admission roots prepare and recursive arguments across GC (O${o
 		admission, honorUserStops: false, isCurrent: () => true,
 		prepare: () => {
 			const leading = valueString(cpu.stringPool.intern('prepare-owned-string'));
-			return { domain: -1, closure, args: () => [leading,
+			return { domain: -1, closure, argumentCount: 3, args: () => [leading,
 				prepareLuaLiteral('{ argument_owned_key = { "nested-owned-string" } }')(cpu),
 				valueString(cpu.stringPool.intern('last-owned-string'))] };
 		},
