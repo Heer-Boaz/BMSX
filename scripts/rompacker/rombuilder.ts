@@ -896,6 +896,7 @@ type BuildRomBlua32TailOptions = {
 } & (
 	| {
 		domain: 'system';
+		resetModule?: string;
 		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
@@ -959,6 +960,7 @@ export function buildRomBlua32Tail(
 			traceStatements: options.traceStatements ?? 'erase',
 			preloadModules: options.preloadModules,
 			domain: 'system',
+			resetModule: options.resetModule,
 			biosExports: options.biosExports,
 		});
 		const linked = built.linked;

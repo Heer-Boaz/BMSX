@@ -1,3 +1,4 @@
+import { SYSTEM_STARTUP_MODULE_PATH } from './generated_modules';
 import {
 	utf8FatalDecoder,
 } from '../../../machine/ts/common/serializer/binencoder';
@@ -14,6 +15,7 @@ import type {
 } from './blua32_bios_imports';
 import type { RomAsset } from './assets';
 import {
+	applyBlua32LinkValues,
 	linkCartBlua32Image,
 	linkSystemBlua32Image,
 	type LinkedCartBlua32Image,
@@ -39,6 +41,12 @@ export type GeneratedLuaModule = {
 	linkValues?: ReadonlyMap<string, number>;
 };
 
+const SYSTEM_STARTUP_LAYOUT_MODULE: GeneratedLuaModule = {
+	path: SYSTEM_STARTUP_MODULE_PATH,
+	source: 'module<const>\nreturn { managed_entry = 0 }',
+	linkValues: new Map([['managed_entry', 0]]),
+};
+
 export type Blua32SourceModule = {
 	readonly path: string;
 	readonly displayPath: string;
@@ -61,6 +69,7 @@ type Blua32ImageBuildOptionsBase = {
 
 type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	domain: 'system';
+	resetModule?: string;
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 };
 
@@ -164,8 +173,11 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		};
 		modules[entryIndex] = entry;
 	}
-	for (let index = 0; index < options.generatedLuaModules.length; index += 1) {
-		const generated = options.generatedLuaModules[index];
+	const authoredReset = options.domain === 'system' && options.resetModule !== undefined;
+	const generatedModules = authoredReset
+		? [...options.generatedLuaModules, SYSTEM_STARTUP_LAYOUT_MODULE]
+		: options.generatedLuaModules;
+	for (const generated of generatedModules) {
 		if (modulePaths.has(generated.path)) {
 			throw new Error(`Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
 		}
@@ -187,8 +199,9 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[index] = modules[index + 1];
 	}
 	modules.length -= 1;
-	const moduleRoots = [...(options.preloadModules ?? []), ...options.generatedLuaModules.map(module => module.path)];
+	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path)];
 	if (options.domain === 'system') {
+		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
 		for (const exported of options.biosExports) moduleRoots.push(exported.path);
 	}
 	const programModules = selectLuaProgramModules(entry.chunk, modules, moduleRoots);
@@ -241,6 +254,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		entrySource: entry.source,
 		entrySourceMap: entry.sourceMap,
 		programDomain: 'system',
+		resetModule: options.resetModule,
 		traceStatements: options.traceStatements,
 		preloadModules: options.preloadModules,
 	});
@@ -252,6 +266,11 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			options.ramByteCount,
 			options.biosExports,
 	);
+	if (authoredReset) {
+		const managed = linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.startupProtoIndex)];
+		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_LAYOUT_MODULE.path,
+			new Map([['managed_entry', managed.address]]));
+	}
 	return {
 		linked,
 		entryCodeAddress: linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.entryProtoIndex)].codeAddress,

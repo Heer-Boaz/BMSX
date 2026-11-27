@@ -191,6 +191,7 @@ type CompiledProgramBase = {
 
 export type CompiledSystemProgram = CompiledProgramBase & {
 	domain: 'system';
+	resetProtoIndex: number;
 	constRelocs: ProgramImageConstReloc[];
 };
 
@@ -208,7 +209,7 @@ export function encodeCompiledProgramObject(compiled: CompiledSystemProgram): Pr
 export function encodeCompiledProgramObject(compiled: CompiledCartProgram): ProgramCartObjectImage;
 export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramObjectImage {
 	const vectors = {
-		resetProtoIndex: compiled.startupProtoIndex,
+		resetProtoIndex: compiled.domain === 'system' ? compiled.resetProtoIndex : compiled.startupProtoIndex,
 		sectionInitProtoIndex: compiled.sectionInitProtoIndex,
 		irqProtoIndex: compiled.irqProtoIndex,
 		exceptionProtoIndex: compiled.exceptionProtoIndex,
@@ -281,6 +282,8 @@ type CompileOptionsBase = {
 
 export type SystemCompileOptions = CompileOptionsBase & {
 	programDomain: 'system';
+	/** Authored cold reset vector; never a module initializer. */
+	resetModule?: string;
 	biosFunctions?: never;
 };
 
@@ -1239,6 +1242,7 @@ const buildEntryProtoId = (moduleId: string): string => `${buildModuleRootId(mod
 const buildModuleProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/module`;
 
 const buildSectionInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/section_init`;
+const buildResetProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/reset`;
 const buildStartupProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/startup`;
 const buildInitProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/init`;
 const buildInterruptProtoId = (moduleId: string): string => `${buildModuleRootId(moduleId)}/irq`;
@@ -6333,6 +6337,7 @@ export function compileLuaChunkToProgram(
 		? 'system'
 		: 'cart';
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
+	const resetPath = options.programDomain === 'system' ? options.resetModule : undefined;
 	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
 	compiledModulePaths[0] = toLuaModulePath(chunk.locations.path);
 	const sourceMaps = new Map<string, LuaSourceMap>();
@@ -6469,6 +6474,7 @@ export function compileLuaChunkToProgram(
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
 	let startupProtoIndex = -1;
+	let resetProtoIndex: number | undefined;
 	let sectionInitProtoIndex = -1;
 	let irqProtoIndex = -1;
 	let exceptionProtoIndex = -1;
@@ -6511,11 +6517,12 @@ export function compileLuaChunkToProgram(
 		if (moduleInfo && moduleInfo.constModule) {
 			continue;
 		}
-		const moduleProtoId = buildModuleProtoId(module.path);
+		const reset = module.path === resetPath;
+		const moduleProtoId = reset ? buildResetProtoId(module.path) : buildModuleProtoId(module.path);
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
 			protoId: moduleProtoId,
-			functionDisplayName: 'module',
+			functionDisplayName: reset ? 'reset' : 'module',
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
@@ -6535,9 +6542,10 @@ export function compileLuaChunkToProgram(
 				isVararg: false,
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
-				staticClosure: false,
-			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, 'module', instructionSet, frontend.getFile(module.path));
-			programBuilder.recordModuleProto(module.path, protoIndex);
+				staticClosure: reset,
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, reset ? 'reset' : 'module', instructionSet, frontend.getFile(module.path));
+			if (reset) resetProtoIndex = protoIndex;
+			else programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
@@ -6551,8 +6559,14 @@ export function compileLuaChunkToProgram(
 	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
 	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
-			entryBuilder.markStaticModulePath(canonicalModules[index].path);
+			const path = canonicalModules[index].path;
+			if (path !== resetPath) entryBuilder.markStaticModulePath(path);
 		}
+	}
+	if (resetPath !== undefined) {
+		if (resetProtoIndex === undefined) throw new Error(`System reset module '${resetPath}' must be an authored executable source.`);
+		if (programBuilder.staticModulePaths.includes(resetPath))
+			throw new Error(`System reset module '${resetPath}' cannot be initialized as an ordinary module.`);
 	}
 	const initParticipants = programBuilder.orderedInitParticipants(moduleId);
 	if (initParticipants.length !== 0 || programBuilder.staticModulePaths.length !== 0) {
@@ -6595,6 +6609,7 @@ export function compileLuaChunkToProgram(
 			metadata,
 			entryProtoIndex,
 			startupProtoIndex,
+			resetProtoIndex: resetProtoIndex ?? startupProtoIndex,
 			sectionInitProtoIndex,
 			irqProtoIndex,
 			exceptionProtoIndex,
