@@ -3,7 +3,8 @@ import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_ser
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
@@ -162,6 +163,11 @@ lua_compiler = require('compiler/api')
 load = lua_compiler.load
 math = require('math')
 assert(setmetatable ~= nil)
+local floor<const> = require('kernel/heap_floor')
+local image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
+local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
+cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
 	compiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), [
