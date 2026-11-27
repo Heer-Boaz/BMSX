@@ -187,7 +187,8 @@ local finish_explicit_step<const> = function(state) -- T:283-286 C:286-289
 end
 
 return {
-	internal = { admitted_total = admitted_total, control_delta = control_delta, work_word_cycles = work_word_cycles },
+	internal = { admitted_total = admitted_total, control_delta = control_delta, work_word_cycles = work_word_cycles,
+		target_offset = target_offset, min_collection_bytes = min_collection_bytes }, -- A:7 B:12 T:13,28,31 C:23,26 H:75
 	heap_capacity = heap_capacity,
 	finish_explicit_step = finish_explicit_step, allocation_debt = allocation_debt, logical_fits = logical_fits,
 	logical_assist_pressure = logical_assist_pressure, logical_assist_allowance = logical_assist_allowance,

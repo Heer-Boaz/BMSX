@@ -270,7 +270,8 @@ local sweep_step<const> = function(metadata, arena, occupied, allowance, exact_s
 end
 
 return {
-	internal = { is_ram_string_id = is_ram_string_id, shrink_step = shrink_step },
+	internal = { is_ram_string_id = is_ram_string_id, shrink_step = shrink_step,
+		rom_tables_offset = 0x18 }, -- T:20-21 C:21-22
 	mark = mark,
 	begin_reachability_epoch = begin_reachability_epoch,
 	begin_sweep = begin_sweep,
