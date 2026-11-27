@@ -17,6 +17,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_collect_step', exportPathKey: 'collect_step', numParams: 0 },
 	{ path: 'kernel/bios_copy_table', exportPathKey: 'copy_table', numParams: 1 },
 	{ path: 'kernel/bios_string_slice', exportPathKey: 'intern_slice', numParams: 6 },
+	{ path: 'kernel/bios_string_char', exportPathKey: 'intern_chars', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },

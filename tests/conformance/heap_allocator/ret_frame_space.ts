@@ -25,7 +25,7 @@ try {
 		const frame = thread.currentFrame!, parent = frame.previous!, depth = cpu.getFrameDepth();
 		const capacity = () => memory.readRamRecordWord(thread.address + ThreadField.StackCapacity);
 		const before = capacity(), rom = join(directory, `system-O${level}.rom`), script = join(directory, `grants-O${level}.trace`);
-		writeFileSync(rom, f.linked.romBytes);
+		writeFileSync(rom, f.romBytes);
 		function save(name: string) {
 			const path = join(directory, `O${level}-${name}.state`);
 			writeFileSync(path, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));

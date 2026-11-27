@@ -1321,9 +1321,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameUpvalue:
 			ThreadRecord::invokeDiagnostic(m_heap, fn.id, args, out);
 			break;
-		case BuiltinFunctionId::StringChar:
-			runBuiltinStringChar(args, out);
-			break;
 		case BuiltinFunctionId::StringFromBytes: {
 			i32 address, count;
 			if (args.size() < 2 || !valueToInteger(args[0], address) || !valueToInteger(args[1], count) ||
@@ -1439,7 +1436,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 		// The resumer owns the argument slots while the new Thread
 		// owns its Entry. Let the existing prepared CALL acquire space.
 		const auto* frame = supplied.frame
-			? pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u, true)
+			? pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u)
 			: pushFrame(closure, supplied.values(), {}, 0u, 0u, true);
 		if (!frame) return;
 		target->setEntry(0u);
@@ -1514,7 +1511,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		const auto protectedIndex = static_cast<i32>(continuationIndex);
 		if (arguments.frame) pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {},
-			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, 0u, protectedIndex);
+			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, 0u, protectedIndex);
 		else pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc, true, protectedIndex);
 		return;
 	}
@@ -1722,21 +1719,6 @@ void CPU::runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int result
 	const int available = count + 1 - *start;
 	const int produced = resultLimit < 0 ? available : std::min(available, resultLimit);
 	for (int index = 0; index < produced; ++index) out.push_back(args[*start + index]);
-}
-
-void CPU::runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out) {
-	instructionBudgetRemaining -= static_cast<int>(args.size());
-	std::string result;
-	result.reserve(args.size());
-	for (const auto& arg : args) {
-		if (!valueIsNumber(arg)) {
-			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const u32 byte = wordOperand(arg);
-		if (byte > 0xffu) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		result.push_back(static_cast<char>(static_cast<u8>(byte)));
-	}
-	out.push_back(valueString(m_stringPool.intern(result)));
 }
 
 void CPU::runBuiltinError(BuiltinArgsView args) {
@@ -3049,7 +3031,7 @@ CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	CallResultPlacement result, u32 callSitePc, bool ordinaryCall, u32 codeFunction, i32 protectedIndex) {
+	CallResultPlacement result, u32 callSitePc, u32 codeFunction, i32 protectedIndex) {
 	const auto [image, functionRecord] = closure != 0u ? resolveClosureActivation(closure)
 		: ClosureActivation{m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
 	const int callerArgBase = caller.stackBase() + argBase;
@@ -3071,8 +3053,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	};
 	auto& thread = *m_activeThread;
 	const size_t end = placement.stackEnd();
-	const bool fits = ordinaryCall && thread.frameSpaceFits(end);
-	if (ordinaryCall && !fits) {
+	if (!thread.frameSpaceFits(end)) {
 		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
 		const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
 		if (function) {
@@ -3082,9 +3063,10 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 		// A first resumed Thread has no frame in which to trap. The
 		// ordinary resumer receives failed admission.
 		if (!sharedStack && thread.frameDepth() == 0u) throw LuaOutOfMemorySignal{};
+		enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		return nullptr;
 	}
 	auto* frame = thread.acquireFrame();
-	if (!fits) thread.reserveFrame(end, valueClosure(closure));
 	frame->executionImage = image;
 	frame->initializeControl(entry);
 	const auto [copied, padded] = placement.formals;

@@ -8,8 +8,8 @@ import { instructionOpcode } from '../../machine/ts/spec/blua32/instruction_form
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkTestSystemBlua32 } from './blua32';
-import { compileHeapServiceSystem } from './heap_service_system';
+import { writeTestBlua32Rom } from './blua32';
+import { linkManagedTestSystem } from './managed_system';
 
 const numbers = Array.from({ length: 65 }, (_, i) => i + 10);
 // Open returns through a short receiving window at a nonzero stack base.
@@ -26,8 +26,9 @@ return 37, call(leaf)
 `;
 
 export function returnWindowFixture(level: 0 | 3) {
-	const linked = linkTestSystemBlua32(compileHeapServiceSystem(program, level));
-	const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+	const linked = linkManagedTestSystem(program, level);
+	const romBytes = writeTestBlua32Rom(linked);
+	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
@@ -49,13 +50,13 @@ export function returnWindowFixture(level: 0 | 3) {
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const thread = cpu.activeThread, callee = thread.currentFrame!, caller = callee.previous!;
 	const issue = callee.pc;
-	const ret = decodeBlua32InstructionAtPc(linked.image.textBytes, linked.image.header.textAddress, issue);
+	const ret = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, issue);
 	const first = ret.a, expected = numbers.map(valueInteger);
 	const edge = callee.registers.get(first + expected.length);
 	assert.equal(valueTag(edge), ValueTag.Closure);
 	expected.push(edge);
 	return {
-		linked, runtime, cpu, memory, arena, management, thread, callee, caller, issue, first, expected, edge, closure: valuePayload(edge), grant,
+		romBytes, runtime, cpu, memory, arena, management, thread, callee, caller, issue, first, expected, edge, closure: valuePayload(edge), grant,
 		flags: () => memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Flags),
 		prepared: (field: PreparedWindowField) => memory.readRamRecordWord(management + HEAP_SERVICE_PREPARED_FRAME_OFFSET + field),
 		completion: [valueInteger(37), ...expected],

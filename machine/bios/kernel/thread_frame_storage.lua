@@ -31,6 +31,18 @@ struct thread_storage_record
 	frame_block: addr -- I:24,182 H:23 J:125
 end
 
+-- Obtain the architectural Thread and caller while a resident CALL runs.
+local active_call_frame<const> = function(management)
+	local state<const> = layout.ram_base + management
+	local project<const>: *word = state + layout.effect_offset
+	*project = layout.publish_roots
+	local roots<const>: *root_descriptors = state + layout.root_banks_offset
+	local owner<const> = roots.active
+	local thread<const>: *thread_storage_record = owner
+	local depth<const> = thread.frame_depth & control_count_mask
+	return owner, layout.ram_base + ((thread.frame_block + (depth - 1) * frame_bytes) & word_mask)
+end
+
 local value_planes<const> = function(address, first)
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask)
 	local base<const> = layout.ram_base + (thread.stack_block & word_mask)
@@ -250,7 +262,7 @@ end
 return {
 	internal = {
 		update_charge = update_charge, resize_value_stack = resize_value_stack,
-		grow_frame_controls = grow_frame_controls, value_planes = value_planes,
+		grow_frame_controls = grow_frame_controls, value_planes = value_planes, active_call_frame = active_call_frame,
 	},
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
 	prepare_frame_space = prepare_frame_space, reserve_frame_space = reserve_frame_space,

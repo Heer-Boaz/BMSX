@@ -25,7 +25,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.RawSet, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.Select, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.StringChar, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.PCall, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },

@@ -125,7 +125,6 @@ test('builtin cost resolution uses fixed VM primitive tiers', () => {
 	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Next].cost, { base: 1, perArg: 0, perRet: 0 });
 	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Error].cost, { base: 2, perArg: 0, perRet: 0 });
 	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.PCall].cost, { base: 4, perArg: 0, perRet: 0 });
-	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.StringChar].cost, { base: 2, perArg: 0, perRet: 0 });
 });
 
 

@@ -1,5 +1,5 @@
 local byte<const> = __bmsx_string_byte
-local byte_char<const> = __bmsx_string_char
+local byte_char<const> = require('string/char')
 local tointeger<const> = __bmsx_tointeger
 
 local encode<const> = function(value)

@@ -153,6 +153,53 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	trace.replay('hardware RESET after cold diagnostic refusal', systemPath);
 }
 
+function verifyStringChar(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
+	const system = readFileSync(rom);
+	const source = `bss report: word
+mem[${IO_IRQ_MASK}] = 0
+local char = string.char
+assert(type(char) == 'function' and char() == '')
+local mixed = char(255.75, -0.75, 4294967296.0, 65, 128)
+assert(#mixed == 5)
+assert(string.byte(mixed, 1) == 255 and string.byte(mixed, 2) == 0 and string.byte(mixed, 3) == 0)
+assert(string.byte(mixed, 4) == 65 and string.byte(mixed, 5) == 128)
+assert(char(table.unpack({255, 0, 0, 65, 128}, 1, 5)) == mixed)
+assert(char(255, 0, 0, 65, 128) == mixed)
+for _, bad in ipairs({-1, 256, -1.75, 0/0, 1/0, false, '65'}) do
+	assert(not pcall(char, 65, bad))
+end
+local ok, result = pcall(char, 23, 7)
+assert(ok and #result == 2 and string.byte(result, 1) == 23 and string.byte(result, 2) == 7)
+assert(utf8.char(0x10000) == char(240, 144, 128, 128))
+*report = 43
+halt_until_irq
+`;
+	const linked = compileCartridge(system, source, 'string-char.lua', optLevel);
+	const cart = writeTestBlua32Rom(linked), cartPath = join(dir, 'string-char.rom');
+	writeFileSync(cartPath, cart);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine, frames = runtime.frameScheduler;
+	const trace = new Trace(native, join(dir, 'string-char.trace'), cartPath);
+	const report = linked.layout.header.bssAddress;
+	for (let grant = 0; grant < 2048 && memory.readMappedU32LE(report) === 0; ++grant) {
+		if (gxGpu.backendCommandDrainPending()) {
+			gxGpu.retireExecutedCommands();
+			trace.observe('>');
+		}
+		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
+		const complete = frames.runCyclesToNextLogicalTick(65536);
+		trace.observe('p 65536', [
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
+			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+		].join(' '));
+	}
+	assert.equal(cpu.readLuaFaultReasonWord(), 0);
+	assert.equal(memory.readMappedU32LE(report), 43);
+	trace.observe(`M ${report}`, '43 0');
+	trace.replay('stock string.char with fixed, open and protected argument windows', rom);
+}
+
 function verifyWarmReset(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
 	const sys = readFileSync(rom);
 	const expectedReport = 29 * 371 + 17;
@@ -869,6 +916,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 				['selected socket 1 supplies its own DATA/BSS extent', () => verifySelectedCartFloor(rom, native, output, optLevel)],
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],
+				['string.char handles fixed, open and protected argument windows', () => verifyStringChar(rom, native, output, optLevel)],
 				['warm reset retires a live capture; native rewind and reissued reset', () => verifyWarmReset(rom, native, output, optLevel)],
 				['RESET waits for the active Array tag-plane move and publication', () => verifyResetDuringTableGrowth(rom, native, output, optLevel)],
 				['warm floor retries after collecting an unreachable blocker', () => verifyWarmFloor(rom, native, output, optLevel, false)],

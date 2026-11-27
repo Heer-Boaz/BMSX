@@ -8,6 +8,8 @@ module<const>
 local layout<const> = require('kernel/gc_runtime_layout') -- T:371,395 C:361,386
 local root_inputs<const> = require('kernel/gc_root_inputs') -- X:4116-4132 Z:295-314
 local roots<const> = require('kernel/gc_operand_roots') -- T:366-368 C:356-359
+local chars<const> = require('kernel/string_char_bytes') -- J:1729-1736 K:5072-5077
+local media_binding<const> = require('kernel/image_string_bindings') -- J:1739 K:5080 C:240-244
 local slices<const> = require('kernel/string_slice') -- T:351-428 C:347-415
 local strings<const> = require('kernel/gc_strings') -- T:367,378-380,428,431-441 C:358,368-370,415,418-429
 local admission<const> = require('kernel/heap_admission') -- L:42-106,134-144,160-167 N:41-116,147-183
@@ -20,6 +22,7 @@ local ram_size<const> = 0x00400000 -- T:393 C:382
 local header_bytes<const> = 16 -- T:353,393 C:382-383
 local string_tag<const> = 5 -- L:160 T:368 C:359; tagged result
 local current_or_fresh<const> = 0 -- L:92,160 N:103,174
+local invalid_char_word<const> = 4 -- J:1732-1736 K:5076-5077; distinguish invalid input from allocation refusal
 local initial_bytes<const> = 4 * slices.initial_buckets -- T:24,373 C:25,363
 
 local begin_string_work<const> = function(management, projected) -- X:4116-4126 Z:295-307
@@ -134,10 +137,10 @@ local allocate_slice<const> = function(management, source, first, length, source
 	-- or host byte buffer is needed at publication.
 	local start<const>, head<const> = slices.slice_head(source, first, length) -- T:351-356 C:347-348
 	local hash<const> = slices.hash_span(start, head, length) -- T:356 C:349
-	local id = slices.lookup_ram(metadata, start, head, length, hash, nil, nil) -- T:233-234,360-362 C:239,350
+	local id = slices.lookup_ram(metadata, start, head, length, hash, nil, nil, nil) -- T:233-234,360-362 C:239,350
 	if id == 0 then -- T:235-241,361 C:240-244,350
 		local fault -- T:217-222 C:228-232; explicit external-read outcome
-		id, fault = slices.lookup_rom_directories(metadata, start, head, length, hash, system, cart0, cart1, nil, nil) -- T:235-241,361 C:240-244,350
+		id, fault = slices.lookup_rom_directories(metadata, start, head, length, hash, system, cart0, cart1, nil, nil, nil) -- T:235-241,361 C:240-244,350
 		if fault ~= 0 then return 0, fault end -- T:217-222 C:228-232; no roots, reservations or directory writes on a failed read
 	end
 	if id ~= 0 then -- T:362 C:350
@@ -158,16 +161,26 @@ end
 -- The existing register planes remain the sources and the roots throughout
 -- this one firmware activation. Replaying their spelling keeps an intern
 -- hit allocation-free and avoids an arena-sized temporary byte record.
-local intern_concat<const> = function(management, owner, first, count, source_cycles, system, cart0, cart1) -- W:16-19,135-136
+local intern_value_window<const> = function(management, owner, first, count, mode, source_cycles) -- W:16-19,135-136
 	local words<const>, tags<const> = thread_storage.internal.value_planes(owner, first) -- W:16-19,135-136
 	local metadata<const> = management + layout.metadata_offset -- T:65,370 C:42,361
-	local workspace<const> = layout.ram_base + management + layout.firmware_data_offset -- V:135-136 W:17-19
-	local length<const>, hash<const> = slices.hash_concat(words, tags, count, workspace) -- W:48,130-131 C:335-337
-	if length == ram_size then return 0, 0 end -- W:20-24 P:3059-3063
-	local id = slices.lookup_ram(metadata, words, tags, length, hash, count, workspace) -- C:328,332-338 T:232-235
+	local state<const> = layout.ram_base + management -- J:1729-1736 K:5072-5077
+	local media<const>: *bound_media_extents = state + media_binding.media_extents_offset -- J:1739 K:5080 C:240-244
+	local workspace<const> = state + layout.firmware_data_offset -- J:1729-1736 K:5072-5077
+	local length, hash -- J:1729-1736 K:5072-5077
+	if mode == slices.concat_source then -- J:1735-1739 K:5076-5080 W:17-19
+		length, hash = slices.hash_concat(words, tags, count, workspace) -- J:1729-1736 K:5072-5077
+		if length == ram_size then return 0, 0 end -- J:1729-1736 K:5072-5077
+	else -- J:1729-1736 K:5072-5077
+		local valid -- J:1729-1736 K:5072-5077
+		hash, valid = chars.hash_chars(words, tags, count) -- J:1729-1736 K:5072-5077
+		if not valid then return 0, invalid_char_word end -- J:1729-1736 K:5072-5077
+		length = count -- J:1729-1736 K:5072-5077
+	end
+	local id = slices.lookup_ram(metadata, words, tags, length, hash, mode, count, workspace) -- C:328,332-338 T:232-235
 	if id == 0 then -- C:328,332-338 T:232-235
 		local fault -- C:328,332-338 T:232-235
-		id, fault = slices.lookup_rom_directories(metadata, words, tags, length, hash, system, cart0, cart1, count, workspace) -- C:228-244,338 T:217-222,235-241
+		id, fault = slices.lookup_rom_directories(metadata, words, tags, length, hash, media.system, media.cart0, media.cart1, mode, count, workspace) -- C:228-244,338 T:217-222,235-241
 		if fault ~= 0 then return 0, fault end -- C:228-244,338 T:217-222,235-241
 	end
 	if id ~= 0 then -- C:338 T:362,439-442
@@ -176,12 +189,16 @@ local intern_concat<const> = function(management, owner, first, count, source_cy
 	end
 	-- Unlike the host's completed temporary bytes, the borrowed operands
 	-- must remain live during the existing allocator/collection retry.
-	slices.retain_concat_sources(metadata, words, tags, count) -- C:339-344 T:430-436
+	if mode == slices.concat_source then slices.retain_concat_sources(metadata, words, tags, count) end -- C:339-344 T:430-436
 	local offset<const>, published<const> = reserve_string_record(management, metadata, length, 0, source_cycles, true) -- C:344,361-383 T:370-393 L:151-155 N:151-155
 	if offset ~= 0 then -- C:344,361-383 T:370-393 L:151-155 N:151-155
 		-- Recovery can compact the Thread backing and move its tag plane.
 		local live_words<const>, live_tags<const> = thread_storage.internal.value_planes(owner, first) -- W:16-19,135-136 C:339-344
-		id = slices.publish_concat(metadata, layout.ram_base + offset, live_words, live_tags, count, length, hash, workspace) -- W:54-55 C:342-344,384-415 T:394-428
+		if mode == slices.concat_source then -- J:1735-1739 K:5076-5080 W:17-19
+			id = slices.publish_concat(metadata, layout.ram_base + offset, live_words, live_tags, count, length, hash, workspace) -- J:1729-1736 K:5072-5077
+		else -- J:1729-1736 K:5072-5077
+			id = slices.publish_chars(metadata, layout.ram_base + offset, live_words, live_tags, count, hash) -- J:1737-1739 K:5078-5080 T:414-428
+		end -- W:54-55 C:342-344,384-415 T:394-428
 	end
 	if published then root_inputs.release_string_work(management) end -- X:4128-4131 Z:309-312
 	return id, 0 -- W:54-56 C:328-344 T:428 L:155 N:155
@@ -192,5 +209,5 @@ return {
 		begin_string_work = begin_string_work, reserve_initial_directory = reserve_initial_directory,
 		reserve_string_record = reserve_string_record,
 	},
-	intern_slice = allocate_slice, intern_concat = intern_concat,
+	intern_slice = allocate_slice, intern_value_window = intern_value_window,
 }

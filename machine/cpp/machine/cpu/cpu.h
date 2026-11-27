@@ -400,7 +400,6 @@ private:
 	bool runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out, BiosCallContinuation completion);
 	std::optional<int> selectArgumentStart(Value selector, int count) const;
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
-	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinError(BuiltinArgsView args);
 	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallValueSource&, bool returnsToProtectedParent);
 	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource&);
@@ -455,7 +454,7 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false, u32 codeFunction = 0u, i32 protectedIndex = -1);
+		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u, i32 protectedIndex = -1);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
 	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);

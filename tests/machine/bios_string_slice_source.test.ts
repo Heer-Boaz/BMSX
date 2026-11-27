@@ -38,6 +38,13 @@ const concatPins = [
 // The owned-buffer variants are separate. Memory stalls retain BMSX's
 // existing allocation/sweep/recovery owners; only accounting cycles become
 // instruction time. The test consumes external ROM status, not a CPU port.
+const charBasis = '894c524ca1e51e7864aebf3c5350a46b3d7d6703';
+const charBytes = 'machine/bios/kernel/string_char_bytes.lua';
+const charPins = [
+	['J', 'machine/cpp/machine/cpu/cpu.cpp', '575c11fe7d301a09afb2380b7572913d30520ad0575b40246091e853c314c6fa'],
+	['K', 'machine/ts/machine/cpu/cpu.ts', '69e58fab2e249c2aed8664423ffc5b255cd26fcf46242870bd4a3585b0828d58'],
+] as const;
+
 const operations = [
 	['T', [[52, 56], [142, 157], [161, 176], [179, 202], [205, 241], [351, 369], [370, 428]]],
 	['C', [[72, 81], [84, 101], [156, 174], [176, 187], [190, 244], [347, 380], [382, 415]]],
@@ -45,6 +52,8 @@ const operations = [
 	['N', [[168, 170], [173, 179]]],
 	['D', [[15, 17], [18, 89], [91, 93], [97, 125]]],
 	['E', [[6, 74], [75, 98]]],
+	['J', [[1729, 1739]]],
+	['K', [[5072, 5080]]],
 	['V', [[132, 140]]],
 	['W', [[16, 20], [38, 42], [48, 48], [54, 55], [103, 103], [109, 109], [136, 136]]],
 ] as const;
@@ -54,13 +63,14 @@ test('borrowed String leaves pin both owners and map each migrated source operat
 	for (const [commit, key, file, digest] of [
 		...pins.map(entry => [basis, ...entry] as const),
 		...concatPins.map(entry => [concatBasis, ...entry] as const),
+		...charPins.map(entry => [charBasis, ...entry] as const),
 	]) {
 		const source = execFileSync('git', ['show', commit + ':' + file], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
 		assert.equal(createHash('sha256').update(source).digest('hex'), digest, file);
 		sources.set(key, { lines: source.split('\n'), covered: new Set() });
 	}
 
-	for (const file of [port, admission, numberBytes]) {
+	for (const file of [port, admission, numberBytes, charBytes]) {
 		const text = readFileSync(file, 'utf8');
 		assert.doesNotMatch(text, /layout\.(?:rom_extent_address|call_fault_address)/);
 		const lines = text.split('\n');

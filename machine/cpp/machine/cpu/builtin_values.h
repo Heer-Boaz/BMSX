@@ -32,7 +32,6 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 },
 	{ 1, 0, 0 }, // Type
 	{ 2, 0, 0 },
-	{ 2, 0, 0 },
 	{ 4, 0, 0 },
 	{ 4, 0, 0 },
 	{ 4, 0, 0 }, // CoroutineResume

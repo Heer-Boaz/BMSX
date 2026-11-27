@@ -15,7 +15,6 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
-#include <tuple>
 #include <utility>
 
 namespace {
@@ -177,38 +176,26 @@ void ramStringPorts() {
 	}
 }
 
-void selectAndChar(bool scalar) {
-	for (const auto [builtin, argc, wanted] : {std::tuple{BuiltinFunctionId::Select, 33, 0}, std::tuple{BuiltinFunctionId::Select, 33, 1}, std::tuple{BuiltinFunctionId::Select, 33, 2}, std::tuple{BuiltinFunctionId::Select, 33, 35}, std::tuple{BuiltinFunctionId::StringChar, 3, 1}}) {
+void selectReceivingRanges(bool scalar) {
+	for (const u8 wanted : {0, 1, 2, 35}) {
 		test::Blua32TestImage image;
 		image.text.resize(2 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, argc + 1, wanted);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 34, wanted);
 		writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
 		image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 40}};
 		CpuMachine machine(image, scalar);
-		if (builtin == BuiltinFunctionId::Select) {
-			for (const int selector : {-2147483647 - 1, 0, -32, -1, 1, 32, 33}) {
-				auto& frame = machine.restart();
-				frame.registers.set(0, machine.cpu.createBuiltinFunction(builtin));
-				frame.registers.set(1, valueInteger(selector));
-				for (int i = 1; i <= 32; ++i) frame.registers.set(i + 1, valueInteger(i));
-				machine.cpu.runUntilDepth(0, 1);
-				const auto expected = selector == 33 ? valueNil() : valueInteger(selector == -1 || selector == 32 ? 32 : 1);
-				if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers.get(0) == expected, "negative select clips to valid argument storage even at INT_MIN");
-				const int available = selector == 33 ? 0 : selector == -1 || selector == 32 ? 1 : 32;
-				const int placed = wanted == 0 ? available : wanted - 1;
-				require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == placed, "select preserves open and fixed receiving ranges");
-				for (int i = available; i < placed; ++i) require(frame.registers.get(i) == valueNil(), "select retains requested nil padding");
-			}
-		} else {
-			for (const bool invalid : {false, true}) {
-				auto& frame = machine.restart();
-				frame.registers.set(0, machine.cpu.createBuiltinFunction(builtin));
-				frame.registers.set(1, valueInteger(invalid ? -1 : 65));
-				frame.registers.set(2, valueInteger(0)); frame.registers.set(3, valueInteger(0xff));
-				machine.cpu.runUntilDepth(0, 1);
-				if (invalid) require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT, "discarding char results must not discard validation");
-				require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 5, "char charges all supplied byte arguments, including argument faults");
-			}
+		for (const int selector : {-2147483647 - 1, 0, -32, -1, 1, 32, 33}) {
+			auto& frame = machine.restart();
+			frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Select));
+			frame.registers.set(1, valueInteger(selector));
+			for (int i = 1; i <= 32; ++i) frame.registers.set(i + 1, valueInteger(i));
+			machine.cpu.runUntilDepth(0, 1);
+			const auto expected = selector == 33 ? valueNil() : valueInteger(selector == -1 || selector == 32 ? 32 : 1);
+			if (wanted != 1 && !(wanted == 0 && selector == 33)) require(frame.registers.get(0) == expected, "negative select clips to valid argument storage even at INT_MIN");
+			const int available = selector == 33 ? 0 : selector == -1 || selector == 32 ? 1 : 32;
+			const int placed = wanted == 0 ? available : wanted - 1;
+			require(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::Top)) == placed, "select preserves open and fixed receiving ranges");
+			for (int i = available; i < placed; ++i) require(frame.registers.get(i) == valueNil(), "select retains requested nil padding");
 		}
 	}
 }
@@ -348,7 +335,7 @@ int main() {
 		for (const bool scalar : {true, false}) {
 			for (const auto op : {OpCode::LT, OpCode::LE, OpCode::EQ}) logicalStringWork(scalar, op);
 			grantedStringOrder(scalar, false); grantedStringOrder(scalar, true);
-			selectAndChar(scalar);
+			selectReceivingRanges(scalar);
 			openSelectPlacesAliasedResults(scalar);
 		}
 		std::cout << "String operation cycles and builtin demand passed\n";

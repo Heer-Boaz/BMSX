@@ -668,7 +668,7 @@ test('runtime save-state codec preserves GPUREAD bytes and raw phase bits', () =
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	const state = createRuntimeSaveState();
-	state.cpuState.completionValues = [valueBuiltinFunction(BuiltinFunctionId.Next), valueBuiltinFunction(BuiltinFunctionId.StringChar)];
+	state.cpuState.completionValues = [valueBuiltinFunction(BuiltinFunctionId.Next), valueBuiltinFunction(BuiltinFunctionId.StringByte)];
 
 	const decoded = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(state),

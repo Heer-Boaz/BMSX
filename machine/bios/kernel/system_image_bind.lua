@@ -80,10 +80,10 @@ local resolve_initial_string<const> = function(management, address, socket, syst
 	local payload<const> = source + sizeof(rom_string) -- S:152,251 R:167,251
 	if size < 0 or size > available - sizeof(rom_string) then return 0, invalid_payload end -- S:153-154 R:169-171
 	local metadata<const> = management + layout.metadata_offset -- S:65
-	local id = slices.lookup_ram(metadata, payload, size, size, hash, nil, nil) -- S:233-234,252 R:239,252
+	local id = slices.lookup_ram(metadata, payload, size, size, hash, nil, nil, nil) -- S:233-234,252 R:239,252
 	if id == 0 then -- S:235-236 R:240
 		local fault -- S:217-224 R:227-232
-		id, fault = slices.lookup_rom_directories(metadata, payload, size, size, hash, system_bytes, cart0_bytes, cart1_bytes, nil, nil) -- S:235 R:240
+		id, fault = slices.lookup_rom_directories(metadata, payload, size, size, hash, system_bytes, cart0_bytes, cart1_bytes, nil, nil, nil) -- S:235 R:240
 		if fault ~= 0 then return 0, fault end -- S:217-224 R:227-232
 	end
 	if id == 0 then return 0, missing_string end -- S:253 R:253

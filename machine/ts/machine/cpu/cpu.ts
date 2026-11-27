@@ -3207,7 +3207,9 @@ export class CPU implements MappedPageInvalidator {
 					FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
 				return true;
 			}
-			this.ensureStackCapacity(extent, valueClosure(frame.closureAddress));
+			// A RET's receiving frame is not the issuing activation.
+			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return true;
 		}
 		frame.growRegisterWindow(capacity);
 		return false;
@@ -4260,7 +4262,7 @@ export class CPU implements MappedPageInvalidator {
 			throw LUA_OUT_OF_MEMORY_SIGNAL;
 		}
 		const varargBase = argumentBase + numParams;
-		const fits = ordinaryCall && thread.frameSpaceFits(end);
+		const fits = thread.frameSpaceFits(end);
 		if (ordinaryCall && !fits) {
 			if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
 			const detached = args instanceof ValueSlots;
@@ -4285,13 +4287,11 @@ export class CPU implements MappedPageInvalidator {
 			// A first resumed Thread has no frame in which to trap; report the
 			// failed admission through the ordinary resumer instead.
 			if (!shared && thread.frameDepth === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
-			if (detached) {
-				this.enterSynchronousException(thread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return null;
-			}
+			this.enterSynchronousException(thread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return null;
 		}
 		const frame = thread.acquireFrame();
-		if (!fits) this.ensureStackCapacity(end, valueClosure(closure), true, exception);
+		if (!ordinaryCall && !fits) this.ensureStackCapacity(end, valueClosure(closure), true, exception);
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
@@ -4539,9 +4539,6 @@ export class CPU implements MappedPageInvalidator {
 				break;
 			case BuiltinFunctionId.StringByte:
 				this.runBuiltinStringByte(args, out);
-				break;
-			case BuiltinFunctionId.StringChar:
-				this.runBuiltinStringChar(args, out);
 				break;
 			case BuiltinFunctionId.StringFromBytes: {
 				if (args.length < 2) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -5065,19 +5062,6 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		out.push(valueInteger(this.stringPool.byteAt(sourceId, position - 1)));
-	}
-
-	private runBuiltinStringChar(args: BuiltinArgsView, out: BuiltinResults): void {
-		this.charge(args.length);
-		const registers = args.registers;
-		let result = '';
-		for (let index = 0; index < args.length; index += 1) {
-			const valueIndex = args.base + index;
-			const byte = wordOperand(registers.get(valueIndex));
-			if (byte > 0xff) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			result += String.fromCharCode(byte);
-		}
-		out.push(valueString(this.stringPool.intern(result)));
 	}
 
 	private runBuiltinError(args: BuiltinArgsView): never {

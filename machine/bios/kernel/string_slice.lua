@@ -6,6 +6,7 @@ module<const>
 -- unchanged. The exact mounted bank extents are ordinary scalar inputs,
 -- not invented firmware memory ports. A ROM read failure is returned
 -- to the owner, never rewritten as a miss or an allocation failure.
+local chars<const> = require('kernel/string_char_bytes') -- J:1739 K:5080 C:176-187,228-235
 local number_bytes<const> = require('kernel/number_bytes') -- V:135-136
 local strings<const> = require('kernel/gc_strings') -- T:379-388,431-436 C:369-377,418-425
 local records<const> = require('kernel/dlmalloc_record') -- T:393 C:383
@@ -27,6 +28,8 @@ local cart_base<const> = 0x10000000 -- M:12
 local cart_extent<const> = 0x20000000 -- M:13
 local alignment_mask<const> = 7 -- I:55-56
 local socket_bit<const> = 0x80000000 -- I:64
+local concat_source<const> = 1 -- J:1739 K:5080 C:176-187,228-235
+local chars_source<const> = 2 -- J:1739 K:5080 C:176-187,228-235
 local invalid_chain<const> = 1 -- T:217 C:227; broken chain, not OOM
 local invalid_header<const> = 2 -- T:146 C:161
 local truncated_payload<const> = 3 -- T:154 C:171
@@ -174,7 +177,7 @@ local retain_concat_sources<const> = function(metadata, words_address, tags_addr
 	end
 end
 
-local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, length, source_count, workspace) -- T:161 C:176
+local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, length, source_kind, source_count, workspace) -- T:161 C:176
 	local state<const>: *string_metadata = ram_base + metadata -- T:166 C:179
 	local link<const>: *u32 = ram_base + (bucket & word_mask) -- T:164 C:177 M:9
 	local id = *link -- T:164 C:177
@@ -189,8 +192,10 @@ local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, le
 			if (*length_word & byte_mask) == length then -- T:169 C:182
 				local offset<const> = (id + header_bytes) & byte_mask -- T:170 C:74,183
 				local mask<const> = length > ram_size - offset and byte_mask or -1 -- T:171 C:74-77,183
-				if source_count then -- C:176-187,338
+				if source_kind == concat_source then -- C:176-187,338
 					if matches_concat(ram_base, offset, mask, start, head, source_count, workspace) then return id end -- C:176-187,338
+				elseif source_kind == chars_source then -- J:1739 K:5080 C:176-187,228-235
+					if chars.matches_chars(ram_base, offset, mask, start, head, source_count) then return id end -- J:1739 K:5080 C:176-187,228-235
 				elseif matches_slice(ram_base, offset, mask, start, head, length) then return id end -- T:172 C:183
 			end
 		end
@@ -200,7 +205,7 @@ local lookup_ram_chain<const> = function(metadata, bucket, hash, start, head, le
 	return 0 -- T:176 C:187
 end
 
-local lookup_ram<const> = function(metadata, start, head, length, hash, source_count, workspace) -- T:179,233,351-356 C:190,239,347-350
+local lookup_ram<const> = function(metadata, start, head, length, hash, source_kind, source_count, workspace) -- T:179,233,351-356 C:190,239,347-350
 	local state<const>: *string_metadata = ram_base + metadata -- T:180 C:191
 	local control<const> = state.capacity -- T:180 C:191
 	local count<const> = control & bucket_extent -- T:180 C:191
@@ -211,7 +216,7 @@ local lookup_ram<const> = function(metadata, start, head, length, hash, source_c
 		if (control & growing) ~= 0 then -- T:185 C:196
 			if (index ~ sign_bit) < (ready ~ sign_bit) then -- T:186 C:197
 				local bucket<const> = state.rehash_base + 4 * (hash & (2 * count - 1)) -- T:187 C:198
-				local found<const> = lookup_ram_chain(metadata, bucket, hash, start, head, length, source_count, workspace) -- T:188 C:199
+				local found<const> = lookup_ram_chain(metadata, bucket, hash, start, head, length, source_kind, source_count, workspace) -- T:188 C:199
 				if found ~= 0 then return found end -- T:189 C:199
 				if ((index + 1) ~ sign_bit) < (ready ~ sign_bit) then return 0 end -- T:190 C:200
 			end
@@ -219,21 +224,21 @@ local lookup_ram<const> = function(metadata, start, head, length, hash, source_c
 			local lower<const> = index - (count >> 1) -- T:193 C:203
 			if lower >= 0 and (lower ~ sign_bit) <= (ready ~ sign_bit) then -- T:194 C:204; count cannot exceed bucket_extent
 				local base<const> = state.buckets -- T:195 C:205
-				local found<const> = lookup_ram_chain(metadata, base + 4 * lower, hash, start, head, length, source_count, workspace) -- T:196 C:206
+				local found<const> = lookup_ram_chain(metadata, base + 4 * lower, hash, start, head, length, source_kind, source_count, workspace) -- T:196 C:206
 				if found ~= 0 or (lower ~ sign_bit) < (ready ~ sign_bit) then return found end -- T:197 C:207
-				local upper<const> = lookup_ram_chain(metadata, base + 4 * index, hash, start, head, length, source_count, workspace) -- T:198 C:208
+				local upper<const> = lookup_ram_chain(metadata, base + 4 * index, hash, start, head, length, source_kind, source_count, workspace) -- T:198 C:208
 				return upper -- T:198 C:208
 			end
 		end
 	end
-	local found<const> = lookup_ram_chain(metadata, state.buckets + 4 * index, hash, start, head, length, source_count, workspace) -- T:202 C:212
+	local found<const> = lookup_ram_chain(metadata, state.buckets + 4 * index, hash, start, head, length, source_kind, source_count, workspace) -- T:202 C:212
 	return found -- T:202 C:212
 end
 
 -- The published ROM bucket table has already been validated at activation.
 -- Individual chains remain external records, so check their full header and
 -- candidate extent lazily at exactly the old lookup boundary.
-local lookup_rom<const> = function(metadata, directory, hash, start, head, length, system, cart, source_count, workspace) -- T:142-159,205-230 C:156-174,215-235
+local lookup_rom<const> = function(metadata, directory, hash, start, head, length, system, cart, source_kind, source_count, workspace) -- T:142-159,205-230 C:156-174,215-235
 	local state<const>: *string_metadata = ram_base + metadata -- T:206-207 C:216-217
 	local table<const> = 2 * directory -- T:206 C:216; index into 4-byte entries
 	local count<const> = state.rom_tables[table + 1] -- T:207 C:217
@@ -263,8 +268,10 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 			if (size ~ socket_bit) > ((cart_extent - header_bytes) ~ socket_bit) or size > extent - offset - header_bytes then -- T:153-154,222 C:169-171,232
 				return 0, truncated_payload -- T:154 C:171
 			end
-			if source_count then -- C:228-239,338
+			if source_kind == concat_source then -- C:228-239,338
 					if matches_concat(0, address + header_bytes, -1, start, head, source_count, workspace) then return address, 0 end -- C:228-239,338
+				elseif source_kind == chars_source then -- J:1739 K:5080 C:176-187,228-235
+					if chars.matches_chars(0, address + header_bytes, -1, start, head, source_count) then return address, 0 end -- J:1739 K:5080 C:176-187,228-235
 				elseif matches_slice(0, address + header_bytes, -1, start, head, length) then return address, 0 end -- T:222-224 C:232
 		end
 		id = record.next -- T:227 C:233
@@ -272,15 +279,15 @@ local lookup_rom<const> = function(metadata, directory, hash, start, head, lengt
 	return 0, 0 -- T:229 C:235
 end
 
-local lookup_rom_directories<const> = function(metadata, start, head, length, hash, system, cart0, cart1, source_count, workspace) -- T:235-241 C:240-244
-	local match, fault = lookup_rom(metadata, 0, hash, start, head, length, system, cart0, source_count, workspace) -- T:235 C:240
+local lookup_rom_directories<const> = function(metadata, start, head, length, hash, system, cart0, cart1, source_kind, source_count, workspace) -- T:235-241 C:240-244
+	local match, fault = lookup_rom(metadata, 0, hash, start, head, length, system, cart0, source_kind, source_count, workspace) -- T:235 C:240
 	if fault ~= 0 or match ~= 0 then return match, fault end -- T:236 C:240; preserve external fault, not a miss
 	local state<const>: *string_metadata = ram_base + metadata -- T:237 C:241
 	local directory<const> = state.first_cart -- T:237 C:241
 	if directory == 0 then return 0, 0 end -- T:238 C:242
-	match, fault = lookup_rom(metadata, directory, hash, start, head, length, system, directory == 2 and cart1 or cart0, source_count, workspace) -- T:239 C:243
+	match, fault = lookup_rom(metadata, directory, hash, start, head, length, system, directory == 2 and cart1 or cart0, source_kind, source_count, workspace) -- T:239 C:243
 	if fault ~= 0 or match ~= 0 then return match, fault end -- T:240 C:243
-	match, fault = lookup_rom(metadata, 3 - directory, hash, start, head, length, system, directory == 1 and cart1 or cart0, source_count, workspace) -- T:241 C:244
+	match, fault = lookup_rom(metadata, 3 - directory, hash, start, head, length, system, directory == 1 and cart1 or cart0, source_kind, source_count, workspace) -- T:241 C:244
 	return match, fault -- T:241 C:244
 end
 
@@ -370,13 +377,19 @@ local publish_initial_directory<const> = function(metadata, offset) -- T:374-377
 	state.capacity = initial_buckets -- T:377 C:367
 end
 
+local publish_chars<const> = function(metadata, id, words, tags, count, hash) -- J:1737-1739 K:5078-5080 T:409-428
+	local bucket<const> = begin_record(metadata, id, count, hash) -- J:1737-1739 K:5078-5080 T:409-428
+	chars.copy_chars(ram_base + ((id + header_bytes) & byte_mask), words, tags, count) -- J:1737-1739 K:5078-5080 T:409-428
+	return (finish_record(metadata, bucket, id)) -- J:1737-1739 K:5078-5080 T:409-428
+end
+
 -- Direct source-free `intern` while boot publishes its original retained
 -- diagnostic set. The caller has initialized an empty arena and has not
 -- installed any ROM directory. These records, including both bucket
 -- extents, fit the first page. There is no earlier object to reclaim.
 local intern_cold_span<const> = function(metadata, arena, occupied, start, length) -- T:331-332,358-393 C:327-329,353-383
 	local hash<const> = hash_span(start, length, length) -- T:332,351-356 C:325-327
-	local prior<const> = lookup_ram(metadata, start, length, length, hash, nil, nil) -- T:233-234,361 C:239,328
+	local prior<const> = lookup_ram(metadata, start, length, length, hash, nil, nil, nil) -- T:233-234,361 C:239,328
 	if prior ~= 0 then -- T:362 C:328
 		strings.mark(metadata, prior) -- T:362,439-442 C:328,427-430
 		return prior -- T:362 C:328
@@ -409,5 +422,6 @@ return {
 	lookup_ram = lookup_ram,
 	prepare_existing_directory = prepare_existing_directory,
 	publish = publish,
+	publish_chars = publish_chars, concat_source = concat_source, chars_source = chars_source,
 	hash_concat = hash_concat, publish_concat = publish_concat, retain_concat_sources = retain_concat_sources,
 }

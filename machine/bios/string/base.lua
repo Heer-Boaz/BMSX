@@ -1,5 +1,5 @@
 local byte<const> = __bmsx_string_byte
-local char<const> = __bmsx_string_char
+local char<const> = require('string/char')
 local to_integer<const> = __bmsx_tointeger
 local slice<const> = require('kernel/bios_string_slice')
 local table<const> = require('table')

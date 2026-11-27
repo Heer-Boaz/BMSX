@@ -109,18 +109,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		else assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	});
 
-	for (const invalid of [false, true]) test(`string.char charges supplied byte arguments even when results are ignored (${backend}, invalid=${invalid})`, () => {
-		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.CALL, 0, 4, 1);
-		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-		const { cpu } = createTestSystemCpu(image, backend), r = cpu.rootThread.currentFrame!.registers;
-		r.setBuiltinFunction(0, BuiltinFunctionId.StringChar);
-		r.setInteger(1, invalid ? -1 : 65); r.setInteger(2, 0); r.setInteger(3, 0xff);
-		cpu.runUntilDepth(0, 1);
-		if (invalid) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 3, 'CALL base + builtin 2 + three supplied byte arguments');
-	});
 }
 
 test('mapped byte String copies RAM, charges by span, and never reads an inadmissible device or region', () => {

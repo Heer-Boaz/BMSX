@@ -1,7 +1,7 @@
 local numeric_parse<const> = require('number/parse')
 local huge<const> = 1.0 / 0.0
 local byte<const> = __bmsx_string_byte
-local char<const> = __bmsx_string_char
+local char<const> = require('string/char')
 local concat<const> = require('table').concat
 local sub<const> = require('string/base').sub
 local token<const> = require('compiler/token')

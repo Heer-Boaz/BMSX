@@ -64,7 +64,9 @@ end
 struct frame_record
 	function_call_site: u32[2] -- F:19 G:33
 	open_head: addr -- F:19 G:33
-	before_return: u32[5] -- F:19 G:33
+	before_vararg: u32[3]
+	vararg_base: u32
+	vararg_count: u32 -- F:19 G:33
 	return_base: u32 -- F:19 G:33
 	return_count: u32 -- F:19 G:33
 	top: u32 -- F:19 G:33

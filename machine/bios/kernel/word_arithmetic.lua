@@ -56,7 +56,21 @@ local divide_words_by_word<const> = function(high, low, divisor)
 	return quotient_high, quotient_low
 end
 
+-- TS numeric.ts:71-80; C++ numeric.h:93-103: unsigned word truncation.
+local float_to_word<const> = function(bits)
+	local encoded<const> = (bits >> 23) & 0xff
+	if encoded == 255 then return 0, false end
+	local exponent<const> = encoded - 127
+	local magnitude = 0
+	if exponent >= 0 and exponent < 55 then
+		local significand<const> = (bits & 0x7fffff) | 0x800000
+		magnitude = exponent < 23 and (significand >> (23 - exponent)) or (significand << (exponent - 23))
+	end
+	return bits < 0 and -magnitude or magnitude, true
+end
+
 return {
+	float_to_word = float_to_word,
 	internal = { divide_word = divide_word },
 	multiply_add_words = multiply_add_words,
 	divide_words_by_word = divide_words_by_word,

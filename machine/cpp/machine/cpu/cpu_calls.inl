@@ -39,12 +39,12 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 		const u32 closure = asClosure(callee, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, result,
-			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true);
+			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		return pushed != nullptr;
 	}
 	if (valueTag(callee) == ValueTag::CodeFunction) {
 		return pushFrame(frame, 0u, a + 1, argCount, result,
-			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, valuePayload(callee)) != nullptr;
+			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, valuePayload(callee)) != nullptr;
 	}
 	if (valueTag(callee) == ValueTag::ResidentFunction) {
 		const CallValueSource arguments{&frame, nullptr, a + 1, argCount};
@@ -167,7 +167,9 @@ inline bool CPU::acquireRegisterWindow(CallFrame& frame, int destination, int so
 			beginFrameSpaceAcquisition(function, static_cast<u32>(extent), 0, 0, FRAME_RESIDENT_PLACE_WINDOW | receiverFlags);
 			return true;
 		}
-		thread.resizeStack(nextPowerOfTwo(extent));
+		// A RET's receiving frame is not the issuing activation.
+		enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		return true;
 	}
 	frame.growRegisterWindow(static_cast<int>(capacity));
 	return false;
