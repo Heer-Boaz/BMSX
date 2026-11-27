@@ -4,6 +4,7 @@ local frames<const> = require('kernel/thread_frame_storage')
 local vectors<const> = require('bmsx/startup')
 local layout<const> = require('kernel/gc_runtime_layout')
 local operand_roots<const> = require('kernel/gc_operand_roots')
+local exception_report<const> = require('kernel/exception_report')
 local trap<const> = 13 << 2
 local control_count_mask<const> = (1 << 18) - 1
 local frame_window_mask<const> = (1 << 20) - 1
@@ -24,7 +25,7 @@ local prepare<const> = function(width, argument)
 	local thread<const>: *thread_storage_record = interrupted
 	local values<const> = (thread.stack_top & frame_window_mask) + width
 	local depth<const> = (thread.frame_depth & control_count_mask) + 1
-	if values <= thread.stack_capacity and depth <= (thread.frame_capacity & control_count_mask) then return end
+	if values <= thread.stack_capacity and depth <= (thread.frame_capacity & control_count_mask) then return true end
 	local management<const> = layout.management_offset
 	local root = 0
 	if argument then
@@ -32,12 +33,30 @@ local prepare<const> = function(width, argument)
 	end
 	-- There is no issuing allocation allowance in the fixed vector. If
 	-- backing remains unavailable the direct target cannot be entered.
-	frames.prepare_frame_space(management, interrupted, values, depth, root, 0, true)
+	return frames.prepare_frame_space(management, interrupted, values, depth, root, 0, true) == 0
 end
 
-local enter<const> = function()
-	prepare(frame_width(vectors.managed_exception), cop0.cause == trap)
-	cop0.exception_target = vectors.managed_exception
+local take_trap_value<const> = function()
+	if cop0.cause ~= trap then return nil end
+	local error<const>: *value = cop0.current + offsetof(thread_storage_record.error_word)
+	local raised<const> = *error
+	*error = nil
+	return raised
 end
 
-return { enter = enter, prepare = prepare, frame_width = frame_width }
+local enter<const> = function(argument)
+	local cause<const> = cop0.cause
+	local raised<const> = cause == trap
+	if raised then
+		local interrupted<const>: *addr = layout.interrupted_context_address
+		local error<const>: *value = *interrupted + offsetof(thread_storage_record.error_word)
+		*error = argument
+	end
+	if prepare(frame_width(vectors.managed_exception), raised) then
+		cop0.exception_target = vectors.managed_exception
+	end
+	if exception_report.report(cause) then blua32.rfe() end
+	while true do end
+end
+
+return { enter = enter, prepare = prepare, frame_width = frame_width, take_trap_value = take_trap_value }

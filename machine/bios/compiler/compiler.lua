@@ -608,6 +608,10 @@ local emit_call_expression<const> = function(
 		end
 		return target
 	end
+	if intrinsic == 'rfe' then
+		bytecode.emit_abc(instruction_words, isa.op_rfe, 0, 0, 0)
+		return target
+	end
 	if intrinsic == 'svc' then
 		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
 		bytecode.emit_abc(instruction_words, isa.op_svc, source, 0, 0)

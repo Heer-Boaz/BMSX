@@ -86,6 +86,15 @@ for (const optLevel of [0, 3] as const) test(`SVC preserves its operand and succ
 	assert.throws(() => compileLuaSource('blua32.svc(1, 2)'), /svc expects (?:one|1) argument/);
 });
 
+test('an authored exception branch can emit RFE without returning a Lua value', () => {
+	const image = linkTestSystemBlua32(compileLuaSource('blua32.rfe(); return 37', 'rfe.lua', 3));
+	const listing = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
+	assert.match(listing, /\bRFE\b/);
+	assert.doesNotMatch(listing, /KSMI r\d+, 37/);
+	assert.throws(() => compileLuaSource('return blua32.rfe()'), /rfe is a statement-only/);
+	assert.throws(() => compileLuaSource('blua32.rfe(1)'), /rfe expects 0 arguments/);
+});
+
 test('fixed call arguments are produced in adjacent slots, not copied through a second argument range', () => {
 	const compiled = compileLuaSource('local f = function(a, b) return a + b end\nreturn f(7, 11)');
 	const image = linkTestSystemBlua32(compiled);

@@ -405,29 +405,35 @@ function verifyExceptionBridge(rom: string, native: string, dir: string, optLeve
 	cpu.setExecutionHook(null, 0, 0);
 	assert.ok(fixedTrap(), 'unhandled Lua error entered the fixed System vector');
 	const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
-	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.String);
-	const thrown = memory.readRamRecordWord(owner + ThreadField.ErrorWord);
+	const argument = cpu.activeThread.currentFrame!.registers.get(0);
+	assert.equal(valueTag(argument), ValueTag.String);
+	const thrown = valuePayload(argument);
+	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.Nil,
+		'the CPU put the error in the exception argument, not the interrupted Thread record');
 	assert.match(cpu.stringPool.toString(thrown), /^detached trap: \d+$/);
 	const checkpoint = join(dir, 'detached-trap.state');
 	writeFileSync(checkpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	const trace = new Trace(native, join(dir, 'detached-trap.trace'), cartPath);
 	trace.observe('X');
-	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) {
+	function step() {
 		const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
 			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
+	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) step();
 	assert.equal(cpu.activeThread.address, owner);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
-	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.Nil);
 	const frame = cpu.activeThread.currentFrame!;
 	assert.equal(frame.isExceptionFrame, true);
-	assert.equal(frame.registers.get(0), valueString(thrown));
-	const block = memory.readRamRecordWord(owner + ThreadField.StackBlock) - RAM_BASE;
-	const capacity = memory.readRamRecordWord(owner + ThreadField.StackCapacity);
-	for (const [offset, bytes] of [[block + 4 * frame.stackBase, 4], [block + 4 * capacity + frame.stackBase, 1],
-		[owner - RAM_BASE + ThreadField.ErrorWord, 8]])
-		trace.observe(`H ${offset} ${offset + bytes}`, hashBytes(memory.ramData(), offset, bytes));
+	assert.equal(frame.registers.get(0), valueNil(), 'changing the vector does not synthesize an argument');
+	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.String);
+	assert.equal(memory.readRamRecordWord(owner + ThreadField.ErrorWord), thrown);
+	const offset = owner - RAM_BASE + ThreadField.ErrorWord;
+	trace.observe(`H ${offset} ${offset + 8}`, hashBytes(memory.ramData(), offset, 8));
+	for (let grant = 0; grant < 2000 && memory.readRamRecordByte(owner + ThreadField.ErrorKind) !== ValueTag.Nil; ++grant) step();
+	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.Nil, 'the guest monitor consumes the saved Value');
+	assert.equal(memory.readRamRecordWord(owner + ThreadField.ErrorWord), 0);
+	trace.observe(`H ${offset} ${offset + 8}`, hashBytes(memory.ramData(), offset, 8));
 	trace.replay('resume the fixed firmware bridge with the original tagged trap argument', rom, checkpoint);
 }
 

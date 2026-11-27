@@ -1065,14 +1065,10 @@ void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
 		return;
 	}
 	const bool nmi = frame.hasControlFlag(FRAME_NMI);
-	const bool carriesValue = resumesContext && m_cop0Words[COP0_CAUSE] == CPU_CAUSE_CODE_TRAP;
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
 	if (resumesContext) resumeInterruptedContext();
-	if (auto* next = enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]); next && carriesValue) {
-		next->registers.set(0, m_activeThread->error());
-		m_activeThread->setError(valueNil());
-	}
+	enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]);
 }
 
 void CPU::resumeInterruptedContext() {
@@ -1798,11 +1794,8 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
-	auto& interrupted = *m_activeThread;
-	if (auto* frame = enterSynchronousException(*interrupted.currentFrame, CPU_CAUSE_CODE_TRAP)) {
-		if (fixedInterruptActive()) interrupted.setError(errorValue);
-		else frame->registers.set(0, errorValue);
-	}
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP,
+		m_currentInstructionPc, errorValue);
 }
 
 void CPU::retireNumericLuaFault(u32 reason) {

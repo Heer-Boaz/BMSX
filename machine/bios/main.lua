@@ -72,8 +72,8 @@ end
 bss boot_cart_state: word
 bss boot_frame: word
 
-function exception(error_value)
-	monitor.enter(error_value)
+function exception()
+	monitor.enter(exception_bridge.take_trap_value())
 end
 
 local scan_cartridges<const> = function()

@@ -1,7 +1,8 @@
 local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
-local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1, svc = 1 }
+-- Statement-only operations use the complement of their argument count.
+local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1, svc = -2, rfe = -1 }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '
@@ -258,13 +259,16 @@ bind_value = function(state, expression, context)
 			if base.kind == syntax.identifier_expression
 				and (base.global_key == 'blua32' or base.environment_key == 'blua32') then
 				local operation<const> = callee.identifier
-				local arity<const> = intrinsic_arity[operation]
+				local arity = intrinsic_arity[operation]
 				if arity ~= nil then
 					if operation == 'argument_suffix' and (context ~= 'return' or not expression.expands_results) then
 						fail(state.chunk_name, 'blua32.argument_suffix must be the sole expression of a return statement', expression)
 					end
-					if operation == 'svc' and context ~= 'statement' then
-						fail(state.chunk_name, 'blua32.svc is a statement-only compiler intrinsic', expression)
+					if arity < 0 then
+						if context ~= 'statement' then
+							fail(state.chunk_name, 'blua32.' .. operation .. ' is a statement-only compiler intrinsic', expression)
+						end
+						arity = ~arity
 					end
 					if #arguments ~= arity then fail(state.chunk_name, 'blua32.' .. operation .. ' expects ' .. arity .. ' arguments', expression) end
 					expression.intrinsic = operation
@@ -331,7 +335,7 @@ end
 
 local bind_return_statement<const> = function(state, statement)
 	local expressions<const> = statement.expressions
-	local context<const> = #expressions == 1 and 'return' or nil
+	local context<const> = #expressions == 1 and 'return'
 	for index = 1, #expressions do
 		bind_value(state, expressions[index], context)
 	end

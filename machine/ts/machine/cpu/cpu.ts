@@ -2033,15 +2033,10 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const nmi = frame.isNonMaskableExceptionFrame;
-		const carriesValue = resumesContext && this.cop0Words[COP0_CAUSE] === CPU_CAUSE_CODE_TRAP;
 		this.charge(this.closeUpvalues(frame));
 		this.activeThread.leaveFrame();
 		if (resumesContext) this.resumeInterruptedContext();
-		const next = this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);
-		if (next !== null && carriesValue) {
-			next.registers.set(0, this.activeThread.error);
-			this.activeThread.error = valueNil();
-		}
+		this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);
 	}
 
 	private resumeInterruptedContext(): void {
@@ -2312,12 +2307,8 @@ export class CPU implements MappedPageInvalidator {
 
 	private enterLuaFaultException(reason: number, error: Value): void {
 		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
-		const interrupted = this.activeThread;
-		const frame = this.enterSynchronousException(interrupted.currentFrame!, CPU_CAUSE_CODE_TRAP);
-		if (frame !== null) {
-			if (this.fixedInterruptActive()) interrupted.error = error;
-			else frame.registers.set(0, error);
-		}
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP,
+			this.currentInstructionPc, error);
 	}
 
 	private returnFromException(frame: CallFrame): void {

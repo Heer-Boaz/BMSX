@@ -4,6 +4,7 @@ local gc<const> = require('kernel/gc_maintenance')
 local layout<const> = require('kernel/gc_runtime_layout')
 local events<const> = require('kernel/interrupts')
 local bridge<const> = require('kernel/exception_bridge')
+local exception_report<const> = require('kernel/exception_report')
 bss cartridge_target: word
 bss cartridge_frame_width: word
 
@@ -16,8 +17,11 @@ local user_irq<const> = function()
 	-- The cartridge's IRQ vector still reads and acknowledges its sources.
 	local target<const>: *word = cartridge_target
 	local width<const>: *word = cartridge_frame_width
-	bridge.prepare(*width, false)
-	cop0.exception_target = *target
+	if bridge.prepare(*width, false) then
+		cop0.exception_target = *target
+	end
+	exception_report.report(cop0.cause)
+	while true do end
 end
 
 return { user_irq = user_irq, cartridge_target = cartridge_target, cartridge_frame_width = cartridge_frame_width }

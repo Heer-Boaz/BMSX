@@ -4302,6 +4302,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private compileBlua32Statement(expression: LuaCallExpression): boolean {
 		const operation = this.resolveBlua32Operation(expression);
+		if (operation === 'rfe') {
+			if (expression.arguments.length !== 0) throw new Error('blua32.rfe expects 0 arguments.');
+			this.emitABC(OpCode.RFE, 0, 0, 0);
+			return true;
+		}
 		if (operation === 'svc') {
 			if (expression.arguments.length !== 1) throw new Error('blua32.svc expects one argument.');
 			const source = this.allocTemp();
@@ -5893,7 +5898,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileBlua32ValueCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
 		const operation = this.resolveBlua32Operation(expression);
 		if (operation === undefined) return false;
-		if (operation === 'trace' || operation === 'trace_sink' || operation === 'svc') {
+		if (operation === 'trace' || operation === 'trace_sink' || operation === 'svc' || operation === 'rfe') {
 			throw new Error(`blua32.${operation} is a statement-only compiler intrinsic.`);
 		}
 		if (operation === 'argument_suffix') {
