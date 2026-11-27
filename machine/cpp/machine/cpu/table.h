@@ -11,6 +11,7 @@
 #include <span>
 
 #include "common/primitives.h"
+#include "machine/cpu/call_state.h"
 #include "machine/cpu/value.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/table_lookup.h"
@@ -66,7 +67,7 @@ public:
 		std::span<const Value> values) noexcept;
 
 	Value get(const Value& key) const;
-	void set(const Value& key, const Value& value, CPU* cpu = nullptr);
+	int set(const Value& key, const Value& value, CPU* cpu = nullptr, BiosCallContinuation completion = {});
 	// A resolved opcode write may suspend only on a physical backing refusal.
 	int assignScheduled(Value key, Value value, CPU& cpu, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool resumeAssignment(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
@@ -229,11 +230,11 @@ private:
 	template <HashStore Policy>
 	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
 		const ArrayDensity* counted = nullptr, LuaAllocationRecovery recovery = LuaAllocationRecovery::CurrentOrFresh,
-		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, BiosCallContinuation completion = {})
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr,
-		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled);
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, BiosCallContinuation completion = {});
 	template <HashStore Policy>
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
@@ -319,11 +320,11 @@ private:
 	int setHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr);
 	template <HashStore Policy>
 	int assignHash(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr,
-		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, BiosCallContinuation completion = {})
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int assignProbedHash(const HashBody& body, u32 home, int nodeIndex, Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
-		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, BiosCallContinuation completion = {})
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	void publishHashInsertion(Value key, Value value);
 	u32 newIndexMetatable() const;

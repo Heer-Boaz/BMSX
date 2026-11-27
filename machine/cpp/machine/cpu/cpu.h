@@ -409,7 +409,7 @@ private:
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
-	void runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out);
+	bool runBuiltinRawSet(BuiltinArgsView args, BuiltinResults& out, BiosCallContinuation completion);
 	std::optional<int> selectArgumentStart(Value selector, int count) const;
 	void runBuiltinSelect(BuiltinArgsView args, BuiltinResults& out, int resultLimit);
 	void runBuiltinStringChar(BuiltinArgsView args, BuiltinResults& out);
@@ -483,7 +483,7 @@ private:
 	void advanceConcat(CallFrame& frame);
 	void advanceTableStore(CallFrame& frame);
 	friend class TableRecord;
-	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra);
+	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);

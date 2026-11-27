@@ -48,6 +48,7 @@ export const enum HeapServiceClosureField {
 export const enum HeapServiceRecordKind { Table, CanonicalClosure, DynamicClosure }
 export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 
+export const enum HeapServiceTableGrowthMode { Scheduled = 0, General = 1 }
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;

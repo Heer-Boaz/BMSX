@@ -1550,10 +1550,11 @@ a partly updated table.
 
 Logical and physical assists each request at most one work word per three
 cycles in their allowance. An indivisible scan such as a record header may
-exceed the requested work. For a new Table or captureless closure from a
-ROM prototype, the BIOS takes this allowance from the time until the next
-timed hardware event at entry and performs the assists on ordinary CPU
-grants. Fewer than three cycles defer the assist, not the reservation.
+exceed the requested work. For a new Table, a captureless closure from a ROM prototype, or
+a Table insertion that cannot use its existing slots, the BIOS sizes
+the assist from the time until the next timed hardware event after the
+issuing instruction or builtin charge. It performs the assists on
+ordinary CPU grants. Fewer than three cycles defer the assist, not the reservation.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.
@@ -1689,8 +1690,7 @@ uses the live-entry count above 64 slots. An overwrite or an insertion
 that fits an existing slot performs neither scan. An unfinished census
 does not reserve replacement storage. These units govern the work
 allowance, not additional CPU charges; the resident instructions set
-the cycle charge. A raw store through `rawset` charges the
-census units directly as cycles.
+the cycle charge. The same rule applies to an insertion through `rawset`.
 
 When an insertion replaces a hash with more than 64 **old** slots and
 either leaves array capacity unchanged or creates the first array backing,
@@ -1720,14 +1720,10 @@ attached until the replacement is ready. Collection and the next instruction
 wait for publication; a reset request waits for the active resident operation
 to return before entering the reset program.
 
-A replacement performed through `rawset` charges the transfer and placement
-counts directly as cycles. A reset finishes an in-place raw growth or a
-raw shrink that has started moving retained tags. Before that tag move, the
-reset can discard the pending raw shrink.
-
-Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
-An allocation assist inside the resident table write pays its ordinary instruction cycles. An insertion that
-fails to reserve storage leaves the requested mapping unmodified.
+Storage growth counts separately against the language-allocation budget.
+`rawset` and a metamethod invocation pay their ordinary call charges
+separately. An insertion that fails to reserve storage leaves the
+requested mapping unmodified.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}
 

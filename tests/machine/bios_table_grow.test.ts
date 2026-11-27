@@ -19,8 +19,8 @@ const MODULE = 'kernel/table_grow', entrySource = 'halt_until_irq';
 const ADAPTER = 'table_grow_result';
 const adapter = `module<const>
 	local grow<const> = require('${MODULE}')
-	local invoke<const> = function(management, cycles, extra)
-		local status<const>, tag<const>, word<const> = grow.grow_table(management, cycles, extra)
+	local invoke<const> = function(management, cycles, extra, mode)
+		local status<const>, tag<const>, word<const> = grow.grow_table(management, cycles, extra, mode)
 		local out<const>: *u32 = 0x08000000 + management + 0x190
 		out[0] = tag
 		out[1] = word
@@ -50,15 +50,23 @@ function fixture(optLevel: 0 | 3) {
 	const heap = cpu.luaHeap, arena = cpu.heapAllocator, { gc } = cpu, { tables } = gc;
 	const management = arena.managementOffset(), head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 	const parked = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment);
-	function begin(receiver: number, key: Value, value: Value, sourceCycles: number, extra = 0) {
+	let scoped = false;
+	function cloneNativeReference() {
+		const reference = createTestSystemCpu(linked).cpu;
+		restoreCpuCheckpoint(reference, captureCpuCheckpoint(cpu));
+		return reference;
+	}
+	function begin(receiver: number, key: Value, value: Value, sourceCycles: number, extra = 0, mode = 0) {
 		memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.Receiver, receiver);
 		memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.KeyTag, valueTag(key), valuePayload(key));
 		memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.ValueTag, valueTag(value), valuePayload(value));
-		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [management, sourceCycles, extra]));
+		scoped = mode === 1;
+		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [management, sourceCycles, extra, mode]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
 		assert.ok(cycles - cpu.instructionBudgetRemaining > 0);
+		if (scoped) assert.equal(parked(), 0, 'General recovery never publishes the parked assignment scope');
 	}
 	function finish(expected: number, receiver = 0) {
 		for (let i = 0; cpu.heapServiceActive() && i < 2048; ++i) grant(512);
@@ -68,7 +76,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(memory.readRamRecordWord(management + 0x190), expected === 0 ? ValueTag.Table : ValueTag.Nil);
 		assert.equal(memory.readRamRecordWord(management + 0x194), receiver);
 	}
-	return { cpu, memory, heap, arena, gc, tables, management, begin, grant, finish, parked };
+	return { cpu, memory, heap, arena, gc, tables, management, begin, grant, finish, parked, cloneNativeReference };
 }
 
 function pressure(f: ReturnType<typeof fixture>, bytes: number) {
@@ -200,6 +208,74 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.tables.get(receiver, trigger), valueInteger(12));
 		assert.equal(f.tables.hashSize(receiver), 1);
 		assert.equal(f.tables.hashAddress(receiver), oldStorage, 'Resume tries the old hash before planning again');
+	});
+
+	test(`General recovery traces detached Table operands and reuses a weak old home at O${opt}`, () => {
+		const f = fixture(opt);
+		const receiver = f.cpu.createTable(0, 1), meta = f.cpu.createTable(0, 1);
+		const unrootedVictim = f.cpu.createTable(0, 0);
+		const detachedKey = f.cpu.createTable(0, 0), detachedValue = f.cpu.createTable(0, 0);
+		const strings = f.cpu.stringPool, key = valueTable(detachedKey), value = valueTable(detachedValue);
+		const oldKey = valueString(strings.intern('general-weak-value-before-retry'));
+		f.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
+		f.tables.setMetatableAddress(receiver, meta);
+		f.tables.set(receiver, oldKey, valueTable(unrootedVictim));
+		f.heap.setCollectionTarget(f.heap.capacity());
+		pressure(f, TableRecords.hashStorageBytes(2));
+		const white = f.gc.white(), backing = f.tables.hashAddress(receiver);
+		const reference = f.cloneNativeReference();
+		reference.gc.tables.set(receiver, key, value, reference);
+
+		// Nothing puts these three Table values in a register/bank/parked
+		// head for the collector. They live only in the typed operand tuple.
+		f.begin(receiver, key, value, 0, 0, 1);
+		for (let i = 0; i < 4096 && f.gc.phase() === GcPhase.Pause; ++i) f.grant(19);
+		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.equal(f.gc.phase(), GcPhase.Mark);
+		assert.equal(f.parked(), 0);
+		const checkpoint = captureCpuCheckpoint(f.cpu);
+		f.finish(0, receiver);
+		assert.equal(f.gc.white(), white ^ 1);
+		assert.equal(f.gc.tableRecordAddress(unrootedVictim), 0);
+		assert.equal(f.gc.tableRecordAddress(detachedKey), detachedKey);
+		assert.equal(f.gc.tableRecordAddress(detachedValue), detachedValue);
+		assert.equal(f.tables.get(receiver, oldKey), valueNil());
+		assert.equal(f.tables.get(receiver, key), value);
+		assert.equal(f.tables.hashAddress(receiver), backing, 'General takes the old home, before any replan');
+		assert.equal(f.tables.hashAddress(receiver), reference.gc.tables.hashAddress(receiver));
+		assert.equal(f.arena.occupiedBytes(), reference.heapAllocator.occupiedBytes());
+		assert.equal(f.heap.usedBytes(), reference.luaHeap.usedBytes());
+		const expected = captureCpuCheckpoint(f.cpu).memory.ram;
+		restoreCpuCheckpoint(f.cpu, checkpoint);
+		f.finish(0, receiver);
+		assert.deepEqual(captureCpuCheckpoint(f.cpu).memory.ram, expected);
+	});
+
+	test(`General restores no preferred hash slots after collecting a refused request at O${opt}`, () => {
+		const f = fixture(opt);
+		const receiver = f.cpu.createTable(0, 1), strings = f.cpu.stringPool;
+		const keep = valueString(strings.intern('general-preferred-existing'));
+		const key = valueString(strings.intern('general-preferred-trigger'));
+		f.tables.set(receiver, keep, valueInteger(5));
+		const garbage = f.cpu.createTable(0, 512);
+		const old = f.tables.hashAddress(receiver);
+		f.heap.setCollectionTarget(f.heap.capacity());
+		pressure(f, TableRecords.hashStorageBytes(2));
+		assert.equal(f.arena.allocate(TableRecords.hashStorageBytes(2), true), 0);
+		const reference = f.cloneNativeReference();
+		// The native General String store passes the preference to the
+		// original allocation loop, then never restores it after recovery.
+		reference.gc.tables.storeStringKey(receiver, valuePayload(key), ValueTag.Integer, 61, -2, 9, reference);
+
+		f.begin(receiver, key, valueInteger(61), 0, 9, 1);
+		f.finish(0, receiver);
+		assert.equal(f.gc.tableRecordAddress(garbage), 0);
+		assert.notEqual(f.tables.hashAddress(receiver), old);
+		assert.equal(f.tables.hashAddress(receiver), reference.gc.tables.hashAddress(receiver));
+		assert.equal(f.tables.hashSize(receiver), 2, 'the previously refused extra=9 is not restored');
+		assert.equal(f.tables.get(receiver, keep), valueInteger(5));
+		assert.equal(f.tables.get(receiver, key), valueInteger(61));
+		assert.equal(f.arena.occupiedBytes(), reference.heapAllocator.occupiedBytes());
 	});
 
 	test(`terminal Scheduled BIOS refusal leaves the original Table unchanged at O${opt}`, () => {

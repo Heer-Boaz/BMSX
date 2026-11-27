@@ -318,7 +318,10 @@ All four functions below require a Table as their first argument; otherwise they
 `rawget` requires a key argument and returns nil for a nil or NaN key.
 `rawset` requires both the key and value arguments. It rejects nil or NaN
 keys with `INDEX_NIL` (4) or `INDEX_NAN` (12), respectively, and uses the
-ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length).
+ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length). If the
+write requires replacement storage, the caller waits until the resident
+routine completes the insertion or raises out-of-memory. The routine uses
+ordinary CPU cycles in addition to the builtin call charge.
 
 
 ## Traversal, argument selection, globals, and output {#sec-bios-base-traversal-argument-selection-globals-and-output}

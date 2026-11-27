@@ -13,8 +13,8 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
-	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
-	HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage, HeapServiceRemarkHeadField,
+	HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
+	HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage, HeapServiceRemarkHeadField, HeapServiceTableGrowthMode,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -424,4 +424,52 @@ test('a requested system reset waits for the current BIOS operation and skips th
 	assert.equal(resets, 4);
 	assert.equal(scheduler.acceptedCpuCycles, 0);
 	assert.equal(scheduler.nowCycles, 0);
+});
+
+test('direct table growth samples one hardware allowance across differently sized grants', () => {
+	const source = 'return function(t, k, v) t[k] = v; return t[k] end';
+	const { romBytes } = linkTestSystemBlua32(compileHeapServiceSystem(source, 3));
+	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine;
+	runGuestToHalt(cpu, 65536);
+	const closure = valuePayload(runtime.readCompletionValues()[0]);
+	const table = cpu.createTable(0, 1);
+	cpu.gc.tables.set(table, valueInteger(-1), valueInteger(1));
+	cpu.beginCompletionCall(closure, [valueTable(table), valueInteger(-2), valueInteger(2)]);
+	const depth = cpu.getFrameDepth() - 1;
+	const op = () => instructionOpcode(memory.readMappedU32LE(cpu.readFramePc(depth)));
+	for (let i = 0; i < 16 && op() !== OpCode.SETT; ++i) {
+		assert.equal(scheduler.runCpuSlice(0, 1), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), false);
+	}
+	assert.equal(op(), OpCode.SETT);
+	const start = scheduler.nowCycles, next = scheduler.nextDeadline();
+	assert.ok(next > start + BASE_CYCLES[OpCode.SETT] + 3, 'a real device edge is still ahead after the store base charge');
+	const snapshot = captureRuntimeSaveState(runtime);
+	const args = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_OFFSET;
+	let elapsed = 0;
+	for (const budget of [1, 16384]) {
+		applyRuntimeSaveState(runtime, snapshot);
+		assert.equal(scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Direct), RunResult.Yielded);
+		assert.equal(cpu.heapServiceActive(), true);
+		const issue = budget - cpu.instructionBudgetRemaining;
+		assert.equal(issue, BASE_CYCLES[OpCode.SETT]);
+		assert.equal(memory.readRamRecordWord(args + 4), next - start - issue);
+		assert.equal(memory.readRamRecordWord(args + 12), HeapServiceTableGrowthMode.General);
+		advanceRuntimeTime(runtime, issue);
+		let paid = issue;
+		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) {
+			assert.equal(scheduler.runCpuSlice(0, 1), RunResult.Yielded);
+			const spent = 1 - cpu.instructionBudgetRemaining;
+			paid += spent;
+			advanceRuntimeTime(runtime, spent);
+		}
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.gc.tables.get(table, valueInteger(-2)), valueInteger(2));
+		if (budget === 1) elapsed = paid;
+		else assert.equal(paid, elapsed);
+	}
 });

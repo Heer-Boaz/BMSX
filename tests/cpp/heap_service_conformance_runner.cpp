@@ -237,12 +237,36 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'B' && opcode != 'C' && opcode != 'F')
-						throw std::runtime_error("Expected generated BIOSCALL, CLOSURE or SETFIELD");
+					if (opcode != 'B' && opcode != 'C' && opcode != 'F' && opcode != 'R')
+						throw std::runtime_error("Expected generated BIOSCALL, CLOSURE, SETFIELD or RAWSET call");
 					const bool biosCall = opcode == 'B';
 					const bool growField = opcode == 'F';
-					const auto gate = growField ? NativeBlockExit::WriteField
+					const bool rawSet = opcode == 'R';
+					const auto gate = rawSet ? NativeBlockExit::Call : growField ? NativeBlockExit::WriteField
 						: biosCall ? NativeBlockExit::BiosCall : NativeBlockExit::CreateClosure;
+					if (rawSet) {
+						auto& frame = *cpu.activeThread()->currentFrame;
+						const u32 closure = frame.readControl(FrameField::Closure);
+						const std::array original{frame.registers.get(0), frame.registers.get(1), frame.registers.get(2), frame.registers.get(3)};
+						const std::array overwrite{original[0], valueInteger(-1), valueInteger(1), original[3]};
+						// Use the restored completion frame for the first overwrite,
+						// then warm that exact guest CALL PC with ordinary activations.
+						frame.registers.set(1, overwrite[1]);
+						frame.registers.set(2, overwrite[2]);
+						for (int visit = 0; visit < 128; ++visit) {
+							if (visit != 0) cpu.beginCompletionCall(closure, {overwrite.data(), overwrite.size()});
+							auto warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
+							for (int grant = 0; grant < 8 && warm == RunResult::Yielded && !cpu.heapServiceActive(); ++grant)
+								warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
+							if (warm != RunResult::Halted || cpu.heapServiceActive())
+								throw std::runtime_error("Warm RAWSET overwrite did not complete without a service (grant "
+									+ std::to_string(static_cast<int>(warm)) + ", pinned " + std::to_string(cpu.heapServiceActive())
+									+ ", visit " + std::to_string(visit) + ", target " + std::to_string(valuePayload(original[0]))
+									+ ", PC " + std::to_string(cpu.readCurrentInstructionPc()) + ")");
+
+						}
+						cpu.beginCompletionCall(closure, {original.data(), original.size()});
+					}
 					cpu.prepareSystemNativeCode();
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
@@ -264,7 +288,7 @@ int main(int argc, char** argv) {
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					if (result != RunResult::Yielded || !cpu.heapServiceActive())
 						throw std::runtime_error("The generated allocation did not suspend");
-					if (growField) {
+					if (growField || rawSet) {
 						const u32 imageAddress = SYSTEM_ROM_BASE
 							+ memory.readMappedU32LE(SYSTEM_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 						const u32 descriptor = memory.readMappedU32LE(imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
@@ -272,9 +296,10 @@ int main(int argc, char** argv) {
 							+ static_cast<u32>(HeapServiceOperation::TableGrow) * sizeof(u32));
 						const u32 activeRoot = memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Function));
 						const u32 origin = memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
-						if (completion != HeapServiceBiosCallKind::Discard || cpu.allocationParked() || activeRoot != root
+						const auto want = rawSet ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
+						if (completion != want || cpu.allocationParked() || activeRoot != root
 							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
-							throw std::runtime_error("The generated SETFIELD did not hand off to the bound TableGrow completion frontier");
+							throw std::runtime_error("The generated table write did not issue the bound TableGrow continuation");
 					} else if (biosCall
 						? completion != HeapServiceBiosCallKind::Opcode || caller != cpu.lastPc + INSTRUCTION_BYTES
 						: memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
@@ -282,7 +307,7 @@ int main(int argc, char** argv) {
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
 					}
 					std::cout << allocation.entries - before.entries;
-					if (growField) std::cout << ' ' << static_cast<u32>(completion)
+					if (growField || rawSet) std::cout << ' ' << static_cast<u32>(completion)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else
@@ -346,6 +371,16 @@ int main(int argc, char** argv) {
 					u32 address;
 					trace >> address;
 					cpu.heapAllocator().free(address);
+					break;
+				}
+				case 'c': {
+					const auto values = runtime.readCompletionValues();
+					std::cout << values.size();
+					for (size_t i = 0; i < values.size(); ++i) {
+						const auto value = values.get(i);
+						std::cout << ' ' << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value);
+					}
+					std::cout << '\n';
 					break;
 				}
 				case 'C': {

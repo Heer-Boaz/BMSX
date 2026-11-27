@@ -26,6 +26,7 @@ local dead_key<const> = 10 -- T:546,657 C:822,703
 local array_census_threshold<const> = 1024 -- T:769 C:323
 local hash_census_threshold<const> = 64 -- T:96 C:834
 local hash_band_threshold<const> = 1024 -- T:97 C:834
+local scheduled_mode<const> = 0 -- P:669-679,852-856 Q:301-314; General covers Direct and RAWSET
 local current_or_fresh<const> = 0 -- P:806-808 Q:198
 local out_of_memory<const> = 9 -- P:867 Q:267; tag-result gate reserves zero for success
 local cpp_policy<const> = 1 -- K:95-102; use the existing C++ color-write policy
@@ -142,7 +143,8 @@ local retry_old_hash<const> = function(management, record, hash, kt, kw, vt, vw)
 	return true -- T:560 C:838
 end
 
-local grow_table<const> = function(management, source_cycles, preferred_extra) -- P:662-678,683-768,803-869 Q:97-271; native Scheduled/Resume
+local grow_table<const> = function(management, source_cycles, preferred_extra, mode) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
+	local scheduled<const> = mode == scheduled_mode -- T:769-771,802 C:322-325,364-368; admission policy, not the CPU's run-kind
 	local state<const> = management + layout.arena_offset -- T:792 C:252
 	local effects<const>: *u32 = ram_base + management + layout.effect_offset -- P:4043-4058 X:165-182
 	local head<const> = management + layout.remark_head_offset -- P:5245 Y:3252
@@ -161,8 +163,8 @@ local grow_table<const> = function(management, source_cycles, preferred_extra) -
 	local projected, borrowed = false, false -- P:4043-4058 X:165-182; root publication is lazy
 	local recovery = current_or_fresh -- P:806-808 Q:197-199
 	local resume = false -- T:769-771 P:851 Q:247
-	while true do -- P:827-869 Q:207-269; original attempt, current or fresh recovery, possible fresh retry
-		local extra = preferred_extra -- P:852-854 Q:249-250; a new Resume uses the initial hint
+	while true do -- P:827-869 Q:207-269 T:768-811 C:321-375; one retry sequence, two entry policies
+		local extra = (scheduled or recovery == current_or_fresh) and preferred_extra or 0 -- P:852-854 Q:249-250 T:798-803 C:360-367; Scheduled restarts from setOwn; General keeps the exhausted preference
 		while true do -- T:768-802 C:321-365; preference fallback does not reprobe
 			local counted = 0 -- T:768-783 C:321-336
 			if old_array >= array_census_threshold and array_cycles ~= 0 and (resume or array_cycles > source_cycles) then -- T:769-778 C:322-330
@@ -183,7 +185,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra) -
 			local admitted = true -- T:786 C:338
 			local charged<const> = requested - previous -- T:786-788 C:349-356
 			if charged > 0 then -- T:786 C:349
-				if resume then -- T:786-788 C:351-352
+				if resume or recovery ~= current_or_fresh then -- T:786-788 C:351-352; every post-recovery replan admits only the capacity
 					admitted = admission.logical_fits(state, charged) ~= 0 -- T:787 C:352
 				else -- T:788 C:353
 					local debt<const> = admission.allocation_debt(state, charged) -- H:85-89 N:85-91; Table prepare does not have fixed Record's impossible-size fault
@@ -236,17 +238,30 @@ local grow_table<const> = function(management, source_cycles, preferred_extra) -
 			if extra == 0 then break end -- T:798-802 C:360-365
 			extra = 0 -- T:799 C:361; same attempt and remaining allowance
 		end
-		recovery = admission.begin_allocation_recovery(state, recovery) -- P:806-808,828-865 Q:197,207-269; Current if active, then Fresh once
-		if recovery < 0 then return out_of_memory + 1, 0, 0 end -- P:861-869 Q:259-268; terminal OOM at the original issuer
+		recovery = admission.begin_allocation_recovery(state, recovery) -- P:806-808,828-865 Q:197,207-269 G:1110-1115,1121 K:1213-1220,1224; Current if active, then Fresh once
+		if recovery < 0 then return out_of_memory + 1, 0, 0 end -- P:861-869 Q:259-268 G:1111 K:1214; terminal OOM at the original issuer
 		borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177; no pending borrowed work at this point
 		projected = true -- P:4043-4053 X:165-177
-		*parked = 1 -- P:5252-5259 Y:3258-3265; native parked root, not an explicit assist triple
-		collection.finish_epoch(management, collection.step_words, 0, 0, 0) -- P:828-838 Q:211-225
-		*parked = 0 -- P:853-863 Q:251-268
-		*effects = layout.release_string_work -- P:4055-4058 X:179-182
-		source_cycles = *device_cycles -- P:849-854 Q:245-250; new retry frontier
-		if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return 0, table_tag, record end -- P:852-858 Q:249-257
-		resume = true -- T:510,770,786,791 C:740,323,351
+		if scheduled then -- T:802 C:364-366; Scheduled owns its stopped, parked recovery
+			*parked = 1 -- P:5252-5259 Y:3258-3265; native parked root, not an explicit assist triple
+			collection.finish_epoch(management, collection.step_words, 0, 0, 0) -- P:828-838 Q:211-225
+			*parked = 0 -- P:853-863 Q:251-268
+			*effects = layout.release_string_work -- P:4055-4058 X:179-182
+			source_cycles = *device_cycles -- P:849-854 Q:245-250; a resumed instruction's allowance
+			if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return 0, table_tag, record end -- P:852-858 Q:249-257
+			resume = true -- T:510,770,786,791 C:740,323,351
+		else -- T:803-809 C:367-373; General does not park or repeat the own-key probe
+			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, operands_offset) -- T:803 C:367 G:1119-1124 K:1223-1227; scoped operands, original fixed epoch quantum
+			*effects = layout.release_string_work -- P:4055-4058 X:179-182; insertion consumes the owning latch
+			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- T:781,793,803 C:334,367 G:1123 K:1226; shadow policy credit, not CPU time
+			if old_hash ~= 0 then -- T:805 C:369
+				local slot<const> = existing.insert_hash_without_growth(management + layout.control_offset, record, kt, kw, vt, vw, cpp_policy) -- T:806-809 C:370-372; weak clearing may have opened the old backing
+				if slot >= 0 then -- T:809 C:373
+					assignment.finish_table_insertion(management, record, kt, kw, vt, vw, cpp_policy) -- T:524-526,565-566 C:761,847-848; continue the original successful insertion epilogue
+					return 0, table_tag, record -- T:809 C:373
+				end
+			end
+		end
 	end
 end
 

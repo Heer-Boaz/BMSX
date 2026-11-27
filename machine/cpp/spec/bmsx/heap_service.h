@@ -57,6 +57,7 @@ enum class HeapServiceClosureField : uint32_t {
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
+enum class HeapServiceTableGrowthMode : uint32_t { Scheduled = 0, General = 1 };
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;

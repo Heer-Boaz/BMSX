@@ -10,6 +10,7 @@
 #include "machine/memory/memory.h"
 #include "spec/blua32/execution_domain.h"
 #include "spec/blua32/opcode.h"
+#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 
@@ -75,6 +76,13 @@ struct CallResultPlacement {
 	constexpr i32 topAfter(i32 before, int count) const {
 		return extendsTop() ? std::max(before, base + count) : base + count;
 	}
+};
+
+// Explicit tagged completion at a semantic call or instruction boundary.
+struct BiosCallContinuation {
+	HeapServiceBiosCallKind kind = HeapServiceBiosCallKind::Discard;
+	u32 target = 0u;
+	u32 word = 0u;
 };
 
 // Architectural words for a new activation. The same record is published

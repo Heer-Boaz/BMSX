@@ -187,7 +187,7 @@ import {
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
-	HeapServiceTableGrowthStage,
+	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS, HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
@@ -449,7 +449,7 @@ export class CPU implements MappedPageInvalidator {
 		this.modeKey = this.stringPool.intern('__mode');
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator, this.modeKey, newIndexKey);
 		this.heapService = new HeapService(this.gc);
-		this.tableGrowthArgs = [this.heapAllocator.managementOffset(), 0, 0];
+		this.tableGrowthArgs = [this.heapAllocator.managementOffset(), 0, 0, 0];
 		this.systemGlobalBank = new GlobalBank(memory, this.gc);
 		this.globalBank = new GlobalBank(memory, this.gc);
 		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
@@ -670,19 +670,17 @@ export class CPU implements MappedPageInvalidator {
 			if (this.finishTableAssignment(frame, key, value, assignment)) return true;
 			receiver = assignment.receiver;
 		}
-		if (this.runKind === CpuRunKind.Scheduled) {
-			const slot = tables.assignScheduled(receiver, key, value, this);
-			if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, receiver, key, value, 0);
-			if (slot === HASH_STORE_PENDING && this.heapServiceActive()) {
-				this.requestYield();
-				return true;
-			}
-		} else tables.set(receiver, key, value, this);
-		return false;
+		const slot = this.runKind === CpuRunKind.Scheduled
+			? tables.assignScheduled(receiver, key, value, this)
+			: tables.set(receiver, key, value, this);
+		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, receiver, key, value, 0);
+		return slot === HASH_STORE_PENDING && this.heapServiceActive();
 	}
 	public allocationParked(): boolean { return this.pendingAllocation !== null; }
 
-	public beginTableGrowth(receiver: number, key: Value, value: Value, extra: number): boolean {
+	public beginTableGrowth(receiver: number, key: Value, value: Value, extra: number, mode: HeapServiceTableGrowthMode,
+		kind: HeapServiceBiosCallKind, target: number, resultWord: number): boolean {
+		if (this.runKind === CpuRunKind.Idle) return false;
 		const services = this.systemImage.heapServiceFunctions;
 		if (services === null) return false;
 		const memory = this.memory;
@@ -693,7 +691,8 @@ export class CPU implements MappedPageInvalidator {
 		const args = this.tableGrowthArgs;
 		args[1] = this.remainingDeviceCycles();
 		args[2] = extra;
-		this.armBiosCall(HeapServiceBiosCallKind.Discard, 0, 0);
+		args[3] = mode;
+		this.armBiosCall(kind, target, resultWord);
 		this.beginHeapService(services[HeapServiceOperation.TableGrow], args);
 		this.requestYield();
 		return true;
@@ -823,10 +822,7 @@ export class CPU implements MappedPageInvalidator {
 			? tables.assignScheduled(assignment.receiver, field, value, this, assignment.slot, extraHashSlots)
 			: tables.storeStringKey(assignment.receiver, key, tag, word, assignment.slot, extraHashSlots, this);
 		if (slot === HASH_STORE_DECLINED) return this.parkTableWrite(frame, assignment.receiver, field, value, extraHashSlots);
-		if (slot === HASH_STORE_PENDING && this.heapServiceActive()) {
-			this.requestYield();
-			return true;
-		}
+		if (slot === HASH_STORE_PENDING && this.heapServiceActive()) return true;
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;
 		return false;
 	}
@@ -4276,9 +4272,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.RawGet:
 				this.runBuiltinRawGet(args, out);
 				break;
-			case BuiltinFunctionId.RawSet:
-				this.runBuiltinRawSet(args, out);
-				break;
 			case BuiltinFunctionId.TableCopy: {
 				const { registers, base } = args;
 				if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
@@ -4564,13 +4557,15 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			builtinArgs.bind(detached ?? frame.registers, argumentBase, argCount);
-			this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
-			if (id === BuiltinFunctionId.RawSet && this.tableRebuild.record) {
-				const j = this.tableRebuild;
-				j.result = TableStoreReturn.Call; j.destination = callBase; j.wanted = returnCount >>> 0;
-				j.instructionPc = this.currentInstructionPc;
-				return;
-			}
+			if (id === BuiltinFunctionId.RawSet) {
+				if (this.runBuiltinRawSet(builtinArgs, results, HeapServiceBiosCallKind.Call, callBase, returnCount)) return;
+				if (this.tableRebuild.record) {
+					const j = this.tableRebuild;
+					j.result = TableStoreReturn.Call; j.destination = callBase; j.wanted = returnCount >>> 0;
+					j.instructionPc = this.currentInstructionPc;
+					return;
+				}
+			} else this.callBuiltinFunction(id, builtinArgs, results, selectedCallResultCount(returnCount, -1));
 			if (this.activeThread.frameDepth > 0 && this.activeThread.currentFrame! === frame) {
 				this.writeReturnValuesFromRegisters(frame, callBase, returnCount, results.slots, 0, results.length);
 			}
@@ -4645,13 +4640,15 @@ export class CPU implements MappedPageInvalidator {
 				const results = this.acquireBuiltinResults();
 				try {
 					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
-					if (builtinId === BuiltinFunctionId.RawSet && this.tableRebuild.record) {
-						const j = this.tableRebuild;
-						j.result = TableStoreReturn.Protected; j.destination = continuationIndex;
-						j.instructionPc = this.currentInstructionPc;
-						return;
-					}
+					if (builtinId === BuiltinFunctionId.RawSet) {
+						if (this.runBuiltinRawSet(builtinArgs, results, HeapServiceBiosCallKind.Protected, continuationIndex, 0)) return;
+						if (this.tableRebuild.record) {
+							const j = this.tableRebuild;
+							j.result = TableStoreReturn.Protected; j.destination = continuationIndex;
+							j.instructionPc = this.currentInstructionPc;
+							return;
+						}
+					} else this.callBuiltinFunction(builtinId, builtinArgs, results, -1);
 					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
 				} finally {
 					this.releaseRegisterBuiltinArgs(builtinArgs);
@@ -4885,11 +4882,13 @@ export class CPU implements MappedPageInvalidator {
 		}
 		return true;
 	}
-	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults): void {
+	private runBuiltinRawSet(args: BuiltinArgsView, out: BuiltinResults, kind: HeapServiceBiosCallKind, target: number, resultWord: number): boolean {
 		const registers = args.registers, base = args.base;
 		if (args.length < 3 || registers.getTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2), this);
+		const slot = this.gc.tables.set(registers.getPayload(base), registers.get(base + 1), registers.get(base + 2), this, kind, target, resultWord);
+		if (slot === HASH_STORE_PENDING && this.heapServiceActive()) return true;
 		out.push(registers.get(base));
+		return false;
 	}
 
 	private runBuiltinSelect(args: BuiltinArgsView, out: BuiltinResults, resultLimit: number): void {

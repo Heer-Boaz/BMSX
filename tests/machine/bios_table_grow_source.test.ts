@@ -81,10 +81,11 @@ test('the linked TableGrow planner, assists and retry branches trace to the fixe
 			requireMark(chunk.locations.range(token).start.line);
 	}
 	for (const [name, decisions] of [
-		['T', [769, 778, 781, 786, 788, 791, 793, 795, 799]],
-		['C', [322, 330, 334, 349, 351, 353, 255, 357, 361]],
+		['T', [769, 778, 781, 786, 788, 791, 793, 795, 798, 799, 802, 803, 805, 806, 807, 808, 809]],
+		['C', [322, 330, 334, 349, 351, 353, 255, 357, 360, 361, 364, 367, 369, 370, 371, 372, 373, 847]],
 		['P', [807, 827, 853, 863, 867]],
 		['Q', [197, 216, 248, 259, 265]],
+		['G', [1111, 1115, 1121, 1123, 1124]], ['K', [1214, 1220, 1224, 1226, 1227]],
 		['X', [169, 172, 181]], ['Y', [3260, 3263, 3265]], ['S', [454]], ['J', [444]],
 	] as const) {
 		for (const line of decisions) assert.ok(sources.get(name)!.covered.has(line), `missing ${name}:${line}`);

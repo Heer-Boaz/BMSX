@@ -1,5 +1,5 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { HeapServiceTableGrowthStage } from '../../spec/bmsx/heap_service';
+import { HeapServiceBiosCallKind, HeapServiceTableGrowthMode, HeapServiceTableGrowthStage } from '../../spec/bmsx/heap_service';
 import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
@@ -500,8 +500,9 @@ export class TableRecords {
 		}
 		result.slot = -1; result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
-	public set(record: number, key: Value, value: Value, budget?: CPU): void {
-		this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General, 0, budget);
+	public set(record: number, key: Value, value: Value, budget?: CPU,
+		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
+		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General, 0, budget, HeapServiceTableGrowthStage.Idle, kind, target, resultWord);
 	}
 	public assignScheduled(record: number, key: Value, value: Value, budget: CPU, slot = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
 		return this.setOwn(record, key, value, slot, HashStore.Scheduled, extraHashSlots, budget);
@@ -511,7 +512,8 @@ export class TableRecords {
 		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume, extraHashSlots, budget, growthStage) !== HASH_STORE_DECLINED;
 	}
 	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore, extraHashSlots = 0, budget?: CPU,
-		growthStage = policy === HashStore.Scheduled ? HeapServiceTableGrowthStage.Scheduled : HeapServiceTableGrowthStage.Idle): number {
+		growthStage = policy === HashStore.Scheduled ? HeapServiceTableGrowthStage.Scheduled : HeapServiceTableGrowthStage.Idle,
+		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
@@ -523,12 +525,13 @@ export class TableRecords {
 			const words = this.arrayAddress(record);
 			this.writeSlot(words, words + array * 4, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
-		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots, budget, growthStage);
+		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots, budget, growthStage, kind, target, resultWord);
 		if (node !== HASH_STORE_DECLINED && node !== HASH_STORE_PENDING && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return node;
 	}
 	private setHash(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
-		policy = HashStore.General, extraHashSlots = 0, budget?: CPU, growthStage = HeapServiceTableGrowthStage.Idle): number {
+		policy = HashStore.General, extraHashSlots = 0, budget?: CPU, growthStage = HeapServiceTableGrowthStage.Idle,
+		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
@@ -562,7 +565,7 @@ export class TableRecords {
 			}
 		}
 		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots, budget, undefined,
-			LuaAllocationRecovery.CurrentOrFresh, growthStage);
+			LuaAllocationRecovery.CurrentOrFresh, growthStage, kind, target, resultWord);
 		if (index === HASH_STORE_DECLINED || index === HASH_STORE_PENDING) return index;
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
 		this.publishHashInsertion(record, key, tag, word);
@@ -756,8 +759,10 @@ export class TableRecords {
 		plan.keepHash = arraySize > oldArray && added < arraySize && plan.hash === oldHash && firstHashArrayKey > arraySize;
 	}
 	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU,
-		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh, growthStage = HeapServiceTableGrowthStage.Idle): number {
-		if (policy === HashStore.Scheduled && cycleBudget!.beginTableGrowth(record, key, value, extraHashSlots))
+		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh, growthStage = HeapServiceTableGrowthStage.Idle,
+		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
+		if (policy !== HashStore.Resume && !counted && cycleBudget?.beginTableGrowth(record, key, value, extraHashSlots,
+			policy === HashStore.Scheduled ? HeapServiceTableGrowthMode.Scheduled : HeapServiceTableGrowthMode.General, kind, target, resultWord))
 			return HASH_STORE_PENDING;
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);

@@ -94,7 +94,8 @@ TableRecord CPU::createTable(int arraySize, int hashSize) {
 	return table;
 }
 
-bool CPU::beginTableGrowth(u32 receiver, Value key, Value value, u8 extra) {
+bool CPU::beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion) {
+	if (m_runKind == CpuRunKind::Idle) return false;
 	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::TableGrow)];
 	if (function == 0u) return false;
 	const u32 management = m_heapAllocator.managementOffset();
@@ -103,8 +104,8 @@ bool CPU::beginTableGrowth(u32 receiver, Value key, Value value, u8 extra) {
 	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), receiver);
 	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(key)), valuePayload(key));
 	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(value)), valuePayload(value));
-	const std::array args{management, static_cast<u32>(remainingDeviceCycles()), static_cast<u32>(extra)};
-	armBiosCall(HeapServiceBiosCallKind::Discard, 0u, 0u);
+	const std::array args{management, static_cast<u32>(remainingDeviceCycles()), static_cast<u32>(extra), static_cast<u32>(mode)};
+	armBiosCall(completion.kind, completion.target, completion.word);
 	beginHeapService(function, args);
 	requestYield();
 	return true;
@@ -220,16 +221,9 @@ bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) 
 	TableRecord(m_heap, valuePayload(base)).resolveAssignment(key, result);
 	if (finishTableAssignment(frame, key, value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
-	if (m_runKind != CpuRunKind::Scheduled) table.set(key, value, this);
-	else {
-		const auto slot = table.assignScheduled(key, value, *this);
-		if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, key, value);
-		if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) {
-			requestYield();
-			return true;
-		}
-	}
-	return false;
+	const auto slot = m_runKind == CpuRunKind::Scheduled ? table.assignScheduled(key, value, *this) : table.set(key, value, this);
+	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, key, value);
+	return slot == TableRecord::HASH_STORE_PENDING && heapServiceActive();
 }
 
 bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value value) {
@@ -238,16 +232,10 @@ bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value 
 	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(index, result);
 	if (finishTableAssignment(frame, valueInteger(index), value, result)) return true;
 	TableRecord table(m_heap, result.receiver);
-	if (m_runKind != CpuRunKind::Scheduled) table.set(valueInteger(index), value, this);
-	else {
-		const auto slot = table.assignScheduled(valueInteger(index), value, *this);
-		if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, valueInteger(index), value);
-		if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) {
-			requestYield();
-			return true;
-		}
-	}
-	return false;
+	const Value key = valueInteger(index);
+	const auto slot = m_runKind == CpuRunKind::Scheduled ? table.assignScheduled(key, value, *this) : table.set(key, value, this);
+	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, key, value);
+	return slot == TableRecord::HASH_STORE_PENDING && heapServiceActive();
 }
 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots) {
@@ -262,10 +250,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 		: table.setStringKey(key, value, result.slot, extraHashSlots, this);
 	if (slot == TableRecord::HASH_STORE_DECLINED)
 		return parkTableWrite(frame, result.receiver, valueString(key), value, extraHashSlots);
-	if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) {
-		requestYield();
-		return true;
-	}
+	if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) return true;
 	if (result.extraVisits == 0) predictedSlot = slot;
 	return false;
 }
