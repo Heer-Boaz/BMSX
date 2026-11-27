@@ -233,7 +233,7 @@ void CPU::reset() {
 		hardHalt();
 		return;
 	}
-	enterVectorFrame(0u);
+	enterDirectFrame(0u);
 	collectHeap();
 }
 
@@ -996,13 +996,12 @@ void CPU::commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSigna
 	m_pendingAllocation = {};
 	m_stringComparison = {};
 	m_concat = {};
-	u32 closure = staticClosureForRecord(decodePrototype(m_functionRecordLatch));
-	pushFrame(closure, {}, {});
+	[[maybe_unused]] const auto* entry = enterDirectFrame(0u);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// A later native grant may warm this entry. EXEC only commits the machine
 	// activation and never waits for or runs the compiler itself.
 	auto& warmup = m_activeExecutionImage->nativeWarmup;
-	if (m_activeExecutionDomainId >= 0 && !warmup.consumed) warmup.entryPc = m_functionRecordLatch.codeAddress;
+	if (m_activeExecutionDomainId >= 0 && !warmup.consumed) warmup.entryPc = entry->readControl(FrameField::Pc);
 #endif
 }
 
@@ -1898,7 +1897,7 @@ CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 func
 		return nullptr;
 	}
 	try {
-		return enterVectorFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
+		return enterDirectFrame(FRAME_EXCEPTION | (nmi ? FRAME_NMI : 0u), epcWord);
 	} catch (const LuaOutOfMemorySignal&) {
 		// Failure to admit an exception vector cannot recursively trap.
 		hardHalt();
@@ -1906,8 +1905,8 @@ CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 func
 	}
 }
 
-CallFrame* CPU::enterVectorFrame(u32 flags, std::optional<u32> epcWord) {
-	// Hardware enters the sampled Function directly, with no capture environment.
+CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
+	// Direct machine entry binds the sampled Function and no capture environment.
 	const auto& record = m_functionRecordLatch;
 	const FunctionEntry entry{record.codeAddress, record.numParams, record.maxStack, record.flags};
 	const auto admitted = ArgumentPlacement::forEntry(m_activeThread->stackTop(), 0, entry);

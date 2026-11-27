@@ -941,7 +941,7 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return;
 		}
-		this.enterVectorFrame();
+		this.enterDirectFrame();
 		this.collectTrackedHeapBytes();
 	}
 
@@ -1916,8 +1916,7 @@ export class CPU implements MappedPageInvalidator {
 		this.pendingAllocation = null;
 		this.hardHalted = false;
 		this.yieldRequested = false;
-		const closure = this.staticClosureFromLatch();
-		this.pushFrame(closure, EMPTY_CALL_ARGS, 0, 0, false);
+		this.enterDirectFrame();
 	}
 
 	private setProgramHeapFloor(staticEnd: number): boolean {
@@ -2210,7 +2209,7 @@ export class CPU implements MappedPageInvalidator {
 			return null;
 		}
 		try {
-			return this.enterVectorFrame(epcWord, nmi);
+			return this.enterDirectFrame(epcWord, nmi);
 		} catch (error) {
 			if (error !== LUA_OUT_OF_MEMORY_SIGNAL) throw error;
 			this.hardHalt();
@@ -2218,8 +2217,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	// Hardware enters the sampled Function directly, with no capture environment.
-	private enterVectorFrame(epcWord?: number, nmi = false): CallFrame {
+	// Direct machine entry binds the sampled Function and no capture environment.
+	private enterDirectFrame(epcWord?: number, nmi = false): CallFrame {
 		const entry = this.functionRecordLatch;
 		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
 		const thread = this.activeThread, base = thread.stackTop;

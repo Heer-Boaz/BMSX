@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readLE32 } from '../../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
@@ -14,7 +15,10 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_EXEC_PENDING_OFFSET, HEAP_SERVICE_FRAME_OFFSET,
 	HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceOperation, HeapServiceTraceField,
@@ -24,7 +28,8 @@ import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_ma
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
-import { linkTestBlua32Pair } from '../../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestBlua32Pair } from '../../helpers/blua32';
+import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
@@ -35,10 +40,70 @@ const cartSource = 'bss records: word[0x10000]\nrecords[0] = 37\nreturn records[
 const sentinel = 0x5eedaa55;
 const maxInstructionCycles = Math.max(...BASE_CYCLES);
 
+// An in-image transfer with already reserved frame storage needs neither
+// target image materialization nor a heap Closure for the entry.
+function verifyFullArenaTransfer(native: string, directory: string) {
+	const code = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.LOADK, 0, 0, 0);
+	writeInstruction(code, 1, OpCode.MTC0, 0, COP0_EXEC, 0);
+	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
+	writeInstruction(code, 3, OpCode.KSMI, 0, 0, 37);
+	writeInstruction(code, 4, OpCode.RET, 0, 2, 0);
+	const system = linkRawTestSystemBlua32({ text: code, constants: [integerConstant(0)], functions: [
+		{ firstWord: 0, wordCount: 3, maxStack: 1 },
+		{ firstWord: 3, wordCount: 2, numParams: 2, maxStack: 2, staticClosure: true },
+	] });
+	const target = system.image.functions[1];
+	writeLE32(system.romBytes, system.image.header.constantTableAddress + BLUA32_CONSTANT_PAYLOAD_OFFSET, target.address);
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, scheduler, memory } = runtime.machine, arena = cpu.heapAllocator;
+	const minimum = closureRecordBytes(0, false);
+	for (let bytes = arena.unoccupiedBytes(); bytes >= minimum; bytes >>>= 1) {
+		while (arena.allocate(bytes, true) !== 0) { /* Reserved backing, not reclaimable objects. */ }
+	}
+	while (arena.allocate(minimum, true) !== 0) { /* Exhaust every block that could hold a Closure. */ }
+	const occupied = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
+	const seed = join(directory, 'full-arena.state'), trace = join(directory, 'full-arena.trace'), rom = join(directory, 'full-arena.rom');
+	writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	const commands = ['X'], expected: string[] = [];
+	function grant(cycles: number, expectedResult: RunResult, paid: number) {
+		assert.equal(scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled), expectedResult);
+		assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
+		assert.equal(arena.occupiedBytes(), occupied);
+		assert.equal(cpu.luaHeap.usedBytes(), charged);
+		commands.push(`J ${cycles} 1`);
+		expected.push(`${expectedResult} ${paid} 0 0 ${occupied} ${charged}`);
+	}
+	grant(1, RunResult.Yielded, BASE_CYCLES[OpCode.LOADK]);
+	grant(1, RunResult.Yielded, BASE_CYCLES[OpCode.MTC0]);
+	const frame = cpu.rootThread.frameAtDepth(0), offset = frame.controlOffset;
+	assert.equal(frame.functionAddress, target.address);
+	assert.equal(frame.pc, target.codeAddress);
+	assert.equal(frame.closureAddress, 0);
+	assert.equal(frame.top, 2);
+	assert.equal(frame.registers.get(0), valueNil());
+	assert.equal(frame.registers.get(1), valueNil());
+	commands.push(`H ${offset} ${offset + FRAME_CONTROL_BYTES}`);
+	expected.push(String(hashBytes(memory.ramData(), offset, FRAME_CONTROL_BYTES)));
+	grant(64, RunResult.Halted, BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[OpCode.RET] + 1);
+	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(37)]);
+	commands.push('C');
+	expected.push('37');
+	writeFileSync(rom, system.romBytes);
+	writeFileSync(trace, commands.join('\n'));
+	assert.deepEqual(execFileSync(native, [rom, trace, seed], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
+	console.log('BIOS-EXEC-DIRECT:PASS same-image transfer with no free block for a Closure');
+}
+
+
 mkdirSync('tmp', { recursive: true });
 const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-exec-heap-floor-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	verifyFullArenaTransfer(native, directory);
 	for (const optLevel of [0, 3] as const) {
 		const bios = compileHeapServiceSystem(biosSource, optLevel);
 		const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel });
@@ -198,6 +263,14 @@ try {
 					assert.equal(memory.ramBusEnd(), floor);
 					assert.equal(arena.floor(), floor - RAM_BASE);
 					assert.equal(cpu.activeCartridgeSlot(), 0);
+					const entry = cpu.rootThread.frameAtDepth(0);
+					assert.equal(cpu.getFrameDepth(), 1);
+					assert.equal(entry.functionAddress, pair.cartVectors.startupFunctionAddress);
+					assert.equal(entry.closureAddress, 0);
+					assert.equal(entry.top, 0);
+					assert.equal(entry.isExceptionFrame, false);
+					observe('P', `1 ${entry.pc}`);
+					observeRam(entry.controlOffset, entry.controlOffset + FRAME_CONTROL_BYTES);
 					let result = RunResult.Yielded;
 					for (let i = 0; i < 64 && result === RunResult.Yielded; ++i) result = step(65536);
 					assert.equal(result, RunResult.Halted);
