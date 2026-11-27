@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -9,9 +9,9 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../../machine/ts/spec/blua32/cop0';
-import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
+import { MemoryAccessKind, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_SIZE, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -24,19 +24,22 @@ import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const path = 'test/private_value';
-const address = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - RUNTIME_MANAGEMENT_SIZE + HEAP_SERVICE_VALUE_CELL_OFFSET;
+const installedEnd = RAM_BASE + PSX_MACHINE_SPEC.ramBytes;
+const managementBase = installedEnd - RUNTIME_MANAGEMENT_SIZE;
+// Do not use the BIOS's exchange cell. Test a four-byte-aligned area before
+// the fixed Thread and the last complete tagged span in installed RAM.
+const address = managementBase + HEAP_SERVICE_THREAD_OFFSET - VALUE_MEMORY_SIZE - 4;
+const tailAddress = installedEnd - VALUE_MEMORY_SIZE;
 const source = `
 module<const>
-local layout<const> = require('kernel/gc_runtime_layout')
 struct distant_cell
 	before: u32[256]
 	slot: value
 end
-local dynamic<const> = function(management, rounds)
-	local base<const> = layout.ram_base + management + layout.value_cell_offset
+local dynamic<const> = function(base, rounds)
 	local cell<const>: *value = base
 	local word<const>: *u32 = base
-	local tag<const>: *u8 = base + layout.value_cell_tag_offset
+	local tag<const>: *u8 = base + ${VALUE_MEMORY_TAG_OFFSET}
 	local saved<const> = *cell
 	*word = 0
 	*tag = 0
@@ -52,7 +55,7 @@ end
 local constant<const> = function(rounds)
 	local cell<const>: *distant_cell = ${address - 1024}
 	local word<const>: *u32 = ${address}
-	local tag<const>: *u8 = ${address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET}
+	local tag<const>: *u8 = ${address + VALUE_MEMORY_TAG_OFFSET}
 	local saved<const> = cell.slot
 	*word = 0
 	*tag = 0
@@ -65,7 +68,15 @@ local constant<const> = function(rounds)
 	end
 	return truth
 end
-return { dynamic = dynamic, constant = constant }
+local load_at<const> = function(address)
+	local cell<const>: *value = address
+	return *cell
+end
+local store_at<const> = function(address)
+	local cell<const>: *value = address
+	*cell = 0x13579bdf
+end
+return { dynamic = dynamic, constant = constant, load_at = load_at, store_at = store_at }
 `;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const fixture = { path, source };
@@ -94,7 +105,8 @@ try {
 			return system.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 		};
 		const dynamic = idx('dynamic'), constant = idx('constant');
-		deriveBlua32FixedStack(system.image, [dynamic, constant]);
+		const loadAt = idx('load_at'), storeAt = idx('store_at');
+		deriveBlua32FixedStack(system.image, [dynamic, constant, loadAt, storeAt]);
 		const rom = join(directory, `O${opt}.rom`);
 		writeFileSync(rom, system.romBytes);
 		const aggregate = new Set<OpCode>();
@@ -111,13 +123,14 @@ try {
 				const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator, management = arena.managementOffset();
 				for (let i = 0; i < 64 && !cpu.isHaltedUntilIrq(); ++i) scheduler.runCpuSlice(0, 10_000, undefined, CpuRunKind.Direct);
 				assert.ok(cpu.isHaltedUntilIrq());
-				const cell = management + HEAP_SERVICE_VALUE_CELL_OFFSET;
+				const cell = (variant === 'dynamic' ? tailAddress : address) - RAM_BASE;
 				const word = tag === ValueTag.Table ? cpu.createTable(1, 0) : 0;
 				memory.writeRamRecordWord(cell, word);
-				memory.writeRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET, tag);
+				const tagAndPadding = (0x17eeaa00 | tag) >>> 0;
+				memory.writeRamRecordWord(cell + VALUE_MEMORY_TAG_OFFSET, tagAndPadding);
 				const prefix = join(directory, `O${opt}-${variant}-${tag}`);
 				writeFileSync(`${prefix}.seed`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-				const args = variant === 'dynamic' ? [management, rounds] : [rounds];
+				const args = variant === 'dynamic' ? [tailAddress, rounds] : [rounds];
 				const commands: string[] = ['X', `B ${fn.address} ${args.length} ${args.join(' ')}`], expected: string[] = ['1'];
 				assert.equal(cpu.beginHeapService(fn.address, args), true);
 				function record(cmd: string, row: string | number) { commands.push(cmd); expected.push(String(row)); }
@@ -127,10 +140,10 @@ try {
 					assert.ok(n > cpu.instructionBudgetRemaining);
 					record(`J ${n} 0`, `${result} ${n - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				}
-				for (let n = 0; n < 1024 && memory.readRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET) !== ValueTag.Nil; ++n) grant(1);
+				for (let n = 0; n < 1024 && memory.readRamRecordByte(cell + VALUE_MEMORY_TAG_OFFSET) !== ValueTag.Nil; ++n) grant(1);
 				assert.ok(cpu.heapServiceActive());
 				assert.equal(memory.readRamRecordWord(cell), 0);
-				assert.equal(memory.readRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET), ValueTag.Nil);
+				assert.equal(memory.readRamRecordByte(cell + VALUE_MEMORY_TAG_OFFSET), ValueTag.Nil);
 				const partialFile = `${prefix}.partial`, nativeFile = `${prefix}.native`;
 				writeFileSync(partialFile, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 				const start = commands.length, first = expected.length;
@@ -139,8 +152,8 @@ try {
 					assert.equal(cpu.heapServiceActive(), false);
 					assert.equal(cpu.heapServiceResult(), tag === ValueTag.Table ? rounds : 0, 'Boolean false must not become the truthy Integer 0');
 					assert.equal(memory.readRamRecordWord(cell), word);
-					assert.equal(memory.readRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET), tag);
-					record(`H ${cell} ${cell + HEAP_SERVICE_VALUE_CELL_SIZE}`, hashBytes(memory.ramData(), cell, HEAP_SERVICE_VALUE_CELL_SIZE));
+					assert.equal(memory.readRamRecordWord(cell + VALUE_MEMORY_TAG_OFFSET), tagAndPadding, 'only the tag byte belongs to the Value');
+					record(`H ${cell} ${cell + VALUE_MEMORY_SIZE}`, hashBytes(memory.ramData(), cell, VALUE_MEMORY_SIZE));
 					const result = management + HEAP_SERVICE_RESULT_OFFSET;
 					record(`H ${result} ${result + 4}`, hashBytes(memory.ramData(), result, 4));
 				}
@@ -178,9 +191,9 @@ try {
 			assert.ok(cpu.isHaltedUntilIrq());
 			assert.equal(cpu.readCauseWord(), 0);
 			cpu.clearHaltUntilIrq();
-			const cell = management + HEAP_SERVICE_VALUE_CELL_OFFSET;
+			const cell = address - RAM_BASE;
 			memory.writeRamRecordWord(cell, 17);
-			memory.writeRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET, ValueTag.False);
+			memory.writeRamRecordByte(cell + VALUE_MEMORY_TAG_OFFSET, ValueTag.False);
 			const seed = join(directory, `O${opt}-${reject}.seed`), badRom = join(directory, `O${opt}-${reject}.rom`);
 			writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 			writeFileSync(badRom, ordinary.romBytes);
@@ -192,13 +205,43 @@ try {
 			}
 			assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			assert.equal(memory.readRamRecordWord(cell), 17);
-			assert.equal(memory.readRamRecordByte(cell + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET), ValueTag.False);
+			assert.equal(memory.readRamRecordByte(cell + VALUE_MEMORY_TAG_OFFSET), ValueTag.False);
 			trace.push('Z'); rows.push(`${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
 			const traceFile = join(directory, `O${opt}-${reject}.trace`);
 			writeFileSync(traceFile, trace.join('\n'));
 			assert.deepEqual(execFileSync(native, [badRom, traceFile, seed], { encoding: 'utf8' }).trimEnd().split('\n'), rows);
 		}
-		console.log(`BIOS-PRIVATE-VALUE:PASS O${opt} (both forms, genuine Table/false, exact grants, restricted ordinary execution, bidirectional restore)`);
+		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		runtime.boot();
+		const { cpu, scheduler, memory } = runtime.machine;
+		for (let i = 0; i < 64 && !cpu.isHaltedUntilIrq(); ++i) scheduler.runCpuSlice(0, 10_000, undefined, CpuRunKind.Direct);
+		assert.ok(cpu.isHaltedUntilIrq());
+		const seed = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+		const seedPath = join(directory, `O${opt}-invalid-span.seed`), tracePath = join(directory, `O${opt}-invalid-span.trace`);
+		writeFileSync(seedPath, seed);
+		const strobe = managementBase + HEAP_SERVICE_GC_PROJECTION_OFFSET;
+		for (const [where, target] of [
+			['bus-visible', memory.ramBusEnd() - 4], ['unaligned', address + 1],
+			['fixed Thread overlap', managementBase + HEAP_SERVICE_THREAD_OFFSET - 4],
+			['end of installed RAM', installedEnd - 4], ['strobe', strobe], ['strobe overlap', strobe - 4],
+		] as const) {
+			for (const [op, index] of [['load', loadAt], ['store', storeAt]] as const) {
+				applyRuntimeSaveState(runtime, decodeRuntimeSaveState(seed, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+				const first = target - RAM_BASE, storage = memory.ramData(), count = Math.min(VALUE_MEMORY_SIZE, storage.length - first);
+				const original = hashBytes(storage, first, count);
+				const fn = system.image.functions[index].address;
+				assert.equal(cpu.beginHeapService(fn, [target]), true);
+				const denied = /Tagged Value access requires an aligned private RAM span/;
+				assert.throws(() => scheduler.runCpuSlice(0, 128, undefined, CpuRunKind.Direct), denied, `${op}: ${where}`);
+				assert.equal(hashBytes(storage, first, count), original, 'admission precedes the first memory effect');
+				writeFileSync(tracePath, ['X', `B ${fn} 1 ${target}`, 'J 128 0'].join('\n'));
+				const out = spawnSync(native, [rom, tracePath, seedPath], { encoding: 'utf8' });
+				assert.equal(out.status, 1, `${op}: ${where}`);
+				assert.equal(out.stdout.trim(), '1', 'native fixed activation entered, then rejected the access');
+				assert.match(out.stderr, denied);
+			}
+		}
+		console.log(`BIOS-PRIVATE-VALUE:PASS O${opt} (both private RAM apertures, Table/false, exact grants, restricted full spans, bidirectional restore)`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

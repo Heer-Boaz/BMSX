@@ -123,9 +123,4 @@ enum class HeapServiceProjection : uint32_t {
 };
 constexpr uint32_t HEAP_SERVICE_PENDING_TOP_OFFSET = 0x79c;
 
-// One reserved Value cell: the payload word, then its separate tag byte.
-constexpr uint32_t HEAP_SERVICE_VALUE_CELL_OFFSET = 0x7a0u;
-constexpr uint32_t HEAP_SERVICE_VALUE_CELL_TAG_OFFSET = 4u;
-constexpr uint32_t HEAP_SERVICE_VALUE_CELL_SIZE = 8u;
-
 } // namespace bmsx

@@ -15,6 +15,10 @@ enum class MemoryAccessKind : uint8_t {
 	Value = 6, // Fixed System activation only.
 };
 
+// A memory Value carries a little-endian payload and a tag byte.
+inline constexpr uint32_t VALUE_MEMORY_SIZE = 8u;
+inline constexpr uint32_t VALUE_MEMORY_TAG_OFFSET = 4u;
+
 inline constexpr int F64_ACCESS_EXTRA_CYCLES = 2;
 
 inline constexpr std::array<uint32_t, 7> MEMORY_ACCESS_KIND_ALIGNMENT_MASKS{

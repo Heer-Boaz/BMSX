@@ -24,8 +24,7 @@ static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResiden
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_PENDING_TOP_OFFSET);
-static_assert(HEAP_SERVICE_PENDING_TOP_OFFSET + sizeof(u32) <= HEAP_SERVICE_VALUE_CELL_OFFSET);
-static_assert(HEAP_SERVICE_VALUE_CELL_OFFSET + HEAP_SERVICE_VALUE_CELL_SIZE <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
+static_assert(HEAP_SERVICE_PENDING_TOP_OFFSET + sizeof(u32) <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_BUS_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
 static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
@@ -236,12 +235,21 @@ void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {
 		throw BMSX_RUNTIME_ERROR("Heap service access requires an aligned byte or word.");
 }
 
+void CPU::admitPrivateValueSpan(u32 address, u32 management) const {
+	const u32 data = management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+	const u32 projection = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
+	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(MemoryAccessKind::Value)]) != 0u
+		|| ((address < m_memory.ramBusEnd() || address > management + HEAP_SERVICE_THREAD_OFFSET - VALUE_MEMORY_SIZE)
+			&& address - data > RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET - VALUE_MEMORY_SIZE)
+		|| address + VALUE_MEMORY_TAG_OFFSET - projection < VALUE_MEMORY_SIZE)
+		throw BMSX_RUNTIME_ERROR("Tagged Value access requires an aligned private RAM span.");
+}
+
 void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address) {
 	if (kind == MemoryAccessKind::Value) {
-		const u32 cell = RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_CELL_OFFSET;
-		if (address != cell) throw BMSX_RUNTIME_ERROR("Heap service Value access is outside its private cell.");
+		admitPrivateValueSpan(address, RAM_BASE + m_heapAllocator.managementOffset());
 		const auto word = m_memory.readRamRecordWord(address);
-		const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET));
+		const auto tag = static_cast<ValueTag>(m_memory.readRamRecordByte(address + VALUE_MEMORY_TAG_OFFSET));
 		frame.registers.set(destination, valueFromTag(tag, word));
 		frame.extendTop(destination + 1);
 		return;
@@ -288,11 +296,10 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
 	if (kind == MemoryAccessKind::Value) {
-		if (address != management + HEAP_SERVICE_VALUE_CELL_OFFSET)
-			throw BMSX_RUNTIME_ERROR("Heap service Value access is outside its private cell.");
+		admitPrivateValueSpan(address, management);
 		const Value value = frame.registers.get(source);
 		m_memory.writeRamRecordWord(address, valuePayload(value));
-		m_memory.writeRamRecordByte(address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET, static_cast<u8>(valueTag(value)));
+		m_memory.writeRamRecordByte(address + VALUE_MEMORY_TAG_OFFSET, static_cast<u8>(valueTag(value)));
 		return;
 	}
 	admitHeapServiceAccess(kind, address);

@@ -386,6 +386,7 @@ private:
 	void executeHeapServiceStore(CallFrame&, int source, MemoryAccessKind, u32 address);
 	void writeHeapServiceProjection(u32 word);
 	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
+	void admitPrivateValueSpan(u32 address, u32 management) const;
 	u32 readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const;
 	// Ordinary CALL arguments borrow frame slots by index so backing growth can
 	// rebind them. Detached implicit calls carry complete Values until admission.

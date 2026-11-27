@@ -114,7 +114,7 @@ import {
 	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
 	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/numeric';
 import {
@@ -184,7 +184,6 @@ import {
 	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_PENDING_TOP_OFFSET,
-	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceProjection, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
@@ -4045,9 +4044,14 @@ export class CPU implements MappedPageInvalidator {
 	private executeHeapServiceAccess(frame: CallFrame, register: number, kind: MemoryAccessKind, address: number, load: boolean): void {
 		const memory = this.memory;
 		if (kind === MemoryAccessKind.Value) {
-			const cell = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_CELL_OFFSET;
-			if (address !== cell) throw new Error('Heap service Value access is outside its private cell.');
-			const tags = address + HEAP_SERVICE_VALUE_CELL_TAG_OFFSET;
+			const data = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+			if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0
+				|| ((address < memory.ramBusEnd() || address > this.heapService.thread.address - VALUE_MEMORY_SIZE)
+					&& ((address - data) >>> 0) > RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET - VALUE_MEMORY_SIZE)
+				|| ((address + VALUE_MEMORY_TAG_OFFSET - this.heapService.projectionAddress) >>> 0) < VALUE_MEMORY_SIZE) {
+				throw new Error('Tagged Value access requires an aligned private RAM span.');
+			}
+			const tags = address + VALUE_MEMORY_TAG_OFFSET;
 			const slots = frame.registers;
 			if (load) {
 				const word = memory.readRamRecordWord(address);
