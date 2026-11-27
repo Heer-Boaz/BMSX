@@ -1397,7 +1397,7 @@ bool CPU::coroutineYieldable(u32 address) const {
 	return true;
 }
 
-void CPU::returnToResumer(const CallValueSource& source, bool succeeded) {
+void CPU::returnToResumer(const CallValueSource& source) {
 	Thread* thread = m_activeThread;
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(valueThread(thread->address));
@@ -1411,7 +1411,7 @@ void CPU::returnToResumer(const CallValueSource& source, bool succeeded) {
 	if (count > 0) {
 		ensureRegisterCapacity(caller, result.base + count - 1);
 		const auto values = source.values();
-		caller.registers.set(result.base, valueBool(succeeded));
+		caller.registers.set(result.base, valueBool(true));
 		const int copied = std::min(source.count, count - 1);
 		values.placeInto(caller.registers, result.base + 1, copied, count - 1 - copied);
 	}
@@ -1427,7 +1427,7 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 		if (!coroutineYieldable(thread->address)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		thread->setTransferResult(result);
 		thread->setStatus(ThreadStatus::Suspended);
-		returnToResumer(arguments, true);
+		returnToResumer(arguments);
 		return;
 	}
 	const Value targetValue = arguments.values()[0];
@@ -1468,18 +1468,6 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 		else writeReturnValues(frame, target->transferResult(), supplied.values());
 	}
 	m_runSignals |= RunThreadSwitch | RunYield;
-}
-
-bool CPU::handleThreadError(Value error) {
-	if (handleProtectedCallError(error)) return true;
-	Thread* thread = m_activeThread;
-	if (thread->resumer() == 0u) return false;
-	for (auto* frame = thread->currentFrame; frame; frame = frame->previous)
-		if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
-	thread->setStatus(ThreadStatus::Failed);
-	thread->setError(error);
-	returnToResumer({nullptr, &error, 0, 1}, false);
-	return true;
 }
 
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallValueSource& arguments) {
@@ -1618,49 +1606,6 @@ void CPU::finishProtectedContinuation(u32 continuationIndex, int resultCount) {
 	}
 }
 
-bool CPU::handleProtectedCallError(Value errorValue) {
-	for (;;) {
-		const u32 depth = m_activeThread->protectedDepth();
-		if (depth == 0) return false;
-		const u32 continuationIndex = depth - 1;
-		const u32 callerIndex = m_activeThread->protectedWord(continuationIndex, ProtectedField::Caller);
-		if (callerIndex >= m_activeThread->frameDepth()) return false;
-		auto* frame = m_activeThread->currentFrame;
-		for (size_t at = m_activeThread->frameDepth() - 1; at > callerIndex; --at, frame = frame->previous) {
-			// Completion roots return to their latch, not the interrupted caller.
-			if (frame->hasControlFlag(FRAME_EXCEPTION | FRAME_COMPLETION)) return false;
-		}
-		unwindToDepth(callerIndex + 1, true);
-		const auto kind = static_cast<ProtectedCallKind>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags)
-			& PROTECTED_CALL_KIND_MASK);
-		if (kind != ProtectedCallKind::XPCallBody) {
-			const Value result = kind == ProtectedCallKind::XPCallHandler ? valueString(m_heap.diagnosticWord(HeapServiceRemarkHeadField::Error)) : errorValue;
-			finishProtectedCallWithError(continuationIndex, result);
-			return true;
-		}
-
-		m_activeThread->setProtectedKind(continuationIndex, ProtectedCallKind::XPCallHandler);
-		const auto result = m_activeThread->protectedResult(continuationIndex);
-		const Value handler = m_activeThread->protectedHandler(continuationIndex);
-		--instructionBudgetRemaining;
-		try {
-			if (result.extendsTop()) {
-				auto roots = acquireLocalRoots();
-				trackLocalRoot(errorValue);
-				invokeProtectedTarget(continuationIndex, handler, {nullptr, &errorValue, 0, 1});
-			} else {
-				setRegister(*frame, result.base, errorValue);
-				invokeProtectedTarget(continuationIndex, handler, {frame, nullptr, result.base, 1});
-			}
-			return true;
-		} catch (const LuaThrownValueError& handlerError) {
-			errorValue = handlerError.value;
-		} catch (const LuaExecutionError& handlerError) {
-			errorValue = luaFaultValue(handlerError.reason);
-		}
-	}
-}
-
 void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
 	if (!valueIsTable(target)) {
 		throw LuaExecutionError(LUA_FAULT_REASON_ITERATE_NON_TABLE);
@@ -1737,6 +1682,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnBadAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
 		const u32 returnLuaFaultReasonWord = m_cop0Words[COP0_LUA_FAULT_REASON];
 		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
+		clearHaltAfterAcceptedInterrupt();
 		enterException(
 			*m_systemImage,
 			m_cop0Words[COP0_SYSTEM_VECTOR],
@@ -1763,6 +1709,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
 		const u32 accepted = enabledFlags | (isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0u);
 		if (m_haltedUntilIrqFrameDepth < 0) m_interruptEventPending = true;
+		clearHaltAfterAcceptedInterrupt();
 		latchExceptionEntry(CPU_CAUSE_IRQ, epc);
 		if (!readFunctionRecordOnBus(image, vector, executionBusSignalsForDomain(domain))) {
 			hardHalt();
@@ -1794,21 +1741,20 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], causeWord, pc);
 }
 
-void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
-	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
+void CPU::enterLuaFaultException(Value errorValue) {
+	m_cop0Words[COP0_LUA_FAULT_REASON] = LUA_FAULT_REASON_EXPLICIT_ERROR;
 	const std::array arguments{errorValue};
 	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP,
 		m_currentInstructionPc, arguments);
 }
 
 void CPU::retireNumericLuaFault(u32 reason) {
+	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
 	if (resetBankSelected()) {
-		m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
 		enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP);
 		return;
 	}
-	const Value value = luaFaultValue(reason);
-	if (!handleThreadError(value)) enterLuaFaultException(reason, value);
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP, m_currentInstructionPc);
 }
 
 void CPU::returnFromException(CallFrame& frame) {
@@ -1893,7 +1839,7 @@ void CPU::latchExceptionEntry(u32 causeWord, u32 epcWord) {
 	m_cop0Words[COP0_CAUSE] = causeWord;
 	m_cop0Words[COP0_STATUS] = (m_cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 		| ((m_cop0Words[COP0_STATUS] << 2u) & CPU_STATUS_MODE_STACK_MASK);
-	clearHaltAfterAcceptedInterrupt();
+	m_runSignals &= ~RunYield;
 }
 
 CallFrame* CPU::placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
@@ -1954,7 +1900,6 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord, std::spa
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
-	m_runSignals &= ~RunYield;
 }
 
 void CPU::blockMappedWrite(CallFrame& frame, uint32_t address) {
@@ -2606,9 +2551,7 @@ dispatch_continue:
 		} catch (const LuaThrownValueError& error) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
-			if (!handleThreadError(error.value)) {
-				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
-			}
+				enterLuaFaultException(error.value);
 		} catch (const LuaExecutionError& error) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
@@ -2667,13 +2610,11 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 					finishClosureReservation();
 				}
 			} catch (const LuaOutOfMemorySignal&) {
-				const auto value = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
-				if (!handleThreadError(value)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
+				retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 			} catch (const LuaThrownValueError& error) {
-				if (!handleThreadError(error.value)) enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
+				enterLuaFaultException(error.value);
 			} catch (const LuaExecutionError& error) {
-				const auto value = luaFaultValue(error.reason);
-				if (!handleThreadError(value)) enterLuaFaultException(error.reason, value);
+				retireNumericLuaFault(error.reason);
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
@@ -3230,15 +3171,6 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 	instructionBudgetRemaining -= targetCount;
 }
 
-void CPU::setRegister(CallFrame& frame, int index, Value value) {
-	ValueSpan& registers = ensureRegisterCapacity(frame, index);
-	registers.set(static_cast<size_t>(index), value);
-	const int nextTop = index + 1;
-	if (nextTop > frame.readWindow(FrameField::Top)) {
-		frame.setTop(nextTop);
-	}
-}
-
 ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (index < frame.stackCapacity()) {
 		return frame.registers;
@@ -3314,12 +3246,6 @@ void CPU::publishHeapRemarkHead() {
 	} else {
 		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 0u);
 	}
-}
-
-Value CPU::luaFaultValue(u32 reason) const {
-	if (reason == LUA_FAULT_REASON_EXPLICIT_ERROR) return valueNil();
-	const u32 faults = m_heap.diagnosticWord(HeapServiceRemarkHeadField::FaultIds);
-	return valueString(m_memory.readRamRecordWord(faults + reason * sizeof(u32)));
 }
 
 void CPU::markRootHead(GcHeap& heap) {

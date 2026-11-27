@@ -3,13 +3,19 @@ import { test } from 'node:test';
 import { asThread, valueBool, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_RECORD_KIND, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileCoroutineTest, coroutineVectors } from '../helpers/coroutine';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 test('a failed thread retains its physical error word, tag and authored frames', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.protected_and_failed, 3));
-	runGuestToHalt(cpu, 1_000_000);
+	assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.Halted);
+	assert.equal(cpu.getFrameDepth(), 0);
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_EXPLICIT_ERROR);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const value = cpu.getGlobalByKey(cpu.stringPool.find('failed_thread')!);
 	const failed = asThread(value, cpu.gc);

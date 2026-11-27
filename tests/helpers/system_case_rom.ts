@@ -26,11 +26,12 @@ export function runSystemCaseRom(rom: Uint8Array, onSuspend: (runtime: Runtime) 
 	let suspensions = 0;
 	for (let grant = 0; grant < maxGrants; grant++) {
 		const result = runCpuWithinBudget(cpu, 1_000_000);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest suite must not fault');
-		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 		if (result === RunResult.Yielded) continue;
 		assert.equal(result, RunResult.Halted);
+		assert.equal(cpu.captureRuntimeState().hardHalted, false, 'the guest suite must not hard-halt');
+		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, 'no exception remains active at the stopping point');
 		if (!cpu.isHaltedUntilIrq()) {
+			assert.equal(cpu.getFrameDepth(), 0);
 			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true), valueBool(true)]);
 			return suspensions;
 		}

@@ -406,7 +406,6 @@ private:
 	bool finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded);
 	CallFrame& protectedCaller(u32 continuationIndex);
 	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
-	bool handleProtectedCallError(Value errorValue);
 	void unwindToDepth(int targetDepth, bool chargeCaptures);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
@@ -478,7 +477,6 @@ private:
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
 	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
-	void setRegister(CallFrame& frame, int index, Value value);
 	ValueSpan& ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
@@ -597,8 +595,7 @@ private:
 	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {}, std::span<const Value> arguments = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord,
 		std::span<const Value> arguments);
-	Value luaFaultValue(u32 reason) const;
-	void enterLuaFaultException(u32 reason, Value errorValue);
+	void enterLuaFaultException(Value errorValue);
 	void retireNumericLuaFault(u32 reason);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
@@ -656,9 +653,8 @@ private:
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
 	}
 	bool coroutineYieldable(u32 address) const;
-	void returnToResumer(const CallValueSource& values, bool succeeded);
+	void returnToResumer(const CallValueSource& values);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallValueSource&);
-	bool handleThreadError(Value error);
 
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
 	InstructionObserverBinding m_instructionObserver;

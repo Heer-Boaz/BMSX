@@ -718,8 +718,10 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const offset = this.heapServiceResult();
-		if (offset === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		if ((offset | 0) < 0) throw new LuaExecutionError(~offset);
+		if (offset === 0 || (offset | 0) < 0) {
+			this.retireNumericLuaFault(offset === 0 ? LUA_FAULT_REASON_OUT_OF_MEMORY : ~offset);
+			return;
+		}
 		const address = RAM_BASE + offset;
 		if ((memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)
 			this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
@@ -802,8 +804,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		this.pendingAllocation = null;
-		const value = this.luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
-		if (!this.handleThreadError(value)) this.enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, value);
+		this.retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 	}
 
 	private finishTableAssignment(frame: CallFrame, key: Value, value: Value, assignment: TableLookupResult): boolean {
@@ -2247,6 +2248,7 @@ export class CPU implements MappedPageInvalidator {
 			const returnBadAddressWord = this.cop0Words[COP0_BAD_ADDRESS];
 			const returnLuaFaultReasonWord = this.cop0Words[COP0_LUA_FAULT_REASON];
 			const returnExceptionDomainWord = this.exceptionDomainWord;
+			this.clearHaltAfterAcceptedInterrupt();
 			this.enterException(
 				this.systemImage,
 				this.cop0Words[COP0_SYSTEM_VECTOR],
@@ -2272,6 +2274,7 @@ export class CPU implements MappedPageInvalidator {
 			const epc = this.activeThread.currentFrame!.pc;
 			const accepted = enabledFlags | (this.isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0);
 			if (this.haltedUntilIrqFrameDepth < 0) this.interruptEventPending = true;
+			this.clearHaltAfterAcceptedInterrupt();
 			this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
 			if (!this.readFunctionRecordOnBus(image, vector, CPU.executionBusSignalsForDomain(domain))) {
 				this.hardHalt();
@@ -2315,10 +2318,21 @@ export class CPU implements MappedPageInvalidator {
 			this.currentInstructionPc, valueInteger(valueEnd), valueInteger(frameEnd), valueInteger(op | (operand << 8)), valueInteger(deadline));
 	}
 
-	private enterLuaFaultException(reason: number, error: Value): void {
-		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
+	private enterLuaFaultException(error: Value): void {
+		this.cop0Words[COP0_LUA_FAULT_REASON] = LUA_FAULT_REASON_EXPLICIT_ERROR;
 		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP,
 			this.currentInstructionPc, error);
+	}
+
+	private retireNumericLuaFault(reason: number): void {
+		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
+		// A managed handler needs the progress already published by the
+		// issuing instruction; the cold numeric vector uses a precise retry.
+		if (this.resetBankSelected()) {
+			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_TRAP);
+			return;
+		}
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_TRAP, this.currentInstructionPc);
 	}
 
 	private returnFromException(frame: CallFrame): void {
@@ -2389,7 +2403,7 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_CAUSE] = causeWord >>> 0;
 		this.cop0Words[COP0_STATUS] = ((this.cop0Words[COP0_STATUS] & ~CPU_STATUS_MODE_STACK_MASK)
 			| ((this.cop0Words[COP0_STATUS] << 2) & CPU_STATUS_MODE_STACK_MASK)) >>> 0;
-		this.clearHaltAfterAcceptedInterrupt();
+		this.yieldRequested = false;
 	}
 
 	private placeExceptionVector(vectorImage: Blua32ExecutionImage, functionAddress: number, nmi: boolean, epcWord: number,
@@ -2455,7 +2469,6 @@ export class CPU implements MappedPageInvalidator {
 	private clearHaltAfterAcceptedInterrupt(): void {
 		this.haltedUntilIrqFrameDepth = -1;
 		this.haltedUntilIrqThread = 0;
-		this.yieldRequested = false;
 	}
 
 	public getFrameDepth(): number {
@@ -2485,9 +2498,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		const status = memory.readRamRecordWord(state + HeapServiceBiosCallField.Status);
 		if (status !== 0) {
-			const reason = status - 1;
-			const error = this.luaFaultValue(reason);
-			if (!this.handleThreadError(error)) this.enterLuaFaultException(reason, error);
+			this.retireNumericLuaFault(status - 1);
 			return;
 		}
 		if (kind === HeapServiceBiosCallKind.Discard) return;
@@ -2801,33 +2812,22 @@ export class CPU implements MappedPageInvalidator {
 		return RunResult.Halted;
 	}
 
-	private retireNumericLuaFault(reason: number): void {
-		if (this.resetBankSelected()) {
-			this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
-			this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_TRAP);
-			return;
-		}
-		const value = this.luaFaultValue(reason);
-		if (!this.handleThreadError(value)) this.enterLuaFaultException(reason, value);
-	}
-
 	private handleRunLoopError(error: unknown): void {
 		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
 			this.retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 		} else if (error instanceof LuaThrownValueError) {
-			if (!this.handleThreadError(error.value)) this.enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
+			this.enterLuaFaultException(error.value);
 		} else if (error instanceof LuaExecutionError) {
 			this.retireNumericLuaFault(error.reason);
 		} else throw error;
 	}
 
-	private unwindToDepth(targetDepth: number, chargeCaptures: boolean): void {
+	private unwindToDepth(targetDepth: number): void {
 		const unwinding = this.activeThread.frameDepth > targetDepth;
 		if (unwinding) this.abortStalledMemoryWrite();
 		while (this.activeThread.frameDepth > targetDepth) {
 			const frame = this.activeThread.currentFrame!;
-			const closed = this.closeUpvalues(frame);
-			if (chargeCaptures) this.charge(closed);
+			this.closeUpvalues(frame);
 			frame.thread.leaveFrame();
 		}
 		if (unwinding) this.resumeFrameBank();
@@ -2890,7 +2890,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public abortCompletionCall(frameIndex: number): void {
 		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
-		this.unwindToDepth(frameIndex, false);
+		this.unwindToDepth(frameIndex);
 		this.clearCompletionValues();
 	}
 
@@ -4159,7 +4159,10 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		const sourceBase = memory.readRamRecordWord(context + HeapServiceResidentField.SourceBase);
 		const count = memory.readRamRecordWord(context + HeapServiceResidentField.SourceCount);
-		if (count === HEAP_SERVICE_RESULT_FAULT) throw new LuaExecutionError(sourceBase);
+		if (count === HEAP_SERVICE_RESULT_FAULT) {
+			this.retireNumericLuaFault(sourceBase);
+			return;
+		}
 		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
 		if ((flags & FRAME_RESIDENT_PREPARED_ENTRY) !== 0) {
 			this.enterPreparedFrame();
@@ -4676,7 +4679,7 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	private returnToResumer(source: ValueSlots | null, sourceBase: number, sourceCount: number): void {
+	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const thread = this.activeThread;
 		const rootBase = this.localRoots.length;
 		this.localRoots.push(valueThread(thread.address));
@@ -4691,13 +4694,9 @@ export class CPU implements MappedPageInvalidator {
 			const count = selectedCallResultCount(returnCount, sourceCount + 1);
 			if (count > 0) {
 				const registers = this.ensureRegisterCapacity(caller, callBase + count - 1);
-				registers.setBoolean(callBase, source !== null);
+				registers.setBoolean(callBase, true);
 				const copied = Math.min(sourceCount, count - 1);
-				if (source !== null) registers.copyRangeFrom(source, callBase + 1, sourceBase, copied, count - copied - 1);
-				else {
-					if (copied !== 0) registers.set(callBase + 1, thread.error);
-					registers.clear(count - copied - 1, callBase + copied + 1);
-				}
+				registers.copyRangeFrom(source, callBase + 1, sourceBase, copied, count - copied - 1);
 			}
 			caller.setCallResultTop(callBase + count, returnCount);
 			thread.resumer = 0;
@@ -4754,18 +4753,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.threadSwitchRequested = true;
 		this.yieldRequested = true;
-	}
-
-	private handleThreadError(error: Value): boolean {
-		if (this.handleProtectedCallError(error)) return true;
-		const thread = this.activeThread;
-		if (thread.resumer === 0) return false;
-		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
-			if (frame.isExceptionFrame || frame.returnToCompletionLatch) return false;
-		thread.status = ThreadStatus.Failed;
-		thread.error = error;
-		this.returnToResumer(null, 0, 1);
-		return true;
 	}
 
 	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number,
@@ -4949,63 +4936,6 @@ export class CPU implements MappedPageInvalidator {
 			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
 			const caller = this.protectedCaller(continuationIndex);
 			this.finishProtectedCall(continuationIndex - 1, caller.registers, callBase, resultCount);
-		}
-	}
-
-	private handleProtectedCallError(
-		error: Value,
-	): boolean {
-		for (;;) {
-			const depth = this.activeThread.protectedDepth;
-			if (depth === 0) return false;
-			const continuationIndex = depth - 1;
-			const callerIndex = this.activeThread.protectedWord(continuationIndex, ProtectedField.Caller);
-			if (callerIndex >= this.activeThread.frameDepth) return false;
-			let caller = this.activeThread.currentFrame!;
-			for (let at = this.activeThread.frameDepth - 1; at > callerIndex; --at, caller = caller.previous!) {
-				// Completion roots return to their latch, not the interrupted caller.
-				if (caller.isExceptionFrame || caller.returnToCompletionLatch) return false;
-			}
-			this.unwindToDepth(callerIndex + 1, true);
-			const kind = this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK;
-			if (kind !== ProtectedCallKind.XPCallBody) {
-				this.finishProtectedCallWithError(continuationIndex, kind === ProtectedCallKind.XPCallHandler
-					? valueString(this.gc.diagnosticWord(HeapServiceRemarkHeadField.Error)) : error);
-				return true;
-			}
-
-			this.activeThread.setProtectedKind(continuationIndex, ProtectedCallKind.XPCallHandler);
-			const handler = this.activeThread.protectedHandler(continuationIndex);
-			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-			const resultWord = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
-			this.charge(1);
-			const rootBase = this.localRoots.length;
-			try {
-				if ((resultWord & CALL_RESULT_EXTEND_TOP) !== 0) {
-					this.localRoots.push(error);
-					const args = this.acquireRegisterBuiltinArgs();
-					try {
-						args.bindDetached(error);
-						this.invokeProtectedTarget(continuationIndex, handler, 0, 1, args.registers);
-					} finally { this.releaseRegisterBuiltinArgs(args); }
-				} else {
-					const registers = this.ensureRegisterCapacity(caller, callBase);
-					registers.set(callBase, error);
-					this.bumpRegisterTop(caller, callBase);
-					this.invokeProtectedTarget(continuationIndex, handler, callBase, 1);
-				}
-				return true;
-			} catch (handlerError) {
-				if (handlerError instanceof LuaThrownValueError) {
-					error = handlerError.value;
-					continue;
-				}
-				if (handlerError instanceof LuaExecutionError) {
-					error = this.luaFaultValue(handlerError.reason);
-					continue;
-				}
-				throw handlerError;
-			} finally { this.localRoots.length = rootBase; }
 		}
 	}
 
@@ -5382,11 +5312,6 @@ export class CPU implements MappedPageInvalidator {
 		} else {
 			memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment, 0);
 		}
-	}
-
-	private luaFaultValue(reason: number): Value {
-		const faults = this.gc.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
-		return valueString(this.memory.readRamRecordWord(faults + reason * 4));
 	}
 
 	public markRootHead(heap: GcHeap): void {

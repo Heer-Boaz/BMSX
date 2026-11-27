@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { asClosure, valueBool } from '../../machine/ts/machine/cpu/value';
+import { CPU_CAUSE_CODE_TRAP } from '../../machine/ts/spec/blua32/cop0';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
+import { runGuestToHalt } from './cpu_execution';
 
 /** Host completion roots interrupt retained Lua execution but do not become its callee. */
 export const completionBoundaryVectors = {
@@ -39,20 +42,24 @@ return true`,
 };
 
 export function exerciseCompletionBoundary(cpu: CPU, name: string): void {
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	runGuestToHalt(cpu, 500_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth(), protectedDepth = cpu.activeThread.protectedDepth;
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
-	for (let grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() === -1; grant++) {
+	const fault = name.startsWith('completion_fault');
+	for (let grant = 0; grant < 10000 && cpu.completionCallPending(); grant++) {
 		cpu.runUntilDepth(depth, 1, thread);
+		if (fault && cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_TRAP) break;
 	}
-	assert.ok(cpu.activeThread.address === thread, 'completion cannot fail/yield the interrupted coroutine');
 	assert.equal(cpu.readThreadStatus(thread), ThreadStatus.Running);
 	assert.equal(cpu.bindThread(thread).protectedDepth, protectedDepth, 'interrupted protected call remains untouched');
-	if (name.startsWith('completion_fault')) {
-		assert.notEqual(cpu.readExceptionReturnFrameDepth(), -1, 'unhandled completion error enters the physical fault path');
+	if (fault) {
+		assert.ok(cpu.fixedInterruptActive(), 'unhandled completion error enters the fixed System vector');
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
+		assert.equal(cpu.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), thread);
 		assert.equal(cpu.completionCallPending(), true, 'fault retains the actual completion root');
 	} else {
+		assert.equal(cpu.activeThread.address, thread);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 		assert.equal(cpu.completionCallPending(), false);
 		assert.equal(cpu.getFrameDepth(), depth);

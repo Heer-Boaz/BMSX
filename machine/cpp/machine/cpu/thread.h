@@ -73,10 +73,8 @@ struct Thread {
 	u32 protectedDepth() const;
 	void setProtectedDepth(u32 depth);
 	u32 protectedWord(u32 index, ProtectedField field) const;
-	void setProtectedKind(u32 index, ProtectedCallKind kind);
 	CallFrame* protectedCaller(u32 index) const;
 	CallResultPlacement protectedResult(u32 index) const;
-	Value protectedHandler(u32 index) const;
 	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler);
 
 	u32 address;

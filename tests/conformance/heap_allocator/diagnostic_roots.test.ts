@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -15,9 +16,10 @@ import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NON_TABLE } from '..
 import { HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
-import { runCompletionClosure, runGuestToHalt } from '../../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { runGuestToHalt } from '../../helpers/cpu_test_harness';
+import { runCpuWithinBudget } from '../../helpers/cpu_execution';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
@@ -54,17 +56,17 @@ end
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 for (const optLevel of [0, 3] as const) {
-	test(`diagnostic String roots select native metatable and protected fault behavior after restore at O${optLevel}`, t => {
-		const folder = mkdtempSync(join('tmp', 'diagnostic-roots-'));
+	test(`diagnostic String roots select metatable and firmware fault behavior after restore at O${optLevel}`, t => {
+		const folder = mkdtempSync(join(tmpdir(), 'diagnostic-roots-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
+		const system = writeTestBlua32Rom(linkManagedTestSystem(source, optLevel));
 		const runtime = new Runtime({
-			systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
+			systemRomBytes: system, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
 			cpuExecutionBackend: CpuExecutionBackend.JavaScript,
 		}, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		runGuestToHalt(cpu, 250_000);
+		runGuestToHalt(cpu, 1_000_000);
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const receiver = global('receiver'), meta = valuePayload(global('meta'));
@@ -77,7 +79,8 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.FaultIds), RAM_BASE + faults);
 
 		// Warm ordinary and protected receiving windows before the observed call.
-		runCompletionClosure(cpu, probe, args, 65_536);
+		cpu.beginCompletionCall(probe, args);
+		assert.equal(runCpuWithinBudget(cpu, 65_536), RunResult.Halted);
 		const old = [valueInteger(111), valueInteger(41), valueInteger(0), valueInteger(13),
 			valueBool(false), valueString(originalFault), valueBool(false), valueString(originalError)];
 		assert.deepEqual(runtime.readCompletionValues(), old, 'the original metamethods remain installed alongside replacements');
@@ -112,7 +115,7 @@ for (const optLevel of [0, 3] as const) {
 
 		const rom = join(folder, 'system.rom'), initialFile = join(folder, 'initial.state');
 		const tsMidFile = join(folder, 'ts-mid.state'), cppMidFile = join(folder, 'cpp-mid.state'), traceFile = join(folder, 'trace');
-		writeFileSync(rom, system.romBytes);
+		writeFileSync(rom, system);
 		cpu.beginCompletionCall(probe, args);
 		const initial = captureRuntimeSaveState(runtime);
 		writeFileSync(initialFile, encodeRuntimeSaveState(initial));
@@ -135,9 +138,10 @@ for (const optLevel of [0, 3] as const) {
 		}
 		function finish() {
 			let result = RunResult.Yielded;
-			for (let i = 0; i < 128 && result === RunResult.Yielded; ++i) result = grant([2, 7, 3, 13][i & 3]);
+			for (let i = 0; i < 4096 && result === RunResult.Yielded; ++i) result = grant([2, 7, 3, 13][i & 3]);
 			assert.equal(result, RunResult.Halted);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'protected language errors do not leave a CPU trap');
+			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INDEX_NON_TABLE, 'the last caught Trap remains architecturally visible');
+			assert.equal(cpu.getFrameDepth(), 0);
 			const values = runtime.readCompletionValues();
 			assert.deepEqual(values, [valueInteger(711), valueInteger(0), valueInteger(41), valueInteger(73),
 				valueBool(false), valueString(fault), valueBool(false), valueString(error)],
@@ -178,7 +182,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(results, afterResults, 'C++ to TS during the protected call');
 
 		applyRuntimeSaveState(runtime, initial);
-		runGuestToHalt(cpu, 65_536);
+		assert.equal(runCpuWithinBudget(cpu, 65_536), RunResult.Halted);
 		assert.deepEqual(runtime.readCompletionValues(), old, 'restoring the old words restores the original selector and fault Ids');
 	});
 }

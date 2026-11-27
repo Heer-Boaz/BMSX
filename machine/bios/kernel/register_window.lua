@@ -3,7 +3,6 @@ module<const>
 local frames<const> = require('kernel/thread_frame_storage')
 local layout<const> = require('kernel/gc_runtime_layout')
 local retire<const> = require('kernel/thread_retire')
-local protected<const> = require('kernel/protected_return')
 local isa<const> = require('bmsx/blua32')
 
 local closure_kind<const> = 7
@@ -44,11 +43,7 @@ local recover<const> = function(values, depth, instruction, deadline)
 			root = layout.ram_base + (*word & record_mask)
 		end
 	end
-	if frames.prepare_frame_space(management, interrupted, values, depth, root, source_cycles, true) == 0 then
-		return true, nil, nil
-	end
-	local caught<const>, pc<const>, context<const> = protected.catch_window_oom(interrupted, deadline)
-	return caught, pc, context
+	return frames.prepare_frame_space(management, interrupted, values, depth, root, source_cycles, true) == 0
 end
 
 return { recover = recover }

@@ -13,9 +13,7 @@ void CPU::finishBiosCall(HeapServiceBiosCallKind kind) {
 	m_lastExecutionDomainId = m_activeExecutionDomainId;
 	const u32 status = m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Status));
 	if (status != 0u) {
-		const u32 reason = status - 1u;
-		const auto error = luaFaultValue(reason);
-		if (!handleThreadError(error)) enterLuaFaultException(reason, error);
+		retireNumericLuaFault(status - 1u);
 		return;
 	}
 	if (kind == HeapServiceBiosCallKind::Discard) return;

@@ -10,6 +10,7 @@ local protected<const> = require('kernel/protected_return')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
+local explicit_error<const> = 8
 local out_of_memory<const> = 9
 local string_tag<const> = 5
 local nmi<const> = 1 << 16
@@ -71,8 +72,8 @@ end
 local enter<const> = function(values, depth, instruction, source_cycles)
 	local cause<const> = cop0.cause
 	local denied_window<const> = cause == register_window
+	local interrupted<const>: *addr = layout.interrupted_context_address
 	if cause == syscall then
-		local interrupted<const>: *addr = layout.interrupted_context_address
 		if *interrupted ~= 0 then
 			local resume_pc<const> = protected.finish_handler(*interrupted, values)
 			if resume_pc then
@@ -82,31 +83,42 @@ local enter<const> = function(values, depth, instruction, source_cycles)
 		end
 	end
 	if denied_window then
-		local recovered<const>, resume_pc<const>, resume_context<const> = window.recover(values, depth, instruction, source_cycles)
-		if recovered then
-			if resume_context then
-				local interrupted<const>: *addr = layout.interrupted_context_address
-				*interrupted = resume_context
-			end
+		if window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
+	end
+	local reason<const> = denied_window and out_of_memory or cop0.lua_fault_reason
+	local raised<const> = cause == trap or denied_window
+	local payload, tag = 0, 0
+	if raised then
+		if reason == explicit_error then
+			-- The architectural argument is a Value, including a supplied Nil.
+			local address<const> = layout.ram_base + layout.management_offset + layout.value_cell_offset
+			local cell<const>: *value = address
+			local word<const>: *u32 = address
+			local kind<const>: *u8 = address + layout.value_cell_tag_offset
+			*cell = values
+			payload, tag = *word, *kind
+		else
+			-- Numeric traps supply only their reason. The BIOS owns these
+			-- boot-interned diagnostics and their root lifetime.
+			local diagnostics<const>: *startup_root_head = layout.ram_base + layout.management_offset + layout.remark_head_offset
+			local fault_ids<const>: *u32 = diagnostics.fault_ids
+			payload, tag = fault_ids[reason], string_tag
+		end
+		local deadline<const> = denied_window and source_cycles or 0
+		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
+		if caught then
+			if resume_context then *interrupted = resume_context end
 			if resume_pc then cop0.epc = resume_pc end
 			blua32.rfe()
 		end
 	end
 	local ready<const>: *word = monitor_ready
 	if *ready ~= 0 then
-		local raised<const> = cause == trap or denied_window
 		if raised then
-			local interrupted<const>: *addr = layout.interrupted_context_address
-			if denied_window then
-				local thread<const>: *thread_storage_record = *interrupted
-				local diagnostics<const>: *startup_root_head = layout.ram_base + layout.management_offset + layout.remark_head_offset
-				local fault_ids<const>: *u32 = diagnostics.fault_ids
-				thread.error_word = fault_ids[out_of_memory]
-				thread.error_tag = string_tag
-			else
-				local error<const>: *value = *interrupted + offsetof(thread_storage_record.error_word)
-				*error = values
-			end
+			local thread<const>: *thread_storage_record = *interrupted
+			local error_tag<const>: *u8 = *interrupted + offsetof(thread_storage_record.error_tag)
+			thread.error_word = payload
+			*error_tag = tag
 		end
 		if prepare(frame_width(vectors.managed_exception), raised) then
 			-- A managed CALL can exhaust its window before the monitor reads
@@ -122,7 +134,7 @@ local enter<const> = function(values, depth, instruction, source_cycles)
 			entry.cause = denied_window and trap or cause
 			entry.epc = cop0.epc
 			entry.bad_address = cop0.bad_address
-			entry.lua_fault_reason = denied_window and out_of_memory or cop0.lua_fault_reason
+			entry.lua_fault_reason = reason
 			entry.irq_mask = *irq_mask
 			entry.cart_select = *cart_select
 			entry.owns_supervisor_context = (*system_status & system_supervisor_resumable) == 0 and 1 or 0

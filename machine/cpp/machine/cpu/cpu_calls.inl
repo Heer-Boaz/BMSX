@@ -121,7 +121,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		const int copied = std::clamp(result.selected(count + 1) - 1, 0, count);
 		admitAndClose(copied);
 		thread->setStatus(ThreadStatus::Dead);
-		returnToResumer({&frame, nullptr, first, copied}, true);
+		returnToResumer({&frame, nullptr, first, copied});
 		thread->setStackTop(0);
 		thread->leaveFrame();
 		return false;

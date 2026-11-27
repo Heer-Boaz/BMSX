@@ -23,7 +23,6 @@ local protected_builtin<const> = 1 << 9
 local protected_resident<const> = 1 << 10
 local xpcall_body<const> = 1
 local xpcall_handler<const> = 2
-local out_of_memory<const> = 9
 local running<const>, failed<const> = 1, 5
 local false_tag<const> = 1
 local true_tag<const> = 2
@@ -213,13 +212,10 @@ local finish_handler<const> = function(interrupted, result)
 	return destination.pc
 end
 
-local catch_window_oom<const> = function(interrupted, deadline)
+local catch_fault<const> = function(interrupted, raised, tag, deadline)
 	local context<const>: *stopped_thread = interrupted
 	local depth<const> = context.frame_depth & control_count_mask
 	local protected_depth<const> = context.protected_depth & control_count_mask
-	local diagnostics<const>: *startup_root_head = layout.ram_base + layout.management_offset + layout.remark_head_offset
-	local fault_ids<const>: *u32 = diagnostics.fault_ids
-	local diagnostic<const> = fault_ids[out_of_memory]
 	local control_block<const>: *stopped_frame = layout.ram_base + (context.frame_block & word_mask)
 	if protected_depth ~= 0 then
 		local continuations<const>: *protected_result_record = layout.ram_base + (context.protected_block & word_mask)
@@ -237,11 +233,15 @@ local catch_window_oom<const> = function(interrupted, deadline)
 		retire.retire_thread_frames(control, arena, interrupted, target)
 		local destination<const>: *stopped_frame = &control_block[target - 1]
 		if kind == xpcall_body then
-			local handler_pc<const> = enter_handler(interrupted, continuation, destination.pc, diagnostic, string_tag, deadline)
+			local handler_pc<const> = enter_handler(interrupted, continuation, destination.pc, raised, tag, deadline)
 			if handler_pc then return true, handler_pc, nil end
 		end
-		local payload<const> = kind == 0 and diagnostic or diagnostics.error
-		if not finish_protected_chain(interrupted, destination, index, payload, string_tag, deadline) then
+		local payload, result_tag = raised, tag
+		if kind ~= 0 then
+			local diagnostics<const>: *startup_root_head = layout.ram_base + layout.management_offset + layout.remark_head_offset
+			payload, result_tag = diagnostics.error, string_tag
+		end
+		if not finish_protected_chain(interrupted, destination, index, payload, result_tag, deadline) then
 			return false, nil, nil
 		end
 		return true, destination.pc, nil
@@ -258,10 +258,10 @@ local catch_window_oom<const> = function(interrupted, deadline)
 	local resumer_depth<const> = resumer.frame_depth & control_count_mask
 	local destination<const>: *stopped_frame = layout.ram_base + ((resumer.frame_block + (resumer_depth - 1) * sizeof(stopped_frame)) & word_mask)
 	context.status = failed
-	context.error_word = diagnostic
-	context.error_kind = string_tag
+	context.error_word = raised
+	context.error_kind = tag
 	resumer.status = running
-	if not place_outcome(resumer_address, destination, resumer.call_base, resumer.return_count, false, nil, 1, diagnostic, string_tag, deadline) then
+	if not place_outcome(resumer_address, destination, resumer.call_base, resumer.return_count, false, nil, 1, raised, tag, deadline) then
 		return false, nil, nil
 	end
 	context.resumer = 0
@@ -269,6 +269,6 @@ local catch_window_oom<const> = function(interrupted, deadline)
 end
 
 return {
-	catch_window_oom = catch_window_oom, finish_handler = finish_handler,
+	catch_fault = catch_fault, finish_handler = finish_handler,
 	internal = { place_outcome = place_outcome, finish_protected_chain = finish_protected_chain, enter_handler = enter_handler },
 }

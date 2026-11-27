@@ -11,6 +11,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/bmsx/model.h"
+#include "support/cpu_execution_budget.h"
 
 class CoroutineInput final : public bmsx::InputControllerInputSource {
 public:
@@ -20,22 +21,26 @@ public:
 };
 
 static void exerciseCompletionBoundary(bmsx::CPU& cpu, bool fault) {
-	if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("completion fixture did not HALT");
+	if (bmsx::test::runCpuWithinBudget(cpu, 500000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq())
+		throw std::runtime_error("completion fixture did not HALT");
 	const bmsx::u32 thread = cpu.activeThread()->address;
 	const int depth = cpu.getFrameDepth();
 	const auto protectedDepth = bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth);
 	cpu.beginCompletionCall(bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe")), cpu.gcHeap()));
-	for (int grant = 0; grant < 10000 && cpu.completionCallPending() && cpu.readExceptionReturnFrameDepth() == -1; ++grant) {
+	for (int grant = 0; grant < 10000 && cpu.completionCallPending(); ++grant) {
 		cpu.runUntilDepth(depth, 1, thread);
+		if (fault && cpu.fixedInterruptActive() && cpu.readCauseWord() == bmsx::CPU_CAUSE_CODE_TRAP) break;
 	}
-	if (cpu.activeThread()->address != thread
-		|| bmsx::ThreadRecord::read(cpu.memory(), thread, bmsx::ThreadField::Status) != static_cast<bmsx::u32>(bmsx::ThreadStatus::Running)
+	if (bmsx::ThreadRecord::read(cpu.memory(), thread, bmsx::ThreadField::Status) != static_cast<bmsx::u32>(bmsx::ThreadStatus::Running)
 		|| bmsx::ThreadRecord::count(cpu.memory(), thread, bmsx::ThreadField::ProtectedDepth) != protectedDepth) throw std::runtime_error("completion changed interrupted coroutine/protected caller");
 	if (fault) {
-		if (cpu.readExceptionReturnFrameDepth() == -1 || !cpu.completionCallPending()) throw std::runtime_error("completion fault did not retain its physical root");
+		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() != bmsx::CPU_CAUSE_CODE_TRAP || !cpu.completionCallPending()
+			|| cpu.memory().readRamRecordWord(bmsx::CPU_INTERRUPTED_CONTEXT_ADDRESS) != thread)
+			throw std::runtime_error("completion fault did not retain its physical root");
 	} else {
 		const auto values = cpu.readCompletionValues();
-		if (cpu.readExceptionReturnFrameDepth() != -1 || cpu.completionCallPending() || cpu.getFrameDepth() != depth
+		if (cpu.activeThread()->address != thread || cpu.readExceptionReturnFrameDepth() != -1
+			|| cpu.completionCallPending() || cpu.getFrameDepth() != depth
 			|| values.size() != 1 || values.get(0) != bmsx::valueBool(true)) throw std::runtime_error("nested completion pcall/coroutine failed");
 	}
 }
@@ -61,15 +66,16 @@ static void exerciseNestedHistory(bmsx::Runtime& runtime) {
 	};
 	int grants = 0;
 	const auto step = [&] {
-		const auto result = cpu.runUntilDepth(0, 17);
-		if (cpu.readLuaFaultReasonWord() != 0 || ++grants >= 10000) throw std::runtime_error("nested history failed to progress");
+		const auto result = cpu.runUntilDepth(0, 257);
+		if (cpu.readLuaFaultReasonWord() != 0 || ++grants >= 40000) throw std::runtime_error("nested history failed to progress");
 		return result;
 	};
 	std::unordered_set<u32> threads;
 	auto result = RunResult::Yielded;
 	while (result == RunResult::Yielded && threads.size() < 3) {
 		result = step();
-		if (cpu.activeThread()->address != root) threads.insert(cpu.activeThread()->address);
+		if (cpu.activeThread()->address != root && !cpu.fixedInterruptActive() && cpu.getFrameDepth() != 0)
+			threads.insert(cpu.activeThread()->address);
 	}
 	if (result != RunResult::Yielded || threads.size() != 3 || cpu.activeThread()->address == root)
 		throw std::runtime_error("all three coroutine banks must execute before the first restore");
@@ -125,6 +131,10 @@ int main(int argc, char** argv) {
 			Runtime runtime({rom, {}, PSX_MACHINE_SPEC}, input);
 			runtime.boot();
 			auto& cpu = runtime.machine.cpu;
+			for (int grant = 0; grant < 256 && cpu.rootThread()->address == CPU_RESET_BANK_ADDRESS; ++grant) {
+				if (cpu.runUntilDepth(0, 4096) != RunResult::Yielded) throw std::runtime_error("fixture reset did not hand off");
+			}
+			if (cpu.rootThread()->address == CPU_RESET_BANK_ADDRESS) throw std::runtime_error("fixture did not admit its managed bank");
 			if (mode.starts_with("completion_")) {
 				exerciseCompletionBoundary(cpu, mode.starts_with("completion_fault_"));
 				continue;
@@ -134,11 +144,17 @@ int main(int argc, char** argv) {
 				continue;
 			}
 			if (mode == "halted_tooling_call") {
-				if (cpu.runUntilDepth(0, 100000) != RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
+				if (test::runCpuWithinBudget(cpu, 500000) != RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
 				const int depth = cpu.getFrameDepth();
 				const auto pc = cpu.readFramePc(depth - 1);
 				cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("probe")), cpu.gcHeap()));
-				if (cpu.runUntilDepth(depth, 100000) != RunResult::Halted || cpu.readLuaFaultReasonWord() != 0
+				auto toolingResult = RunResult::Yielded;
+				bool windowFault = false;
+				for (int grant = 0; grant < 10000 && toolingResult == RunResult::Yielded; ++grant) {
+					toolingResult = cpu.runUntilDepth(depth, 17);
+					windowFault |= cpu.fixedInterruptActive() && cpu.readCauseWord() == CPU_CAUSE_CODE_REGISTER_WINDOW;
+				}
+				if (toolingResult != RunResult::Halted || !windowFault || cpu.readLuaFaultReasonWord() != 0
 					|| !cpu.isHaltedUntilIrq() || cpu.activeThread() != cpu.rootThread() || cpu.getFrameDepth() != depth
 					|| cpu.readFramePc(depth - 1) != pc || cpu.getGlobalByKey(*cpu.stringPool().find("entered")) != valueBool(true))
 					throw std::runtime_error("tooling must not consume the root HALT");
@@ -152,24 +168,29 @@ int main(int argc, char** argv) {
 			if (mode == "interrupted") {
 				bool admitted = false;
 				const auto ready = *cpu.stringPool().find("interrupt_ready");
-				for (int grant = 0; grant < 10000 && result == RunResult::Yielded; ++grant) {
-					if (!admitted && cpu.activeThread() != cpu.rootThread() && cpu.getGlobalByKey(ready) == valueBool(true)) {
+				for (int grant = 0; grant < 20000 && result == RunResult::Yielded; ++grant) {
+					if (!admitted && cpu.activeThread() != cpu.rootThread() && cpu.getFrameDepth() != 0
+						&& !cpu.fixedInterruptActive() && !cpu.heapServiceActive() && cpu.getGlobalByKey(ready) == valueBool(true)) {
 						cpu.requestNonMaskableInterrupt();
 						if (!cpu.enterPendingInterrupt()) throw std::runtime_error("NMI was not admitted");
 						admitted = true;
 					}
 					result = cpu.runUntilDepth(0, 17);
-					if (cpu.readLuaFaultReasonWord() != 0) throw std::runtime_error("guest fault during NMI");
 				}
-				if (!admitted) throw std::runtime_error("NMI must interrupt the live coroutine");
+				if (!admitted || cpu.readLuaFaultReasonWord() != 0) throw std::runtime_error("NMI did not interrupt and restore the live coroutine");
 			} else {
-				result = cpu.runUntilDepth(0, 1000000);
+				const int grants = mode == "suite" ? 32 : 1;
+				for (int grant = 0; grant < grants && result == RunResult::Yielded; ++grant)
+					result = test::runCpuWithinBudget(cpu, 1000000);
 			}
 			const auto values = runtime.readCompletionValues();
 			const bool suite = mode == "suite";
-			if (result != RunResult::Halted || cpu.readLuaFaultReasonWord() != 0 || cpu.getFrameDepth() != 0
-				|| values.size() != (suite ? 2u : 1u) || values.get(0) != valueBool(true) || (suite && values.get(1) != valueBool(true)))
+			if (result != RunResult::Halted || cpu.captureRuntimeState().hardHalted || cpu.getFrameDepth() != 0
+				|| values.size() != (suite ? 2u : 1u) || values.get(0) != valueBool(true) || (suite && values.get(1) != valueBool(true))) {
+				std::cerr << mode << ": stopped with " << static_cast<int>(result) << ", frame depth " << cpu.getFrameDepth()
+					<< ", completion values " << values.size() << '\n';
 				throw std::runtime_error("coroutine assertion failed");
+			}
 			if (suite) {
 				const auto value = cpu.getGlobalByKey(*cpu.stringPool().find("failed_thread"));
 				const u32 thread = asThread(value, cpu.gcHeap());

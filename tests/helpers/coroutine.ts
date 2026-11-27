@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { compileHeapServiceSystem } from './heap_service_system';
-import { linkTestSystemBlua32 } from './blua32';
+import { writeTestBlua32Rom } from './blua32';
+import { linkManagedTestSystem } from './managed_system';
 import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
 const testModules = ['context', 'execution'].map(name => ({ path: `testlib/${name}`, source: readFileSync(`testlib/${name}.lua`, 'utf8') }));
@@ -16,11 +16,12 @@ next = __bmsx_next`;
 
 export function compileCoroutineTest(body: string, optLevel: 0 | 3) {
 	const source = `require('boot')\ncoroutine = require('coroutine')\n${body}`;
-	return linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel, [
+	const linked = linkManagedTestSystem(source, optLevel, [
 		{ path: 'boot', source: bootSource },
 		...COROUTINE_FIRMWARE_MODULES,
 		...testModules,
-	]));
+	]);
+	return { image: linked.layout, symbols: linked.symbols, romBytes: writeTestBlua32Rom(linked) };
 }
 
 export const coroutineVectors = {
@@ -80,6 +81,7 @@ assert(coroutine.status(thread) == 'dead')
 failed_thread = thread
 return true`,
 	interrupted: `
+local bridge<const> = require('kernel/exception_bridge')
 interrupted = false
 local new_target = coroutine.create(function() error('exception entered new coroutine') end)
 local suspended_target = coroutine.create(function()
@@ -92,6 +94,8 @@ assert(suspended_wrapped() == 51)
 local setup_ok, setup_value = coroutine.resume(suspended_target)
 assert(setup_ok and setup_value == 11)
 function exception()
+ local entry<const>: *monitor_entry_state = bridge.monitor_entry
+ local return_pc<const> = entry.epc
  assert(not coroutine.isyieldable())
  local ok, message = coroutine.resume(new_target)
  assert(not ok and message == 'cannot resume coroutine across a hardware exception')
@@ -104,7 +108,10 @@ function exception()
  assert(coroutine.status(new_target) == 'suspended')
  assert(coroutine.status(suspended_target) == 'suspended')
  interrupted = true
+ cop0.epc = return_pc
 end
+local ready<const>: *word = bridge.monitor_ready
+*ready = 1
 interrupt_ready = true
 local co = coroutine.create(function()
   local n = 0

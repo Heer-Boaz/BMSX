@@ -17,7 +17,7 @@ import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTag,
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -260,8 +260,8 @@ return 43, pick(2, 99, nil, 707, nil)
 	trace.observe(`O ${report} 2`);
 	for (let n = 0; n < 4096 && memory.readMappedU32LE(report) !== 42; ++n)
 		if (grant(trace, 257) === RunResult.Halted) break;
-	assert.equal(cpu.readLuaFaultReasonWord(), 0, `stage ${memory.readMappedU32LE(report)}`);
-	assert.equal(memory.readMappedU32LE(report), 42);
+	assert.equal(memory.readMappedU32LE(report), 42, `last fault reason ${cpu.readLuaFaultReasonWord()}`);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	memory.writeMappedWord(report, 43);
 	trace.observe(`O ${report} 43`);
 
@@ -319,7 +319,7 @@ return 43, pick(2, 99, nil, 707, nil)
 		assert.equal(frame.varargBase, varargBase);
 		let result = RunResult.Yielded;
 		for (let n = 0; n < 4096 && result !== RunResult.Halted; ++n) result = grant(trace, 257);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 		assert.equal(result, RunResult.Halted);
 		assert.equal(memory.readMappedU32LE(report), 43);
 		const expected = [valueInteger(43), valueNil(), valueInteger(707), valueNil()];
@@ -381,8 +381,8 @@ halt_until_irq
 			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
 		].join(' '));
 	}
-	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	assert.equal(memory.readMappedU32LE(report), 43);
+	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	trace.observe(`M ${report}`, '43 0');
 	trace.replay('stock string.char with fixed, open and protected argument windows', rom);
 }

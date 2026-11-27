@@ -74,11 +74,6 @@ u32 Thread::protectedAddress(u32 index) const {
 u32 Thread::protectedWord(u32 index, ProtectedField field) const {
 	return heap.memory.readRamRecordWord(protectedAddress(index) + static_cast<u32>(field));
 }
-void Thread::setProtectedKind(u32 index, ProtectedCallKind kind) {
-	const u32 flags = protectedWord(index, ProtectedField::Flags);
-	heap.memory.writeRamRecordWord(protectedAddress(index) + static_cast<u32>(ProtectedField::Flags),
-		(flags & ~PROTECTED_CALL_KIND_MASK) | static_cast<u32>(kind));
-}
 CallFrame* Thread::protectedCaller(u32 index) const {
 	const u32 depth = protectedWord(index, ProtectedField::Caller);
 	// An index outside the active window has no activation.
@@ -89,13 +84,6 @@ CallFrame* Thread::protectedCaller(u32 index) const {
 }
 CallResultPlacement Thread::protectedResult(u32 index) const {
 	return {static_cast<i32>(protectedWord(index, ProtectedField::Base)), protectedWord(index, ProtectedField::Wanted)};
-}
-Value Thread::protectedHandler(u32 index) const {
-	const u32 payload = protectedWord(index, ProtectedField::Handler);
-	const auto flags = protectedWord(index, ProtectedField::Flags);
-	if ((flags & PROTECTED_CALL_HANDLER_RESIDENT) != 0u) return valueResidentFunction(payload);
-	if ((flags & PROTECTED_CALL_HANDLER_BUILTIN) != 0u) return valueBuiltinFunction(static_cast<BuiltinFunctionId>(payload));
-	return valueClosure(payload);
 }
 u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler) {
 	const u32 index = protectedDepth();

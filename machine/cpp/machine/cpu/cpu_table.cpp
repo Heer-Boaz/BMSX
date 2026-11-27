@@ -169,8 +169,7 @@ void CPU::resumeAllocation() {
 	}
 
 	m_pendingAllocation = {};
-	const Value error = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
-	if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
+	retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 }
 
 void CPU::advanceTableStore(CallFrame& frame) {

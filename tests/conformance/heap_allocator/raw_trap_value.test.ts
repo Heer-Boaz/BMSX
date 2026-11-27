@@ -9,10 +9,10 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
-import { valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
-import { COP0_CONTEXT, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_CONTEXT, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
@@ -24,11 +24,15 @@ import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-test('explicit trap enters the fixed vector with the original tagged Value and leaves the interrupted error intact', t => {
+for (const explicit of [true, false]) test(explicit
+	? 'raw explicit Trap delivers the original tagged Value without writing Thread.error'
+	: 'raw numeric Trap delivers only its reason without diagnostic storage', t => {
 	const context = CPU_FIXED_STACK_BASE - 0x4000, frame = context + 0x100, backing = context + 0x200;
 	const capacity = 8, tags = backing + capacity * 4;
 	const previousError = valueInteger(-769), thrown = valueFloatBits(0xff812345);
-	const callee = valueBuiltinFunction(BuiltinFunctionId.Error);
+	const callee = explicit ? valueBuiltinFunction(BuiltinFunctionId.Error) : valueInteger(123);
+	const reason = explicit ? LUA_FAULT_REASON_EXPLICIT_ERROR : LUA_FAULT_REASON_CALL_NON_FUNCTION;
+	const argument = explicit ? thrown : valueNil();
 	const instructions: [OpCode, number, number, number][] = [];
 	const constants: number[] = [];
 	function load(register: number, value: number) {
@@ -105,23 +109,23 @@ test('explicit trap enters the fixed vector with the original tagged Value and l
 	assert.equal(cpu.readFramePc(0), issuer.codeAddress);
 	assert.equal(cpu.readFrameRegister(0, 1), thrown);
 	checkInterruptedError();
-	step(); // Ordinary CALL of the explicit error producer.
+	step(); // Ordinary CALL, without stock firmware or a diagnostic table.
 	assert.equal(cpu.fixedInterruptActive(), true);
 	assert.equal(cpu.readFramePc(0), vector.codeAddress);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
-	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_EXPLICIT_ERROR);
+	assert.equal(cpu.readLuaFaultReasonWord(), reason);
 	assert.equal(cpu.readEpcWord(), issuer.codeAddress);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), context);
 	checkInterruptedError();
 	observe('P', `1 ${vector.codeAddress}`);
-	observe('Z', `${CPU_CAUSE_CODE_TRAP} ${LUA_FAULT_REASON_EXPLICIT_ERROR} ${issuer.codeAddress}`);
+	observe('Z', `${CPU_CAUSE_CODE_TRAP} ${reason} ${issuer.codeAddress}`);
 	hash(CPU_INTERRUPTED_CONTEXT_ADDRESS - RAM_BASE, 4);
 	const active = cpu.activeThread.currentFrame!;
-	assert.equal(active.registers.get(0), thrown);
+	assert.equal(active.registers.get(0), argument);
 	step(); // Observe the delivered bits through ordinary instructions.
 	step();
-	assert.equal(active.registers.get(1), thrown);
-	assert.equal(active.registers.get(2), valueInteger(1));
+	assert.equal(active.registers.get(1), argument);
+	assert.equal(active.registers.get(2), valueInteger(+explicit));
 	const slot = active.stackBase, values = active.thread.stackOffset();
 	hash(values + slot * 4, 3 * 4);
 	hash(values + active.thread.stackRegisters.capacity() * 4 + slot, 3);

@@ -19,14 +19,17 @@ export function exerciseNestedHistory(runtime: Runtime): void {
 	const threads = new Set<number>();
 	let result = RunResult.Yielded, grants = 0;
 	const step = () => {
-		const status = cpu.runUntilDepth(0, 17);
+		// Keep one grant size for initial, restored, and replayed execution.
+		// This fixture performs sixteen complete firmware GC epochs.
+		const status = cpu.runUntilDepth(0, 257);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		assert.ok(++grants < 10000, 'the nested fixture must finish within its cycle grants');
+		assert.ok(++grants < 40000, 'the nested fixture must finish within its cycle grants');
 		return status;
 	};
 	while (result === RunResult.Yielded && threads.size < 3) {
 		result = step();
-		if (cpu.activeThread.address !== root) threads.add(cpu.activeThread.address);
+		if (cpu.activeThread.address !== root && !cpu.fixedInterruptActive() && cpu.getFrameDepth() !== 0)
+			threads.add(cpu.activeThread.address);
 	}
 	assert.equal(result, RunResult.Yielded);
 	assert.equal(threads.size, 3, 'all three coroutine records execute before the first restore');

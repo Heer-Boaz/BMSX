@@ -12,6 +12,8 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW } from '../../../machine/ts/spec/blua32/cop0';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runGuestToHalt } from '../../helpers/cpu_test_harness';
 import { runSystemCaseRom, systemCaseSource } from '../../helpers/system_case_rom';
@@ -46,16 +48,25 @@ try {
 		});
 		runtime.boot();
 		const cpu = runtime.machine.cpu;
+		for (let grant = 0; grant < 256 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++grant)
+			assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
+		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'the authored ROM admitted its managed bank');
 		if (name.startsWith('completion_')) {
 			exerciseCompletionBoundary(cpu, name);
 		} else if (name === 'nested_three_banks') {
 			exerciseNestedHistory(runtime);
 		} else if (name === 'halted_tooling_call') {
-			runGuestToHalt(cpu, 100_000);
+			runGuestToHalt(cpu, 500_000);
 			assert.ok(cpu.isHaltedUntilIrq());
 			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), cpu.gc));
-			runGuestToHalt(cpu, 100_000, depth);
+			let result = RunResult.Yielded, windowFault = false;
+			for (let grant = 0; grant < 10_000 && result === RunResult.Yielded; ++grant) {
+				result = cpu.runUntilDepth(depth, 17);
+				windowFault ||= cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW;
+			}
+			assert.equal(result, RunResult.Halted);
+			assert.ok(windowFault, 'the tooling call must take a synchronous window exception over the dormant HALT');
 			assert.equal(cpu.activeThread, cpu.rootThread);
 			assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('entered')!), valueBool(true));
 			assert.ok(cpu.isHaltedUntilIrq() && cpu.getFrameDepth() === depth && cpu.readFramePc(depth - 1) === pc);
@@ -69,16 +80,19 @@ try {
 		} else {
 			let result = RunResult.Yielded, admitted = false;
 			const ready = cpu.stringPool.find('interrupt_ready')!;
-			for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant++) {
-				if (!admitted && cpu.activeThread !== cpu.rootThread && cpu.getGlobalByKey(ready) === valueBool(true)) {
+			for (let grant = 0; grant < 20000 && result === RunResult.Yielded; grant++) {
+				if (!admitted && cpu.activeThread !== cpu.rootThread && cpu.getFrameDepth() !== 0
+					&& !cpu.fixedInterruptActive() && !cpu.heapServiceActive() && cpu.getGlobalByKey(ready) === valueBool(true)) {
 					cpu.requestNonMaskableInterrupt();
 					assert.equal(cpu.enterPendingInterrupt(), true);
 					admitted = true;
 				}
 				result = cpu.runUntilDepth(0, 17);
-				assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			}
 			assert.ok(admitted && result === RunResult.Halted);
+			assert.equal(cpu.captureRuntimeState().hardHalted, false);
+			assert.equal(cpu.getFrameDepth(), 0);
+			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the outer NMI restores its pre-entry reason');
 			assert.deepEqual(runtime.readCompletionValues(), [valueBool(true)]);
 		}
 	}

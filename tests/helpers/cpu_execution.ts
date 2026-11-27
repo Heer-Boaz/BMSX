@@ -32,11 +32,14 @@ export function runCpuWithinBudget(cpu: CPU, budget: number, depth = 0, profile?
 	return outcome;
 }
 
-/** Run to the requested depth and require a clean halt. A guest error also ends in
- * Halted, so the Lua fault reason has to stay clear as well. */
+/** A handled Trap leaves its reason latched. A clean halt is a return or
+ * ordinary IRQ wait, not a hard halt or a newly retained exception. */
 export function runGuestToHalt(cpu: CPU, budget: number, depth = 0): void {
+	const existingException = cpu.readExceptionReturnFrameDepth();
 	assert.equal(runCpuWithinBudget(cpu, budget, depth), RunResult.Halted);
-	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'the guest halted without a Lua fault');
+	assert.equal(cpu.captureRuntimeState().hardHalted, false, 'the guest did not hard-halt');
+	const exception = cpu.readExceptionReturnFrameDepth();
+	assert.ok(exception === -1 || (exception === existingException && exception < depth), 'no new exception is active');
 }
 
 /** Generated regions store and read registers through the `s` and `p` aliases. */

@@ -1,6 +1,6 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_HANDLER_RESIDENT, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_HANDLER_RESIDENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
 import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
@@ -77,22 +77,12 @@ export class Thread {
 	public protectedWord(index: number, field: ProtectedField): number {
 		return this.heap.memory.readRamRecordWord(this.protectedAddress(index) + field);
 	}
-	public setProtectedKind(index: number, kind: ProtectedCallKind): void {
-		const flags = this.protectedWord(index, ProtectedField.Flags);
-		this.heap.memory.writeRamRecordWord(this.protectedAddress(index) + ProtectedField.Flags, (flags & ~PROTECTED_CALL_KIND_MASK) | kind);
-	}
 	public protectedCaller(index: number): CallFrame | null {
 		const depth = this.protectedWord(index, ProtectedField.Caller);
 		if (depth >= this.frameDepth) return null;
 		let frame = this.currentFrame!;
 		for (let at = this.frameDepth - 1; at > depth; --at) frame = frame.previous!;
 		return frame;
-	}
-	public protectedHandler(index: number): Value {
-		const flags = this.protectedWord(index, ProtectedField.Flags);
-		const tag = (flags & PROTECTED_CALL_HANDLER_RESIDENT) !== 0 ? ValueTag.ResidentFunction
-			: (flags & PROTECTED_CALL_HANDLER_BUILTIN) !== 0 ? ValueTag.BuiltinFunction : ValueTag.Closure;
-		return valueFromTag(tag, this.protectedWord(index, ProtectedField.Handler));
 	}
 	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: Value): number {
 		const index = this.protectedDepth;

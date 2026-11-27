@@ -1,33 +1,32 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField, PreparedFrameField, PREPARED_FRAME_DETACHED_SOURCE, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK } from '../../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField, PreparedFrameField, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { MAX_THREAD_VALUE_SLOTS } from '../../../machine/ts/machine/cpu/thread_record';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable, ValueTag, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { type Value, valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_RESULT_FAULT, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-// Source basis: 29861d1ce, TS CPU.invokeProtectedTarget / handleProtectedCallError
-// and C++ peers (4751 / 4883, 1449 / 1559). The original control record
-// exists before the managed Closure gets a frame. Its existing Frame.Protected
-// field is returned with the prepared frame, not a second continuation.
+// Protected ingress still prepares the body activation. A failed body enters
+// the fixed Trap vector instead; the handler then runs by ordinary CALL.
 const extras = Array.from({ length: 96 }, (_, i) => `extra${i + 1}`).join(',');
 const source = `
 local pcall<const>, xpcall<const> = __bmsx_pcall, __bmsx_xpcall
@@ -52,24 +51,25 @@ return protected_body, protected_handler, implicit_handler, body, handler, fail
 `;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
-	buildDirectory: 'tmp/build-native-protected-closure-admission',
+	buildDirectory: join(tmpdir(), 'build-native-protected-closure-admission'),
 	configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON'],
 });
 const deadText = 'a dead String providing frame backing during synchronized recovery '.repeat(120);
 
 for (const opt of [0, 3] as const) test(`protected Closure activations preserve the existing record at O${opt}`, async t => {
-	const folder = mkdtempSync(join('tmp', 'protected-closure-admission-'));
+	const folder = mkdtempSync(join(tmpdir(), 'protected-closure-admission-'));
 	t.after(() => rmSync(folder, { recursive: true, force: true }));
 	const linked = linkManagedTestSystem(source, opt);
+	const handlerIndex = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(':handler'));
+	assert.ok(handlerIndex >= 0);
+	const handlerRecord = linked.layout.functions[handlerIndex];
 	const romBytes = writeTestBlua32Rom(linked);
 	const rom = join(folder, 'system.rom');
 	for (const mode of ['body-reclaim', 'body-oom', 'handler', 'detached-handler', 'handler-oom', 'handler-limit'] as const) await t.test(mode, () => {
 		const bytes = romBytes.slice();
 		const handlerLimit = mode === 'handler-limit';
 		if (handlerLimit) {
-			const index = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(':handler'));
-			assert.ok(index >= 0, 'the deliberate direct-limit fixture owns the handler record');
-			writeLE32(bytes, linked.layout.functions[index].address + BLUA32_FUNCTION_MAX_STACK_OFFSET, MAX_THREAD_VALUE_SLOTS);
+			writeLE32(bytes, handlerRecord.address + BLUA32_FUNCTION_MAX_STACK_OFFSET, MAX_THREAD_VALUE_SLOTS);
 		}
 		writeFileSync(rom, bytes);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
@@ -135,42 +135,44 @@ for (const opt of [0, 3] as const) test(`protected Closure activations preserve 
 			assert.equal(have.length, want.length);
 		};
 		const seed = save('seed'), oldBlock = root.stackOffset();
-		let entered = false, result = RunResult.Yielded;
-		for (let step = 0; step < 4096 && result === RunResult.Yielded; ++step) {
+		let result = RunResult.Yielded;
+		for (let step = 0; step < 4096; ++step) {
 			result = grant(1);
-			if (cpu.heapServiceActive()) {
-				assert.equal(memory.readRamRecordWord(pinned + FrameField.Flags), FRAME_RESIDENT_ACTIVATION | FRAME_RESIDENT_PREPARED_ENTRY);
-				entered = true;
-				break;
-			}
+			assert.equal(result, RunResult.Yielded);
+			if (pcallBody ? cpu.heapServiceActive() : cpu.fixedInterruptActive()) break;
 		}
-		if (!handlerLimit) {
-			assert.ok(entered, 'a genuine protected Closure frame requested BIOS backing');
-			assert.equal(root.protectedDepth, 1);
-			assert.equal(root.protectedWord(0, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK,
-				pcallBody ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallHandler);
+		assert.equal(root.protectedDepth, 1);
+		assert.equal(root.protectedWord(0, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK,
+			pcallBody ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody);
+
+		const caller = cpu.getFrameDepth() - 1;
+		if (pcallBody) {
+			assert.equal(cpu.heapServiceActive(), true);
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Flags), FRAME_RESIDENT_ACTIVATION | FRAME_RESIDENT_PREPARED_ENTRY);
 			assert.equal(memory.readRamRecordWord(prepared + FrameField.Protected), 0);
-			assert.equal(memory.readRamRecordWord(prepared + FrameField.Closure), valuePayload(pcallBody ? body : handler));
+			assert.equal(memory.readRamRecordWord(prepared + FrameField.Closure), valuePayload(body));
 			assert.equal(memory.readRamRecordWord(prepared + PreparedFrameField.Supplied), 1);
 			const source = memory.readRamRecordWord(prepared + PreparedFrameField.SourceSlot);
-			if (detached) {
-				assert.equal(source, PREPARED_FRAME_DETACHED_SOURCE);
-				assert.equal(memory.readRamRecordWord(prepared + PreparedFrameField.Payloads), invalid);
-				assert.equal(memory.readRamRecordByte(prepared + PreparedFrameField.Tags), ValueTag.String);
-			} else assert.equal(root.stackRegisters.get(source), valueInteger(71));
-			const caller = cpu.getFrameDepth() - 1, next = cpu.readFramePc(caller);
-			const collect = exhausted || mode === 'body-reclaim', before = arena.occupiedBytes();
+			assert.equal(root.stackRegisters.get(source), valueInteger(71));
+			const next = cpu.readFramePc(caller);
 			for (let step = 0; step < 16384 && cpu.heapServiceActive(); ++step) {
-				if (collect ? gc.phase() !== GcPhase.Pause : arena.occupiedBytes() !== before) break;
+				if (gc.phase() !== GcPhase.Pause) break;
 				assert.equal(grant(1), RunResult.Yielded);
 			}
 			assert.equal(cpu.heapServiceActive(), true, 'checkpoint excludes placement');
-			assert.ok(collect ? gc.active() : arena.occupiedBytes() !== before);
+			assert.ok(gc.active());
 			assert.equal(cpu.readFramePc(caller), next);
-			const nativeMid = path('native-mid'), mid = save('mid');
-			record('l'); record('s'); record(`x ${nativeMid}`);
-			const split = commands.length, predicted = expected.length;
-			function finish() {
+		} else {
+			assert.equal(root.protectedWord(0, ProtectedField.Handler), valuePayload(handler));
+			checkTrap(detached ? LUA_FAULT_REASON_CALL_NON_FUNCTION : LUA_FAULT_REASON_EXPLICIT_ERROR,
+				detached ? 0 : 1, detached ? valueNil() : valueInteger(71));
+		}
+
+		const nativeMid = path('native-mid'), mid = save('mid');
+		record('l'); record('s'); record(`x ${nativeMid}`);
+		const split = commands.length, predicted = expected.length;
+		function finish() {
+			if (pcallBody) {
 				for (let guard = 0; guard < 4096 && cpu.heapServiceActive(); ++guard)
 					assert.equal(grant(173), RunResult.Yielded);
 				assert.equal(cpu.heapServiceActive(), false);
@@ -178,37 +180,75 @@ for (const opt of [0, 3] as const) test(`protected Closure activations preserve 
 					assert.equal(memory.readRamRecordWord(resident + HeapServiceResidentField.SourceCount), HEAP_SERVICE_RESULT_FAULT);
 					assert.equal(memory.readRamRecordWord(resident + HeapServiceResidentField.SourceBase), LUA_FAULT_REASON_OUT_OF_MEMORY);
 					assert.equal(root.stackOffset(), oldBlock);
-					assert.equal(root.protectedDepth, 0);
+					checkTrap(LUA_FAULT_REASON_OUT_OF_MEMORY, 0, valueNil());
 				} else {
 					assert.equal(cpu.getFrameDepth(), caller + 2);
 					const frame = cpu.activeThread.currentFrame!;
 					assert.equal(frame.protectedContinuationIndex, 0);
-					assert.equal(frame.registers.get(0), detached ? valueString(invalid) : valueInteger(71));
+					assert.equal(frame.registers.get(0), valueInteger(71));
 					assert.equal(frame.registers.get(96), valueNil());
 					if (mode === 'body-reclaim') assert.equal(cpu.stringPool.find(deadText), undefined);
 				}
-				for (let steps = 0; steps < 128 && result !== RunResult.Halted; ++steps) result = grant(67);
-				verifyCompletion();
+			} else {
+				let window = false, denied = false, called = false;
+				for (let step = 0; step < 65536 && result !== RunResult.Halted; ++step) {
+					result = grant(1);
+					assert.equal(cpu.heapServiceActive(), false, 'the handler does not use a private activation');
+					const active = cpu.activeThread.currentFrame;
+					if (cpu.fixedInterruptActive()) {
+						if (!window && cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW) {
+							assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), root.address);
+							window = true;
+							record('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
+						} else if (!denied && cpu.readCauseWord() === CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() === LUA_FAULT_REASON_OUT_OF_MEMORY) {
+							checkTrap(LUA_FAULT_REASON_OUT_OF_MEMORY, 0, valueNil());
+							denied = true;
+						}
+					} else if (active?.pc === handlerRecord.codeAddress) {
+						assert.equal(active.protectedContinuationIndex, -1);
+						assert.equal(root.protectedWord(0, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK, ProtectedCallKind.XPCallHandler);
+						assert.equal(active.registers.get(0), detached ? valueString(invalid) : valueInteger(71));
+						assert.equal(active.registers.get(96), valueNil());
+						called = true;
+					}
+				}
+				assert.equal(called, !exhausted && !handlerLimit);
+				if (!handlerLimit) assert.ok(window, 'ordinary CALL needed a larger register window');
+				if (handlerLimit) assert.ok(denied && !window, 'the function limit raises Trap without a reservation');
 			}
-			finish();
-			const tail = commands.slice(split), predictions = expected.slice(predicted);
-			replay(seed, [...commands, 'u', ...tail], [...expected, ...predictions]);
-			replay(mid, tail, predictions);
-			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeMid), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-			assert.equal(root.protectedDepth, 1);
-			result = RunResult.Yielded;
-			commands.length = expected.length = 0;
-			finish();
-			assert.deepEqual(expected, predictions);
-		} else {
-			assert.equal(entered, false, 'placement is impossible before any firmware reservation');
+			for (let steps = 0; steps < 128 && result !== RunResult.Halted; ++steps) result = grant(67);
 			verifyCompletion();
-			replay(seed, commands, expected);
+		}
+		finish();
+		const tail = commands.slice(split), predictions = expected.slice(predicted);
+		replay(seed, [...commands, 'u', ...tail], [...expected, ...predictions]);
+		replay(mid, tail, predictions);
+		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeMid), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		assert.equal(root.protectedDepth, 1);
+		result = RunResult.Yielded;
+		commands.length = expected.length = 0;
+		finish();
+		assert.deepEqual(expected, predictions);
+
+		function checkTrap(reason: number, argumentCount: number, operand: Value) {
+			assert.equal(cpu.fixedInterruptActive(), true);
+			assert.equal(cpu.heapServiceActive(), false);
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
+			assert.equal(cpu.readLuaFaultReasonWord(), reason);
+			assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), root.address);
+			assert.equal(root.protectedDepth, 1, 'the continuation still belongs to firmware at Trap entry');
+			const frame = cpu.activeThread.currentFrame!;
+			assert.equal(frame.argumentCount, argumentCount);
+			assert.equal(frame.registers.get(0), operand);
+			record('Z', `${CPU_CAUSE_CODE_TRAP} ${reason} ${cpu.readEpcWord()}`);
+			const ram = memory.ramData(), control = frame.controlOffset;
+			record(`H ${control} ${control + FRAME_CONTROL_BYTES}`, hashBytes(ram, control, FRAME_CONTROL_BYTES));
 		}
 
 		function verifyCompletion() {
 			assert.equal(result, RunResult.Halted);
-			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'handled failure is not a hardware fault');
+			assert.equal(cpu.fixedInterruptActive(), false);
+			assert.equal(cpu.getFrameDepth(), 0);
 			assert.equal(root.protectedDepth, 0);
 			const resultValues = runtime.readCompletionValues();
 			if (detached) {
