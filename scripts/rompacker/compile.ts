@@ -74,6 +74,7 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 		includeSymbols: debug,
 		includeSources: debug,
 		optLevel,
+		resetModule: 'kernel/reset',
 		preloadModules: HEAP_SERVICE_MODULES,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,

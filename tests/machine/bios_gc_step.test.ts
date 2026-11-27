@@ -48,6 +48,9 @@ function fixture(optLevel: 0 | 3) {
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const root = 'gc step live', dead = 'gc step dead';
 	const addresses = [cpu, oracle].map(target => {
+		// These fixtures splice into an established collector epoch; bare
+		// instruction reset does not prepare the collector's initial cursor.
+		target.gc.collect();
 		let result = target.runUntilDepth(0, 4096);
 		for (let n = 0; n < 8 && result === RunResult.Yielded; ++n) result = target.runUntilDepth(0, 4096);
 		assert.equal(result, RunResult.Halted);

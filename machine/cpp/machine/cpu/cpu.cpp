@@ -234,7 +234,6 @@ void CPU::reset() {
 		return;
 	}
 	enterDirectFrame(0u);
-	collectHeap();
 }
 
 void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records) {

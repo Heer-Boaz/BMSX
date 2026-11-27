@@ -480,8 +480,8 @@ int main() {
 	require(initialExecutionProfile.scheduler_now_cycles == cartridgeRuntimeState.machineState.schedulerNowCycles
 		&& initialExecutionProfile.cpu_slice_count == 0u && initialExecutionProfile.cpu_slice_consumed_cycles == 0,
 		"execution profile exports the raw scheduler position and unexecuted CPU slice counters");
-	require(initialExecutionProfile.gc_collections == 1u,
-		"the loaded CPU profile includes its boot collection before the first host run");
+	require(initialExecutionProfile.gc_collections == 0u && initialExecutionProfile.gc_total_nanoseconds == 0u,
+		"loading this ROM performs no native collection before the first host run");
 	require(initialExecutionProfile.gc_total_nanoseconds >= initialExecutionProfile.gc_roots_nanoseconds
 		+ initialExecutionProfile.gc_trace_nanoseconds + initialExecutionProfile.gc_weak_nanoseconds
 		+ initialExecutionProfile.gc_sweep_nanoseconds + initialExecutionProfile.gc_string_reclaim_nanoseconds
@@ -567,9 +567,9 @@ int main() {
 	require(afterResetProfile.cpu_native_origin_cycles == beforeResetProfile.cpu_native_origin_cycles
 		&& afterResetProfile.cpu_interpreter_runtime_cycles == beforeResetProfile.cpu_interpreter_runtime_cycles,
 		"hardware reset does not rewind backend-origin diagnostic lifetime counters");
-	require(afterResetProfile.gc_collections == beforeResetProfile.gc_collections + 1u
-		&& afterResetProfile.gc_total_nanoseconds >= beforeResetProfile.gc_total_nanoseconds,
-		"CPU reset adds its real collection to the existing diagnostic lifetime");
+	require(afterResetProfile.gc_collections == beforeResetProfile.gc_collections
+		&& afterResetProfile.gc_total_nanoseconds == beforeResetProfile.gc_total_nanoseconds,
+		"hardware reset performs no native collection before the first system instruction");
 #endif
 	require(geometryNotifications + systemAvNotifications == notificationsBeforeReset, "retro_reset must defer geometry publication to retro_run");
 	insideRetroRun = true;

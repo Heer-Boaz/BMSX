@@ -942,7 +942,6 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		this.enterDirectFrame();
-		this.collectTrackedHeapBytes();
 	}
 
 	public clearExecutionEnvironment(): void {

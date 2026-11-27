@@ -373,14 +373,20 @@ void canonicalPoolAndRootRanges() {
 	require(threshold.second == 1048576, "the existing minimum collection threshold is unchanged");
 	cpu.instructionBudgetRemaining = 123;
 	cpu.collectHeap();
-	require(cpu.instructionBudgetRemaining == 123, "host/reset raw collection does not bill guest work");
+	require(cpu.instructionBudgetRemaining == 123, "the explicit oracle collects without billing guest work");
 	const auto state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22,
 		"snapshot capture/restore does not collect or bill runtime work and preserves canonical accounting");
+	const u32 workAddress = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK;
+	const auto beforeReset = machine.memory.readRamRecordWord(workAddress);
 	cpu.reset();
+	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22
+		&& machine.memory.readRamRecordWord(workAddress) == beforeReset,
+		"reset installs the vector without collecting the previous frame's objects");
+	cpu.collectHeap();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
-		"reset installation and raw maintenance collection do not execute or bill guest work");
+		"the oracle reclaims the objects after reset, when their roots are gone");
 }
 
 void collectorWorkIgnoresInactiveThreadFrames() {

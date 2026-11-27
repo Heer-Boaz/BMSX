@@ -28,6 +28,7 @@ import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_ma
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkRawTestSystemBlua32, linkTestBlua32Pair } from '../../helpers/blua32';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -128,6 +129,18 @@ try {
 			});
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator } = cpu;
+			// Place the pressure fixture at the issuing instruction. The ordinary
+			// startup CALLs preceding EXEC may legitimately assist collection.
+			let atExec = false;
+			for (let i = 0; i < 8192; ++i) {
+				if (!cpu.heapServiceActive()) {
+					const instruction = decodeBlua32InstructionAtPc(pair.systemImage.textBytes, pair.systemImage.header.textAddress,
+						cpu.readFramePc(cpu.getFrameDepth() - 1));
+					if (instruction.op === OpCode.MTC0 && instruction.b === COP0_EXEC) { atExec = true; break; }
+				}
+				assert.equal(scheduler.runCpuSlice(0, cpu.heapServiceActive() ? 123 : 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+			}
+			assert.ok(atExec, 'the reset program reached its real EXEC instruction');
 			const management = heapAllocator.managementOffset(), oldFloor = memory.ramBusEnd();
 			const allocatorState = heapAllocator.allocatorStateOffset(), arena = memory.bindDlmalloc(allocatorState);
 			const pendingAddress = management + HEAP_SERVICE_EXEC_PENDING_OFFSET;
