@@ -26,12 +26,9 @@ inline u32 frameCaptureCount(const Memory& memory, u32 closure) {
 
 enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
-// Entry: canonical frame control followed by its physical stack source.
-// A first resume borrows the resumer's stack, otherwise the active stack.
-// A detached call uses the three inline Value lanes instead.
-constexpr uint32_t PREPARED_FRAME_DETACHED_SOURCE = 0xffffffffu;
+// Canonical frame control followed by argument count and inline Value lanes.
 constexpr uint32_t PREPARED_FRAME_SCOPE_TAG = 1u;
-enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64, Payloads = 68, Tags = 80, End = 83 };
+enum class PreparedFrameField : uint32_t { Supplied = 60, Payloads = 68, Tags = 80, End = 83 };
 
 // The stack datapath uses a RAM-word slot index, not a host signed integer.
 constexpr u32 FRAME_WINDOW_MASK = (MAIN_RAM_SIZE / sizeof(u32)) - 1;

@@ -1,5 +1,4 @@
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
-import { compileTestSystemWithHeap, residentFunctionAddress } from '../helpers/heap_service_system';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
@@ -14,12 +13,11 @@ import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/
 import { BASE_CYCLES, encodeFixedValueCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { linkCartBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
-import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload, valueResidentFunction } from '../../machine/ts/machine/cpu/value';
+import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
@@ -586,14 +584,13 @@ function makeCompiledCartCpu(
 	systemSource: string,
 	cartSource: string,
 	optLevel: OptimizationLevel = 0,
-	withFirmware = false,
 ): {
 	cpu: CPU;
 	memory: Memory;
 	irqController: IrqController;
 	images: TestBlua32ImagePair;
 } {
-	const system = (withFirmware ? compileTestSystemWithHeap : compileLuaChunkToProgram)(
+	const system = compileLuaChunkToProgram(
 		parseLuaChunk(systemSource, 'system_vector.lua'),
 		[],
 		{ entrySource: systemSource, programDomain: 'system' },
@@ -609,32 +606,36 @@ function makeCompiledCartCpu(
 }
 
 test('cartridge IRQ context survives an active coroutine and CPU restore', () => {
-	const { cpu, memory, irqController, images } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, `
+	const bios = linkManagedTestSystem(`coroutine = require('coroutine')
+${TEST_CART_TRANSFER_SOURCE}`, 0, COROUTINE_FIRMWARE_MODULES);
+	const source = `
 function irq(flags) end
 function exception() end
 local worker = coroutine.create(function()
-    halt_until_irq
+	-- Leave physical room for the cartridge vector while the worker waits.
+	local function prime(...) primed = ... end
+	prime(${Array.from({ length: 40 }, (_, index) => index + 1).join(', ')})
+	halt_until_irq
 end)
 coroutine.resume(worker)
-`, 0, true);
-	const coroutine = cpu.createTable(0, 2);
-	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('create'), valueResidentFunction(residentFunctionAddress(
-		{ image: images.systemImage, symbols: images.systemSymbols }, 'kernel/thread_create', 'create_coroutine')));
-	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
-	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), valueTable(coroutine));
-	assert.equal(runCpuWithinBudget(cpu, 100_000), RunResult.Halted);
+`;
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'coroutine_irq.lua'), [],
+		{ entrySource: source, programDomain: 'cart' });
+	const cart = linkCartBlua32Image(bios.biosImports, encodeCompiledProgramObject(compiled), compiled.metadata,
+		CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+	const { cpu, memory, irqController } = bootManagedTestSystem(bios, 'main', cartridgeSlots(writeTestBlua32Rom(cart)));
+	assert.equal(runCpuWithinBudget(cpu, 500_000), RunResult.Halted);
+	assert.ok(cpu.isHaltedUntilIrq());
 	const suspended = cpu.captureRuntimeState();
 	assert.notEqual(suspended.activeThreadAddress, suspended.rootThreadAddress);
-	cpu.restoreRuntimeState(cpu.captureRuntimeState());
+	cpu.restoreRuntimeState(suspended);
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.heapServiceActive(), true, 'the registered cartridge prelude precedes vector installation');
-	for (let grant = 0; grant < 64 && cpu.heapServiceActive(); ++grant)
-		assert.equal(cpu.runUntilDepth(0, 128), RunResult.Yielded);
 	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(cpu.activeThread.address, suspended.activeThreadAddress);
 	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0);
-	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.cartVectors.irqFunctionAddress);
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), cart.irqFunctionAddress);
 });
 
 function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqController; cpuExecution: CpuExecutionState; state: FrameState } {

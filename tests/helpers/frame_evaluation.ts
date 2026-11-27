@@ -20,7 +20,7 @@ local captures<const> = require('kernel/frame_upvalue')
 set_frame_upvalue = captures.set_frame_upvalue
 local creation<const> = require('kernel/thread_create')
 create_thread = creation.create_coroutine
-yield_thread = __bmsx_coroutine_yield
+yield_thread = require('coroutine').yield
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end` });
 	const source = `require('base')
 table = require('table')
@@ -71,30 +71,32 @@ local ok, value = coroutine.resume(a, 17)
 assert(ok and value == 17)
 ok, value = coroutine.resume(b, 27)
 assert(ok and value == 27)
-assert(frame_count(a) == 1 and frame_count(b) == 1)
-local address<const> = frame_header(a, 0.0)
+-- The suspended frame chain has the guest entry, body, then yield.
+local body_frame<const> = 1
+assert(frame_count(a) == 3 and frame_count(b) == 3)
+local address<const> = frame_header(a, body_frame)
 local descriptor<const>: *word = address
 local reserved<const> = descriptor[format.function_max_stack_word_index]
 local captures<const> = descriptor[format.function_upvalue_count_word_index]
 assert(reserved > 1 and captures == 1)
-assert(get_frame_register(a, 0, 0.0) == 17 and get_frame_register(b, 0, 0) == 27)
+assert(get_frame_register(a, body_frame, 0.0) == 17 and get_frame_register(b, body_frame, 0) == 27)
 -- The later select reserves more argument scratch than the already executed
 -- yield. Its last reserved slot is above current top, but still inspectable.
-set_frame_register(a, 0.0, reserved - 1, 73)
-assert(get_frame_register(a, 0, reserved - 1) == 73)
-set_frame_register(a, 0, reserved - 1, nil)
-assert(get_frame_register(a, 0, reserved - 1) == nil)
-assert(get_frame_upvalue(a, 0.0, 0.0) == 41 and get_frame_upvalue(b, 0, 0) == 51)
-set_frame_upvalue(a, 0, 0, nil)
-assert(get_frame_upvalue(a, 0, 0) == nil)
-set_frame_upvalue(a, 0, 0, 43)
-set_frame_upvalue(b, 0, 0, 53)
+set_frame_register(a, body_frame, reserved - 1, 73)
+assert(get_frame_register(a, body_frame, reserved - 1) == 73)
+set_frame_register(a, body_frame, reserved - 1, nil)
+assert(get_frame_register(a, body_frame, reserved - 1) == nil)
+assert(get_frame_upvalue(a, body_frame, 0.0) == 41 and get_frame_upvalue(b, body_frame, 0) == 51)
+set_frame_upvalue(a, body_frame, 0, nil)
+assert(get_frame_upvalue(a, body_frame, 0) == nil)
+set_frame_upvalue(a, body_frame, 0, 43)
+set_frame_upvalue(b, body_frame, 0, 53)
 local reject<const> = function(operation, ...)
  local accepted, message = pcall(operation, ...)
  assert(not accepted and message == 'Invalid argument.', message)
- assert(frame_count(a) == 1 and frame_count(b) == 1)
- assert(get_frame_register(a, 0, 0) == 17 and get_frame_register(b, 0, 0) == 27)
- assert(get_frame_upvalue(a, 0, 0) == 43 and get_frame_upvalue(b, 0, 0) == 53)
+ assert(frame_count(a) == 3 and frame_count(b) == 3)
+ assert(get_frame_register(a, body_frame, 0) == 17 and get_frame_register(b, body_frame, 0) == 27)
+ assert(get_frame_upvalue(a, body_frame, 0) == 43 and get_frame_upvalue(b, body_frame, 0) == 53)
 end
 local empty<const> = make(61)
 assert(frame_count(empty) == 0)
@@ -106,19 +108,19 @@ end
 for _, operation in ipairs({ frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do
  reject(operation, a)
  reject(operation, empty, 0, 0, 99)
- for _, index in ipairs({ -1, 1, 0x80000, 0.5, '0' }) do reject(operation, a, index, 0, 99) end
+ for _, index in ipairs({ -1, 3, 0x80000, 0.5, '0' }) do reject(operation, a, index, 0, 99) end
 end
 for _, operation in ipairs({ get_frame_register, set_frame_register }) do
- reject(operation, a, 0)
+ reject(operation, a, body_frame)
  -- 400000H formerly wrapped both RAM planes back onto the valid R0.
- for _, index in ipairs({ -1, reserved, 0x400000, 0.5, '0' }) do reject(operation, a, 0, index, 99) end
+ for _, index in ipairs({ -1, reserved, 0x400000, 0.5, '0' }) do reject(operation, a, body_frame, index, 99) end
 end
 for _, operation in ipairs({ get_frame_upvalue, set_frame_upvalue }) do
- reject(operation, a, 0)
+ reject(operation, a, body_frame)
  -- 100000H formerly wrapped the capture-word read back onto capture zero.
- for _, index in ipairs({ -1, captures, 0x100000, 0.5, '0' }) do reject(operation, a, 0, index, 99) end
+ for _, index in ipairs({ -1, captures, 0x100000, 0.5, '0' }) do reject(operation, a, body_frame, index, 99) end
 end
-reject(set_frame_register, a, 0, 0)
+reject(set_frame_register, a, body_frame, 0)
 ok, value = coroutine.resume(a)
 assert(ok and value == 60 and frame_count(a) == 0)
 for _, operation in ipairs({ frame_header, get_frame_register, set_frame_register, get_frame_upvalue, set_frame_upvalue }) do

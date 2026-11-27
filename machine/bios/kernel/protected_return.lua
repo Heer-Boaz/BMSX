@@ -3,8 +3,8 @@ module<const>
 local layout<const> = require('kernel/gc_runtime_layout')
 local frames<const> = require('kernel/thread_frame_storage')
 local retire<const> = require('kernel/thread_retire')
-local allocator<const> = require('kernel/dlmalloc')
 local roots<const> = require('kernel/gc_operand_roots')
+local coroutine_transfer<const> = require('kernel/coroutine_transfer')
 local entries<const> = require('bmsx/startup')
 
 local word_mask<const> = 0x003ffffc
@@ -12,44 +12,7 @@ local window_mask<const> = 0x000fffff
 local control_count_mask<const> = 0x0003ffff
 local exception_or_completion<const> = 3
 local cartridge_bank<const> = 1 << 3
-local extend_top<const> = 1 << 31
-local running<const>, failed<const> = 1, 5
-local false_tag<const>, string_tag<const> = 1, 5
-
--- Coroutine failure still returns to the suspended resume CALL. The
--- coroutine retains its own frames and error until coroutine.close.
-local place_failed_resume<const> = function(thread, frame, base, wanted, payload, tag, deadline)
-	local context<const>: *stopped_thread = thread
-	local destination<const>: *stopped_frame = frame
-	local encoded<const> = wanted & ~extend_top
-	local count<const> = encoded == 0 and 2 or encoded - 1
-	local stack_base<const> = destination.stack_base & window_mask
-	local stop<const> = base + count
-	if count ~= 0 and stop > (destination.stack_capacity & window_mask) then
-		local capacity<const> = stop <= 8 and 8 or 1 << (allocator.internal.highest_bit(stop - 1) + 1)
-		local extent<const> = stack_base + capacity
-		if extent > context.stack_capacity then
-			local scope<const> = roots.single_value_scope(layout.management_offset, tag, payload)
-			if frames.prepare_frame_space(layout.management_offset, thread, extent, 0, scope, deadline, true) ~= 0 then return false end
-		end
-		destination.stack_capacity = (destination.stack_capacity & ~window_mask) | capacity
-		context.stack_top = extent
-	end
-	if count ~= 0 then
-		local word_address<const>, tag_address<const> = frames.internal.value_planes(thread, stack_base + base)
-		local words<const>: *u32 = word_address
-		local tags<const>: *u8 = tag_address
-		words[0], tags[0] = 0, false_tag
-		if count > 1 then words[1], tags[1] = payload, tag end
-		for slot = 2, count - 1 do
-			words[slot], tags[slot] = 0, 0
-		end
-	end
-	if (wanted & extend_top) == 0 or stop > (destination.top & window_mask) then
-		destination.top = (destination.top & ~window_mask) | stop
-	end
-	return true
-end
+local string_tag<const> = 5
 
 -- Replace the protected activation, preserving its return destination and
 -- attributed call site. Both landing bodies return through ordinary RET.
@@ -124,20 +87,8 @@ local catch_fault<const> = function(interrupted, raised, tag, deadline)
 		end
 	end
 
-	if context.resumer == 0 then return false, nil, nil end
-	local resumer_address<const> = layout.ram_base + (context.resumer & word_mask)
-	local resumer<const>: *stopped_thread = resumer_address
-	local resumer_depth<const> = resumer.frame_depth & control_count_mask
-	local destination<const>: *stopped_frame = layout.ram_base + ((resumer.frame_block + (resumer_depth - 1) * sizeof(stopped_frame)) & word_mask)
-	context.status = failed
-	context.error_word = raised
-	context.error_kind = tag
-	resumer.status = running
-	if not place_failed_resume(resumer_address, destination, resumer.call_base, resumer.return_count, raised, tag, deadline) then
-		return false, nil, nil
-	end
-	context.resumer = 0
-	return true, destination.pc, resumer_address
+	local pc<const>, resumer<const> = coroutine_transfer.fail(interrupted, raised, tag, deadline)
+	return pc ~= nil, pc, resumer
 end
 
-return { catch_fault = catch_fault, internal = { land = land, place_failed_resume = place_failed_resume } }
+return { catch_fault = catch_fault, internal = { land = land } }

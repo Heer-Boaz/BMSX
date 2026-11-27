@@ -50,11 +50,6 @@ export class Thread {
 	public set resumer(address: number) { this.write(ThreadField.Resumer, address); }
 	public get entry(): number { return this.read(ThreadField.Entry); }
 	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }
-	public get callBase(): number { return this.read(ThreadField.CallBase) | 0; }
-	public get returnCount(): number { return this.read(ThreadField.ReturnCount); }
-	public setReturnWindow(base: number, count: number): void {
-		this.heap.memory.writeRamRecordPair(this.address + ThreadField.CallBase, base, count);
-	}
 	public get error(): Value { return valueFromTag(this.heap.memory.readRamRecordByte(this.address + ThreadField.ErrorKind), this.read(ThreadField.ErrorWord)); }
 	public set error(value: Value) {
 		this.heap.memory.writeRamRecordPair(this.address + ThreadField.ErrorWord, valuePayload(value), valueTag(value));

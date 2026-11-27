@@ -1345,34 +1345,6 @@ void returnPlacementCycles() {
 	}
 }
 
-void coroutineReturnPlacementCycles() {
-	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6}) {
-		test::Blua32TestImage image;
-		image.text.resize(5 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 4, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::MOV), 5, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CALL), 4, 2, wanted);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 3, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 12}, {.firstWord = 4, .wordCount = 1, .maxStack = 2}};
-		image.systemGlobalNames = {"resume"};
-		CpuMachine machine(image, scalar);
-		const u32 entry = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		machine.cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(machine.cpu, entry)));
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
-		const u32 root = machine.cpu.activeThread()->address;
-		for (int step = 0; step < 8 && machine.cpu.activeThread()->address == root; ++step) machine.cpu.runUntilDepth(0, 1);
-		require(machine.cpu.activeThread()->address != root, "the prepared Thread starts its real activation");
-		machine.cpu.activeThread()->currentFrame->registers.set(0, valueInteger(17)); machine.cpu.activeThread()->currentFrame->registers.set(1, valueInteger(29));
-		require(machine.cpu.runUntilDepth(0, 2) == RunResult::Yielded, "coroutine RET ends the current execution slice");
-		const int placed = wanted == 0 ? 3 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - placed && machine.cpu.activeThread()->address == root,
-			"coroutine RET charges status, results and nil padding in its resumer");
-		const Value values[]{valueBool(true), valueInteger(17), valueInteger(29), valueNil(), valueNil()};
-		for (int i = 0; i < placed; ++i) require(machine.cpu.activeThread()->currentFrame->registers.get(4 + i) == values[i], "resumer receives the selected range");
-	}
-}
-
 void rootReturnPlacementCycles() {
 	for (const bool scalar : {false, true}) for (const int producedOperand : {0, 1, 3}) {
 		test::Blua32TestImage image;
@@ -1882,7 +1854,6 @@ int main(int argc, char** argv) {
 		closingSharedCaptureCycles();
 		weakCanonicalClosuresAndStaticEntry();
 		returnPlacementCycles();
-		coroutineReturnPlacementCycles();
 		rootReturnPlacementCycles();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		haltedReceivingFrame();

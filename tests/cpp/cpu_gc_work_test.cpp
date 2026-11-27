@@ -1625,33 +1625,16 @@ void sweepCoroutineRecord() {
 }
 
 void sweepUnselectsSuspendedTransferFrames() {
-	constexpr u32 depth = 8u, rootWords = 5u, bodyWords = 4u;
+	constexpr u32 depth = 8u, width = 2u;
 	test::Blua32TestImage program;
-	program.text.resize((rootWords + bodyWords * depth) * INSTRUCTION_BYTES);
-	const auto emit = [&](u32 word, OpCode op, u32 a = 0u, u32 b = 0u, u32 c = 0u) {
-		writeInstruction(program.text, word, static_cast<u8>(op), a, b, c);
-	};
-	emit(0, OpCode::GETSYS, 2); emit(1, OpCode::MOV, 3);
-	emit(2, OpCode::CALL, 2, 2, 3); emit(3, OpCode::HALT); emit(4, OpCode::RET, 0, 1);
-	program.functions.push_back({.firstWord=0, .wordCount=rootWords, .maxStack=8});
-	program.systemGlobalNames = {"resume", "yield"};
-	for (u32 i = 0; i < depth; ++i) {
-		const u32 start = rootWords + i * bodyWords;
-		program.functions.push_back({.firstWord=start, .wordCount=bodyWords, .maxStack=2});
-		if (i + 1u < depth) {
-			emit(start, OpCode::WIDE); emit(start + 1, OpCode::CLOSURE);
-			emit(start + 2, OpCode::CALL, 0, 1, 1);
-			program.closureRelocations.push_back({start + 1, test::blua32TestFunctionAddress(RomImageDomain::System, i + 2u)});
-		} else {
-			emit(start, OpCode::GETSYS, 0, 0, 1); emit(start + 1, OpCode::KSMI, 1, 0, 37);
-			emit(start + 2, OpCode::CALL, 0, 2, 1);
-		}
-		emit(start + 3, OpCode::RET, 0, 1);
-	}
-	Machine machine(program); auto& cpu = machine.cpu;
-	const std::array primitives{BuiltinFunctionId::CoroutineResume, BuiltinFunctionId::CoroutineYield};
-	for (size_t i = 0; i < primitives.size(); ++i)
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern(program.systemGlobalNames[i]), cpu.createBuiltinFunction(primitives[i]));
+	program.text.resize(5u * INSTRUCTION_BYTES);
+	writeInstruction(program.text, 0, static_cast<u8>(OpCode::MTC0), 1, COP0_CURRENT, 0);
+	writeInstruction(program.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(program.text, 2, static_cast<u8>(OpCode::KSMI), 1, 0, 37);
+	writeInstruction(program.text, 3, static_cast<u8>(OpCode::MTC0), 0, COP0_CURRENT, 0);
+	writeInstruction(program.text, 4, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	program.functions = {{.firstWord=0, .wordCount=2, .maxStack=width}, {.firstWord=2, .wordCount=3, .maxStack=width}};
+	Machine machine(program); auto& cpu = machine.cpu; auto& memory = cpu.memory();
 	struct Observation { CPU& cpu; Thread* bank = nullptr; CallFrame* head = nullptr; size_t maxDepth = 0; bool rebound = false; } observation{cpu};
 	cpu.setExecutionHook({+[](void* context, ExecutionDomainId, u32) {
 		auto& out = *static_cast<Observation*>(context);
@@ -1668,20 +1651,37 @@ void sweepUnselectsSuspendedTransferFrames() {
 		out.maxDepth = std::max(out.maxDepth, thread->frameDepth());
 		return false;
 	}, &observation, ALL_EXECUTION_DOMAINS_MASK, 0u});
-	const auto run = [&] {
+	const auto run = [&](u32 count) {
 		const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
-		cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(cpu, entry)));
-		for (const auto& relocation : program.closureRelocations) test::seedTestRomClosure(cpu, relocation.functionAddress);
-		for (int i = 0; i < 16; ++i)
-			if (cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread()) return;
-		throw std::runtime_error("the real coroutine must yield to its halted resumer");
+		const u32 address = bmsx::test::allocateThreadRecordReference(cpu, entry);
+		if (count > 1u) cpu.luaHeap().reserveThreadFrameStorage(address, count * width, count + 1u, valueThread(address));
+		const auto backing = ThreadRecord::storageLayout(memory, address);
+		const u32 pc = machine.rom.textAddress + 2u * INSTRUCTION_BYTES;
+		for (u32 index = 0; index < count; ++index) {
+			const i32 base = static_cast<i32>(index * width);
+			const FrameEntryControl entryFrame{machine.rom.functionAddresses[1], pc, pc,
+				frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID), base, 0, {}, 1, entry, base, width};
+			entryFrame.writeWords([&](FrameField field, u32 word) {
+				memory.writeRamRecordWord(backing.frameAddress(index) + static_cast<u32>(field), word);
+			});
+		}
+		memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::FrameDepth), count);
+		memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::StackTop), count * width);
+		memory.writeRamRecordWord(address + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
+		backing.slots(memory).set((count - 1u) * width, valueInteger(cpu.rootThread()->address));
+		auto& root = *cpu.rootThread()->currentFrame;
+		root.registers.set(0, valueThread(address));
+		root.registers.set(1, valueInteger(address));
+		root.setTop(2);
+		require(cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread(),
+			"CURRENT runs the authored inactive frame chain and switches back");
+		require(observation.maxDepth == count && observation.bank->address == address
+			&& backing.slots(memory).get(count * width - 1u) == valueInteger(37),
+			"the CPU used the selected context's physical frame window");
+		return address;
 	};
-	run();
-	auto& registers = cpu.rootThread()->currentFrame->registers;
-	const auto address = valuePayload(registers.get(0));
-	require(observation.maxDepth == depth && observation.bank->address == address
-		&& registers.get(2) == valueBool(true) && registers.get(3) == valueInteger(37), "a selected deep coroutine is genuinely suspended");
-	registers.set(0, valueNil());
+	const auto address = run(depth);
+	cpu.rootThread()->currentFrame->registers.set(0, valueNil());
 	do { cpu.gcHeap().step(valueNil(), valueNil(), valueNil()); } while (cpu.collecting());
 	require(cpu.gcHeap().threadRecordAddress(address) == 0u && observation.bank->address == 0u
 		&& !observation.bank->firstFrame && !observation.bank->currentFrame && observation.bank->stack.size() == 0u,
@@ -1690,9 +1690,7 @@ void sweepUnselectsSuspendedTransferFrames() {
 	observation.maxDepth = 0u;
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, machine.rom.functionAddresses[0], machine.rom.textAddress);
-	run();
-	require(observation.maxDepth == depth && registers.get(2) == valueBool(true) && registers.get(3) == valueInteger(37),
-		"the cached nodes rebind to the new physical call chain and yield normally");
+	run(1u);
 	cpu.reset();
 	require(observation.bank->address == 0u && !observation.bank->firstFrame, "reset also withdraws cached transfers before replacing images");
 }

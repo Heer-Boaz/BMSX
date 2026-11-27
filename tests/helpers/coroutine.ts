@@ -26,6 +26,13 @@ export function compileCoroutineTest(body: string, optLevel: 0 | 3) {
 }
 
 export const coroutineVectors = {
+firmware_entry_as_body: `
+local worker = coroutine.create(coroutine.yield)
+local ok, value = coroutine.resume(worker, 8)
+assert(ok and value == 8)
+local finished, returned = coroutine.resume(worker, 9)
+assert(finished and returned == 9 and coroutine.status(worker) == 'dead')
+return true`,
 	wrap_close_ownership: `
 local wrapped<const> = coroutine.wrap(function() error('original failure') end)
 coroutine.close = function() error('replaced public close') end

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
@@ -21,18 +22,18 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const path = 'kernel/thread_retire';
 const source = `
 local creation<const> = require('kernel/thread_create')
 local create<const> = creation.create_coroutine
-local resume<const> = __bmsx_coroutine_resume
+local coroutine_entries<const> = require('bmsx/startup')
+local resume<const> = blua32.closure(coroutine_entries.coroutine_resume)
 
 function inside()
 	local object = {}
@@ -69,20 +70,19 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 
 for (const optLevel of [0, 3] as const) {
 	test(`BLua warm Thread retirement closes real captures in native order and resumes mid-cell at O${optLevel}`, t => {
-		mkdirSync('tmp', { recursive: true });
-		const folder = mkdtempSync(join('tmp', 'thread-retire-'));
+		const folder = mkdtempSync(join(tmpdir(), 'thread-retire-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
-		const compiled = compileHeapServiceSystem(source, optLevel, [{ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }]);
-		const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
+		const linked = linkManagedTestSystem(source, optLevel);
+		const { object } = linked, romBytes = writeTestBlua32Rom(linked);
 		const exported = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === 'retire_threads')!;
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-		const entry = linked.image.functions[index].address;
-		const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index]);
+		const entry = linked.layout.functions[index].address;
+		const { valueSlots, frames } = deriveBlua32FixedStack(linked.layout, [index]);
 		assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
+		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		runGuestToHalt(cpu, 300_000);
+		runGuestToHalt(cpu, 1_000_000);
 		const root = cpu.rootThread.address, active = cpu.activeThread.address, relay = cpu.activeThread.resumer;
 		assert.notEqual(root, active);
 		assert.ok(cpu.activeThread.frameDepth >= 2);
@@ -119,7 +119,7 @@ for (const optLevel of [0, 3] as const) {
 		const initial = captureRuntimeSaveState(runtime);
 		const rom = join(folder, 'system.rom'), traceFile = join(folder, 'trace');
 		const initialFile = join(folder, 'initial.state'), partialFile = join(folder, 'partial.state');
-		writeFileSync(rom, linked.romBytes);
+		writeFileSync(rom, romBytes);
 		writeFileSync(initialFile, encodeRuntimeSaveState(initial));
 
 		cpu.clearExecutionEnvironment();

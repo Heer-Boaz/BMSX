@@ -29,8 +29,7 @@ void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value 
 	if (valueTag(method) == ValueTag::ResidentFunction) {
 		beginResidentCall(valuePayload(method), {args.data(), args.size()}, placement);
 	} else if (valueIsBuiltinFunction(method)) {
-		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(method))], frame, placement,
-			{nullptr, args.data(), 0, static_cast<int>(args.size())});
+		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(method))], frame, placement, {args.data(), args.size()});
 	} else throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 

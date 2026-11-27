@@ -23,7 +23,7 @@ const firmware = [
 	'kernel/gc_stopped_roots', 'kernel/global_bank', 'kernel/warm_bindings',
 	'kernel/boot_image_admission',
 	'kernel/string_slice', 'kernel/allocate_string_slice',
-	BIOS_EXCEPTION_BRIDGE.path, 'kernel/exception_report', 'kernel/register_window', 'kernel/protected_return',
+	BIOS_EXCEPTION_BRIDGE.path, 'kernel/exception_report', 'kernel/register_window', 'kernel/protected_return', 'kernel/coroutine_transfer',
 	...BIOS_MANAGED_ENTRIES.map(entry => entry.path),
 ];
 
@@ -41,7 +41,7 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 			: path === exceptionModule && options.exceptionSource !== undefined ? options.exceptionSource
 				: readFileSync('machine/bios/' + path + '.lua', 'utf8')));
 	for (const { path, source, linkValues } of extraModules) luaModules.push(systemModule(path, source, linkValues));
-	luaModules.push(systemModule(entryPath, 'module<entry>\n' + source));
+	luaModules.push(systemModule(entryPath, source.startsWith('module<entry>') ? source : 'module<entry>\n' + source));
 	const generatedLuaModules = extraModules.some(module => module.path === 'bmsx/blua32') ? []
 		: [{ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE }];
 	const { linked, object, diagnosticSources } = buildBlua32Image({

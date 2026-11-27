@@ -100,17 +100,14 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.text.resize(8u * INSTRUCTION_BYTES);
-	image.systemGlobalNames = {"resume", "yield"};
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 6}, {.firstWord = 4, .wordCount = 4}};
+	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 5}, {.firstWord = 4, .wordCount = 4, .maxStack = 2}};
 	const auto put = [&](u32 word, OpCode op, u8 a, u8 b, u8 c, u8 ext = 0) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c, ext);
 	};
-	put(0, OpCode::GETSYS, 4, 0, 0);
-	put(1, OpCode::MOV, 5, 0, 0);
-	put(2, OpCode::CALL, 4, 2, 2);
-	put(3, OpCode::JMP, 0, 63, 63, 255);
-	put(4, OpCode::GETSYS, 0, 0, 1);
-	put(5, OpCode::CALL, 0, 1, 1);
+	put(0, OpCode::MTC0, 4, COP0_CURRENT, 0);
+	put(1, OpCode::JMP, 0, 63, 63, 255);
+	put(4, OpCode::KNIL, 1, 0, 0);
+	put(5, OpCode::MTC0, 0, COP0_CURRENT, 0);
 	put(6, OpCode::K0, 0, 0, 0);
 	put(7, OpCode::RET, 0, 2, 0);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
@@ -120,12 +117,25 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 		auto& machine = fixture->runtime.machine;
 		auto& cpu = machine.cpu;
 		const u32 entry = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
-		cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(cpu, entry)));
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern("resume"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
-		cpu.setSystemGlobalByKey(cpu.stringPool().intern("yield"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
-		for (u32 step = 0; step < 12 && cpu.activeThread() == cpu.rootThread(); ++step) cpu.runUntilDepth(0, 1);
-		require(cpu.activeThread() != cpu.rootThread(), "the coroutine starts in its own frame");
-		const u32 thread = cpu.activeThread()->address;
+		const u32 thread = bmsx::test::allocateThreadRecordReference(cpu, 0u);
+		const auto backing = ThreadRecord::storageLayout(machine.memory, thread);
+		const u32 pc = rom.textAddress + 4u * INSTRUCTION_BYTES;
+		const FrameEntryControl suspended{rom.functionAddresses[1], pc, pc, frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID),
+			0, 0, {}, 1, entry, 0, 2};
+		const u32 control = backing.frameAddress(0u);
+		suspended.writeWords([&](FrameField field, u32 value) {
+			machine.memory.writeRamRecordWord(control + static_cast<u32>(field), value);
+		});
+		machine.memory.writeRamRecordWord(thread + static_cast<u32>(ThreadField::FrameDepth), 1u);
+		machine.memory.writeRamRecordWord(thread + static_cast<u32>(ThreadField::StackTop), 2u);
+		machine.memory.writeRamRecordWord(thread + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Suspended));
+		backing.slots(machine.memory).set(0, valueInteger(cpu.rootThread()->address));
+		auto& registers = cpu.rootThread()->currentFrame->registers;
+		registers.set(0, valueThread(thread));
+		registers.set(4, valueInteger(thread));
+		cpu.rootThread()->currentFrame->setTop(5);
+		cpu.runUntilDepth(0, 1);
+		require(cpu.activeThread()->address == thread, "CURRENT selects the authored physical context");
 		for (u32 step = 0; step < 4 && cpu.activeThread() != cpu.rootThread(); ++step) cpu.runUntilDepth(0, 1);
 		const u32 frame = ThreadRecord::storageLayout(machine.memory, thread).frameAddress(0);
 		require(cpu.activeThread() == cpu.rootThread()

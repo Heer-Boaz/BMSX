@@ -47,12 +47,12 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, valuePayload(callee)) != nullptr;
 	}
 	if (valueTag(callee) == ValueTag::ResidentFunction) {
-		const CallValueSource arguments{&frame, nullptr, a + 1, argCount};
 		// The source is an existing Value window, not a request to grow it.
 		if (!frame.registers.containsRange(a + 1, argCount)
 			&& !frame.thread->stack.containsRange(frame.stackBase() + a + 1, argCount))
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		beginResidentCall(valuePayload(callee), arguments.values(), result);
+		beginResidentCall(valuePayload(callee),
+			BuiltinArgsView(frame.thread->stack.subspan(frame.stackBase() + a + 1, argCount)), result);
 		return false;
 	}
 	if (valueIsBuiltinFunction(callee)) {
@@ -61,7 +61,8 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 		if (!frame.registers.containsRange(a + 1, argCount)
 			&& !frame.thread->stack.containsRange(frame.stackBase() + a + 1, argCount))
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, result, {&frame, nullptr, a + 1, argCount});
+		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(callee))], frame, result,
+			BuiltinArgsView(frame.thread->stack.subspan(frame.stackBase() + a + 1, argCount)));
 		return false;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -100,18 +101,6 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		return false;
 	}
 	const bool root = m_activeThread->frameDepth() == 1;
-	const u32 resumer = root ? m_activeThread->resumer() : 0u;
-	if (resumer != 0u) {
-		Thread* thread = m_activeThread;
-		const CallResultPlacement result{0, ThreadRecord::read(m_memory, resumer, ThreadField::ReturnCount)};
-		const int copied = std::clamp(result.selected(count + 1) - 1, 0, count);
-		admitAndClose(copied);
-		thread->setStatus(ThreadStatus::Dead);
-		returnToResumer({&frame, nullptr, first, copied});
-		thread->setStackTop(0);
-		thread->leaveFrame();
-		return false;
-	}
 	if (root) {
 		admitAndClose(count);
 		m_completionValues.reserveCapacity(count);

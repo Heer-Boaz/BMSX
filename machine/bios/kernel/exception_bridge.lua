@@ -7,6 +7,8 @@ local operand_roots<const> = require('kernel/gc_operand_roots')
 local exception_report<const> = require('kernel/exception_report')
 local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
+local coroutine_transfer<const> = require('kernel/coroutine_transfer')
+local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
 local explicit_error<const> = 8
@@ -17,6 +19,8 @@ local system_supervisor_fault<const> = 1 << 3
 local system_supervisor_resumable<const> = 1 << 2
 local control_count_mask<const> = (1 << 18) - 1
 local frame_window_mask<const> = (1 << 20) - 1
+local ram_word_mask<const> = 0x003ffffc
+local cartridge_bank<const> = 1 << 3
 bss monitor_ready: word
 
 struct monitor_entry_state
@@ -68,15 +72,53 @@ local take_trap_value<const> = function()
 	return raised
 end
 
+-- These are System program entry points, not CPU service ordinals.
+local transfer_coroutine<const> = function(address, operand)
+	local context<const>: *stopped_thread = address
+	local depth<const> = context.frame_depth & control_count_mask
+	local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
+	if (frame.flags & cartridge_bank) ~= 0 then return false, nil, nil, nil end
+	local fn<const> = frame.fn
+	if fn == vectors.coroutine_resume then
+		local cell_address<const> = layout.ram_base + layout.management_offset + layout.value_cell_offset
+		local value_cell<const>: *value = cell_address
+		local word<const>: *u32 = cell_address
+		*value_cell = operand
+		local pc<const>, thread<const>, reason<const> = coroutine_transfer.resume(address, frame, *word)
+		return true, pc, thread, reason
+	end
+	if fn == vectors.coroutine_yield then
+		local pc<const>, thread<const>, reason<const> = coroutine_transfer.yield(address, frame)
+		return true, pc, thread, reason
+	end
+	if fn == vectors.coroutine_entry then
+		local pc<const>, thread<const>, reason<const> = coroutine_transfer.finish(address, frame, operand)
+		return true, pc, thread, reason
+	end
+	return false, nil, nil, nil
+end
+
 local enter<const> = function(values, depth, instruction, source_cycles)
 	local cause<const> = cop0.cause
 	local denied_window<const> = cause == register_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
+	local transfer_fault
+	if cause == syscall and *interrupted ~= 0 then
+		local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
+		if handled then
+			*interrupted = thread
+			if pc then
+				cop0.epc = pc
+				blua32.rfe()
+			end
+			transfer_fault = reason
+		end
+	end
 	if denied_window then
 		if window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
 	end
-	local reason<const> = denied_window and out_of_memory or cop0.lua_fault_reason
-	local raised<const> = cause == trap or denied_window
+	local reason<const> = transfer_fault or (denied_window and out_of_memory) or cop0.lua_fault_reason
+	local raised<const> = cause == trap or denied_window or transfer_fault ~= nil
 	local payload, tag = 0, 0
 	if raised then
 		if reason == explicit_error then
@@ -121,7 +163,7 @@ local enter<const> = function(values, depth, instruction, source_cycles)
 			entry.status = cop0.status
 			-- A physical Window fault is still visible in SYSTEM. The stock
 			-- monitor presents the language error after recovery was denied.
-			entry.cause = denied_window and trap or cause
+			entry.cause = (denied_window or transfer_fault ~= nil) and trap or cause
 			entry.epc = cop0.epc
 			entry.bad_address = cop0.bad_address
 			entry.lua_fault_reason = reason
@@ -141,4 +183,5 @@ end
 return {
 	enter = enter, prepare = prepare, frame_width = frame_width,
 	monitor_ready = monitor_ready, monitor_entry = monitor_entry, take_trap_value = take_trap_value,
+	internal = { transfer_coroutine = transfer_coroutine },
 }

@@ -63,7 +63,7 @@ export class SourceDebugger {
 		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.cpu.readThreadFrameDepth(this.stop.thread) > 1 || this.cpu.readThreadResumer(this.stop.thread) !== 0);
 	}
 	public get stepThreadFinished(): boolean {
-		if (this.stepThread === undefined) return false;
+		if (this.stepThread === undefined || this.cpu.fixedInterruptActive()) return false;
 		const status = this.cpu.readThreadStatus(this.stepThread);
 		return status === ThreadStatus.Dead || status === ThreadStatus.Failed;
 	}

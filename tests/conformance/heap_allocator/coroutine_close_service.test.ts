@@ -29,8 +29,9 @@ local retirement<const> = require('kernel/coroutine_close')
 local close<const> = retirement.close_thread
 local creation<const> = require('kernel/thread_create')
 local create<const> = creation.create_coroutine
-local resume<const> = __bmsx_coroutine_resume
-local suspend<const> = __bmsx_coroutine_yield
+local coroutine_entries<const> = require('bmsx/startup')
+local resume<const> = blua32.closure(coroutine_entries.coroutine_resume)
+local suspend<const> = blua32.closure(coroutine_entries.coroutine_yield)
 local startup<const> = require('bmsx/startup')
 local protect<const> = blua32.closure(startup.protected_call)
 

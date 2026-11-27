@@ -75,10 +75,7 @@ struct Thread {
 	void setStatus(ThreadStatus status);
 	u32 resumer() const;
 	void setResumer(u32 thread);
-	u32 entry() const { return read(ThreadField::Entry); }
 	void setEntry(u32 closure) { write(ThreadField::Entry, closure); }
-	CallResultPlacement transferResult() const;
-	void setTransferResult(CallResultPlacement);
 	Value error() const;
 	void setError(Value value);
 	// Retained nodes are this CPU view bank's translation cache. Physical RAM

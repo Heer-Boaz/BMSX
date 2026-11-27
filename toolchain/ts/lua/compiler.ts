@@ -4320,6 +4320,22 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitABC(OpCode.SVC, source, 0, 0);
 			return true;
 		}
+		if (operation === 'svc_results') {
+			const results = expression.arguments[0];
+			if (expression.arguments.length !== 1 || !isMultiReturnExpression(results)
+				|| (results.kind === LuaSyntaxKind.CallExpression
+					&& (this.resolveRequireModuleBinding(results) || this.resolveBlua32Operation(results) !== undefined))) {
+				throw new Error('blua32.svc_results expects one open result expression.');
+			}
+			const source = this.allocTemp();
+			const base = this.allocTemp();
+			// SVC exposes the stopped frame. Prepare its operand below the
+			// open window so no write after the call can change its top.
+			this.emitLoadConst(source, integerConstant(base));
+			this.compileExpressionInto(results, base, 0);
+			this.emitABC(OpCode.SVC, source, 0, 0);
+			return true;
+		}
 		if (operation !== 'trace' && operation !== 'trace_sink') {
 			return false;
 		}
@@ -5904,7 +5920,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileBlua32ValueCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
 		const operation = this.resolveBlua32Operation(expression);
 		if (operation === undefined) return false;
-		if (operation === 'trace' || operation === 'trace_sink' || operation === 'svc' || operation === 'rfe') {
+		if (operation === 'trace' || operation === 'trace_sink' || operation === 'svc' || operation === 'svc_results' || operation === 'rfe') {
 			throw new Error(`blua32.${operation} is a statement-only compiler intrinsic.`);
 		}
 		if (operation === 'argument_suffix') {

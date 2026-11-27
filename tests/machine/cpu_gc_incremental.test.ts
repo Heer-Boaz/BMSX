@@ -1,8 +1,8 @@
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { FrameField, writeFrameEntryControl } from '../../machine/ts/machine/cpu/call_state';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { COP0_CURRENT } from '../../machine/ts/spec/blua32/cop0';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -11,7 +11,7 @@ import { GC_COLOR_OFFSET, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadStatus } from '../../machine/ts/machine/cpu/thread';
-import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { GcPhase, GC_MODE_META, GC_MODE_NODE, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_TRACE_CURSOR, GC_THREAD_TRACE_OPEN, GC_THREAD_VISITS, GC_VISIT_COUNT, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
@@ -19,8 +19,8 @@ import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
-import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { ValueTag, hashCanonicalTableKey, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
@@ -395,33 +395,19 @@ test('a suspended Thread scan follows closing JMP and RET of a large live captur
 	assert.deepEqual(finish(), expected);
 });
 
-test('sweeping a suspended coroutine withdraws its borrowed view and rebinds only the needed prefix', () => {
-	const depth = 8, rootWords = 5, bodyWords = 4;
-	const text = new Uint8Array((rootWords + bodyWords * depth) * 4);
-	const emit = (word: number, op: OpCode, a = 0, b = 0, c = 0) => writeInstruction(text, word, op, a, b, c);
-	emit(0, OpCode.GETSYS, 2); emit(1, OpCode.MOV, 3);
-	emit(2, OpCode.CALL, 2, 2, 3); emit(3, OpCode.HALT); emit(4, OpCode.RET, 0, 1);
-	const functions = [{ firstWord: 0, wordCount: rootWords, maxStack: 8 }];
-	const closureRelocations: { wordIndex: number; functionIndex: number }[] = [];
-	const systemGlobalNames = ['resume', 'yield'];
-	for (let i = 0; i < depth; ++i) {
-		const start = rootWords + i * bodyWords;
-		functions.push({ firstWord: start, wordCount: bodyWords, maxStack: 2 });
-		if (i + 1 < depth) {
-			emit(start, OpCode.WIDE); emit(start + 1, OpCode.CLOSURE);
-			emit(start + 2, OpCode.CALL, 0, 1, 1);
-			closureRelocations.push({ wordIndex: start + 1, functionIndex: i + 2 });
-		} else {
-			emit(start, OpCode.GETSYS, 0, 0, 1); emit(start + 1, OpCode.KSMI, 1, 0, 37);
-			emit(start + 2, OpCode.CALL, 0, 2, 1);
-		}
-		emit(start + 3, OpCode.RET, 0, 1);
-	}
-	const rom = linkRawTestSystemBlua32({ text, functions, systemGlobalNames, closureRelocations });
+test('sweeping a suspended Thread withdraws its borrowed view and rebinds only the needed prefix', () => {
+	const depth = 8, width = 2;
+	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.MTC0, 1, COP0_CURRENT, 0);
+	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.KSMI, 1, 0, 37);
+	writeInstruction(text, 3, OpCode.MTC0, 0, COP0_CURRENT, 0);
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	const rom = linkRawTestSystemBlua32({ text, functions: [
+		{ firstWord: 0, wordCount: 2, maxStack: width }, { firstWord: 2, wordCount: 3, maxStack: width },
+	] });
 	const { cpu } = createTestHeapServiceCpu(rom);
-	const primitives = [BuiltinFunctionId.CoroutineResume, BuiltinFunctionId.CoroutineYield];
-	for (let i = 0; i < primitives.length; ++i)
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern(systemGlobalNames[i]), valueBuiltinFunction(primitives[i]));
+	const { memory, gc } = cpu;
 	const observation: { bank?: typeof cpu.rootThread; head?: typeof cpu.rootThread.firstFrame; maxDepth: number; rebound: boolean } = {
 		maxDepth: 0, rebound: false,
 	};
@@ -437,30 +423,45 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 		observation.maxDepth = Math.max(observation.maxDepth, thread.frameDepth);
 		return false;
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	const run = () => {
-		const entry = seedTestRomClosure(cpu, rom.symbols.functionAddresses[1]);
-		cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
-		for (const { functionIndex } of closureRelocations) seedTestRomClosure(cpu, rom.symbols.functionAddresses[functionIndex]);
-		for (let i = 0; i < 16; ++i)
-			if (cpu.runUntilDepth(0, 1000) === RunResult.Halted && cpu.activeThread === cpu.rootThread) return;
-		assert.fail('the real coroutine must yield to its halted resumer');
+	const run = (count: number) => {
+		const fn = rom.symbols.functionAddresses[1], pc = rom.image.functions[1].codeAddress;
+		const entry = seedTestRomClosure(cpu, fn);
+		const address = allocateThreadRecordReference(cpu, entry);
+		if (count > 1) cpu.luaHeap.reserveThreadFrameStorage(address, count * width, count + 1, valueThread(address));
+		const layout = new ThreadLayout();
+		gc.threads.readLayout(address, layout);
+		for (let index = 0; index < count; ++index) {
+			const base = index * width;
+			writeFrameEntryControl(memory, gc.threads.frameAddress(layout, index), fn, pc, pc, false, SYSTEM_EXECUTION_DOMAIN_ID,
+				base, 0, 0, 0, 1, entry, base, width);
+		}
+		memory.writeRamRecordWord(address + ThreadField.FrameDepth, count);
+		memory.writeRamRecordWord(address + ThreadField.StackTop, count * width);
+		memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
+		const first = (count - 1) * width;
+		memory.writeRamRecordWord(layout.block + 4 * first, cpu.rootThread.address);
+		memory.writeRamRecordByte(layout.block + 4 * layout.capacity + first, ValueTag.Integer);
+		const root = cpu.rootThread.currentFrame!;
+		root.registers.set(0, valueThread(address));
+		root.registers.setInteger(1, address);
+		root.top = 2;
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		assert.equal(cpu.activeThread, cpu.rootThread);
+		assert.equal(observation.maxDepth, count);
+		assert.equal(observation.bank!.address, address);
+		assert.equal(observation.bank!.stackRegisters.get(first + 1), valueInteger(37), 'CURRENT used the authored frame window');
+		return address;
 	};
-	run();
-	const registers = cpu.rootThread.currentFrame!.registers, address = valuePayload(registers.get(0));
-	assert.equal(observation.maxDepth, depth);
+	const address = run(depth);
 	const bank = observation.bank!;
-	assert.equal(bank.address, address);
-	assert.deepEqual([registers.get(2), registers.get(3)], [valueBool(true), valueInteger(37)]);
-	registers.setNil(0);
-	do { cpu.gc.step(); } while (cpu.gc.active());
-	assert.equal(cpu.gc.threadRecordAddress(address), 0);
+	cpu.rootThread.currentFrame!.registers.setNil(0);
+	do { gc.step(); } while (gc.active());
+	assert.equal(gc.threadRecordAddress(address), 0);
 	assert.deepEqual([bank.address, bank.firstFrame, bank.currentFrame, bank.stackRegisters.capacity()], [0, null, null, 0]);
 	observation.rebound = true; observation.maxDepth = 0;
 	cpu.clearHaltUntilIrq();
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.symbols.functionAddresses[0], rom.image.functions[0].codeAddress);
-	run();
-	assert.equal(observation.maxDepth, depth);
-	assert.deepEqual([registers.get(2), registers.get(3)], [valueBool(true), valueInteger(37)]);
+	run(1);
 	cpu.reset();
 	assert.deepEqual([bank.address, bank.firstFrame], [0, null], 'reset also withdraws cached transfers before replacing images');
 });

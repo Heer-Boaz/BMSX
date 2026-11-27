@@ -18,10 +18,9 @@ import { asClosure, asThread, valueInteger, valueNil } from '../../machine/ts/ma
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { writeTestBlua32Rom } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { afterTest } from '../helpers/test_cleanup';
@@ -42,10 +41,22 @@ end
 local answer = parent(41)
 return answer, output`;
 function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: readonly { path: string; source: string }[] = []) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'debugger_probe'),
-		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })),
-		{ entrySource: source, programDomain: 'system', optLevel }), image = linkTestSystemBlua32(compiled);
+	const linked = linkManagedTestSystem('module<entry>; ' + source, optLevel, modules, [], 'debugger_probe');
+	// These operations debug the authored program, not the ROM's firmware.
+	const { metadata } = linked.symbols;
+	metadata.statementPointsByFunction = metadata.statementPointsByFunction.map(points =>
+		points.filter(point => point.range.path === 'debugger_probe'));
+	const image = { image: linked.layout, symbols: linked.symbols, biosImports: linked.biosImports, romBytes: writeTestBlua32Rom(linked) };
 	const runtime = createTestRuntime(image.romBytes);
+	runtime.boot();
+	const { cpu } = runtime.machine;
+	const startup = linked.symbols.functionAddresses[linked.symbols.metadata.functionIds.indexOf('module:debugger_probe/startup')];
+	let bootBudget = 1_000_000;
+	for (let grant = 0; grant < 32 && cpu.readFrameFunctionAddress(0) !== startup && bootBudget > 0; ++grant) {
+		assert.equal(cpu.runUntilDepth(0, bootBudget), RunResult.Yielded);
+		bootBudget = cpu.instructionBudgetRemaining;
+	}
+	assert.equal(cpu.readFrameFunctionAddress(0), startup);
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: RESOURCE.path, projectRootPath: '', can_boot_from_source: true, revision: 0 };
 	registerLuaSourceRecord(registry, { resid: RESOURCE.path, type: 'lua', src: source, base_src: source,
 		source_path: RESOURCE.path, normalized_source_path: RESOURCE.path, module_path: 'debugger_probe',
@@ -54,8 +65,8 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	sources.systemInstalledBlua32Sources = new Map([['debugger_probe', source]]);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
-	const state = f.debuggerState, owner = f.debuggerExecution, cpu = runtime.machine.cpu;
-	cpu.reset(); f.execution.setPauseReason(HostPauseReason.Workbench, true);
+	const state = f.debuggerState, owner = f.debuggerExecution;
+	f.execution.setPauseReason(HostPauseReason.Workbench, true);
 	afterTest(t, () => { owner.dispose(); f.presenter.dispose(); });
 	const execute = () => {
 		owner.beforeHostFrame();
@@ -261,8 +272,9 @@ test('conversation lifecycle cancels its own execution and keeps persistent brea
 
 const THREAD_PRIMITIVES = [{ path: 'thread_primitives', source: `
 local creation<const> = require('kernel/thread_create')
+local entries<const> = require('bmsx/startup')
 create_co = creation.create_coroutine
-resume_co = __bmsx_coroutine_resume
+resume_co = blua32.closure(entries.coroutine_resume)
 raise_error = __bmsx_error
 return true` }];
 
@@ -295,12 +307,12 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped);
 		const child = f.cpu.activeThread.address;
 		assert.notEqual(child, f.cpu.rootThread.address);
-		assert.equal(f.cpu.getFrameDepth(), 1, 'a coroutine root has a resumer even without a parent frame');
+		assert.equal(f.cpu.getFrameDepth(), 2, 'the ordinary coroutine body executes above its guest entry frame');
 		assert.equal(f.owner.canResume(mode), true);
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'thread-completed');
 		assert.equal(f.cpu.readThreadStatus(child), failure ? ThreadStatus.Failed : ThreadStatus.Dead);
-		assert.equal(f.cpu.activeThread, f.cpu.rootThread);
+		assert.equal(f.cpu.activeThread.address, f.cpu.rootThread.address);
 		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), valueNil(), 'the operation never runs its resumer');
 		assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
 	});
@@ -323,10 +335,13 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 end
 child = create_co(function() other(); child_done = true end)
 invoke = function() resume_co(child) end
-root_value = 0
-root_value = 1`, optLevel, THREAD_PRIMITIVES);
-		f.state.breakpoints.set(RESOURCE, [2, 6]);
-		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
+write_parent = function()
+ root_value = 0
+ root_value = 1
+end
+write_parent()`, optLevel, THREAD_PRIMITIVES);
+		f.state.breakpoints.set(RESOURCE, [2, 7]);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 7);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
 		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('invoke')), f.cpu.gc));
@@ -334,7 +349,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
 		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread.address);
 		if (recompile) applyRuntimeDebuggerHotResume(f.state, f.state.breakpoints.compile(f.sources.currentBlua32Media));
-		f.state.breakpoints.set(RESOURCE, recompile ? [6] : []);
+		f.state.breakpoints.set(RESOURCE, recompile ? [7] : []);
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
 		runCpuWithinBudget(f.cpu, 100_000, depth);
 		assert.notEqual(f.state.source.domainMask, 0, 'the parked parent still owns resume suppression');

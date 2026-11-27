@@ -4,16 +4,14 @@ import { test } from 'node:test';
 import { bindOpen, isOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueBool, valueBuiltinFunction, valueClosure, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
-import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 // A raw placement test supplies a real open Cell in its measured frame. Its
 // ROM intentionally has no allocation firmware or descriptor-execution setup.
@@ -112,70 +110,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.deepEqual(Array.from(cells, cell => isOpen(cpu.memory, cell)), [false, false]);
 	});
 
-}
-
-for (const backend of [CpuExecutionBackend.Interpreter]) {
-	test(`coroutine yield and resume each charge the actual receiving range (${backend})`, () => {
-		const text = new Uint8Array(9 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
-		writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
-		writeInstruction(text, 2, OpCode.CALL, 4, 2, 6);
-		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-		writeInstruction(text, 4, OpCode.GETSYS, 0, 0, 1);
-		writeInstruction(text, 5, OpCode.LOADK, 1, 0, 0);
-		writeInstruction(text, 6, OpCode.LOADK, 2, 0, 1);
-		writeInstruction(text, 7, OpCode.CALL, 0, 3, 3);
-		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
-		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['resume', 'yield'], functions: [
-			{ firstWord: 0, wordCount: 4, maxStack: 12 }, { firstWord: 4, wordCount: 5, maxStack: 8 },
-		] });
-		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
-		for (const [name, id] of [['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
-			cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
-		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
-		assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');
-		const child = cpu.activeThread;
-		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + 2 * BASE_CYCLES[OpCode.LOADK]);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 5);
-		assert.equal(cpu.activeThread, cpu.rootThread);
-		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(4 + i)), [valueBool(true), valueInteger(17), valueInteger(29), valueNil(), valueNil()]);
-		const root = cpu.rootThread.currentFrame!;
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, root.functionAddress, image.image.functions[0].codeAddress);
-		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.MOV]);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2, 'resuming the fixed two-result yield fills both missing values');
-		assert.equal(cpu.activeThread, child);
-		assert.deepEqual([child.currentFrame!.registers.get(0), child.currentFrame!.registers.get(1)], [valueNil(), valueNil()]);
-	});
-	for (const vararg of [false, true]) test(`first coroutine resume charges copied formals and retained extras (${backend}, vararg=${vararg})`, () => {
-		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 4, 0, 0);
-		writeInstruction(text, 1, OpCode.MOV, 5, 0, 0);
-		writeInstruction(text, 2, OpCode.CALL, 4, 5, 1);
-		writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
-		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
-		const image = linkManagedTestOpcodes({ text, systemGlobalNames: ['resume'], functions: [
-			{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, numParams: 2, maxStack: 8, isVararg: vararg },
-		] });
-		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		const target = allocateThreadRecordReference(cpu, entry), receiver = valueThread(target);
-		cpu.rootThread.currentFrame!.registers.set(0, receiver);
-		// Keep allocation outside this placement timing probe. The separate
-		// first-resume integration tests exercise growth and the BIOS grants.
-		cpu.luaHeap.reserveThreadFrameStorage(target, 16, 0, receiver);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
-		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
-		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
-		for (let i = 0; i < 3; ++i) cpu.rootThread.currentFrame!.registers.setInteger(6 + i, 17 + i);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 2 - (vararg ? 1 : 0));
-		assert.notEqual(cpu.activeThread, cpu.rootThread);
-		assert.deepEqual([cpu.activeThread.currentFrame!.registers.get(0), cpu.activeThread.currentFrame!.registers.get(1)], [valueInteger(17), valueInteger(18)]);
-	});
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {

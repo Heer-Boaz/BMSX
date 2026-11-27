@@ -376,24 +376,7 @@ private:
 	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
 	void admitPrivateValueSpan(u32 address, u32 management) const;
 	u32 readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const;
-	// Ordinary CALL arguments borrow frame slots by index so backing growth can
-	// rebind them. Detached implicit calls carry complete Values until admission.
-	struct CallValueSource {
-		CallFrame* frame;
-		const Value* detached;
-		int base, count;
-		BuiltinArgsView values() const {
-			if (count == 0) return {};
-			return frame
-				? BuiltinArgsView(frame->thread->stack.subspan(frame->stackBase() + base, count))
-				: BuiltinArgsView(detached, count);
-		}
-		CallValueSource tail(int skip) const {
-			return frame ? CallValueSource{frame, nullptr, base + skip, std::max(count - skip, 0)}
-				: CallValueSource{nullptr, detached + std::min(skip, count), 0, std::max(count - skip, 0)};
-		}
-	};
-	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, const CallValueSource&);
+	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, BuiltinArgsView);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
@@ -447,8 +430,7 @@ private:
 		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
-	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);
-	void prepareFrameEntry(u32 function, const FrameEntryControl&, u32 sourceSlot, u32 supplied, bool relocate, BuiltinArgsView detached = {});
+	void prepareFrameEntry(u32 function, const FrameEntryControl&, BuiltinArgsView detached);
 	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
@@ -468,7 +450,6 @@ private:
 	bool executeVararg(CallFrame& frame, int first, int requested);
 	int admitRegisterWindow(CallFrame& issuer, const CallFrame& receiver, int end, OpCode opcode, int a);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
-	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
 	ValueSpan& ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
@@ -645,8 +626,6 @@ private:
 		if (m_rootView.address != 0u) visitor(m_rootView);
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
 	}
-	void returnToResumer(const CallValueSource& values);
-	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallValueSource&);
 
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
 	InstructionObserverBinding m_instructionObserver;

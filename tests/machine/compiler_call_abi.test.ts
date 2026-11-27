@@ -95,6 +95,17 @@ test('an authored exception branch can emit RFE without returning a Lua value', 
 	assert.throws(() => compileLuaSource('blua32.rfe(1)'), /rfe expects 0 arguments/);
 });
 
+for (const optLevel of [0, 3] as const) test(`SVC can expose the original open result window (O${optLevel})`, () => {
+	const compiled = compileLuaSource('local function entry(fn, ...) blua32.svc_results(fn(...)) end; return entry', 'svc-results.lua', optLevel);
+	const image = linkTestSystemBlua32(compiled);
+	const entry = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':entry'));
+	const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[entry]]);
+	assert.match(listing, /KSMI r(\d+), (\d+)[\s\S]*CALL r\2, \*, \*[^\n]*\n[^\n]*SVC r\1\b/);
+	assert.equal(listing.match(/\bCALL /g)?.length, 1);
+	assert.throws(() => compileLuaSource('local function f() end; blua32.svc_results((f()))'), /expects one open result expression/);
+	assert.throws(() => compileLuaSource('local function f() end; return blua32.svc_results(f())'), /statement-only/);
+});
+
 test('fixed call arguments are produced in adjacent slots, not copied through a second argument range', () => {
 	const compiled = compileLuaSource('local f = function(a, b) return a + b end\nreturn f(7, 11)');
 	const image = linkTestSystemBlua32(compiled);

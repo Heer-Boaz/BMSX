@@ -725,7 +725,7 @@ Thread& CPU::bindThread(u32 address, bool authored) {
 		if (authored) bindPhysicalFrames(*retained);
 		return *retained;
 	}
-	// A transfer may still borrow the current bank for arguments/results.
+	// Keep the currently selected view while binding the next one.
 	auto& view = m_activeThread == &m_transferViews[0] ? m_transferViews[1] : m_transferViews[0];
 	view.select(address);
 	bindPhysicalFrames(view);
@@ -1367,100 +1367,18 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, address, ThreadField::Status))));
 			break;
 		}
-		case BuiltinFunctionId::CoroutineResume:
-		case BuiltinFunctionId::CoroutineYield:
-			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
 	}
 }
 
-void CPU::returnToResumer(const CallValueSource& source) {
-	Thread* thread = m_activeThread;
-	auto roots = acquireLocalRoots();
-	trackLocalRoot(valueThread(thread->address));
-	Thread* resumer = &bindThread(thread->resumer());
-	m_activeThread = resumer;
-	resumeFrameBank();
-	resumer->setStatus(ThreadStatus::Running);
-	CallFrame& caller = *resumer->currentFrame;
-	const auto result = resumer->transferResult();
-	const int count = result.selected(source.count + 1);
-	if (count > 0) {
-		ensureRegisterCapacity(caller, result.base + count - 1);
-		const auto values = source.values();
-		caller.registers.set(result.base, valueBool(true));
-		const int copied = std::min(source.count, count - 1);
-		values.placeInto(caller.registers, result.base + 1, copied, count - 1 - copied);
-	}
-	caller.placeResultTop(result, count);
-	thread->setResumer(0u);
-	m_runSignals |= RunThreadSwitch | RunYield;
-	instructionBudgetRemaining -= count;
-}
-
-void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement result, const CallValueSource& arguments) {
-	Thread* thread = m_activeThread;
-	if (id == BuiltinFunctionId::CoroutineYield) {
-		if (thread->resumer() == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		thread->setTransferResult(result);
-		thread->setStatus(ThreadStatus::Suspended);
-		returnToResumer(arguments);
-		return;
-	}
-	const Value targetValue = arguments.values()[0];
-	if (!valueIsThread(targetValue)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 targetAddress = asThread(targetValue, m_heap);
-	if (targetAddress == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const auto status = static_cast<ThreadStatus>(ThreadRecord::read(m_memory, targetAddress, ThreadField::Status));
-	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
-	if (exceptionActive || (status != ThreadStatus::New && status != ThreadStatus::Suspended)) {
-		auto scratch = acquireBuiltinResultScratch();
-		BuiltinResults& out = scratch.get();
-		out.push_back(valueBool(false));
-		out.push_back(valueString(m_stringPool.intern(exceptionActive ? "cannot resume coroutine across a hardware exception" : "cannot resume non-suspended coroutine")));
-		writeReturnValues(caller, result, BuiltinArgsView(out.data(), out.size()));
-		return;
-	}
-	const bool fresh = status == ThreadStatus::New;
-	Thread* target = &bindThread(targetAddress);
-	thread->setTransferResult(result);
-	thread->setStatus(ThreadStatus::Normal);
-	target->setResumer(thread->address);
-	target->setStatus(ThreadStatus::Running);
-	m_activeThread = target;
-	const auto supplied = arguments.tail(1);
-	if (fresh) {
-		const auto closure = m_heap.closureRecordAddress(target->entry());
-		// The resumer owns the argument slots while the new Thread
-		// owns its Entry. Let the existing prepared CALL acquire space.
-		const auto* frame = supplied.frame
-			? pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u)
-			: pushFrame(closure, supplied.values(), {}, 0u, 0u, true);
-		if (!frame) return;
-		target->setEntry(0u);
-	} else {
-		resumeFrameBank();
-		CallFrame& frame = *target->currentFrame;
-		if (supplied.frame) writeReturnValuesFromRegisters(frame, target->transferResult(), *supplied.frame, supplied.base, supplied.count);
-		else writeReturnValues(frame, target->transferResult(), supplied.values());
-	}
-	m_runSignals |= RunThreadSwitch | RunYield;
-}
-
-void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallValueSource& arguments) {
+void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, BuiltinArgsView arguments) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
-	if (fn.id == BuiltinFunctionId::CoroutineResume || fn.id == BuiltinFunctionId::CoroutineYield) {
-		runCoroutineTransfer(fn.id, frame, result, arguments);
-		return;
-	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
-	callBuiltinFunction(fn, arguments.values(), out);
-	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
-		writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
-	}
+	callBuiltinFunction(fn, arguments, out);
+	writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
 }
 
 void CPU::runBuiltinNextValue(Value target, Value key, BuiltinResults& out) {
@@ -2829,9 +2747,7 @@ CPU::FunctionActivation CPU::resolveFunctionActivation(u32 closure, u32 codeFunc
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
 	CallResultPlacement result, u32 callSitePc, u32 codeFunction) {
 	const auto [image, functionRecord] = resolveFunctionActivation(closure, codeFunction);
-	const int callerArgBase = caller.stackBase() + argBase;
-	const bool sharedStack = caller.thread == m_activeThread;
-	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
+	const int argumentBase = caller.stackBase() + argBase;
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, argCount, functionRecord.entry);
 	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
@@ -2845,27 +2761,14 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const size_t end = placement.stackEnd();
 	if (!thread.frameSpaceFits(end)) {
 		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
-		if (sharedStack) {
-			enterRegisterWindowException(caller, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, OpCode::CALL, argBase - 1);
-			return nullptr;
-		}
-		const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
-		if (function) {
-			prepareFrameEntry(function, entry, callerArgBase, argCount, placement.relocatesFormals);
-			return nullptr;
-		}
-		// A first resumed Thread has no frame in which to trap. The
-		// ordinary resumer receives failed admission.
-		if (!sharedStack && thread.frameDepth() == 0u) throw LuaOutOfMemorySignal{};
-		enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		enterRegisterWindowException(caller, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, OpCode::CALL, argBase - 1);
 		return nullptr;
 	}
 	auto* frame = thread.acquireFrame();
 	frame->executionImage = image;
 	frame->initializeControl(entry);
 	const auto [copied, padded] = placement.formals;
-	if (sharedStack) placeSharedFormals(*frame, callerArgBase, copied, padded, placement.relocatesFormals);
-	else placeForeignFormals(*frame, caller.thread->stack, callerArgBase, copied, padded, placement.varargBase, placement.varargCount);
+	placeSharedFormals(*frame, argumentBase, copied, padded, placement.relocatesFormals);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
@@ -2881,40 +2784,27 @@ void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded
 	instructionBudgetRemaining -= relocate ? copied + padded : padded;
 }
 
-void CPU::placeForeignFormals(CallFrame& frame, const ValueSpan& source, int first, int copied, int padded,
-	int varargBase, int extras) {
-	frame.registers.copyFrom(source, 0, first, copied, padded);
-	if (extras != 0) frame.thread->stack.copyFrom(source, varargBase, first + copied + padded, extras);
-	instructionBudgetRemaining -= copied + padded + extras;
-}
-
-void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, u32 sourceSlot,
-	u32 supplied, bool relocate, BuiltinArgsView detached) {
+void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, BuiltinArgsView arguments) {
 	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 	entry.writeWords([&](FrameField field, u32 word) {
 		m_memory.writeRamRecordWord(prepared + static_cast<u32>(field), word);
 	});
-	m_memory.writeRamRecordPair(prepared + static_cast<u32>(PreparedFrameField::SourceSlot), sourceSlot, supplied);
-	m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals), relocate);
-	u32 roots = entry.closure;
-	if (sourceSlot == PREPARED_FRAME_DETACHED_SOURCE) {
-		const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
-		const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
-		for (u32 slot = 0; slot < supplied; ++slot) {
-			const Value value = detached[slot];
-			m_memory.writeRamRecordWord(words + 4u * slot, valuePayload(value));
-			m_memory.writeRamRecordByte(tags + slot, static_cast<u8>(valueTag(value)));
-		}
-		roots = prepared | PREPARED_FRAME_SCOPE_TAG;
+	const u32 supplied = static_cast<u32>(arguments.size());
+	m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied), supplied);
+	const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
+	const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
+	for (u32 slot = 0; slot < supplied; ++slot) {
+		const Value value = arguments[slot];
+		m_memory.writeRamRecordWord(words + 4u * slot, valuePayload(value));
+		m_memory.writeRamRecordByte(tags + slot, static_cast<u8>(valueTag(value)));
 	}
 	beginFrameSpaceAcquisition(function, entry.stackBase + entry.capacity, static_cast<u32>(m_activeThread->frameDepth()) + 2u,
-		roots, FRAME_RESIDENT_PREPARED_ENTRY);
+		prepared | PREPARED_FRAME_SCOPE_TAG, FRAME_RESIDENT_PREPARED_ENTRY);
 }
 
 void CPU::enterPreparedFrame() {
 	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 	auto& thread = *m_activeThread;
-	const bool firstResume = thread.frameDepth() == 0u;
 	auto& frame = *thread.acquireFrame();
 	frame.applyPreparedControl(prepared);
 	const auto domain = frame.savedExecutionBank();
@@ -2922,31 +2812,19 @@ void CPU::enterPreparedFrame() {
 	const int params = frame.readWindow(FrameField::Top);
 	const int supplied = static_cast<int>(m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::Supplied)));
 	const int copied = std::min(params, supplied);
-	const u32 sourceSlot = m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::SourceSlot));
-	if (sourceSlot == PREPARED_FRAME_DETACHED_SOURCE) {
-		const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
-		const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
-		const auto source = [&](int index) {
-			return valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tags + index)), m_memory.readRamRecordWord(words + 4u * index));
-		};
-		for (int slot = 0; slot < copied; ++slot) frame.registers.set(slot, source(slot));
-		frame.registers.clear(copied, params - copied);
-		const int extras = frame.varargCount(), base = frame.readWindow(FrameField::VarargBase);
-		for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
-		instructionBudgetRemaining -= params + extras;
-	} else if (firstResume) {
-		// The source is the physical resumer's stack, not a saved host view.
-		const auto& source = bindThread(thread.resumer()).stack;
-		placeForeignFormals(frame, source, static_cast<int>(sourceSlot), copied, params - copied,
-			frame.readWindow(FrameField::VarargBase), frame.varargCount());
-	} else {
-		placeSharedFormals(frame, static_cast<int>(sourceSlot), copied, params - copied,
-			m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
-	}
+	const u32 words = prepared + static_cast<u32>(PreparedFrameField::Payloads);
+	const u32 tags = prepared + static_cast<u32>(PreparedFrameField::Tags);
+	const auto source = [&](int index) {
+		return valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordByte(tags + index)), m_memory.readRamRecordWord(words + 4u * index));
+	};
+	for (int slot = 0; slot < copied; ++slot) frame.registers.set(slot, source(slot));
+	frame.registers.clear(copied, params - copied);
+	const int extras = frame.varargCount(), base = frame.readWindow(FrameField::VarargBase);
+	for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
+	instructionBudgetRemaining -= params + extras;
 	thread.setStackTop(frame.stackBase() + frame.stackCapacity());
 	thread.enterFrame(&frame);
 	latchActiveExecutionImage(domain, frame.executionImage);
-	if (firstResume) thread.setEntry(0u);
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
@@ -2971,7 +2849,7 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 			enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return nullptr;
 		}
-		prepareFrameEntry(function, entry, PREPARED_FRAME_DETACHED_SOURCE, static_cast<u32>(argCount), placement.relocatesFormals, args);
+		prepareFrameEntry(function, entry, args);
 		return nullptr;
 	}
 	auto* frame = thread.acquireFrame();
@@ -2988,18 +2866,6 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
 	return frame;
-}
-
-void CPU::writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement result, const CallFrame& source, int sourceBase, int sourceCount) {
-	const int base = result.base;
-	const auto placement = ValuePlacement::fit(sourceCount, result.selected(sourceCount));
-	if (placement.count() > 0) {
-		ValueSpan& registers = ensureRegisterCapacity(frame, base + placement.count() - 1);
-		// Backing growth can relocate both views; their stack offsets stay fixed.
-		registers.copyFrom(source.registers, base, sourceBase, placement.copied, placement.padded);
-	}
-	frame.placeResultTop(result, placement.count());
-	instructionBudgetRemaining -= placement.count();
 }
 
 void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, BuiltinArgsView values) {

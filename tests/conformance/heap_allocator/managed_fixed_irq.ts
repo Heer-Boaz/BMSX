@@ -34,7 +34,8 @@ end
 ${user ? `cop0.irq_vector = mem[${BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET}]` : ''}
 local creation<const> = require('kernel/thread_create')
 local co<const> = creation.create_coroutine(body)
-local ok<const>, value<const> = __bmsx_coroutine_resume(co, 33)
+local coroutine_entries<const> = require('bmsx/startup')
+local ok<const>, value<const> = blua32.closure(coroutine_entries.coroutine_resume)(co, 33)
 if not ok then return -1 end
 return value
 `;

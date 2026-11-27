@@ -33,6 +33,10 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 	{ symbol: 'protected_body', path: 'kernel/protected_body', callable: true },
 	{ symbol: 'protected_failure', path: 'kernel/protected_failure' },
 	{ symbol: 'protected_handler', path: 'kernel/protected_handler' },
+	{ symbol: 'coroutine_resume', path: 'kernel/coroutine_resume' },
+	{ symbol: 'coroutine_yield', path: 'kernel/coroutine_yield' },
+	{ symbol: 'coroutine_yieldable', path: 'kernel/coroutine_yieldable', callable: true },
+	{ symbol: 'coroutine_entry', path: 'kernel/coroutine_entry' },
 ];
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {

@@ -600,65 +600,60 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 	}
 }
 
-void yieldingBuiltinIndexRestoresItsPlacement() {
+void suspendedIndexRestoresItsPlacement() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	const auto put = [&](u32 word, OpCode op, int a, int b, int c) {
+	const auto put = [&](u32 word, OpCode op, int a = 0, int b = 0, int c = 0) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c);
 	};
-	put(0, OpCode::MOV, 3, 12, 0); put(1, OpCode::MOV, 4, 0, 0); put(2, OpCode::MOV, 5, 13, 0);
-	put(3, OpCode::CALL, 3, 3, 4); // resume(receiver) takes status, receiver, key
-	put(4, OpCode::MOV, 3, 12, 0); put(5, OpCode::MOV, 4, 0, 0); put(6, OpCode::K1, 5, 0, 0);
-	put(7, OpCode::CALL, 3, 3, 3); // resume(1) supplies the result of the in-flight index
-	put(8, OpCode::HALT, 0, 0, 0);
-	put(64, OpCode::K1, 10, 0, 0);
-	put(65, OpCode::WIDE, 0, 0, 0); put(66, OpCode::GETFIELD, 0, 0, 0);
-	put(67, OpCode::RET, 0, 2, 0);
+	put(0, OpCode::K1, 10);
+	put(1, OpCode::WIDE); put(2, OpCode::SELF, 0);
+	put(3, OpCode::HALT);
+	put(64, OpCode::HALT);
+	put(65, OpCode::RET, 0, 2);
 	image.constants = {std::string("field")};
-	image.functions = {{.firstWord=0, .wordCount=9, .maxStack=16}, {.firstWord=64, .wordCount=4, .numParams=1, .maxStack=12}};
+	image.functions = {{.firstWord=0, .wordCount=4, .maxStack=12}, {.firstWord=64, .wordCount=2, .numParams=2, .maxStack=2}};
 	Machine generated(image, false), scalar(image, true);
 	const std::array machines{&generated, &scalar};
 	for (auto* m : machines) {
 		auto& cpu = m->cpu;
 		const u32 entry = test::seedTestCapturedClosure(cpu, m->rom.functionAddresses[1], {});
-		auto* frame = cpu.activeThread()->currentFrame;
 		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
+		meta.setStringKey(cpu.stringPool().intern("__index"), valueClosure(entry));
 		root.setMetatableAddress(meta.address());
-		const u32 thread = bmsx::test::allocateThreadRecordReference(cpu, entry);
-		frame->registers.set(0, valueThread(thread));
-		// Isolate the yielding index operation from first-resume allocation.
-		cpu.luaHeap().reserveThreadFrameStorage(thread, image.functions[1].maxStack, THREAD_INITIAL_FRAMES, valueClosure(entry));
-		frame->registers.set(12, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
-		frame->registers.set(13, valueTable(root.address()));
-		frame->extendTop(14);
+		auto* thread = cpu.rootThread();
+		cpu.luaHeap().reserveThreadFrameStorage(thread->address, 32u, 4u, valueClosure(entry));
+		thread->bindStack();
+		thread->currentFrame->registers.set(0, valueTable(root.address()));
+		thread->currentFrame->extendTop(1);
 	}
-	for (int i = 0; i < 6; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
-	const u32 rootThread = generated.cpu.rootThread()->address;
-	require(generated.cpu.activeThread()->address == rootThread
-		&& generated.cpu.readFrameRegister(0, 3) == valueBool(true)
-		&& generated.cpu.readFrameRegister(0, 4) == generated.cpu.readFrameRegister(0, 13)
-		&& generated.cpu.readFrameRegister(0, 5) == keyFor(generated.cpu, KeyKind::String),
-		"direct coroutine.yield as __index yields the original receiver and key through ordinary resume");
+	for (int grant = 0; grant < 12 && !generated.cpu.isHaltedUntilIrq(); ++grant)
+		test::runCpuParity(generated.cpu, scalar.cpu, 1);
+	const auto* indexer = generated.cpu.activeThread()->currentFrame;
+	require(generated.cpu.isHaltedUntilIrq() && generated.cpu.getFrameDepth() == 2
+		&& indexer->readControl(FrameField::Function) == generated.rom.functionAddresses[1]
+		&& indexer->registers.get(0) == indexer->previous->registers.get(1)
+		&& indexer->registers.get(1) == keyFor(generated.cpu, KeyKind::String),
+		"SELF's ordinary indexer suspends with the original receiver and key");
 	const std::array ram{generated.memory.captureSaveState(), scalar.memory.captureSaveState()};
 	const std::array cpu{generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState()};
 	for (bool replay : {false, true}) {
 		if (replay) for (size_t i = 0; i < machines.size(); ++i) {
 			machines[i]->memory.restoreSaveState(ram[i]); machines[i]->cpu.restoreRuntimeState(cpu[i]);
 		}
-		for (int i = 0; i < 4; ++i) test::runCpuParity(generated.cpu, scalar.cpu, 1);
-		const auto* resumed = generated.cpu.activeThread()->currentFrame;
-		require(generated.cpu.activeThread()->address != rootThread
-			&& resumed->readControl(FrameField::Pc) == generated.rom.textAddress + 67 * INSTRUCTION_BYTES
-			&& resumed->readWindow(FrameField::Top) == 11 && resumed->registers.get(0) == valueInteger(1)
-			&& resumed->registers.get(10) == valueInteger(1),
-			"resume fills only the suspended index result without truncating its live guest window");
+		for (auto* machine : machines) {
+			machine->cpu.activeThread()->currentFrame->registers.set(0, valueInteger(17));
+			machine->cpu.clearHaltUntilIrq();
+		}
 		test::runCpuParity(generated.cpu, scalar.cpu, 1);
-		require(generated.cpu.activeThread()->address == rootThread
-			&& generated.cpu.readFrameRegister(0, 3) == valueBool(true) && generated.cpu.readFrameRegister(0, 4) == valueInteger(1),
-			"the coroutine completes the ordinary read using the value supplied by resume");
+		const auto* caller = generated.cpu.activeThread()->currentFrame;
+		require(generated.cpu.getFrameDepth() == 1
+			&& caller->readControl(FrameField::Pc) == generated.rom.textAddress + 3 * INSTRUCTION_BYTES
+			&& caller->readWindow(FrameField::Top) == 11 && caller->registers.get(0) == valueInteger(17)
+			&& valueIsTable(caller->registers.get(1)) && caller->registers.get(10) == valueInteger(1),
+			"the resumed indexer fills only the selected result without shortening the live caller window");
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
-		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "suspended and restored transfer has identical guest state");
+		require(test::sameLanguageRam(generated.cpu, scalar.cpu), "suspended and restored indexers have identical guest state");
 	}
 }
 
@@ -708,7 +703,7 @@ int main() {
 	try {
 		grantsAndRestore(); integerStoreCensus(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
-		yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
+		suspendedIndexRestoresItsPlacement(); stringReceiver();
 	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 	return 0;

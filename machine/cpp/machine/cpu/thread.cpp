@@ -37,12 +37,6 @@ u32 Thread::resumer() const {
 }
 void Thread::setResumer(u32 thread) { write(ThreadField::Resumer, thread); }
 
-CallResultPlacement Thread::transferResult() const {
-	return {static_cast<i32>(read(ThreadField::CallBase)), read(ThreadField::ReturnCount)};
-}
-void Thread::setTransferResult(CallResultPlacement result) {
-	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::CallBase), static_cast<u32>(result.base), result.word);
-}
 Value Thread::error() const { return ThreadRecord::error(heap.memory, address); }
 void Thread::setError(Value value) {
 	heap.memory.writeRamRecordPair(address + static_cast<u32>(ThreadField::ErrorWord), valuePayload(value), static_cast<u32>(valueTag(value)));

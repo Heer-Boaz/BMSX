@@ -13,8 +13,9 @@ const source = `
 require('base')
 local create<const> = require('kernel/thread_create').create_coroutine
 local store<const> = require('kernel/frame_upvalue').set_frame_upvalue
-local resume<const> = __bmsx_coroutine_resume
-local yield<const> = __bmsx_coroutine_yield
+local coroutine_entries<const> = require('bmsx/startup')
+local resume<const> = blua32.closure(coroutine_entries.coroutine_resume)
+local yield<const> = blua32.closure(coroutine_entries.coroutine_yield)
 local read<const> = __bmsx_get_frame_upvalue
 local protected_entries<const> = require('bmsx/startup')
 local protected<const> = blua32.closure(protected_entries.protected_call)
@@ -32,14 +33,14 @@ local function closed_thread(seed)
 end
 local closed = closed_thread(41)
 local ok, value = resume(closed)
-assert(ok and value == 41 and read(closed, 0, 0) == 41)
-store(closed, 0.0, 0.0, nil)
-assert(read(closed, 0, 0) == nil)
+assert(ok and value == 41 and read(closed, 1, 0) == 41)
+store(closed, 1.0, 0.0, nil)
+assert(read(closed, 1, 0) == nil)
 local replacement = { value = 53 }
-assert(select('#', store(closed, 0, 0, replacement)) == 0)
-local accepted, message = protected(store, closed, 0, 0.5, nil)
+assert(select('#', store(closed, 1, 0, replacement)) == 0)
+local accepted, message = protected(store, closed, 1, 0.5, nil)
 assert(not accepted and message == 'Invalid argument.')
-accepted, message = protected(store, closed, 0, 0x100000, nil)
+accepted, message = protected(store, closed, 1, 0x100000, nil)
 assert(not accepted and message == 'Invalid argument.')
 accepted, message = protected(store, 99, 0, 0, nil)
 assert(not accepted and message == 'Invalid argument.')
@@ -57,9 +58,9 @@ local open = create(function()
  return captured
 end)
 ok, value = resume(open)
-assert(ok and value == 73 and read(open, 0, 0) == 73)
-store(open, 0, 0, replacement)
-assert(read(open, 0, 0) == replacement)
+assert(ok and value == 73 and read(open, 1, 0) == 73)
+store(open, 1, 0, replacement)
+assert(read(open, 1, 0) == replacement)
 ok, value = resume(open)
 assert(ok and value == replacement)
 return true, true

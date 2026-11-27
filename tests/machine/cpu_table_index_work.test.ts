@@ -5,9 +5,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 
-import { hashCanonicalTableKey, ValueTag, valueBuiltinFunction, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { hashCanonicalTableKey, ValueTag, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
@@ -84,11 +83,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		}
 	});
 
-	test(`a directly yielding __index builtin survives coroutine checkpoint and preserves outer results (${backend})`, () => {
+	test(`a yielding __index function survives coroutine checkpoint and preserves outer results (${backend})`, () => {
 		const image = compileCoroutineTest(`
-local receiver = setmetatable({}, {})
-lookup_target = receiver
-halt_until_irq
+local receiver = setmetatable({}, { __index = coroutine.yield })
 local task = coroutine.create(function(a, b)
   local result = receiver.name
   return result, a, b
@@ -112,13 +109,6 @@ assert(v == false and held == 91)
 return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
 		runGuestToHalt(cpu, 1_000_000);
-		assert.ok(cpu.isHaltedUntilIrq());
-		const target = cpu.getGlobalByKey(cpu.stringPool.find('lookup_target')!);
-		assert.notEqual(target, valueNil());
-		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(valuePayload(target)), cpu.stringPool.intern('__index'),
-			valueBuiltinFunction(BuiltinFunctionId.CoroutineYield));
-		cpu.clearHaltUntilIrq();
-		runGuestToHalt(cpu, 100_000);
 		assert.ok(cpu.isHaltedUntilIrq());
 		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('waiting_to_resume')!), valueBool(true));
 		const saved = captureCpuCheckpoint(cpu);

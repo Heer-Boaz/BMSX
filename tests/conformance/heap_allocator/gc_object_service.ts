@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { residentFunctionAddress } from '../../helpers/heap_service_system';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
@@ -17,19 +21,21 @@ import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 const source = `
+require('fixture_sweep_boot')
+local co<const> = require('coroutine')
 local function grow(depth, value)
 	if depth == 0 then return value end
 	return grow(depth - 1, value + 1) + 1
 end
-local saved<const> = fixture_thread(function(seed)
+local saved<const> = co.create(function(seed)
 	local before<const> = grow(seed, 3)
-	local resumed<const> = fixture_yield(before)
+	local resumed<const> = co.yield(before)
 	return before + resumed
 end)
-local started, yielded = fixture_resume(saved, 24)
+local started, yielded = co.resume(saved, 24)
 fixture_live_thread = saved
 fixture_collect()
-local done, value = fixture_resume(saved, 7)
+local done, value = co.resume(saved, 7)
 if not started or not done then return -1 end
 return value, saved, yielded
 `;
@@ -37,13 +43,10 @@ return value, saved, yielded
 const boot = {
 	path: 'fixture_sweep_boot',
 	source: `
-local creation<const> = require('kernel/thread_create')
-fixture_thread = creation.create_coroutine
-fixture_resume = __bmsx_coroutine_resume
-fixture_yield = __bmsx_coroutine_yield
+local co<const> = require('coroutine')
 local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
 local make_dead_thread<const> = function(count)
-	return fixture_thread(function()
+	return co.create(function()
 		count = count + 1
 		return count
 	end)
@@ -56,26 +59,33 @@ fixture_dead_canonical = canonical
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-mkdirSync('tmp', { recursive: true });
-const directory = mkdtempSync(join('tmp', 'bmsx-full-gc_object_service-'));
+const directory = mkdtempSync(join(tmpdir(), 'bmsx-full-gc_object_service-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
 		const path = join(directory, `O${opt}`);
 		mkdirSync(path);
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [boot]));
+		const system = linkManagedTestSystem(source, opt, [...COROUTINE_FIRMWARE_MODULES, boot]);
+		const bytes = writeTestBlua32Rom(system);
 		const rom = join(path, 'system.rom');
-		writeFileSync(rom, system.romBytes);
-		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		writeFileSync(rom, bytes);
+		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		const startup = system.symbols.functionAddresses[system.symbols.metadata.functionIds.indexOf('module:main/startup')];
+		for (let grant = 0; grant < 256 && cpu.readFrameFunctionAddress(0) !== startup; ++grant) {
+			assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
+		}
+		assert.equal(cpu.readFrameFunctionAddress(0), startup);
+		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const head = () => memory.readRamRecordWord(control + OBJECT_HEAD);
 		const count = () => memory.readRamRecordWord(control + OBJECT_COUNT);
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
 		const occupied = () => cpu.luaHeap.usedBytes();
 		const tail = cpu.createTable(6, 16);
-		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
+		const driver = new FullGcConformance(runtime, native, path, rom,
+			residentFunctionAddress({ image: system.layout, symbols: system.symbols }, 'kernel/gc_full', 'collect_full'));
 		driver.launch();
 		assert.equal(gc.fullEpochs(), 1);
 		const live = cpu.getGlobalByKey(cpu.stringPool.intern('fixture_live_thread'));

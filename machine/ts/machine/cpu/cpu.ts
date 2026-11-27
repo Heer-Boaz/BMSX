@@ -3187,14 +3187,6 @@ export class CPU implements MappedPageInvalidator {
 		if (frame.returnToCompletionLatch || caller === null) {
 			this.charge(this.closeUpvalues(frame));
 			const completes = frame.returnToCompletionLatch;
-			if (!completes && this.activeThread.resumer !== 0) {
-				const finished = this.activeThread;
-				finished.status = ThreadStatus.Dead;
-				this.returnToResumer(source, first, total);
-				finished.stackTop = 0;
-				frame.thread.leaveFrame();
-				return false;
-			}
 			this.latchCompletionValues(source, first, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
@@ -3221,13 +3213,8 @@ export class CPU implements MappedPageInvalidator {
 
 	/** A receiver may discard part or all of the produced range without reading it. */
 	private returnSourceCount(frame: CallFrame, produced: number): number {
-		const thread = frame.thread;
-		if (frame.returnToCompletionLatch) return produced;
-		if (frame.previous !== null) return Math.min(produced, selectedCallResultCount(frame.returnCount, produced));
-		const resumer = thread.resumer;
-		if (resumer === 0) return produced;
-		const wanted = this.memory.readRamRecordWord(resumer + ThreadField.ReturnCount);
-		return Math.max(0, Math.min(produced, selectedCallResultCount(wanted, produced + 1) - 1));
+		if (frame.returnToCompletionLatch || frame.previous === null) return produced;
+		return Math.min(produced, selectedCallResultCount(frame.returnCount, produced));
 	}
 
 	private executeVararg(frame: CallFrame, a: number, b: number): boolean {
@@ -4305,7 +4292,7 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.activeThread;
 		const fromFrame = args instanceof CallFrame;
 		const fromSlots = fromFrame || args instanceof ValueSlots;
-		const shared = fromFrame && args.thread === thread;
+		const shared = fromFrame;
 		const first = fromFrame ? args.stackBase + argBase : argBase;
 		const count = fromSlots ? supplied : args.length;
 		const argumentBase = shared ? first : thread.stackTop;
@@ -4342,9 +4329,6 @@ export class CPU implements MappedPageInvalidator {
 				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], end, thread.frameDepth + 2, roots, FRAME_RESIDENT_PREPARED_ENTRY);
 				return null;
 			}
-			// A first resumed Thread has no frame in which to trap; report the
-			// failed admission through the ordinary resumer instead.
-			if (!shared && thread.frameDepth === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
 			this.enterSynchronousException(thread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return null;
 		}
@@ -4360,7 +4344,7 @@ export class CPU implements MappedPageInvalidator {
 			if (shared) {
 				this.placeSharedFormals(frame, first, copied, numParams - copied, vararg);
 			} else {
-				this.placeForeignFormals(frame, slots, first, copied, numParams - copied, varargBase, extras);
+				this.placeDetachedFormals(frame, slots, first, copied, numParams - copied, varargBase, extras);
 			}
 		} else {
 			for (let i = 0; i < copied; ++i) frame.registers.set(i, args[i]);
@@ -4382,7 +4366,7 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(relocate ? copied + padded : padded);
 	}
 
-	private placeForeignFormals(frame: CallFrame, source: ValueSlots, first: number, copied: number, padded: number,
+	private placeDetachedFormals(frame: CallFrame, source: ValueSlots, first: number, copied: number, padded: number,
 		varargBase: number, extras: number): void {
 		frame.registers.copyRangeFrom(source, 0, first, copied, padded);
 		if (extras !== 0) frame.thread.stackRegisters.copyRangeFrom(source, varargBase, first + copied + padded, extras);
@@ -4392,7 +4376,6 @@ export class CPU implements MappedPageInvalidator {
 	private enterPreparedFrame(): void {
 		const memory = this.memory, prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 		const thread = this.activeThread;
-		const firstResume = thread.frameDepth === 0;
 		const frame = thread.acquireFrame();
 		frame.applyPreparedControl(prepared);
 		const domain = frame.savedExecutionBank;
@@ -4413,11 +4396,6 @@ export class CPU implements MappedPageInvalidator {
 					memory.readRamRecordByte(tags + source), memory.readRamRecordWord(words + 4 * source));
 			}
 			this.charge(params + extras);
-		} else if (firstResume) {
-			// The source stack is the still-live resumer, not the private
-			// activation nor a saved host view. Acquire its current backing.
-			const source = this.bindThread(thread.resumer).stackRegisters;
-			this.placeForeignFormals(frame, source, sourceSlot, copied, params - copied, frame.varargBase, frame.varargCount);
 		} else {
 			this.placeSharedFormals(frame, sourceSlot, copied, params - copied,
 				memory.readRamRecordWord(prepared + PreparedFrameField.RelocateFormals) !== 0);
@@ -4425,7 +4403,6 @@ export class CPU implements MappedPageInvalidator {
 		thread.stackTop = frame.stackBase + frame.stackCapacity;
 		thread.enterFrame(frame);
 		this.latchActiveExecutionImage(domain, image);
-		if (firstResume) thread.entry = 0;
 	}
 
 	private closeUpvalues(frame: CallFrame, firstSlot = 0): number {
@@ -4626,98 +4603,15 @@ export class CPU implements MappedPageInvalidator {
 				out.push(valueInteger(this.readThreadStatus(address)));
 				break;
 			}
-			case BuiltinFunctionId.CoroutineResume:
-			case BuiltinFunctionId.CoroutineYield:
-				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;
 		}
 	}
 
-	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		const thread = this.activeThread;
-		const rootBase = this.localRoots.length;
-		this.localRoots.push(valueThread(thread.address));
-		try {
-			const resumer = this.bindThread(thread.resumer);
-			this.activeThread = resumer;
-			this.resumeFrameBank();
-			resumer.status = ThreadStatus.Running;
-			const caller = resumer.currentFrame!;
-			const callBase = resumer.callBase;
-			const returnCount = resumer.returnCount;
-			const count = selectedCallResultCount(returnCount, sourceCount + 1);
-			if (count > 0) {
-				const registers = this.ensureRegisterCapacity(caller, callBase + count - 1);
-				registers.setBoolean(callBase, true);
-				const copied = Math.min(sourceCount, count - 1);
-				registers.copyRangeFrom(source, callBase + 1, sourceBase, copied, count - copied - 1);
-			}
-			caller.setCallResultTop(callBase + count, returnCount);
-			thread.resumer = 0;
-			this.threadSwitchRequested = true;
-			this.yieldRequested = true;
-			this.charge(count);
-		} finally { this.localRoots.length = rootBase; }
-	}
-
-	private runCoroutineTransfer(id: BuiltinFunctionId, caller: CallFrame, callBase: number, returnCount: number,
-		argumentBase: number, argCount: number, detached?: ValueSlots): void {
-		const thread = this.activeThread;
-		const source = detached ?? caller.registers;
-		if (id === BuiltinFunctionId.CoroutineYield) {
-			if (thread.resumer === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			thread.setReturnWindow(callBase, returnCount);
-			thread.status = ThreadStatus.Suspended;
-			this.returnToResumer(source, argumentBase, argCount);
-			return;
-		}
-		if (argCount === 0 || source.getTag(argumentBase) !== ValueTag.Thread) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const targetAddress = source.getThread(argumentBase, this.gc);
-		if (targetAddress === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const status = this.readThreadStatus(targetAddress);
-		const exceptionActive = this.readExceptionReturnFrameDepth() !== -1;
-		if (exceptionActive || (status !== ThreadStatus.New && status !== ThreadStatus.Suspended)) {
-			const results = this.acquireBuiltinResults();
-			try {
-				results.push(valueBool(false));
-				results.push(valueString(this.stringPool.intern(exceptionActive ? 'cannot resume coroutine across a hardware exception' : 'cannot resume non-suspended coroutine')));
-				this.writeReturnValuesFromRegisters(caller, callBase, returnCount, results.slots, 0, results.length);
-			} finally { this.releaseBuiltinResults(results); }
-			return;
-		}
-		const target = this.bindThread(targetAddress);
-		const fresh = status === ThreadStatus.New;
-		thread.setReturnWindow(callBase, returnCount);
-		thread.status = ThreadStatus.Normal;
-		target.resumer = thread.address;
-		target.status = ThreadStatus.Running;
-		this.activeThread = target;
-		if (fresh) {
-			const closure = this.gc.closureRecordAddress(target.entry);
-			// The resumer owns the argument slots while the new Thread
-			// owns its Entry. Let the existing prepared CALL acquire space.
-			if (this.pushFrame(closure, detached ?? caller, 0, 0, false, false, 0, argumentBase + 1, argCount - 1, true) === null) return;
-			target.entry = 0;
-		} else {
-			this.resumeFrameBank();
-			const frame = target.currentFrame!;
-			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, source, argumentBase + 1, argCount - 1);
-		}
-		this.threadSwitchRequested = true;
-		this.yieldRequested = true;
-	}
-
 	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number,
 		detached?: ValueSlots, argumentBase = callBase + 1): void {
 		this.charge(BUILTIN_FUNCTIONS[id].cost.base);
-		if (id === BuiltinFunctionId.CoroutineResume || id === BuiltinFunctionId.CoroutineYield) {
-			this.runCoroutineTransfer(id, frame, callBase, returnCount, argumentBase, argCount, detached);
-			return;
-		}
 		const builtinArgs = this.acquireRegisterBuiltinArgs();
 		const results = this.acquireBuiltinResults();
 		try {
