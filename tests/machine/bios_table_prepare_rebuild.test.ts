@@ -4,8 +4,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
+import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRebuild, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -20,7 +23,7 @@ import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/table_prepare_rebuild', port = `machine/bios/${MODULE}.lua`, entrySource = 'halt_until_irq';
 const basis = 'edfe988ff624b541b9162691b5d8bdae295b70bc';
-const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/table_create', 'kernel/table_reinsert', MODULE].map(path => {
+const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/table_create', 'kernel/table_reinsert', 'kernel/table_assignment', MODULE].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
 	return { path, source, chunk: parseLuaChunk(source, path) };
 });
@@ -31,7 +34,7 @@ const dirty = 0x9d;
 function fixture(optLevel: 0 | 3) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const roots = ['prepare_table_rebuild', 'place_table_rebuild'].map(operation => {
+	const roots = ['prepare_table_rebuild', 'place_table_rebuild', 'publish_table_rebuild'].map(operation => {
 		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === operation);
 		assert.ok(symbol);
 		const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
@@ -73,21 +76,45 @@ function fixture(optLevel: 0 | 3) {
 		assert.ok(used > 0);
 		return used;
 	}
-	function finish(expected: number) {
+	function retire(expected: number) {
 		let spent = 0;
 		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) spent += grant(256);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapServiceResult() | 0, expected);
+		assert.equal(cpu.readLuaFaultReasonWord(), 0);
+		return spent;
+	}
+	function compare() {
 		const actual = memory.ramData().subarray(first, last), native = oracle.memory.ramData().subarray(first, last);
 		if (Buffer.compare(actual, native) !== 0) {
 			const mismatch = actual.findIndex((value, i) => value !== native[i]);
 			assert.equal(actual[mismatch], native[mismatch], `private RAM differs at 0x${(first + mismatch).toString(16)}`);
 		}
+	}
+	function finish(expected: number) {
+		const spent = retire(expected);
+		compare();
 		return spent;
+	}
+	function beginPublication(job: TableRebuild, allowance: number) {
+		const record = job.record, management = cpu.heapAllocator.managementOffset();
+		const expected = oracle.gc.tables.advanceRebuild(job, allowance);
+		assert.equal(job.record, 0, 'the old operation reached its epilogue');
+		const oracleMemory = oracle.memory;
+		oracleMemory.writeRamRecordPair(jobOffset + 24, job.arrayCleared, job.cleared);
+		oracleMemory.writeRamRecordPair(jobOffset + 48, job.homes, job.cursor);
+		oracleMemory.writeRamRecordPair(jobOffset + 56, job.free, job.collisions);
+		// A pure keep-hash resize can enter the final prep grant with no
+		// placements; otherwise these fixtures reach publication via place.
+		const prepareOnly = job.source === 0 && job.storage === 0;
+		assert.ok(cpu.beginHeapService(linked.image.functions[roots[prepareOnly ? 0 : 1]].address, [record, jobOffset, allowance]));
+		retire(expected);
+		assert.ok(cpu.beginHeapService(linked.image.functions[roots[2]].address, [management, record, jobOffset, expected]));
+		return expected;
 	}
 	const frontiers = () => [memory.readRamRecordWord(jobOffset + 24), memory.readRamRecordWord(jobOffset + 28)];
 	const placement = () => [48, 52, 56, 60].map(offset => memory.readRamRecordWord(jobOffset + offset));
-	return { cpu, memory, same, seed, begin, grant, finish, frontiers, placement };
+	return { cpu, memory, same, seed, begin, grant, finish, frontiers, placement, beginPublication };
 }
 
 for (const opt of [0, 3] as const) {
@@ -258,16 +285,122 @@ for (const opt of [0, 3] as const) {
 	});
 }
 
+
+for (const opt of [0, 3] as const) {
+	test(`staged publication matches native detached Array, retained Hash, in-place shrink and zero Array at O${opt}`, () => {
+		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		for (const [kind, oldArray, array, keepHash] of [
+			['move', 1024, 2048, false],
+			['keep-hash', 1024, 2048, true],
+			['shrink', 1024, 512, false],
+			['zero-array', 1024, 0, false],
+		] as const) {
+			const oldHash = 128, hash = keepHash ? 0 : 256;
+			const record = f.same(cpu => cpu.createTable(oldArray, oldHash));
+			const oldBase = f.same(cpu => cpu.gc.tables.arrayAddress(record));
+			const oldStorage = f.same(cpu => cpu.gc.tables.hashAddress(record));
+			const base = array > oldArray ? f.same(cpu => cpu.heapAllocator.allocate(5 * array, true)) : oldBase;
+			const storage = keepHash ? 0 : f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+			const key = valueInteger(array === 0 ? 1025 : 3), value = valueInteger(787);
+			const j = Object.assign(new TableRebuild(), { record, source: keepHash ? 0 : oldStorage, count: keepHash ? 0 : oldHash,
+				storage, capacity: hash, arrayStorage: base, arraySlots: array, free: hash - 1 >>> 0, key, value });
+			f.same(cpu => {
+				cpu.gc.tables.set(record, valueInteger(1), valueInteger(11));
+				cpu.gc.tables.set(record, valueInteger(2), valueInteger(12));
+				cpu.gc.tables.set(record, valueInteger(oldArray), valueInteger(17));
+				cpu.gc.tables.set(record, valueInteger(-5), valueInteger(15));
+			});
+			f.seed(j);
+			const prepare = (hash * 14 + 15 >>> 4) + (array > oldArray ? (5 * array + 15 >>> 4) : 0);
+			// The zero-capacity Hash starts at zero, so only Array prep is paid.
+			// All shapes except keep-hash have a placement pass after prep.
+			if (keepHash) {
+				// The existing placement proof compares the post-prepare bytes
+				// against the old monolith only when a later phase will suspend.
+				// Use one partial transfer, then let the actual epilogue probe
+				// finish prepare in both implementations.
+				f.finish(f.begin(j, prepare - 1));
+			} else {
+				f.finish(f.begin(j, prepare));
+			}
+			f.same(cpu => {
+				// Relocation must invalidate a currently traced Table before
+				// changing that Table's header or killing its original extent.
+				cpu.memory.writeRamRecordByte(record + 1, 3);
+				cpu.memory.writeRamRecordPair(control + GC_TRACE_RECORD, record, 45);
+				cpu.memory.writeRamRecordWord(control + GC_MODE_META, record);
+			});
+			const chargedBefore = f.cpu.luaHeap.usedBytes();
+			const expected = f.beginPublication(j, 8192);
+			assert.equal(f.memory.readRamRecordWord(record + TableHeader.ArrayStorage), oldBase);
+			for (let i = 0; i < 4096 && f.memory.readRamRecordWord(record + TableHeader.Array) === oldArray; ++i) f.grant(1);
+			assert.ok(f.cpu.heapServiceActive());
+			assert.equal(f.memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
+			assert.equal(f.memory.readRamRecordWord(control + GC_MODE_META), 0);
+			assert.equal(f.memory.readRamRecordWord(control + GC_CHANGED_HEAD), (record & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
+			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Array), array);
+			assert.equal(f.memory.readRamRecordWord(record + TableHeader.ArrayStorage), array ? base : 0);
+			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), oldStorage, 'Array publishes before Hash');
+			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore);
+			const checkpoint = captureCpuCheckpoint(f.cpu), paid = f.finish(expected);
+			assert.equal(f.cpu.gc.tables.get(record, key), value);
+			assert.equal(f.cpu.gc.tables.get(record, valueInteger(-5)), valueInteger(15));
+			assert.equal(f.cpu.gc.tables.get(record, valueInteger(oldArray)), valueInteger(17));
+			assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), keepHash ? oldStorage : storage);
+			assert.equal(f.cpu.luaHeap.usedBytes(), chargedBefore + TableRecords.allocationCharge(array, keepHash ? oldHash : hash) - TableRecords.allocationCharge(oldArray, oldHash));
+			if (array !== 0) assert.equal(f.memory.readRamRecordWord(record + TableHeader.Length), 3);
+			restoreCpuCheckpoint(f.cpu, checkpoint);
+			assert.equal(f.finish(expected), paid);
+		}
+	});
+
+	test(`staged Hash publication invalidates its own method cache before marking inserted String edges at O${opt}`, () => {
+		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+		const oldHash = 128, hash = 256, record = f.same(cpu => cpu.createTable(0, oldHash));
+		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
+		const storage = f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+		const key = f.cpu.gc.tables.newIndexKey, value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
+		f.same(cpu => {
+			cpu.gc.tables.set(record, valueInteger(-10), valueInteger(40));
+			cpu.stringPool.beginReachabilityEpoch();
+			cpu.stringPool.resumeMarkWork(3);
+			cpu.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
+			cpu.memory.writeRamRecordByte(record + 1, 3);
+		});
+		assert.equal(f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent), 1);
+		const j = Object.assign(new TableRebuild(), { record, source, count: oldHash, storage, capacity: hash, free: hash - 1, key, value });
+		f.seed(j);
+		f.finish(f.begin(j, hash * 14 + 15 >>> 4));
+		const expected = f.beginPublication(j, 4096);
+		const oldValueMark = f.memory.readRamRecordByte(valuePayload(value) + 1);
+		for (let i = 0; i < 4096 && f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent) !== 0; ++i) f.grant(1);
+		assert.ok(f.cpu.heapServiceActive());
+		assert.equal(f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent), 0);
+		assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), storage);
+		assert.equal(f.cpu.gc.tables.get(record, key), value);
+		assert.equal(f.memory.readRamRecordByte(valuePayload(value) + 1), oldValueMark);
+		const checkpoint = captureCpuCheckpoint(f.cpu), paid = f.finish(expected);
+		assert.notEqual(f.memory.readRamRecordByte(valuePayload(value) + 1), oldValueMark);
+		restoreCpuCheckpoint(f.cpu, checkpoint);
+		assert.equal(f.finish(expected), paid);
+	});
+}
+
 const pins = [
 	['T', 'machine/ts/machine/cpu/table.ts', '5de6ece7a84cd8e4218173055c0d658cc6db0c354cc716b5fc34d6cdf794000e'],
 	['C', 'machine/cpp/machine/cpu/table_rebuild.cpp', 'f3217b0930169913133560533ced527a5d0fe91b43b509da107413f11863de7f'],
 	['H', 'machine/cpp/machine/cpu/table.h', '833fac7494641af2da5008ffdbd007e265456e202ff400beaaf399b0de75e9a4'],
 	['J', 'machine/cpp/machine/cpu/table_rebuild.h', '3949c956a6d04499b9a4093613a170af13bef7dc8a558b4b0491140ba13c367b'],
+	['B', 'machine/cpp/machine/cpu/table.cpp', '61f4630adf5f3e0a610ea0e0f41f6b3d10e252a57987ea0b63b6186e53fd3dba'],
+	['U', 'machine/ts/machine/cpu/lua_heap.ts', '9fcad1e20049b69a9f89bc69bad1495fdda8034214903dd1f8d140cc845041de'],
+	['L', 'machine/cpp/machine/cpu/lua_heap.cpp', '0fb5c13cffa84c99fecf4530dd85dc60452274382db02f30cb394b0768d6c0b5'],
+	['A', 'machine/cpp/machine/cpu/heap_allocator.cpp', 'aea53d9b2fecb8ae6d17abda4987b08e2af8a4fdf9a8424c49e10fc84f9eb7a5'],
+	['D', 'machine/ts/machine/cpu/heap_allocator.ts', '79309f418c20016b037b26fae01b28c891c72a2ed155ba1f375d7bc11f6d42f1'],
 	['V', 'machine/ts/machine/cpu/value.ts', 'bdafe30a070405b98b673dfe76e0daad1384ccd87ee7ca26584eba734204c641'],
 	['W', 'machine/cpp/machine/cpu/value.h', 'cb211876c00637f49334db80b281d4af8a17f978bdceb736b6c9a177b9abe94e'],
 	['M', 'machine/ts/spec/bmsx/memory_map.ts', '00dbd23e01f06a9aaf126c55fa7ba6c3306b5ac86caa3adfa695b6b9360fe1f0'],
 ] as const;
-test('staged rebuild preparation and placement pin source operations and exact job lane offsets', () => {
+test('staged rebuild preparation, placement and publication pin source operations and exact job lane offsets', () => {
 	const source = modules.find(module => module.path === MODULE)!.source;
 	assert.ok(source.includes(`-- Source basis: ${basis}.`));
 	const references = new Map(pins.map(([key, file, digest]) => {
@@ -289,7 +422,7 @@ test('staged rebuild preparation and placement pin source operations and exact j
 			}
 		}
 	}
-	for (const [key, first, last, excluded] of [['T', 924, 1071, [929, 1002, 1030, 1057, 1058, 1060, 1071]], ['C', 6, 144, [84, 93]]] as const) {
+	for (const [key, first, last, excluded] of [['T', 924, 1091, [929, 1002, 1030, 1057, 1058, 1060, 1071, 1079, 1084]], ['C', 6, 163, [84, 93]]] as const) {
 		const reference = references.get(key)!;
 		for (let index = first; index <= last; ++index) {
 			if (/^\s*(?:$|\/\/|[{}]$)/.test(reference.lines[index - 1]) || (excluded as readonly number[]).includes(index)) continue;
@@ -303,4 +436,10 @@ test('staged rebuild preparation and placement pin source operations and exact j
 	const layout = types.resolve(port, { name: 'rebuild_prepare_job', arrayLengths: [], span }).struct!;
 	assert.equal(layout.size, 64);
 	for (const [index, name] of fields.entries()) assert.equal(layout.fields.get(name)!.offset, index * 4);
+	const header = types.resolve(port, { name: 'rebuild_array_header', arrayLengths: [], span }).struct!;
+	assert.equal(header.size, TableRecords.HEADER_BYTES);
+	for (const [field, offset] of [
+		['hash_storage', TableHeader.HashStorage], ['array_slots', TableHeader.Array], ['hash_slots', TableHeader.Hash],
+		['free', TableHeader.Free], ['array_storage', TableHeader.ArrayStorage],
+	] as const) assert.equal(header.fields.get(field)!.offset, offset);
 });

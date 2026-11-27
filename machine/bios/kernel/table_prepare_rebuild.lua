@@ -3,11 +3,15 @@ module<const>
 -- Source basis: edfe988ff624b541b9162691b5d8bdae295b70bc.
 -- T/C: TableRecords.advanceRebuild and TableRecord::advanceRebuild;
 -- H/J: Table and rebuild layouts; V/W: Values; M: RAM.
+-- B: C++ Table; U/L: LuaHeap; A/D: allocator adapters.
 -- The allowance is the original rebuilding policy's work budget, not
--- an instruction quota. The caller still owns final publication.
+-- an instruction quota. The caller owns admission and the interrupted activation.
 local fill<const> = require('kernel/table_create') -- T:954,958,968,981-982,992 C:31,35,44,57-58,68
 local slots<const> = require('kernel/table_reinsert') -- T:997,999-1000 C:63,74-75 H:258-262
 local allocator<const> = require('kernel/dlmalloc') -- T:102,994 C:70 H:274
+local barrier<const> = require('kernel/gc_barrier') -- T:1072 C:145
+local assignment<const> = require('kernel/table_assignment') -- T:1086-1089 C:159-161
+local layout<const> = require('kernel/gc_runtime_layout') -- M:6 T:1085 U:28-30 L:24-25
 local ram_base<const> = 0x08000000 -- T:932 M:6; private record port
 local ram_word_mask<const> = 0x003ffffc -- M:7-9 T:942-943 H:247,312
 local integer_tag<const> = 3 -- V:9-11 W:21-23
@@ -16,9 +20,12 @@ local byte_link_capacity<const> = 128 -- T:95,98 H:44,47
 local band_capacity<const> = 1024 -- T:97,990 H:46 C:66
 
 struct rebuild_array_header
-	before_array: u32[4] -- T:35-36 H:26-27
+	before_hash: u32[3] -- T:35-36 H:26-27
+	hash_storage: addr -- T:36,140-141 H:27,55 B:508-509
 	array_slots: u32 -- T:36,133,935 H:27,57 C:10
-	before_array_storage: u32[3] -- T:35-36 H:26-27
+	hash_slots: u32 -- T:36,134,141 H:27,58 B:510
+	length: u32 -- T:36,135 H:27
+	free: u32 -- T:36,142-143 H:27,60 B:511
 	array_storage: addr -- T:36,137,936 H:27,56 C:14
 end
 
@@ -329,9 +336,60 @@ local place_table_rebuild<const> = function(record, job_offset, allowance) -- T:
 	return allowance -- T:1070,1072 C:143,145; caller resumes at publication
 end
 
+
+-- Starts at the original epilogue: homes, collisions, and any shrinking
+-- tag move are complete. The pinned caller continues past this call only
+-- once; the native active-job sentinel is not a second ownership lane.
+local publish_table_rebuild<const> = function(management, record, job_offset, allowance) -- T:1072-1091 C:145-163
+	local job<const>: *rebuild_prepare_job = ram_base + job_offset -- T:41-46,930 J:12-16 C:6
+	local target<const>: *rebuild_array_header = ram_base + (record & ram_word_mask) -- T:121,935-936 H:247 M:9
+	local old_array<const>, old_base<const> = target.array_slots, target.array_storage -- T:935-936 C:10,14
+	local array_storage<const> = job.array_storage -- T:935-937 C:10-11,15
+	local array<const> = array_storage ~= 0 and job.array_slots or old_array -- T:935 C:10
+	local in_place<const> = array_storage ~= 0 and array_storage == old_base -- T:937 C:15
+	local shrinking<const> = array < old_array -- T:938 C:16
+	local arena<const> = management + layout.arena_offset -- A:20 D:25
+	barrier.table_entries_moved(management + layout.control_offset, record, 1) -- T:1072 C:145; existing C++ color write policy
+	local old_hash<const> = target.hash_slots -- T:1073 C:146
+	if array_storage ~= 0 then -- T:1074 C:147
+		if shrinking and array ~= 0 then -- T:1075 C:148
+			allocator.bmsx_dlmalloc_shrink(arena, old_base - ram_base, 5 * array) -- T:1075 C:148 A:68-69 D:70-72
+		elseif array == 0 or (old_array ~= 0 and not in_place) then -- T:1076 C:149
+			allocator.bmsx_dlmalloc_free(arena, old_base - ram_base) -- T:1076 C:149 A:59 D:62
+		end
+		target.array_storage = array ~= 0 and array_storage or 0 -- T:1077 C:150
+		target.array_slots = array -- T:1078 C:151
+	end
+	local key_tag<const>, key_word<const> = job.key_tag, job.key_word -- T:934,1080 V:23-24 C:13,153 W:29-30
+	local value_tag<const>, value_word<const> = job.value_tag, job.value_word -- T:1080 V:23-24 C:153 W:29-30
+	if key_tag == integer_tag and key_word > 0 and key_word - 1 < array then -- T:934,1080 C:13,153 H:200-202; positive index before unsigned extent
+		local base<const> = ram_base + ((array_storage ~= 0 and array_storage or old_base) & ram_word_mask) -- T:936 C:11-12 M:9
+		slots.internal.write_slot(base, base + 4 * array, key_word - 1, value_tag, value_word) -- T:1080 C:153 H:258-262
+	end
+	local source<const>, storage<const> = job.source, job.storage -- T:1081 C:154
+	if source ~= 0 or storage ~= 0 then -- T:1081 C:154
+		local capacity<const> = job.capacity -- T:1082 C:155
+		local mask<const> = capacity - 1 -- T:934,1083 C:9,156
+		target.hash_storage = storage -- T:141,1082 C:155 B:509
+		target.hash_slots = capacity -- T:142,1082 C:155 B:510
+		target.free = mask -- T:143,1082 C:155 B:511
+		if job.free ~= mask then target.free = job.free end -- T:1083 C:156
+	end
+	local previous<const> = 5 * old_array + 10 * old_hash -- T:120,1085 C:158 B:19,73-74
+	local requested<const> = 5 * array + 10 * target.hash_slots -- T:120,1085 C:158 B:19,73-74
+	if source ~= 0 then allocator.bmsx_dlmalloc_free(arena, source - ram_base) end -- T:1085 C:158 U:305-307 L:308-310
+	if previous ~= requested then -- T:1085 C:158 U:310-311 L:313-314
+		local occupied<const>: *u32 = ram_base + management + layout.occupied_offset -- T:1085 C:158 U:29 L:24
+		*occupied = *occupied - previous + requested -- T:1085 C:158 U:310-311 L:315-316
+	end
+	assignment.finish_table_insertion(management, record, key_tag, key_word, value_tag, value_word, 1) -- T:1086-1089 C:159-161
+	return allowance -- T:1090-1091 C:162-163; caller retires the original job by continuing past the epilogue
+end
+
 return {
 	internal = { transfer_extent = transfer_extent, move_extent = move_extent,
 		transfer_array = transfer_array, initialize_hash_trigger = initialize_hash_trigger, empty_tail_slots = empty_tail_slots },
 	prepare_table_rebuild = prepare_table_rebuild,
 	place_table_rebuild = place_table_rebuild,
+	publish_table_rebuild = publish_table_rebuild,
 }
