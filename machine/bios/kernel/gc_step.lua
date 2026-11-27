@@ -18,16 +18,18 @@ struct mark_quantum_context
 	limit: u32 -- C:1264
 end
 
-local finish_atomic<const> = function(management, operands_offset) -- C:689-702
+local finish_atomic<const> = function(management, operands_offset, account_quanta) -- C:689-712
 	local control<const> = management + layout.control_offset -- C:1270
 	local scoped = operands_offset -- C:697; 0 means the invocation has no explicit Table roots
 	local work = 0 -- C:696
 	repeat -- C:698
-		work = work + atomic.atomic_work(management, step_words, scoped) -- C:699
-		scoped = mark.internal.remark_stage(control) <= atomic.internal.weak_visits and operands_offset or 0 -- C:700 H:157,214
+		local chunk<const> = atomic.atomic_work(management, step_words, scoped) -- C:699,711
+		if account_quanta then gc.account_epoch_work(control, chunk) end -- C:712; scheduled maintenance publishes each source quantum
+		work = work + chunk -- C:699
+		scoped = operands_offset ~= 0 and mark.internal.remark_stage(control) <= atomic.internal.weak_visits and operands_offset or 0 -- C:700 H:157,214
 	until gc.internal.phase(control) ~= atomic_phase -- C:701
-	local accounted<const> = gc.account_epoch_work(control, work) -- C:702
-	return accounted -- C:702
+	if not account_quanta then gc.account_epoch_work(control, work) end -- C:702; stopped Direct and scoped passes publish once
+	return work -- C:702,712
 end
 
 local step<const> = function(management, limit, growing_thread, compact_threads, operands_offset) -- C:1006-1010,1229,1241-1242
@@ -35,7 +37,7 @@ local step<const> = function(management, limit, growing_thread, compact_threads,
 	local current<const> = gc.internal.phase(control) -- C:1008,1019,1093,1108
 	if current == atomic_phase then -- C:1008,1241
 		if operands_offset ~= 0 then -- C:1007-1008; Table admission uses the synchronous source pass
-			local work<const> = finish_atomic(management, operands_offset) -- C:689-702,1008
+			local work<const> = finish_atomic(management, operands_offset, false) -- C:689-702,1008
 			return work -- C:702,1008
 		end
 		local work<const> = atomic.atomic_work(management, limit, 0) -- C:712,1241

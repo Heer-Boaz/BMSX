@@ -2596,8 +2596,10 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const auto gcStage = cartLane == 0u && completion == HeapServiceBiosCallKind::Idle ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		// Debugger stepping accounts a pinned full collector as machine progress,
 		// not as a second cartridge instruction. The activation owns all phases.
-		const bool fullCollection = m_heapServiceView.firstFrame->readControl(FrameField::Function)
-			== m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::FullCollection)];
+		const u32 root = m_heapServiceView.firstFrame->readControl(FrameField::Function);
+		const auto& functions = m_systemImage->heapServiceFunctions;
+		const bool collection = root == functions[static_cast<size_t>(HeapServiceOperation::FullCollection)]
+			|| root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
 		m_runKind = kind;
 		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -2676,7 +2678,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (fullCollection || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
+		return (collection || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

@@ -622,82 +622,6 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	require(finish() == expected, "restoring the parked operation repeats its final mark and original store");
 }
 
-void testFinalCollectionRetainsTheMachineGrant() {
-	using namespace bmsx;
-	TickRuntimeFixture fixture;
-	auto& runtime = fixture.runtime;
-	auto& cpu = runtime.machine.cpu;
-	auto& heap = cpu.gcHeap();
-	auto& scheduler = runtime.frameScheduler;
-	constexpr int slots = 8192;
-	auto weak = cpu.createTable(slots, 0);
-	auto meta = cpu.createTable(0, 1);
-	meta.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
-	weak.setMetatableAddress(meta.address());
-	auto& frame = *cpu.rootThread()->currentFrame;
-	frame.registers.set(0, valueTable(weak.address()));
-	frame.setTop(1);
-	weak.setInteger(slots, valueTable(cpu.createTable().address()));
-	for (int step = 0; !heap.finalMarkPending() && step < 40; ++step)
-		heap.step(valueNil(), valueNil(), valueNil());
-	require(heap.finalMarkPending(), "the automatic final phase is ready to enter at the host boundary");
-	runtime.frameLoop.beginFrameState(runtime, 127, 0);
-	const i64 clock = runtime.machine.scheduler.nowCycles();
-	const i64 deadline = runtime.machine.scheduler.nextDeadline();
-	const auto pc = cpu.readFramePc(0);
-	const int cpuBudget = cpu.instructionBudgetRemaining;
-	require(scheduler.advanceLogicalTick(runtime, 400) == LogicalTickResult::Maintenance
-		&& heap.finalMarkPending(), "a logical tick offer performs one final quantum, not the entire pass");
-	const auto checkpoint = captureRuntimeSaveState(runtime);
-	const auto finish = [&] {
-		require(!scheduler.runCyclesToNextLogicalTick(runtime, 0) && heap.finalMarkPending(),
-			"resuming an exact CPU-clock grant does not advance the clock during the pause");
-		require(!scheduler.runDevicesToNextLogicalTick(runtime, 0),
-			"device-only ticks do not advance the paused machine");
-		for (int step = 0; heap.finalMarkPending() && step < 40; ++step) {
-			require(scheduler.advanceLogicalTick(runtime, 500) == LogicalTickResult::Maintenance,
-				"even the last collector quantum has its own outcome, not a guest tick");
-		}
-		require(!heap.finalMarkPending() && isNil(weak.getInteger(slots)), "the final pass cleared the unreachable value");
-		require(runtime.machine.scheduler.nowCycles() == clock && runtime.machine.scheduler.nextDeadline() == deadline
-			&& cpu.readFramePc(0) == pc && cpu.instructionBudgetRemaining == cpuBudget
-			&& runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetGranted == 127
-			&& runtime.frameLoop.frameState.cycleBudgetRemaining == 127 && scheduler.lastTickSequence == 0,
-			"collection does not execute the CPU, deliver a device deadline or accept another grant");
-		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	};
-	applyRuntimeSaveState(runtime, checkpoint);
-	const auto expected = finish();
-	applyRuntimeSaveState(runtime, checkpoint);
-	require(finish() == expected, "the suspended collector resumes identically after a full save/load");
-
-	applyRuntimeSaveState(runtime, checkpoint);
-	scheduler.run(runtime, 1.0);
-	require(runtime.machine.scheduler.nowCycles() == clock && scheduler.captureState().accumulatedHostTimeMs == 1.0,
-		"a real-time offer waits in the scheduler while only the collector progresses");
-	for (int step = 0; heap.finalMarkPending() && step < 40; ++step) {
-		const auto pulse = scheduler.maintenancePulseSequence();
-		scheduler.run(runtime, 0.0);
-		require(scheduler.maintenancePulseSequence() == pulse + 1u,
-			"including the last reoffer, only actual maintenance reports a pulse");
-	}
-	require(!heap.finalMarkPending() && runtime.machine.scheduler.nowCycles() == clock,
-		"finishing the last maintenance quantum does not advance guest time");
-	require(scheduler.captureState().accumulatedHostTimeMs == 1.0,
-		"reoffers of one slot do not mint additional nominal frame grants");
-	const auto marked = captureRuntimeSaveState(runtime);
-	const auto resume = [&] {
-		scheduler.run(runtime, 2.0);
-		require(runtime.machine.scheduler.nowCycles() == clock + 127
-			+ static_cast<i64>(3.0 * runtime.timing.cpuCyclesPerMillisecond),
-			"both the queued host offer and the first post-collection offer fund guest execution");
-		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	};
-	const auto resumed = resume();
-	applyRuntimeSaveState(runtime, marked);
-	require(resume() == resumed, "restoring just after final mark retains the same real-time frontier");
-}
-
 void testDeviceVblankDoesNotStartPhysicalCollection() {
 	using namespace bmsx;
 	TickRuntimeFixture fixture;
@@ -2096,7 +2020,6 @@ int main() {
 	testParkedTableWriteRetiresBeforeVblank(true);
 #endif
 	testParkedWriteRootsEnterAfterTheAtomicQueueTransfer();
-	testFinalCollectionRetainsTheMachineGrant();
 	testDeviceVblankDoesNotStartPhysicalCollection();
 	testRuntimeRestoreRearmsCpuGp0Wait();
 	testGpuRawExtensionWordCodec();

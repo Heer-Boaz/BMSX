@@ -191,12 +191,13 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::RetryFresh: return false;
 		case AllocationRecovery::Current:
 		case AllocationRecovery::Fresh: {
-			// The remaining native work belongs to stopped maintenance.
-			if (m_heap.finalMarkPending()) advanceFinalMark();
-			else {
-				const auto& services = m_systemImage->heapServiceFunctions;
+			const auto& services = m_systemImage->heapServiceFunctions;
+			const auto* resident = services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr;
+			if (m_heap.finalMarkPending()) {
+				m_heap.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage::MaintenanceTrace, resident);
+			} else {
 				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS, HeapServiceGcStage::AllocationRecoveryStringSweep,
-					services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
+					resident);
 			}
 			finishAllocationRecovery();
 			return true;
@@ -204,12 +205,6 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::None: BMSX_UNREACHABLE();
 	}
 	BMSX_UNREACHABLE();
-}
-
-void CPU::advanceFinalMark() {
-	const auto& services = m_systemImage->heapServiceFunctions;
-	m_heap.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage::MaintenanceTrace,
-		services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr);
 }
 
 void CPU::finishAllocationRecovery() {

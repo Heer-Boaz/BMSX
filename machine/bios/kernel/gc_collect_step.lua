@@ -16,7 +16,7 @@ local collect_step<const> = function(management, _source_cycles, _run_kind) -- C
 	local borrows_roots<const> = phase <= atomic_phase -- G:1122-1124,697-703
 	if borrows_roots then *effects = layout.publish_roots end -- G:1122-1124,1274-1276
 	if phase == atomic_phase then -- G:1007
-		collector.finish_atomic(management, 0) -- G:696-702; public Step supplies no scoped roots
+		collector.finish_atomic(management, 0, false) -- G:696-702; public Step supplies no scoped roots
 	else -- G:1008; the normal step owns one quantum
 		collector.step(management, collector.step_words, 0, 0, 0) -- C:287 T:284 G:1005-1008; no compact thread work
 	end

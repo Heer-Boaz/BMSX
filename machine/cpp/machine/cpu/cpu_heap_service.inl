@@ -49,6 +49,13 @@ u32 CPU::heapServiceResult() const {
 	return m_memory.readRamRecordWord(RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_RESULT_OFFSET);
 }
 
+bool CPU::beginStoppedFinalMark(CpuRunKind kind) {
+	if (heapServiceActive() || allocationParked() || !m_heap.stoppedFinalMarkPending()) return false;
+	const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
+	const std::array args{m_heapAllocator.managementOffset(), static_cast<u32>(kind)};
+	return beginHeapService(function, args);
+}
+
 bool CPU::beginHeapService(u32 functionAddress, std::span<const u32> args) {
 	if (heapServiceActive()) return false;
 	CallFrame& frame = prepareHeapServiceFrame(functionAddress, 0, static_cast<int>(args.size()), {}, std::nullopt);

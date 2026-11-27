@@ -10,7 +10,7 @@ import type {
 	InputControllerInputSource,
 	InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
-import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueString } from '../../machine/ts/machine/cpu/value';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -383,64 +383,6 @@ test('supervisor service completes and banks unread GPUREAD through the ordinary
 	assert.equal(memory.readMappedU32LE(IO_GX_GPU_GP0), 0x5555);
 	assert.equal(readback.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(scheduler.lastTickSequence, 0);
-});
-
-test('final collection advances the heap without accepting a new machine grant', () => {
-	const { runtime } = createTickRuntime();
-	const { cpu, scheduler: clock } = runtime.machine;
-	const { gc, stringPool } = cpu;
-	const scheduler = runtime.frameScheduler;
-	const slots = 8192, weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1);
-	gc.tables.setStringKey(meta, stringPool.intern('__mode'), valueString(stringPool.intern('v')));
-	gc.tables.setMetatableAddress(weak, meta);
-	const frame = cpu.rootThread.frameAtDepth(0);
-	frame.registers.setTable(0, weak);
-	frame.top = 1;
-	gc.tables.setInteger(weak, slots, valueTable(cpu.createTable()));
-	for (let step = 0; !gc.finalMarkPending() && step < 40; ++step) gc.step();
-	assert.equal(gc.finalMarkPending(), true);
-	runtime.frameLoop.beginFrameState(127, 0);
-	const before = [clock.nowCycles, clock.nextDeadline(), cpu.readFramePc(0), cpu.instructionBudgetRemaining];
-	assert.equal(scheduler.advanceLogicalTick(400), LogicalTickResult.Maintenance);
-	assert.equal(gc.finalMarkPending(), true, 'a single offer does not drain the final pass');
-	const checkpoint = captureRuntimeSaveState(runtime);
-	const finish = () => {
-		assert.equal(scheduler.runCyclesToNextLogicalTick(0), false);
-		assert.equal(gc.finalMarkPending(), true);
-		assert.equal(scheduler.runDevicesToNextLogicalTick(0), false);
-		for (let step = 0; gc.finalMarkPending() && step < 40; ++step) {
-			assert.equal(scheduler.advanceLogicalTick(500), LogicalTickResult.Maintenance);
-		}
-		assert.equal(gc.finalMarkPending(), false);
-		assert.equal(gc.tables.getInteger(weak, slots), valueNil());
-		assert.deepEqual([clock.nowCycles, clock.nextDeadline(), cpu.readFramePc(0), cpu.instructionBudgetRemaining], before);
-		assert.equal(runtime.frameLoop.frameActive, true);
-		assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, 127);
-		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 127);
-		assert.equal(scheduler.lastTickSequence, 0);
-		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	};
-	applyRuntimeSaveState(runtime, checkpoint);
-	const expected = finish();
-	applyRuntimeSaveState(runtime, checkpoint);
-	assert.ok(isDeepStrictEqual(finish(), expected), 'restore resumes at the same physical collection cursor');
-
-	applyRuntimeSaveState(runtime, checkpoint);
-	scheduler.run(1);
-	assert.equal(clock.nowCycles, before[0], 'only the collector progresses during a real-time offer');
-	assert.equal(scheduler.captureState().accumulatedHostTimeMs, 1);
-	for (let step = 0; gc.finalMarkPending() && step < 40; ++step) scheduler.run(0);
-	assert.equal(gc.finalMarkPending(), false);
-	assert.equal(clock.nowCycles, before[0], 'the last maintenance quantum does not advance the guest clock');
-	const marked = captureRuntimeSaveState(runtime);
-	const resume = () => {
-		scheduler.run(2);
-		assert.equal(clock.nowCycles, before[0] + 127 + Math.trunc(3 * runtime.timing.cpuCyclesPerMillisecond));
-		return encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	};
-	const resumed = resume();
-	applyRuntimeSaveState(runtime, marked);
-	assert.ok(isDeepStrictEqual(resume(), resumed), 'restoring just after final mark retains the same real-time frontier');
 });
 
 test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {

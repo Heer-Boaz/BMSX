@@ -49,7 +49,6 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	if (!backendBlocked && !m_backendServiceSuspended) accumulateHostTime(hostDeltaMs);
 	m_backendServiceSuspended = backendBlocked;
 	auto& cpu = runtime.machine.cpu;
-	auto& heap = cpu.gcHeap();
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || cpu.heapServiceActive()
 		|| runtime.machine.systemController.hasResetRequest()) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 	if (cpu.allocationParked()) {
@@ -58,12 +57,8 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 			++m_maintenancePulseSequence;
 			return Pulse::Maintenance;
 		}
-	} else if (heap.stoppedFinalMarkPending()) {
-		cpu.advanceFinalMark();
-		if (!cpu.heapServiceActive()) {
-			++m_maintenancePulseSequence;
-			return Pulse::Maintenance;
-		}
+	} else if (!backendBlocked) {
+		cpu.beginStoppedFinalMark(CpuRunKind::Scheduled);
 	}
 	return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 }

@@ -156,7 +156,7 @@ export class CpuExecutionState {
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
-		if (!cpu.heapServiceActive() && cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
+		cpu.beginStoppedFinalMark(CpuRunKind.Direct);
 		runDueRuntimeTimers(runtime);
 		// A fixed service can own the next grant without a deeper guest frame.
 		while (cpu.heapServiceActive() || cpu.readThreadFrameDepth(targetThread) > targetDepth) {
@@ -202,7 +202,10 @@ export class CpuExecutionState {
 				}
 			}
 			if (!cpu.heapServiceActive()) {
-				if (cpu.gc.stoppedFinalMarkPending()) cpu.gc.finishFinalMark();
+				if (cpu.beginStoppedFinalMark(CpuRunKind.Direct)) {
+					if (result === RunResult.ExecutionStopped) return CpuSuspendedRunResult.ExecutionStopped;
+					continue;
+				}
 				if (cpu.readThreadFrameDepth(targetThread) <= targetDepth) return CpuSuspendedRunResult.Completed;
 				if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			}

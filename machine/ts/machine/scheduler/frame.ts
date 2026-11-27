@@ -1,3 +1,4 @@
+import { CpuRunKind } from '../cpu/cpu';
 import { Runtime } from '../runtime/runtime';
 import { InstructionStepResult } from '../runtime/frame/state';
 import { HistoryMode } from '../runtime/history/history';
@@ -102,16 +103,14 @@ export class FrameSchedulerState {
 		if (!backendBlocked && !this.backendServiceSuspended) this.accumulateHostTime(hostDeltaMs);
 		this.backendServiceSuspended = backendBlocked;
 		const cpu = runtime.machine.cpu;
-		const heap = cpu.gc;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0 || cpu.heapServiceActive()
 			|| runtime.machine.systemController.hasResetRequest()) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 		if (cpu.allocationParked()) {
 			// A parked instruction owns its recovery and retry even when a
 			// device edge occurred during the timed part of that recovery.
 			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
-		} else if (heap.stoppedFinalMarkPending()) {
-			cpu.advanceFinalMark();
-			if (!cpu.heapServiceActive()) return Pulse.Maintenance;
+		} else if (!backendBlocked) {
+			cpu.beginStoppedFinalMark(CpuRunKind.Scheduled);
 		}
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}

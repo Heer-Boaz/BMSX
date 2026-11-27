@@ -314,6 +314,7 @@ export class CPU implements MappedPageInvalidator {
 	private readonly heapService: HeapService;
 	private readonly execFloorArgs = [0, 0];
 	private readonly fullCollectionArgs: readonly [number];
+	private readonly stoppedFinalMarkArgs: [number, CpuRunKind];
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
@@ -439,6 +440,7 @@ export class CPU implements MappedPageInvalidator {
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.fullCollectionArgs = [this.heapAllocator.managementOffset()];
+		this.stoppedFinalMarkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
@@ -805,8 +807,9 @@ export class CPU implements MappedPageInvalidator {
 	public advanceAllocationRecovery(): boolean {
 		const recovery = this.pendingAllocation!.recovery;
 		if (recovery === AllocationRecovery.RetryCurrent || recovery === AllocationRecovery.RetryFresh) return false;
-		if (this.gc.finalMarkPending()) this.advanceFinalMark();
-		else {
+		if (this.gc.finalMarkPending()) {
+			this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
+		} else {
 			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
 				HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions);
 		}
@@ -814,8 +817,11 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	public advanceFinalMark(): void {
-		this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
+	public beginStoppedFinalMark(kind: CpuRunKind): boolean {
+		if (this.heapServiceActive() || this.allocationParked() || !this.gc.stoppedFinalMarkPending()) return false;
+		this.stoppedFinalMarkArgs[1] = kind;
+		return this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.StoppedFinalMark],
+			this.stoppedFinalMarkArgs);
 	}
 
 	private finishAllocationRecovery(): void {
@@ -2367,8 +2373,9 @@ export class CPU implements MappedPageInvalidator {
 			const gcStage = cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			// Debugger stepping reports paid machine progress, not a second
 			// cartridge instruction. The activation owns all collector phases.
-			const fullCollection = this.heapService.thread.firstFrame!.functionAddress
-				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.FullCollection];
+			const root = this.heapService.thread.firstFrame!.functionAddress, services = this.systemImage.heapServiceFunctions;
+			const collection = root === services?.[HeapServiceOperation.FullCollection]
+				|| root === services?.[HeapServiceOperation.StoppedFinalMark];
 			this.runKind = kind;
 			this.deviceClock = deviceClock;
 			try {
@@ -2433,7 +2440,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return (fullCollection || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
+				return (collection || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;

@@ -1495,7 +1495,9 @@ by physical pressure can finish over later accepted VBlank IRQs without
 further allocation.
 When scheduled execution resumes with a final remark pending, revisiting
 threads and weak tables, scanning roots, tracing, and weak-entry removal also
-run on ordinary CPU grants. Free space may be separated by retained
+run on ordinary CPU grants. The next program instruction and interrupt entry
+wait until the final remark is complete; devices can continue advancing and
+latching interrupt requests. Free space may be separated by retained
 allocations, so enough unoccupied bytes does not guarantee that an allocation
 of that size will fit.
 The BIOS [collection service](bios-base.md#sec-bios-base-collectgarbage)
