@@ -103,7 +103,9 @@ prepared ordinary context. On a warm restart the firmware retires the previous
 context and its operand bindings.
 
 Firmware also prepares an image's name and String bindings before ordinary
-execution can use them. The cores can construct or discard derived image views,
+execution can use them. It reserves the cartridge's initial register window
+before transferring control; cartridge entry consumes that space rather than
+allocating it. The cores can construct or discard derived image views,
 but a guest Function lookup does not install missing bindings or allocate guest
 storage. Explicit authoring-time image replacement is a separate operation, not
 an alternative guest loading path.

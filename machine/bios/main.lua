@@ -143,7 +143,8 @@ local update_boot_screen<const> = function()
 			while true do halt_until_irq end
 		end
 		cop0.ram_end = end_address
-		if image_bind.bind_cartridge(slot, image, *system_rom_bytes, *cart0_rom_bytes, *cart1_rom_bytes) ~= 0 then
+		local root<const> = coroutine.running()
+		if image_bind.bind_cartridge(slot, image, *system_rom_bytes, *cart0_rom_bytes, *cart1_rom_bytes, startup, root) ~= 0 then
 			cop0.status = cop0.status & ~inhibit_reset
 			*sys_control = 8
 			while true do halt_until_irq end

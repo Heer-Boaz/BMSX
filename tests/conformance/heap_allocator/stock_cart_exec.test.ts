@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CPU, CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { asInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -13,9 +14,9 @@ import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
@@ -260,6 +261,61 @@ halt_until_irq
 			fault.commands.push('F', 'P');
 			fault.expected.push('0', `${depth} ${rejectedMachine.cpu.readFramePc(depth - 1)}`);
 			compare('rejected.trace', fault.commands, fault.expected, unused, rejectedPath);
+
+			// The same executable can legally request a larger entry window.
+			// Keep the original reset and malformed-binding paths unchanged.
+			const entrySlots = 4097;
+			const startup = readLE32(selected, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET);
+			const wide = selected.slice(), widePath = join(output, 'wide-entry.rom');
+			writeLE32(wide, startup - CART_ROM_BASE + BLUA32_FUNCTION_MAX_STACK_OFFSET, entrySlots);
+			writeFileSync(widePath, wide);
+			let wideStopped = false;
+			const { runtime: wideRuntime } = boot(cartridgeSlots(other, wide), () => wideStopped, () => wideStopped = true);
+			const wideMachine = wideRuntime.machine;
+			const capacityAddress = wideMachine.cpu.rootThread.address + ThreadField.StackCapacity;
+			assert.equal(wideMachine.memory.readRamRecordWord(capacityAddress), 8192,
+				'the BIOS has already reserved the larger selected-socket window');
+			const wideSeed = join(output, 'wide-pre-exec.state');
+			writeFileSync(wideSeed, encodeRuntimeSaveState(captureRuntimeSaveState(wideRuntime)));
+			const occupied = wideMachine.cpu.heapAllocator.occupiedBytes();
+			const chargedBytes = wideMachine.cpu.luaHeap.usedBytes();
+			const entered = wideMachine.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
+			const paid = 1 - wideMachine.cpu.instructionBudgetRemaining;
+			assert.equal(entered, RunResult.Yielded);
+			assert.equal(paid, BASE_CYCLES[OpCode.MTC0]);
+			assert.equal(wideMachine.cpu.activeCartridgeSlot(), 1);
+			assert.equal(wideMachine.cpu.rootThread.frameAtDepth(0).stackCapacity, entrySlots);
+			assert.equal(wideMachine.cpu.heapServiceActive(), false);
+			assert.equal(wideMachine.cpu.heapAllocator.occupiedBytes(), occupied);
+			assert.equal(wideMachine.cpu.luaHeap.usedBytes(), chargedBytes);
+			compare('prepared-frame-exec.trace', ['X', 'J 1 1'], [
+				`${entered} ${paid} 0 0 ${occupied} ${chargedBytes}`,
+			], wideSeed, otherPath, widePath);
+			const wideLaunch = boot(cartridgeSlots(other, wide), cpu =>
+				cpu.activeCartridgeSlot() === 1 && cpu.isHaltedUntilIrq());
+			compare('wide-stock-launch.trace', wideLaunch.commands, wideLaunch.expected, unused, otherPath, widePath);
+
+			// Supply the same larger Function to the transfer without having
+			// prepared its backing. Both CPU cores must refuse, not allocate.
+			const missingSpace = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(other, wide),
+				machineModel: PSX_MACHINE_SPEC }, {
+				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+			});
+			missingSpace.boot();
+			applyRuntimeSaveState(missingSpace, prepared);
+			const without = missingSpace.machine;
+			assert.ok(without.memory.readRamRecordWord(without.cpu.rootThread.address + ThreadField.StackCapacity) < entrySlots);
+			const unpreparedPhysical = without.cpu.heapAllocator.occupiedBytes();
+			const refused = without.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
+			assert.equal(refused, RunResult.Halted);
+			assert.equal(without.cpu.captureRuntimeState().hardHalted, true);
+			assert.equal(without.cpu.heapAllocator.occupiedBytes(), unpreparedPhysical);
+			assert.equal(without.cpu.luaHeap.usedBytes(), preparedCharge);
+			compare('unprepared-frame-exec.trace', ['X', 'J 1 1', 'F'], [
+				`${refused} ${1 - without.cpu.instructionBudgetRemaining} 0 0 ${unpreparedPhysical} ${preparedCharge}`, '1',
+			], seed, otherPath, widePath);
+
+
 		} catch (err) {
 			failed = true;
 			throw err;

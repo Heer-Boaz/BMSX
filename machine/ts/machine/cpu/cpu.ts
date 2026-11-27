@@ -2378,18 +2378,24 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	// Direct machine entry binds the sampled Function and no capture environment.
-	private enterDirectFrame(epcWord?: number, nmi = false): CallFrame {
+	private enterDirectFrame(epcWord?: number, nmi = false): CallFrame | null {
 		const entry = this.functionRecordLatch;
 		const { functionAddress, codeAddress, numParams, maxStack, executionDomainId } = entry;
 		const thread = this.activeThread, base = thread.stackTop;
 		const capacity = Math.max(1, numParams, maxStack);
 		const end = base + capacity;
+		const preparedCartridge = epcWord === undefined && executionDomainId >= 0;
+		if (preparedCartridge && !thread.frameSpaceFits(end)) {
+			this.hardHalt();
+			return null;
+		}
 		if (end > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		const frame = thread.acquireFrame(), image = entry.image!;
+		const image = entry.image!;
 		if (thread.address === CPU_RESET_BANK_ADDRESS) {
 			const frames = epcWord === undefined ? thread.frameDepth + 2 : thread.frameDepth + 1;
 			if (end > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		} else this.ensureStackCapacity(end, valueNil(), true, epcWord !== undefined);
+		} else if (!preparedCartridge) this.ensureStackCapacity(end, valueNil(), true, epcWord !== undefined);
+		const frame = thread.acquireFrame();
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,

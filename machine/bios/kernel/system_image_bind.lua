@@ -11,6 +11,7 @@ local strings<const> = require('kernel/gc_strings') -- S:244-254,438-442 R:247-2
 local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; compact physical root prefix
 local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
 local names<const> = require('kernel/global_bank') -- G:71-109 H:59-101
+local frame_storage<const> = require('kernel/thread_frame_storage')
 
 local string_constant_tag<const> = 4 -- F:67-75
 local image_magic<const> = 0x32334c42
@@ -22,6 +23,19 @@ local invalid_header<const> = 2 -- S:145-146 R:160-161; same leaf result as the 
 local invalid_payload<const> = 3 -- S:153-154 R:169-171
 local missing_string<const> = 4 -- S:252-253 R:253; missing is not Nil or OUT_OF_MEMORY
 local no_storage<const> = 10 -- L:86,152-155 N:98,151-154; allocation recovery exhausted
+local static_function<const> = 2
+local function_align_mask<const> = 15
+
+struct launch_function_record
+	code: addr
+	code_bytes: u32
+	formals: u32
+	maximum: u32
+	flags: u32
+	captures: addr
+	capture_count: u32
+	reserved: u32
+end
 
 struct immutable_image_operands
 	magic: u32 -- F:4
@@ -178,14 +192,14 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	view.ram_strings = ram_count -- T:1005-1006 C:282,291
 	view.base = base -- T:1178 C:421; the actual installed operand block
 	view.bytes = extent -- T:1076-1077 C:370,419; this bank owns the original charged span
-	return 0 -- T:1167-1181 C:441
+	return 0, source_cycles -- T:1167-1181 C:441
 end
 
 local bind_initial_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, root)
 	return (bind_image(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, 0, root, -1, 0))
 end
 
-local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes)
+local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes, startup, root_thread)
 	local management_port<const>: *u32 = layout.management_address
 	local source_cycles<const>: *u32 = layout.call_cycles_address
 	local management<const> = *management_port
@@ -193,7 +207,26 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	local system_bank<const> = state + layout.system_global_bank_offset
 	local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
 	local installed<const> = state + layout.installed_image_bindings_offset + (slot + 1) * sizeof(installed_image_binding)
-	return (bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, 0, slot, *source_cycles))
+	local status<const>, remaining<const> = bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed,
+		system_bytes, cart0_bytes, cart1_bytes, 0, slot, *source_cycles)
+	if status ~= 0 then return status end
+	-- EXEC still owns Function fetch and execution admission. Only a
+	-- readable cartridge Function contributes a backing reservation.
+	local cart_bytes<const> = slot == 0 and cart0_bytes or cart1_bytes
+	if startup < cart_base or startup - cart_base > cart_bytes - sizeof(launch_function_record)
+		or (startup & function_align_mask) ~= 0 then return 0 end
+	local entry<const>: *launch_function_record = startup | (slot << 31)
+	if (entry.flags & static_function) == 0 then return 0 end
+	local formals<const>, maximum<const> = entry.formals, entry.maximum
+	if formals < 0 or maximum < 0 then return 0 end
+	local slots = formals > maximum and formals or maximum
+	if slots == 0 then slots = 1 end
+	if slots > ram_bytes // 5 then return 0 end
+
+	local owner_cell<const>: *value = state + layout.value_cell_offset
+	local owner_word<const>: *u32 = state + layout.value_cell_offset
+	*owner_cell = root_thread
+	return (frame_storage.prepare_frame_space(management, *owner_word, slots, 2, 0, remaining))
 end
 
 return {

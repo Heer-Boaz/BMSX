@@ -1084,6 +1084,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_stringComparison = {};
 	m_concat = {};
 	[[maybe_unused]] const auto* entry = enterDirectFrame(0u);
+	if (!entry) return;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	// A later native grant may warm this entry. EXEC only commits the machine
 	// activation and never waits for or runs the compiler itself.
@@ -1961,18 +1962,23 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
 	// Direct machine entry binds the sampled Function and no capture environment.
 	const auto& record = m_functionRecordLatch;
 	const FunctionEntry entry{record.codeAddress, record.numParams, record.maxStack, record.flags};
-	const auto admitted = ArgumentPlacement::forEntry(m_activeThread->stackTop(), 0, entry);
-	if (!admitted) throw LuaOutOfMemorySignal{};
-	const auto& placement = *admitted;
-	auto* frame = m_activeThread->acquireFrame();
 	auto* image = record.image;
 	const auto domain = image->executionDomainId;
-	const u32 address = record.address;
 	const bool exception = (flags & FRAME_EXCEPTION) != 0u;
+	const bool preparedCartridge = !exception && domain >= 0;
+	const auto admitted = ArgumentPlacement::forEntry(m_activeThread->stackTop(), 0, entry);
+	if (preparedCartridge && (!admitted || !m_activeThread->frameSpaceFits(admitted->stackEnd()))) {
+		hardHalt();
+		return nullptr;
+	}
+	if (!admitted) throw LuaOutOfMemorySignal{};
+	const auto& placement = *admitted;
+	const u32 address = record.address;
 	if (m_activeThread->address == CPU_RESET_BANK_ADDRESS) {
 		const auto frames = m_activeThread->frameDepth() + (exception ? 1u : 2u);
 		if (placement.stackEnd() > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LuaOutOfMemorySignal{};
-	} else m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), exception);
+	} else if (!preparedCartridge) m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), exception);
+	auto* frame = m_activeThread->acquireFrame();
 	frame->executionImage = image;
 	frame->initializeControl({
 		address, entry.codeAddress, epcWord.value_or(entry.codeAddress), frameBankWord(domain) | flags,

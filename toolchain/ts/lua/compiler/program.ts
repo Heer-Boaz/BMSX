@@ -21,7 +21,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
 	{ path: 'kernel/heap_floor', exportPathKey: 'admit_static_end', numParams: 1 },
-	{ path: 'kernel/system_image_bind', exportPathKey: 'bind_cartridge', numParams: 5 },
+	{ path: 'kernel/system_image_bind', exportPathKey: 'bind_cartridge', numParams: 7 },
 	{ path: 'kernel/string_index', exportPathKey: 'install', numParams: 1 },
 	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
 	{ path: 'kernel/thread_create', exportPathKey: 'create_coroutine', numParams: 1 },
