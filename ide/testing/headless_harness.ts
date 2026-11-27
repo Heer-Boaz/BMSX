@@ -2,6 +2,8 @@ import { captureEditorActionPresentation, performHotResume, performReboot } from
 import { inputFocus } from '../input/focus';
 import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { asClosure } from '../../machine/ts/machine/cpu/value';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import type { CodeEditorContext } from '../editor/ui/code_editor_state';
 import type { CodeEditorPane } from '../workbench/contrib/code_editor/editor_pane';
@@ -13,6 +15,7 @@ import {
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../workbench/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
+import { scheduleRuntimeGuestCall } from '../runtime/guest_call';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';
 import type { ContextMenuController } from '../workbench/services/context_menu/controller';
@@ -70,7 +73,7 @@ export type HeadlessIdeHarness = {
 	openLuaSource(path: string, contextId?: string): void;
 	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
-	debugStats(): HeadlessIdeHeapStats;
+	debugStats(): Promise<HeadlessIdeHeapStats>;
 };
 
 export type HeadlessIdeHeapStats = {
@@ -155,12 +158,31 @@ export function createHeadlessIdeHarness(
 			);
 			insertText(code, source);
 		},
-		debugStats: () => {
+		debugStats: async () => {
 			const cpu = runtime.machine.cpu;
+			const collected = Promise.withResolvers<void>();
+			let revision = ide.execution.revision;
+			void scheduleRuntimeGuestCall(runtime, ide.guest, ide.debugger, ide.runtimeTasks, {
+				admission: 'quiescent',
+				honorUserStops: false,
+				isCurrent: () => ide.execution.revision === revision,
+				prepare: () => ({
+					domain: SYSTEM_EXECUTION_DOMAIN_ID,
+					closure: asClosure(cpu.getGlobalByKey(cpu.stringPool.find('collectgarbage')!), cpu.gc),
+					argumentCount: 0,
+					args: () => [],
+				}),
+			}, () => {
+				ide.execution.requestExecution(false);
+				revision = ide.execution.revision;
+			}, completed => {
+				if (completed) collected.resolve();
+				else collected.reject(new Error('Guest collection for heap diagnostics did not finish.'));
+			}, collected.reject);
+			await collected.promise;
 			const slot = cpu.activeCartridgeSlot();
 			const sourceState = ide.sources;
 			const executable = blua32ToolingImageForDomain(sourceState.currentBlua32Media, slot)!;
-			cpu.collectTrackedHeapBytes();
 			return {
 				tracked: cpu.luaHeap.usedBytes(),
 				moduleFunctions: executable.symbols!.moduleFunctions.length,

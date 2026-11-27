@@ -8,7 +8,7 @@ function fmt(s) {
 await t.waitForCart();
 await t.frames(400); // warm up so lazy modules load like real play
 
-const warm = t.debugStats();
+const warm = await t.debugStats();
 t.log(`warm ${fmt(warm)}`);
 
 const RESUMES = 8;
@@ -18,7 +18,7 @@ for (let i = 0; i < RESUMES; i += 1) {
 	const result = await resume.completion;
 	t.assert(result.status === 'completed', `no-op resume ${i + 1}: ${result.status}`);
 	await t.frames(8);
-	const s = t.debugStats();
+	const s = await t.debugStats();
 	t.log(`resume ${i + 1}/${RESUMES}: ${fmt(s)}`);
 	if (i === 0) {
 		t.assert(s.codeBytes === warm.codeBytes, `first no-op hot-resume grew code from ${warm.codeBytes} to ${s.codeBytes}`);

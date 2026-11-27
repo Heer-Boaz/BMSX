@@ -14,6 +14,8 @@ import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { RecordingLogOutput } from '../../ide/testing/recording_log_output';
 import { createHeadlessIdeHarness } from '../../ide/testing/headless_harness';
+import { createLiveStudioFixture } from '../helpers/live_studio';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { HeadlessCaptureCoordinator } from '../../scripts/bootrom/platforms/headless_capture';
@@ -79,4 +81,21 @@ t.controlInput([
 		['pointer_primary', true, 25, 4], ['pointer_primary', false, 25, 4],
 	]);
 	assert.equal(host.input.getPlayerInput(1).pollFrame, 0, 'ordered UI input is delivered without another guest poll');
+});
+
+test('headless heap diagnostics collect through the running guest', async t => {
+	const { ide, runtime, until } = await createLiveStudioFixture(t, { ready: ide => ide.luaEvaluation.canEvaluate });
+	await until(() => runtime.admitExternalCpuMutation());
+	const { cpu, memory, scheduler } = runtime.machine;
+	t.mock.method(cpu, 'collectTrackedHeapBytes', () => assert.fail('heap diagnostics must not run the host collector'));
+	const harness = createHeadlessIdeHarness(ide, runtime, new RecordingLogOutput({ log() {} }));
+	const unreachable = cpu.createTable(), started = scheduler.nowCycles;
+	assert.equal(memory.readRamRecordByte(unreachable), ValueTag.Table);
+	let settled = false;
+	const pending = harness.debugStats().finally(() => { settled = true; });
+	await until(() => settled);
+	const stats = await pending;
+	assert.equal(stats.tracked, cpu.luaHeap.usedBytes());
+	assert.equal(memory.readRamRecordByte(unreachable), 0);
+	assert.ok(scheduler.nowCycles > started);
 });
