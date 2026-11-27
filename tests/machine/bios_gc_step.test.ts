@@ -14,15 +14,14 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execu
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
 const driver = 'module<const>\n'
-	+ 'local layout<const> = require("kernel/gc_runtime_layout")\n'
+	+ 'local roots<const> = require("kernel/gc_root_inputs")\n'
 	+ 'local gc<const> = require("kernel/gc_step")\n'
 	+ 'local collect<const> = function(management, limit, scope, finish)\n'
-	+ '  local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset\n'
-	+ '  *effects = layout.publish_roots\n'
+	+ '  roots.publish(management)\n'
 	+ '  local work\n'
 	+ '  if finish ~= 0 then work = gc.finish_epoch(management, limit, 0, 0, scope)\n'
 	+ '  else work = gc.step(management, limit, 0, 0, scope) end\n'
-	+ '  *effects = layout.release_string_work\n'
+	+ '  roots.release_string_work(management)\n'
 	+ '  return work\n'
 	+ 'end\n'
 	+ 'return { collect = collect }';

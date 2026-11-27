@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { valuePayload } from '../../machine/ts/machine/cpu/value';
+import { HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { MAPPED_BUS_DMA_MEMORY, MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
@@ -20,15 +20,14 @@ import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 const path = 'test/gc_projection';
 const entrySource = `local projection<const> = require('${path}')\nhalt_until_irq`;
 const source = `module<const>
+local roots<const> = require('kernel/gc_root_inputs')
 return {
-	transfer = function(port, work_slot, replacement, acquire, release)
-		local notify<const>: *word = port
-		local notify_le<const>: *u32 = port
+	transfer = function(management, work_slot, replacement)
 		local work<const>: *u32 = work_slot
-		*notify = acquire
+		roots.publish(management)
 		local prior<const> = *work
 		*work = replacement
-		*notify_le = release
+		roots.release_string_work(management)
 		return prior
 	end,
 	store_byte = function(port)
@@ -57,17 +56,19 @@ function fixture(optLevel: 0 | 3) {
 }
 
 for (const optLevel of [0, 3] as const) {
-	test(`Pinned projection publishes roots and transfers String work without a RAM store at O${optLevel}`, () => {
+	test(`The BIOS transfers String mark credit through resumable RAM writes at O${optLevel}`, () => {
 		const { cpu, memory, management, entries: [transfer] } = fixture(optLevel);
 		const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, roots = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
 		const port = RAM_BASE + management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
 		const traceWork = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.PendingStringWork;
+		const markWork = management + HEAP_STRING_MARK_WORK_OFFSET;
 		const active = cpu.activeThread.address, occupied = cpu.heapAllocator.occupiedBytes();
 		const pinned = management + HEAP_SERVICE_THREAD_OFFSET;
 		assert.equal(memory.readRamRecordWord(pinned + ThreadField.StackBlock), RAM_BASE + management + HEAP_SERVICE_VALUE_OFFSET);
 		assert.equal(memory.readRamRecordWord(pinned + ThreadField.StackCapacity), HEAP_SERVICE_VALUE_COUNT);
 
 		cpu.stringPool.resumeMarkWork(9);
+		memory.writeRamRecordWord(traceWork, 4);
 		memory.writeRamRecordWord(port, 0x12345678);
 		for (const signals of [MAPPED_BUS_MASTER_CPU, MAPPED_BUS_MASTER_DMA | MAPPED_BUS_DMA_MEMORY]) {
 			const sequence = memory.readBusFaultSequence();
@@ -76,23 +77,21 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.ActiveThread), 0);
 		}
 
-		assert.ok(cpu.beginHeapService(transfer, [port, RAM_BASE + traceWork, 17,
-			HeapServiceProjection.PublishRoots, HeapServiceProjection.ReleaseStringWork]));
-		for (let steps = 0; steps < 16 && memory.readRamRecordWord(args + HeapServiceGcArgumentField.ActiveThread) === 0; ++steps)
+		assert.ok(cpu.beginHeapService(transfer, [management, RAM_BASE + traceWork, 17]));
+		for (let steps = 0; steps < 128 && memory.readRamRecordWord(markWork) !== 0; ++steps)
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.ok(cpu.heapServiceActive());
-		assert.equal(memory.readRamRecordWord(traceWork), 9);
+		assert.equal(memory.readRamRecordWord(markWork), 0);
+		assert.equal(memory.readRamRecordWord(traceWork), 4, 'save between clearing the old word and publishing the borrowed credit');
 		assert.equal(memory.readRamRecordWord(roots + 4), active);
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.ActiveThread), active);
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.ModeKey), cpu.stringPool.intern('__mode'));
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.NewIndexKey), cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 		assert.equal(memory.readRamRecordWord(args + HeapServiceGcArgumentField.PendingTop), 0);
-		assert.equal(memory.readRamRecordWord(pinned + ThreadField.FrameDepth), 1);
-		assert.equal(cpu.stringPool.takeMarkWork(), 0);
 
 		const borrowed = captureCpuCheckpoint(cpu);
 		const finish = () => {
-			assert.equal(cpu.runUntilDepth(0, 64), RunResult.Yielded);
+			assert.equal(cpu.runUntilDepth(0, 256), RunResult.Yielded);
 			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.heapServiceResult(), 9);
 			assert.equal(memory.readRamRecordWord(port), 0x12345678);

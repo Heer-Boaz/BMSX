@@ -129,7 +129,7 @@ export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, Pendi
 export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 export const HEAP_SERVICE_GC_PROJECTION_MASK = 7;
 export const enum HeapServiceProjection {
-	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4, ReleaseStringWork = 5,
+	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4,
 }
 export const HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 export const enum HeapServiceGcArgumentField { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 }

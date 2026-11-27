@@ -3,6 +3,7 @@ module<const>
 -- Source basis: 8a93a0f474615ca392cf618cc15f7deb4659c1ad.
 -- C/T: C++/TS LuaHeap; G/H: C++ GcHeap source/header.
 local layout<const> = require('kernel/gc_runtime_layout') -- G:1270,1276
+local root_inputs<const> = require('kernel/gc_root_inputs') -- G:1122-1124,1274-1276
 local gc<const> = require('kernel/gc_control') -- C:288-289 T:285-286
 local collector<const> = require('kernel/gc_step') -- G:1005-1008
 local admission<const> = require('kernel/heap_admission') -- C:288-289 T:285-286
@@ -13,15 +14,14 @@ local collect_step<const> = function() -- C:286-289 T:283-286
 	local management<const> = *management_port -- C:286 T:283 G:1270; ordinary CALL passes no hidden parameters
 	local control<const> = management + layout.control_offset -- G:1270
 	local phase<const> = gc.internal.phase(control) -- G:1007
-	local effects<const>: *word = layout.ram_base + management + layout.effect_offset -- G:1122-1124,1274-1276
 	local borrows_roots<const> = phase <= atomic_phase -- G:1122-1124,697-703
-	if borrows_roots then *effects = layout.publish_roots end -- G:1122-1124,1274-1276
+	if borrows_roots then root_inputs.publish(management) end -- G:1122-1124,1274-1276
 	if phase == atomic_phase then -- G:1007
 		collector.finish_atomic(management, 0, false) -- G:696-702; public Step supplies no scoped roots
 	else -- G:1008; the normal step owns one quantum
 		collector.step(management, collector.step_words, 0, 0, 0) -- C:287 T:284 G:1005-1008; no compact thread work
 	end
-	if borrows_roots then *effects = layout.release_string_work end -- G:1284,1312-1314
+	if borrows_roots then root_inputs.release_string_work(management) end -- G:1284,1312-1314
 	local finished<const> = admission.finish_explicit_step(management + layout.arena_offset) -- C:288-289 T:285-286
 	return finished -- C:289 T:286; ordinary Boolean result
 end

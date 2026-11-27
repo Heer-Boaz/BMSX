@@ -9,6 +9,7 @@ module<const>
 -- gates; Y is C++ projection; D the original fault; E/W Value tags.
 -- Admission basis: 08c4a76d41e49d689c13a47fed3de37cece84072.
 local layout<const> = require('kernel/gc_runtime_layout') -- T:177 C:189 A:25 B:20
+local root_inputs<const> = require('kernel/gc_root_inputs') -- X:3996,4007 Y:169,181
 local allocator<const> = require('kernel/dlmalloc') -- T:179-183,191-193 C:191-193,201-203 A:57-62 B:54-59
 local collector<const> = require('kernel/gc_control') -- T:186-187 C:195-197 U:147-155 V:235-244
 local admission<const> = require('kernel/heap_admission') -- T:42-106,175-176 C:41-116,187-188
@@ -93,7 +94,6 @@ end
 
 local allocate_coroutine<const> = function(management, entry, source_cycles) -- T:170,174-178,195 C:182,186-190,205; ingress has already resolved the Closure
 	local arena<const> = management + layout.arena_offset -- T:177 A:25 C:189 B:20
-	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- X:3996,4007 Y:169,181; private projection borrows ordinary roots
 	local roots_published = false -- X:3996-4010 Y:169-184; no root publication on allocator-only attempts
 	local recovery = current_or_fresh -- T:92,175 C:103,187
 	local debt<const> = admission.allocation_debt(arena, charged) -- T:75,85 C:85,97
@@ -102,11 +102,11 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 		repeat -- T:94,175 C:105,187
 			recovery = admission.begin_allocation_recovery(arena, recovery) -- T:95 C:106 U:1110-1117 V:1213-1224
 			if recovery < 0 then -- U:1111 V:1214; logical admission exhausted its recovery epochs
-				*effects = layout.release_string_work -- X:4007-4010 Y:181-184
+				root_inputs.release_string_work(management) -- X:4007-4010 Y:181-184
 				return 0 -- U:1111 V:1214 D:43
 			end
 			if not roots_published then -- X:3996-4005 Y:169-178
-				*effects = layout.publish_roots -- T:95,174 C:106,186 U:1123 V:1226
+				root_inputs.publish(management) -- T:95,174 C:106,186 U:1123 V:1226
 				roots_published = true -- X:3996-4005 Y:169-178
 			end
 			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; Entry is the single explicit root
@@ -115,7 +115,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 	elseif debt > 0 and source_cycles >= admission.internal.work_word_cycles then -- T:77-79 C:87-90 X:5183-5188 Z:2795-2801
 		local pressure<const> = admission.logical_assist_pressure(arena, charged) -- T:78 C:88
 		local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- T:79 C:89-90 X:5183-5187 Z:2795-2799
-		*effects = layout.publish_roots -- T:79,174 C:90,186 X:3996 Y:169
+		root_inputs.publish(management) -- T:79,174 C:90,186 X:3996 Y:169
 		roots_published = true -- X:3996-4005 Y:169-178
 		local work<const> = collection.step(management, words, 0, 0, entry) -- X:5189 Z:2801
 		source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5190 Z:2802
@@ -124,7 +124,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 	local words<const> = admission.reservation_assist_allowance(arena, charged + object_prefix, source_cycles) -- T:101-106,176 C:112-116,188 U:934-953 V:985-1003
 	if words >= 0 then -- U:952-953 V:1001-1002; a present zero-word allowance still invokes the source quantum
 		if not roots_published then -- X:3996-4005 Y:169-178
-			*effects = layout.publish_roots -- T:105,176 C:116,188 X:3996 Y:169
+			root_inputs.publish(management) -- T:105,176 C:116,188 X:3996 Y:169
 			roots_published = true -- X:3996-4005 Y:169-178
 		end
 		collection.step(management, words, 0, 0, entry) -- X:5189 Z:2801
@@ -132,18 +132,18 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 	while true do -- T:178 C:190
 		local offset<const> = create_thread(management, entry) -- T:179-193 C:191-203
 		if offset ~= 0 then -- T:184-189 C:193-199
-			if roots_published then *effects = layout.release_string_work end -- X:4007-4010 Y:181-184
+			if roots_published then root_inputs.release_string_work(management) end -- X:4007-4010 Y:181-184
 			return offset -- T:189 C:199; physical result remains an arena offset
 		end
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:195 C:205 U:1110-1117 V:1213-1224
 		if recovery < 0 then break end -- U:1111 V:1214
 		if not roots_published then -- X:3996-4005 Y:169-178
-			*effects = layout.publish_roots -- T:195 C:205 X:3996 Y:169
+			root_inputs.publish(management) -- T:195 C:205 X:3996 Y:169
 			roots_published = true -- X:3996-4005 Y:169-178
 		end
 		collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; retry starts at raw reservation, not admission
 	end
-	if roots_published then *effects = layout.release_string_work end -- X:4007-4010 Y:181-184
+	if roots_published then root_inputs.release_string_work(management) end -- X:4007-4010 Y:181-184
 	return 0 -- U:1111 V:1214 D:43
 end
 

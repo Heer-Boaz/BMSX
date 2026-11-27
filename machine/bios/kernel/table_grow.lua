@@ -6,6 +6,7 @@ module<const>
 -- The initial attempt already resolved __newindex and found
 -- an absent canonical key which cannot fit the existing backing.
 local layout<const> = require('kernel/gc_runtime_layout') -- P:4047-4052,5245 Q:102 X:170-176
+local root_inputs<const> = require('kernel/gc_root_inputs') -- P:4043-4058 X:165-182 S:452-458 J:442-448
 local table_create<const> = require('kernel/table_create') -- T:98,852 H:139
 local table_plan<const> = require('kernel/table_plan') -- T:675-756,763-784 C:155-246,313-337
 local table_resize<const> = require('kernel/table_resize') -- T:795,840-873 C:249-285
@@ -72,14 +73,9 @@ end
 -- from the canonical latch only if a later GC fork follows a reserve.
 local borrow_collection_roots<const> = function(management, projected) -- P:4043-4053 X:165-177
 	if not projected then -- P:4044 X:167
-		local effect<const>: *u32 = ram_base + management + layout.effect_offset -- P:4044 X:167
-		*effect = layout.publish_roots -- P:4043-4053 X:165-177
+		root_inputs.publish(management) -- P:4043-4053 X:165-177
 	else -- P:4049 X:172; the banks are already projected
-		local work<const>: *u32 = ram_base + management + layout.string_mark_work_offset -- S:452-453 J:442-443; already-projected caller
-		local trace<const>: *u32 = ram_base + management + layout.trace_context_offset + layout.trace_string_work_offset -- G:751 K:777
-		local pending<const> = *work -- S:453 J:443
-		if pending ~= 0 then *work = 0 end -- S:454 J:444
-		*trace = pending -- G:751 K:777
+		root_inputs.borrow_string_work(management) -- S:452-455 J:442-445 G:751 K:777
 	end
 end
 
@@ -146,7 +142,6 @@ end
 local grow_table<const> = function(management, source_cycles, preferred_extra, mode) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
 	local scheduled<const> = mode == scheduled_mode -- T:769-771,802 C:322-325,364-368; admission policy, not the CPU's run-kind
 	local state<const> = management + layout.arena_offset -- T:792 C:252
-	local effects<const>: *u32 = ram_base + management + layout.effect_offset -- P:4043-4058 X:165-182
 	local head<const> = management + layout.remark_head_offset -- P:5245 Y:3252
 	local operands_offset<const> = head + layout.remark_receiver_offset -- P:5254-5256 Y:3260-3262
 	local operands<const>: *growth_operands = ram_base + operands_offset -- P:806 Q:197-199
@@ -215,7 +210,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				end
 			end
 			if borrowed then -- P:4055-4058 X:179-182
-				*effects = layout.release_string_work -- P:4055-4058 X:179-182; assignment reads its canonical latch
+				root_inputs.release_string_work(management) -- P:4055-4058 X:179-182; assignment reads its canonical latch
 				borrowed = false -- P:4055-4058 X:179-182
 			end
 			if admitted then -- T:789,795-796 C:356-358
@@ -246,13 +241,13 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 			*parked = 1 -- P:5252-5259 Y:3258-3265; native parked root, not an explicit assist triple
 			collection.finish_epoch(management, collection.step_words, 0, 0, 0) -- P:828-838 Q:211-225
 			*parked = 0 -- P:853-863 Q:251-268
-			*effects = layout.release_string_work -- P:4055-4058 X:179-182
+			root_inputs.release_string_work(management) -- P:4055-4058 X:179-182
 			source_cycles = *device_cycles -- P:849-854 Q:245-250; a resumed instruction's allowance
 			if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return 0, table_tag, record end -- P:852-858 Q:249-257
 			resume = true -- T:510,770,786,791 C:740,323,351
 		else -- T:803-809 C:367-373; General does not park or repeat the own-key probe
 			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, operands_offset) -- T:803 C:367 G:1119-1124 K:1223-1227; scoped operands, original fixed epoch quantum
-			*effects = layout.release_string_work -- P:4055-4058 X:179-182; insertion consumes the owning latch
+			root_inputs.release_string_work(management) -- P:4055-4058 X:179-182; insertion consumes the owning latch
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- T:781,793,803 C:334,367 G:1123 K:1226; shadow policy credit, not CPU time
 			if old_hash ~= 0 then -- T:805 C:369
 				local slot<const> = existing.insert_hash_without_growth(management + layout.control_offset, record, kt, kw, vt, vw, cpp_policy) -- T:806-809 C:370-372; weak clearing may have opened the old backing

@@ -184,10 +184,10 @@ import {
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_PENDING_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
+	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK,
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
-	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
+	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceIrqForwardField,
@@ -4148,17 +4148,10 @@ export class CPU implements MappedPageInvalidator {
 			this.publishHeapRemarkHead();
 			this.publishHeapRootBanks();
 			const memory = this.memory, management = this.heapAllocator.managementOffset();
-			const trace = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-			memory.writeRamRecordWord(trace + HeapServiceTraceField.PendingStringWork, this.stringPool.takeMarkWork());
 			const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, thread = this.activeThread.address;
 			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode),
 				this.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
 			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ActiveThread, thread, this.pendingOperandTop(thread));
-			return;
-		}
-		if (word === HeapServiceProjection.ReleaseStringWork) {
-			const trace = this.heapAllocator.managementOffset() + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-			this.stringPool.resumeMarkWork(this.memory.readRamRecordWord(trace + HeapServiceTraceField.PendingStringWork));
 			return;
 		}
 		const record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;

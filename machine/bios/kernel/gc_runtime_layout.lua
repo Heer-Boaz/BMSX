@@ -33,5 +33,4 @@ return {
 	call_run_kind_address = 0x02c0000c,
 	call_fault_address = 0x02c00010,
 	publish_roots = 0,
-	release_string_work = 5,
 }

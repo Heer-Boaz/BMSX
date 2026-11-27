@@ -9,6 +9,7 @@ module<const>
 -- I: the reference instruction limited the hints to 15 bits. Rounded capacity,
 -- physical extent and logical charge fit a signed Integer.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:71-74 T:843,855-865
+local root_inputs<const> = require('kernel/gc_root_inputs') -- C:154-158 G:1228
 local admission<const> = require('kernel/heap_admission') -- C:9-14,36,43,54-63,174,210-217 T:805-811,827-833,844-849,933,970-976 L:146
 local operand_roots<const> = require('kernel/gc_operand_roots') -- B:35-36 J:71-72
 local collector<const> = require('kernel/gc_step') -- C:154-159,181-186 A:238-251 G:1225-1229
@@ -28,7 +29,6 @@ local exhausted<const> = 2 -- G:1216,1222 C:141-142
 
 local allocate_record<const> = function(management, kind, operand0, operand1, mode, source_cycles) -- C:3-4 T:799-800; destination, fault PC and cache publication stay with CPU retirement
 	local state<const>, control<const>, occupied<const> = management + layout.arena_offset, management + layout.control_offset, management + layout.occupied_offset -- C:71-74
-	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- C:154-158 G:1228; raw root inputs are published without selecting a collector phase
 	local copy<const> = kind == table_copy_kind -- B:33-37 J:69-73
 	local table<const> = kind == table_kind or copy -- C:6 T:802 B:35-37 J:71-73
 	local binding, array_bytes, hash_bytes, charged, bytes, canonical, array -- C:7-8,55-57,78-86
@@ -65,7 +65,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 					recovery = admission.begin_allocation_recovery(state, recovery) -- C:174-175 T:933-934 G:1215-1222
 					if recovery < 0 then break end -- C:168-174 T:927-933 G:1216
 					if not roots_published then -- C:154-158 G:1228
-						*effects = layout.publish_roots -- C:154-158 G:1228; first GC call borrows the already paused mutator
+						root_inputs.publish(management) -- C:154-158 G:1228; first GC call borrows the already paused mutator
 						roots_published = true -- C:154-158 G:1228
 					end
 					local work<const> = collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 G:1228-1229; exactly one current or fresh epoch
@@ -76,7 +76,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 		elseif debt > 0 and source_cycles >= admission.internal.work_word_cycles then -- C:35 T:826
 			local pressure<const> = admission.logical_assist_pressure(state, charged) -- C:36 T:827 L:88
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- C:43 T:832 L:89
-			*effects = layout.publish_roots -- C:154-158 G:1228; first GC call in the assist branch
+			root_inputs.publish(management) -- C:154-158 G:1228; first GC call in the assist branch
 			roots_published = true -- C:154-158 G:1228
 			local work<const> = collector.step(management, words, 0, 0, scope) -- C:43,154-158 T:873-874
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973
@@ -86,7 +86,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			local words<const> = admission.reservation_assist_allowance(state, bytes + records.internal.object_prefix, source_cycles) -- C:54-59 T:843-848 L:164-169
 			if words >= 0 then -- C:59 T:847; zero is a present allowance
 				if not roots_published then -- C:154-158 G:1228
-					*effects = layout.publish_roots -- C:154-158 G:1228
+					root_inputs.publish(management) -- C:154-158 G:1228
 					roots_published = true -- C:154-158 G:1228
 				end
 				collector.step(management, words, 0, 0, scope) -- C:63,154-159 T:848,873-874
@@ -109,13 +109,13 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 		recovery = admission.begin_allocation_recovery(state, recovery) -- C:118-125,134-142 A:225-251,313-314 T:903-920 G:1215-1222
 		if recovery < 0 then break end -- C:141-142 T:909 G:1216; both epochs or the permitted retry have been used
 		if not roots_published then -- C:154-158 G:1228
-			*effects = layout.publish_roots -- C:154-158 G:1228
+			root_inputs.publish(management) -- C:154-158 G:1228
 			roots_published = true -- C:154-158 G:1228
 		end
 		collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
 		admitted = mode == direct or admission.logical_fits(state, charged) ~= 0 -- C:9-14,206-208 A:299-300 T:807 L:152-153,162; direct physical retries never re-admit
 	end
-	if roots_published then *effects = layout.release_string_work end -- C:154-158 G:1228; return only the work left in the borrowed String latch
+	if roots_published then root_inputs.release_string_work(management) end -- C:154-158 G:1228; return only the work left in the borrowed String latch
 	return offset -- C:102-142 T:889-920; 0 is the original terminal OOM signal before CPU fault delivery
 end
 

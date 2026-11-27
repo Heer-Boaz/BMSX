@@ -328,18 +328,11 @@ void CPU::writeHeapServiceProjection(u32 word) {
 		publishHeapRemarkHead();
 		publishHeapRootBanks();
 		const u32 management = m_heapAllocator.managementOffset();
-		const u32 trace = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-		m_memory.writeRamRecordWord(trace + static_cast<u32>(HeapServiceTraceField::PendingStringWork), static_cast<u32>(m_stringPool.takeMarkWork()));
 		const u32 args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
 		const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
 		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.diagnosticWord(HeapServiceRemarkHeadField::Mode),
 		m_heap.diagnosticWord(HeapServiceRemarkHeadField::NewIndex));
 		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ActiveThread), m_activeThread->address, pendingTop);
-		return;
-	}
-	if (word == static_cast<u32>(Projection::ReleaseStringWork)) {
-		const u32 trace = m_heapAllocator.managementOffset() + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-		m_stringPool.resumeMarkWork(m_memory.readRamRecordWord(trace + static_cast<u32>(HeapServiceTraceField::PendingStringWork)));
 		return;
 	}
 	const u32 record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;

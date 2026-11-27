@@ -8,6 +8,7 @@ module<const>
 -- The current Thread and the explicit source Closure remain roots; no code
 -- runs from those frames until the posting operation retires.
 local layout<const> = require('kernel/gc_runtime_layout') -- T:24,27-30 C:23-25 X:3983-4016
+local root_inputs<const> = require('kernel/gc_root_inputs') -- X:3997-4016 S:168-188 P:119-122
 local allocator<const> = require('kernel/dlmalloc') -- T:227-229,236 C:234-238,244 A:57-69 B:54-67
 local admission<const> = require('kernel/heap_admission') -- T:73-106,223-226 C:81-116,230-233
 local collector<const> = require('kernel/gc_step') -- L:1109-1124 N:1213-1229
@@ -151,7 +152,6 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 	local previous_frames<const> = frames ~= 0 and (thread.frame_capacity & control_count_mask) * frame_bytes or 0 -- T:216-217 C:224
 	local requested<const>, previous<const> = values * value_bytes + frames * frame_bytes, previous_values + previous_frames -- T:212-213,222 C:220-221,229
 	local charged<const> = requested - previous -- T:202,223-225 C:211,230-232
-	local effect<const>: *u32 = layout.ram_base + management + layout.effect_offset -- X:3997-4016 S:168-188 P:119-122
 	local projected = false -- X:3997-4016 S:168-188; projection is lazy, never repeated on retry
 	local recovery = current_or_fresh -- T:92,225 C:103,232
 	if (values == 0 and frames ~= 0) or requested > previous then -- T:202,218-225 C:211,225-232
@@ -161,11 +161,11 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 			repeat -- T:94-96 C:105-107
 				recovery = admission.begin_allocation_recovery(arena, recovery) -- T:95 L:1110-1117 C:106 N:1213-1220
 				if recovery < 0 then -- L:1111 N:1214
-					*effect = layout.release_string_work -- X:4009-4013 S:180-184; only reachable after a projected epoch
+					root_inputs.release_string_work(management) -- X:4009-4013 S:180-184; only reachable after a projected epoch
 					return out_of_memory + 1, 0, 0 -- L:1111 N:1214 E:43
 				end
 				if not projected then -- X:3997-4007 S:169-178
-					*effect = layout.publish_roots -- T:95,202,224 C:106,211,231 X:3997-4007 S:169-178
+					root_inputs.publish(management) -- T:95,202,224 C:106,211,231 X:3997-4007 S:169-178
 					projected = true -- X:3997-4007 S:169-178
 				end
 				local work<const> = collector.finish_epoch(management, collector.step_words, address, 0, root) -- L:1123 N:1226; explicit Closure and growing Thread address
@@ -174,7 +174,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 		elseif debt > 0 and source_cycles >= admission.internal.work_word_cycles then -- T:77-79 C:87-90 X:5201-5207 Y:2809-2815
 			local pressure<const> = admission.logical_assist_pressure(arena, charged) -- T:78 C:88
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- T:79 C:89-90 X:5203-5206 Y:2811-2814
-			*effect = layout.publish_roots -- X:3997-4007 S:169-178 T:79 C:90
+			root_inputs.publish(management) -- X:3997-4007 S:169-178 T:79 C:90
 			projected = true -- X:3997-4007 S:169-178
 			local work<const> = collector.step(management, words, address, 0, root) -- T:79 C:90 X:5207 Y:2815
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5208 Y:2816
@@ -184,25 +184,25 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 	local words<const> = admission.reservation_assist_allowance(arena, requested, source_cycles) -- T:101-106,203,226 C:112-116,212,233 L:934-953 N:985-1003
 	if words >= 0 then -- L:952-953 N:1001-1002; zero is a present source allowance
 		if not projected then -- X:3997-4007 S:169-178
-			*effect = layout.publish_roots -- X:3997-4007 S:169-178
+			root_inputs.publish(management) -- X:3997-4007 S:169-178
 			projected = true -- X:3997-4007 S:169-178
 		end
 		collector.step(management, words, address, 0, root) -- T:105,203,226 C:116,212,233 X:5207 Y:2815
 	end
 	while true do -- T:204,228 C:213,235
 		if reserve_frame_storage(management, address, values, frames) ~= 0 then -- T:205-206,229-235 C:214,238-243
-			if projected then *effect = layout.release_string_work end -- X:4009-4013 S:180-184
+			if projected then root_inputs.release_string_work(management) end -- X:4009-4013 S:180-184
 			return 0, 0, 0 -- T:206,234 C:214,242; original CALL owner receives no Lua Value from reservation
 		end
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:207,238 C:215,246 L:1110-1117 N:1213-1220
 		if recovery < 0 then break end -- L:1111 N:1214
 		if not projected then -- X:3997-4007 S:169-178
-			*effect = layout.publish_roots -- T:207,238 C:215,246 X:3997-4007 S:169-178
+			root_inputs.publish(management) -- T:207,238 C:215,246 X:3997-4007 S:169-178
 			projected = true -- X:3997-4007 S:169-178
 		end
 		collector.finish_epoch(management, collector.step_words, address, 0, root) -- L:1123 N:1226; retry starts at the original physical reservation
 	end
-	if projected then *effect = layout.release_string_work end -- X:4009-4013 S:180-184
+	if projected then root_inputs.release_string_work(management) end -- X:4009-4013 S:180-184
 	return out_of_memory + 1, 0, 0 -- L:1111 N:1214 E:43
 end
 

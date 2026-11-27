@@ -139,7 +139,7 @@ enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, P
 constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_MASK = 7;
 enum class HeapServiceProjection : uint32_t {
-	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4, ReleaseStringWork = 5,
+	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4,
 };
 constexpr uint32_t HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 enum class HeapServiceGcArgumentField : uint32_t { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 };
