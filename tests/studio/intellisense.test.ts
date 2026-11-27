@@ -546,7 +546,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	].join('\n');
 	const { bridge, runtime, analysis } = createIntellisenseRuntime(source, 0, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
 	const cpu = runtime.machine.cpu;
-	cpu.reset(); cpu.installBootPrimitives();
+	cpu.reset();
 	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
@@ -558,7 +558,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(fault.lastCpuFaultSnapshot.length, 1);
 	assert.equal(fault.lastCpuFaultSnapshot[0].upvalues.length, 1);
 
-	cpu.reset(); cpu.installBootPrimitives();
+	cpu.reset();
 	runGuestToHalt(cpu, 1000);
 	assert.equal(cpu.getFrameDepth(), 0);
 
@@ -723,7 +723,6 @@ halt_until_irq`;
 		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = __bmsx_setmetatable' });
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 100000);
 		const subject = guest.global('subject');
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
@@ -897,10 +896,10 @@ return descend(1)`,
 
 			const faultSource = "require('supervisor_fault'); " + scenario.source.replace('halt_until_irq', "raise_fault('recursive stop')");
 			const faulted = createIntellisenseRuntime(faultSource, optLevel, { [SUPERVISOR_FAULT_MODULE.path]: SUPERVISOR_FAULT_MODULE.source });
-			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
+			faulted.runtime.machine.cpu.reset();
 			runToSupervisorFault(faulted.runtime);
 			recordSupervisorFault(fault, faulted.bridge.sources, faulted.runtime, faulted.bridge.suspendedGuest);
-			faulted.runtime.machine.cpu.reset(); faulted.runtime.machine.cpu.installBootPrimitives();
+			faulted.runtime.machine.cpu.reset();
 			assert.deepEqual(readRuntimeLuaValue(faulted.runtime, faulted.bridge.sources, fault, faulted.bridge.suspendedGuest,
 				faulted.analysis, runtimeResource, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column),
 				scenario.expected.kind === 'value' ? { kind: 'snapshot', value: { kind: 'integer', value: 0 } } : scenario.expected,

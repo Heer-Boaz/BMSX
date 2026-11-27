@@ -28,7 +28,6 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 			{ entrySource: FORMAT32_ROM_SOURCE, optLevel, programDomain: 'system' });
 		const image = linkTestSystemBlua32(program);
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		const budget = 500_000_000;
 		runGuestToHalt(cpu, budget);
 		const results = materializeCpuCompletionValues(cpu);
@@ -43,7 +42,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 				v.valueTag(value) === v.ValueTag.String ? `S ${cpu.stringPool.toString(v.asStringId(value))}` :
 				`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
 			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,
-				['--execute-rom', '--boot-primitives', String(budget)], { input: image.romBytes, encoding: 'utf8' }), expected);
+				['--execute-rom', String(budget)], { input: image.romBytes, encoding: 'utf8' }), expected);
 		}
 		console.log(JSON.stringify({ optLevel, backend, referenceChecks: FORMAT32_CASES.length, cycles: budget - cpu.instructionBudgetRemaining }));
 	});

@@ -30,6 +30,6 @@ export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistor
 	const sources = createTestRuntimeSourceState(systemSources, [cartSources, null], 0);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(systemSources, images.systemSymbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(cartSources, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
-	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
+	runtime.machine.cpu.reset();
 	return { runtime, sources, cpu: runtime.machine.cpu };
 }

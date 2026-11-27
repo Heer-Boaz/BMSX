@@ -68,14 +68,12 @@ export class Runtime {
 	public boot(): void {
 		this.completionValues.length = 0;
 		this.machine.cpu.reset();
-		this.machine.cpu.installBootPrimitives();
 		this.finishSystemBoot();
 	}
 
 	public rebootSystem(): void {
 		this.resetForSystemBoot();
 		this.machine.cpu.reset();
-		this.machine.cpu.installBootPrimitives();
 		this.finishSystemBoot();
 	}
 

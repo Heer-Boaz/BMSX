@@ -74,7 +74,6 @@ end`;
 			...tokenEntries,
 		]),
 	}, backend);
-	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted, 'cold boot');
 	const read = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	const lookup = (id: string, system = false) => {
@@ -121,12 +120,11 @@ for (const optLevel of [3] as const) test(`packed system directory O${optLevel}:
 		.map((resid, i) => ({ type: 'image', resid, start: 0x200 + i * 4, end: 0x204 + i * 4 }));
 	const romBytes = directory(linked.romBytes, alignRomAssetOffset(linked.romBytes.length), entries);
 	const { cpu } = createTestBlua32PairCpu({ systemRomBytes: romBytes, cartRomBytes: createTestRuntimeRomPayload() });
-	cpu.installBootPrimitives();
 	const budget = 10_000_000;
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	const results = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(results, [valueInteger(98), valueInteger(entries.reduce((sum, entry) => sum + entry.start!, 0)), valueInteger(392)]);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`)].join('\n') + '\n';
-	assert.equal(execFileSync(nativeRunner!, ['--execute-rom', '--boot-primitives', String(budget)], { input: romBytes, encoding: 'utf8' }), expected);
+	assert.equal(execFileSync(nativeRunner!, ['--execute-rom', String(budget)], { input: romBytes, encoding: 'utf8' }), expected);
 });

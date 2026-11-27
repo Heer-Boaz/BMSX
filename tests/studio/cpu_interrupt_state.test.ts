@@ -11,7 +11,8 @@ import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/
 import { BASE_CYCLES, encodeFixedValueCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,

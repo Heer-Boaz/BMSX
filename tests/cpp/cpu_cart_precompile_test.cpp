@@ -5,7 +5,6 @@
 #include "machine/cpu/execution_image.h"
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
-#include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -37,7 +36,6 @@ public:
 
 test::Blua32TestRom systemProgram(bool warmLoop = false) {
 	test::Blua32TestImage image;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.constants = {static_cast<i32>(test::blua32TestFunctionAddress(RomImageDomain::Cartridge, 0))};
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);

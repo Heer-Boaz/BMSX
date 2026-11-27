@@ -9,7 +9,6 @@ import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_t
 
 test('a failed thread retains its physical error word, tag and authored frames', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.protected_and_failed, 3));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	const value = cpu.getGlobalByKey(cpu.stringPool.find('failed_thread')!);
@@ -25,7 +24,6 @@ test('a failed thread retains its physical error word, tag and authored frames',
 
 test('a dead coroutine is collected after its last stack roots return', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.collection, 3));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	cpu.collectTrackedHeapBytes();

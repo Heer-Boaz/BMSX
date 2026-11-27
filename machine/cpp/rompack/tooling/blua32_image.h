@@ -65,7 +65,12 @@ struct Blua32FunctionRecord {
 };
 
 struct Blua32FloatConstant { u32 bits; };
-using Blua32EncodedConstant = std::variant<std::monostate, bool, i32, Blua32FloatConstant, std::string>;
+struct Blua32BuiltinConstant {
+	u32 id;
+	bool operator==(const Blua32BuiltinConstant&) const = default;
+};
+
+using Blua32EncodedConstant = std::variant<std::monostate, bool, i32, Blua32FloatConstant, Blua32BuiltinConstant, std::string>;
 
 struct Blua32ImageLayout {
 	u32 address = 0;

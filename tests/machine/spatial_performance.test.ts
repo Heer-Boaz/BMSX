@@ -159,7 +159,6 @@ for (const optLevel of [3] as const) {
 		// Both measurements use the same linked code, but boot fresh RAM and CPU state.
 		const images = worldImages ??= compileCartlibProgram(worldFixture, { optLevel, modules: WORLD_CPU_MODULES }).images;
 		const { cpu } = createTestBlua32PairCpu(images);
-		cpu.installBootPrimitives();
 		return { cpu, images };
 	};
 	test(`spatial CPU: unrelated World size does not tax a changed leaf or dirty branch (O${optLevel})`, t => {

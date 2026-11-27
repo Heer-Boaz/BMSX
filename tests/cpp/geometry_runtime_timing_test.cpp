@@ -7,7 +7,6 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
 #include "machine/scheduler/frame.h"
-#include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
@@ -64,7 +63,6 @@ void testOverrun(bool scalar, bool restore) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions.push_back({.firstWord = 0, .wordCount = 2});
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image,
 		summary + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
 	IdleInput input;

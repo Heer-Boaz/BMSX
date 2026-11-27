@@ -1,10 +1,52 @@
-import { LUA_BOOT_PRIMITIVES } from '../../../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../../../machine/ts/spec/blua32/builtin';
 
 export type ProgramCompileDomain = 'cart' | 'system';
 
-export const SYSTEM_ROM_BOOT_PRIMITIVE_NAMES: ReadonlyArray<string> = LUA_BOOT_PRIMITIVES.map(primitive => primitive.name);
+export interface LuaBootPrimitive {
+	readonly name: string;
+	readonly id: BuiltinFunctionId;
+}
 
-/** Ambient names supplied by the machine at system initialization, not cart globals. */
+export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
+	{ name: '__bmsx_next', id: BuiltinFunctionId.Next },
+	{ name: '__bmsx_type', id: BuiltinFunctionId.Type },
+	{ name: '__bmsx_setmetatable', id: BuiltinFunctionId.SetMetatable },
+	{ name: '__bmsx_getmetatable', id: BuiltinFunctionId.GetMetatable },
+	{ name: '__bmsx_rawget', id: BuiltinFunctionId.RawGet },
+	{ name: '__bmsx_rawset', id: BuiltinFunctionId.RawSet },
+	{ name: '__bmsx_select', id: BuiltinFunctionId.Select },
+	{ name: '__bmsx_string_byte', id: BuiltinFunctionId.StringByte },
+	{ name: '__bmsx_string_char', id: BuiltinFunctionId.StringChar },
+	{ name: '__bmsx_error', id: BuiltinFunctionId.Error },
+	{ name: '__bmsx_pcall', id: BuiltinFunctionId.PCall },
+	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
+	{ name: '__bmsx_set_string_index', id: BuiltinFunctionId.SetStringIndex },
+	{ name: '__bmsx_coroutine_create', id: BuiltinFunctionId.CoroutineCreate },
+	{ name: '__bmsx_coroutine_resume', id: BuiltinFunctionId.CoroutineResume },
+	{ name: '__bmsx_coroutine_yield', id: BuiltinFunctionId.CoroutineYield },
+	{ name: '__bmsx_coroutine_status', id: BuiltinFunctionId.CoroutineStatus },
+	{ name: '__bmsx_coroutine_running', id: BuiltinFunctionId.CoroutineRunning },
+	{ name: '__bmsx_coroutine_close', id: BuiltinFunctionId.CoroutineClose },
+	{ name: '__bmsx_coroutine_isyieldable', id: BuiltinFunctionId.CoroutineIsYieldable },
+	{ name: '__bmsx_getglobal', id: BuiltinFunctionId.GetGlobal },
+	{ name: '__bmsx_setglobal', id: BuiltinFunctionId.SetGlobal },
+	{ name: '__bmsx_frame_count', id: BuiltinFunctionId.FrameCount },
+	{ name: '__bmsx_get_frame_register', id: BuiltinFunctionId.GetFrameRegister },
+	{ name: '__bmsx_set_frame_register', id: BuiltinFunctionId.SetFrameRegister },
+	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
+	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
+	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
+	{ name: '__bmsx_number_type', id: BuiltinFunctionId.NumberType },
+	{ name: '__bmsx_tointeger', id: BuiltinFunctionId.ToInteger },
+	{ name: '__bmsx_string_slice', id: BuiltinFunctionId.StringSlice },
+	{ name: '__bmsx_table_copy', id: BuiltinFunctionId.TableCopy },
+	{ name: '__bmsx_string_from_bytes', id: BuiltinFunctionId.StringFromBytes },
+];
+
+export const SYSTEM_ROM_BUILTIN_BY_NAME = new Map(LUA_BOOT_PRIMITIVES.map(({ name, id }) => [name, id]));
+const SYSTEM_ROM_BOOT_PRIMITIVE_NAMES: ReadonlyArray<string> = LUA_BOOT_PRIMITIVES.map(primitive => primitive.name);
+
+/** Ambient immutable ROM bindings, not globals in the guest namespace. */
 export const PROGRAM_BOOT_GLOBAL_NAMES: Readonly<Record<ProgramCompileDomain, readonly string[]>> = {
 	system: SYSTEM_ROM_BOOT_PRIMITIVE_NAMES,
 	cart: [],

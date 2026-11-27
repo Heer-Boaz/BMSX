@@ -8,7 +8,7 @@ import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/st
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import * as geo from '../../machine/ts/machine/devices/geometry/contracts';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';

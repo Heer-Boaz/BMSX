@@ -7,10 +7,10 @@ import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 
-import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueFloat, valueNil, valueString, valueTable, type Value, valueBuiltinFunction } from '../../machine/ts/machine/cpu/value';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
@@ -25,11 +25,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   writeInstruction(text, 0, OpCode.CALL, 0, 3, 0);
   writeInstruction(text, 1, OpCode.K1, 7, 0, 0);
   writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }],
-   systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name) });
+  const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }] });
   const { cpu } = createTestSystemCpu(image, backend);
-  cpu.installBootPrimitives();
-  const next = cpu.getSystemGlobalByKey(cpu.stringPool.intern('__bmsx_next'));
+  const next = valueBuiltinFunction(BuiltinFunctionId.Next);
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const grant = BASE_CYCLES[OpCode.CALL] + 1;
@@ -102,7 +100,6 @@ count, key, value = capture(next({}))
 assert(count == 1 and key == nil and value == nil)
 return true`, 3);
   const { cpu } = createTestSystemCpu(image, backend);
-  cpu.installBootPrimitives();
   runGuestToHalt(cpu, 200_000);
   const values: Value[] = [];
   cpu.readCompletionValues(values);

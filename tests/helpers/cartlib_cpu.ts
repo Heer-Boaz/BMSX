@@ -222,7 +222,6 @@ export function compileCartlibProgram(
 export function createCartlibProgramHarness(cartEntrySource: string, options: CartlibProgramOptions = {}) {
 	const { images, cart } = compileCartlibProgram(cartEntrySource, options);
 	const { cpu } = createTestBlua32PairCpu(images);
-	cpu.installBootPrimitives();
 	return { cpu, images, cart };
 }
 

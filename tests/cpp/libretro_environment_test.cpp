@@ -7,7 +7,6 @@
 #include "spec/bmsx/cartridge.h"
 #include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
-#include "spec/blua32/builtin.h"
 #include "spec/blua32/opcode.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/bmsx/model.h"
@@ -284,10 +283,6 @@ void testStateRequiresInstalledMedia(const std::filesystem::path& testDirectory)
 		writeInstruction(code.text, 0u, static_cast<u8>(load), 0u, 0u, 0u);
 		writeInstruction(code.text, 1u, static_cast<u8>(OpCode::HALT), 0u, 0u, 0u);
 		code.functions = {{.firstWord = 0u, .wordCount = 2u}};
-		if (domain == RomImageDomain::System) {
-			for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES)
-				code.systemGlobalNames.emplace_back(primitive.name);
-		}
 		const auto image = test::encodeBlua32TestRom(domain, code, manifest);
 		std::ofstream file(path, std::ios::binary);
 		file.write(reinterpret_cast<const char*>(image.bytes.data()), static_cast<std::streamsize>(image.bytes.size()));

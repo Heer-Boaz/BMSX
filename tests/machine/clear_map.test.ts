@@ -44,6 +44,8 @@ function probe.clear() clear(map) end
 		const { cpu } = createCartlibProgramHarness(`
 local clear<const> = require('cartlib/util/clear_map')
 local map<const> = {}
+-- Reserve the known integer band before measuring retention of historical object keys.
+for index = 1, 32 do map[index] = false end
 probe = { map = map }
 function probe.seed()
  local weak<const> = setmetatable({}, { __mode = 'v' })

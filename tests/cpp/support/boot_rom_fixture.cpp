@@ -3,7 +3,6 @@
 #include "blua32_test_rom.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
-#include "spec/blua32/builtin.h"
 #include "rompack/tooling/blua32_symbols.h"
 
 #include <span>
@@ -44,11 +43,6 @@ std::vector<u8> makeMinimalBootRom(
 	RomImageDomain domain,
 	const CartManifest& manifest, u32 bssByteCount) {
 	Blua32TestImage image = makeMinimalImage();
-	if (domain == RomImageDomain::System) {
-		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
-			image.systemGlobalNames.emplace_back(primitive.name);
-		}
-	}
 	return encodeBlua32TestRom(
 		domain,
 		image,
@@ -59,11 +53,6 @@ std::vector<u8> makeMinimalBootRom(
 
 std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 	Blua32TestImage image = makeMinimalImage();
-	if (domain == RomImageDomain::System) {
-		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
-			image.systemGlobalNames.emplace_back(primitive.name);
-		}
-	}
 	const Blua32TestRom executable = encodeBlua32TestRom(domain, image);
 	Blua32SymbolsImage symbols;
 	symbols.imageAddress = (domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE)

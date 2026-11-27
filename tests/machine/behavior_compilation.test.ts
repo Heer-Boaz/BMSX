@@ -280,7 +280,6 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 		const { images } = compileCartlibProgram(BT_COMPILATION_PROBE_SOURCE, { traceStatements, modules });
 		for (const mode of modes) {
 			const { cpu } = createTestBlua32PairCpu(images);
-			cpu.installBootPrimitives();
 			runGuestToHalt(cpu, 10_000_000);
 			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 			const ready = cpu.collectTrackedHeapBytes();

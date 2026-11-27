@@ -43,7 +43,7 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number, faulting 
 		f.debuggerState.breakpoints.set({ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'stack_probe.lua' }, [breakpoint]);
 	}
 	runtime.machine.cpu.reset();
-	if (faulting) { runtime.machine.cpu.installBootPrimitives(); runToSupervisorFault(runtime); }
+	if (faulting) { runToSupervisorFault(runtime); }
 	else assert.equal(runtime.machine.cpu.runUntilDepth(0, 100_000), breakpoint === undefined ? RunResult.Halted : RunResult.ExecutionStopped);
 	f.inspection.pause();
 	return f;

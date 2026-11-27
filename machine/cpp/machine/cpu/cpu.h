@@ -214,7 +214,6 @@ public:
 	void invalidateMappedRange(u64 firstKey, u64 endKey) override;
 
 	void reset();
-	void installBootPrimitives();
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
 	FunctionPrototype readClosureBinding(u32 closure);
 	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;

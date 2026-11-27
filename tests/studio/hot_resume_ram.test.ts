@@ -26,7 +26,7 @@ ram_leaf = assert(load('local result = 3; return result', '=ram-leaf'))
 ram_outer = assert(load('local result = ram_leaf(); return result + 3', '=ram-outer'))
 return ram_outer() == 6`, optLevel);
 	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
-	cpu.reset(); cpu.installBootPrimitives();
+	cpu.reset();
 	cpu.setExecutionHook(() => {
 		const depth = cpu.getFrameDepth();
 		return depth >= 2 && blua32FunctionIndexAtAddress(image.image, cpu.readFrameFunctionAddress(depth - 1)) === -1
@@ -77,7 +77,6 @@ assert(ok and result == 42)
 halt_until_irq
 `, 3);
 	const { cpu } = createTestSystemCpu(image);
-	cpu.installBootPrimitives();
 	let result = RunResult.Yielded;
 	for (let step = 0; step < 10 && result === RunResult.Yielded; ++step) result = cpu.runUntilDepth(0, 1_000_000);
 	assert.equal(result, RunResult.Halted);
@@ -99,7 +98,6 @@ end
 return run(17)
 `, 0);
 	const { cpu } = createTestSystemCpu(image);
-	cpu.installBootPrimitives();
 	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
 	const thread = cpu.activeThread;
 	let handler = 0;

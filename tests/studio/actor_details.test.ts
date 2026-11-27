@@ -101,7 +101,7 @@ function fixture(worldSource = WORLD) {
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
-	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = captureCpuCheckpoint(cpu); cpu.runUntilDepth(0, 100_000);
+	cpu.reset(); const beforeBirth = captureCpuCheckpoint(cpu); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
 	const objects = valuePayload(guest.readStringMember(world, '_objects'));

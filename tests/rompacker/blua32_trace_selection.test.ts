@@ -73,7 +73,6 @@ return producer
 		systemRomBytes: writeTestBlua32Rom(system.linked),
 		cartRomBytes: writeTestBlua32Rom(cart.linked),
 	});
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 100_000);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('system_observed')!), valueInteger(3));
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7)]);

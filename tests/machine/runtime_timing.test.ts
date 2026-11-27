@@ -78,7 +78,8 @@ import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_pa
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';

@@ -246,7 +246,6 @@ function probe()
  assert(ok and value == 210)
 end
 halt_until_irq`, 0));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 100000);
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));

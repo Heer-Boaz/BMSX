@@ -77,6 +77,7 @@ enum class Blua32ConstantTag : uint32_t {
 	Integer = 3u,
 	String = 4u,
 	Float = 5u,
+	Builtin = 6u,
 };
 
 } // namespace bmsx

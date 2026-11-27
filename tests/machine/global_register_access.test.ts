@@ -32,7 +32,6 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
 		parseLuaChunk(source, 'global-register-access.lua'), [boot], { entrySource: source, optLevel: level, programDomain: 'system' },
 	)));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 65_536);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil()]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('alias')!), cpu.getGlobalByKey(cpu.stringPool.find('shared')!));
@@ -53,7 +52,6 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
 		parseLuaChunk(source, 'global-banks.lua'), [boot], { entrySource: source, programDomain: 'system' },
 	)));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 65_536);
 	const values = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);

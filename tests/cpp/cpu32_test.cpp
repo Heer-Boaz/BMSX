@@ -727,8 +727,8 @@ void tableHeap() {
 }
 } // namespace
 int main(int argc, char** argv) {
-	const bool profileFullGc = argc == 6 && std::string_view(argv[4]) == "--profile-full-gc";
-	if ((argc == 2 || ((argc == 3 || argc == 4 || profileFullGc) && std::string(argv[2]) == "--boot-primitives")) &&
+	const bool profileFullGc = argc == 5 && std::string_view(argv[3]) == "--profile-full-gc";
+	if ((argc == 2 || argc == 3 || profileFullGc) &&
 		std::string(argv[1]) == "--execute-rom") {
 		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin), {});
 		Memory memory(MemoryInit{bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
@@ -739,11 +739,9 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		cpu.prepareSystemNativeCode();
 #endif
-		if (argc >= 3)
-			cpu.installBootPrimitives();
 		int fullGcCycles = 0;
-		if (test::runCpuWithinBudget(cpu, argc >= 4 ? std::stoi(argv[3]) : 100000, 0,
-			profileFullGc ? &fullGcCycles : nullptr, profileFullGc ? static_cast<u32>(std::stoul(argv[5])) : 0u) != RunResult::Halted) {
+		if (test::runCpuWithinBudget(cpu, argc >= 3 ? std::stoi(argv[2]) : 100000, 0,
+			profileFullGc ? &fullGcCycles : nullptr, profileFullGc ? static_cast<u32>(std::stoul(argv[4])) : 0u) != RunResult::Halted) {
 			std::cerr << "ROM did not finish within its cycle grant\n";
 			return 1;
 		}

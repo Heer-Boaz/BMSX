@@ -32,7 +32,6 @@ for (const optLevel of [3] as const) test(`BIOS samples the unsigned millisecond
 	const image = linkTestSystemBlua32(program);
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 1_000_000);
 		const sample = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('sample')!), cpu.gc);
 		let reads = 0, word = 0;
@@ -102,11 +101,10 @@ for (const optLevel of [3] as const) test(`BIOS civil seconds: exact signed endp
 	const budget = 20_000_000;
 	for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, budget);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(epochs.length)]);
 		if (backend === CpuExecutionBackend.Interpreter && process.env.BMSX_CPU32_RUNNER) {
-			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER, ['--execute-rom', '--boot-primitives', String(budget)],
+			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER, ['--execute-rom', String(budget)],
 				{ input: image.romBytes, encoding: 'utf8' }), `budget ${cpu.instructionBudgetRemaining} fault 0\n3 ${epochs.length.toString(16)}\n`);
 		}
 	}

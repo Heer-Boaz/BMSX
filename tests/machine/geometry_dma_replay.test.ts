@@ -4,7 +4,7 @@ import { encodeRuntimeSaveState, decodeRuntimeSaveState } from '../../machine/ts
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState, applyRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';

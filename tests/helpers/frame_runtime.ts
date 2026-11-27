@@ -1,6 +1,6 @@
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { createTestRuntime } from './runtime_sources';
 import { linkRawTestSystemBlua32 } from './blua32';
 

@@ -234,7 +234,7 @@ test('fault, physical reset and target shutdown each settle pending operations h
 	for (const event of ['fault', 'host-fault', 'reset', 'close'] as const) {
 		const f = event === 'fault' ? fixture(t, "require('supervisor_fault'); raise_fault('probe fault')", 0, [SUPERVISOR_FAULT_MODULE]) : fixture(t);
 		const op = f.owner.resume('continue', 'workbench');
-		if (event === 'fault') { f.cpu.installBootPrimitives(); runToSupervisorFault(f.runtime); recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest); f.owner.afterHostFrame(); }
+		if (event === 'fault') { runToSupervisorFault(f.runtime); recordSupervisorFault(f.fault, f.sources, f.runtime, f.guest); f.owner.afterHostFrame(); }
 		else if (event === 'host-fault') { f.fault.hostFrameFailure = new TypeError('host failure').stack; f.owner.afterHostFrame(); }
 		else if (event === 'reset') { f.cpu.reset(); f.owner.didReset(); resetRuntimeDebuggerExecution(f.state); }
 		else f.owner.dispose();
@@ -274,7 +274,7 @@ end)
 local resume<const> = resume_co
 resume(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
-		f.cpu.installBootPrimitives(); f.state.breakpoints.set(RESOURCE, [6]);
+		f.state.breakpoints.set(RESOURCE, [6]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
 		const parent = f.cpu.activeThread.address;
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
@@ -290,7 +290,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 end)
 resume_co(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
-		f.cpu.installBootPrimitives(); f.state.breakpoints.set(RESOURCE, [3]);
+		f.state.breakpoints.set(RESOURCE, [3]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 		const child = f.cpu.activeThread.address;
 		assert.notEqual(child, f.cpu.rootThread.address);
@@ -309,7 +309,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 end)
 resume_co(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
-		f.cpu.installBootPrimitives(); f.state.breakpoints.set(RESOURCE, [2, 4]);
+		f.state.breakpoints.set(RESOURCE, [2, 4]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 4);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
@@ -324,7 +324,7 @@ child = create_co(function() other(); child_done = true end)
 invoke = function() resume_co(child) end
 root_value = 0
 root_value = 1`, optLevel, THREAD_PRIMITIVES);
-		f.cpu.installBootPrimitives(); f.state.breakpoints.set(RESOURCE, [2, 6]);
+		f.state.breakpoints.set(RESOURCE, [2, 6]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
@@ -348,7 +348,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 end)
 close = function() close_co(child) end
 resume_co(child)`, optLevel, THREAD_PRIMITIVES);
-		f.cpu.installBootPrimitives(); f.state.breakpoints.set(RESOURCE, [2]);
+		f.state.breakpoints.set(RESOURCE, [2]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 		const child = f.cpu.activeThread.address;
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);

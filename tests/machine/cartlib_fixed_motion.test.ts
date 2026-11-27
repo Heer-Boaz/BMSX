@@ -28,7 +28,6 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		const program = compileTestSystemWithHeap(parseLuaChunk(source, 'fixed-motion.lua').chunk, modules,
 			{ entrySource: source, programDomain: 'system', optLevel });
 		const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.Halted);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		const results: Value[] = [];
@@ -36,7 +35,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		assert.deepEqual(results, [valueBool(true)]);
 		if (process.env.BMSX_CPU32_RUNNER) {
 			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,
-				['--execute-rom', '--boot-primitives', '1000000'], { input: image.romBytes, encoding: 'utf8' }),
+				['--execute-rom', '1000000'], { input: image.romBytes, encoding: 'utf8' }),
 				`budget ${cpu.instructionBudgetRemaining} fault 0\n2 0\n`);
 		}
 	});

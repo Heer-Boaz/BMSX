@@ -158,7 +158,6 @@ collect()
 return read(), a, b, c, d
 `, optLevel);
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		let result = RunResult.Yielded;
 		for (let step = 0; step < 2048 && result === RunResult.Yielded; ++step) {
 			result = cpu.runUntilDepth(0, [13, 59, 191, 1024][step & 3]);
@@ -181,7 +180,6 @@ local function nilvalue() return nil end
 return count('#', empty()), count('#', implicit()), count('#', nilvalue())
 `, optLevel);
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 1_000_000);
 		const values: Value[] = [];
 		cpu.readCompletionValues(values);

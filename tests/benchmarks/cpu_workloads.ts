@@ -2,7 +2,7 @@ import { integerConstant } from '../../toolchain/ts/lua/number';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { IO_IRQ_MASK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';

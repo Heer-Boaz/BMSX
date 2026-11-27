@@ -67,7 +67,6 @@ test('public BIOS diagnostics and embedded host symbols are independently select
 		assert.equal(readLE32(bytes, CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET) !== 0, includeDiagnostics);
 		executables.push(image.layout.bytes);
 		const { cpu, memory } = createTestSystemCpu({ romBytes: bytes });
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 100_000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
 		if (!includeDiagnostics || includeSymbols) continue;

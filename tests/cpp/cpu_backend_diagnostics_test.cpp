@@ -5,7 +5,6 @@
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state/codec.h"
 #include "spec/blua32/instruction_format.h"
-#include "spec/blua32/builtin.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
@@ -151,7 +150,6 @@ Run runPair(Fixture& generated, Fixture& scalar, int grant) {
 
 test::Blua32TestImage imageWithHandler(u32 words) {
 	test::Blua32TestImage image;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text,64,static_cast<u8>(OpCode::HALT),0,0,0);
 	writeInstruction(image.text,96,static_cast<u8>(OpCode::RFE),0,0,0);

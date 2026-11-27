@@ -419,7 +419,6 @@ return imgdec
 		const executionAddressSpace = new ExecutionAddressSpace(memory);
 		const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
 		cpu.reset();
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 10_000_000);
 		const textureDestination = gxGpuPair16(320, 0);
 		const clutDestination = gxGpuPair16(320, 16);

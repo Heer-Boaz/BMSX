@@ -32,7 +32,6 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
   const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
    { entrySource, optLevel, programDomain: 'system' });
   const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
-  cpu.installBootPrimitives();
   runGuestToHalt(cpu, 1_000_000);
   const closure = v.asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
   const call = (...args: v.Value[]) => {

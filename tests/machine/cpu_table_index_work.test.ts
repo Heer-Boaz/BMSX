@@ -108,7 +108,6 @@ local v, held = read(nested, 91)
 assert(v == false and held == 91)
 return true`, 0);
 		const { cpu } = createTestSystemCpu(image, backend);
-		cpu.installBootPrimitives();
 		const targetKey = cpu.stringPool.intern('lookup_target');
 		for (let attempts = 0; attempts < 65_536 && cpu.getGlobalByKey(targetKey) === valueNil(); ++attempts) {
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);

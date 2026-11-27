@@ -26,7 +26,6 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
 			{ entrySource, optLevel, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 100000);
 		const completed = materializeCpuCompletionValues(cpu);
 		const functions = completed.slice(0, 3).map(value => v.asClosure(value, cpu.gc));
@@ -75,7 +74,6 @@ for (const optLevel of [3] as const) test(`BIOS trig O${optLevel}: physical ROM 
 	const program = compileTestSystemWithHeap(parseLuaChunk(TRIG32_ROM_SOURCE, 'trig32-rom.lua'), modules,
 		{ entrySource: TRIG32_ROM_SOURCE, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image);
-	cpu.installBootPrimitives();
 	const budget = 100_000_000;
 	runGuestToHalt(cpu, budget);
 	const results = materializeCpuCompletionValues(cpu);
@@ -86,6 +84,6 @@ for (const optLevel of [3] as const) test(`BIOS trig O${optLevel}: physical ROM 
 		const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value =>
 			`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
 		assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,
-			['--execute-rom', '--boot-primitives', String(budget)], { input: image.romBytes, encoding: 'utf8' }), expected);
+			['--execute-rom', String(budget)], { input: image.romBytes, encoding: 'utf8' }), expected);
 	}
 });

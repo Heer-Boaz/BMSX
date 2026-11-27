@@ -95,7 +95,6 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 		let remaining = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.installBootPrimitives();
 			runGuestToHalt(cpu, budget);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
 			if (backend === CpuExecutionBackend.Interpreter) remaining = cpu.instructionBudgetRemaining;
@@ -103,7 +102,7 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)],
+			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget)],
 				{ input: image.romBytes, encoding: 'utf8' });
 			assert.equal(output, [`budget ${remaining} fault 0`,
 				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
@@ -198,7 +197,6 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 		const functionAddress = residentFunctionAddress(image, 'kernel/gc_full', 'collect_full');
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.installBootPrimitives();
 			const profile = { functionAddress, fullGcCycles: 0 };
 			assert.equal(runCpuWithinBudget(cpu, budget, 0, profile), RunResult.Halted);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -211,7 +209,7 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget), '--profile-full-gc', String(functionAddress)],
+			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget), '--profile-full-gc', String(functionAddress)],
 				{ input: image.romBytes, encoding: 'utf8' });
 			const cost = /^budget (\d+) fault 0\nfull-gc ([1-9]\d*)\n/.exec(output);
 			assert.ok(cost, 'native execution completes without a fault and bills its explicit GC');
@@ -310,14 +308,13 @@ return a,b,c,d,e,f,g,h,i,j,k,l,m,n,direct()
 		let scalarBudget = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			cpu.installBootPrimitives();
 			runGuestToHalt(cpu, budget);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
 			if (backend === CpuExecutionBackend.Interpreter) scalarBudget = cpu.instructionBudgetRemaining;
 			else assert.equal(cpu.instructionBudgetRemaining, scalarBudget);
 		}
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', '--boot-primitives', String(budget)], { input: image.romBytes, encoding: 'utf8' });
+			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget)], { input: image.romBytes, encoding: 'utf8' });
 			assert.equal(output, [`budget ${scalarBudget} fault 0`,
 				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
 		}

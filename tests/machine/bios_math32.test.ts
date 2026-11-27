@@ -22,7 +22,6 @@ function compile(source: string, optLevel: 0 | 3) {
 }
 function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 100_000) {
 	const image = compile(source, opt), { cpu } = createTestSystemCpu(image, backend);
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, budget);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
 	return { image, cpu, results };
@@ -92,5 +91,5 @@ for (const fixture of ['math', 'random']) for (const opt of [3] as const) test(`
 	const { image, cpu, results } = run(source, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => v.valueIsString(value)
 		? 'S ' + cpu.stringPool.toString(v.asStringId(value)) : `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
-	assert.equal(execFileSync(native!, ['--execute-rom', '--boot-primitives'], { input: image.romBytes, encoding: 'utf8' }), expected);
+	assert.equal(execFileSync(native!, ['--execute-rom'], { input: image.romBytes, encoding: 'utf8' }), expected);
 });

@@ -1,24 +1,27 @@
-import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { createEditorSemanticFrontend } from '../../ide/editor/contrib/intellisense/frontend';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 for (const optLevel of [3] as const) {
-	test(`compiler accepts ambient boot globals only in the system domain at O${optLevel}`, () => {
+	test(`compiler emits immutable builtin constants only in the system domain at O${optLevel}`, () => {
 		for (const primitive of LUA_BOOT_PRIMITIVES) {
 			const source = `return ${primitive.name}`;
 			const chunk = parseLuaChunk(source, 'capture.lua').chunk;
 			const bios = compileLuaChunkToProgram(chunk, [], { entrySource: source, optLevel, programDomain: 'system' });
-			assert.ok(bios.metadata.systemGlobalNames.includes(primitive.name));
+			assert.equal(bios.metadata.systemGlobalNames.includes(primitive.name), false);
+			assert.deepEqual(encodeCompiledProgramObject(bios).sections.rodata.constPool.filter(value =>
+				value !== null && typeof value === 'object' && value.kind === 'builtin'), [{ kind: 'builtin', word: primitive.id }]);
 			assert.throws(() => compileLuaChunkToProgram(chunk, [], { entrySource: source, optLevel, programDomain: 'cart' }));
 			assert.throws(() => compileLuaChunkToProgram(chunk, [], { entrySource: source, optLevel }));
 		}
@@ -30,16 +33,13 @@ for (const optLevel of [3] as const) {
 		assert.ok(cart.metadata.globalNames.includes('__bmsx_next'));
 		assert.equal(cart.metadata.systemGlobalNames.includes('__bmsx_next'), false);
 		const bootSource = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
-		const bios = compileLuaChunkToProgram(parseLuaChunk(bootSource, 'boot.lua').chunk, [], {
-			entrySource: bootSource, optLevel, programDomain: 'system',
-		});
-		const { cpu } = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart));
-		cpu.installBootPrimitives();
-		runGuestToHalt(cpu, 10000);
+		const bios = compileHeapServiceSystem(bootSource, optLevel);
+		const pair = linkTestBlua32Pair(bios, cart);
+		const { cpu } = createTestBlua32PairCpu(pair);
+		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(42)]);
-		for (const primitive of LUA_BOOT_PRIMITIVES) {
-			assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find(primitive.name)!), valueNil());
-		}
+		for (const primitive of LUA_BOOT_PRIMITIVES)
+			assert.equal(pair.systemImage.systemGlobalNames.includes(primitive.name), false);
 	});
 }
 

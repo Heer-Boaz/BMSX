@@ -24,7 +24,6 @@ const budget = 10000000;
 function run(source: string, optLevel: 0 | 3, backend: CpuExecutionBackend) {
 	const program = compileTestSystemWithHeap(parseLuaChunk(source, 'number32.lua').chunk, parsedModules, { entrySource: source, optLevel, programDomain: 'system' });
 	const image = linkTestSystemBlua32(program), { cpu } = createTestSystemCpu(image, backend);
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, budget);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
 	return { image, cpu, results };
@@ -43,7 +42,7 @@ const native = process.env.BMSX_CPU32_RUNNER;
 for (const opt of [3] as const) test(`BIOS Number32 O${opt}: C++ and TS execute the same parser with identical guest cycles`, { skip: !native }, () => {
 	const { image,cpu,results } = run(source,opt,CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value => `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
-	assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
+	assert.equal(execFileSync(native!,['--execute-rom',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
 });
 
 const loadSource = readFileSync('tests/fixtures/compiler32/load.lua','utf8');
@@ -103,7 +102,7 @@ for (const [name,source] of [['load',loadSource],['syntax',syntaxSource]]) for (
 	test(`BIOS ${name} O${opt}: native scalar CPU consumes the runtime-compiled RAM program`, { skip: !native }, () => {
 		const { image,cpu,results } = run(source,opt,CpuExecutionBackend.Interpreter);
 		const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value => `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
-		assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
+		assert.equal(execFileSync(native!,['--execute-rom',String(budget)],{ input:image.romBytes,encoding:'utf8' }),expected);
 	});
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS literal ${backend}: hexadecimal exponents and long significands cancel without a wide accumulator`, () => {
@@ -145,5 +144,5 @@ for (const opt of [3] as const) test(`BIOS word moves O${opt}: C++ executes runt
  const {image,cpu,results} = run(wordMovesSource,opt,CpuExecutionBackend.Interpreter);
  assert.deepEqual(results,[v.valueInteger(0xffa12345),v.valueInteger(5),v.valueFloatBits(0x80000000),v.valueInteger(0x40000000)]);
  const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value=>`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
- assert.equal(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
+ assert.equal(execFileSync(native!,['--execute-rom',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
 });

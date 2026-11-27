@@ -482,7 +482,6 @@ int main() {
    writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 7, 0, 0);
    writeInstruction(image.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
    image.functions = {{.firstWord=0, .wordCount=3, .maxStack=8}};
-   for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
    const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
    Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
    IrqController irq(memory);
@@ -490,8 +489,7 @@ int main() {
    CPU cpu(memory, irq, addresses);
    cpu.reset();
    if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
-   cpu.installBootPrimitives();
-   const Value next = cpu.getSystemGlobalByKey(cpu.stringPool().intern("__bmsx_next"));
+   const Value next = valueBuiltinFunction(BuiltinFunctionId::Next);
    auto* frame = cpu.activeThread()->frameAtDepth(0);
    const int grant = BASE_CYCLES[static_cast<u8>(OpCode::CALL)] + 1;
    const auto runNext = [&](TableRecord table, Value after, std::initializer_list<Value> expected) {

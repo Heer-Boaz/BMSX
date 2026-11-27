@@ -28,7 +28,7 @@ return true`, 0);
 	const sources = createScenarioTestSourceState([]);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
 	const guest = new SuspendedGuestSession(runtime);
-	cpu.reset(); cpu.installBootPrimitives();
+	cpu.reset();
 	// A pre-initialization source installation has no scope registry yet.
 	retireRuntimeFrameScopes(runtime, sources, guest);
 	runGuestToHalt(cpu, 30_000_000);

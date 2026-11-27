@@ -14,7 +14,7 @@ import { GX_GPU_DMA_DIRECTION_OFF } from '../../machine/ts/spec/gx/gp0';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { GX_GPU_COMMAND_FIFO_WORD_CAPACITY } from '../../machine/ts/spec/gx/gp0';
 import { gxGpuPcrtcRegisterAddress, GX_GPU_PCRTC_SMODE1_LOW, GX_GPU_PCRTC_SMODE1_SINT } from '../../machine/ts/spec/gx/pcrtc';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';

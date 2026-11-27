@@ -49,7 +49,7 @@ function fixture(t: TestContext, optLevel: 0 | 3, source = ENTRY, extraModules: 
 	afterTest(t, () => sources.catalog.dispose());
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports, captureInstalledLuaSources(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, images.systemSymbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID),
 		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols, captureInstalledLuaSources(sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, images.cartSymbols!.metadata.compiledModulePaths), TEST_CARTRIDGE_CONTEXT_IDS[0]), null] };
-	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
+	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	assert.deepEqual(readProgramInstances(sources, guest, 0, 'progression'), [], 'image metadata does not prove its module initializer ran');
 	runGuestToHalt(runtime.machine.cpu, 10_000_000);

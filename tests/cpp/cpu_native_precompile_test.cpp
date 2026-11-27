@@ -58,7 +58,6 @@ struct Fixture {
 
 test::Blua32TestImage program() {
 	test::Blua32TestImage image;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(3u * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KSMI), 1, 0, 7);
@@ -99,7 +98,6 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	image.mappedCode = false;
 	image.text.resize(8u * INSTRUCTION_BYTES);
 	image.systemGlobalNames = {"resume", "yield"};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 6}, {.firstWord = 4, .wordCount = 4}};
 	const auto put = [&](u32 word, OpCode op, u8 a, u8 b, u8 c, u8 ext = 0) {
 		writeInstruction(image.text, word, static_cast<u8>(op), a, b, c, ext);
@@ -182,7 +180,6 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 void verifiedFunctionControlFlowIsAdmittedBeforeExecution() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord = 0u, .wordCount = 4u}, {.firstWord = 4u, .wordCount = 1u}};
 	const auto layout = test::encodeBlua32TestRom(RomImageDomain::System, image);
@@ -503,7 +500,6 @@ void crossPageWideDependenciesRemainOwned() {
 void coldPreparationPublishesLengthSplitEntries() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord=0, .wordCount=1}};
 	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
@@ -528,7 +524,6 @@ void coldPreparationPublishesLengthSplitEntries() {
 void verifiedSinglePagePreparationSharesTheColdBatch() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(4u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 2, 0);
@@ -558,7 +553,6 @@ void verifiedSinglePagePreparationSharesTheColdBatch() {
 void adaptiveBranchSelectsExecutedDestinations(bool bothArms) {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(5u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMPIF), 0, 0, 2);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K0), 0, 0, 0);
@@ -605,7 +599,6 @@ void adaptiveBranchSelectsExecutedDestinations(bool bothArms) {
 void verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(6u * INSTRUCTION_BYTES);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::K0), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::K1), 1, 0, 0);
@@ -648,7 +641,6 @@ void verifiedSinglePageHotLoopLeavesItsFunctionEntryScalar() {
 void wideFunctionUsesDemandedBoundedRegions() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(5u * MAPPED_PAGE_BYTE_SIZE);
 	image.functions = {{.firstWord=0, .wordCount=2}};
 	const auto initial = test::encodeBlua32TestRom(RomImageDomain::System, image);
@@ -709,7 +701,6 @@ void verifiedStartupReachabilityOutranksDescriptiveHints() {
 	test::Blua32TestImage image;
 	image.mappedCode = false;
 	image.textAlignment = MAPPED_PAGE_BYTE_SIZE;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const u32 tailWord = NATIVE_VERSION_REGION_MAX_PAGES * DECODED_PAGE_WORDS;
 	const u32 lastHintWord = (NATIVE_VERSION_REGION_MAX_PAGES + NATIVE_IMAGE_WARMUP_MAX_PAGES) * DECODED_PAGE_WORDS;
 	image.text.resize((lastHintWord + 1u) * INSTRUCTION_BYTES);
@@ -750,7 +741,6 @@ void verifiedStartupReachabilityOutranksDescriptiveHints() {
 
 void descriptiveHintsAreBudgetedBeforeDiscovery() {
 	test::Blua32TestImage image;
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	image.text.resize(2u * MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::ADD), 0, 0, 1);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);

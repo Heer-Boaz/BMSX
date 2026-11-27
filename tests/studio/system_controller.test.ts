@@ -51,7 +51,7 @@ import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols
 import { COP0_EXEC } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';

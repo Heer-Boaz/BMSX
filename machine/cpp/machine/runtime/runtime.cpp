@@ -77,7 +77,6 @@ void Runtime::applyPublishedGxGpuPcrtcTiming(const GxGpuPcrtcTiming& pcrtcTiming
 
 void Runtime::boot() {
 	machine.cpu.reset();
-	machine.cpu.installBootPrimitives();
 	finishSystemBoot();
 }
 
@@ -89,7 +88,6 @@ void Runtime::finishSystemBoot() {
 void Runtime::rebootSystem() {
 	resetForSystemBoot();
 	machine.cpu.reset();
-	machine.cpu.installBootPrimitives();
 	finishSystemBoot();
 }
 

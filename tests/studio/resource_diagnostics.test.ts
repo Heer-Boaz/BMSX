@@ -14,7 +14,7 @@ import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/backg
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { afterTest } from '../helpers/test_cleanup';
 
 function fixture(t: TestContext) {

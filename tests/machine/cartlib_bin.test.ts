@@ -31,7 +31,6 @@ end, fixture_bytes`;
 	const program = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules,
 		{ entrySource, programDomain: 'system', optLevel });
 	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program), backend);
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 1_000_000);
 	const [decodeValue, decodeMetadataValue, buffer] = materializeCpuCompletionValues(cpu);
 	const decode = v.asClosure(decodeValue, cpu.gc), decodeMetadata = v.asClosure(decodeMetadataValue, cpu.gc);

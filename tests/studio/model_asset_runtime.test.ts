@@ -111,7 +111,6 @@ for (const optLevel of [3] as const) test(`model geometry binds ROM streams once
 		tocOffset: systemTocOffset, tocLength: systemToc.length });
 	const initial = modelCartridge(1.25, 0x100);
 	const { cpu, memory } = createTestBlua32PairCpu({ systemRomBytes, cartRomBytes: initial.bytes });
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')));
 	const read = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('read')), cpu.gc);

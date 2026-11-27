@@ -126,7 +126,6 @@ void testMappedStringCompletesBeforeVblank() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 3, 2);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 3}};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -173,7 +172,6 @@ void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::CALL), 0, 4, 2);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -269,7 +267,6 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::K1), 3, 0, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 4}};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -461,8 +458,6 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}, {.firstWord = 5, .wordCount = 3, .maxStack = 8}};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	image.systemGlobalNames = {"pcall"};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES)
-		if (primitive.name != std::string_view("pcall")) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -554,7 +549,6 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::SETT), 0, 1, 2);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::RET), 0, 0, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 4}};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, 0x10000u);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -681,7 +675,6 @@ void testRuntimeRestoreRearmsCpuGp0Wait() {
 	image.constants = {static_cast<i32>(IO_GX_GPU_GP0), i32{0x1f000000}};
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 1u;
-	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	TickInputSource input;
 	Runtime runtime(RuntimeOptions{rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -840,7 +833,6 @@ void testBusyCpuBudgetAtVblank() {
 	image.text.resize(bmsx::INSTRUCTION_BYTES);
 	bmsx::writeInstruction(image.text, 0, static_cast<bmsx::u8>(bmsx::OpCode::JMP), 0, 63, 63, 255);
 	image.functions.push_back({.firstWord = 0, .wordCount = 1});
-	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto system = bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image);
 	TickInputSource input;
 	bmsx::Runtime runtime({system.bytes, bmsx::test::cartridgeSlots(), bmsx::PSX_MACHINE_SPEC}, input);
@@ -886,7 +878,6 @@ void testDmaSharedBusStopsCpu() {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::JMP), 0, 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::HALT), 0, 0, 0, 0);
 	image.functions.push_back({.firstWord = 0, .wordCount = 2});
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	TickInputSource input;
 	Runtime runtime({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -948,7 +939,6 @@ void testWarmedGeneratedDmaSharedBus() {
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::ADD), 6, 6, 4);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::JMP), 0, 63, 56, 255); // -8 words
 	image.functions.push_back({.firstWord = 0, .wordCount = 8, .maxStack = 8});
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	TickInputSource generatedInput, referenceInput;
 	Runtime generated({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, generatedInput);

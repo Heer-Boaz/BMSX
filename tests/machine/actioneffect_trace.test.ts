@@ -257,7 +257,6 @@ function createActionEffectCpu(traceStatements: TraceStatementSelection): {
 		compiled.system,
 		compiled.cart,
 	)).cpu;
-	cpu.installBootPrimitives();
 	return { cpu, cart: compiled.cart };
 }
 
@@ -386,7 +385,6 @@ test('ActionEffect activity facts observe the committed count and periodic lane'
 		committed.system,
 		committed.cart,
 	)).cpu;
-	commitCpu.installBootPrimitives();
 	runGuestToHalt(commitCpu, 10_000_000);
 	const [observationList] = materializeCpuCompletionValues(commitCpu);
 	const observations = valuePayload(observationList);

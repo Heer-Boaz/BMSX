@@ -401,7 +401,7 @@ return n, t.value, other.value
 `, 0);
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	for (const cpu of [js, ref]) cpu.installBootPrimitives();
+
 	const executionImage = js.rootThread.frameAtDepth(0).executionImage;
 	let result = RunResult.Yielded;
 	for (let slice = 0; slice < 40_000 && result === RunResult.Yielded; ++slice) {

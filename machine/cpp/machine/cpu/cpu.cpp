@@ -238,15 +238,6 @@ void CPU::reset() {
 	collectHeap();
 }
 
-void CPU::installBootPrimitives() {
-	for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
-		setSystemGlobalByKey(
-			m_stringPool.intern(primitive.name),
-			createBuiltinFunction(primitive.id)
-		);
-	}
-}
-
 void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constPool) {
 	const u32 constantCount = static_cast<u32>(constPool.size());
 	if (constantCount == 0u) return;
@@ -277,6 +268,13 @@ void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddre
 			case Blua32ConstantTag::Float:
 				constPool.set(index, valueFloatBits(readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)));
 				break;
+			case Blua32ConstantTag::Builtin: {
+				const u32 id = readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+				if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || id >= BUILTIN_FUNCTION_COUNT)
+					throw BMSX_RUNTIME_ERROR("BLua32 builtin constant is invalid for this image.");
+				constPool.set(index, valueBuiltinFunction(static_cast<BuiltinFunctionId>(id)));
+				break;
+			}
 			case Blua32ConstantTag::String:
 				constPool.set(index, valueString(m_stringPool.resolveImageRecord(
 					executionDomainId,

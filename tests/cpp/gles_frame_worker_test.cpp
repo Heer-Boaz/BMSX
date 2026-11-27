@@ -12,7 +12,6 @@
 #include "render/backend/pass/library.h"
 #include "render/video_presenter.h"
 #include "render/shared/bmsx_font.h"
-#include "spec/blua32/builtin.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_local_memory.h"
 #include "spec/blua32/instruction_format.h"
@@ -99,9 +98,6 @@ void mutateFrontendGlState() {
 struct Script {
 	test::Blua32TestImage image;
 	std::vector<u32> code;
-	Script() {
-		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	}
 	void constant(unsigned reg, u32 word) {
 		const u32 index = static_cast<u32>(image.constants.size());
 		image.constants.emplace_back(static_cast<i32>(word));

@@ -19,14 +19,13 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(CLOCK_WORD_ROM_SOURCE), modules,
 			{ entrySource: CLOCK_WORD_ROM_SOURCE, optLevel, programDomain: 'system' }));
 		const { cpu } = createTestSystemCpu(image, backend), budget = 1_000_000;
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, budget);
 		const result = materializeCpuCompletionValues(cpu);
 		assert.deepEqual(result, [v.valueBool(true), v.valueInteger(CLOCK_WORD_CHECKS)]);
 		if (backend === CpuExecutionBackend.Interpreter && process.env.BMSX_CPU32_RUNNER) {
 			const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...result.map(value =>
 				`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
-			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER, ['--execute-rom', '--boot-primitives', String(budget)],
+			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER, ['--execute-rom', String(budget)],
 				{ input: image.romBytes, encoding: 'utf8' }), expected);
 		}
 	});
@@ -53,7 +52,7 @@ return true
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`cartlib input words O${optLevel} ${backend}: initial and grouped signed-axis sampling`, () => {
 		const { images } = compileCartlibProgram(inputSource, { optLevel, modules: inputModules });
-		const { cpu, memory } = createTestBlua32PairCpu(images, backend); cpu.installBootPrimitives();
+		const { cpu, memory } = createTestBlua32PairCpu(images, backend);
 		runGuestToHalt(cpu, 20_000_000);
 		const read = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('word32_read_axis')!), cpu.gc);
 		const sample = v.asClosure(cpu.getGlobalByKey(cpu.stringPool.find('word32_sample_axis')!), cpu.gc);

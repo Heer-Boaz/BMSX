@@ -374,6 +374,7 @@ Constant record `i` begins at `constantTableAddress + 12i`, with zero-based `i`.
 | 3 | Integer Number | Four-byte two's-complement integer, little-endian, at `04H`–`07H`. |
 | 4 | String | Absolute ROM String record address at `04H`; `08H` is reserved. |
 | 5 | Floating Number | Four-byte IEEE-754 binary32, little-endian, at `04H`–`07H`. |
+| 6 | BuiltinFunction | System ROM only. A four-byte builtin identifier at `04H`–`07H`; `08H` is reserved. |
 
 Each constant record occupies 12 bytes. An Integer record preserves its signed
 32-bit value. A Floating record preserves all 32 bits, including signed zero,
@@ -383,8 +384,11 @@ compare equal but have different subtypes.
 
 Constant indices select records in table order. Tags 0–2 encode their value
 without a payload. The word at `08H` is unused in Integer and Floating
-records. String records use all three words. A record with another tag is
-invalid and prevents program activation. An activated image's constant values
+records. String records use all three words. A builtin record supplies an
+immutable callable value, not an address or an entry in a global name table.
+A cartridge image may use a builtin value supplied by the BIOS but may not
+encode a builtin constant. An invalid builtin identifier or constant tag
+prevents image activation. An activated image's constant values
 and kinds do not change while that image is resident. A replacement image
 establishes its own constants. Arithmetic and the comparison of the
 two Number subtypes are defined by the

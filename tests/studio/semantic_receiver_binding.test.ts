@@ -164,7 +164,6 @@ return original:change(), original:read()`;
 			{ path: 'test_boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test_boot.lua') },
 		], { entrySource, optLevel: level, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [33, 11].map(valueInteger));
 	}

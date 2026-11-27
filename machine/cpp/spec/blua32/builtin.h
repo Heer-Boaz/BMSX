@@ -1,9 +1,7 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 namespace bmsx {
 
@@ -46,47 +44,5 @@ enum class BuiltinFunctionId : uint8_t {
 };
 
 constexpr size_t BUILTIN_FUNCTION_COUNT = 33u;
-
-
-struct LuaBootPrimitive {
-	std::string_view name;
-	BuiltinFunctionId id;
-};
-
-inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_PRIMITIVES{{
-	{ "__bmsx_next", BuiltinFunctionId::Next },
-	{ "__bmsx_type", BuiltinFunctionId::Type },
-	{ "__bmsx_setmetatable", BuiltinFunctionId::SetMetatable },
-	{ "__bmsx_getmetatable", BuiltinFunctionId::GetMetatable },
-	{ "__bmsx_rawget", BuiltinFunctionId::RawGet },
-	{ "__bmsx_rawset", BuiltinFunctionId::RawSet },
-	{ "__bmsx_select", BuiltinFunctionId::Select },
-	{ "__bmsx_string_byte", BuiltinFunctionId::StringByte },
-	{ "__bmsx_string_char", BuiltinFunctionId::StringChar },
-	{ "__bmsx_error", BuiltinFunctionId::Error },
-	{ "__bmsx_pcall", BuiltinFunctionId::PCall },
-	{ "__bmsx_xpcall", BuiltinFunctionId::XPCall },
-	{ "__bmsx_set_string_index", BuiltinFunctionId::SetStringIndex },
-	{ "__bmsx_coroutine_create", BuiltinFunctionId::CoroutineCreate },
-	{ "__bmsx_coroutine_resume", BuiltinFunctionId::CoroutineResume },
-	{ "__bmsx_coroutine_yield", BuiltinFunctionId::CoroutineYield },
-	{ "__bmsx_coroutine_status", BuiltinFunctionId::CoroutineStatus },
-	{ "__bmsx_coroutine_running", BuiltinFunctionId::CoroutineRunning },
-	{ "__bmsx_coroutine_close", BuiltinFunctionId::CoroutineClose },
-	{ "__bmsx_coroutine_isyieldable", BuiltinFunctionId::CoroutineIsYieldable },
-	{ "__bmsx_getglobal", BuiltinFunctionId::GetGlobal },
-	{ "__bmsx_setglobal", BuiltinFunctionId::SetGlobal },
-	{ "__bmsx_frame_count", BuiltinFunctionId::FrameCount },
-	{ "__bmsx_get_frame_register", BuiltinFunctionId::GetFrameRegister },
-	{ "__bmsx_set_frame_register", BuiltinFunctionId::SetFrameRegister },
-	{ "__bmsx_get_frame_upvalue", BuiltinFunctionId::GetFrameUpvalue },
-	{ "__bmsx_set_frame_upvalue", BuiltinFunctionId::SetFrameUpvalue },
-	{ "__bmsx_frame_header", BuiltinFunctionId::FrameHeader },
-	{ "__bmsx_number_type", BuiltinFunctionId::NumberType },
-	{ "__bmsx_tointeger", BuiltinFunctionId::ToInteger },
-	{ "__bmsx_string_slice", BuiltinFunctionId::StringSlice },
-	{ "__bmsx_table_copy", BuiltinFunctionId::TableCopy },
-	{ "__bmsx_string_from_bytes", BuiltinFunctionId::StringFromBytes },
-}};
 
 } // namespace bmsx

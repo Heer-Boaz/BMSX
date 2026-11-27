@@ -48,7 +48,8 @@ import {
 	PSX_CPU_FREQ_HZ,
 	PSX_MACHINE_SPEC,
 } from '../../machine/ts/spec/bmsx/model';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { GX_GPU_READBACK_IDLE, GX_GPU_READBACK_PENDING, GX_GPU_READBACK_READY } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';

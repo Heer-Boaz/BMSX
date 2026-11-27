@@ -6,7 +6,6 @@
 #include "machine/devices/geometry/contracts.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
-#include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/opcode.h"
@@ -41,7 +40,6 @@ Result runCase(bool native, bool crossing, bool doorbell = false) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 1, 0, static_cast<u8>(MemoryAccessKind::U32LE), 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0u, .wordCount = 2u, .maxStack = 2u}};
-	for (const auto& primitive : LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, output + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
 	const u32 entryPc = DYNAMIC_RAM_BASE + 0x8000u + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	IdleInput input;

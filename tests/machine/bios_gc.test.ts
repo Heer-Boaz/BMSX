@@ -46,7 +46,6 @@ return true, capacity`;
 		], { entrySource, optLevel, programDomain: 'system' });
 		const linked = linkTestSystemBlua32(compiled);
 		const { cpu } = createTestSystemCpu(linked, backend);
-		cpu.installBootPrimitives();
 		let result = RunResult.Yielded;
 		// BIOS allocation and collection now consume the guest grants. Keep
 		// the bounded 2048-cycle pulse size for both build variants.

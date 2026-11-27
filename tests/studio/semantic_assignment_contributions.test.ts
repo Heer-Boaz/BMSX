@@ -264,7 +264,6 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 			{ path: 'test_boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test_boot.lua') },
 		], { entrySource, optLevel: optimization, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-		cpu.installBootPrimitives();
 		runGuestToHalt(cpu, 100000);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
 	}

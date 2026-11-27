@@ -22,7 +22,6 @@ local exercise = function(value, ...)
 end
 return exercise(0)
 `, optLevel));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), name = cpu.stringPool.find('advance')!;
@@ -67,7 +66,6 @@ end
 return park(42)
 `, optLevel);
 	const { cpu } = createTestSystemCpu(image);
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
@@ -93,7 +91,6 @@ local ok, message = repl.evaluate_frame('unexpected_global_write = 1', '=no-symb
 assert(not ok and message == 'Frame symbols are unavailable.' and getglobal('unexpected_global_write') == nil)
 return true
 `, optLevel, false));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 30_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true), valueBool(true)]);
 });
@@ -123,7 +120,6 @@ local exercise = function(value, ...)
 end
 return exercise(42)
 `, optLevel));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 30_000_000);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);

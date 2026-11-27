@@ -9,7 +9,6 @@ import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('steady-state table deletion and reinsertion do not reserve guest heap', t => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest(tableIterationVectors.delete_reinsert_churn, 3));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 10_000_000);
 	const kernel = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('churn_kernel')!), cpu.gc);
 	const table = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('churn_values')!));
@@ -23,7 +22,6 @@ test('steady-state table deletion and reinsertion do not reserve guest heap', t 
 
 test('a physical object address remains a deleted-key continuation', () => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest('return true', 0));
-	cpu.installBootPrimitives();
 	runGuestToHalt(cpu, 100000);
 	const key = cpu.createTable();
 	const table = cpu.createTable(0, 64);

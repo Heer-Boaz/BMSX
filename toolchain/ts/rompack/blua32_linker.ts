@@ -943,7 +943,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag.String);
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, strings.addressOf(value));
 		} else {
-			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET, value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
+			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_TAG_OFFSET,
+				value.kind === 'builtin' ? Blua32ConstantTag.Builtin
+					: value.kind === 'integer' ? Blua32ConstantTag.Integer : Blua32ConstantTag.Float);
 			writeLE32(bytes, recordOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET, value.word);
 		}
 	}

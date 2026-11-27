@@ -120,12 +120,12 @@ import {
 	MAPPED_PAGE_BYTE_SIZE,
 	mappedPageDomainIndex, mappedPageAddressKey,
 } from '../memory/mapped_page';
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../spec/blua32/builtin';
+import { BuiltinFunctionId, BUILTIN_FUNCTION_COUNT } from '../../spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag, valueToByteString, MAX_NON_STRING_TEXT_BYTES,
-	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueBuiltinFunction, valueString, valueBool, valueThread, asThread,
+	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread, asThread,
 	isNil, valueTag, valueToInteger,
 	valueTypeNameForLuaTag,
 	type Value,
@@ -952,16 +952,6 @@ export class CPU implements MappedPageInvalidator {
 		this.collectTrackedHeapBytes();
 	}
 
-	public installBootPrimitives(): void {
-		for (let index = 0; index < LUA_BOOT_PRIMITIVES.length; index += 1) {
-			const primitive = LUA_BOOT_PRIMITIVES[index];
-			this.setSystemGlobalByKey(
-				this.stringPool.intern(primitive.name),
-				valueBuiltinFunction(primitive.id),
-			);
-		}
-	}
-
 	public clearExecutionEnvironment(): void {
 		this.clearCompletionValues();
 		this.clearCallStack();
@@ -1009,6 +999,14 @@ export class CPU implements MappedPageInvalidator {
 				case Blua32ConstantTag.Float:
 					constTags[index] = ValueTag.Float;
 					constWords[index] = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET); break;
+				case Blua32ConstantTag.Builtin: {
+					const id = readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET);
+					if (executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || id >= BUILTIN_FUNCTION_COUNT)
+						throw new Error('BLua32 builtin constant is invalid for this image.');
+					constTags[index] = ValueTag.BuiltinFunction;
+					constWords[index] = id;
+					break;
+				}
 				case Blua32ConstantTag.String:
 					constTags[index] = ValueTag.String;
 					constWords[index] = this.stringPool.resolveImageRecord(

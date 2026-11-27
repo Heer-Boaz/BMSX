@@ -8,7 +8,6 @@
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/gx/gte.h"
 #include "machine/devices/geometry/contracts.h"
-#include "spec/blua32/builtin.h"
 #include "machine/machine.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -82,9 +81,6 @@ auto makeRuntimeImage(bmsx::OpCode startupOpcode) -> bmsx::test::Blua32TestImage
 	};
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 1u;
-	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		image.systemGlobalNames.emplace_back(primitive.name);
-	}
 	return image;
 }
 
@@ -122,9 +118,6 @@ auto makeExecutionSelectorSystemImage() -> bmsx::test::Blua32TestImage {
 	};
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 0u;
-	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		image.systemGlobalNames.emplace_back(primitive.name);
-	}
 	return image;
 }
 
@@ -225,9 +218,6 @@ auto makeExternalClosureSystemImage() -> bmsx::test::Blua32TestImage {
 	};
 	image.irqFunctionIndex = 3u;
 	image.exceptionFunctionIndex = 3u;
-	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		image.systemGlobalNames.emplace_back(primitive.name);
-	}
 	return image;
 }
 
@@ -252,9 +242,6 @@ auto makeCompletionLatchSystemImage() -> bmsx::test::Blua32TestImage {
 	}};
 	image.irqFunctionIndex = 2u;
 	image.exceptionFunctionIndex = 2u;
-	for (const bmsx::LuaBootPrimitive& primitive : bmsx::LUA_BOOT_PRIMITIVES) {
-		image.systemGlobalNames.emplace_back(primitive.name);
-	}
 	return image;
 }
 
@@ -1174,7 +1161,6 @@ void testRuntimeCodecRestoresBlockedGp0StoreWakeup() {
 	image.constants.emplace_back(static_cast<bmsx::i32>(0x1f000000u));
 	image.irqFunctionIndex = 1u;
 	image.exceptionFunctionIndex = 1u;
-	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
 	SystemRuntimeFixture fixture(image, makeRuntimeImage(bmsx::OpCode::HALT));
 	auto& runtime = fixture.runtime;
 	auto& machine = runtime.machine;

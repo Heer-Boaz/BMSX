@@ -119,7 +119,7 @@ import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFront
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
 import { resolveCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
-import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
+import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BUILTIN_BY_NAME, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
 import { getLuaJumpBindings } from './analysis/jumps';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
@@ -471,7 +471,6 @@ class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
 	private readonly constSlotByValue: Map<null | boolean | string | number, number>;
-	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
 	private readonly systemGlobalSlotByName: Map<string, number> = new Map();
 	private readonly globalNames: string[] = [];
@@ -537,10 +536,6 @@ class ProgramBuilder {
 		this.programDomain = programDomain;
 		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
 		this.constSlotByValue = new Map();
-		this.systemGlobalNameSet = new Set(PROGRAM_BOOT_GLOBAL_NAMES[programDomain]);
-		for (const name of this.systemGlobalNameSet) {
-			this.resolveSystemGlobalSlot(name);
-		}
 	}
 
 	public registerLifetimes(file: FileSemanticData): FileRegisterLifetimes {
@@ -569,7 +564,7 @@ class ProgramBuilder {
 
 	public constIndex(value: ProgramConstant): number {
 		const key = typeof value === 'string' || typeof value === 'boolean' ? value
-			: value === null ? null : numberConstantKey(value);
+			: value === null ? null : value.kind === 'builtin' ? 0x2_0000_0000 + value.word : numberConstantKey(value);
 		const slot = this.constSlotByValue.get(key);
 		if (slot) {
 			return slot - 1;
@@ -624,13 +619,12 @@ class ProgramBuilder {
 	}
 
 	public resolveGlobalAccess(name: string): { system: boolean; slot: number } {
+		if (this.programDomain === 'system' && SYSTEM_ROM_BUILTIN_BY_NAME.has(name))
+			throw new Error(`'${name}' is an immutable System ROM builtin.`);
 		if (SYSTEM_ROM_VECTOR_HANDLER_NAME_SET.has(name)) {
 			return this.programDomain === 'system'
 				? { system: true, slot: this.resolveSystemGlobalSlot(name) }
 				: { system: false, slot: this.resolveGlobalSlot(name) };
-		}
-		if (this.systemGlobalNameSet.has(name)) {
-			return { system: true, slot: this.resolveSystemGlobalSlot(name) };
 		}
 		return { system: false, slot: this.resolveGlobalSlot(name) };
 	}
@@ -1616,23 +1610,12 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		range: LuaSourceRange,
 		sectionInitProtoIndex: number,
 		entryProtoIndex: number,
-		clearBootPrimitives: boolean,
 	): void {
 		this.withRange(range, () => {
 			const callReg = this.allocTemp();
 			this.emitABx(OpCode.CLOSURE, callReg, sectionInitProtoIndex);
 			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), encodeFixedValueCount(0));
 			this.emitStaticModuleInitializers(callReg);
-			if (clearBootPrimitives) {
-				this.emitABC(OpCode.KNIL, callReg, 0, 0);
-				for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
-					this.emitABx(
-						OpCode.SETSYS,
-						callReg,
-						this.program.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_PRIMITIVE_NAMES[index]),
-					);
-				}
-			}
 			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
 			this.emitABC(OpCode.CALL, callReg, encodeFixedValueCount(0), 0);
 			this.emitABC(OpCode.RET, callReg, 0, 0);
@@ -2949,6 +2932,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (reference.kind === 'unresolved') {
 			throw new Error(`'${name}' is not defined.`);
 		}
+		if (this.program.programDomain === 'system') {
+			const builtin = SYSTEM_ROM_BUILTIN_BY_NAME.get(name);
+			if (builtin !== undefined) {
+				this.emitLoadConst(target, { kind: 'builtin', word: builtin });
+				return;
+			}
+		}
 		const access = this.program.resolveGlobalAccess(name);
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
@@ -3185,6 +3175,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case true:
 				break;
 			default:
+				if (keyValue.kind === 'builtin') break;
 				const integer = numberConstantInteger(keyValue);
 				if (integer !== null && integer >= 1 && integer <= MAX_SPECIALIZED_TABLE_OPERAND) {
 					this.emitABC(OpCode.GETI, target, tableReg, integer);
@@ -3210,6 +3201,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case true:
 				break;
 			default:
+				if (keyValue.kind === 'builtin') break;
 				const integer = numberConstantInteger(keyValue);
 				if (integer !== null && integer >= 1 && integer <= MAX_SPECIALIZED_TABLE_OPERAND) {
 					this.emitABC(OpCode.SETI, tableReg, integer, valueReg, RK_C);
@@ -6211,7 +6203,6 @@ function compileStartupProto(
 	frontend: LuaSemanticFrontend,
 	sectionInitProtoIndex: number,
 	entryProtoIndex: number,
-	clearBootPrimitives: boolean,
 ): number {
 	const protoId = buildStartupProtoId(moduleId);
 	const functionDisplayName = 'startup';
@@ -6219,7 +6210,7 @@ function compileStartupProto(
 	// The generated reset thunk belongs to the entry location, not a body range
 	// that can cross several authored/generated sources in a composed program.
 	const entryLocation = { path: range.path, start: range.start, end: range.start };
-	builder.compileStartup(entryLocation, sectionInitProtoIndex, entryProtoIndex, clearBootPrimitives);
+	builder.compileStartup(entryLocation, sectionInitProtoIndex, entryProtoIndex);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
 	const constRelocs = builder.getConstRelocs();
@@ -6582,7 +6573,6 @@ export function compileLuaChunkToProgram(
 		frontend,
 		sectionInitProtoIndex,
 		entryProtoIndex,
-		programDomain === 'system',
 	);
 	const {
 		program,

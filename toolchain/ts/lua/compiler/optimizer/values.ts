@@ -11,13 +11,15 @@ export const enum ConstValueKind {
 	Boolean,
 	Number,
 	String,
+	Builtin,
 }
 
 export type ConstValue =
 	| { kind: ConstValueKind.Nil; value: null; constIndex: number }
 	| { kind: ConstValueKind.Boolean; value: boolean; constIndex: number }
 	| { kind: ConstValueKind.Number; value: NumberConstant; constIndex: number }
-	| { kind: ConstValueKind.String; value: string; constIndex: number };
+	| { kind: ConstValueKind.String; value: string; constIndex: number }
+	| { kind: ConstValueKind.Builtin; value: Extract<ProgramConstant, { kind: 'builtin' }>; constIndex: number };
 
 export const constValueForOptimization = (value: ProgramConstant, constIndex: number): ConstValue => {
 	switch (value) {
@@ -30,7 +32,8 @@ export const constValueForOptimization = (value: ProgramConstant, constIndex: nu
 			if (typeof value === 'string') {
 				return { kind: ConstValueKind.String, value, constIndex };
 			}
-			return { kind: ConstValueKind.Number, value, constIndex };
+			return value.kind === 'builtin' ? { kind: ConstValueKind.Builtin, value, constIndex }
+				: { kind: ConstValueKind.Number, value, constIndex };
 	}
 };
 
@@ -106,6 +109,7 @@ export const replaceWithConst = (instruction: Instruction, target: number, value
 			instruction.format = 'ABC';
 			return constant;
 		case ConstValueKind.String:
+		case ConstValueKind.Builtin:
 			instruction.op = OpCode.LOADK;
 			instruction.a = target;
 			instruction.b = constant.constIndex;
@@ -183,6 +187,8 @@ export const evaluateBinary = (op: OpCode, left: ConstValue, right: ConstValue):
 export const evaluateComparison = (op: OpCode, left: ConstValue, right: ConstValue): boolean | null => {
 	switch (op) {
 		case OpCode.EQ:
+			if (left.kind === ConstValueKind.Builtin)
+				return right.kind === ConstValueKind.Builtin && left.value.word === right.value.word;
 			return left.kind === ConstValueKind.Number && right.kind === ConstValueKind.Number
 				? numberConstantValue(left.value) === numberConstantValue(right.value) : left.value === right.value;
 		case OpCode.LT:

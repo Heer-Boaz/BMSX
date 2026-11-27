@@ -14,7 +14,7 @@ const consoleSource='return {write=function() end,end_line=function() end}';modu
 const budget=1000000;
 function run(source:string,optLevel:0|3,backend:CpuExecutionBackend){
  const image=linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(source,'pack32.lua').chunk,modules,{entrySource:source,optLevel,programDomain:'system'}));
- const {cpu}=createTestSystemCpu(image,backend);cpu.installBootPrimitives();runGuestToHalt(cpu, budget);
+ const {cpu}=createTestSystemCpu(image,backend);runGuestToHalt(cpu, budget);
  const results:v.Value[]=[];cpu.readCompletionValues(results);
  return {image,cpu,results};
 }
@@ -53,5 +53,5 @@ const native=process.env.BMSX_CPU32_RUNNER;
 for(const opt of [0,3] as const)test(`packet32 O${opt}: C++ executes the same BIOS with identical String bytes and cycles`,{skip:!native},()=>{
  const {image,cpu,results}=run(source,opt,CpuExecutionBackend.Interpreter);
  const expected=[`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(x=>v.valueIsString(x)?'S '+cpu.stringPool.bytes(v.asStringId(x)):`${v.valueTag(x).toString(16)} ${v.valuePayload(x).toString(16)}`)].join('\n')+'\n';
- assert.deepEqual(execFileSync(native!,['--execute-rom','--boot-primitives',String(budget)],{input:image.romBytes}),Buffer.from(expected,'latin1'));
+ assert.deepEqual(execFileSync(native!,['--execute-rom',String(budget)],{input:image.romBytes}),Buffer.from(expected,'latin1'));
 });

@@ -23,7 +23,7 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 	test(`recorder32 O${optLevel} ${backend}: actual Lua producers, sign/full wrap, raw timestamps and overflow policy`, t => {
 		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(initialize), modules,
 			{entrySource:initialize,optLevel,programDomain:'system',traceStatements:'erase'}));
-		const {cpu} = createTestSystemCpu(image, backend); cpu.installBootPrimitives();
+		const {cpu} = createTestSystemCpu(image, backend);
 		assert.equal(cpu.runUntilDepth(0,1_000_000),RunResult.Halted);
 		const roots = v.valuePayload(materializeCpuCompletionValues(cpu)[0]);
 		const fsm = v.valuePayload(cpu.gc.tables.getInteger(roots, 1)), effects = v.valuePayload(cpu.gc.tables.getInteger(roots, 2));
@@ -105,12 +105,12 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 for(const optLevel of [0,3] as const) test(`recorder32 O${optLevel}: physical ROM preserves producer words and cycle parity`,()=>{
 	const image=linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(RECORDER32_ROM_SOURCE),modules,
 		{entrySource:RECORDER32_ROM_SOURCE,optLevel,programDomain:'system',traceStatements:'erase'}));
-	const {cpu}=createTestSystemCpu(image);cpu.installBootPrimitives();const budget=2_000_000;
+	const {cpu}=createTestSystemCpu(image);const budget=2_000_000;
 	assert.equal(cpu.runUntilDepth(0,budget),RunResult.Halted);
 	const results=materializeCpuCompletionValues(cpu);
 	assert.deepEqual(results,[v.valueBool(true),v.valueInteger(24),v.valueInteger(9),v.valueInteger(4),v.valueInteger(9),v.valueInteger(4)]);
 	if(process.env.BMSX_CPU32_RUNNER) {
 		const expected=[`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value=>`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
-		assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,['--execute-rom','--boot-primitives',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
+		assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,['--execute-rom',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
 	}
 });

@@ -83,7 +83,8 @@ const formatBlua32Value = (constant: Blua32EncodedConstant): string => {
 		case true:
 			return 'true';
 	}
-	return typeof constant === 'string' ? JSON.stringify(constant) : numberConstantText(constant);
+	return typeof constant === 'string' ? JSON.stringify(constant)
+		: constant.kind === 'builtin' ? `builtin(${constant.word})` : numberConstantText(constant);
 };
 
 const formatSourceConst = (

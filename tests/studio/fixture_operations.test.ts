@@ -7,7 +7,7 @@ import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueStr
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
+import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { afterTest } from '../helpers/test_cleanup';
 
