@@ -11,7 +11,7 @@ import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
 import { GcPhase, GC_LAST_EPOCH_WORK, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -36,6 +36,7 @@ import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../m
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 function source(operation: OpCode = OpCode.HALT, wide = false) {
@@ -58,6 +59,36 @@ const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
 const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
+
+test('String mark work follows its reached records through a CPU checkpoint', () => {
+	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const strings = cpu.stringPool;
+	const first = strings.intern('mark-work-before-checkpoint');
+	const second = strings.intern('mark-work-after-checkpoint');
+	const workOffset = cpu.heapAllocator.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
+
+	strings.beginReachabilityEpoch();
+	strings.markReachable(first);
+	strings.markReachable(first);
+	assert.equal(memory.readRamRecordWord(workOffset), 1, 'only a newly reached String contributes work');
+	const checkpoint = captureCpuCheckpoint(cpu);
+
+	assert.equal(strings.takeMarkWork(), 1);
+	strings.markReachable(second);
+	assert.equal(strings.takeMarkWork(), 1);
+	assert.equal(strings.takeMarkWork(), 0);
+
+	restoreCpuCheckpoint(cpu, checkpoint);
+	assert.equal(strings.takeMarkWork(), 1, 'restoring the mark also restores unconsumed work');
+	strings.markReachable(first);
+	assert.equal(strings.takeMarkWork(), 0, 'the restored String is already marked');
+	strings.markReachable(second);
+	assert.equal(memory.readRamRecordWord(workOffset), 1, 'a mark beyond the checkpoint is undone');
+	strings.resumeMarkWork(0);
+	assert.equal(strings.takeMarkWork(), 0, 'returning zero work replaces a previous latch value');
+	strings.resumeMarkWork(1);
+	assert.equal(strings.takeMarkWork(), 1, 'borrowed work can be returned and consumed once');
+});
 
 test('physical GC work counts canonical scans, reclamation and one global bank pass without a cycle debit', () => {
 	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));

@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <utility>
 
 namespace bmsx {
 namespace {
@@ -40,7 +39,8 @@ constexpr u32 romStringId(u32 address, u32 cartridgeSlot) {
 }
 
 StringPool::StringPool(LuaHeap& heap, Memory& memory, HeapAllocator& arena)
-	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET) {}
+	: m_heap(heap), m_memory(memory), m_arena(arena), m_metadata(arena.managementOffset() + HEAP_STRING_METADATA_OFFSET),
+	m_markWorkOffset(arena.managementOffset() + HEAP_STRING_MARK_WORK_OFFSET) {}
 
 u32 StringPool::metadata(u32 field) const { return m_memory.readRamRecordWord(m_metadata + field); }
 void StringPool::writeMetadata(u32 field, u32 word) { m_memory.writeRamRecordWord(m_metadata + field, word); }
@@ -435,9 +435,18 @@ void StringPool::endLocalRoots() {
 	m_localRootBases.pop_back();
 }
 void StringPool::beginReachabilityEpoch() { writeMetadata(EPOCH, metadata(EPOCH) ^ 1u); }
-void StringPool::markReachable(StringId id) { m_markWork += mark(id); }
+void StringPool::markReachable(StringId id) {
+	if (mark(id)) m_memory.writeRamRecordWord(m_markWorkOffset, m_memory.readRamRecordWord(m_markWorkOffset) + 1u);
+}
 void StringPool::markLocalRoots() { for (StringId id : m_localRoots) markReachable(id); }
-size_t StringPool::takeMarkWork() { return std::exchange(m_markWork, size_t{0}); }
+size_t StringPool::takeMarkWork() {
+	const u32 work = m_memory.readRamRecordWord(m_markWorkOffset);
+	if (work != 0u) m_memory.writeRamRecordWord(m_markWorkOffset, 0u);
+	return work;
+}
+void StringPool::resumeMarkWork(u32 work) {
+	if (work != 0u || m_memory.readRamRecordWord(m_markWorkOffset) != 0u) m_memory.writeRamRecordWord(m_markWorkOffset, work);
+}
 
 void StringPool::beginSweep() {
 	const u32 ready = metadata(REHASH_READY);

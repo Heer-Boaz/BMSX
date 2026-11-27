@@ -49,7 +49,7 @@ public:
 	void markReachable(StringId id);
 	void markLocalRoots();
 	size_t takeMarkWork();
-	void resumeMarkWork(size_t work) { m_markWork = work; }
+	void resumeMarkWork(u32 work);
 	void beginSweep();
 	u32 estimateSweepWork() const;
 	size_t sweepStep(size_t allowance);
@@ -89,10 +89,9 @@ private:
 	LuaHeap& m_heap;
 	Memory& m_memory;
 	HeapAllocator& m_arena;
-	const u32 m_metadata;
+	const u32 m_metadata, m_markWorkOffset;
 	std::vector<StringId> m_localRoots;
 	std::vector<size_t> m_localRootBases;
-	size_t m_markWork = 0; // Collected before a GC step yields.
 };
 
 } // namespace bmsx

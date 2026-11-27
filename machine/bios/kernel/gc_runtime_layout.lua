@@ -8,6 +8,7 @@ return {
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,
+	string_mark_work_offset = 0x3f4,
 	arena_offset = 0x400,
 	root_banks_offset = 0x600,
 	remark_head_offset = 0x680,

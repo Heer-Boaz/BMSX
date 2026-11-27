@@ -12,6 +12,7 @@ inline constexpr u32 HEAP_STRING_METADATA_OFFSET = 0x300u;
 inline constexpr u32 HEAP_COLLECTION_TARGET_OFFSET = 0x340u;
 inline constexpr u32 HEAP_GC_CONTROL_OFFSET = 0x344u;
 inline constexpr u32 HEAP_LOGICAL_OCCUPIED_OFFSET = 0x3f0u;
+inline constexpr u32 HEAP_STRING_MARK_WORK_OFFSET = 0x3f4u;
 
 // Owns the machine's private, non-moving language arena. Allocation state and
 // intrusive links are RAM words; history and save restore them with the payloads.

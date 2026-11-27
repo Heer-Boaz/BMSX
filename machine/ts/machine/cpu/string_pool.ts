@@ -10,7 +10,7 @@ import {
 } from '../../spec/blua32/image_format';
 import { CART_ROM_BASE, CART_ROM_SIZE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
 import type { Memory, MemoryByteView } from '../memory/memory';
-import { HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
+import { HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET, type HeapAllocator } from './heap_allocator';
 import type { LuaHeap } from './lua_heap';
 import { valueNil, valueString } from './value';
 
@@ -61,11 +61,13 @@ export class StringPool {
 	private readonly localRoots: StringId[] = [];
 	private readonly localRootBases: number[] = [];
 	public readonly metadataOffset: number;
+	private readonly markWorkOffset: number;
 	private readonly romView: MemoryByteView;
-	private markWork = 0;
 
 	public constructor(private readonly heap: LuaHeap, private readonly memory: Memory, private readonly arena: HeapAllocator) {
-		this.metadataOffset = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
+		const management = arena.managementOffset();
+		this.metadataOffset = management + HEAP_STRING_METADATA_OFFSET;
+		this.markWorkOffset = management + HEAP_STRING_MARK_WORK_OFFSET;
 		this.romView = { bytes: memory.systemRomStorage().bytes, byteOffset: 0, byteLength: 0 };
 	}
 
@@ -442,14 +444,19 @@ export class StringPool {
 	public beginLocalRoots(): void { this.localRootBases.push(this.localRoots.length); }
 	public endLocalRoots(): void { this.localRoots.length = this.localRootBases.pop()!; }
 	public beginReachabilityEpoch(): void { this.writeMetadata(EPOCH, this.metadata(EPOCH) ^ 1); }
-	public markReachable(id: StringId): void { this.markWork += this.mark(id); }
+	public markReachable(id: StringId): void {
+		const work = this.mark(id);
+		if (work !== 0) this.memory.writeRamRecordWord(this.markWorkOffset, this.memory.readRamRecordWord(this.markWorkOffset) + work);
+	}
 	public markLocalRoots(): void { for (const id of this.localRoots) this.markReachable(id); }
 	public takeMarkWork(): number {
-		const work = this.markWork;
-		this.markWork = 0;
+		const work = this.memory.readRamRecordWord(this.markWorkOffset);
+		if (work !== 0) this.memory.writeRamRecordWord(this.markWorkOffset, 0);
 		return work;
 	}
-	public resumeMarkWork(work: number): void { this.markWork = work; }
+	public resumeMarkWork(work: number): void {
+		if (work !== 0 || this.memory.readRamRecordWord(this.markWorkOffset) !== 0) this.memory.writeRamRecordWord(this.markWorkOffset, work);
+	}
 
 	public beginSweep(): void {
 		const ready = this.metadata(REHASH_READY);

@@ -63,6 +63,36 @@ constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
 // that also clears eight Value slots, two remark visits and a sweep visit.
 constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
 
+void stringMarkWorkSurvivesCheckpoint() {
+	Machine machine(image()); auto& cpu = machine.cpu;
+	auto& strings = cpu.stringPool();
+	const auto first = strings.intern("mark-work-before-checkpoint");
+	const auto second = strings.intern("mark-work-after-checkpoint");
+	const auto workOffset = cpu.heapAllocator().managementOffset() + HEAP_STRING_MARK_WORK_OFFSET;
+
+	strings.beginReachabilityEpoch();
+	strings.markReachable(first);
+	strings.markReachable(first);
+	require(machine.memory.readRamRecordWord(workOffset) == 1u, "only a newly reached String contributes work");
+	const auto state = cpu.captureRuntimeState();
+	const auto ram = machine.memory.captureSaveState();
+
+	require(strings.takeMarkWork() == 1u, "first mark is charged once");
+	strings.markReachable(second);
+	require(strings.takeMarkWork() == 1u && strings.takeMarkWork() == 0u, "later work is consumed independently");
+
+	machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+	require(strings.takeMarkWork() == 1u, "restoring the mark also restores unconsumed work");
+	strings.markReachable(first);
+	require(strings.takeMarkWork() == 0u, "the restored String is already marked");
+	strings.markReachable(second);
+	require(machine.memory.readRamRecordWord(workOffset) == 1u, "a mark beyond the checkpoint is undone");
+	strings.resumeMarkWork(0u);
+	require(strings.takeMarkWork() == 0u, "returning zero work replaces a previous latch value");
+	strings.resumeMarkWork(1u);
+	require(strings.takeMarkWork() == 1u, "borrowed work can be returned and consumed once");
+}
+
 void allocationAdmissionUsesLogicalBytes() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	const size_t logical = cpu.luaHeap().usedBytes();
@@ -1835,6 +1865,7 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 		canonicalPoolAndRootRanges();
+		stringMarkWorkSurvivesCheckpoint();
 		collectorWorkIgnoresInactiveThreadFrames();
 		allocationAdmissionUsesLogicalBytes(); tableReplacementAdmitsOnlyItsLogicalIncrease();
 		tableBackingRecoveryRetriesEachEpoch();
