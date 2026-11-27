@@ -25,6 +25,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/heap_service.h"
 #include "machine/memory/memory.h"
+#include "machine/scheduler/device.h"
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
@@ -2579,7 +2580,14 @@ dispatch_continue:
 #undef PUBLISH_SCALAR_FRONTIER
 #undef OBSERVE_SCALAR_ARITHMETIC
 
-RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind) {
+int CPU::remainingDeviceCycles() const {
+	// Bare CPU execution supplies only an explicit clock horizon.
+	return m_deviceClock == nullptr ? std::max(0, instructionBudgetRemaining) : m_deviceClock->cyclesUntilDeadline();
+}
+
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind, const DeviceScheduler* deviceClock) {
+	m_deviceClock = deviceClock;
+	ScopeExit endClock([this] { m_deviceClock = nullptr; });
 	if (heapServiceActive()) {
 		const u32 irq = m_heapAllocator.managementOffset() + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));

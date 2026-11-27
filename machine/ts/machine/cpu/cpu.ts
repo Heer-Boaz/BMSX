@@ -21,6 +21,7 @@ import {
 } from '../memory/bus_signals';
 import { readLE32 } from '../../common/endian';
 import type { IrqController } from '../devices/irq/controller';
+import type { DeviceScheduler } from '../scheduler/device';
 import { BASE_CYCLES, INLINE_CONCAT_BYTES, INLINE_CONCAT_OPERANDS, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
 	cop0FieldImplemented,
@@ -189,7 +190,7 @@ import {
 	HeapServiceTableGrowthField, HeapServiceTableGrowthResultField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
 	HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
-	HEAP_SERVICE_REMAINING_GRANT_ADDRESS, HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
+	HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS, HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
 	HeapServiceRootBankField, HeapServiceRootPlane,
 } from '../../spec/bmsx/heap_service';
 import {
@@ -328,6 +329,7 @@ export class CPU implements MappedPageInvalidator {
 	private memoryWriteBlockedAddress = 0;
 	private pendingAllocation: PendingAllocation | null = null;
 	private runKind = CpuRunKind.Idle;
+	private deviceClock: DeviceScheduler | null = null;
 	private readonly concat = new ConcatAssembly();
 	public readonly tableRebuild = new TableRebuild();
 	private stringComparison = new StringComparisonLatch();
@@ -779,7 +781,7 @@ export class CPU implements MappedPageInvalidator {
 		args[1] = kind;
 		args[2] = prototype;
 		args[3] = domain;
-		args[5] = Math.max(this.instructionBudgetRemaining, 0);
+		args[5] = this.remainingDeviceCycles();
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
@@ -2297,7 +2299,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const frame = this.prepareHeapServiceFrame(functions[HeapServiceOperation.Count + selector], 0, 0, 0, this.currentInstructionPc);
 		frame.registers.setInteger(0, this.heapAllocator.managementOffset());
-		frame.registers.setInteger(1, Math.max(0, this.instructionBudgetRemaining));
+		frame.registers.setInteger(1, this.remainingDeviceCycles());
 		frame.registers.setInteger(2, this.runKind);
 		if (supplied !== 0) this.bumpRegisterTop(caller, destination + supplied);
 		for (let index = 0; index < supplied; ++index) {
@@ -2344,7 +2346,15 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address, kind = CpuRunKind.Direct): RunResult {
+	private remainingDeviceCycles(): number {
+		// Bare CPU execution supplies only an explicit clock horizon.
+		return this.deviceClock === null
+			? Math.max(0, this.instructionBudgetRemaining)
+			: this.deviceClock.cyclesUntilDeadline();
+	}
+
+	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address,
+		kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
 		if (this.heapServiceActive()) {
 			const irq = this.heapService.irqForwardAddress;
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
@@ -2355,6 +2365,7 @@ export class CPU implements MappedPageInvalidator {
 			const fullCollection = this.heapService.thread.firstFrame!.functionAddress
 				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.FullCollection];
 			this.runKind = kind;
+			this.deviceClock = deviceClock;
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
@@ -2421,6 +2432,7 @@ export class CPU implements MappedPageInvalidator {
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
+				this.deviceClock = null;
 			}
 		}
 		if (this.pendingAllocation !== null) {
@@ -2429,6 +2441,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		this.runKind = kind;
+		this.deviceClock = deviceClock;
 		try {
 			for (;;) {
 				const result = this.runUntilDepthEntry(this.activeThread.address === target ? targetDepth : 0, instructionBudget);
@@ -2440,6 +2453,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		} finally {
 			this.runKind = CpuRunKind.Idle;
+			this.deviceClock = null;
 		}
 	}
 
@@ -4002,8 +4016,8 @@ export class CPU implements MappedPageInvalidator {
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
 			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {
 				word = this.readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
-			} else if (address === HEAP_SERVICE_REMAINING_GRANT_ADDRESS && kind !== MemoryAccessKind.U8) {
-				word = this.instructionBudgetRemaining;
+			} else if (address === HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS && kind !== MemoryAccessKind.U8) {
+				word = this.remainingDeviceCycles();
 			} else {
 				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
 				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;

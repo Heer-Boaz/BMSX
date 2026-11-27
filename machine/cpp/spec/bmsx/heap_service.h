@@ -93,8 +93,8 @@ enum class HeapServiceRootPlane : uint32_t {
 	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
-// A word load samples the current instruction grant after paying the load.
-constexpr uint32_t HEAP_SERVICE_REMAINING_GRANT_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
+// A word load samples time to the next device deadline after paying the load.
+constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
 
 // CPU-published head roots and the pinned static fault-ID word plane.
 constexpr uint32_t HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;

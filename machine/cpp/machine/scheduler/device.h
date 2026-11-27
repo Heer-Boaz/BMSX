@@ -53,6 +53,7 @@ public:
 	RunResult runCpuSlice(int targetDepth, int sliceBudget, u32 targetThread = 0u, CpuRunKind kind = CpuRunKind::Direct);
 	void advanceTo(i64 nowCycles);
 	i64 nextDeadline() const;
+	int cyclesUntilDeadline() const;
 	bool hasDueTimer() const;
 	uint8_t popDueTimer();
 	void scheduleDeviceService(uint8_t deviceKind, i64 deadlineCycles);

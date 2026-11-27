@@ -88,7 +88,8 @@ try {
 			assert.equal(gc.fullEpochs(), epochs);
 			held();
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(traceLimit) === 0; ++i) grant(1);
-			assert.equal(memory.readRamRecordWord(traceLimit), 1, 'a one-cycle supply clamps guest work to one unit');
+			assert.ok(memory.readRamRecordWord(traceLimit) > 1, 'one-cycle host fragments must not shorten the allowance to the next hardware event');
+			observe(`H ${traceLimit} ${traceLimit + 4}`, hashBytes(memory.ramData(), traceLimit, 4));
 			for (let i = 0; i < 8192 && gc.tables.get(weak, valueInteger(1)) !== valueNil(); ++i) grant(113);
 			assert.equal(gc.tables.get(weak, valueInteger(1)), valueNil(), 'the real weak entry is cleared in firmware');
 			assert.equal(gc.fullEpochs(), epochs);

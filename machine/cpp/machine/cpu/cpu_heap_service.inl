@@ -9,7 +9,7 @@ static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STAC
 static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
-static_assert(HEAP_SERVICE_REMAINING_GRANT_ADDRESS + sizeof(u32) <= RAM_BASE);
+static_assert(HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + sizeof(u32) <= RAM_BASE);
 static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STRIDE);
 static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
@@ -131,8 +131,8 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
 	} else if (address - HEAP_SERVICE_ROOT_PORT_BASE < HEAP_SERVICE_ROOT_PORT_BYTES) {
 		word = readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
-	} else if (address == HEAP_SERVICE_REMAINING_GRANT_ADDRESS && kind != MemoryAccessKind::U8) {
-		word = static_cast<u32>(instructionBudgetRemaining);
+	} else if (address == HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS && kind != MemoryAccessKind::U8) {
+		word = static_cast<u32>(remainingDeviceCycles());
 	} else {
 		const u32 slot = address >> BLUA32_STRING_ROM_SOCKET_SHIFT;
 		const u32 busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;

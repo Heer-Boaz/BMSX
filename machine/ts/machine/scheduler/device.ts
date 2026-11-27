@@ -80,7 +80,7 @@ export class DeviceScheduler {
 	public runCpuSlice(targetDepth: number, sliceBudget: number, targetThread: number = this.cpu.rootThread.address, kind = CpuRunKind.Direct): RunResult {
 		this.beginCpuSlice(sliceBudget);
 		try {
-			return this.cpu.runUntilDepth(targetDepth, sliceBudget, targetThread, kind);
+			return this.cpu.runUntilDepth(targetDepth, sliceBudget, targetThread, kind, this);
 		} finally {
 			this.endCpuSlice();
 		}
@@ -92,6 +92,12 @@ export class DeviceScheduler {
 
 	public nextDeadline(): number {
 		return this.timerDeadlines[this.timerNext[0]];
+	}
+
+	// Sample the hardware clock, not the host fragment used to run the CPU.
+	public cyclesUntilDeadline(): number {
+		const head = this.timerNext[0];
+		return head === 0 ? 0x7fff_ffff : Math.min(0x7fff_ffff, Math.max(0, this.timerDeadlines[head] - this.currentNowCycles()));
 	}
 
 	public hasDueTimer(): boolean {

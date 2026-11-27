@@ -1517,9 +1517,9 @@ BIOS, the resident routine marks roots, scans reachable records, revisits
 Threads and weak Tables, then removes weak entries before reclaiming storage.
 It can also shrink the stack of a surviving Thread. The routine continues
 across CPU grants. At the start of a quantum it allows one work word per
-three remaining cycles, with a minimum allowance of one word and a maximum
-of 4,096 words. An indivisible record operation can exceed the allowance.
-Work words size the quantum; they do not add a charge to the ordinary cycles
+three cycles until the next timed hardware event, with a minimum allowance
+of one word and a maximum of 4,096 words. An indivisible record operation
+can exceed the allowance. Work words size the quantum; they do not add a charge to the ordinary cycles
 of its instructions. Device time advances while the routine runs. Interrupt
 entry and the following instruction wait until the fresh cycle completes.
 
@@ -1546,11 +1546,11 @@ storage and moves the entries before returning. The next instruction cannot
 observe a partly updated table.
 
 Logical and physical assists each request at most one work word per three
-remaining cycles of the issuing grant. Fewer than three cycles defer the
-assist, not the reservation. An indivisible scan such as a record header may
-exceed the requested work. The BIOS performs these assists on ordinary CPU
-grants before reserving storage for a new Table or a new captureless closure
-from a ROM prototype.
+cycles in their allowance. An indivisible scan such as a record header may
+exceed the requested work. For a new Table or captureless closure from a
+ROM prototype, the BIOS takes this allowance from the time until the next
+timed hardware event at entry and performs the assists on ordinary CPU
+grants. Fewer than three cycles defer the assist, not the reservation.
 Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.

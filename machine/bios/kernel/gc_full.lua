@@ -8,14 +8,14 @@ local collector<const> = require('kernel/gc_step') -- C:1239-1243 T:1139-1144
 local cycles_per_word<const> = 3 -- X:2645-2647 Y:2602-2605; allowance only, never a CPU charge
 
 local collect_full<const> = function(management) -- C:1230-1243 T:1134-1144
-	local grant_remaining<const>: *word = layout.remaining_grant_address -- X:2644-2646 Y:2602-2604; private load of the active grant after its own charge
+	local device_cycles_remaining<const>: *word = layout.remaining_device_cycles_address -- X:2644-2646 Y:2602-2604; sample the hardware clock after paying for the load
 	local control<const> = management + layout.control_offset -- C:1234,1241 T:1136,1142
 	local epochs<const>: *u8 = layout.ram_base + control + control_layout.internal.full_epochs_offset -- C:1234,1241 T:1136,1142
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- C:1274-1277,1300
 	*epochs = control_layout.internal.active(control) and 2 or 1 -- C:1234 T:1136
 	*effects = layout.publish_roots -- C:1124,1261-1277,1300-1313
 	repeat -- X:2642-2644 Y:2598-2601; the guest loop continues across CPU grants
-		local words = *grant_remaining // cycles_per_word -- X:2645-2647 Y:2602-2605; decoded CPU cycles interpreted as a signed Integer
+		local words = *device_cycles_remaining // cycles_per_word -- X:2645-2647 Y:2602-2605; decoded CPU cycles interpreted as a signed Integer
 		if words < 1 then words = 1 end -- X:2645-2647 Y:2602-2605
 		if words > collector.step_words then words = collector.step_words end -- X:2645-2647 Y:2602-2605
 		collector.step(management, words, 0, 1) -- C:1239-1241 T:1139-1141; compact live thread backing only on a full collection

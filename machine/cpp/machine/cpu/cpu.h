@@ -77,6 +77,7 @@ struct NativeWarmupPages;
 class GcHeap;
 class IrqController;
 class Memory;
+class DeviceScheduler;
 struct MappedPageBinding;
 
 class TableRecord;
@@ -281,7 +282,8 @@ public:
 	void setInstructionObserver(InstructionObserverBinding binding);
 
 	void setExecutionHook(ExecutionHookBinding binding);
-	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u, CpuRunKind kind = CpuRunKind::Direct);
+	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u,
+		CpuRunKind kind = CpuRunKind::Direct, const DeviceScheduler* deviceClock = nullptr);
 	bool allocationParked() const { return m_pendingAllocation.recovery != AllocationRecovery::None; }
 	bool allocationReady() const {
 		return m_pendingAllocation.recovery == AllocationRecovery::RetryCurrent
@@ -629,7 +631,9 @@ private:
 	StringComparisonLatch m_stringComparison;
 	ConcatAssembly m_concat;
 	PendingAllocation m_pendingAllocation;
+	int remainingDeviceCycles() const;
 	CpuRunKind m_runKind = CpuRunKind::Idle;
+	const DeviceScheduler* m_deviceClock = nullptr;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::array<u32, COP0_EXEC + 1u> m_cop0Words{};

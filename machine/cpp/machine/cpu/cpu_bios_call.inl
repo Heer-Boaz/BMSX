@@ -11,7 +11,7 @@ void CPU::enterBiosCall(CallFrame& caller, int destination, u32 selector, int su
 	const u32 management = m_heapAllocator.managementOffset();
 	auto& frame = prepareHeapServiceFrame(entry, 0, BIOS_CALL_CONTEXT_WORDS + 2 * supplied, {}, m_currentInstructionPc);
 	frame.registers.set(0, valueInteger(static_cast<i32>(management)));
-	frame.registers.set(1, valueInteger(std::max(0, instructionBudgetRemaining)));
+	frame.registers.set(1, valueInteger(remainingDeviceCycles()));
 	frame.registers.set(2, valueInteger(static_cast<i32>(m_runKind)));
 	if (supplied != 0) caller.extendTop(destination + supplied + 1);
 	for (int index = 0; index < supplied; ++index) {

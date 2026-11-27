@@ -15,7 +15,7 @@ return {
 	trace_context_offset = 0x740,
 	effect_offset = 0x788,
 	arguments_offset = 0x790,
-	remaining_grant_address = 0x02c00000,
+	remaining_device_cycles_address = 0x02c00000,
 	publish_roots = 0,
 	release_string_work = 5,
 }

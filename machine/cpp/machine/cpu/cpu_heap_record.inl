@@ -6,7 +6,7 @@ void CPU::beginClosureReservation(CallFrame& frame, int destination, HeapService
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceClosureField::LastPc), lastPc, nextPc);
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	const std::array args{management, static_cast<u32>(kind), prototype, domain,
-		static_cast<u32>(HeapServiceRecordMode::Direct), static_cast<u32>(std::max(0, instructionBudgetRemaining))};
+		static_cast<u32>(HeapServiceRecordMode::Direct), static_cast<u32>(remainingDeviceCycles())};
 	beginHeapService(m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::AllocateRecord)], args);
 }
 
