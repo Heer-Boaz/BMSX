@@ -5,6 +5,7 @@ module<const>
 -- effect address is a private store strobe, not RAM.
 return {
 	ram_base = 0x08000000,
+	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,

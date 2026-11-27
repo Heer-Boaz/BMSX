@@ -7,7 +7,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { AllocationRecovery, CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { ValueTag, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, ValueTag, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -111,10 +111,10 @@ try {
 		const baseline = history.capture(memory, null);
 		for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) grant(1);
 		assert.equal(stage(), HeapServiceTableGrowthStage.Scheduled);
-		assert.equal(memory.readRamRecordWord(growth + HeapServiceTableGrowthField.Immediate), 1);
 		assert.equal(memory.readRamRecordWord(growth + HeapServiceTableGrowthField.Receiver), owner);
-		assert.equal(memory.readRamRecordWord(growth + HeapServiceTableGrowthField.ArraySlots), arraySlots);
-		assert.equal(memory.readRamRecordWord(growth + HeapServiceTableGrowthField.HashSlots), hashSlots);
+		const firmware = cpu['heapService'].thread.firstFrame!.registers;
+		assert.equal(asInteger(firmware.get(2)), arraySlots);
+		assert.equal(asInteger(firmware.get(3)), hashSlots);
 		const issue = memory.readRamRecordWord(growth + HeapServiceTableGrowthField.InstructionPc);
 		const nextPc = memory.readRamRecordWord(growth + HeapServiceTableGrowthField.NextPc);
 		const opcodeAtIssue = instructionOpcode(readLE32(system.romBytes, issue));
@@ -132,7 +132,7 @@ try {
 		held();
 		assert.equal(arena.occupiedBytes(), physical, 'admission has not allocated');
 		assert.deepEqual(memory.ramData().subarray(header, headerEnd), seed.ram.subarray(header, headerEnd));
-		observeRam(growth, growth + HeapServiceTableGrowthField.Immediate + 4);
+		observeRam(growth, growth + HeapServiceTableGrowthField.Budget + 4);
 		observeRam(context, context + HeapServiceTableResizeContextField.HashBytes + 4);
 		assert.ok(step() > 0, 'a resident instruction advances the ordinary machine clock');
 		let referenceSeed = seed;
@@ -169,7 +169,7 @@ try {
 			resumeLogical = budget.usedBytes();
 			step();
 			held();
-			observeRam(growth, growth + HeapServiceTableGrowthField.Immediate + 4);
+			observeRam(growth, growth + HeapServiceTableGrowthField.Budget + 4);
 		}
 
 		// Use the existing synchronous owner from the same successful

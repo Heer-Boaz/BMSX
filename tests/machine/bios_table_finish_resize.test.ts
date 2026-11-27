@@ -363,6 +363,6 @@ test('combined Table resize pins both native mappings, including allocation refu
 			assert.ok(native.covered.has(line), `${key}:${line}: ${statement.trim()} has no firmware counterpart`);
 		}
 	}
-	for (const [key, line] of [['T', 818], ['T', 835], ['T', 837], ['T', 1035], ['C', 391], ['C', 433]] as const)
-		assert.equal(sources.get(key)!.covered.has(line), false, 'special hash-only and staged algorithms are distinct');
+	for (const [key, line] of [['T', 835], ['T', 837], ['T', 1035], ['C', 391], ['C', 433]] as const)
+		assert.equal(sources.get(key)!.covered.has(line), false, 'the native hash-only fast path and staged placement are separate leaves');
 });

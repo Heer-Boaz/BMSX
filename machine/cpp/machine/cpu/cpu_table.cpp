@@ -96,7 +96,7 @@ TableRecord CPU::createTable(int arraySize, int hashSize) {
 
 bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, const TableRecord::ResizePlan& plan, u32 previous,
 	u32 requested, bool staged, bool stagedGrowth, u8 extraSlots, u8 parkExtraSlots, HeapServiceTableGrowthStage stage) {
-	const auto operation = staged ? HeapServiceOperation::ReserveTableGrowth : HeapServiceOperation::ResizeTable;
+	const auto operation = staged ? HeapServiceOperation::RebuildTable : HeapServiceOperation::ResizeTable;
 	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(operation)];
 	if (function == 0u) return false;
 	const u32 management = m_heapAllocator.managementOffset();
@@ -109,24 +109,20 @@ bool CPU::beginTableGrowthReservation(u32 receiver, Value key, Value value, cons
 	CallFrame& frame = *m_activeThread->currentFrame;
 	const u32 nextPc = allocationParked() ? m_pendingAllocation.nextPc : frame.readControl(FrameField::Pc);
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::Stage), static_cast<u32>(stage), receiver);
-	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ArraySlots), array, hash);
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::ExtraSlots), extraSlots, parkExtraSlots);
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::InstructionPc), m_currentInstructionPc, lastPc);
 	m_memory.writeRamRecordPair(base + static_cast<u32>(HeapServiceTableGrowthField::NextPc), nextPc,
 		extraSlots != 0u ? static_cast<u32>(std::max(instructionBudgetRemaining, 0)) : 0u);
-	m_memory.writeRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate), static_cast<u32>(!staged));
+	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash, hashBytes);
 	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeyTag), keyTag, keyWord);
 	m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag), valueTagWord, valueWord);
 	frame.writeControl(FrameField::Pc, m_currentInstructionPc);
 	const u32 result = management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET;
 	if (staged) {
-		m_memory.writeRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash);
-		const std::array args{m_heapAllocator.stateOffset(), receiver, array, hash, hashBytes, keepHash,
-			static_cast<u32>(stagedGrowth), result};
+		const std::array args{management, receiver, array, hash, static_cast<u32>(stagedGrowth), result};
 		beginHeapService(function, args);
 	} else {
 		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::Previous), previous, requested);
-		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash), keepHash, hashBytes);
 		const std::array args{management, receiver, array, hash, result};
 		beginHeapService(function, args);
 	}
@@ -145,8 +141,7 @@ void CPU::finishTableGrowthReservation() {
 	const u32 nextPc = m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::NextPc));
 	CallFrame& frame = *m_activeThread->currentFrame;
 	m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceTableGrowthStage::Idle));
-	const bool allocated = heapServiceResult() != 0u;
-	if (allocated && m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::Immediate)) != 0u) {
+	if (heapServiceResult() != 0u) {
 		frame.writeControl(FrameField::Pc, nextPc);
 		return;
 	}
@@ -157,19 +152,6 @@ void CPU::finishTableGrowthReservation() {
 	const Value value = valueFromTag(static_cast<ValueTag>(m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueTag))),
 		m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::ValueWord)));
 	TableRecord table(m_heap, receiver);
-	if (allocated) {
-		const TableRecord::ResizePlan plan{
-			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ArraySlots)),
-			m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::HashSlots)),
-			m_memory.readRamRecordWord(context + static_cast<u32>(HeapServiceTableResizeContextField::KeepHash)) != 0u,
-		};
-		const u32 result = management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET;
-		table.installStagedGrowth(*this, plan,
-			m_memory.readRamRecordWord(result + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage)),
-			m_memory.readRamRecordWord(result + static_cast<u32>(HeapServiceTableGrowthResultField::HashStorage)), key, value);
-		frame.writeControl(FrameField::Pc, nextPc);
-		return;
-	}
 	// The refused reservation left the Table unchanged. Continue the next
 	// source attempt at this exact opcode; do not repeat __newindex lookup.
 	const u8 parkExtra = static_cast<u8>(m_memory.readRamRecordWord(base + static_cast<u32>(HeapServiceTableGrowthField::ParkExtraSlots)));

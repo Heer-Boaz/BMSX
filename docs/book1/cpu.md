@@ -1539,11 +1539,11 @@ is visible until its reservation succeeds. Interrupt entry and the following
 instruction wait until the request completes or raises its error.
 
 When a table-write instruction needs replacement storage, the resident memory
-routine reserves it on ordinary CPU grants. Device time advances while it
-reserves the blocks. A refused reservation publishes no new capacity or
-mapping. When the routine also performs the resize, it publishes the new
-storage and moves the entries before returning. The next instruction cannot
-observe a partly updated table.
+routine reserves the blocks, moves the entries and publishes the new capacity
+and mapping before returning. This work uses ordinary CPU cycles while the
+devices continue to advance. A refused reservation publishes no new capacity
+or mapping. Neither the next instruction nor an interrupt handler can observe
+a partly updated table.
 
 Logical and physical assists each request at most one work word per three
 cycles in their allowance. An indivisible scan such as a record header may
@@ -1691,40 +1691,37 @@ existing slot performs neither scan. A store through `rawset` pays the same
 scan charges. A failed reservation does not refund a completed
 scan; a recovery attempt that scans again pays for its own work.
 When an insertion replaces a hash with more than 64 **old** slots and
-either leaves array capacity unchanged or creates the first array backing, the store continues across cycle grants.
-It initializes 16 replacement bytes per cycle (rounding the final group up)
-and visits each source slot at eight cycles per visit to establish the home
-positions. If any entries collide, it visits the source again until the last
-collision is placed. Each such visit costs eight cycles, including a repeated
-visit when the next free-slot candidate is occupied. A started visit finishes
-even if fewer than eight cycles remain.
+either leaves array capacity unchanged or creates the first array backing,
+the resident memory routine prepares the new hash and visits the sources
+to place entries at their home positions. If entries collide, it visits
+the sources again until the last collision is placed. A free-slot candidate
+that is occupied causes another visit for that entry.
 
-When growth moves an existing array of at least 1,024 slots to a different
-block, the processor transfers 16 destination bytes per cycle. Each retained
-payload and tag goes to its position in the larger array; new slots are
-initialized to nil. The old array stays attached until publication. A hash
-that needs no repartitioning keeps its block and links; otherwise its
-replacement proceeds under the same cycle grants. When an array of at least
-1,024 slots grows within its existing block, retained payloads stay in place.
-The processor moves the retained tags and clears the new payloads and tags at
-the same 16 bytes per cycle. A reset during this in-place operation finishes
-the store before entering the reset program.
+When an array of at least 1,024 slots grows into a different block, the
+routine copies the retained payloads and tags and initializes the new
+slots to nil. For growth within the existing block, it leaves the retained
+payloads in place, moves the retained tags and clears the extensions.
+A hash that does not need repartitioning keeps its block and links.
 
-When an array of at least 1,024 slots shrinks, the store transfers the
-non-nil entries beyond its new end to the replacement hash. Each placement
-pass visits old hash slots first, then the disappearing array slots in
-ascending index order. Each run of nil array slots costs one cycle per
-four slots, rounding the last group up. Other visits use the eight-cycle
-hash placement charge. After placement, the processor moves the retained
-tags at 16 bytes per cycle and releases the unused storage. A reset before
-the first retained tag moves discards the pending shrink; a reset after that
-point finishes it before entering the reset program.
+When an array of at least 1,024 slots shrinks, the routine transfers the
+non-nil entries beyond the new end to the replacement hash. Both placement
+passes visit old hash slots before the disappearing array slots, in
+ascending index order. The routine then moves the retained tags and releases
+the unused storage.
 
-The old hash remains attached until the replacement is complete. The processor
-then publishes the insertion before issuing another instruction or accepting
-an interrupt. Guest time advances during the replacement; this is not an
-allocation park. Collection at tick boundaries and stopped final remark wait
-until publication. These charges also apply to a raw store.
+The routine sizes these batches in units of 16 bytes of transfer or
+initialization, eight units per individual placement visit and one unit per
+group of up to four consecutive nil slots in the disappearing array. A
+started visit can exhaust its batch allowance. These counts size the work;
+the instructions that perform it pay the CPU cycles. The old hash remains
+attached until the replacement is ready. Collection and the next instruction
+wait for publication; a reset request waits for the active resident operation
+to return before entering the reset program.
+
+A replacement performed through `rawset` charges the transfer and placement
+counts directly as cycles. A reset finishes an in-place raw growth or a
+raw shrink that has started moving retained tags. Before that tag move, the
+reset can discard the pending raw shrink.
 
 Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
 An incremental allocation assist adds its work charge as specified above. An insertion that

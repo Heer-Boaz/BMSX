@@ -9,7 +9,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, FullCollection, Count,
+	RootHead, RootBanks, AllocateRecord, RebuildTable, ResizeTable, InterruptPrelude, FullCollection, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -50,8 +50,8 @@ export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, R
 
 export const HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50;
 export const enum HeapServiceTableGrowthField {
-	Stage = 0, Receiver = 4, ArraySlots = 8, HashSlots = 12, ExtraSlots = 16, ParkExtraSlots = 20,
-	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
+	Stage = 0, Receiver = 4, ExtraSlots = 8, ParkExtraSlots = 12,
+	InstructionPc = 16, LastPc = 20, NextPc = 24, Budget = 28,
 }
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 

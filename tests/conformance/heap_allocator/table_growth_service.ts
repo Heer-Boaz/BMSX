@@ -6,7 +6,7 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { AllocationRecovery, CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { valueInteger, valueNil, valuePayload, valueTable } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valueInteger, valueNil, valuePayload, valueTable } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -104,8 +104,8 @@ try {
 			assert.equal(memory.readRamRecordWord(base + HeapServiceTableGrowthField.Receiver), owner);
 			assert.equal(arena.occupiedBytes(), before, 'admission has not called the native allocator');
 			assert.equal(hashBytes(memory.ramData(), ownerOffset, TableRecords.HEADER_BYTES), initialHeader);
-			const arraySlots = memory.readRamRecordWord(base + HeapServiceTableGrowthField.ArraySlots);
-			const hashSlots = memory.readRamRecordWord(base + HeapServiceTableGrowthField.HashSlots);
+			const firmware = cpu['heapService'].thread.firstFrame!.registers;
+			const arraySlots = asInteger(firmware.get(2)), hashSlots = asInteger(firmware.get(3));
 			assert.equal(array ? arraySlots : hashSlots, extent * 2);
 			observeRam(base, base + HeapServiceTableGrowthField.NextPc + 4);
 			assert.ok(step() > 0, 'the normal scheduler advances device time during reservation');
@@ -121,8 +121,20 @@ try {
 			if (!recovering) {
 				assert.ok(array ? expectedArray : expectedHash);
 				for (let i = 0; i < 8192 && arena.occupiedBytes() === before; ++i) grant(1);
-				assert.equal(cpu.heapServiceActive(), true, 'checkpoint interrupts physical allocation work at an arena write');
+				assert.equal(cpu.heapServiceActive(), true, 'physical allocation work interrupted at an arena write');
 				assert.ok(arena.occupiedBytes() > before);
+				// The portable checkpoint must also cover a genuinely partial
+				// replacement, not only the allocator or the final table header.
+				const first = array ? expectedArray : expectedHash + 10 * hashSlots;
+				const last = array ? expectedArray + 4 * (extent - 1) : expectedHash + requested - 1;
+				const read = array ? (at: number) => memory.readRamRecordWord(at) : (at: number) => memory.readRamRecordByte(at);
+				const firstValue = array ? 1 : 0xff, lastValue = array ? extent : 0xff;
+				assert.notEqual(read(first), firstValue);
+				for (let i = 0; i < 16384 && read(first) !== firstValue && cpu.heapServiceActive(); ++i) grant(1);
+				assert.equal(read(first), firstValue);
+				assert.notEqual(read(last), lastValue, 'replacement initialization is still in progress');
+				assert.equal(cpu.heapServiceActive(), true);
+				observeRam(first - RAM_BASE, first - RAM_BASE + (array ? 4 : 1));
 			} else {
 				assert.equal(expectedHash, 0, 'the original WASM allocator also refuses this backing');
 				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) grant(1);
@@ -170,19 +182,29 @@ try {
 					observeRam(base, base + HeapServiceTableGrowthField.NextPc + 4);
 				}
 				let paid = 0;
-				for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) paid += grant(1);
-				assert.ok(paid > 0);
-				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(stage(), HeapServiceTableGrowthStage.Idle);
-				assert.equal(cpu.readFramePc(caller), nextPc);
-				assert.equal(cpu.tableRebuild.record, owner);
+				const reserved = () =>
+					memory.readRamRecordWord(resultBase + HeapServiceTableGrowthResultField.HashStorage) === expectedHash
+					&& memory.readRamRecordWord(resultBase + HeapServiceTableGrowthResultField.ArrayStorage) === expectedArray;
+				for (let i = 0; i < 8192 && cpu.heapServiceActive() && !reserved(); ++i) paid += grant(1);
+				assert.equal(reserved(), true, 'the guest reserves both backings before publication');
+				assert.equal(cpu.heapServiceActive(), true, 'staged placement follows reservation in one activation');
+				assert.equal(cpu.readFramePc(caller), issue);
+				assert.equal(cpu.tableRebuild.record, 0, 'the host has not installed a stage job');
 				assert.equal(hashBytes(memory.ramData(), ownerOffset, TableRecords.HEADER_BYTES), initialHeader);
-				assert.equal(memory.readRamRecordWord(resultBase + HeapServiceTableGrowthResultField.HashStorage), expectedHash);
-				assert.equal(memory.readRamRecordWord(resultBase + HeapServiceTableGrowthResultField.ArrayStorage), expectedArray);
 				assert.equal(arena.occupiedBytes(), reference.occupiedBytes());
 				assert.deepEqual(memory.ramData().subarray(state, stateEnd), oracle.machine.memory.ramData().subarray(state, stateEnd));
 				observeRam(state, stateEnd);
 				observeRam(resultBase, resultBase + 8);
+				for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) paid += grant(83);
+				assert.ok(paid > 0);
+				assert.equal(cpu.heapServiceActive(), false);
+				assert.equal(stage(), HeapServiceTableGrowthStage.Idle);
+				assert.equal(cpu.readFramePc(caller), nextPc);
+				assert.equal(cpu.tableRebuild.record, 0, 'no host table rebuild follows the completed BIOS operation');
+				assert.equal(tables.arrayAddress(owner), expectedArray);
+				assert.equal(tables.hashAddress(owner), expectedHash);
+				assert.equal(tables.get(owner, valueInteger(added)), valueInteger(61));
+				observeRam(ownerOffset, headerEnd);
 				for (let i = 0; i < 4096 && cpu.getFrameDepth() !== 0; ++i) grant(64);
 				assert.equal(cpu.getFrameDepth(), 0);
 				assert.equal(cpu.tableRebuild.record, 0);

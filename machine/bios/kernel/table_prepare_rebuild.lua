@@ -169,7 +169,7 @@ local initialize_hash_trigger<const> = function(job_address, array, storage, cap
 end
 
 local prepare_table_rebuild<const> = function(record, job_offset, allowance) -- T:930-931 C:6-7
-	if allowance <= 0 then return allowance end -- T:931 C:7
+	if allowance <= 0 then return allowance, false end -- T:931 C:7
 	local job_address<const> = ram_base + job_offset -- T:41-46 C:6 J:12-16; fixed transport of the original job
 	local job<const>: *rebuild_prepare_job = job_address -- T:930,935 C:6,10
 	local table<const>: *rebuild_array_header = ram_base + (record & ram_word_mask) -- T:121,133,137,935-936 C:10,14 H:247 M:9
@@ -187,7 +187,7 @@ local prepare_table_rebuild<const> = function(record, job_offset, allowance) -- 
 		transfer_array(array_storage & ram_word_mask, old_base & ram_word_mask, old_array, array, in_place, transfer, first, last) -- T:942-972 C:11,22-48
 		job.array_cleared = last -- T:973 C:49
 		allowance = allowance - ((n + 15) >> 4) -- T:974 C:50
-		if last < transfer or (allowance == 0 and job.cleared < bytes) then return allowance end -- T:975 C:51
+		if last < transfer or (allowance == 0 and job.cleared < bytes) then return allowance, false end -- T:975 C:51
 	end
 	local cleared<const> = job.cleared -- T:977-979 C:53-55
 	if cleared < bytes then -- T:977 C:53
@@ -200,10 +200,10 @@ local prepare_table_rebuild<const> = function(record, job_offset, allowance) -- 
 		fill.internal.fill_backing(storage + split, storage + last, 0xffffffff) -- T:982-983 C:58-59
 		job.cleared = last -- T:984 C:60
 		allowance = allowance - ((n + 15) >> 4) -- T:985 C:61
-		if last < bytes then return allowance end -- T:986 C:62
+		if last < bytes then return allowance, false end -- T:986 C:62
 		initialize_hash_trigger(job_address, array, storage, capacity, bytes) -- T:987-1001 C:63-76
 	end
-	return allowance -- T:975,986,1003 C:51,62,94; caller resumes at placement
+	return allowance, true -- T:975,986,1003 C:51,62,94; caller resumes at placement
 end
 
 -- The original policy counts skipped Array tags at four per work unit.
@@ -283,7 +283,7 @@ local place_table_rebuild<const> = function(record, job_offset, allowance) -- T:
 		end
 		::next_home:: -- T:1007,1015,1021 C:95,99,103
 	end
-	if job.homes < sources then return allowance end -- T:1031 C:113
+	if job.homes < sources then return allowance, false end -- T:1031 C:113
 	while job.collisions ~= 0 and job.cursor < sources and allowance > 0 do -- T:1033 C:114
 		do
 			local i<const> = job.cursor -- T:1034,1040 C:114,117
@@ -321,9 +321,9 @@ local place_table_rebuild<const> = function(record, job_offset, allowance) -- T:
 		end
 		::next_collision:: -- T:1037,1051 C:115,123
 	end
-	if job.collisions ~= 0 and job.cursor < sources then return allowance end -- T:1061 C:133
+	if job.collisions ~= 0 and job.cursor < sources then return allowance, false end -- T:1061 C:133
 	if shrinking and job.array_cleared < array then -- T:1062 C:134
-		if allowance <= 0 then return allowance end -- T:1063 C:135
+		if allowance <= 0 then return allowance, false end -- T:1063 C:135
 		local first<const> = job.array_cleared -- T:1064-1066 C:136-139
 		local n<const> = transfer_extent(array - first, allowance) -- T:1064 C:136-137
 		local dest<const> = (old_base & ram_word_mask) + 4 * array + first -- T:1065 C:138
@@ -331,9 +331,9 @@ local place_table_rebuild<const> = function(record, job_offset, allowance) -- T:
 		move_extent(dest, from, n) -- T:1067-1068 C:139-140
 		job.array_cleared = first + n -- T:1069 C:141
 		allowance = allowance - ((n + 15) >> 4) -- T:1069 C:142
-		if job.array_cleared < array then return allowance end -- T:1070 C:143
+		if job.array_cleared < array then return allowance, false end -- T:1070 C:143
 	end
-	return allowance -- T:1070,1072 C:143,145; caller resumes at publication
+	return allowance, true -- T:1070,1072 C:143,145; caller resumes at publication
 end
 
 
@@ -386,9 +386,57 @@ local publish_table_rebuild<const> = function(management, record, job_offset, al
 	return allowance -- T:1090-1091 C:162-163; caller retires the original job by continuing past the epilogue
 end
 
+-- Install only the native staged locals which survive from reservation.
+-- A stopped host fragment leaves these words and the one BIOS activation
+-- intact; it neither owns a job sentinel nor requests the next pass.
+local finish_reserved_rebuild<const> = function(management, record, array, hash, storage, base, keep_hash, kt, kw, vt, vw) -- T:825-834,858-862 B:279-282,288-293
+	local table<const>: *rebuild_array_header = ram_base + (record & ram_word_mask) -- T:121,827,830 H:247 M:9 B:289,291
+	local old_array<const> = table.array_slots -- T:827 B:289
+	local moved<const>, replacing<const> = array ~= old_array, keep_hash == 0 -- T:830-832 B:289-293
+	local capacity<const> = replacing and hash or 0 -- T:831 B:292
+	local job_offset<const> = management + layout.table_rebuild_offset -- T:825,859 J:12-16; fixed guest scratch
+	local job<const>: *rebuild_prepare_job = ram_base + job_offset -- T:825 J:12-16
+	job.source = replacing and table.hash_storage or 0 -- T:830 B:291
+	job.count = replacing and table.hash_slots or 0 -- T:830 B:291
+	job.storage = replacing and storage or 0 -- T:831 B:292
+	job.capacity = capacity -- T:831 B:292
+	job.array_storage = moved and base or 0 -- T:832 B:292
+	job.array_slots = moved and array or 0 -- T:832 B:293
+	job.array_cleared = 0 -- T:832 J:14
+	job.cleared = 0 -- T:833 J:15
+	job.homes = 0 -- T:833 J:15
+	job.cursor = 0 -- T:833 J:15
+	job.collisions = 0 -- T:833 J:15
+	job.free = capacity - 1 -- T:833 B:293
+	job.key_tag = kt -- T:833 V:23 W:29 B:293
+	job.key_word = kw -- T:833 V:24 W:30 B:293
+	job.value_tag = vt -- T:833 V:23 W:29 B:293
+	job.value_word = vw -- T:833 V:24 W:30 B:293
+
+	local prepared = false -- T:940,977 C:19,53; the preparation phase returns whether the next phase can start
+	local device_cycles<const>: *word = layout.remaining_device_cycles_address -- T:827,930-931 B:281 C:6-7; use the hardware horizon, not host's fragment
+	while true do -- T:827,930 C:6; the native caller continued the same job
+		local allowance = *device_cycles -- T:827,930-931 B:281 C:6-7; sample only at the source quantum frontier
+		if allowance > 0 then -- T:931 C:7
+			if not prepared then -- T:940,977 C:19,53
+				allowance, prepared = prepare_table_rebuild(record, job_offset, allowance) -- T:940-1001 C:19-76; completion comes from the original exits
+			end
+			if prepared then -- T:975,986,1003 C:51,62,94
+				local placed -- T:1031,1061,1070 C:113,133,143
+				allowance, placed = place_table_rebuild(record, job_offset, allowance) -- T:1003-1071 C:78-144
+				if placed then -- T:1070,1072 C:143,145; final publication is admitted even after the last group consumes its allowance
+					publish_table_rebuild(management, record, job_offset, allowance) -- T:1072-1091 C:145-163
+					return -- T:1090-1091 C:162-163; the completed root, not a host sentinel
+				end
+			end
+		end
+	end
+end
+
 return {
 	internal = { transfer_extent = transfer_extent, move_extent = move_extent,
-		transfer_array = transfer_array, initialize_hash_trigger = initialize_hash_trigger, empty_tail_slots = empty_tail_slots },
+		transfer_array = transfer_array, initialize_hash_trigger = initialize_hash_trigger, empty_tail_slots = empty_tail_slots,
+		finish_reserved_rebuild = finish_reserved_rebuild },
 	prepare_table_rebuild = prepare_table_rebuild,
 	place_table_rebuild = place_table_rebuild,
 	publish_table_rebuild = publish_table_rebuild,

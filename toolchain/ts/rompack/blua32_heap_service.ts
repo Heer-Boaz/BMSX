@@ -19,7 +19,6 @@ export const HEAP_SERVICE_WEAK_MODULE_PATH = 'kernel/gc_weak_quantum';
 export const HEAP_SERVICE_REMARK_MODULE_PATH = 'kernel/gc_remark';
 export const HEAP_SERVICE_ROOT_BANKS_MODULE_PATH = 'kernel/gc_root_banks';
 export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
-export const HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH = 'kernel/table_reserve_growth';
 export const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
 const FULL_COLLECTION_MODULE = 'kernel/gc_full';
@@ -33,7 +32,7 @@ export const HEAP_SERVICE_MODULES = [
 	'kernel/gc_mark', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
 	'kernel/gc_table_mode', 'kernel/gc_weak_mode', 'kernel/string_record', HEAP_SERVICE_TRACE_MODULE_PATH,
 	'kernel/gc_weak_table', HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,
-	HEAP_SERVICE_CLOSURE_MODULE_PATH, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH,
+	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/gc_barrier', 'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
 	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH,
 	INTERRUPT_PRELUDE_MODULE, FULL_COLLECTION_MODULE, 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
@@ -62,7 +61,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.RootHead]: ['mark_root_head', 6, HEAP_SERVICE_REMARK_MODULE_PATH],
 	[HeapServiceOperation.RootBanks]: ['trace_root_banks', 8, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH],
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
-	[HeapServiceOperation.ReserveTableGrowth]: ['reserve_table_growth', 8, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH],
+	[HeapServiceOperation.RebuildTable]: ['execute_staged_table_growth', 6, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH],
 	[HeapServiceOperation.ResizeTable]: ['execute_table_resize', 5, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],
 	[HeapServiceOperation.FullCollection]: ['collect_full', 1, FULL_COLLECTION_MODULE],

@@ -19,7 +19,7 @@ import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_
 import {
 	HEAP_SERVICE_MODULE_PATH, HEAP_SERVICE_MODULES, HEAP_SERVICE_STRINGS_MODULE_PATH,
 	HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TRACE_MODULE_PATH, HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH,
-	HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH,
+	HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH,
 } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { linkSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
@@ -78,7 +78,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		[HEAP_SERVICE_REMARK_MODULE_PATH, 'mark_root_head'],
 		[HEAP_SERVICE_ROOT_BANKS_MODULE_PATH, 'trace_root_banks'],
 		['kernel/allocate_record', 'allocate_record'],
-		[HEAP_SERVICE_TABLE_GROWTH_MODULE_PATH, 'reserve_table_growth'],
+		[HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'execute_staged_table_growth'],
 		[HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'execute_table_resize'],
 		['kernel/vblank_irq', 'before_cart_irq'],
 		['kernel/gc_full', 'collect_full'],

@@ -16,7 +16,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, ReserveTableGrowth, ResizeTable, InterruptPrelude, FullCollection, Count,
+	RootHead, RootBanks, AllocateRecord, RebuildTable, ResizeTable, InterruptPrelude, FullCollection, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -59,8 +59,8 @@ enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurren
 
 constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50u;
 enum class HeapServiceTableGrowthField : uint32_t {
-	Stage = 0, Receiver = 4, ArraySlots = 8, HashSlots = 12, ExtraSlots = 16, ParkExtraSlots = 20,
-	InstructionPc = 24, LastPc = 28, NextPc = 32, Budget = 36, Immediate = 40,
+	Stage = 0, Receiver = 4, ExtraSlots = 8, ParkExtraSlots = 12,
+	InstructionPc = 16, LastPc = 20, NextPc = 24, Budget = 28,
 };
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
 
