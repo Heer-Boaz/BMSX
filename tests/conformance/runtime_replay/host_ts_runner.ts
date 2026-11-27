@@ -74,6 +74,28 @@ async function main(): Promise<void> {
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution, keyboardInteraction);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
+	const supervisorRequestLineHigh = history.input.supervisorRequestLineHigh.bind(history.input);
+	history.input.supervisorRequestLineHigh = () => {
+		if (history.mode === HistoryMode.Replaying) {
+			const journal = history.inputJournal;
+			assert.equal(runtime.machine.scheduler.currentNowCycles(), journal.cycleAt(journal.replaySequence), 'replay polls exactly at the recorded hardware edge');
+		}
+		return supervisorRequestLineHigh();
+	};
+	type Frontier = [tick: number, cycles: number, debt: number, privateService: boolean];
+	const recordedFrontiers = new Map<number, Frontier>();
+	const actualFrontier = (): Frontier => [
+		runtime.frameScheduler.lastTickSequence, runtime.machine.scheduler.currentNowCycles(),
+		runtime.machine.scheduler.acceptedCpuCycles, runtime.machine.cpu.heapServiceActive(),
+	];
+	const tickUpdate = runtime.frameLoop.tickUpdate.bind(runtime.frameLoop);
+	runtime.frameLoop.tickUpdate = () => {
+		const previous = runtime.frameScheduler.lastTickSequence;
+		const progressed = tickUpdate();
+		const tick = runtime.frameScheduler.lastTickSequence;
+		if (history.mode === HistoryMode.Recording && tick > previous) recordedFrontiers.set(history.latestCycles, actualFrontier());
+		return progressed;
+	};
 	const frame = async () => {
 		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
@@ -204,13 +226,21 @@ async function main(): Promise<void> {
 	const oldest = history.earliestCycles;
 	const lastVideoTick = runtime.frameScheduler.lastTickSequence;
 	const journalEnd = history.inputJournal.endSequence;
+	const latestFrontier = recordedFrontiers.get(latest);
+	assert.ok(latestFrontier);
+	const assertLatest = () => {
+		assert.equal(runtime.frameScheduler.lastTickSequence, lastVideoTick, 'transport reaches the recorded video tick');
+		assert.equal(history.inputJournal.replaySequence, journalEnd, 'replay consumes exactly the retained input stream');
+		assert.equal(history.inputJournal.cycleAt(journalEnd - 1), latest, 'the physical VBlank journal edge is unchanged');
+		assert.deepEqual(actualFrontier(), latestFrontier, 'machine replays the exact original settled frontier');
+	};
 	for (let index = 0; index < 3; index += 1) {
 		await press('lb'); await settle();
 		assert.equal(runtime.frameScheduler.lastTickSequence, lastVideoTick - 1);
 		const beforeForward = restores;
 		await press('rb'); await settle();
-		assert.equal(runtime.frameScheduler.lastTickSequence, lastVideoTick);
-		assert.equal(runtime.machine.scheduler.currentNowCycles(), latest);
+		assert.equal(rewind.positionCycles, latest, 'frame forward selects the exact recorded edge');
+		assertLatest();
 		assert.equal(restores, beforeForward, 'forward frame playback does not restore a checkpoint');
 		assert.equal(history.inputJournal.endSequence, journalEnd);
 		assert.equal(history.latestCycles, latest, 'frame stepping preserves the recorded future');
@@ -232,14 +262,16 @@ async function main(): Promise<void> {
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > selected, 'Right seeks forward without resuming gameplay');
 	assert.equal(history.mode, HistoryMode.Reviewing);
 	assert.equal(rewind.positionCycles, latest, 'Left/Right round trip preserves the selected coordinate');
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'one Right returns to the recorded end without rounding drift');
+	assertLatest();
 	await press('right'); await settle();
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'timeline includes the recorded end');
+	assert.equal(rewind.positionCycles, latest, 'the timeline includes the recorded edge');
+	assertLatest();
 	for (let roundTrip = 0; roundTrip < 2; roundTrip += 1) {
 		await press('left'); await settle();
 		assert.equal(rewind.positionCycles, latest - runtime.timing.cpuHz, 'selected coordinate survives journal rounding');
 		await press('right'); await settle();
-		assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'repeated round trips have no drift');
+		assert.equal(rewind.positionCycles, latest, 'repeated round trips select the identical recorded edge');
+		assertLatest();
 	}
 	// Holding a direction uses the host repeat cadence and clamps at the oldest boundary.
 	input.inputButton('gamepad:0', 'left', true, 1, clock.now() + 1, pressId++);
@@ -291,12 +323,22 @@ async function main(): Promise<void> {
 	await press('x');
 	assert.ok(runtime.machine.scheduler.currentNowCycles() - previewPaused <= runtime.timing.cycleBudgetPerFrame * 2, 'Play discards paused wall time');
 	for (let index = 0; index < 4000 && rewind.playing; index += 1) await frame();
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), playbackEnd, 'playback stops exactly at the recorded end');
+	assert.equal(history.latestCycles, playbackEnd, 'playback keeps the recorded edge');
+	assertLatest();
 	assert.ok(!rewind.playing && rewind.active, 'end of replay does not silently take live control');
 	assert.equal(history.inputJournal.endSequence, playbackSequence);
+	// Returning to the last recorded input tick is not a branch, even if
+	// its final accepted instruction finished after that tick's video edge.
+	const rejoinBranches: boolean[] = [];
+	history.onWillResumeRecording = branched => {
+		rejoinBranches.push(branched);
+		assert.equal(history.latestCycles, latest, 'rejoin keeps the exact recorded edge');
+	};
 	// B cancels the transport; it is not a navigation item in a second menu.
 	await clickTimeline('BACK'); await settle();
 	for (let index = 0; index < 12; index += 1) await frame();
+	history.onWillResumeRecording = undefined;
+	assert.deepEqual(rejoinBranches, [false], 'returning to the recorded end does not invalidate retained checkpoints');
 	assert.equal(rewind.active, false);
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.ok(runtime.machine.scheduler.currentNowCycles() >= latest);
@@ -345,17 +387,28 @@ async function main(): Promise<void> {
 	const intended = rewind.positionCycles;
 	const intendedSequence = history.inputJournal.endAt(intended);
 	const intendedBoundary = history.inputJournal.cycleAt(intendedSequence - 1);
+	const intendedFrontier = recordedFrontiers.get(intendedBoundary);
+	assert.ok(intendedFrontier);
 	assert.equal(tasks.ready, false);
 	await press('a');
 	assert.ok(rewind.active, 'south is normal menu confirm, not rewind commit');
 	await press('start');
 	assert.equal(rewind.positionCycles, intended, 'accept must not replace the pending target with the recorded end');
+	let tookOver = false;
+	history.onWillResumeRecording = branched => {
+		assert.equal(branched, true);
+		assert.equal(history.inputJournal.replaySequence, intendedSequence, 'takeover replays exactly the selected input edge');
+		assert.deepEqual(actualFrontier(), intendedFrontier, 'takeover settles at the selected tick, not an intermediate replay state');
+		tookOver = true;
+	};
 	releaseResume();
 	await settle();
 	for (let index = 0; index < 4; index += 1) await frame();
 	backend.finishGxGpuReadbacks = finishBeforeResume;
+	history.onWillResumeRecording = undefined;
+	assert.equal(tookOver, true);
 	assert.equal(history.mode, HistoryMode.Recording);
-	assert.equal(history.checkpointCycles(history.checkpointCount - 1), intendedBoundary, 'live takeover captures the selected target, not an intermediate replay state');
+	assert.equal(history.checkpointCycles(history.checkpointCount - 1), intendedFrontier[1], 'live takeover captures the selected machine frontier');
 
 	// A delayed backend readback and a tooling mutation share one operation queue.
 	// This deliberately controls completion; the normal run above uses the real software backend.

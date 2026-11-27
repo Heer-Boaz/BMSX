@@ -152,24 +152,32 @@ void RuntimeHistory::advancePlayback(f64 hostDeltaMs) {
 
 void RuntimeHistory::resumeRecording() {
 	const i64 cycles = runtime.machine.scheduler.currentNowCycles();
-	const bool rejoiningLatest = cycles == endCycles;
+	const auto& checkpoint = *checkpoints[firstCheckpoint];
+	const i64 endSequence = inputJournal.endSequence;
+	const i64 endTick = checkpoint.state.machineState.frameScheduler.lastTickSequence + endSequence - checkpoint.inputSequence;
+	// The journal names the video edge. A CPU instruction already retired
+	// across that edge may have settled further before playback stopped.
+	const bool rejoiningLatest = inputJournal.replaySequence == endSequence
+		&& runtime.frameScheduler.lastTickSequence == endTick;
 	if (onWillEndReview) onWillEndReview();
 	if (onWillResumeRecording) onWillResumeRecording(!rejoiningLatest);
-	while (count > 0) {
-		const size_t index = (firstCheckpoint + count - 1) % checkpoints.size();
-		if (checkpoints[index]->cycles <= cycles) break;
-		// Discard the future logically; retain slot storage for the new branch.
-		--count;
+	if (!rejoiningLatest) {
+		while (count > 0) {
+			const size_t index = (firstCheckpoint + count - 1) % checkpoints.size();
+			if (checkpoints[index]->cycles <= cycles) break;
+			// Discard the future logically; retain slot storage for the new branch.
+			--count;
+		}
+		for (size_t index = 0; index < count; ++index) {
+			auto& checkpoint = *checkpoints[(firstCheckpoint + index) % checkpoints.size()];
+			checkpoint.seekUntilCycles = std::min(checkpoint.seekUntilCycles, cycles);
+		}
+		inputJournal.branch();
+		endCycles = cycles;
 	}
-	if (!rejoiningLatest) for (size_t index = 0; index < count; ++index) {
-		auto& checkpoint = *checkpoints[(firstCheckpoint + index) % checkpoints.size()];
-		checkpoint.seekUntilCycles = std::min(checkpoint.seekUntilCycles, cycles);
-	}
-	inputJournal.branch();
 	resetFrameAdmission();
-	endCycles = cycles;
 	mode = HistoryMode::Recording;
-	checkpointPending = !rejoiningLatest || cycles >= nextCheckpointCycles
+	checkpointPending = !rejoiningLatest || endCycles >= nextCheckpointCycles
 		|| inputJournal.endSequence - latestCheckpointInputSequence == static_cast<i64>(inputJournal.capacity());
 }
 

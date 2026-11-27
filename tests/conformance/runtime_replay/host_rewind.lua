@@ -49,6 +49,8 @@ display.reset_256x192()
 local next_frame<const> = setmetatable({}, {
 	__index = function(_, tick)
 		vblank.wait()
+		-- Replay and host frame stepping can split this work differently.
+		assert(collectgarbage("collect") == 0)
 		return tick
 	end,
 })

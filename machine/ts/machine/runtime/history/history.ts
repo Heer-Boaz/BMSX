@@ -224,24 +224,32 @@ export class RuntimeHistory {
 	/** A branch needs a synchronized checkpoint; rejoining the recorded end keeps its capture schedule. */
 	public resumeRecording(): void {
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();
-		const rejoiningLatest = cycles === this.endCycles;
+		const checkpoint = this.checkpoints[this.firstCheckpoint]!;
+		const endSequence = this.inputJournal.endSequence;
+		const endTick = checkpoint.state.machineState.frameScheduler.lastTickSequence + endSequence - checkpoint.inputSequence;
+		// The journal names the video edge. A CPU instruction already retired
+		// across that edge may have settled further before playback stopped.
+		const rejoiningLatest = this.inputJournal.replaySequence === endSequence
+			&& this.runtime.frameScheduler.lastTickSequence === endTick;
 		this.onWillEndReview?.();
 		this.onWillResumeRecording?.(!rejoiningLatest);
-		while (this.count > 0) {
-			const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;
-			if (this.checkpoints[index]!.cycles <= cycles) break;
-			// Discard the future logically; retain slot storage for the new branch.
-			this.count -= 1;
+		if (!rejoiningLatest) {
+			while (this.count > 0) {
+				const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;
+				if (this.checkpoints[index]!.cycles <= cycles) break;
+				// Discard the future logically; retain slot storage for the new branch.
+				this.count -= 1;
+			}
+			for (let index = 0; index < this.count; index++) {
+				const checkpoint = this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!;
+				checkpoint.seekUntilCycles = Math.min(checkpoint.seekUntilCycles, cycles);
+			}
+			this.inputJournal.branch();
+			this.endCycles = cycles;
 		}
-		if (!rejoiningLatest) for (let index = 0; index < this.count; index++) {
-			const checkpoint = this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!;
-			checkpoint.seekUntilCycles = Math.min(checkpoint.seekUntilCycles, cycles);
-		}
-		this.inputJournal.branch();
 		this.resetFrameAdmission();
-		this.endCycles = cycles;
 		this.mode = HistoryMode.Recording;
-		this.checkpointPending = !rejoiningLatest || cycles >= this.nextCheckpointCycles
+		this.checkpointPending = !rejoiningLatest || this.endCycles >= this.nextCheckpointCycles
 			|| this.inputJournal.endSequence - this.latestCheckpointInputSequence === this.inputJournal.capacity;
 	}
 }
