@@ -21,6 +21,7 @@ local syntax<const> = {
 	call_statement = 20,
 	numeric_for_statement = 21,
 	vararg_expression = 22,
+	table_constructor_expression = 23,
 
 	unary_negate = 1,
 	unary_string_id = 2,

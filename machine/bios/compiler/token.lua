@@ -45,6 +45,8 @@ local token<const> = {
 	hash = 44,
 	colon = 45,
 	ellipsis = 46,
+	left_brace = 47,
+	right_brace = 48,
 }
 
 token.keyword_by_text = {
@@ -87,6 +89,8 @@ token.single_character_by_code = {
 	[62] = token.greater,
 	[91] = token.left_bracket,
 	[93] = token.right_bracket,
+	[123] = token.left_brace,
+	[125] = token.right_brace,
 }
 
 token.name = {
@@ -94,6 +98,8 @@ token.name = {
 	[token.right_parenthesis] = ')',
 	[token.left_bracket] = '[',
 	[token.right_bracket] = ']',
+	[token.left_brace] = '{',
+	[token.right_brace] = '}',
 	[token.minus] = '-',
 	[token.plus] = '+',
 	[token.star] = '*',

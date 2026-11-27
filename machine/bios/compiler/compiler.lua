@@ -1,4 +1,5 @@
 local types<const> = require('kernel/value_type')
+local create_table<const> = require('kernel/heap_control_ids').create_table
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -138,6 +139,25 @@ prepare_value_operands = function(state, expression)
 	if kind == syntax.function_expression then
 		return
 	end
+	if kind == syntax.table_constructor_expression then
+		local fields<const> = expression.fields
+		local array_size = 0
+		for index = 1, #fields do
+			local field<const> = fields[index]
+			if field.key == nil then
+				array_size = array_size + 1
+			else
+				prepare_value_operands(state, field.key)
+			end
+			prepare_value_operands(state, field.value)
+		end
+		local hash_size<const> = #fields - array_size
+		if array_size > isa.max_ext_register_bc or hash_size > isa.max_ext_register_bc then
+			error('Table constructor capacity exceeds ' .. isa.max_ext_register_bc .. ' slots per storage lane.')
+		end
+		expression.array_size, expression.hash_size = array_size, hash_size
+		return
+	end
 	if kind == syntax.binary_expression then
 		prepare_value_operands(state, expression.left)
 		prepare_value_operands(state, expression.right)
@@ -181,6 +201,15 @@ materialize_wide_immediates = function(state, expression)
 		return
 	end
 	if kind == syntax.function_expression then
+		return
+	end
+	if kind == syntax.table_constructor_expression then
+		local fields<const> = expression.fields
+		for index = 1, #fields do
+			local field<const> = fields[index]
+			if field.key ~= nil then materialize_wide_immediates(state, field.key) end
+			materialize_wide_immediates(state, field.value)
+		end
 		return
 	end
 	if kind == syntax.member_expression or kind == syntax.index_expression then
@@ -856,6 +885,51 @@ local emit_binary_expression<const> = function(
 	return target
 end
 
+local emit_table_constructor<const> = function(state, instruction_words, expression, target, target_is_temporary)
+	local temporary_base<const> = state.free_register
+	-- A fixed destination can still be read by a field expression. Keep the
+	-- new table unpublished until all fields have been evaluated and assigned.
+	local table_register = target
+	if not target_is_temporary or target + 1 ~= temporary_base then
+		table_register = reserve_register(state)
+	end
+	local array_hint<const> = reserve_register(state)
+	local hash_hint<const> = reserve_register(state)
+	bytecode.emit_integer(instruction_words, array_hint, expression.array_size)
+	bytecode.emit_integer(instruction_words, hash_hint, expression.hash_size)
+	bytecode.emit_integer(instruction_words, table_register, create_table)
+	bytecode.emit_abc(instruction_words, isa.op_svc, table_register, 3, 0)
+
+	local fields<const> = expression.fields
+	local array_index = 1
+	for index = 1, #fields do
+		state.free_register = table_register + 1
+		local field<const> = fields[index]
+		local key_register
+		if field.key ~= nil then
+			-- Evaluating the RHS can mutate a local/capture used as the key.
+			key_register = reserve_register(state)
+			local key<const> = emit_value(state, instruction_words, field.key, key_register, true)
+			if key_register ~= key then
+				bytecode.emit_abc(instruction_words, isa.op_mov, key_register, key, 0)
+			end
+		end
+		-- Like the ROM compiler, each constructor field contributes one Value.
+		local value<const> = emit_value(state, instruction_words, field.value, reserve_register(state), true)
+		if key_register ~= nil then
+			bytecode.emit_abc(instruction_words, isa.op_sett, table_register, key_register, value)
+		else
+			bytecode.emit_abc(instruction_words, isa.op_seti, table_register, array_index, value)
+			array_index = array_index + 1
+		end
+	end
+	if table_register ~= target then
+		bytecode.emit_abc(instruction_words, isa.op_mov, target, table_register, 0)
+	end
+	state.free_register = temporary_base
+	return target
+end
+
 emit_value = function(
 	state,
 	instruction_words,
@@ -891,6 +965,9 @@ emit_value = function(
 			constant_register(state, expression.function_address_constant_index)
 		)
 		return target
+	end
+	if kind == syntax.table_constructor_expression then
+		return emit_table_constructor(state, instruction_words, expression, target, target_is_temporary)
 	end
 	if kind == syntax.call_expression then
 		return emit_call_expression(
@@ -943,18 +1020,7 @@ emit_value = function(
 	end
 	local immediate_number<const> = expression.immediate_number
 	if immediate_number ~= nil then
-		if immediate_number == 0 then
-			bytecode.emit_abc(instruction_words, isa.op_k0, target, 0, 0)
-		elseif immediate_number == 1 then
-			bytecode.emit_abc(instruction_words, isa.op_k1, target, 0, 0)
-		else
-			bytecode.emit_signed_abx(
-				instruction_words,
-				isa.op_ksmi,
-				target,
-				immediate_number
-			)
-		end
+		bytecode.emit_integer(instruction_words, target, immediate_number)
 		return target
 	end
 	return constant_register(

@@ -91,6 +91,16 @@ function bytecode.emit_signed_abx(instruction_words, op, a, sbx)
 	return instruction_index
 end
 
+function bytecode.emit_integer(instruction_words, target, value)
+	if value == 0 then
+		bytecode.emit_abc(instruction_words, isa.op_k0, target, 0, 0)
+	elseif value == 1 then
+		bytecode.emit_abc(instruction_words, isa.op_k1, target, 0, 0)
+	else
+		bytecode.emit_signed_abx(instruction_words, isa.op_ksmi, target, value)
+	end
+end
+
 -- Runtime-compiled code lives in the 256 KiB compiler arena, so a branch
 -- displacement always fits the base signed Bx field. A WIDE prefix here can
 -- therefore only belong to the condition register and is already present.

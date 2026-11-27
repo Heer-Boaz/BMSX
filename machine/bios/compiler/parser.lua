@@ -121,6 +121,34 @@ local or_operator_by_token<const> = {
 	[token.keyword_or] = syntax.binary_or,
 }
 
+local parse_table_constructor<const> = function(state)
+	local line<const>, column<const> = state.token_line, state.token_column
+	lexer.next(state)
+	local fields<const> = {}
+	while state.token_kind ~= token.right_brace do
+		local key, value
+		if match(state, token.left_bracket) then
+			key = parse_expression(state)
+			expect(state, token.right_bracket)
+			expect(state, token.equal)
+			value = parse_expression(state)
+		else
+			local bare_name<const> = state.token_kind == token.identifier
+			value = parse_expression(state)
+			if bare_name and value.kind == syntax.identifier_expression and match(state, token.equal) then
+				key = value
+				key.kind, key.value = syntax.string_literal_expression, key.name
+				key.name = nil
+				value = parse_expression(state)
+			end
+		end
+		fields[#fields + 1] = { key = key, value = value }
+		if not match(state, token.comma) and not match(state, token.semicolon) then break end
+	end
+	expect(state, token.right_brace)
+	return { kind = syntax.table_constructor_expression, fields = fields, line = line, column = column }
+end
+
 local parse_primary_expression<const> = function(state)
 	local kind<const> = state.token_kind
 	if kind == token.identifier then
@@ -183,6 +211,9 @@ local parse_primary_expression<const> = function(state)
 	end
 	if kind == token.keyword_function then
 		return parse_function_expression(state)
+	end
+	if kind == token.left_brace then
+		return parse_table_constructor(state)
 	end
 	if match(state, token.left_parenthesis) then
 		local expression<const> = parse_expression(state)

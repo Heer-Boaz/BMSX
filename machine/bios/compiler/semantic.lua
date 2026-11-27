@@ -233,6 +233,15 @@ bind_value = function(state, expression, context)
 		bind_function(state, expression)
 		return
 	end
+	if kind == syntax.table_constructor_expression then
+		local fields<const> = expression.fields
+		for index = 1, #fields do
+			local field<const> = fields[index]
+			if field.key ~= nil then bind_value(state, field.key) end
+			bind_value(state, field.value)
+		end
+		return
+	end
 	if kind == syntax.nil_literal_expression
 		or kind == syntax.boolean_literal_expression then
 		return
