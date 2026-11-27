@@ -624,6 +624,7 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'I': std::cout << cpu.enterPendingInterrupt() << '\n'; break;
+				case 'e': cpu.clearExecutionEnvironment(); break; // Warm frame-retirement reference.
 				case 'R': {
 					const auto before = scheduler.nowCycles();
 					try {
