@@ -32,7 +32,7 @@ for (const optLevel of [0, 3] as const) {
 		});
 		const linked = linkTestSystemBlua32(compiled);
 		const object = encodeCompiledProgramObject(compiled);
-		const names = [[path, 'initialize_heap'], ['kernel/dlmalloc', 'bmsx_dlmalloc_allocate'], ['kernel/dlmalloc', 'bmsx_dlmalloc_free']];
+		const names = [[path, 'initialize_heap'], ['kernel/dlmalloc', 'bmsx_dlmalloc_allocate'], ['kernel/dlmalloc', 'bmsx_dlmalloc_free'], [path, 'publish_system_directory']];
 		const indices = names.map(([path, name]) => {
 			const entry = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === name)!;
 			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
@@ -85,7 +85,7 @@ for (const optLevel of [0, 3] as const) {
 			function begin(index: number, args: number[]) {
 				assert.ok(cpu.beginHeapService(linked.image.functions[indices[index]].address, args));
 			}
-			begin(0, [management, floor, bucketAddress, bucketCount]);
+			begin(0, [management, floor]);
 			const back = state + firstSmallBinBack;
 			const self = oracle.memory.readRamRecordWord(back);
 			assert.notEqual(self, 0);
@@ -97,9 +97,13 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.gc.white(), 0);
 			const checkpoint = captureCpuCheckpoint(cpu);
 			const cycles = finish(0);
+			begin(3, [management, bucketAddress, bucketCount]);
+			finish(0);
 			compare();
 			restoreCpuCheckpoint(cpu, checkpoint);
 			assert.equal(finish(0), cycles);
+			begin(3, [management, bucketAddress, bucketCount]);
+			finish(0);
 			compare();
 			assert.equal(arena.occupiedBytes(), 0);
 			assert.equal(cpu.luaHeap.usedBytes(), 0);
@@ -132,7 +136,7 @@ test('cold heap entrance accounts for its frozen owner statements and delegates 
 	for (const line of source.split('\n')) {
 		const text = line.trim();
 		if (!text || text.startsWith('--') || text === 'module<const>' || text === 'end'
-			|| text === 'return { initialize_heap = initialize_heap }') continue;
+			|| text.startsWith('return { initialize_heap = initialize_heap,')) continue;
 		assert.match(text, /-- .*\b[ABCHLST]:\d+/, text);
 	}
 	assert.match(source, /bmsx_dlmalloc_reset\(management \+ layout.arena_offset, floor, management\) -- A:35-36 B:32-33 C:462-473/);

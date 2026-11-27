@@ -49,15 +49,11 @@ end
 local sign_bit<const> = 0x80000000 -- E:24 P:41; compare raw unsigned Function words
 local running<const> = 1 -- I:27 C:137 T:484
 
-local read_system_entry<const> = function(fn) -- C:1893-1896 T:2224-2229
+local publish_system_root<const> = function(address, fn) -- C:1893-1912 T:2224-2241; backing was admitted by the caller
 	local body<const>: *system_entry_record = fn -- C:1893 F:29-38
 	local code<const>, formals<const>, maximum<const> = body.code, body.formals, body.maximum -- C:1894 T:2225
 	local capacity = (formals ~ sign_bit) > (maximum ~ sign_bit) and formals or maximum -- T:2227 E:24 P:41
 	if capacity == 0 then capacity = 1 end -- T:2227 E:24 P:41
-	return code, formals, capacity -- C:1894-1897 T:2225-2229
-end
-
-local publish_system_root<const> = function(address, fn, code, formals, capacity) -- C:1903-1912 T:2232-2241; inputs were admitted by the caller
 	local thread<const>: *activation_thread = address -- I:21-24 C:1903-1910
 	thread.status = running -- I:27 C:137 T:484
 	local frame<const>: *initial_frame = thread.frame_block -- S:117 C:1904
@@ -83,4 +79,4 @@ local publish_system_root<const> = function(address, fn, code, formals, capacity
 	thread.frame_depth = 1 -- C:1910 T:2239 J:227-235 N:15-21
 end
 
-return { read_system_entry = read_system_entry, publish_system_root = publish_system_root }
+return { publish_system_root = publish_system_root }

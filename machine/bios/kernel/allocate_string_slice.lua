@@ -18,8 +18,7 @@ local ram_size<const> = 0x00400000 -- T:393 C:382
 local header_bytes<const> = 16 -- T:353,393 C:382-383
 local string_tag<const> = 5 -- L:160 T:368 C:359; tagged result
 local current_or_fresh<const> = 0 -- L:92,160 N:103,174
-local initial_buckets<const> = 16 -- T:24 C:25
-local initial_bytes<const> = 4 * initial_buckets -- T:373 C:363
+local initial_bytes<const> = 4 * slices.initial_buckets -- T:24,373 C:25,363
 
 -- A first directory, unlike optional growth, is a required backing
 -- allocation. Its separate recovery token is not inherited by the String.
@@ -79,11 +78,7 @@ local allocate_slice<const> = function(management, source, first, length, source
 			if published then *effects = layout.release_string_work end -- G:657 Q:678; return only outstanding latch
 			return 0, 0 -- G:1111 Q:1214
 		end
-		local address<const> = layout.ram_base + offset -- T:374 C:364
-		local buckets<const>: *u32 = address -- T:375-376 C:365-366
-		for i = 0, initial_buckets - 1 do buckets[i] = 0 end -- T:375-376 C:365-366
-		state.buckets = address -- T:377 C:367
-		state.capacity = initial_buckets -- T:377 C:367
+		slices.publish_initial_directory(metadata, offset) -- T:374-377 C:364-367
 	else -- T:378 C:368
 		slices.prepare_existing_directory(metadata, arena) -- T:370,378-391 C:361,368-380
 	end

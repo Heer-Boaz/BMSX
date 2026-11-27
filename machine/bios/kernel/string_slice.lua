@@ -7,6 +7,7 @@ module<const>
 -- not invented firmware memory ports. A ROM read failure is returned
 -- to the owner, never rewritten as a miss or an allocation failure.
 local strings<const> = require('kernel/gc_strings') -- T:379-388,431-436 C:369-377,418-425
+local records<const> = require('kernel/dlmalloc_record') -- T:393 C:383
 local allocator<const> = require('kernel/dlmalloc') -- T:384 C:374 A:57-59 B:54-56
 local ram_base<const> = 0x08000000 -- M:6
 local ram_size<const> = 0x00400000 -- M:7
@@ -252,8 +253,46 @@ local publish<const> = function(metadata, id, start, head, length, hash) -- T:39
 	return id -- T:428,442 C:415,430
 end
 
+local initial_buckets<const> = 16 -- T:24 C:25
+
+local publish_initial_directory<const> = function(metadata, offset) -- T:374-377 C:364-367
+	local address<const> = ram_base + offset -- T:374 C:364
+	local buckets<const>: *u32 = address -- T:375 C:365
+	for i = 0, initial_buckets - 1 do buckets[i] = 0 end -- T:375-376 C:365-366
+	local state<const>: *string_metadata = ram_base + metadata -- T:370,377 C:361,367
+	state.buckets = address -- T:377 C:367
+	state.capacity = initial_buckets -- T:377 C:367
+end
+
+-- Direct source-free `intern` while boot publishes its original retained
+-- diagnostic set. The caller has initialized an empty arena and has not
+-- installed any ROM directory. These records, including both bucket
+-- extents, fit the first page. There is no earlier object to reclaim.
+local intern_cold_span<const> = function(metadata, arena, occupied, start, length) -- T:331-332,358-393 C:327-329,353-383
+	local hash<const> = hash_span(start, length, length) -- T:332,351-356 C:325-327
+	local prior<const> = lookup_ram(metadata, start, length, length, hash) -- T:233-234,361 C:239,328
+	if prior ~= 0 then -- T:362 C:328
+		strings.mark(metadata, prior) -- T:362,439-442 C:328,427-430
+		return prior -- T:362 C:328
+	end
+	local state<const>: *string_metadata = ram_base + metadata -- T:370 C:361
+	if (state.capacity & bucket_extent) == 0 then -- T:370-372 C:361-362
+		local directory<const> = allocator.bmsx_dlmalloc_allocate(arena, 4 * initial_buckets, 0) -- T:373 C:363
+		if directory == 0 then return 0 end -- T:373 C:363; no reclaimable input in this producer
+		publish_initial_directory(metadata, directory) -- T:374-377 C:364-367
+	else -- T:378 C:368
+		prepare_existing_directory(metadata, arena) -- T:378-391 C:368-380
+	end
+	local bytes<const> = header_bytes + length -- T:393 C:382-383; fixed admitted input lengths
+	local offset<const> = records.bmsx_dlmalloc_reserve_record(arena, bytes, 0, 0, 0, bytes, 0, 0, occupied) -- T:393 C:383
+	if offset == 0 then return 0 end -- T:393 C:383; no earlier reclaimable object
+	local id<const> = publish(metadata, ram_base + offset, start, length, length, hash) -- T:393-428 C:383-415
+	return id -- T:428 C:415
+end
+
 return {
 	internal = { fnv_segment = fnv_segment, matches_slice = matches_slice, lookup_ram_chain = lookup_ram_chain, lookup_rom = lookup_rom },
+	initial_buckets = initial_buckets, publish_initial_directory = publish_initial_directory, intern_cold_span = intern_cold_span,
 	slice_head = slice_head,
 	lookup_rom_directories = lookup_rom_directories,
 	hash_span = hash_span,

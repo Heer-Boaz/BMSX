@@ -24,8 +24,7 @@ const path = 'kernel/root_activation';
 const producer = `module<const>
 local root<const> = require('${path}')
 local build<const> = function(address, fn)
-	local pc<const>, formals<const>, capacity<const> = root.read_system_entry(fn)
-	root.publish_system_root(address, fn, pc, formals, capacity)
+	root.publish_system_root(address, fn)
 	return address
 end
 return { build = build }`;
