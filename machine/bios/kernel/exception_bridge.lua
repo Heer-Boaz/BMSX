@@ -8,9 +8,11 @@ local exception_report<const> = require('kernel/exception_report')
 local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
 local coroutine_transfer<const> = require('kernel/coroutine_transfer')
+local barrier<const> = require('kernel/gc_barrier')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
+local reference_store<const> = 15 << 2
 local explicit_error<const> = 8
 local out_of_memory<const> = 9
 local string_tag<const> = 5
@@ -102,6 +104,10 @@ end
 -- prefix. Ordinary traps still supply their original shorter argument list.
 local enter<const> = function(values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14)
 	local cause<const> = cop0.cause
+	if cause == reference_store then
+		barrier.store_closed_upvalue(cop0.bad_address, values)
+		blua32.rfe()
+	end
 	local denied_window<const> = cause == register_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
 	local transfer_fault

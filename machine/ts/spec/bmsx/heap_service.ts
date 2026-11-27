@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
 export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
-	AllocateRecord, TableGrow, StoppedFinalMark, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, StoppedFinalMark, CapturedClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;

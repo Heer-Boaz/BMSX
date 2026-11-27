@@ -134,18 +134,16 @@ local store_closed_value<const> = function(control, arena, metadata, cell_offset
 	*tag_lane = tag -- U:69-70 N:75
 end
 
--- The private SETUP transaction receives ordinary tagged fixed-frame
--- inputs. Project the Value once, then preserve the native store sequence.
-local store_closed_upvalue<const> = function(cell_offset, value) -- U:63-69 N:65-75; trusted fixed entry
-	local management_port<const>: *u32 = layout.management_address -- A:8,10; private management port
-	local management<const> = *management_port -- A:8,10
+-- The exception supplies the addressed cell and sampled tagged operand.
+local store_closed_upvalue<const> = function(cell, value) -- U:63-69 N:65-75
+	local management<const> = layout.management_offset -- A:8,10
 	local address<const> = ram_base + management + layout.value_cell_offset -- U:63,67-69 N:65,72-75; tagged transport
 	local tagged_value<const>: *value = address -- U:63 N:65; tagged transport
 	*tagged_value = value -- U:63 N:65; tagged transport
 	local tag<const>: *u8 = address + layout.value_cell_tag_offset -- U:67,69 N:72,75
 	local word<const>: *u32 = address -- U:67-68 N:72,74
 	store_closed_value(management + layout.control_offset, management + layout.arena_offset, -- T:232-236 N:72; canonical collector association
-		management + layout.metadata_offset, cell_offset, *tag, *word, 1) -- N:72-75 C:146-153; canonical C++ color store
+		management + layout.metadata_offset, cell - ram_base, *tag, *word, 1) -- N:72-75 C:146-153; canonical C++ color store
 end
 
 local table_entries_moved<const> = function(control, address, cpp_mirror) -- T:238 C:155 H:141

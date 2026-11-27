@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, TableGrow, StoppedFinalMark, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, StoppedFinalMark, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;

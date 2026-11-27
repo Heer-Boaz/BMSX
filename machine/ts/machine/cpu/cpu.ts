@@ -37,6 +37,7 @@ import {
 	CPU_CAUSE_CODE_DATA_BUS_ERROR,
 	CPU_CAUSE_CODE_SYSCALL,
 	CPU_CAUSE_CODE_REGISTER_WINDOW,
+	CPU_CAUSE_CODE_REFERENCE_STORE,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
@@ -762,8 +763,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public queuedFixedWork(): number {
-		// Do not publish a partially committed table as a new input root.
-		return this.resetBankSelected() || this.tableRebuild.record ? 0
+		// An ordinary vector owns the machine until it retires, even across grants.
+		return this.resetBankSelected() || this.fixedInterruptActive() || this.tableRebuild.record ? 0
 			: this.memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
 	}
 
@@ -4390,17 +4391,9 @@ export class CPU implements MappedPageInvalidator {
 		const cell = address & Upvalue.UPVALUE_ADDRESS_MASK;
 		const tag = registers.getTag(registerIndex), word = registers.getPayload(registerIndex);
 		if (Upvalue.tryStoreDirect(this.memory, cell, tag, word)) return false;
-		const services = this.systemImage.heapServiceFunctions;
-		if (services === null) {
-			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return true;
-		}
-		const firmware = this.prepareHeapServiceFrame(services[HeapServiceOperation.StoreClosedUpvalue],
-			0, 2, 0, DISCARD_CALL_RESULT, this.currentInstructionPc);
-		firmware.registers.setInteger(0, cell);
-		firmware.registers.setEncoded(1, tag, word);
-		this.charge(firmware.top);
-		this.enterResidentFrame(firmware);
+		this.cop0Words[COP0_BAD_ADDRESS] = RAM_BASE + cell;
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REFERENCE_STORE,
+			frame.pc, valueFromTag(tag, word));
 		return true;
 	}
 

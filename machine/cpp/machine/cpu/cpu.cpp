@@ -1576,6 +1576,13 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source) {
 		frame.readControl(FrameField::Pc), arguments);
 }
 
+void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
+	m_cop0Words[COP0_BAD_ADDRESS] = RAM_BASE + cell;
+	const std::array arguments{value};
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REFERENCE_STORE,
+		issuer.readControl(FrameField::Pc), arguments);
+}
+
 void CPU::enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a) {
 	const u32 instruction = static_cast<u32>(opcode) | (static_cast<u32>(a) << 8u);
 	const std::array arguments{

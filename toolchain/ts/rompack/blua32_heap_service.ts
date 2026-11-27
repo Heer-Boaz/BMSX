@@ -46,7 +46,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
 	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
-	[HeapServiceOperation.StoreClosedUpvalue]: ['store_closed_upvalue', 2, 'kernel/gc_barrier'],
 	[HeapServiceOperation.CapturedClosure]: ['allocate_captured_closure', 6, CAPTURED_CLOSURE_MODULE],
 };
 

@@ -1,186 +1,176 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { test } from 'node:test';
+import { hashBytes } from '../../../machine/ts/common/hash';
+import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
-import { captureAddress } from '../../../machine/ts/machine/cpu/closure';
 import { GC_CHANGED_HEAD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_RECORD_SHIFT } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
-import { isOpen, load, UPVALUE_ADDRESS_MASK, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
-import { asClosure, ValueTag, valueInteger, valueString } from '../../../machine/ts/machine/cpu/value';
+import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { isOpen, load, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
+import { ValueTag, valueInteger, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { CPU_CAUSE_CODE_REFERENCE_STORE } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { HEAP_SERVICE_FIXED_WORK_OFFSET, HeapServiceOperation } from '../../../machine/ts/spec/bmsx/heap_service';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
-import { runCompletionClosure, runGuestToHalt } from '../../helpers/cpu_test_harness';
+import { cartridgeSlots } from '../../helpers/cartridge';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-mkdirSync('tmp', { recursive: true });
-const evidence = mkdtempSync(join('tmp', 'bmsx-closed-upvalue-'));
-try {
-	const runner = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
-		buildDirectory: join('tmp', 'build-native-upvalue-store'),
+const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
+
+for (const [opt, phase] of [[0, GcPhase.MarkAgain], [3, GcPhase.Mark]] as const) test(`closed SETUP publishes its reference through the System exception at O${opt}`, t => {
+	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
+		buildDirectory: join(tmpdir(), 'bmsx-native-closed-upvalue'),
 		configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON', '-DBMSX_NATIVE_GATE_PROFILE=ON'],
 	});
-	for (const opt of [0, 3] as const) {
-		const image = linkManagedTestSystem(`
-local captured = 73
-function set_captured(v)
-    captured = v
-    return 1
+	const image = linkManagedTestSystem(`
+local function make_setter()
+	local captured = 73
+	return function(value)
+		captured = value
+		return captured
+	end
 end
+local set<const> = make_setter()
+local incoming<const> = { marker = 57 }
+halt_until_irq
+return set(incoming)
 `, opt);
-		const systemRomBytes = writeTestBlua32Rom(image);
-		const startup = image.symbols.functionAddresses[image.symbols.metadata.functionIds.indexOf('module:main/startup')];
-		for (const [kind, phase, color] of [
-			[CpuRunKind.Direct, GcPhase.MarkAgain, 3],
-			[CpuRunKind.Scheduled, GcPhase.MarkAgain, 3],
-			[CpuRunKind.Scheduled, GcPhase.Mark, 3],
-			[CpuRunKind.Scheduled, GcPhase.Mark, 0],
-		] as const) {
-			const runtime = new Runtime({ systemRomBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: CpuExecutionBackend.JavaScript }, {
-				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-			});
-			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine;
-			let bootBudget = 1_000_000;
-			for (let grant = 0; grant < 32 && cpu.readFrameFunctionAddress(0) !== startup && bootBudget > 0; ++grant) {
-				assert.equal(cpu.runUntilDepth(0, bootBudget), RunResult.Yielded);
-				bootBudget = cpu.instructionBudgetRemaining;
-			}
-			assert.equal(cpu.readFrameFunctionAddress(0), startup, 'the reset ROM reaches the managed fixture entry');
-			runGuestToHalt(cpu, 250_000);
-			const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), cpu.gc);
-			const cell = captureAddress(memory, setter, 0) & UPVALUE_ADDRESS_MASK;
-			assert.equal(isOpen(memory, cell), false);
-			for (let visit = 0; visit <= COMPILED_BLOCK_THRESHOLD; ++visit) runCompletionClosure(cpu, setter, [valueInteger(73)], 1024);
-			const id = cpu.stringPool.intern('new native closed value');
-			cpu.stringPool.beginReachabilityEpoch();
-			const stage = cpu.stringPool.metadataOffset;
-			const epoch = memory.readRamRecordWord(stage + 0x0c) & 1;
-			const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-			const latch = management + HEAP_STRING_MARK_WORK_OFFSET, work = control + 0x5c, changed = control + GC_CHANGED_HEAD;
-			memory.writeRamRecordWord(control, phase);
-			memory.writeRamRecordWord(changed, 0x311);
-			memory.writeRamRecordWord(work, 17);
-			memory.writeRamRecordWord(latch, 2);
-			memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, color);
-			memory.writeRamRecordWord(cell + UPVALUE_NEXT, 0x819ab2ef);
-			const input = valueString(id);
-			cpu.beginCompletionCall(setter, [input]);
-			const frame = cpu.activeThread.currentFrame!, beginning = frame.pc, topBefore = frame.top;
-			let pc = beginning, issueSpent = 2; // fixed input placement
-			for (;;) {
-				const decoded = decodeBlua32InstructionAtPc(image.layout.textBytes, image.layout.header.textAddress, pc);
-				issueSpent += BASE_CYCLES[decoded.op];
-				if (decoded.op === OpCode.SETUP) break;
-				pc = decoded.pc + INSTRUCTION_BYTES;
-			}
-			const issue = pc;
-			const name = `${evidence}/o${opt}-mode${kind}-phase${phase}-color${color}`;
-			const rom = name + '.rom', initial = name + '.state', trace = name + '.trace';
-			writeFileSync(rom, systemRomBytes);
-			writeFileSync(initial, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-			function native(commands: string[], state = initial) {
-				writeFileSync(trace, commands.join('\n') + '\n');
-				return execFileSync(runner, [rom, trace, state], { encoding: 'utf8' }).trimEnd().split('\n');
-			}
-			const floor = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
-			const h = `H ${floor} ${end}`;
-			const hash = () => {
-				let state = 0x811c9dc5;
-				for (const byte of memory.ramData().subarray(floor, end)) state = Math.imul(state ^ byte, 0x01000193);
-				return String(state >>> 0);
-			};
-			const issueGrant = 64, traceMode = Number(kind === CpuRunKind.Scheduled);
-			const begin = (nativeMode: number) => ['X', `! ${issueGrant} ${nativeMode} ${traceMode}`];
-			const started = scheduler.runCpuSlice(0, issueGrant, 0, kind);
-			assert.equal(started, RunResult.Yielded);
-			assert.equal(issueGrant - cpu.instructionBudgetRemaining, issueSpent);
-			assert.ok(cpu.heapServiceActive());
-			assert.equal(load(memory, cell), valueInteger(73));
-			assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.IssuePc), issue);
-			const top = frame.top;
-			assert.ok(top >= topBefore && frame.pc > issue);
-			const grantCommand = `J 1 ${traceMode}`, prefix: string[] = [], prints: string[] = [];
-			function one() {
-				const result = scheduler.runCpuSlice(0, 1, 0, kind);
-				// The J trace records precise work and heap metadata after every instruction.
-				return [result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), 0, cpu.heapAllocator.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' ');
-			}
-			const published = color !== 3 ? cell + UPVALUE_VALUE_WORD : phase === GcPhase.MarkAgain ? latch : cell + UPVALUE_NEXT;
-			const beforePublish = memory.readRamRecordWord(published);
-			while (memory.readRamRecordWord(published) === beforePublish && prefix.length < 512) {
-				prefix.push(grantCommand); prints.push(one());
-			}
-			if (color !== 3) {
-				assert.equal(memory.readRamRecordWord(published), id);
-				assert.equal(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), ValueTag.Integer, 'snapshot between payload and tag');
-				assert.equal(memory.readRamRecordWord(latch), 2);
-				assert.equal(memory.readRamRecordWord(changed), 0x311);
-			} else if (phase === GcPhase.MarkAgain) {
-				assert.equal(memory.readRamRecordByte(id + 1), epoch);
-				assert.equal(memory.readRamRecordWord(latch), 3);
-			} else {
-				assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x311);
-				assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET), 3);
-				assert.equal(memory.readRamRecordWord(changed), 0x311);
-			}
-			assert.equal(memory.readRamRecordWord(work), 17);
-			if (color === 3) assert.equal(load(memory, cell), valueInteger(73));
-			assert.ok(cpu.heapServiceActive());
-			const before = hash();
-			const tsSave = name + '.ts.state';
-			writeFileSync(tsSave, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-			const tail: string[] = [], suffix: string[] = [];
-			while (cpu.heapServiceActive() && tail.length < 512) {
-				tail.push(grantCommand); suffix.push(one());
-			}
-			assert.equal(cpu.heapServiceActive(), false);
-			if (color !== 3) {
-				assert.equal(memory.readRamRecordWord(latch), 2);
-				assert.equal(memory.readRamRecordWord(work), 17);
-				assert.equal(memory.readRamRecordWord(changed), 0x311);
-				assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET), color);
-				assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x819ab2ef);
-			} else if (phase === GcPhase.MarkAgain) {
-				assert.equal(memory.readRamRecordWord(latch), 0);
-				assert.equal(memory.readRamRecordWord(work), 20);
-				assert.equal(memory.readRamRecordWord(changed), 0x311);
-			} else {
-				assert.equal(memory.readRamRecordWord(latch), 2);
-				assert.equal(memory.readRamRecordWord(work), 17);
-				assert.equal(memory.readRamRecordWord(changed), cell >>> GC_RECORD_SHIFT);
-				assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET), 2);
-			}
-			assert.equal(load(memory, cell), input);
-			assert.equal(frame.top, top);
-			const after = hash();
-			const expectedLine = (native: number) => [RunResult.Yielded, issueSpent, 1, native, native, 0, 0].join(' ');
-			for (const mode of [0, 1])
-				assert.deepEqual(native([...begin(mode), ...prefix, h, ...tail, h]), [expectedLine(mode), ...prints, before, ...suffix, after]);
-			assert.deepEqual(native(['X', ...tail, h], tsSave), [...suffix, after]);
-			const cppSave = name + '.cpp.state';
-			assert.deepEqual(native([...begin(1), ...prefix, `x ${cppSave}`, h]), [expectedLine(1), ...prints, before]);
-			const state = decodeRuntimeSaveState(readFileSync(cppSave), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-			applyRuntimeSaveState(runtime, state);
-			assert.ok(cpu.heapServiceActive());
-			assert.deepEqual(tail.map(() => one()), suffix);
-			assert.equal(hash(), after);
-			console.log(`SETUP O${opt} ${kind === CpuRunKind.Direct ? 'Direct' : 'Scheduled'}: phase ${phase} color ${color}: scalar and generated native side exits exact; ${prefix.length + tail.length} matching single grants, cross-core saves during closed store`);
+	const rom = writeTestBlua32Rom(image);
+	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler } = runtime.machine, { gc } = cpu;
+	runGuestToHalt(cpu, 4_194_304);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	cpu.clearHaltUntilIrq();
+	const decode = () => decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, cpu.activeThread.currentFrame!.pc);
+	for (let step = 0; decode().op !== OpCode.SETUP && step < 16; ++step)
+		assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+	const thread = cpu.activeThread, depth = thread.frameDepth, caller = thread.currentFrame!;
+	const setup = decode(), closure = caller.closureAddress;
+	assert.equal(setup.op, OpCode.SETUP);
+	const value = caller.registers.get(setup.a), child = valuePayload(value), owner = thread.address;
+	const successor = setup.pc + INSTRUCTION_BYTES, cell = caller.captureAddress(setup.b) & UPVALUE_ADDRESS_MASK;
+	assert.equal(valueTag(value), ValueTag.Table);
+	assert.equal(isOpen(memory, cell), false);
+	assert.equal(load(memory, cell), valueInteger(73));
+
+	// Establish the original algorithm's black-owner / white-child case
+	// without a collector step that would visit the stopped caller's operand.
+	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	memory.writeRamRecordByte(control, phase);
+	const immediate = phase === GcPhase.MarkAgain, changed = control + GC_CHANGED_HEAD;
+	const originalChanged = memory.readRamRecordWord(changed);
+	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3);
+	assert.equal(gc.isAlive(child), false);
+	const dir = mkdtempSync(join(tmpdir(), 'bmsx-closed-upvalue-'));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const romPath = join(dir, 'system.rom'), trace = join(dir, 'trace');
+	const seed = join(dir, 'seed'), tsMid = join(dir, 'ts-mid'), cppMid = join(dir, 'cpp-mid');
+	writeFileSync(romPath, rom);
+	writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	const commands: string[] = ['X'], observations: string[] = [];
+	function grant(budget: number) {
+		const run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
+		commands.push(`E ${budget}`);
+		observations.push(`${run} ${budget - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		return run;
+	}
+	function observeCell() {
+		commands.push(`H ${cell} ${cell + UPVALUE_HEAP_BYTES}`);
+		observations.push(String(hashBytes(memory.ramData(), cell, UPVALUE_HEAP_BYTES)));
+	}
+	assert.equal(grant(1), RunResult.Yielded);
+	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.SETUP]);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);
+	assert.equal(cpu.readBadAddressWord(), RAM_BASE + cell);
+	assert.equal(cpu.readEpcWord(), successor);
+	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
+	assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), successor);
+	const vector = cpu.activeThread.currentFrame!;
+	assert.equal(vector.argumentCount, 1);
+	assert.equal(vector.registers.get(0), value);
+	assert.equal(load(memory, cell), valueInteger(73), 'architectural issue writes neither cell lane');
+	assert.equal(gc.isAlive(child), false, 'collector policy has not run at issue');
+	commands.push('Z');
+	observations.push(`${CPU_CAUSE_CODE_REFERENCE_STORE} 0 ${successor}`);
+	observeCell();
+
+	// Stop between the guest stores, after the barrier and before the
+	// firmware publishes the new value tag.
+	for (let step = 0; memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD) === 73 && step < 4096; ++step)
+		assert.equal(grant(1), RunResult.Yielded);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD), child);
+	assert.equal(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), ValueTag.Integer);
+	assert.equal(gc.isAlive(child), immediate);
+	assert.equal(memory.readRamRecordWord(changed), immediate ? originalChanged : cell >>> GC_RECORD_SHIFT);
+	const fixedWork = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET;
+	const pending = memory.readRamRecordWord(fixedWork);
+	memory.writeRamRecordWord(fixedWork, HeapServiceOperation.StoppedFinalMark + 1);
+	assert.equal(cpu.admitFixedWork(CpuRunKind.Scheduled), false, 'maintenance cannot enter during a split reference publication');
+	memory.writeRamRecordWord(fixedWork, pending);
+	observeCell();
+	writeFileSync(tsMid, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	commands.push(`x ${cppMid}`, 'l', 's');
+	const commandCut = commands.length, observationCut = observations.length;
+
+	function complete() {
+		for (let step = 0; cpu.fixedInterruptActive() && step < 4096; ++step) assert.equal(grant(1), RunResult.Yielded);
+		assert.equal(cpu.fixedInterruptActive(), false);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.activeThread.address, owner);
+		assert.equal(cpu.readFramePc(depth - 1), successor);
+		assert.equal(load(memory, cell), value);
+		assert.equal(gc.isAlive(child), immediate);
+		observeCell();
+		assert.equal(grant(4096), RunResult.Halted);
+		assert.deepEqual(runtime.readCompletionValues(), [value]);
+		commands.push('c');
+		observations.push(`1 ${ValueTag.Table} ${child}`);
+	}
+
+	complete();
+	const tail = commands.slice(commandCut), expectedTail = observations.slice(observationCut);
+	function replay(script: readonly string[], state: string) {
+		writeFileSync(trace, script.join('\n'));
+		return execFileSync(native, [romPath, trace, state], { encoding: 'utf8' }).trimEnd().split('\n');
+	}
+	assert.deepEqual(replay([...commands, 'u', ...tail], seed), [...observations, ...expectedTail], 'C++ runs the same timed exception and rewinds the split store');
+	assert.deepEqual(replay(['X', ...tail], tsMid), expectedTail, 'TS to C++ resumes between stores');
+	const state = decodeRuntimeSaveState(readFileSync(cppMid), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	assert.equal(state.cpuState.badAddressWord, RAM_BASE + cell);
+	assert.equal(state.cpuState.causeWord, CPU_CAUSE_CODE_REFERENCE_STORE);
+	applyRuntimeSaveState(runtime, state);
+	assert.equal(load(memory, cell), valueInteger(child));
+	const before = observations.length;
+	complete();
+	assert.deepEqual(observations.slice(before), expectedTail, 'C++ to TS resumes between stores');
+
+	if (opt === 0) {
+		// At the same program's ordinary callable entry the native runner
+		// warms with a scalar, then issues the same SETUP with a reference.
+		cpu.beginCompletionCall(closure, [value]);
+		const warmSeed = join(dir, 'warm-seed');
+		writeFileSync(warmSeed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+		const paid = BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETUP] + 2;
+		for (const mode of [0, 1]) {
+			assert.deepEqual(replay(['X', `! ${paid} ${mode} 1`, 'Z'], warmSeed),
+				[`${RunResult.Yielded} ${paid} 0 ${mode} ${mode} 0 0`, `${CPU_CAUSE_CODE_REFERENCE_STORE} 0 ${successor}`]);
 		}
 	}
-	rmSync(evidence, { recursive: true });
-} catch (error) {
-	console.error(`Evidence retained: ${evidence}`);
-	throw error;
-}
+});

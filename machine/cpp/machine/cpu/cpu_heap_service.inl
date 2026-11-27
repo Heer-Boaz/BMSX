@@ -47,8 +47,9 @@ u32 CPU::heapServiceResult() const {
 }
 
 u32 CPU::queuedFixedWork() const {
-	// Do not publish a partially committed table as a new input root.
-	return resetBankSelected() || tableRebuild.record ? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
+	// An ordinary vector owns the machine until it retires, even across grants.
+	return resetBankSelected() || fixedInterruptActive() || tableRebuild.record
+		? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
 }
 
 bool CPU::admitFixedWork(CpuRunKind kind) {
@@ -104,19 +105,6 @@ void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPla
 	supplied.placeInto(callee.registers, 0, copied, 0);
 	instructionBudgetRemaining -= callee.readWindow(FrameField::Top);
 	enterResidentFrame(callee);
-}
-
-void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
-	const auto address = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StoreClosedUpvalue)];
-	if (address == 0u) {
-		enterSynchronousException(issuer, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return;
-	}
-	auto& frame = prepareHeapServiceFrame(address, 0, 2, CallResultPlacement::discard(), m_currentInstructionPc);
-	frame.registers.set(0, valueInteger(static_cast<i32>(cell)));
-	frame.registers.set(1, value);
-	instructionBudgetRemaining -= frame.readWindow(FrameField::Top);
-	enterResidentFrame(frame);
 }
 
 void CPU::enterResidentFrame(CallFrame& frame) {

@@ -4,8 +4,7 @@ import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { FRAME_RESIDENT_ACTIVATION, FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../machine/ts/spec/bmsx/heap_service';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -14,16 +13,19 @@ import { asClosure, valueBool, valueFloat, valueFloatBits, valueInteger, valueNi
 import { GC_COLOR_MASK, GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_REFERENCE_STORE, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure, writeTestBlua32Rom } from '../helpers/blua32';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { createTestHeapServiceCpu, compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
@@ -418,16 +420,21 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 });
 
 test('compiled SETUP hands a new black closed-cell edge to timed System firmware', t => {
-	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
+	const image = linkManagedTestSystem(`
 local captured
 function set_captured(value)
 	captured = value
-	return 1
 end
-`, 0));
+`, 0);
+	const systemRomBytes = writeTestBlua32Rom(image);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const { cpu, memory } = createTestHeapServiceCpu(image, backend), { gc } = cpu;
-		runGuestToHalt(cpu, 65_536);
+		const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(),
+			machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: backend }, {
+			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+		});
+		runtime.boot();
+		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		runGuestToHalt(cpu, 4_194_304);
 		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);
@@ -443,11 +450,13 @@ end
 
 		cpu.beginCompletionCall(setter, [valueTable(child)]);
 		let generatedExit: CompiledBlockExit | undefined;
+		let generatedBudget = 0;
 		if (backend === CpuExecutionBackend.JavaScript) {
 			const frame = cpu.rootThread.frameAtDepth(0), pc = frame.pc;
 			const page = frame.executionImage.compiledCodeLookup!.find(pc, 0)!;
 			const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 			const { region } = block, execute = region.execute;
+			generatedBudget = block.admissionCycles + 3; // two fixed input lanes plus admission
 			t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
 				const exit = execute(...args);
 				generatedExit = region.exits[exit].exit;
@@ -457,27 +466,33 @@ end
 		const frame = cpu.rootThread.frameAtDepth(0), issue = frame.pc + INSTRUCTION_BYTES;
 		assert.equal(instructionOpcode(memory.readMappedWord(frame.pc)), OpCode.MOV);
 		assert.equal(instructionOpcode(memory.readMappedWord(issue)), OpCode.SETUP);
-		const management = cpu.heapAllocator.managementOffset();
-		assert.equal(cpu.runUntilDepth(0, 64), RunResult.Yielded);
-		assert.equal(64 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETUP] + 2, 'the prefix, SETUP and its two fixed inputs are charged once');
+		const owner = cpu.activeThread.address;
+		const paid = BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETUP] + 2;
+		const budget = Math.max(paid, generatedBudget);
+		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.equal(generatedExit, CompiledBlockExit.WriteUpvalue, 'the generated path exits before either store');
-		assert.ok(cpu.heapServiceActive());
-		assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.IssuePc), issue);
-		assert.ok(memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION);
+		else assert.equal(cpu.instructionBudgetRemaining, 0, 'the prefix, SETUP and its two fixed inputs are charged once');
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.fixedInterruptActive(), true);
+		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);
+		assert.equal(cpu.readEpcWord(), issue + INSTRUCTION_BYTES);
+		assert.equal(cpu.readBadAddressWord(), RAM_BASE + (cell & Upvalue.UPVALUE_ADDRESS_MASK));
+		assert.equal(cpu.readFrameRegister(0, 0), valueTable(child));
 		assert.equal(frame.pc, issue + INSTRUCTION_BYTES);
 		const top = frame.top;
 		assert.equal(top, 2, 'the issued prefix publishes its original top');
 		assert.equal(Upvalue.load(memory, cell), valueNil(), 'SETUP published neither lane at issue');
 		assert.equal(gc.isAlive(child), false);
 		let elapsed = 0;
-		while (cpu.heapServiceActive()) {
+		while (cpu.fixedInterruptActive()) {
 			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 			elapsed += 1 - cpu.instructionBudgetRemaining;
 			assert.ok(elapsed < 4096);
 		}
 		assert.ok(elapsed > 0);
-		assert.equal(frame.pc, issue + INSTRUCTION_BYTES, 'no caller successor ran before BIOS RET');
+		assert.equal(frame.pc, issue + INSTRUCTION_BYTES, 'no caller successor ran before BIOS RFE');
 		assert.equal(frame.top, top, 'an implicit write receives no results and changes no caller slots');
 		runGuestToHalt(cpu, 10_000);
 		assert.equal(Upvalue.load(memory, cell), valueTable(child));

@@ -69,7 +69,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
-		['kernel/gc_barrier', 'store_closed_upvalue'],
 		['kernel/allocate_captured_closure', 'allocate_captured_closure'],
 	];
 	const functions = new Set<number>();
