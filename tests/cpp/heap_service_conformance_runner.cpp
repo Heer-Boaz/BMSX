@@ -155,6 +155,12 @@ int main(int argc, char** argv) {
 					std::cout << static_cast<u32>(valueTag(value)) << ' ' << valuePayload(value) << '\n';
 					break;
 				}
+				case 'k': {
+					u32 key;
+					trace >> key;
+					cpu.setGlobalByKey(key, valueNil());
+					break;
+				}
 				case 'o': {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 					u32 function;

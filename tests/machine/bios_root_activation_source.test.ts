@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
@@ -10,13 +8,9 @@ import {
 	BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_NUM_PARAMS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE,
 	BLUA32_FUNCTION_RESERVED_OFFSET, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 } from '../../machine/ts/spec/blua32/image_format';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
-import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
-import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
-import { LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
+import { verifyPinnedBluaSource } from '../helpers/blua_source_proof';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 
 const port = 'machine/bios/kernel/root_activation.lua';
@@ -33,78 +27,16 @@ const sources = {
 	E: ['machine/cpp/machine/cpu/closure.h', 'ef85f807bc81dc47034d15cabcf80bffd408c4e9f890827fcabbf11af8512663'],
 	P: ['machine/cpp/machine/cpu/frame_placement.h', '0537a87b5386a632bb273b3c1700ef389b760e6fbe2d18fd1a5ea3dfc6678785'],
 	V: ['machine/ts/machine/cpu/value_slots.ts', '5392a460b99ca64717c81da1574bad1df8353a5c2133fb37ddab528d640cbe70'],
-};
+} as const;
 
 test('authored System root covers the published writes of the pinned direct-entry implementations', () => {
-	const reference = new Map(Object.entries(sources).map(([key, [path, sha256]]) => {
-		const text = execFileSync('git', ['show', `${basis}:${path}`], { encoding: 'utf8' });
-		assert.equal(createHash('sha256').update(text).digest('hex'), sha256, path);
-		return [key, { lines: text.split('\n'), covered: new Set<number>() }];
-	}));
-	const source = readFileSync(port, 'utf8'), lines = source.split('\n');
-	const { chunk, tokens } = parseLuaChunk(source, port);
-	const mappings = new Map<number, string>();
-	for (const token of tokens) {
-		if (token.type !== LuaTokenType.SingleLineCommentTrivia) continue;
-		const { line, column } = chunk.locations.range(token).start;
-		if (lines[line - 1].slice(0, column - 1).trim() === '') continue;
-		const marks = token.lexeme.slice(2).split(';', 1)[0].trim();
-		assert.match(marks, /^[A-Z]:[0-9,-]+(?: [A-Z]:[0-9,-]+)*$/, `${port}:${line}`);
-		mappings.set(line, marks);
-	}
-	const destinations = new Set<number>();
-	const mapOperation = (span: LuaSyntaxSpan) => {
-		const { line } = chunk.locations.range(span).start;
-		destinations.add(line);
-		const marks = mappings.get(line);
-		assert.ok(marks, `${port}:${line}: no source for ${lines[line - 1].trim()}`);
-	};
-	const exported = chunk.body.get(chunk.body.length - 1);
-	walkLuaAst(chunk, node => {
-		if (node === exported) return false;
-		switch (node.kind) {
-			case LuaSyntaxKind.StructDeclarationStatement:
-				for (const field of node.fields) mapOperation(field.span);
-				break;
-			case LuaSyntaxKind.IfStatement:
-				for (const clause of node.clauses) {
-					assert.ok(clause.condition);
-					mapOperation(clause.condition.span);
-				}
-				break;
-			case LuaSyntaxKind.AssignmentStatement:
-			case LuaSyntaxKind.LocalAssignmentStatement:
-			case LuaSyntaxKind.ForNumericStatement:
-			case LuaSyntaxKind.ReturnStatement:
-				mapOperation(node.span);
-				break;
-		}
-	});
-	for (const [line, marks] of mappings) {
-		assert.ok(destinations.has(line), `${port}:${line}: source mark does not point to a field or an AST operation`);
-		for (const mark of marks.split(' ')) {
-			const [key, ranges] = mark.split(':'), origin = reference.get(key);
-			assert.ok(origin, mark);
-			for (const interval of ranges.split(',')) {
-				const [start, end = start] = interval.split('-').map(Number);
-				assert.ok(start >= 1 && end >= start && end <= origin.lines.length, mark);
-				for (let row = start; row <= end; ++row) origin.covered.add(row);
-			}
-		}
-	}
 	// Admission, image latching, and host-view invalidation have different
 	// owners. The producer consumes a fresh, already admitted zero-arg bank.
-	for (const [key, begin, end] of [
+	verifyPinnedBluaSource(port, basis, sources, [
 		['F', 31, 38], ['S', 118, 131], ['Q', 64, 79], ['E', 24, 24],
-		['C', 1904, 1910], ['T', 2234, 2236], ['T', 2238, 2239],
+		['C', 1904, 1906], ['C', 1908, 1910], ['T', 2234, 2236], ['T', 2238, 2239],
 		['N', 21, 21], ['N', 29, 29],
-	] as const) {
-		const origin = reference.get(key)!;
-		for (let row = begin; row <= end; ++row) {
-			if (origin.lines[row - 1].trim() === '});') continue;
-			assert.ok(origin.covered.has(row), `${key}:${row}: ${origin.lines[row - 1]}`);
-		}
-	}
+	]);
 });
 
 test('authored System root uses the physical Function, Frame and Thread fields', () => {
