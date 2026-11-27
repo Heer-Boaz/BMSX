@@ -4229,6 +4229,9 @@ export class CPU implements MappedPageInvalidator {
 				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], end, thread.frameDepth + 2, roots, FRAME_RESIDENT_PREPARED_ENTRY);
 				return null;
 			}
+			// A first resumed Thread has no frame in which to trap; report the
+			// failed admission through the ordinary resumer instead.
+			if (!shared && thread.frameDepth === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
 			if (detached) {
 				this.enterSynchronousException(thread.currentFrame!, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return null;
@@ -4246,9 +4249,7 @@ export class CPU implements MappedPageInvalidator {
 			if (shared) {
 				this.placeSharedFormals(frame, first, copied, numParams - copied, vararg);
 			} else {
-				frame.registers.copyRangeFrom(slots, 0, first, copied, numParams - copied);
-				if (extras !== 0) thread.stackRegisters.copyRangeFrom(slots, varargBase, first + numParams, extras);
-				this.charge(numParams + extras);
+				this.placeForeignFormals(frame, slots, first, copied, numParams - copied, varargBase, extras);
 			}
 		} else {
 			for (let i = 0; i < copied; ++i) frame.registers.set(i, args[i]);
@@ -4270,9 +4271,18 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(relocate ? copied + padded : padded);
 	}
 
+	private placeForeignFormals(frame: CallFrame, source: ValueSlots, first: number, copied: number, padded: number,
+		varargBase: number, extras: number): void {
+		frame.registers.copyRangeFrom(source, 0, first, copied, padded);
+		if (extras !== 0) frame.thread.stackRegisters.copyRangeFrom(source, varargBase, first + copied + padded, extras);
+		this.charge(copied + padded + extras);
+	}
+
 	private enterPreparedFrame(): void {
 		const memory = this.memory, prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
-		const thread = this.activeThread, frame = thread.acquireFrame();
+		const thread = this.activeThread;
+		const firstResume = thread.frameDepth === 0;
+		const frame = thread.acquireFrame();
 		frame.applyPreparedControl(prepared);
 		const domain = frame.savedExecutionBank;
 		const image = this.executionImageForDomain(domain)!;
@@ -4291,6 +4301,11 @@ export class CPU implements MappedPageInvalidator {
 					memory.readRamRecordByte(tags + source), memory.readRamRecordWord(words + 4 * source));
 			}
 			this.charge(params + frame.varargCount);
+		} else if (firstResume) {
+			// The source stack is the still-live resumer, not the private
+			// activation nor a saved host view. Acquire its current backing.
+			const source = this.bindThread(thread.resumer).stackRegisters;
+			this.placeForeignFormals(frame, source, sourceSlot, copied, params - copied, frame.varargBase, frame.varargCount);
 		} else {
 			this.placeSharedFormals(frame, sourceSlot, copied, params - copied,
 				memory.readRamRecordWord(prepared + PreparedFrameField.RelocateFormals) !== 0);
@@ -4298,6 +4313,7 @@ export class CPU implements MappedPageInvalidator {
 		thread.stackTop = frame.stackBase + frame.stackCapacity;
 		thread.enterFrame(frame);
 		this.latchActiveExecutionImage(domain, image);
+		if (firstResume) thread.entry = 0;
 	}
 
 	private closeUpvalues(frame: CallFrame, firstSlot = 0): number {
@@ -4639,7 +4655,9 @@ export class CPU implements MappedPageInvalidator {
 		this.activeThread = target;
 		if (fresh) {
 			const closure = this.gc.closureRecordAddress(target.entry);
-			this.pushFrame(closure, detached ?? caller, 0, 0, false, false, 0, argumentBase + 1, argCount - 1);
+			// The resumer owns the argument slots while the new Thread
+			// owns its Entry. Let the existing prepared CALL acquire space.
+			if (this.pushFrame(closure, detached ?? caller, 0, 0, false, false, 0, argumentBase + 1, argCount - 1, true) === null) return;
 			target.entry = 0;
 		} else {
 			this.resumeFrameBank();

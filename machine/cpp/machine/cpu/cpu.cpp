@@ -1375,8 +1375,12 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 	const auto supplied = arguments.tail(1);
 	if (fresh) {
 		const auto closure = m_heap.closureRecordAddress(target->entry());
-		if (supplied.frame) pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u);
-		else pushFrame(closure, supplied.values(), {}, 0u, 0u);
+		// The resumer owns the argument slots while the new Thread
+		// owns its Entry. Let the existing prepared CALL acquire space.
+		const auto* frame = supplied.frame
+			? pushFrame(*supplied.frame, closure, supplied.base, supplied.count, {}, 0u, true)
+			: pushFrame(closure, supplied.values(), {}, 0u, 0u, true);
+		if (!frame) return;
 		target->setEntry(0u);
 	} else {
 		resumeFrameBank();
@@ -2981,6 +2985,9 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 			prepareFrameEntry(function, entry, callerArgBase, argCount, placement.relocatesFormals);
 			return nullptr;
 		}
+		// A first resumed Thread has no frame in which to trap. The
+		// ordinary resumer receives failed admission.
+		if (!sharedStack && thread.frameDepth() == 0u) throw LuaOutOfMemorySignal{};
 	}
 	auto* frame = thread.acquireFrame();
 	if (!fits) thread.reserveFrame(end, valueClosure(closure));
@@ -2988,12 +2995,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	frame->initializeControl(entry);
 	const auto [copied, padded] = placement.formals;
 	if (sharedStack) placeSharedFormals(*frame, callerArgBase, copied, padded, placement.relocatesFormals);
-	else {
-		frame->registers.copyFrom(caller.thread->stack, 0, callerArgBase, copied, padded);
-		if (placement.relocatesFormals)
-			thread.stack.copyFrom(caller.thread->stack, placement.varargBase, callerArgBase + placement.top(), placement.varargCount);
-		instructionBudgetRemaining -= placement.cycles(false);
-	}
+	else placeForeignFormals(*frame, caller.thread->stack, callerArgBase, copied, padded, placement.varargBase, placement.varargCount);
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
@@ -3007,6 +3009,13 @@ void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded
 		stack.clear(first, copied);
 	} else frame.registers.clear(copied, padded);
 	instructionBudgetRemaining -= relocate ? copied + padded : padded;
+}
+
+void CPU::placeForeignFormals(CallFrame& frame, const ValueSpan& source, int first, int copied, int padded,
+	int varargBase, int extras) {
+	frame.registers.copyFrom(source, 0, first, copied, padded);
+	if (extras != 0) frame.thread->stack.copyFrom(source, varargBase, first + copied + padded, extras);
+	instructionBudgetRemaining -= copied + padded + extras;
 }
 
 void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, u32 sourceSlot,
@@ -3035,6 +3044,7 @@ void CPU::prepareFrameEntry(u32 function, const FrameEntryControl& entry, u32 so
 void CPU::enterPreparedFrame() {
 	const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 	auto& thread = *m_activeThread;
+	const bool firstResume = thread.frameDepth() == 0u;
 	auto& frame = *thread.acquireFrame();
 	frame.applyPreparedControl(prepared);
 	const auto domain = frame.savedExecutionBank();
@@ -3054,6 +3064,11 @@ void CPU::enterPreparedFrame() {
 		const int extras = frame.readWindow(FrameField::VarargCount), base = frame.readWindow(FrameField::VarargBase);
 		for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
 		instructionBudgetRemaining -= params + extras;
+	} else if (firstResume) {
+		// The source is the physical resumer's stack, not a saved host view.
+		const auto& source = bindThread(thread.resumer()).stack;
+		placeForeignFormals(frame, source, static_cast<int>(sourceSlot), copied, params - copied,
+			frame.readWindow(FrameField::VarargBase), frame.readWindow(FrameField::VarargCount));
 	} else {
 		placeSharedFormals(frame, static_cast<int>(sourceSlot), copied, params - copied,
 			m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
@@ -3061,6 +3076,7 @@ void CPU::enterPreparedFrame() {
 	thread.setStackTop(frame.stackBase() + frame.stackCapacity());
 	thread.enterFrame(&frame);
 	latchActiveExecutionImage(domain, frame.executionImage);
+	if (firstResume) thread.setEntry(0u);
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
@@ -3081,6 +3097,7 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
 		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
 		if (function == 0u) {
+			if (thread.frameDepth() == 0u) throw LuaOutOfMemorySignal{};
 			enterSynchronousException(*thread.currentFrame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return nullptr;
 		}

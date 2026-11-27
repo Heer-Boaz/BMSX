@@ -471,6 +471,7 @@ private:
 		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
+	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);
 	void prepareFrameEntry(u32 function, const FrameEntryControl&, u32 sourceSlot, u32 supplied, bool relocate, BuiltinArgsView detached = {});
 	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
