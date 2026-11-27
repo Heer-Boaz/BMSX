@@ -10,6 +10,7 @@ return {
 	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request
 	installed_image_bindings_offset = 0x200,
 	system_global_bank_offset = 0x230,
+	ordinary_global_bank_offset = 0x23c,
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,

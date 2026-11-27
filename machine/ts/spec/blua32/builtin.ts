@@ -17,15 +17,14 @@ export const enum BuiltinFunctionId {
 	CoroutineRunning = 15,
 	CoroutineIsYieldable = 16,
 	GetGlobal = 17,
-	SetGlobal = 18,
-	FrameCount = 19,
-	GetFrameRegister = 20,
-	SetFrameRegister = 21,
-	GetFrameUpvalue = 22,
-	SetFrameUpvalue = 23,
-	FrameHeader = 24,
-	NumberType = 25,
-	StringFromBytes = 26,
+	FrameCount = 18,
+	GetFrameRegister = 19,
+	SetFrameRegister = 20,
+	GetFrameUpvalue = 21,
+	SetFrameUpvalue = 22,
+	FrameHeader = 23,
+	NumberType = 24,
+	StringFromBytes = 25,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 27;
+export const BUILTIN_FUNCTION_COUNT = 26;

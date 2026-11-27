@@ -12,7 +12,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
-import { EXECUTION_IMAGE_BINDING_SIZE, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
+import { EXECUTION_IMAGE_BINDING_SIZE, GLOBAL_BANK_OFFSET, GlobalBankField, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
@@ -46,6 +46,14 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 selected_payload = '${payload}'
 report[0] = 37
 report[1] = #selected_payload
+namespace_preserved = 51
+for index = 1, 256 do setglobal('dynamic global ' .. index, index) end
+report[2] = namespace_preserved
+setglobal('namespace_preserved', 89)
+report[3] = namespace_preserved
+namespace_preserved = 144
+report[4] = getglobal('namespace_preserved')
+report[5] = getglobal('dynamic global 256')
 mem[${IO_IRQ_MASK}] = 0
 halt_until_irq
 `;
@@ -123,6 +131,10 @@ halt_until_irq
 			const { bssAddress, bssByteCount } = slot1.layout.header;
 			assert.equal(memory.readMappedU32LE(bssAddress), 37);
 			assert.equal(memory.readMappedU32LE(bssAddress + 4), payload.length);
+			assert.deepEqual([2, 3, 4, 5].map(slot => memory.readMappedU32LE(bssAddress + 4 * slot)), [51, 89, 144, 256]);
+			const bank = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET;
+			const bankCapacity = memory.readRamRecordWord(bank + GlobalBankField.Capacity);
+			assert.ok(bankCapacity >= 256);
 			assert.ok(beforeExec !== undefined);
 			assert.deepEqual(memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE), beforeExec,
 				'EXEC consumes the installed binding without replacing it');
@@ -133,10 +145,10 @@ halt_until_irq
 			assert.ok(cpu.heapAllocator.floorOffset(slot0.layout.header.bssAddress + slot0.layout.header.bssByteCount) > floor - RAM_BASE);
 			assert.equal(memory.ramBusEnd(), floor, 'the ordinary mapped selected socket supplies the exact aperture');
 			const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-			commands.push('E 1', `H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + 8}`, `H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
+			commands.push('E 1', `H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + 24}`, `H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
 			expected.push([result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
 				memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
-			expected.push(String(hashBytes(memory.ramData(), bssAddress - RAM_BASE, 8)),
+			expected.push(String(hashBytes(memory.ramData(), bssAddress - RAM_BASE, 24)),
 				String(hashBytes(memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE)));
 			const unused = join(output, 'unused');
 			compare('launch.trace', commands, expected, unused, otherPath, selectedPath);

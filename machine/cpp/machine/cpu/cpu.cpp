@@ -1317,10 +1317,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			out.push_back(getGlobalByKey(asStringId(args[0])));
 			break;
-		case BuiltinFunctionId::SetGlobal:
-			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			setGlobalByKey(asStringId(args[0]), args[1]);
-			break;
 		case BuiltinFunctionId::Select:
 			runBuiltinSelect(args, out, resultLimit);
 			break;
@@ -2701,6 +2697,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			// Thread itself is rooted but its physical planes can change.
 			m_activeThread->bindStack(true);
 			if (m_activeThread != &m_rootView) m_rootView.bindStack(true);
+			m_globalBank.bind();
+			m_systemGlobalBank.bind();
 			for (auto& view : m_transferViews)
 				if (&view != m_activeThread && view.address != 0u) view.select(0u);
 			try {

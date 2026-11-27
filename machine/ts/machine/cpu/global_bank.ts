@@ -25,10 +25,12 @@ export class GlobalBank {
 		if (valueTagHasGcEdge(tag)) this.gc.writeGlobalRoot(tag, word);
 	}
 
-	// RAM has already been restored by the machine; reconstruct only the borrowed view.
+	// Refresh the view of the RAM descriptor without moving its contents.
 	public bind(): void {
 		const capacity = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Capacity);
-		if (capacity === 0) this.slots.unbind();
+		if (capacity === 0) {
+			if (this.slots.capacity() !== 0) this.slots.unbind();
+		}
 		else {
 			const base = this.memory.readRamRecordWord(this.descriptor + GlobalBankField.Base);
 			this.slots.bindRam(this.memory, (base + 12 * capacity) & RAM_RECORD_WORD_MASK, capacity);

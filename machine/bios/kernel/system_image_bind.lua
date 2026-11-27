@@ -107,7 +107,7 @@ local bind_name_table<const> = function(management, root, source, count, bank, d
 			local capacity<const> = names.growth_capacity(bank) -- G:93-94 H:84-85
 			local accepted, offset
 			accepted, offset, source_cycles = admission.reserve(management, root,
-				key, names.name_charge, names.backing_slot_bytes * capacity, false, source_cycles) -- G:93-99 H:84-91 L:160-168 N:173-179
+				key, names.name_charge, names.backing_slot_bytes * capacity, false, source_cycles, 0, 0) -- G:93-99 H:84-91 L:160-168 N:173-179
 			if not accepted then return no_storage, source_cycles end -- L:86,152-155 N:98,151-154
 			local backing<const> = offset == 0 and 0 or layout.ram_base + offset -- G:95-97 H:86-88
 			ordinal = names.commit_name(management, bank, key, backing, capacity) -- G:97,101-108 H:88,92-100
@@ -158,7 +158,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	if extent ~= 0 then -- T:1139 C:420
 		local accepted, offset
 		accepted, offset, source_cycles = admission.reserve(management, root,
-			0, extent, extent, true, source_cycles) -- T:1140 C:421 L:132-155 N:142-155
+			0, extent, extent, true, source_cycles, 0, 0) -- T:1140 C:421 L:132-155 N:142-155
 		if not accepted then return no_storage end -- L:86,153-155 N:98,153-154
 		base = layout.ram_base + offset -- T:1140 C:421
 

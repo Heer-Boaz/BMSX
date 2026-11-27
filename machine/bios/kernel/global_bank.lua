@@ -120,8 +120,26 @@ local commit_name<const> = function(management, address, key, backing, capacity)
 	return slot -- T:108 C:100
 end
 
+-- Publish the Value in the same order as the register store, then mark its edge.
+local write_slot<const> = function(management, address, slot, tag, payload) -- T:26-31 H:27-31
+	local bank<const>: *namespace_bank = address -- H:28-29
+	local base<const>, capacity<const> = bank.base, bank.capacity -- H:28-29
+	local words<const>: *u32 = base + 12 * capacity -- T:28 H:28
+	local tags<const>: *u8 = base + 16 * capacity -- T:29 H:29
+	words[slot] = payload -- T:28 H:28
+	tags[slot] = tag -- T:29 H:29
+	if barrier.internal.has_edge(tag) then -- T:30 H:30
+		local latch<const>: *u32 = layout.ram_base + management + layout.string_mark_work_offset -- G:185 J:108
+		local pending<const> = *latch -- G:185 J:108
+		local work<const> = barrier.mark_global_write(management + layout.control_offset, -- T:30 H:30 G:202-215 J:110-124
+			management + layout.arena_offset, management + layout.metadata_offset, tag, payload, 1, pending)
+		if work ~= pending then *latch = work end -- G:185 J:108; retain only unspent credit
+	end
+end
+
 return {
 	internal = { bucket_for = bucket_for, grow = grow },
 	find_name = find_name, growth_capacity = growth_capacity, commit_name = commit_name,
+	write_slot = write_slot,
 	name_charge = name_charge, backing_slot_bytes = backing_slot_bytes,
 }

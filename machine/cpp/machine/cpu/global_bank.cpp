@@ -9,7 +9,7 @@ constexpr u32 GLOBAL_NAME_BUDGET_BYTES = 9u;
 using Bank = GlobalBankField;
 }
 
-// RAM has already been restored by the machine; reconstruct only the borrowed view.
+// Refresh the view of the RAM descriptor without moving its contents.
 void GlobalBank::bind() {
 	const u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
 	if (capacity == 0u) {
@@ -18,6 +18,7 @@ void GlobalBank::bind() {
 	}
 	const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
 	const u32 payloads = base + 12u * capacity;
+	if (m_values.size() == capacity && m_values.wordAddress() == (payloads & RAM_RECORD_WORD_MASK)) return;
 	m_values = ValueSpan(m_memory, payloads, payloads + 4u * capacity, capacity);
 }
 

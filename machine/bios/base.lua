@@ -1,6 +1,7 @@
 local vm_next<const> = __bmsx_next
 local vm_type<const> = __bmsx_type
 local metatables<const> = require('kernel/gc_barrier')
+local globals<const> = require('kernel/set_global')
 local vm_getmetatable<const> = __bmsx_getmetatable
 local vm_rawget<const> = __bmsx_rawget
 local vm_rawset<const> = __bmsx_rawset
@@ -21,7 +22,7 @@ getmetatable = vm_getmetatable
 rawget = vm_rawget
 rawset = vm_rawset
 getglobal = __bmsx_getglobal
-setglobal = __bmsx_setglobal
+setglobal = globals.set_global
 select = vm_select
 error = vm_error
 pcall = vm_pcall

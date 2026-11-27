@@ -25,7 +25,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_coroutine_running', id: BuiltinFunctionId.CoroutineRunning },
 	{ name: '__bmsx_coroutine_isyieldable', id: BuiltinFunctionId.CoroutineIsYieldable },
 	{ name: '__bmsx_getglobal', id: BuiltinFunctionId.GetGlobal },
-	{ name: '__bmsx_setglobal', id: BuiltinFunctionId.SetGlobal },
 	{ name: '__bmsx_frame_count', id: BuiltinFunctionId.FrameCount },
 	{ name: '__bmsx_get_frame_register', id: BuiltinFunctionId.GetFrameRegister },
 	{ name: '__bmsx_set_frame_register', id: BuiltinFunctionId.SetFrameRegister },

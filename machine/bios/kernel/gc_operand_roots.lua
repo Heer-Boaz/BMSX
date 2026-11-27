@@ -97,7 +97,9 @@ local mark_operand_roots<const> = function(control, arena, metadata, scope, atom
 		return work -- T:657,711,1061 C:678,735,1137
 	end
 	local roots<const>: *table_operand_roots = layout.ram_base + scope -- A:761,788,793 B:255 M:6; published operand lanes
-	mark.mark_record(control, arena, roots.receiver, table_kind, trace_head, 1) -- T:324-325,347,656,710,1060 C:81-82,100,297-298,677,734,1136
+	if roots.receiver ~= 0 then -- A:761 B:255; named namespace writes have no Table receiver
+		mark.mark_record(control, arena, roots.receiver, table_kind, trace_head, 1) -- T:324-325,347,656,710,1060 C:81-82,100,297-298,677,734,1136
+	end
 	local _<const>, key_work<const> = mark.mark_value(control, arena, metadata, roots.key_tag, roots.key_word, trace_head, 1) -- T:345-352,656,710,1060 C:77-92,100,677,734,1136
 	local _<const>, value_work<const> = mark.mark_value(control, arena, metadata, roots.value_tag, roots.value_word, trace_head, 1) -- T:345-352,656,710,1060 C:77-92,100,677,734,1136
 	return key_work + value_work -- T:657,711,1061 C:678,735,1137 S:445,447-450 R:438,440
@@ -117,9 +119,22 @@ local table_copy_scope<const> = function(management, source) -- P:35-36 Q:71-72
 	return offset -- P:35-36 Q:71-72
 end
 
+-- GlobalBank inserts a name with these two explicit admission roots.
+local global_write_scope<const> = function(management, key, tag, payload)
+	local offset<const> = management + layout.table_plan_offset
+	local scope<const>: *table_operand_roots = layout.ram_base + offset
+	scope.receiver = 0
+	scope.key_tag = 5
+	scope.key_word = key
+	scope.value_tag = tag
+	scope.value_word = payload
+	return offset
+end
+
 return {
 	internal = { mark_detached_frame_roots = mark_detached_frame_roots }, -- I:15-20
 	mark_operand_roots = mark_operand_roots, -- T:656-657 C:677-678
 	single_value_scope = single_value_scope, -- Z:368
+	global_write_scope = global_write_scope,
 	table_copy_scope = table_copy_scope, -- P:35-36 Q:71-72
 } -- I:15-20 P:35-36

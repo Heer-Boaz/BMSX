@@ -10,7 +10,7 @@ local op_getup<const> = isa.op_getup
 -- Boot-only registers are cleared after firmware initialization. Retain the
 -- primitives, not the mutable public getglobal/setglobal bindings.
 local vm_getglobal<const> = __bmsx_getglobal
-local vm_setglobal<const> = __bmsx_setglobal
+local vm_setglobal<const> = require('kernel/set_global').set_global
 
 local opcode_by_binary_operator<const> = {
 	[syntax.binary_add] = isa.op_add,

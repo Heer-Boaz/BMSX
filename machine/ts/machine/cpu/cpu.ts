@@ -2501,6 +2501,8 @@ export class CPU implements MappedPageInvalidator {
 					// layout or retired an inactive bank's previous referent.
 					this.activeThread.bindStack(true);
 					if (this.activeThread !== this.rootThread) this.rootThread.bindStack(true);
+					this.globalBank.bind();
+					this.systemGlobalBank.bind();
 					for (let i = 1; i < this.threadBanks.length; ++i) {
 						const bank = this.threadBanks[i];
 						if (bank !== this.activeThread && bank.address !== 0) bank.bindAddress(0);
@@ -4646,15 +4648,6 @@ export class CPU implements MappedPageInvalidator {
 				const slot = this.globalBank.find(args.registers.getPayload(args.base));
 				if (slot === undefined) out.push(valueNil());
 				else out.push(this.globalBank.slots.get(slot));
-				break;
-			}
-			case BuiltinFunctionId.SetGlobal: {
-				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				const key = args.registers.getPayload(args.base);
-				if (args.length < 2) this.setGlobalByKey(key, valueNil());
-				else this.setGlobalByKey(key, args.registers.get(args.base + 1));
 				break;
 			}
 			case BuiltinFunctionId.Select:

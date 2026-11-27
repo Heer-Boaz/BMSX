@@ -1,17 +1,20 @@
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 
-const bootSource = 'getglobal = __bmsx_getglobal; setglobal = __bmsx_setglobal; pcall = __bmsx_pcall';
-const boot = { path: 'boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'boot.lua') };
+const bootSource = `local globals<const> = require('kernel/set_global')
+getglobal = __bmsx_getglobal
+setglobal = globals.set_global
+pcall = __bmsx_pcall
+select = __bmsx_select`;
+const boot = { path: 'boot', source: bootSource };
 
-for (const level of [3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
+for (const level of [0, 3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
 	const source = `require('boot')
 local get<const> = getglobal
 local set<const> = setglobal
@@ -19,6 +22,9 @@ counter = 7
 local first = get('counter')
 set('counter', 13)
 local second = counter
+local returned = select('#', set('counter', 13))
+for index = 1, 78 do set('new name ' .. index, index) end
+local after_growth = counter
 counter = counter + 1
 shared = { hp = 20 }
 local object = get('shared')
@@ -28,14 +34,13 @@ set('counter', false)
 local fourth = counter
 set('counter')
 return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
- get('absent')
+ get('absent'), after_growth, returned, get('new name 78')
 `;
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
-		parseLuaChunk(source, 'global-register-access.lua'), [boot], { entrySource: source, optLevel: level, programDomain: 'system' },
-	)));
-	runGuestToHalt(cpu, 65_536);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil()]);
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, level, [boot]));
+	runGuestToHalt(cpu, 1_048_576);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil(), valueInteger(13), valueInteger(0), valueInteger(78)]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('alias')!), cpu.getGlobalByKey(cpu.stringPool.find('shared')!));
+	assert.ok(cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity) >= 128);
 });
 
 test('named access cannot alias the system bank and invalid names use guest errors', () => {
@@ -50,9 +55,7 @@ local invalid_write = pcall(set, false, 4)
 local missing_name = pcall(set)
 return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 `;
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileTestSystemWithHeap(
-		parseLuaChunk(source, 'global-banks.lua'), [boot], { entrySource: source, programDomain: 'system' },
-	)));
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, 3, [boot]));
 	runGuestToHalt(cpu, 65_536);
 	const values = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);
@@ -62,7 +65,7 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 });
 
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-growth.lua')));
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem('return 0', 3));
 	const count = cpu.globalSlotCount;
 	const capacity = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity;
 	let grewBank = false;
@@ -105,7 +108,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 });
 
 test('registered writes allocate no guest heap and missing reads create no registers', () => {
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-reuse.lua')));
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem('return 0', 3));
 	const key = cpu.stringPool.intern('value'), absent = cpu.stringPool.intern('absent');
 	cpu.setGlobalByKey(key, valueInteger(0));
 	const count = cpu.globalSlotCount, heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
