@@ -1244,7 +1244,7 @@ function readCpuOperandContinuation(reader: BinaryReader): Pick<CpuRuntimeState,
 		case CpuOperandContinuation.Idle: return { concat: null, capturedClosureOperands: null };
 		case CpuOperandContinuation.Concat: return { concat: readConcatAssembly(reader), capturedClosureOperands: null };
 		case CpuOperandContinuation.CapturedClosure:
-			return { concat: null, capturedClosureOperands: [reader.u32Array(reader.u32()), reader.u32Array(reader.u32())] };
+			return { concat: null, capturedClosureOperands: [reader.u32Array(reader.u32()), reader.u32Array(reader.u32()), reader.u32Array(reader.u32())] };
 	}
 	throw new Error('Invalid saved CPU operand owner.');
 }

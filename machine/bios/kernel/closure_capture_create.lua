@@ -73,11 +73,15 @@ struct open_cell
 end
 
 -- Explicit owner aliases: allocator offsets (state/control/occupied), actual
--- caller frame backing, one sampled binding, and three word planes.
+-- caller frame backing, one sampled binding, and the operand aperture.
+-- Plan words retain an existing Cell address or the sampled source slot for
+-- a missing Cell. Its bit plane distinguishes them without narrowing either
+-- word or re-reading a descriptor on the mapped bus after allocation.
 struct closure_work
 	descriptors: addr -- T:4084,4089-4099 C:3024,3027-3038
 	resolved: addr -- T:4082,4085-4086,4104,4109 C:3022-3023,3043,3047
 	new_cells: addr -- T:4111-4112,4121 L:256,262,269 C:3050-3051,3056 R:262,268,275
+	missing: addr -- T:4104-4105,4117 C:3043-3044,3055; compact transport of the source predicate
 end
 
 local cell_flags_offset<const> = 2 -- U:12 V:29,35
@@ -118,24 +122,35 @@ local prepare_closure<const> = function(state, frame, binding, workspace) -- T:4
 	end
 	local frame_view<const>: *closure_frame = frame -- T:4102,4108-4109 C:3041,3046-3047
 	local work<const>: *closure_work = workspace -- T:4080-4086 C:3022-3024
-	local descriptors<const>: *u32 = work.descriptors -- T:4084,4099 C:3024,3038; already sampled by bus owner
+	local descriptors<const>: *u32 = work.descriptors -- T:4084,4099 C:3024,3038; each load performs one mapped read
 	local resolved<const>: *u32 = work.resolved -- T:4082,4085-4086 C:3022-3023
-	local missing, index = 0, 0 -- T:4088-4089 C:3026-3027
+	local missing_bits<const>: *u32 = work.missing -- T:4104-4105,4117 C:3043-3044,3055
+	local missing, index, plan = 0, 0, 0 -- T:4088-4089 C:3026-3027
 	while index < count do -- T:4089 C:3027
 		local word<const> = descriptors[index] -- T:4099-4100 C:3038-3039
 		local capture<const> = word & index_mask -- T:4100 C:3039
 		if (word & in_stack) ~= 0 then -- T:4101 C:3040
 			if capture >= (frame_view.stack_capacity & frame_window_mask) then return -(invalid_argument + 1) end -- T:4102 F:52 C:3041 H:128 E:44
 			local cell<const> = find_open(state, frame, (frame_view.stack_base & frame_window_mask) + capture) -- T:568,4103 F:51 C:2976,3042 H:128
-			resolved[index] = cell -- T:4104 C:3043
-			if cell == 0 then missing = missing + 1 end -- T:4105 C:3044
+			if cell == 0 then -- T:4104-4105 C:3043-3044
+				resolved[index] = capture -- T:4104,4117,4122 C:3043,3055,3058; retain original validated slot
+				plan = plan | (1 << (index & 31)) -- T:4104-4105,4117 C:3043-3044,3055
+				missing = missing + 1 -- T:4105 C:3044
+			else -- T:4104-4105 C:3043-3044
+				resolved[index] = cell -- T:4104 C:3043
+			end
 		else -- T:4107-4108 C:3045
 			local parent<const> = frame_view.closure -- T:4108-4109 F:69,103,106-108 C:3046-3047 H:33
 			if capture >= captures.internal.capture_count(parent) then return -(invalid_argument + 1) end -- T:4108 C:3046 E:44 S:37,50-53 B:68-71
 			resolved[index] = captures.internal.capture_address(parent, capture) -- T:4109 C:3047 S:55-56 B:74-75
 		end
 		index = index + 1 -- T:4089 C:3027
+		if (index & 31) == 0 then -- T:4089,4104-4105 C:3027,3043-3044; flush the complete predicate word
+			missing_bits[(index >> 5) - 1] = plan -- T:4104-4105,4117 C:3043-3044,3055
+			plan = 0 -- T:4104-4105 C:3043-3044
+		end
 	end
+	if (index & 31) ~= 0 then missing_bits[index >> 5] = plan end -- T:4089,4104-4105,4117 C:3027,3043-3044,3055
 	return missing -- T:4111-4112 C:3050-3051; source-prepared count, retained across retries
 end
 
@@ -226,19 +241,22 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 	-- after the following loop (T:4125); the mutator is paused in both cases.
 	collector.publish_object(control, address) -- T:4125 C:162 P:147-155 Q:235-244
 	local frame<const>: *closure_frame = frame_address -- T:4122 C:3057
-	local descriptors<const>: *u32 = work.descriptors -- T:4084,4117,4122 C:3038,3055,3058
+	local missing_bits<const>: *u32 = work.missing -- T:4104-4105,4117 C:3043-3044,3055
 	local resolved<const>: *u32 = work.resolved -- T:4085,4117-4118 C:3043,3047,3054
 	local edges<const>: *u32 = address + non_capture_bytes -- T:4118,4123 S:58-59 C:3060 K:85-86 B:78-79
-	local next_cell = 0 -- T:4115 C:3052
+	local next_cell, plan = 0, 0 -- T:4115 C:3052
 	index = 0 -- T:4116 C:3053
 	while index < count do -- T:4116 C:3053
+		if (index & 31) == 0 then plan = missing_bits[index >> 5] end -- T:4116-4117 C:3053,3055
 		local reference = resolved[index] -- T:4117-4118 C:3054
-		if reference == 0 and (descriptors[index] & in_stack) ~= 0 then -- T:4117 C:3055
+		if (plan & 1) ~= 0 then -- T:4117 C:3055
+			local capture<const> = reference -- T:4122 C:3058; consumed from the prepared raw word
 			reference = layout.ram_base + cells[next_cell] -- T:4121 C:3056
 			next_cell = next_cell + 1 -- T:4121 C:3056
-			link_open(state, frame_address, reference, (frame.stack_base & frame_window_mask) + (descriptors[index] & index_mask), owner) -- T:4122 C:3057-3058
+			link_open(state, frame_address, reference, (frame.stack_base & frame_window_mask) + capture, owner) -- T:4122 C:3057-3058
 		end
 		edges[index] = reference -- T:4118,4123 C:3060 S:58-59 K:85-86 B:78-79
+		plan = plan >> 1 -- T:4116-4117 C:3053,3055
 		index = index + 1 -- T:4116 C:3053
 	end
 	return offset -- T:4127 C:3065; capture instructions pay ordinary cycles

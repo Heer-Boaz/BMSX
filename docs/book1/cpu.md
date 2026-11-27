@@ -1038,10 +1038,9 @@ operations add **1 cycle per value slot placed**:
   Include status prefixes, copied values and nil padding. The error argument
   supplied to an `xpcall` handler counts as one placed slot.
 
-For a published function of a non-mapped executable, with a descriptor
-range fully backed by ROM, `CLOSURE` executes capture preparation and binding
-as a BIOS routine. Its instructions consume ordinary CPU cycles, with no
-separate per-descriptor surcharge. Other captured closures charge
+For a published function of a non-mapped executable, `CLOSURE` executes
+capture preparation and binding as a BIOS routine. Its instructions consume
+ordinary CPU cycles, with no separate per-descriptor surcharge. Other captured closures charge
 **1 cycle per upvalue descriptor bound**, whether the descriptor binds a
 newly opened cell or an existing capture.
 
@@ -1095,8 +1094,11 @@ Each upvalue descriptor is a 32-bit word. Descriptor `i` is read at `upvalueTabl
 
 A register source must be inside the parent frame's reserved window, and an
 upvalue source must be inside the parent closure's capture list. The processor
-checks the descriptors before allocating or linking any captures. A descriptor
-that selects no source raises `INVALID_ARGUMENT` without writing `R(A)`.
+samples each descriptor word through the mapped bus once, in index order,
+and checks it before proceeding to the next. A descriptor that selects no
+source raises `INVALID_ARGUMENT` without writing `R(A)`. A fault on a
+descriptor bus read halts execution. Neither failure allocates or links any
+captures.
 
 An open upvalue names the owning Thread and the slot for its captured
 parent-frame register. Moving the Thread's value slots to a larger block
@@ -1116,11 +1118,11 @@ Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. A non-STATIC prototype constructs a distinct closure on
 each execution. For a captureless ROM prototype, or a published function of
-a non-mapped executable whose capture descriptors all reside in ROM, one BIOS
-activation handles admission, any collection work and retry, and initialization.
-It uses ordinary CPU cycles while devices
-continue to advance. The new function becomes visible only when its record
-is ready. If the reservation still cannot be made, `CLOSURE` reports
+a non-mapped executable, one BIOS activation handles capture sampling,
+admission, any collection work and retry, and initialization. The capture
+descriptors need not reside in ROM. The activation uses ordinary CPU cycles
+while devices continue to advance. The new function becomes visible only
+when its record is ready. If the reservation still cannot be made, `CLOSURE` reports
 `OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
 instruction wait for that result.
 An ordinary call uses a function value, not a numeric address. For a
@@ -1564,7 +1566,7 @@ tracing, final remark, weak-entry removal and sweeping within that call
 execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
 same admission and recovery procedure for a new Closure from a captureless
-ROM prototype or a published function with ROM-backed capture descriptors.
+ROM prototype or a published function of a non-mapped executable.
 It reserves the Closure and new cells together. If a reservation fails, it
 releases its partial reservation before retrying without publishing any new
 capture links. Collection during a suspended table insertion

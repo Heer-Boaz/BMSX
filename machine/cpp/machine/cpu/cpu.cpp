@@ -2968,27 +2968,20 @@ u32 CPU::createClosure(CallFrame& frame, int destination) {
 		requestYield();
 		return 0u;
 	}
-	// A catalog record does not constrain descriptor placement. Leave
-	// mutable and I/O descriptors with the original synchronous sampler.
 	if (!captureless && functionRecord.romBacked && !functionRecord.image->romFunctions.mappedCode) {
 		if (functionRecord.upvalueCount > maxClosureCaptures(false)) throw LuaOutOfMemorySignal{};
-		const u32 slot = m_memory.cartridgeController().selectedSlot(functionRecord.busSignals);
-		Span<const u8> descriptors;
-		if (m_memory.bindRomByteView(functionRecord.upvalueTableAddress,
-			static_cast<size_t>(functionRecord.upvalueCount) * BLUA32_UPVALUE_RECORD_SIZE,
-			slot, descriptors)) {
-			if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
-				enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return 0u;
-			}
-			beginCapturedClosure(frame, destination, slot);
-			requestYield();
+		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			return 0u;
 		}
+		beginCapturedClosure(frame, destination);
+		requestYield();
+		return 0u;
 	}
 	if (canonical) return allocateStaticClosure(decodePrototype(functionRecord));
 	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
-	auto& [resolvedCells, issuedCells] = m_capturedClosureOperands;
+	auto& resolvedCells = m_capturedClosureOperands[0];
+	auto& issuedCells = m_capturedClosureOperands[1];
 	resolvedCells.resize(functionRecord.upvalueCount);
 	std::fill(resolvedCells.begin(), resolvedCells.end(), 0u);
 	m_closureUpvalueWordScratch.resize(functionRecord.upvalueCount);

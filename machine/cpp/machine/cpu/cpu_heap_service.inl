@@ -30,10 +30,12 @@ static_assert(HEAP_SERVICE_GC_ARGUMENTS_OFFSET + static_cast<u32>(HeapServiceGcA
 static_assert(HEAP_SERVICE_VALUE_CELL_OFFSET + HEAP_SERVICE_VALUE_CELL_SIZE <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_WORK_OFFSET);
 static_assert((HEAP_SERVICE_CAPTURE_WORK_OFFSET & 7u) == 0u);
-static_assert(HEAP_SERVICE_CAPTURE_WORK_OFFSET + 3 * sizeof(u32) == HEAP_SERVICE_CAPTURE_BUS_OFFSET);
+static_assert(HEAP_SERVICE_CAPTURE_WORK_OFFSET + 4 * sizeof(u32) == HEAP_SERVICE_CAPTURE_BUS_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT >= HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32));
 static_assert(HEAP_SERVICE_CAPTURE_PORT_END <= RAM_BASE);
+static_assert((1u << HEAP_SERVICE_CAPTURE_PLANE_SHIFT) == MAIN_RAM_SIZE);
+static_assert(HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_MISSING_PORT == MAIN_RAM_SIZE / 32u);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
@@ -242,10 +244,16 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 		const u32 management = m_heapAllocator.managementOffset();
 		const u32 descriptor = m_memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET + static_cast<u32>(HeapServiceCaptureBindingField::Descriptor));
 		const auto signals = static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET));
+		const u32 faultSequence = m_memory.readBusFaultSequence();
 		word = m_memory.readMappedBusU32LE(descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, signals);
+		if (m_memory.readBusFaultSequence() != faultSequence) {
+			do m_heapServiceView.leaveFrame(); while (heapServiceActive());
+			hardHalt();
+			return;
+		}
 	} else if (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
 		&& kind != MemoryAccessKind::U8) {
-		const auto& plane = m_capturedClosureOperands[address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT];
+		const auto& plane = m_capturedClosureOperands[(address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >> HEAP_SERVICE_CAPTURE_PLANE_SHIFT];
 		word = plane[((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1u)) >> 2];
 	} else if (address - RAM_BASE < m_memory.ramByteCount()) {
 		// Raw records may project into the bus-visible part or beneath MMIO.
@@ -286,7 +294,7 @@ void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind
 	admitHeapServiceAccess(kind, address);
 	if (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
 		&& kind != MemoryAccessKind::U8) {
-		auto& plane = m_capturedClosureOperands[address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT];
+		auto& plane = m_capturedClosureOperands[(address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >> HEAP_SERVICE_CAPTURE_PLANE_SHIFT];
 		const size_t index = ((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1u)) >> 2;
 		const u32 value = wordOperand(frame.registers.get(source));
 		if (index == plane.size()) plane.push_back(value);

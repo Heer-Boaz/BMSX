@@ -171,7 +171,7 @@ struct CpuRuntimeState {
 	StringComparisonLatch stringComparison;
 	TableRebuild rebuild;
 	ConcatAssembly concat;
-	std::optional<std::array<std::vector<u32>, 2>> capturedClosureOperands;
+	std::optional<std::array<std::vector<u32>, 3>> capturedClosureOperands;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
@@ -525,7 +525,7 @@ private:
 	void finishAllocationRecovery();
 	void beginClosureReservation(CallFrame&, int destination, HeapServiceRecordKind, u32 prototype, u32 domain, u32 nextPc);
 	void finishClosureReservation();
-	void beginCapturedClosure(CallFrame&, int destination, u32 descriptorSlot);
+	void beginCapturedClosure(CallFrame&, int destination);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);
@@ -697,7 +697,7 @@ private:
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 
-	std::array<std::vector<u32>, 2> m_capturedClosureOperands;
+	std::array<std::vector<u32>, 3> m_capturedClosureOperands;
 	std::vector<u32> m_closureUpvalueWordScratch;
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;

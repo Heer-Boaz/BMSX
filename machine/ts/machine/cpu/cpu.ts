@@ -181,7 +181,8 @@ import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
 	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_WORK_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET,
-	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT, HEAP_SERVICE_CAPTURE_ISSUED_PORT, HEAP_SERVICE_CAPTURE_PORT_END,
+	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT, HEAP_SERVICE_CAPTURE_ISSUED_PORT,
+	HEAP_SERVICE_CAPTURE_MISSING_PORT, HEAP_SERVICE_CAPTURE_PLANE_SHIFT, HEAP_SERVICE_CAPTURE_PORT_END,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
@@ -238,7 +239,7 @@ export type CpuRuntimeState = {
 	stringComparison: StringComparisonLatch;
 	rebuild: TableRebuild | null;
 	concat: ConcatAssemblyState | null;
-	capturedClosureOperands: readonly [Uint32Array, Uint32Array] | null;
+	capturedClosureOperands: readonly [Uint32Array, Uint32Array, Uint32Array] | null;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
 	statusWord: number;
@@ -379,8 +380,8 @@ export class CPU implements MappedPageInvalidator {
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
 	private closureUpvalueWords = new Uint32Array(0);
-	private readonly capturedClosureOperands = [new Uint32Array(0), new Uint32Array(0)];
-	private readonly capturedClosureExtent = new Uint32Array(2);
+	private readonly capturedClosureOperands = [new Uint32Array(0), new Uint32Array(0), new Uint32Array(0)];
+	private readonly capturedClosureExtent = new Uint32Array(3);
 	private readonly capturedClosureArgs = [0, 0, 0, 0, 0, 0];
 	private readonly tableLookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
@@ -723,7 +724,7 @@ export class CPU implements MappedPageInvalidator {
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
-	private beginCapturedClosure(frame: CallFrame, destination: number, descriptorSlot: number): void {
+	private beginCapturedClosure(frame: CallFrame, destination: number): void {
 		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
 		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
 		const workspace = management + HEAP_SERVICE_CAPTURE_WORK_OFFSET;
@@ -736,8 +737,8 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
 		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
 		memory.writeRamRecordPair(workspace, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT);
-		memory.writeRamRecordWord(workspace + 8, HEAP_SERVICE_CAPTURE_ISSUED_PORT);
-		memory.writeRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET, mappedBusSignalsForCartridgeSlot(descriptorSlot));
+		memory.writeRamRecordPair(workspace + 8, HEAP_SERVICE_CAPTURE_ISSUED_PORT, HEAP_SERVICE_CAPTURE_MISSING_PORT);
+		memory.writeRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET, record.busSignals);
 		this.capturedClosureExtent.fill(0);
 		const args = this.capturedClosureArgs;
 		args[0] = management; args[1] = RAM_BASE + frame.controlOffset; args[2] = frame.thread.address;
@@ -753,10 +754,17 @@ export class CPU implements MappedPageInvalidator {
 		this.lastPc = memory.readRamRecordWord(base + HeapServiceClosureField.LastPc);
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		memory.writeRamRecordWord(base + HeapServiceClosureField.Destination, 0);
+		const frame = this.activeThread.currentFrame!;
+		if (this.hardHalted) {
+			// Mapped descriptor access hard-halts after the original decode
+			// advanced its caller, without a Lua fault or result.
+			frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
+			return;
+		}
 		const offset = this.heapServiceResult();
 		if (offset === 0) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		if ((offset | 0) < 0) throw new LuaExecutionError(~offset);
-		const address = RAM_BASE + offset, frame = this.activeThread.currentFrame!;
+		const address = RAM_BASE + offset;
 		if ((memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)
 			this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
 		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
@@ -2979,21 +2987,16 @@ export class CPU implements MappedPageInvalidator {
 			this.requestYield();
 			return;
 		}
-		// Mutable or bus-served descriptor tables still use the ordered native
-		// sampling path. A ROM prototype alone does not make its descriptors immutable.
 		if (!captureless && record.romBacked && !record.image.romFunctions.mappedCode) {
 			const bytes = Closure.closureRecordBytes(record.recordUpvalueCount, false);
 			if (bytes > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
-			const slot = this.memory.cartridgeController.selectedSlot(record.busSignals);
-			if (this.memory.bindRomByteView(record.upvalueTableAddress, record.recordUpvalueCount * BLUA32_UPVALUE_RECORD_SIZE, slot, this.executionReadView)) {
-				if (this.systemImage.heapServiceFunctions === null) {
-					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-					return;
-				}
-				this.beginCapturedClosure(frame, a, slot);
-				this.requestYield();
+			if (this.systemImage.heapServiceFunctions === null) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return;
 			}
+			this.beginCapturedClosure(frame, a);
+			this.requestYield();
+			return;
 		}
 		const closure = canonical ? this.allocateStaticClosureFromLatch() : this.createClosure(frame);
 		if (closure !== 0) this.setRegisterClosureFast(frame, registers, a, closure);
@@ -4074,10 +4077,16 @@ export class CPU implements MappedPageInvalidator {
 				const management = this.heapAllocator.managementOffset();
 				const descriptor = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET + HeapServiceCaptureBindingField.Descriptor);
 				const signals = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET) as MappedBusSignals;
-				word = memory.readMappedBusU32LE(descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, signals);
+				const faultSequence = memory.readBusFaultSequence();
+				word = memory.readMappedBusU32LE((descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT) >>> 0, signals);
+				if (memory.readBusFaultSequence() !== faultSequence) {
+					do this.heapService.thread.leaveFrame(); while (this.heapServiceActive());
+					this.hardHalt();
+					return;
+				}
 			} else if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
 				&& kind !== MemoryAccessKind.U8) {
-				const lane = +(address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT);
+				const lane = (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> HEAP_SERVICE_CAPTURE_PLANE_SHIFT;
 				word = this.capturedClosureOperands[lane][((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2];
 			} else if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
 				// Raw records may project into the bus-visible part or beneath MMIO.
@@ -4106,7 +4115,7 @@ export class CPU implements MappedPageInvalidator {
 		} else {
 			if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
 				&& kind !== MemoryAccessKind.U8) {
-				const lane = +(address >= HEAP_SERVICE_CAPTURE_ISSUED_PORT);
+				const lane = (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> HEAP_SERVICE_CAPTURE_PLANE_SHIFT;
 				const index = ((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2;
 				let words = this.capturedClosureOperands[lane];
 				if (index === words.length) {
@@ -5207,7 +5216,8 @@ export class CPU implements MappedPageInvalidator {
 			capturedClosureOperands: this.heapServiceActive() && this.heapService.thread.firstFrame!.functionAddress
 				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.CapturedClosure]
 				? [this.capturedClosureOperands[0].slice(0, this.capturedClosureExtent[0]),
-					this.capturedClosureOperands[1].slice(0, this.capturedClosureExtent[1])]
+					this.capturedClosureOperands[1].slice(0, this.capturedClosureExtent[1]),
+					this.capturedClosureOperands[2].slice(0, this.capturedClosureExtent[2])]
 				: null,
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
@@ -5278,7 +5288,7 @@ export class CPU implements MappedPageInvalidator {
 		else this.tableRebuild.record = 0;
 		this.concat.restore(state.concat);
 		if (state.capturedClosureOperands !== null) {
-			for (let lane = 0; lane < 2; ++lane) {
+			for (let lane = 0; lane < state.capturedClosureOperands.length; ++lane) {
 				const words = state.capturedClosureOperands[lane];
 				if (words.length > this.capturedClosureOperands[lane].length) this.capturedClosureOperands[lane] = new Uint32Array(words.length);
 				this.capturedClosureOperands[lane].set(words);

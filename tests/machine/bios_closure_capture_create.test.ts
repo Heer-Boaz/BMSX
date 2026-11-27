@@ -84,11 +84,12 @@ for (const level of [0, 3] as const) {
 		const arena = actual.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
 		// Isolated test workspace: no production capture count cap or heap reservation.
-		const workspace = RAM_BASE + management + 0x200, binding = workspace + 12, descriptors = binding + 36;
+		const workspace = RAM_BASE + management + 0x200, binding = workspace + 16, descriptors = binding + 36;
 		const resolved = descriptors + 4 * target.upvalues.length, cells = resolved + 4 * target.upvalues.length;
 		memory.writeRamRecordWord(workspace, descriptors);
 		memory.writeRamRecordWord(workspace + 4, resolved);
 		memory.writeRamRecordWord(workspace + 8, cells);
+		memory.writeRamRecordWord(workspace + 12, cells + 4 * target.upvalues.length);
 		const frame = actual.activeThread.currentFrame!, owner = frame.thread.address;
 		function bind(latched: boolean) {
 			[target.address, -1, +latched, target.codeAddress, target.numParams, target.maxStack, target.flags,

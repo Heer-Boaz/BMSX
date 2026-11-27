@@ -56,11 +56,13 @@ enum class HeapServiceClosureField : uint32_t {
 constexpr uint32_t HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
 enum class HeapServiceCaptureBindingField : uint32_t { Prototype = 0, Domain = 4, Latched = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 };
 constexpr uint32_t HEAP_SERVICE_CAPTURE_WORK_OFFSET = 0x7d8;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e4;
+constexpr uint32_t HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e8;
 constexpr uint32_t HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
 constexpr uint32_t HEAP_SERVICE_CAPTURE_RESOLVED_PORT = 0x03400000;
 constexpr uint32_t HEAP_SERVICE_CAPTURE_ISSUED_PORT = 0x03800000;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_PORT_END = 0x03c00000;
+constexpr uint32_t HEAP_SERVICE_CAPTURE_MISSING_PORT = 0x03c00000;
+constexpr uint32_t HEAP_SERVICE_CAPTURE_PLANE_SHIFT = 22;
+constexpr uint32_t HEAP_SERVICE_CAPTURE_PORT_END = 0x03c20000;
 
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
