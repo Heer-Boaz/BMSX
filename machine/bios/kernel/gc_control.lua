@@ -137,6 +137,7 @@ return {
 	internal = {
 		phase_offset = 0x00, -- T:83-85 H:90
 		white_offset = 0x01, -- T:86 H:91
+		trace_head_offset = 0x04, -- T:21 H:22
 		changed_head_offset = 0x08, -- T:22 H:23
 		weak_visits_offset = 0x1c, -- T:25 H:27
 		trace_record_offset = 0x34, -- T:29 H:31
