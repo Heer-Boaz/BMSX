@@ -1121,12 +1121,6 @@ function readRuntimeSaveMachineState(reader: BinaryReader, gxGpuVramByteCount: n
 function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void {
 	writer.i32(state.executionCartridgeSlot);
 	writer.i32(state.programExecutionDomainId);
-	writer.u32(state.systemGlobals.base);
-	writer.u32(state.systemGlobals.capacity);
-	writer.u32(state.systemGlobals.count);
-	writer.u32(state.globals.base);
-	writer.u32(state.globals.capacity);
-	writer.u32(state.globals.count);
 	writer.u64(state.stringIndexTable);
 	writer.u32(state.rootThreadAddress);
 	writer.u32(state.activeThreadAddress);
@@ -1236,8 +1230,6 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 	return {
 		executionCartridgeSlot: reader.i32() as ExecutionDomainId,
 		programExecutionDomainId: reader.i32() as ExecutionDomainId,
-		systemGlobals: { base: reader.u32(), capacity: reader.u32(), count: reader.u32() },
-		globals: { base: reader.u32(), capacity: reader.u32(), count: reader.u32() },
 		stringIndexTable: reader.u64() as Value,
 		rootThreadAddress: reader.u32(),
 		activeThreadAddress: reader.u32(),

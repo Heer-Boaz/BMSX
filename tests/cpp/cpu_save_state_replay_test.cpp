@@ -477,15 +477,16 @@ void preserveDynamicGlobalRegisters() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto count = cpu.globalSlotCount();
+	const auto capacity = cpu.heapAllocator().managementOffset() + bmsx::GLOBAL_BANK_OFFSET + static_cast<bmsx::u32>(bmsx::GlobalBankField::Capacity);
 	bool grewBank = false;
 	for (int index = 0; index < 257; ++index) {
 		const auto key = cpu.stringPool().intern("dynamic" + std::to_string(index));
 		const auto logical = cpu.luaHeap().usedBytes();
 		const auto physical = cpu.heapAllocator().occupiedBytes();
-		const auto previous = cpu.captureRuntimeState().globals.capacity;
+		const auto previous = cpu.memory().readRamRecordWord(capacity);
 		cpu.setGlobalByKey(key, bmsx::valueInteger(index));
 		require(cpu.luaHeap().usedBytes() == logical + 9u, "every newly registered name costs nine bytes");
-		if (cpu.captureRuntimeState().globals.capacity != previous) {
+		if (cpu.memory().readRamRecordWord(capacity) != previous) {
 			grewBank = true;
 			require(cpu.heapAllocator().occupiedBytes() > physical, "the physical index reserve grows separately");
 		} else require(cpu.heapAllocator().occupiedBytes() == physical, "growing membership need not grow the reserve");

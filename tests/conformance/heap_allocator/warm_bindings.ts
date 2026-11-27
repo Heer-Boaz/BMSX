@@ -20,7 +20,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkRawTestBlua32Pair, linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { runGuestToHalt } from '../../helpers/cpu_execution';
+import { readNamespaceBank, runGuestToHalt } from '../../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
@@ -77,14 +77,10 @@ try {
 		// Real prior producer layouts, not the live host views of the fixture
 		// runtime itself: the idle System code remains attached and checkpointable.
 		const banks = ['prior-system', 'prior-global'].map((name, lane) => {
-			const bank = new GlobalBank(memory, cpu.gc);
+			const descriptor = systemDesc + 12 * lane;
+			const bank = new GlobalBank(memory, cpu.gc, descriptor);
 			for (let i = 0; i < lane + 2; ++i) bank.registerName(cpu.stringPool.intern(`${name}-${i}`));
-			const state = bank.captureState();
-			const base = systemDesc + 12 * lane;
-			write(base, state.base);
-			write(base + 4, state.capacity);
-			write(base + 8, state.count);
-			return state;
+			return readNamespaceBank(memory, descriptor);
 		});
 		const spans = [16, opt === 0 ? 28 : 0, 44];
 		const imageBases = spans.map((span, lane) => {
@@ -164,15 +160,7 @@ try {
 		assert.ok(arena.occupiedBytes() < initialPhysical);
 		hashes(rawRam, note);
 		finish();
-		for (const [i, state] of banks.entries()) {
-			const bank = new GlobalBank(oldMemory, old.gc);
-			bank.bind(state);
-			bank.clear();
-			const cleared = bank.captureState();
-			oldMemory.writeRamRecordWord(systemDesc + 12 * i, cleared.base);
-			oldMemory.writeRamRecordWord(systemDesc + 12 * i + 4, cleared.capacity);
-			oldMemory.writeRamRecordWord(systemDesc + 12 * i + 8, cleared.count);
-		}
+		for (const [i] of banks.entries()) new GlobalBank(oldMemory, old.gc, systemDesc + 12 * i).clear();
 		assert.equal(heap.usedBytes(), initialUsed - nameCharge * (banks[0].count + banks[1].count));
 		assert.deepEqual(readWords(systemDesc, 6), [0, 0, 0, 0, 0, 0]);
 		assert.deepEqual(readWords(metadata + directory, directoryWords), oldDirectory, 'namespace phase must not retire String directories');

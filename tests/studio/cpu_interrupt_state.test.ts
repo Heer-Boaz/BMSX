@@ -4,6 +4,7 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
+import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -1109,7 +1110,9 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(systemSeenAddress), IRQ_VBLANK);
 	assert.equal(memory.readMappedU32LE(cartSeenAddress), 0);
 	const saved = cpu.captureRuntimeState();
-	assert.notEqual(saved.systemGlobals.base, saved.globals.base, 'same-name ordinary and system IRQ slots are in different banks');
+	const management = cpu.heapAllocator.managementOffset();
+	assert.notEqual(memory.readRamRecordWord(management + SYSTEM_GLOBAL_BANK_OFFSET),
+		memory.readRamRecordWord(management + GLOBAL_BANK_OFFSET), 'same-name ordinary and system IRQ slots are in different banks');
 	cpu.restoreRuntimeState(saved);
 
 	irqController.raise(IRQ_VBLANK);

@@ -111,7 +111,7 @@ import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
 	type ExecutionDomainMask,
-	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
+	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
@@ -140,7 +140,7 @@ import { StaticClosureIndex } from './static_closure_index';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
 import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
-import { GlobalBank, type GlobalBankState } from './global_bank';
+import { GlobalBank } from './global_bank';
 import { BuiltinArgsView, BuiltinResults, BUILTIN_FUNCTIONS } from './builtin_values';
 import {
 	COMPILED_VERSION_MAX_PAGES,
@@ -215,8 +215,6 @@ import { compileJavaScriptRegion, type CompiledRegion, type CompiledRegionRunSta
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	programExecutionDomainId: ExecutionDomainId;
-	systemGlobals: GlobalBankState;
-	globals: GlobalBankState;
 	executionResidencyMask: ExecutionDomainMask;
 	hardHalted: boolean;
 	stringIndexTable: Value;
@@ -445,8 +443,9 @@ export class CPU implements MappedPageInvalidator {
 		this.heapService = new HeapService(this.gc);
 		this.tableGrowthArgs = [this.heapAllocator.managementOffset(), 0, 0, 0];
 		this.coroutineCreateArgs = [this.heapAllocator.managementOffset(), 0, 0];
-		this.systemGlobalBank = new GlobalBank(memory, this.gc);
-		this.globalBank = new GlobalBank(memory, this.gc);
+		const management = this.heapAllocator.managementOffset();
+		this.systemGlobalBank = new GlobalBank(memory, this.gc, management + SYSTEM_GLOBAL_BANK_OFFSET);
+		this.globalBank = new GlobalBank(memory, this.gc, management + GLOBAL_BANK_OFFSET);
 		const errorInErrorHandlingStringId = this.stringPool.intern('error in error handling');
 		const faultIds: StringId[] = [];
 		faultIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.');
@@ -462,7 +461,6 @@ export class CPU implements MappedPageInvalidator {
 		faultIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = this.stringPool.intern("invalid key to 'next'");
 		faultIds[LUA_FAULT_REASON_INDEX_NAN] = this.stringPool.intern('Table index is NaN.');
 		// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
-		const management = this.heapAllocator.managementOffset();
 		this.irqPreludeArgs = [management, 0, 0];
 		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
 		memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, modeKey);
@@ -3665,14 +3663,14 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.GETSYS:
-					registers.set(a, this.systemGlobalBank.readSlot(page.bx[pageOffset]));
+					registers.set(a, this.systemGlobalBank.slots.get(page.bx[pageOffset]));
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETSYS:
 					this.systemGlobalBank.writeSlot(page.bx[pageOffset], registers.get(a));
 					return;
 				case OpCode.GETGL:
-					registers.set(a, this.globalBank.readSlot(page.bx[pageOffset]));
+					registers.set(a, this.globalBank.slots.get(page.bx[pageOffset]));
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETGL:
@@ -5103,8 +5101,6 @@ export class CPU implements MappedPageInvalidator {
 		return {
 			executionCartridgeSlot: this.activeExecutionDomainId,
 			programExecutionDomainId: this.programExecutionDomainId,
-			systemGlobals: this.systemGlobalBank.captureState(),
-			globals: this.globalBank.captureState(),
 			executionResidencyMask,
 			hardHalted: this.hardHalted,
 			stringIndexTable: this.stringIndexTable,
@@ -5150,8 +5146,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.memory.clearMappedPageWriteWatches();
 		this.reindexCanonicalClosures();
-		this.systemGlobalBank.bind(state.systemGlobals);
-		this.globalBank.bind(state.globals);
+		this.systemGlobalBank.bind();
+		this.globalBank.bind();
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;

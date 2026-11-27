@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Memory } from '../../machine/ts/machine/memory/memory';
+import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { HEAP_SERVICE_FRAME_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
@@ -63,6 +65,14 @@ export function restoreCpuCheckpoint(cpu: CPU, checkpoint: ReturnType<typeof cap
 	cpu.restoreRuntimeState(checkpoint.cpu);
 }
 
+
+export function readNamespaceBank(memory: Memory, descriptor: number) {
+	return {
+		base: memory.readRamRecordWord(descriptor + GlobalBankField.Base),
+		capacity: memory.readRamRecordWord(descriptor + GlobalBankField.Capacity),
+		count: memory.readRamRecordWord(descriptor + GlobalBankField.Count),
+	};
+}
 
 export function allocatedObjectRecords(cpu: CPU): number[] {
 	const records: number[] = [];

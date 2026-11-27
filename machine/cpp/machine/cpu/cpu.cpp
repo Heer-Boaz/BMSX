@@ -93,8 +93,8 @@ CPU::CPU(
 	, m_rootView(m_heap)
 	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
-	, m_systemGlobalBank(memory, m_heap)
-	, m_globalBank(memory, m_heap) {
+	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
+	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	const StringId indexKey = m_stringPool.intern("__index");
 	const StringId newIndexKey = m_stringPool.intern("__newindex");
@@ -1051,8 +1051,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.activeThreadAddress = m_activeThread->address;
 	state.completionThreadAddress = m_completionThreadAddress;
 	state.haltedUntilIrqThreadAddress = m_haltedUntilIrqThreadAddress;
-	state.systemGlobals = m_systemGlobalBank.captureState();
-	state.globals = m_globalBank.captureState();
 	state.executionCartridgeSlot = m_activeExecutionDomainId;
 	state.programExecutionDomainId = m_programExecutionDomainId;
 	completionStorage.resize(m_completionValueCount);
@@ -1121,8 +1119,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			}
 		}
 	});
-	m_systemGlobalBank.bind(state.systemGlobals);
-	m_globalBank.bind(state.globals);
+	m_systemGlobalBank.bind();
+	m_globalBank.bind();
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);

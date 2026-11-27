@@ -1,6 +1,8 @@
 import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { test } from 'node:test';
+import { GLOBAL_BANK_OFFSET } from '../../machine/ts/spec/blua32/execution_domain';
+import { readNamespaceBank } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 
@@ -73,7 +75,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
-	const bank = state.globals;
+	const bank = readNamespaceBank(cpu.memory, cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET);
 	const words = bank.base + 12 * bank.capacity;
 	assert.equal(bank.count, 1);
 	assert.equal(cpu.memory.readRamRecordWord(words), BuiltinFunctionId.Next);

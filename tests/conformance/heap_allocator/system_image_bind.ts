@@ -11,7 +11,7 @@ import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../.
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
+import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, Blua32ConstantTag, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
@@ -24,6 +24,7 @@ import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler'
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
+import { readNamespaceBank } from '../../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
@@ -61,10 +62,12 @@ try {
 		runtime.boot();
 		const reference = ram.slice();
 		const nativeState = cpu.captureRuntimeState();
-		assert.equal(nativeState.globals.count, names.length);
-		assert.ok(nativeState.systemGlobals.count >= 12);
+		const globals = readNamespaceBank(memory, management + GLOBAL_BANK_OFFSET);
+		const systemGlobals = readNamespaceBank(memory, management + SYSTEM_GLOBAL_BANK_OFFSET);
+		assert.equal(globals.count, names.length);
+		assert.ok(systemGlobals.count >= 12);
 		const expectedPhysical = arena.occupiedBytes(), expectedLogical = cpu.luaHeap.usedBytes();
-		const operands = [nativeState.globals, nativeState.systemGlobals].flatMap(({ base, capacity, count }) => [base, capacity, count]);
+		const operands = [globals, systemGlobals].flatMap(({ base, capacity, count }) => [base, capacity, count]);
 		const installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 		const expectedBase = memory.readRamRecordWord(installed);
 		operands.push(expectedBase);
@@ -114,8 +117,8 @@ try {
 		const compareSpans = [
 			[installed, EXECUTION_IMAGE_BINDING_SPAN_OFFSET + 4],
 			[metadata, state + allocatorStateBytes - metadata],
-			[nativeState.globals.base & RAM_RECORD_WORD_MASK, 17 * nativeState.globals.capacity],
-			[nativeState.systemGlobals.base & RAM_RECORD_WORD_MASK, 17 * nativeState.systemGlobals.capacity],
+			[globals.base & RAM_RECORD_WORD_MASK, 17 * globals.capacity],
+			[systemGlobals.base & RAM_RECORD_WORD_MASK, 17 * systemGlobals.capacity],
 			[expectedBase & RAM_RECORD_WORD_MASK, 4 * (nameCount + stringCount)],
 		];
 		// C++ starts from the original native activation, before importing the

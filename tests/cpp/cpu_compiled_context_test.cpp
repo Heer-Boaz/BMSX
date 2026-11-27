@@ -516,13 +516,15 @@ void hotGlobalWritesForwardTheirWhiteChildren() {
 		heap.step(valueNil(), valueNil(), valueNil(), 0u, false, 1);
 	require(heap.phase() == GcPhase::MarkAgain && !heap.isAlive(cart.address()) && !heap.isAlive(system.address())
 		&& !heap.isAlive(child.address()), "the table graphs are genuinely white after the initial global scan");
-	const auto banks = cpu.captureRuntimeState();
-	const auto slots = [&](GlobalBankState bank) {
-		return ValueSpan(machine.memory, bank.base + 12u * bank.capacity, bank.base + 16u * bank.capacity, bank.capacity);
+	const auto slots = [&](u32 offset) {
+		const u32 descriptor = cpu.heapAllocator().managementOffset() + offset;
+		const u32 base = machine.memory.readRamRecordWord(descriptor);
+		const u32 capacity = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Capacity));
+		return ValueSpan(machine.memory, base + 12u * capacity, base + 16u * capacity, capacity);
 	};
 	frame.registers.set(0, valueTable(cart.address()));
 	frame.registers.set(1, valueTable(system.address()));
-	const auto globals = slots(banks.globals), systemGlobals = slots(banks.systemGlobals);
+	const auto globals = slots(GLOBAL_BANK_OFFSET), systemGlobals = slots(SYSTEM_GLOBAL_BANK_OFFSET);
 	NativeBlockRunState state{.frame = &frame, .heap = &heap,
 		.globalValues = &globals, .systemGlobalValues = &systemGlobals,
 		.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};

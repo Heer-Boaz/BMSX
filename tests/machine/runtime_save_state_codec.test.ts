@@ -537,8 +537,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 
 				executionCartridgeSlot: 0,
 				programExecutionDomainId: 0,
-				systemGlobals: { base: 0x08340000, capacity: 16, count: 11 },
-				globals: { base: 0x08340400, capacity: 32, count: 19 },
 				stringIndexTable: valueNil(),
 			rootThreadAddress: 0x08300000,
 			activeThreadAddress: 0x08300040,
@@ -678,7 +676,6 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
 });
 

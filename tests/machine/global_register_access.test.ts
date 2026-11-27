@@ -3,6 +3,7 @@ import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cp
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
+import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -63,14 +64,15 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'global-growth.lua')));
 	const count = cpu.globalSlotCount;
+	const capacity = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity;
 	let grewBank = false;
 	for (let index = 0; index < 257; index++) {
 		const key = cpu.stringPool.intern(`dynamic${index}`);
 		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
-		const previous = cpu.captureRuntimeState().globals.capacity;
+		const previous = cpu.memory.readRamRecordWord(capacity);
 		cpu.setGlobalByKey(key, valueInteger(index));
 		assert.equal(cpu.luaHeap.usedBytes(), logical + 9, 'every newly registered name costs nine bytes');
-		if (cpu.captureRuntimeState().globals.capacity !== previous) {
+		if (cpu.memory.readRamRecordWord(capacity) !== previous) {
 			grewBank = true;
 			assert.ok(cpu.heapAllocator.occupiedBytes() > physical, 'the physical index reserve grows separately');
 		} else assert.equal(cpu.heapAllocator.occupiedBytes(), physical, 'members can grow without growing the reserve');

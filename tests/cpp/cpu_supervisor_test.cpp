@@ -318,8 +318,13 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 	);
 	const auto savedRam = machine.memory.captureSaveState();
 	const auto saved = machine.cpu.captureRuntimeState();
-	require(saved.systemGlobals.count == 1u && saved.globals.count == 1u
-		&& saved.systemGlobals.base != saved.globals.base, "the namespaces have distinct physical banks");
+	const auto management = machine.cpu.heapAllocator().managementOffset();
+	const auto systemBank = management + bmsx::SYSTEM_GLOBAL_BANK_OFFSET, ordinaryBank = management + bmsx::GLOBAL_BANK_OFFSET;
+	const auto count = static_cast<bmsx::u32>(bmsx::GlobalBankField::Count);
+	require(machine.memory.readRamRecordWord(systemBank + count) == 1u
+		&& machine.memory.readRamRecordWord(ordinaryBank + count) == 1u
+		&& machine.memory.readRamRecordWord(systemBank) != machine.memory.readRamRecordWord(ordinaryBank),
+		"the namespaces have distinct physical banks");
 	require(machine.cpu.getSystemGlobalByKey(irqKey) == bmsx::valueInteger(11), "media remount preserves the system registerfile");
 	require(machine.cpu.getGlobalByKey(irqKey) == bmsx::valueInteger(22), "ordinary global lookup does not expose the system slot");
 

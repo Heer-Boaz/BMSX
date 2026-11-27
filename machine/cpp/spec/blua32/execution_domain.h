@@ -14,6 +14,11 @@ constexpr u32 EXECUTION_IMAGE_BINDINGS_OFFSET = 0x200u;
 constexpr u32 EXECUTION_IMAGE_BINDING_SIZE = 8u;
 constexpr u32 EXECUTION_IMAGE_BINDING_SPAN_OFFSET = 4u;
 
+// Physical namespace descriptors, shared with the firmware's namespace_bank.
+constexpr u32 SYSTEM_GLOBAL_BANK_OFFSET = 0x218u;
+constexpr u32 GLOBAL_BANK_OFFSET = 0x224u;
+enum class GlobalBankField : u32 { Base = 0, Capacity = 4, Count = 8 };
+
 constexpr u32 executionImageBindingOffset(u32 management, ExecutionDomainId domain) {
 	return management + EXECUTION_IMAGE_BINDINGS_OFFSET + EXECUTION_IMAGE_BINDING_SIZE * static_cast<u32>(domain + 1);
 }

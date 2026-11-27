@@ -150,8 +150,6 @@ struct StringComparisonLatch {
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	ExecutionDomainId programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
-	GlobalBankState systemGlobals;
-	GlobalBankState globals;
 	ExecutionDomainMask executionResidencyMask = 0;
 	bool hardHalted = false;
 	Value stringIndexTable = valueNil();

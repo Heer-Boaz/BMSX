@@ -83,16 +83,8 @@ int main(int argc, char** argv) {
 					if (operation == 'g') {
 						u32 globals;
 						trace >> globals;
-						for (const u32 bankAddress : {address, globals}) {
-							GlobalBank bank(memory, cpu.gcHeap());
-							bank.bind({memory.readRamRecordWord(bankAddress), memory.readRamRecordWord(bankAddress + 4),
-								memory.readRamRecordWord(bankAddress + 8)});
-							bank.clear();
-							const auto [base, capacity, count] = bank.captureState();
-							memory.writeRamRecordWord(bankAddress, base);
-							memory.writeRamRecordWord(bankAddress + 4, capacity);
-							memory.writeRamRecordWord(bankAddress + 8, count);
-						}
+						for (const u32 bankAddress : {address, globals})
+							GlobalBank(memory, cpu.gcHeap(), bankAddress).clear();
 					} else if (operation == 'i') {
 						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
 							const u32 base = memory.readRamRecordWord(address);

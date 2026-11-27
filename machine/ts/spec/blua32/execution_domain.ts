@@ -8,6 +8,11 @@ export const EXECUTION_IMAGE_BINDINGS_OFFSET = 0x200;
 export const EXECUTION_IMAGE_BINDING_SIZE = 8;
 export const EXECUTION_IMAGE_BINDING_SPAN_OFFSET = 4;
 
+// Physical namespace descriptors, shared with the firmware's namespace_bank.
+export const SYSTEM_GLOBAL_BANK_OFFSET = 0x218;
+export const GLOBAL_BANK_OFFSET = 0x224;
+export const enum GlobalBankField { Base = 0, Capacity = 4, Count = 8 }
+
 export function executionImageBindingOffset(management: number, domain: ExecutionDomainId): number {
 	return management + EXECUTION_IMAGE_BINDINGS_OFFSET + EXECUTION_IMAGE_BINDING_SIZE * (domain + 1);
 }
