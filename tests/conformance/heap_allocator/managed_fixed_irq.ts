@@ -19,6 +19,7 @@ import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEAD
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = (user: boolean) => `
@@ -32,8 +33,7 @@ local body<const> = function(seed)
 	return retained
 end
 ${user ? `cop0.irq_vector = mem[${BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET}]` : ''}
-local creation<const> = require('kernel/thread_create')
-local co<const> = creation.create_coroutine(body)
+local co<const> = require('coroutine').create(body)
 local coroutine_entries<const> = require('bmsx/startup')
 local ok<const>, value<const> = blua32.closure(coroutine_entries.coroutine_resume)(co, 33)
 if not ok then return -1 end
@@ -53,7 +53,7 @@ try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) for (const user of [false, true]) {
 		const mode = user ? 'User' : 'Supervisor';
-		const linked = linkManagedTestSystem(source(user), optLevel, [], [], 'main', { irqSource: irqSource(user) });
+		const linked = linkManagedTestSystem(source(user), optLevel, COROUTINE_FIRMWARE_MODULES, [], 'main', { irqSource: irqSource(user) });
 		const rom = writeTestBlua32Rom(linked);
 		const vector = readLE32(rom, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET);
 		const replacement = readLE32(rom, BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET);

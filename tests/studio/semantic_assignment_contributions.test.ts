@@ -256,7 +256,7 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 	workspace.updateFile('prototypes.lua', source);
 	assert.deepEqual(semanticSymbolsAt(workspace.getSnapshot(), 'prototypes.lua', 5, 15), []);
 	// Publish the same resident Value as BIOS base.lua.
-	const bootSource = 'setmetatable = require([[kernel/gc_barrier]]).set_metatable';
+	const bootSource = 'setmetatable = require([[kernel/set_metatable]])';
 	const entrySource = "require('test_boot')\n" + source.replace('return right.left_only', 'return right.left_only == nil');
 	for (const optimization of [3] as const) {
 		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, 'prototypes.lua'), [

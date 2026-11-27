@@ -1,6 +1,4 @@
-local metatables<const> = require('kernel/gc_barrier')
-local globals<const> = require('kernel/set_global')
-local tables<const> = require('kernel/table_grow')
+local table_calls<const> = require('kernel/bios_table_ids')
 local entries<const> = require('bmsx/startup')
 local raise_error<const> = __bmsx_error
 local console<const> = require('tty/console')
@@ -32,14 +30,19 @@ type = function(value)
 	end
 	raise_error('Internal table metadata is not a language value.')
 end
-setmetatable = metatables.set_metatable
+setmetatable = require('kernel/set_metatable')
 getmetatable = __bmsx_getmetatable
 rawget = __bmsx_rawget
-rawset = function(target, key, ...)
-	return tables.raw_set(target, key, (...), blua32.argument_count())
+rawset = function(target, key, value)
+	if blua32.argument_count() < 3 then
+		blua32.svc(table_calls.raw_set)
+	else
+		blua32.svc_value(table_calls.raw_set, target, key, value)
+	end
+	return target
 end
 getglobal = __bmsx_getglobal
-setglobal = globals.set_global
+setglobal = require('kernel/set_global_entry')
 select = select_arguments
 error = raise_error
 pcall = blua32.closure(entries.protected_call)

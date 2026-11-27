@@ -42,7 +42,7 @@ for (const scenario of cases) test(`managed storage-window exception: ${scenario
 	const rom = writeTestBlua32Rom(linkManagedTestSystem(`
 local entries<const> = require('bmsx/startup')
 local protect<const> = blua32.closure(entries.protected_call)
-${scenario.forwarded ? "local set_meta<const> = require('kernel/gc_barrier').set_metatable" : ''}
+${scenario.forwarded ? "local set_meta<const> = require('kernel/set_metatable')" : ''}
 local function issue(receiver, key, value)
 	halt_until_irq
 	${scenario.source}

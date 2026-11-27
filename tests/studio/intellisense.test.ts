@@ -722,7 +722,7 @@ function subject:own() return self.value end
 index_calls = 0
 dynamic = setmetatable({}, { __index = function() index_calls = index_calls + 1; return ancestor.inherited end })
 halt_until_irq`;
-		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = require([[kernel/gc_barrier]]).set_metatable' }, compileTestSystemWithHeap);
+		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = require([[kernel/set_metatable]])' }, compileTestSystemWithHeap);
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
 		runGuestToHalt(cpu, 100000);

@@ -1,18 +1,22 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runSystemCaseRom } from '../../helpers/system_case_rom';
-import { BASE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
+import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 
 const source = `
 require('base')
-local create<const> = require('kernel/thread_create').create_coroutine
-local store<const> = require('kernel/frame_upvalue').set_frame_upvalue
+local create<const> = require('coroutine').create
+local thread_calls<const> = require('kernel/coroutine_control_ids')
+local store<const> = function(thread, frame, capture, replacement)
+ blua32.svc_value(thread_calls.set_frame_upvalue, thread, frame, capture, replacement)
+end
 local coroutine_entries<const> = require('bmsx/startup')
 local resume<const> = blua32.closure(coroutine_entries.coroutine_resume)
 local yield<const> = blua32.closure(coroutine_entries.coroutine_yield)
@@ -67,13 +71,12 @@ return true, true
 `;
 
 test('firmware writes the selected suspended Frame capture in its closed cell or owning stack', () => {
-	mkdirSync('tmp', { recursive: true });
-	const dir = mkdtempSync(join('tmp', 'frame-upvalue-store-'));
+	const dir = mkdtempSync(join(tmpdir(), 'frame-upvalue-store-'));
 	try {
 		const native = nativeConformanceRunner('bmsx_frame_evaluation_runner');
 		for (const level of [0, 3] as const) {
 			const rom = writeTestBlua32Rom(linkManagedTestSystem(source, level,
-				[...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }]));
+				[...BASE_FIRMWARE_MODULES, ...COROUTINE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }]));
 			const path = join(dir, `O${level}.rom`);
 			writeFileSync(path, rom);
 			assert.equal(runSystemCaseRom(rom, () => assert.fail('fixture has no external suspension')), 0);

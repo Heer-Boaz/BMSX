@@ -1,34 +1,38 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { asInteger } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valueBool, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 
 const bytes = 8192;
 const cartSource = `
 local source<const> = 'L\\xff\\x00${'q'.repeat(bytes - 3)}ZJ'
-local result<const> = string.sub(source, 2.75, -2)
+local ok<const>, result<const> = pcall(string.sub, source, 2.75, -2)
+if not ok then return false, result end
 assert(#result == ${bytes})
 assert(string.byte(result, 1) == 255 and string.byte(result, 2) == 0)
 assert(string.byte(result, -1 + #result) == 113 and string.byte(result, #result) == 90)
-return 37
+return true, 37
 `;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const directory = mkdtempSync(join('tmp', 'bmsx-string-slice-call-'));
+const directory = mkdtempSync(join(tmpdir(), 'bmsx-string-slice-call-'));
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 
 try {
@@ -37,22 +41,29 @@ try {
 		const system = join(directory, `O${optLevel}.rom`), cart = join(directory, `O${optLevel}-cart.rom`);
 		writeFileSync(system, images.systemRomBytes);
 		writeFileSync(cart, images.cartRomBytes);
-		const entryIndex = images.systemSymbols.metadata.functionIds.findIndex(id => id.startsWith('module:kernel/bios_string_slice/') && id.endsWith('|constant|intern_slice'));
-		assert.ok(entryIndex >= 0, 'the public library links to a static BIOS function');
-		const entry = images.systemImage.functions[entryIndex].address;
-
 		for (const outcome of ['new', 'oom'] as const) {
 			const runtime = new Runtime({
 				systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
 			}, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
-			const management = arena.managementOffset();
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			const inSlice = () => cpu.heapServiceActive() && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function) === entry;
-			for (let i = 0; i < 200_000 && !inSlice(); ++i) run(73);
-			assert.ok(inSlice(), `the cartridge call entered the linked BIOS function (cause ${cpu.readCauseWord()}, Lua ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord().toString(16)})`);
-			const callerPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
+			const issue = () => {
+				if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL) return null;
+				const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), depth = cpu.readThreadFrameDepth(owner) - 1;
+				if (cpu.readThreadFrameExecutionDomain(owner, depth) >= 0) return null;
+				const pc = cpu.readEpcWord();
+				const op = decodeBlua32InstructionAtPc(images.systemRomBytes, SYSTEM_ROM_BASE, pc - INSTRUCTION_BYTES);
+				if (op.op !== OpCode.SVC || op.b !== 4 || cpu.readThreadRegister(owner, depth, op.a) !== valueInteger(0x10008)) return null;
+				return { owner, depth, pc };
+			};
+			let call = issue();
+			for (let i = 0; i < 200_000 && call === null; ++i) { run(73); call = issue(); }
+			assert.ok(call, `the public string.sub entered the SVC vector (cause ${cpu.readCauseWord()}, Lua ${cpu.readLuaFaultReasonWord()}, EPC ${cpu.readEpcWord().toString(16)})`);
+			const { owner, depth, pc } = call;
+			const inSlice = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
+				&& memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) === owner;
+			assert.equal(cpu.heapServiceActive(), false);
 			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (outcome === 'oom') {
 				for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
@@ -79,7 +90,7 @@ try {
 			}
 			for (let i = 0; i < 8192 && (outcome === 'new' ? arena.occupiedBytes() === physicalBefore : gc.phase() === phaseBefore); ++i) {
 				assert.ok(inSlice());
-				assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), callerPc, 'the cart cannot observe an incomplete String');
+				assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Pc), pc, 'the cart cannot observe an incomplete String');
 				grant(73);
 			}
 			assert.ok(inSlice(), 'a grant ended inside the production String operation');
@@ -93,17 +104,20 @@ try {
 			function finish() {
 				for (let i = 0; i < 8192 && inSlice(); ++i) grant(137);
 				assert.equal(inSlice(), false);
+				let result = RunResult.Yielded;
+				for (let i = 0; i < 64 && result !== RunResult.Halted; ++i) result = grant(8192);
+				assert.equal(result, RunResult.Halted);
+				const values = runtime.readCompletionValues();
+				assert.equal(values.length, 2);
 				if (outcome === 'oom') {
-					assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-					observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
+					assert.equal(values[0], valueBool(false));
+					assert.equal(valueTag(values[1]), ValueTag.String);
+					assert.equal(cpu.stringPool.bytes(valuePayload(values[1])), 'Out of memory.');
 				} else {
-					let result = RunResult.Yielded;
-					for (let i = 0; i < 64 && result !== RunResult.Halted; ++i) result = grant(8192);
-					assert.equal(result, RunResult.Halted);
-					assert.equal(cpu.readLuaFaultReasonWord(), 0);
-					assert.equal(asInteger(runtime.readCompletionValues()[0]), 37, 'guest consumed the entire raw byte slice');
-					observe('C', 37);
+					assert.equal(values[0], valueBool(true));
+					assert.equal(asInteger(values[1]), 37, 'guest consumed the entire raw byte slice');
 				}
+				observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 				const start = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
 				observe(`H ${start} ${end}`, hashBytes(memory.ramData(), start, end - start));
 			}

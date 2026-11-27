@@ -26,12 +26,12 @@ import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fix
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { COROUTINE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const path = 'kernel/thread_retire';
 const source = `
-local creation<const> = require('kernel/thread_create')
-local create<const> = creation.create_coroutine
+local create<const> = require('coroutine').create
 local coroutine_entries<const> = require('bmsx/startup')
 local resume<const> = blua32.closure(coroutine_entries.coroutine_resume)
 
@@ -72,7 +72,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua warm Thread retirement closes real captures in native order and resumes mid-cell at O${optLevel}`, t => {
 		const folder = mkdtempSync(join(tmpdir(), 'thread-retire-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
-		const linked = linkManagedTestSystem(source, optLevel);
+		const linked = linkManagedTestSystem(source, optLevel, COROUTINE_FIRMWARE_MODULES);
 		const { object } = linked, romBytes = writeTestBlua32Rom(linked);
 		const exported = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === 'retire_threads')!;
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);

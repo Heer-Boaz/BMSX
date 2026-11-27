@@ -1,8 +1,7 @@
-local creation<const> = require('kernel/thread_create')
-local create<const> = creation.create_coroutine
+local ids<const> = require('kernel/coroutine_control_ids')
+local create<const> = function(entry) return blua32.svc_value(ids.create, entry) end
 local status<const> = __bmsx_coroutine_status
 local running<const> = __bmsx_coroutine_running
-local retirement<const> = require('kernel/coroutine_close')
 local raise<const> = __bmsx_error
 local frame_scopes<const> = require('debug/frame_scopes')
 local entries<const> = require('bmsx/startup')
@@ -14,17 +13,18 @@ local failed_status<const> = 5
 local main_thread<const> = running()
 
 local coroutine<const> = {}
-function coroutine.create(fn) return create(fn) end
+coroutine.create = create
 coroutine.resume = blua32.closure(entries.coroutine_resume)
 coroutine.yield = blua32.closure(entries.coroutine_yield)
 local resume<const> = coroutine.resume
 function coroutine.status(thread) return status_names[status(thread)] end
 function coroutine.running() return running() end
-local closed<const> = function(thread, ...)
+local close_thread<const> = function(thread)
+	local ok<const>, message<const> = blua32.svc_values(ids.close, thread)
 	frame_scopes.retire(thread, 0)
-	return ...
+	if ok then return true end
+	return false, message
 end
-local close_thread<const> = function(thread) return closed(thread, retirement.close_thread(thread)) end
 coroutine.close = close_thread
 function coroutine.isyieldable(...)
 	local thread = ...

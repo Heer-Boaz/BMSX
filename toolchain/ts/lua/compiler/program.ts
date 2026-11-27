@@ -6,27 +6,15 @@ import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 import type { TraceStatementSelection } from './trace_statement';
 import type { BuiltinFunctionId } from '../../../../machine/ts/spec/blua32/builtin';
-import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../../../machine/ts/spec/bmsx/bios';
 import type { ProgramStaticScopes } from './static_debug';
 
 export type ProgramConstant = null | boolean | NumberConstant | string | { readonly kind: 'builtin'; readonly word: BuiltinFunctionId };
 
-// Linked System exports entering the resident stack through ordinary CALL.
-// The compiler must preserve the boundary; the System linker proves it.
-export const SYSTEM_RESIDENT_EXPORTS = [
-	{ path: 'kernel/bios_copy_table', exportPathKey: 'copy_table', numParams: 1 },
-	{ path: 'kernel/bios_string_slice', exportPathKey: 'intern_slice', numParams: 6 },
-	{ path: 'kernel/bios_string_char', exportPathKey: 'intern_chars', numParams: 0 },
-	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
-	{ path: 'kernel/table_grow', exportPathKey: 'raw_set', numParams: 4 },
-	{ path: 'kernel/set_global', exportPathKey: 'set_global', numParams: 2 },
-	{ path: 'kernel/frame_upvalue', exportPathKey: 'set_frame_upvalue', numParams: 4 },
-	{ path: 'kernel/string_index', exportPathKey: 'install', numParams: 1 },
-	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
-	{ path: 'kernel/thread_create', exportPathKey: 'create_coroutine', numParams: 1 },
-	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },
-	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.Concat], numParams: 1 },
-] as const;
+// Software ABI used by language lowering, not interpreted by either CPU.
+export const enum StockFirmwareOperand {
+	CreateTable = 0,
+	Concat = 1,
+}
 
 export type ProgramInitParticipant = {
 	functionId: string;

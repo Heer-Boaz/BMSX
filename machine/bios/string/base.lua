@@ -1,13 +1,10 @@
 local byte<const> = __bmsx_string_byte
 local char<const> = require('string/char')
 local to_integer<const> = __bmsx_tointeger
-local slice<const> = require('kernel/bios_string_slice')
+local ids<const> = require('kernel/heap_control_ids')
 local table<const> = require('table')
 local concat<const> = table.concat
 local string<const> = {}
-local system_rom_size<const>: *word = 0x080101f4
-local cart0_rom_size<const>: *word = 0x080101f8
-local cart1_rom_size<const>: *word = 0x080101fc
 
 string.from_bytes = require('string/from_bytes')
 
@@ -76,8 +73,7 @@ string.sub = function(value, start_arg, end_arg)
 	if start_index == 1 and end_index == length then
 		return value
 	end
-	return slice.intern_slice(value, to_integer(start_index), to_integer(end_index),
-		*system_rom_size, *cart0_rom_size, *cart1_rom_size)
+	return blua32.svc_value(ids.string_slice, value, to_integer(start_index), to_integer(end_index))
 end
 
 

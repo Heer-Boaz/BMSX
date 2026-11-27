@@ -147,34 +147,24 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 end
 
 -- CALL ingress basis: f48d8f3c8917ccae4ffded4d790acb9ebd194cfc. K/L: TS/C++ CPU gate; O/R: exact tagged Closure decode.
-local create_coroutine<const> = function(entry) -- K:4559-4570 L:1301-1309
-	local management_port<const>: *u32 = layout.management_address -- K:4564 L:1306; ordinary resident port
-	local source_cycles<const>: *u32 = layout.call_cycles_address -- K:4566 L:1306; latched actual device horizon
-	local fault<const>: *u32 = layout.call_fault_address -- K:4561 L:1303; generic CALL fault retirement
-	local management<const> = *management_port -- K:4564 L:1306
-	local address<const> = layout.ram_base + management + layout.value_cell_offset -- K:4560 L:1302; existing typed cell
-	local cell<const>: *value = address -- K:4560 L:1302
-	local word<const>: *u32 = address -- K:4560 L:1302 O:139-143 R:254-257
-	local tag<const>: *u8 = address + layout.value_cell_tag_offset -- K:4560 L:1302
-	*cell = entry -- K:4560 L:1302; ordinary typed argument
-	if *tag ~= closure_tag then -- K:4560-4561 L:1302-1303
-		*fault = invalid_argument -- K:4561 L:1303
-		return nil -- K:4561 L:1303
+local create_from_value<const> = function(entry, tag, source_cycles) -- K:4559-4570 L:1301-1309
+	local management<const> = layout.management_offset -- K:4564 L:1306
+	if tag ~= closure_tag then -- K:4560-4561 L:1302-1303
+		return 0, invalid_argument -- K:4561 L:1303
 	end
-	local offset<const> = *word & record_mask -- O:139-143,151-153 R:254-257,276-278
+	local offset<const> = entry & record_mask -- O:139-143,151-153 R:254-257,276-278
 	local kind<const>: *u8 = layout.ram_base + offset -- O:140-142 R:255-257
 	if *kind ~= closure_tag or allocator.bmsx_dlmalloc_is_object(management + layout.arena_offset, offset - object_prefix) == 0 then -- O:140-143 R:255-257
-		*fault = invalid_argument -- K:4561 L:1303
-		return nil -- K:4561 L:1303
+		return 0, invalid_argument -- K:4561 L:1303
 	end
-	local thread<const> = allocate_coroutine(management, layout.ram_base + offset, *source_cycles) -- K:4564-4568 L:1306-1308 T:174-195 C:186-205
-	if thread == 0 then -- T:195 U:1111 C:205 V:1214
-		*fault = out_of_memory -- U:1111 V:1214 D:43
-		return nil -- K:4561 L:1303
+	local thread<const> = allocate_coroutine(management, layout.ram_base + offset, source_cycles) -- K:4564-4568 L:1306-1308 T:174-195 C:186-205
+	if thread == 0 then -- T:195 U:1111 C:205 V:1214 D:43
+		return 0, out_of_memory -- T:195 U:1111 C:205 V:1214 D:43
 	end
-	*word = layout.ram_base + thread -- T:185,189 C:194,199 E:9-11 W:21-22
-	*tag = thread_tag -- T:189 C:199 E:9-11 W:21-22
-	return *cell -- T:189 C:199 E:9-11 W:21-22; ordinary tagged RET
+	return layout.ram_base + thread, nil -- T:185,189 C:194,199 E:9-11 W:21-22
 end
 
-return { create_thread = create_thread, create_coroutine = create_coroutine, internal = { allocate_coroutine = allocate_coroutine } }
+return {
+	create_thread = create_thread, create_from_value = create_from_value,
+	internal = { allocate_coroutine = allocate_coroutine },
+}

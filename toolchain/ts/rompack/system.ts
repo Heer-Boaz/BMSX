@@ -1,7 +1,6 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
 import type { Blua32PreparedEntry, Blua32StaticExport } from './blua32_image_builder';
 import type { ManagedEntry } from '../lua/compiler';
-import { SYSTEM_RESIDENT_EXPORTS } from '../lua/compiler/program';
 import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
@@ -43,7 +42,11 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 export const SYSTEM_KERNEL_MODULES = [
 	'kernel/heap_control_ids', 'kernel/heap_control_call', 'kernel/gc_collect_step', 'kernel/gc_full',
 	'kernel/heap_floor', 'kernel/system_image_bind', 'kernel/thread_frame_storage',
-	'kernel/allocate_record', ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
+	'kernel/bios_create_table', 'kernel/allocate_record',
+	'kernel/bios_table_ids', 'kernel/bios_table_call', 'kernel/bios_copy_table', 'kernel/gc_barrier',
+	'kernel/table_grow', 'kernel/set_global', 'kernel/set_global_entry', 'kernel/set_metatable', 'kernel/string_control_call', 'kernel/byte_string_input',
+	'kernel/coroutine_control_ids', 'kernel/coroutine_control', 'kernel/coroutine_close',
+	'kernel/thread_create', 'kernel/frame_upvalue',
 	'kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_strings',
 	'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/thread_retire', 'kernel/gc_objects', 'kernel/table_create',
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',

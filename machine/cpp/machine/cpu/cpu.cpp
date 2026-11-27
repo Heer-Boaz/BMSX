@@ -1027,6 +1027,8 @@ void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
 void CPU::resumeInterruptedContext() {
 	const u32 context = m_memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 	m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0u, 0u);
+	m_globalBank.bind();
+	m_systemGlobalBank.bind();
 	auto& thread = bindThread(context);
 	if (thread.currentFrameViewMatches()) thread.bindStack(true);
 	else bindPhysicalFrames(thread);

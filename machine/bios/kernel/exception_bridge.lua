@@ -12,7 +12,13 @@ local barrier<const> = require('kernel/gc_barrier')
 local globals<const> = require('kernel/global_bank')
 local table_growth<const> = require('kernel/table_grow')
 local binding<const> = require('kernel/function_binding')
-local byte_strings<const> = require('kernel/byte_string_input')
+local strings<const> = require('kernel/string_control_call')
+local firmware_ids<const> = require('kernel/heap_control_ids')
+local table_ids<const> = require('kernel/bios_table_ids')
+local thread_ids<const> = require('kernel/coroutine_control_ids')
+local value_tags<const> = require('kernel/value_type')
+local table_calls<const> = require('kernel/bios_table_call')
+local thread_calls<const> = require('kernel/coroutine_control')
 local heap_control<const> = require('kernel/heap_control_call')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
@@ -136,14 +142,27 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		blua32.rfe()
 	end
 	if cause == syscall and *interrupted ~= 0 then
-		local handled<const>, fault<const> = heap_control.receive(*interrupted, values, depth, instruction)
+		local handled, fault = false, nil
+		if blua32.tag(values) == value_tags.integer_tag then
+			if (values == firmware_ids.create_table and depth ~= nil)
+				or (values >= firmware_ids.collect_full and values <= firmware_ids.reserve_entry) then
+				handled = true
+				fault = heap_control.receive(*interrupted, values, depth, instruction)
+			elseif (values == firmware_ids.string_concat and depth ~= nil) or values == firmware_ids.string_from_bytes
+				or (values >= firmware_ids.string_slice and values <= firmware_ids.string_index) then
+				handled = true
+				fault = strings.receive(*interrupted, values, depth, instruction)
+			elseif values >= table_ids.copy and values <= table_ids.set_global then
+				handled = true
+				fault = table_calls.receive(*interrupted, values, depth, instruction)
+			elseif values >= thread_ids.create and values <= thread_ids.set_frame_upvalue then
+				handled = true
+				fault = thread_calls.receive(*interrupted, values, depth, instruction)
+			end
+		end
 		if handled then
 			if fault == nil then blua32.rfe() end
 			transfer_fault = fault
-		elseif depth ~= nil and values == byte_strings.syscall_id then
-			local admitted<const>, reason<const> = byte_strings.receive(*interrupted, depth, instruction)
-			if admitted then blua32.rfe() end
-			transfer_fault = reason
 		else
 			local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
 			if handled then

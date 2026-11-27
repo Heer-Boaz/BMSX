@@ -3,18 +3,13 @@ import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
-import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../machine/ts/spec/bmsx/bios';
-import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { createTestHeapServiceCpu, compileHeapServiceSystem, linkHeapServiceEntry } from '../helpers/heap_service_system';
-import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
-import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { isDeepStrictEqual } from 'node:util';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { ValueTag, asClosure, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueResidentFunction, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { ValueTag, asClosure, valueBool, valueBuiltinFunction, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -388,73 +383,4 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_INDEX_NIL);
 	assert.equal(js.readEpcWord(), image.image.functions[0].codeAddress + INSTRUCTION_BYTES);
 	assert.equal(js.rootThread.frameAtDepth(0).registers.getInteger(3), 19);
-});
-
-test('compiled WIDE CALL preserves its callee and original instruction when the resident constructor runs out of memory', () => {
-	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.K1, 7, 0, 0);
-	writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(text, 2, OpCode.CALL, 8, 3, 2);
-	writeInstruction(text, 3, OpCode.MOV, 11, 8, 0);
-	writeInstruction(text, 4, OpCode.RET, 0, 0, 0);
-	const image = linkHeapServiceEntry(text, 16);
-	const { path, exportPathKey } = BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable];
-	const { staticFunctionIdBySlot, functionIds } = image.symbols.metadata;
-	const index = functionIds.indexOf(staticFunctionIdBySlot[buildModuleExportSlotName(path, [exportPathKey])]);
-	const constructor = valueResidentFunction(image.symbols.functionAddresses[index]);
-	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const functionAddress = image.vectors.entryFunctionAddress;
-	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
-	const start = (cpu: typeof js, hint: number) => {
-		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
-		const root = cpu.rootThread.frameAtDepth(0);
-		root.registers.set(8, constructor);
-		root.registers.setInteger(9, hint);
-		root.registers.setInteger(10, hint);
-		root.registers.setNil(11);
-		root.top = 11;
-	};
-	for (let visit = 0; visit <= COMPILED_BLOCK_THRESHOLD; ++visit) {
-		start(js, 0); start(ref, 0);
-		assert.equal(runCpuParity(js, ref, 64), RunResult.Yielded);
-		assert.ok(js.heapServiceActive() && ref.heapServiceActive());
-		assert.equal(runCpuParity(js, ref, 4096), RunResult.Yielded);
-		assert.ok(!js.heapServiceActive() && !ref.heapServiceActive());
-	}
-	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
-	const terminal = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal;
-	assert.equal(terminal.exit, CompiledBlockExit.Call);
-	assert.equal(terminal.currentPc, pc + INSTRUCTION_BYTES, 'the WIDE head, not the body, owns the operation');
-	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
-	for (const cpu of [js, ref]) {
-		start(cpu, 1024);
-		cpu.collectTrackedHeapBytes(); // Discard the unrooted warming allocations.
-		cpu.rootThread.resizeStack(32); // Exception entry need not allocate a larger stack.
-		assert.ok(cpu.heapAllocator.setFloor(RAM_BASE + cpu.heapAllocator.managementOffset() - 65536));
-		const retained = cpu.createTable(11000);
-		cpu.setGlobalByKey(cpu.stringPool.intern('retained'), valueTable(retained));
-		cpu.collectTrackedHeapBytes();
-	}
-	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.K1]), RunResult.Yielded);
-	assert.equal(js.heapServiceActive(), false, 'the first short grant cannot admit the call');
-	assert.equal(frame.pc, terminal.currentPc);
-	assert.equal(frame.registers.get(8), constructor);
-	assert.equal(runCpuParity(js, ref, BASE_CYCLES[OpCode.CALL] + 2), RunResult.Yielded);
-	assert.equal(js.instructionBudgetRemaining, 0, 'CALL charges the instruction and two copied arguments before BIOS executes');
-	assert.ok(js.heapServiceActive() && ref.heapServiceActive());
-	let grants = 0;
-	while (js.heapServiceActive() && grants < 2048) {
-		runCpuParity(js, ref, 4096);
-		++grants;
-	}
-	assert.ok(!js.heapServiceActive());
-	assert.ok(grants > 1, 'recovery is timed and cannot retire inside the issuing instruction');
-	assert.equal(js.luaHeap.usedBytes(), ref.luaHeap.usedBytes());
-	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
-	assert.equal(js.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-	assert.equal(js.readEpcWord(), terminal.currentPc);
-	assert.equal(frame.registers.get(8), constructor);
-	assert.equal(frame.registers.get(11), valueNil(), 'no following caller instruction ran');
-	assert.equal(frame.top, 11, 'the tagged argument window stays live through collection');
-	assert.ok(js.memory.readRamRecordWord(js.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_LAST_EPOCH_WORK) > 0);
 });

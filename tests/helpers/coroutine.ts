@@ -10,7 +10,7 @@ assert = function(value, message) if not value then raise(message) end end
 pcall = blua32.closure(entries.protected_call)
 xpcall = blua32.closure(entries.protected_xcall)
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end
-setmetatable = require([[kernel/gc_barrier]]).set_metatable
+setmetatable = require([[kernel/set_metatable]])
 error = raise
 next = __bmsx_next`;
 

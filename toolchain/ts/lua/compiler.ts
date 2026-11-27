@@ -1,5 +1,4 @@
 import { ReturnSource, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
-import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import type { FileSemanticData } from './semantic/model';
@@ -71,7 +70,7 @@ import type {
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
-import { buildInitParticipantSlotName, programModuleExportKey, SYSTEM_RESIDENT_EXPORTS } from './compiler/program';
+import { buildInitParticipantSlotName, programModuleExportKey, StockFirmwareOperand } from './compiler/program';
 import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
@@ -2811,17 +2810,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		throw new Error(`Static function export '${symbol}' is a call target, not a Lua runtime value.`);
 	}
 
-	private isResidentSystemExport(symbol: ModuleFunctionTarget): boolean {
-		return this.program.programDomain === 'system' && symbol.kind === 'export_proto'
-			&& SYSTEM_RESIDENT_EXPORTS.some(entry => entry.path === symbol.path && entry.exportPathKey === symbol.exportPathKey);
-	}
-
-	private emitStaticFunctionExportValue(symbol: ModuleFunctionTarget, binding: ModuleBinding, target: number): void {
-		if (!this.isResidentSystemExport(symbol))
-			this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:${binding.exportPathKey}`);
-		this.emitModuleFunctionTargetLoad(symbol, target);
-	}
-
 	private failConstModuleValueCall(binding: ModuleBinding): never {
 		throw new Error(`Const module '${binding.modulePath}' value export '${binding.exportPathKey}' is not a call target.`);
 	}
@@ -2886,8 +2874,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (this.moduleBindingOwnsCompileTimeLocal(compileTimeModuleRoot)) {
 				const functionTarget = this.resolveStaticFunctionExportCallTarget(compileTimeModuleRoot);
 				if (functionTarget) {
-					this.emitStaticFunctionExportValue(functionTarget, compileTimeModuleRoot, target);
-					return;
+					this.failStaticFunctionExportRuntimeValue(`${compileTimeModuleRoot.modulePath}:${compileTimeModuleRoot.exportPathKey}`);
 				}
 				this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 			}
@@ -2926,8 +2913,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (binding && binding.moduleBinding) {
 			const functionTarget = this.resolveStaticFunctionExportCallTarget(binding.moduleBinding);
 			if (functionTarget) {
-				this.emitStaticFunctionExportValue(functionTarget, binding.moduleBinding, target);
-				return;
+				this.failStaticFunctionExportRuntimeValue(`${binding.moduleBinding.modulePath}:${binding.moduleBinding.exportPathKey}`);
 			}
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -4855,8 +4841,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (binding) {
 			const symbol = this.resolveStaticFunctionExportCallTarget(binding);
 			if (symbol) {
-				this.emitStaticFunctionExportValue(symbol, binding, target);
-				return;
+				this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:${binding.exportPathKey}`);
 			}
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
@@ -4907,8 +4892,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (binding) {
 			const symbol = this.resolveStaticFunctionExportCallTarget(binding);
 			if (symbol) {
-				this.emitStaticFunctionExportValue(symbol, binding, target);
-				return;
+				this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:${binding.exportPathKey}`);
 			}
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
@@ -4972,11 +4956,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		this.emitLoadConst(base + 1, integerConstant(arraySize));
 		this.emitLoadConst(base + 2, integerConstant(hashSize));
-		this.emitModuleFunctionTargetLoad(this.program.programDomain === 'system'
-			? { kind: 'export_proto', ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable] }
-			: { kind: 'bios_function', importIndex: BiosFunction.CreateTable }, base);
-		this.emitABC(OpCode.CALL, base, encodeFixedValueCount(2), encodeFixedValueCount(1));
-		this.code[this.code.length - 1].tableConstructor = true;
+		// Keep the constructor window in the issuer: ordinary CALL to the
+		// former resident function used a hidden privileged stack.
+		this.emitLoadConst(base, integerConstant(StockFirmwareOperand.CreateTable));
+		this.emitABC(OpCode.SVC, base, 3, 0);
+		const construction = this.code[this.code.length - 1];
+		construction.tableConstructor = true;
+		construction.inlineSupervisorWindow = true;
 		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
 	}
 
@@ -4999,7 +4985,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				this.compileExpressionInto(expression.fields[i].value, base + i, 1);
 				this.tempTop = afterValues;
 			}
-			// A fixed CALL retires with top at its result. Keep pre-evaluated
+			// Construction retires with top at its result. Keep pre-evaluated
 			// RHSs below it so an intervening collection can still trace them.
 			const call = this.allocTempBlock(3);
 			this.emitTableCreation(call, call, 0, keys.length);
@@ -5763,19 +5749,15 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.collectConcatOperands(expression, operands);
 		const tempBase = this.tempTop;
 		const base = target >= this.localCount && target === tempBase - 1 ? target : tempBase;
-		this.reserveTempRange(base, 2);
+		this.reserveTempRange(base, 1);
 		for (const operand of operands) {
 			const slot = this.allocTemp();
 			this.compileExpressionInto(operand, slot, 1);
 			this.tempTop = slot + 1;
 		}
-		// The fixed entry copies the count and borrows the rest of the
-		// ordinary argument window in the still-rooted caller.
-		this.emitLoadConst(base + 1, integerConstant(operands.length));
-		this.emitModuleFunctionTargetLoad(this.program.programDomain === 'system'
-			? { kind: 'export_proto', ...BIOS_FUNCTION_SLOTS[BiosFunction.Concat] }
-			: { kind: 'bios_function', importIndex: BiosFunction.Concat }, base);
-		this.emitABC(OpCode.CALL, base, encodeFixedValueCount(operands.length + 1), encodeFixedValueCount(1));
+		this.emitLoadConst(base, integerConstant(StockFirmwareOperand.Concat));
+		this.emitABC(OpCode.SVC, base, operands.length + 1, 0);
+		this.code[this.code.length - 1].inlineSupervisorWindow = true;
 		if (base !== target) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
 		this.tempTop = tempBase;
 	}
@@ -5839,7 +5821,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.compileRequireExpression(requireBinding, target, resultCount);
 			return;
 		}
-		if (this.compileBlua32ValueCall(expression, target, resultCount)) {
+		if (this.compileBlua32ValueCall(expression, target, resultCount, resultOperand === 0)) {
 			return;
 		}
 		const methodName = expression.method?.name;
@@ -5891,11 +5873,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		this.ensureMaxStack(callBase + resultSlots);
 		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedValueCount(callArgs), resultOperand);
-		if (callProtoIndex !== null) {
-			const symbol = moduleCallTarget ?? ownStaticFunctionExportTarget;
-			const resident = symbol !== undefined && this.isResidentSystemExport(symbol);
-			if (!resident) this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
-		}
+		if (callProtoIndex !== null) this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
 		if (!useTarget) {
 			for (let i = 0; i < resultCount; i += 1) {
 				this.emitABC(OpCode.MOV, target + i, callBase + i, 0);
@@ -5921,7 +5899,17 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private compileBlua32ValueCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
+	private emitSupervisorWindow(arguments_: readonly LuaExpression[], base: number): void {
+		if (arguments_.length === 0) throw new Error('A supervisor window requires an operand.');
+		for (let i = 0; i < arguments_.length; i += 1) {
+			this.reserveTempRange(base + i, 1);
+			this.compileExpressionInto(arguments_[i], base + i, 1);
+			this.tempTop = base + i + 1;
+		}
+		this.emitABC(OpCode.SVC, base, arguments_.length, 0);
+	}
+
+	private compileBlua32ValueCall(expression: LuaCallExpression, target: number, resultCount: number, open: boolean): boolean {
 		const operation = this.resolveBlua32Operation(expression);
 		if (operation === undefined) return false;
 		if (operation === 'trace' || operation === 'trace_sink' || operation === 'svc' || operation === 'svc_results' || operation === 'rfe') {
@@ -5930,21 +5918,17 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (operation === 'argument_suffix') {
 			throw new Error('blua32.argument_suffix must be the sole expression of a return statement.');
 		}
-		if (operation === 'svc_value') {
-			const count = expression.arguments.length;
-			if (count === 0) throw new Error('blua32.svc_value expects a service operand.');
-			// The vector borrows this exact window and returns into its first slot.
+		if (operation === 'svc_value' || operation === 'svc_values') {
+			// The vector borrows the issuer's slots for both inputs and outputs.
+			const multi = operation === 'svc_values';
 			const tempBase = this.tempTop, useTarget = target >= this.localCount && target === tempBase - 1;
-			const base = useTarget ? target : this.allocTemp();
-			for (let i = 0; i < count; i += 1) {
-				this.reserveTempRange(base + i, 1);
-				this.compileExpressionInto(expression.arguments[i], base + i, 1);
-				this.tempTop = base + i + 1;
-			}
-			this.emitABC(OpCode.SVC, base, count, 0);
-			if (!useTarget && resultCount > 0) this.emitABC(OpCode.MOV, target, base, ValueMoveKind.Copy);
+			const base = (multi && open) || useTarget ? target : this.allocTemp();
+			this.emitSupervisorWindow(expression.arguments, base);
+			const copied = Math.min(resultCount, multi ? expression.arguments.length : 1);
+			if (base !== target) for (let i = 0; i < copied; i++)
+				this.emitABC(OpCode.MOV, target + i, base + i, ValueMoveKind.Copy);
 			this.tempTop = tempBase;
-			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			if (resultCount > copied) this.emitLoadNil(target + copied, resultCount - copied);
 			return true;
 		}
 		if (operation === 'argument_count') {
@@ -6011,7 +5995,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
 		if (this.resolveRequireModuleBinding(expression)) return false;
-		if (this.resolveBlua32Operation(expression) !== undefined) return false;
+		const operation = this.resolveBlua32Operation(expression);
+		if (operation !== undefined) return operation === 'svc_values';
 		if (this.program.optLevel >= 2) {
 			const protoIndex = this.resolveCallProtoIndex(expression);
 			if (protoIndex !== null && this.program.protoReturnsOne(protoIndex)) {

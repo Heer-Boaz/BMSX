@@ -23,7 +23,7 @@ import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
-local metatables<const> = require('kernel/gc_barrier')
+local set_metatable<const> = require('kernel/set_metatable')
 local protected_entries<const> = require('bmsx/startup')
 local pcall<const> = blua32.closure(protected_entries.protected_call)
 local xpcall<const> = blua32.closure(protected_entries.protected_xcall)
@@ -40,7 +40,7 @@ function broken_handler(message) return broken(62) end
 
 meta = { __index = old_index, __newindex = old_newindex, __len = old_len }
 receiver = {}
-metatables.set_metatable(receiver, meta)
+set_metatable(receiver, meta)
 
 function probe(target, value)
 	sink.old = 0

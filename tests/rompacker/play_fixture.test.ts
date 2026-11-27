@@ -49,7 +49,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')", launchCartridge: true,
-		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable' },
+		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])' },
 			...COROUTINE_FIRMWARE_MODULES], cartSource: GAME,
 		cartModules: [{ path: 'game', source: 'return { updates=0, down_samples=0, after_publication=0 }' }],
 	});

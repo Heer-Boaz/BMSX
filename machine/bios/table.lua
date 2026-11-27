@@ -1,7 +1,9 @@
 require('base')
 local table<const> = {}
-local copy<const> = require('kernel/bios_copy_table')
-table.copy = copy.copy_table
+local ids<const> = require('kernel/bios_table_ids')
+table.copy = function(source)
+	return blua32.svc_value(ids.copy, source)
+end
 
 table.pack = function(...)
 	local packed<const> = { n = select('#', ...) }

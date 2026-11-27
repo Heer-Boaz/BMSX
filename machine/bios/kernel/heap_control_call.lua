@@ -8,6 +8,7 @@ local gc<const> = require('kernel/gc_full')
 local step<const> = require('kernel/gc_collect_step')
 local floor<const> = require('kernel/heap_floor')
 local bindings<const> = require('kernel/system_image_bind')
+local tables<const> = require('kernel/bios_create_table')
 local control_count_mask<const> = (1 << 18) - 1
 local window_mask<const> = (1 << 20) - 1
 local word_mask<const> = 0x003ffffc
@@ -18,23 +19,31 @@ local invalid_argument<const> = 10
 -- The original operand/result window belongs to the stopped frame.
 -- The software identifies its operations; the CPU only takes the trap.
 local receive<const> = function(owner, token, destination, count)
-	if blua32.tag(token) ~= tags.integer_tag or token < ids.collect_full or token > ids.reserve_entry then
-		return false, nil
-	end
 	if token == ids.collect_full then
-		if destination ~= nil then return true, invalid_argument end
+		if destination ~= nil then return invalid_argument end
 		gc.collect_full()
-		return true, nil
+		return nil
 	end
-	if destination == nil then return true, invalid_argument end
+	if destination == nil then return invalid_argument end
 
 	local context<const>: *stopped_thread = owner
 	local depth<const> = context.frame_depth & control_count_mask
 	local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & word_mask)
 	local slot<const> = (frame.stack_base & window_mask) + destination
 	local result_word, result_tag = 0, tags.integer_tag
-	if token < ids.admit_floor then
-		if count ~= 0 then return true, invalid_argument end
+	if token == ids.create_table then
+		if count ~= 2 then return invalid_argument end
+		local words<const>, kinds<const> = frames.internal.value_planes(owner, slot + 1)
+		local hints<const>: *u32 = words
+		local hint_kinds<const>: *u8 = kinds
+		if hint_kinds[0] ~= tags.integer_tag or hint_kinds[1] ~= tags.integer_tag then
+			return invalid_argument
+		end
+		local address<const>, reason<const> = tables.create_table(hints[0], hints[1])
+		if reason ~= nil then return reason end
+		result_word, result_tag = address, tags.table_tag
+	elseif token < ids.admit_floor then
+		if count ~= 0 then return invalid_argument end
 		if token == ids.collect_step then
 			local finished<const> = step.collect_step()
 			result_tag = finished and tags.true_tag or tags.false_tag
@@ -46,7 +55,7 @@ local receive<const> = function(owner, token, destination, count)
 		-- A user or cartridge procedure cannot set the private floor or
 		-- install backing by issuing the same token.
 		if (frame.flags & cartridge_bank) ~= 0 or (cop0.status & previous_user_mode) ~= 0 then
-			return true, invalid_argument
+			return invalid_argument
 		end
 		local arguments<const>: *u32 = frames.internal.value_planes(owner, slot + 1)
 		if token == ids.admit_floor then
@@ -55,7 +64,7 @@ local receive<const> = function(owner, token, destination, count)
 			result_word = bindings.bind_cartridge(arguments[0], arguments[1], arguments[2], arguments[3], arguments[4], arguments[5], owner)
 		else
 			local reason<const> = frames.reserve_system_entry(arguments[0])
-			return true, reason
+			return reason
 		end
 	end
 
@@ -65,10 +74,10 @@ local receive<const> = function(owner, token, destination, count)
 	local kind<const>: *u8 = result_tags
 	*output, *kind = result_word, result_tag
 	local saved<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & word_mask)
-	if (saved.top & window_mask) <= destination then
+	if token == ids.create_table or (saved.top & window_mask) <= destination then
 		saved.top = (saved.top & ~window_mask) | (destination + 1)
 	end
-	return true, nil
+	return nil
 end
 
 return { receive = receive }

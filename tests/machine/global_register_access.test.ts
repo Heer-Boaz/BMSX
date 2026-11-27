@@ -2,13 +2,27 @@ import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cp
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { valueBool, valueInteger, valueIsClosure, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
-import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { writeTestBlua32Rom } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 
 
 const modules = [...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }];
+const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
+
+function run(source: string, level: 0 | 3, linkedModules: typeof modules = []) {
+	const rom = writeTestBlua32Rom(linkManagedTestSystem(source, level, linkedModules));
+	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu } = runtime.machine;
+	runGuestToHalt(cpu, 3_000_000);
+	return cpu;
+}
 
 for (const level of [0, 3] as const) test(`named access and compiled GETGL/SETGL share one register at O${level}`, () => {
 	const source = `require('base')
@@ -32,8 +46,7 @@ set('counter')
 return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
  get('absent'), after_growth, returned, get('new name 78')
 `;
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, level, modules));
-	runGuestToHalt(cpu, 1_048_576);
+	const cpu = run(source, level, modules);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueInteger(13), valueInteger(30), valueBool(false), valueNil(), valueBool(true), valueNil(), valueInteger(13), valueInteger(0), valueInteger(78)]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('alias')!), cpu.getGlobalByKey(cpu.stringPool.find('shared')!));
 	assert.ok(cpu.memory.readRamRecordWord(cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity) >= 128);
@@ -41,7 +54,7 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 
 test('named access cannot alias the system bank and invalid names use guest errors', () => {
 	const source = `local get<const> = __bmsx_getglobal
-local set<const> = require('kernel/set_global').set_global
+local set<const> = require('kernel/set_global_entry')
 local startup<const> = require('bmsx/startup')
 local pcall<const> = blua32.closure(startup.protected_call)
 function irq(value) return value end
@@ -52,8 +65,7 @@ local invalid_write = pcall(set, false, 4)
 local missing_name = pcall(set)
 return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 `;
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(source, 3));
-	runGuestToHalt(cpu, 65_536);
+	const cpu = run(source, 3);
 	const values = materializeCpuCompletionValues(cpu);
 	assert.deepEqual(values.slice(0, 2), [valueNil(), valueInteger(99)]);
 	assert.deepEqual(values.slice(3), [valueBool(false), valueBool(false), valueBool(false)]);
@@ -62,7 +74,7 @@ return before, get('irq'), irq(3), invalid_read, invalid_write, missing_name
 });
 
 test('dynamic names and values survive growth, collection and exact checkpoint restore', () => {
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem('return 0', 3));
+	const cpu = run('return 0', 3);
 	const count = cpu.globalSlotCount;
 	const capacity = cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET + GlobalBankField.Capacity;
 	let grewBank = false;
@@ -105,7 +117,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 });
 
 test('registered writes allocate no guest heap and missing reads create no registers', () => {
-	const { cpu } = bootManagedTestSystem(linkManagedTestSystem('return 0', 3));
+	const cpu = run('return 0', 3);
 	const key = cpu.stringPool.intern('value'), absent = cpu.stringPool.intern('absent');
 	cpu.setGlobalByKey(key, valueInteger(0));
 	const count = cpu.globalSlotCount, heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];

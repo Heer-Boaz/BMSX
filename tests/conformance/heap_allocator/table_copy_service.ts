@@ -7,14 +7,13 @@ import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { asInteger, isNil, valuePayload } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, isNil, valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
-import { HEAP_PAGE_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, HEAP_PAGE_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
@@ -36,7 +35,11 @@ end
 write_weak_member(source, 2)
 source[4] = nil
 copy_source = source
-local copy<const> = table.copy(source)
+local admitted, copy = pcall(table.copy, source)
+if not admitted then
+	assert(copy == 'Out of memory.')
+	return 41
+end
 copy_result = copy
 local okay, message = pcall(table.copy, false)
 assert(not okay and message == 'Invalid argument.')
@@ -56,30 +59,28 @@ try {
 		const rom = join(directory, `O${optLevel}.rom`), cart = join(directory, `O${optLevel}-cart.rom`);
 		writeFileSync(rom, images.systemRomBytes);
 		writeFileSync(cart, images.cartRomBytes);
-		const entryIndex = images.systemSymbols.metadata.functionIds.findIndex(id => id.startsWith('module:kernel/bios_copy_table/') && id.endsWith('|constant|copy_table'));
-		assert.ok(entryIndex >= 0);
-		const entry = images.systemImage.functions[entryIndex].address;
 		for (const scenario of ['weak_recovered', 'oom'] as const) {
 			const runtime = new Runtime({
 				systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
 			}, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
-			const management = arena.managementOffset(), resident = management + HEAP_SERVICE_RESIDENT_OFFSET;
-
-			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			const inCopy = () => cpu.heapServiceActive() && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function) === entry;
-			for (let i = 0; i < 200_000 && !inCopy(); ++i) run(23);
-			assert.ok(inCopy(), 'public CALL installed the linked resident body');
+			const systemVector = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL;
+			const atCopy = () => systemVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10020);
+			for (let i = 0; i < 200_000 && !atCopy(); ++i) run(23);
+			assert.ok(atCopy(), 'public Table copy entered the ordinary System vector');
+			assert.equal(cpu.heapServiceActive(), false);
 			const source = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_source')!));
 			const member = cpu.stringPool.find('__newindex')!;
 			const tables = cpu.gc.tables;
 			assert.equal(tables.arrayCapacity(source), 1024);
 			assert.ok(!isNil(tables.getStringKey(source, member)));
 			assert.equal(memory.readRamRecordByte(source + TableHeader.NewIndexAbsent), 0);
-			const issue = memory.readRamRecordWord(resident + HeapServiceResidentField.IssuePc), successor = framePc();
-			assert.notEqual(issue, successor);
+			const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), caller = cpu.rootThread.frameDepth - 1;
+			const successor = cpu.readEpcWord();
+			const inCopy = () => systemVector() && cpu.readEpcWord() === successor;
+			assert.equal(cpu.readThreadFrameWord(owner, caller, FrameField.Pc), successor);
 
 			// Source is rooted and before the first allocation in the firmware.
 			// Occupy *physical* slots; the recovered case frees a real dead
@@ -103,7 +104,7 @@ try {
 				return result;
 			}
 			for (let i = 0; i < 8192 && gc.phase() !== GcPhase.Strings; ++i) {
-				assert.equal(framePc(), successor, 'caller cannot execute while assistance is pending');
+				assert.equal(cpu.readThreadFrameWord(owner, caller, FrameField.Pc), successor, 'caller cannot execute while assistance is pending');
 				assert.ok(inCopy());
 				grant(151);
 			}
@@ -119,19 +120,14 @@ try {
 			function finish() {
 				for (let i = 0; i < 8192 && inCopy(); ++i) grant(151);
 				assert.equal(inCopy(), false);
-				if (scenario === 'oom') {
-					assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP);
-					assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_OUT_OF_MEMORY);
-					assert.equal(cpu.readEpcWord(), issue);
-					observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${issue}`);
-				} else {
-					assert.equal(cpu.readLuaFaultReasonWord(), 0);
-					const limit = 8192;
-					let result = RunResult.Yielded;
-					for (let i = 0; i < 64 && result !== RunResult.Halted; ++i) result = grant(limit);
-					assert.equal(result, RunResult.Halted);
-					assert.equal(asInteger(runtime.readCompletionValues()[0]), 37);
-					observe('C', 37);
+				const limit = 8192;
+				let result = RunResult.Yielded;
+				for (let i = 0; i < 64 && result !== RunResult.Halted; ++i) result = grant(limit);
+				assert.equal(result, RunResult.Halted);
+				const completion = scenario === 'oom' ? 41 : 37;
+				assert.equal(asInteger(runtime.readCompletionValues()[0]), completion);
+				observe('C', completion);
+				if (scenario !== 'oom') {
 					const copy = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_result')!));
 					assert.ok(isNil(tables.getStringKey(copy, member)));
 					assert.equal(memory.readRamRecordByte(copy + TableHeader.NewIndexAbsent), 1, 'copy carries the proof from after recovery');

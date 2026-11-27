@@ -310,39 +310,20 @@ local store_resolved<const> = function(receiver, key, value, extra, cycles, sele
 	return (grow_table(management, cycles, extra, scheduled_mode, true))
 end
 
--- RawSet uses the existing normal tagged CALL transport. No metamethod
--- lookup precedes setOwn, and the bound receiver remains the return value.
-local raw_set<const> = function(target, key, value, supplied)
-	local management_port<const>: *u32 = layout.management_address
-	local fault<const>: *u32 = layout.call_fault_address
-	local management<const> = *management_port
-	local cell<const> = ram_base + management + layout.value_cell_offset
-	local argument<const>: *value = cell
-	local tag<const>: *u8 = cell + layout.value_cell_tag_offset
-	local payload<const>: *u32 = cell
-	*argument = target
-	if *tag ~= table_tag or supplied < 3 then
-		*fault = invalid_argument
-		return nil
-	end
-	local record<const> = *payload
-	*argument = key
-	local kt, kw = *tag, *payload
+-- No metamethod lookup precedes this own assignment.
+local raw_set<const> = function(record, target_tag, kw, kt, vw, vt)
+	if target_tag ~= table_tag then return invalid_argument end
+	local management<const> = layout.management_offset
 	if kt == nil_tag then
-		*fault = index_nil
-		return nil
+		return index_nil
 	elseif kt <= true_tag then
 		kw = 0
 	elseif kt == float_tag then
-		if key ~= key then
-			*fault = index_nan
-			return nil
-		end
+		local key<const> = blua32.float_from_bits(kw)
+		if key ~= key then return index_nan end
 		local integer<const> = word_arithmetic.float_to_word(kw)
 		if key == integer then kt, kw = integer_tag, integer end
 	end
-	*argument = value
-	local vt<const>, vw<const> = *tag, *payload
 	local header<const>: *growth_receiver = record
 	local positive_integer<const> = kt == integer_tag and kw > 0
 	if positive_integer and kw <= header.array then
@@ -366,18 +347,13 @@ local raw_set<const> = function(target, key, value, supplied)
 		local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 		operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
 		operands.value_tag, operands.value_word = vt, vw
-		local cycles<const>: *u32 = layout.call_cycles_address
-		if not grow_table(management, *cycles, 0, general_mode, false) then
-			*fault = out_of_memory
-			return nil
-		end
+		if not grow_table(management, cop0.event_cycles, 0, general_mode, true) then return out_of_memory end
 	end
 	if positive_integer then
 		local hint<const> = header.length
 		if vt == nil_tag and kw == hint then header.length = kw - 1
 		elseif vt ~= nil_tag and kw - 1 == hint then header.length = kw end
 	end
-	return target
 end
 
 return {

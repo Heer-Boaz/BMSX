@@ -42,7 +42,7 @@ for (const level of [0, 3] as const) for (const scenario of ['read', 'write', 'r
 bss invoked: u32[1]
 local entries<const> = require('bmsx/startup')
 local protect<const> = blua32.closure(entries.protected_call)
-local set_meta<const> = require('kernel/gc_barrier').set_metatable
+local set_meta<const> = require('kernel/set_metatable')
 local function callback(receiver, ...)
 	invoked[0] = invoked[0] + 1
 	-- The cold branch reserves an ordinary large register window without

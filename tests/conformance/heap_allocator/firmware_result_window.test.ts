@@ -39,7 +39,7 @@ local entries<const> = require('bmsx/startup')
 local protect<const> = blua32.closure(entries.protected_call)
 ${resident ? "local heap<const> = require('kernel/gc_full')" : ''}
 ${weak ? `
-local set_meta<const> = require('kernel/gc_barrier').set_metatable
+local set_meta<const> = require('kernel/set_metatable')
 local function weak_owner()
 	return set_meta({{marker = 57}}, { __mode = 'v' })
 end

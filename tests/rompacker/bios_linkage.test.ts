@@ -23,18 +23,16 @@ test('published BIOS slots derive addresses and RAM occupancy from the ROM heade
 	writeLE32(rom, image + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, 0x1230);
 	writeLE32(rom, image + BLUA32_IMAGE_BSS_ADDRESS_OFFSET, 0x080c0020);
 	writeLE32(rom, image + BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, 0x34);
-	assert.deepEqual(BIOS_FUNCTION_SLOTS.map(entry => entry.path), ['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'kernel/bios_create_table']);
+	assert.deepEqual(BIOS_FUNCTION_SLOTS.map(entry => entry.path), ['math/sin', 'string/float/decode', 'gpu/system_vram_region']);
 	assert.equal(BiosFunction.TurnPhaseSine, 0);
 	assert.equal(BiosFunction.DecodeFloat, 1);
 	assert.equal(BiosFunction.SystemVramRegion, 2);
-	assert.equal(BiosFunction.CreateTable, 3);
 	assert.deepEqual(readBlua32BiosImports(rom), {
 		cartridgeStaticRamBase: 0x080c0054,
 		functions: [
 			{ path: 'math/sin', exportPathKey: '', functionAddress: 0x1230 },
 			{ path: 'string/float/decode', exportPathKey: '', functionAddress: 0x1250 },
 			{ path: 'gpu/system_vram_region', exportPathKey: '', functionAddress: 0x1270 },
-			{ path: 'kernel/bios_create_table', exportPathKey: 'create_table', functionAddress: 0x1290 },
 		],
 	});
 });

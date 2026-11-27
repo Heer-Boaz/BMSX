@@ -16,12 +16,13 @@ frame_header = __bmsx_frame_header
 get_frame_register = __bmsx_get_frame_register
 set_frame_register = __bmsx_set_frame_register
 get_frame_upvalue = __bmsx_get_frame_upvalue
-local captures<const> = require('kernel/frame_upvalue')
-set_frame_upvalue = captures.set_frame_upvalue
-local creation<const> = require('kernel/thread_create')
-create_thread = creation.create_coroutine
-yield_thread = require('coroutine').yield
-local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end` });
+local thread_calls<const> = require('kernel/coroutine_control_ids')
+function set_frame_upvalue(thread, index, ordinal, value)
+ blua32.svc_value(thread_calls.set_frame_upvalue, thread, index, ordinal, value)
+end
+local coroutines<const> = require('coroutine')
+create_thread = coroutines.create
+yield_thread = coroutines.yield` });
 	const source = `require('base')
 table = require('table')
 string = require('string/base')

@@ -21,6 +21,7 @@ import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { linkManagedTestSystem } from '../helpers/managed_system';
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { afterTest } from '../helpers/test_cleanup';
@@ -270,10 +271,9 @@ test('conversation lifecycle cancels its own execution and keeps persistent brea
 	assert.throws(() => decodeDebuggerToolRequest('studio_resume_debugger', { target: 'x', mode: 'instruction' }), /continue\/into\/over\/out/);
 });
 
-const THREAD_PRIMITIVES = [{ path: 'thread_primitives', source: `
-local creation<const> = require('kernel/thread_create')
+const THREAD_PRIMITIVES = [...COROUTINE_FIRMWARE_MODULES, { path: 'thread_primitives', source: `
 local entries<const> = require('bmsx/startup')
-create_co = creation.create_coroutine
+create_co = require('coroutine').create
 resume_co = blua32.closure(entries.coroutine_resume)
 raise_error = __bmsx_error
 return true` }];

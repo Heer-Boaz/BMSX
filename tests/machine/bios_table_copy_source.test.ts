@@ -30,7 +30,7 @@ test('the ordinary Table copy pins both native routines and every backing/header
 	const scope = readFileSync(`${firmware}gc_operand_roots.lua`, 'utf8');
 	for (const [source, begin, end, labels] of [
 		[table, 'local copy_capacities<const>', '\nreturn {', {}],
-		[ingress, 'local layout<const>', '\nreturn {', { C: 'X', T: 'Y' }],
+		[ingress, 'local copy_record<const>', '\nreturn {', { C: 'X', T: 'Y' }],
 		[record, 'local copy<const>', '\n\tlocal roots_published', { B: 'C', J: 'T' }],
 	] as const) {
 		assert.ok(source.includes(begin) && source.includes(end));

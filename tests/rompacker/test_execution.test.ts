@@ -68,7 +68,7 @@ function exception()
  halt_until_irq
 end`, launchCartridge: true,
 			systemModules: [
-				{ path: 'base', source: `setmetatable = require([[kernel/gc_barrier]]).set_metatable` },
+				{ path: 'base', source: `setmetatable = require([[kernel/set_metatable]])` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>
@@ -154,7 +154,7 @@ test(`O${optLevel}: named cases preserve fixture hooks, failure inspection and b
 		const fixture = await buildScenarioMediaFixture(directory, [testSource], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('game entry must never run in a unit target')`,
@@ -255,7 +255,7 @@ return { kind = 'integration', tests = {
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartModules: [{ path: 'game', source: `return { updates = 0, down_samples = 0, after_publication = 0 }` }],
@@ -320,7 +320,7 @@ test(`O${optLevel}: cooperative and uncooperative cancellation have bounded, ind
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')`, launchCartridge: true,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])` },
 				...COROUTINE_FIRMWARE_MODULES,
 			], cartSource: `module<entry>
 function irq(flags) mem[0x08000004] = flags end

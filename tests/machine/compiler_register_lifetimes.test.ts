@@ -135,10 +135,8 @@ return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id 
 			const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(':record'));
 			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]);
 			const body = listing.split('\n').map(line => line.replace(/^0x[\da-f]+: /i, ''));
-			const binding = body.findIndex(line => TABLE_CONSTRUCTOR_BINDING.test(line));
-			assert.ok(binding >= 0);
-			const allocation = binding + 1;
-			assert.match(body[allocation], /CALL r\d+, 2, 1/);
+			const allocation = body.findIndex((line, i) => i > 0 && TABLE_CONSTRUCTOR_BINDING.test(body[i - 1] + "\n" + line));
+			assert.ok(allocation >= 0);
 			const proto = compiled.metadata.protoIds.findIndex(id => id.endsWith(':record'));
 			assert.deepEqual(tableConstructorHints(compiled, proto), [[0, 5]]);
 			assert.deepEqual(body.slice(allocation + 1, allocation + 6).map(line => line.split('"')[1]),
@@ -157,7 +155,7 @@ test('a call result can release its last table reference before the next collect
 	const boot = `local startup<const> = require('bmsx/startup')
 local heap<const> = require('kernel/gc_full')
 collect = function() heap.collect_full() end
-setmeta = require('kernel/gc_barrier').set_metatable
+setmeta = require('kernel/set_metatable')
 protect = blua32.closure(startup.protected_call)`;
 	const source = `
 require('boot')

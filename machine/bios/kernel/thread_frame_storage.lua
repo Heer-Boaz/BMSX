@@ -35,18 +35,6 @@ struct thread_storage_record
 	frame_block: addr -- I:24,182 H:23 J:125
 end
 
--- Obtain the architectural Thread and caller while a resident CALL runs.
-local active_call_frame<const> = function(management) -- X:3997-4007; select the resident caller's physical frame
-	local state<const> = layout.ram_base + management -- X:4001-4004
-	local project<const>: *word = state + layout.effect_offset -- X:3987-3991
-	*project = layout.publish_roots -- X:3997-4000
-	local roots<const>: *root_descriptors = state + layout.root_banks_offset -- X:4000,4004-4006
-	local owner<const> = roots.active -- X:4004-4006
-	local thread<const>: *thread_storage_record = owner -- I:20-24 H:20-24
-	local depth<const> = thread.frame_depth & control_count_mask -- I:24,34 H:23,27
-	return owner, layout.ram_base + ((thread.frame_block + (depth - 1) * frame_bytes) & word_mask) -- I:24 H:23 F:21 G:34
-end
-
 local value_planes<const> = function(address, first) -- I:156-165 J:91-106; borrow the slot planes without resizing them
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- I:157-159 J:92-94
 	local base<const> = layout.ram_base + (thread.stack_block & word_mask) -- I:163 J:101-102
@@ -263,7 +251,7 @@ end
 return {
 	internal = {
 		update_charge = update_charge, resize_value_stack = resize_value_stack,
-		grow_frame_controls = grow_frame_controls, value_planes = value_planes, active_call_frame = active_call_frame,
+		grow_frame_controls = grow_frame_controls, value_planes = value_planes,
 		publish_frame_roots = publish_frame_roots,
 	},
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,

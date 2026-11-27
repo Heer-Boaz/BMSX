@@ -4,7 +4,7 @@ local running<const> = __bmsx_coroutine_running
 local get_register<const> = __bmsx_get_frame_register
 local set_register<const> = __bmsx_set_frame_register
 local get_upvalue<const> = __bmsx_get_frame_upvalue
-local set_upvalue<const> = require('kernel/frame_upvalue').set_frame_upvalue
+local thread_calls<const> = require('kernel/coroutine_control_ids')
 local frame_header<const> = __bmsx_frame_header
 local frame_count<const> = __bmsx_frame_count
 local scopes<const> = require('debug/scopes')
@@ -74,7 +74,7 @@ function frame.open(frame_index, names, owner_frame)
 				raise('Selected frame evaluation has ended.')
 			end
 			if location.upvalue then
-				set_upvalue(thread, frame_index, location.index, value)
+				blua32.svc_value(thread_calls.set_frame_upvalue, thread, frame_index, location.index, value)
 			else
 				set_register(thread, frame_index, location.index, value)
 			end

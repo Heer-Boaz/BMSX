@@ -16,11 +16,12 @@ import { EXECUTION_IMAGE_BINDING_SIZE, GLOBAL_BANK_OFFSET, GlobalBankField, exec
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RESIDENT, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
+import { decodeBlua32Image } from '../../../toolchain/ts/rompack/blua32_image';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
 import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -41,6 +42,11 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 				'--output-dir', output, '--store-dir', join(dir, 'store')], { stdio: 'inherit' });
 			const rom = join(output, 'system', 'bmsx-bios.debug.rom');
 			const system = readFileSync(rom);
+			const imageAddress = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
+			const imageBytes = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET);
+			const image = decodeBlua32Image(system.subarray(imageAddress, imageAddress + imageBytes), imageAddress);
+			assert.ok(image.functions.every(fn => (fn.flags & BLUA32_FUNCTION_RESIDENT) === 0),
+				'the shipped System image does not enter the resident heap bank');
 			const payload = 'socket one cartridge literal';
 			const source = `bss report: word[0x2000]
 selected_payload = '${payload}'

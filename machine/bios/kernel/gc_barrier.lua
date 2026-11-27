@@ -164,39 +164,18 @@ end
 -- The C++ color-byte store is the existing common BIOS barrier policy.
 local invalid_argument<const> = 10 -- E:44 C:1209 T:4970,4980
 
-local set_metatable<const> = function(target, metatable) -- C:1206-1212 T:4967-4985
-	local port<const>: *u32 = layout.management_address -- C:1207 T:4968; existing resident call context
-	local fault<const>: *u32 = layout.call_fault_address -- C:1209 T:4970,4980; generic CALL faults
-	local management<const> = *port -- C:1207 T:4968; same context
-	local cell<const> = ram_base + management + layout.value_cell_offset -- C:1207-1209 T:4968-4979; existing typed exchange
-	local value<const>: *value = cell -- C:1207-1208 T:4968-4979
-	local word<const>: *u32 = cell -- C:1210 T:4972,4978
-	local tag<const>: *u8 = cell + layout.value_cell_tag_offset -- C:1209 T:4969,4976
-	*value = target -- C:1207 T:4968
-	if *tag ~= table_tag then -- C:1208-1209 T:4969
-		*fault = invalid_argument -- C:1209 T:4970
-		return nil -- C:1209 T:4970; no mutation on invalid argument
-	end
-	local address<const> = *word -- C:1210 T:4972
-	*value = metatable -- C:1208 T:4974-4976; an absent argument is Nil
-	local kind<const> = *tag -- C:1209-1210 T:4976
-	local replacement = 0 -- C:1210 T:4973
-	if kind == table_tag then -- C:1209-1210 T:4977
-		replacement = *word -- C:1210 T:4978
-	elseif kind ~= nil_tag then -- C:1209 T:4979
-		*fault = invalid_argument -- C:1209 T:4980
-		return nil -- C:1209 T:4980; neither queue nor record has changed
-	end
-	write_barrier(management + layout.control_offset, address, record_link, 1) -- B:33-34 D:105-106 T:4983
+local assign_metatable<const> = function(address, target_tag, metatable, kind) -- C:1206-1212 T:4967-4985
+	if target_tag ~= table_tag then return invalid_argument end -- C:1208-1209 T:4969-4970
+	if kind ~= table_tag and kind ~= nil_tag then return invalid_argument end -- C:1209 T:4979-4980
+	write_barrier(layout.management_offset + layout.control_offset, address, record_link, 1) -- B:33-34 D:105-106 T:4983
 	local field<const>: *u32 = address + table_metatable -- B:35 D:107
-	*field = replacement -- B:35 D:107
-	return target -- C:1211-1212 T:4983-4984
+	*field = kind == table_tag and metatable or 0 -- B:35 D:107 C:1209-1210 T:4973-4978
 end
 
 return {
 	internal = { has_edge = has_edge, mark_color = mark_color, credit_barrier_marks = credit_barrier_marks },
 	write_barrier = write_barrier,
-	set_metatable = set_metatable,
+	assign_metatable = assign_metatable,
 	mark_global_write = mark_global_write,
 	write_black_table_assignment = write_black_table_assignment,
 	write_table_assignment = write_table_assignment,

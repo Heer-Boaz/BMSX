@@ -21,7 +21,7 @@ import { afterTest } from '../helpers/test_cleanup';
 
 // The fixture now boots linked Table allocation and mutator firmware, not a rosterless image.
 const WORLD_BOOT_CYCLE_LIMIT = 500_000;
-const WORLD = `setmetatable = require([[kernel/gc_barrier]]).set_metatable
+const WORLD = `setmetatable = require([[kernel/set_metatable]])
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local answer<const> = blackboard.key('answer', 0)
 local board<const> = blackboard.new()

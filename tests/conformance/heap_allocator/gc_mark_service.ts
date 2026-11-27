@@ -25,7 +25,7 @@ const boot = {
 	source: `
 local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
 fixture_live = { answer = 41 }
-fixture_weak = require([[kernel/gc_barrier]]).set_metatable({ { answer = 23 }, fixture_live }, { __mode = 'v' })
+fixture_weak = require([[kernel/set_metatable]])({ { answer = 23 }, fixture_live }, { __mode = 'v' })
 `,
 };
 

@@ -30,9 +30,5 @@ return {
 	effect_offset = 0x788,
 	value_cell_offset = 0x7a0, -- firmware scratch; only this module owns the placement
 	value_cell_tag_offset = 4,
-	management_address = 0x02c00004,
-	call_cycles_address = 0x02c00008,
-	call_run_kind_address = 0x02c0000c,
-	call_fault_address = 0x02c00010,
 	publish_roots = 0,
 }

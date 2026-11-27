@@ -222,7 +222,7 @@ export function visitInstructionDefs<T>(
 			visitRegisterRange(state, visitor, instruction.a, 2);
 			break;
 		case OpCode.SVC:
-			if (instruction.b !== 0) visitRegister(state, visitor, instruction.a);
+			visitRegisterRange(state, visitor, instruction.a, instruction.b);
 			break;
 		case OpCode.ITERN:
 			visitRegister(state, visitor, instruction.a + 2);

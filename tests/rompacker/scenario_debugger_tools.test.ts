@@ -48,7 +48,7 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SOURCE }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')", launchCartridge: true,
-		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable' },
+		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/set_metatable]])' },
 			...COROUTINE_FIRMWARE_MODULES],
 		cartOptLevel: optLevel,
 		cartSource: 'module<entry>\nwhile true do halt_until_irq end',

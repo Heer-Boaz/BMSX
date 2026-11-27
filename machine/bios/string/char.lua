@@ -1,5 +1,5 @@
-local chars<const> = require('kernel/bios_string_char')
+local ids<const> = require('kernel/heap_control_ids')
 
 return function(...)
-	return chars.intern_chars()
+	return blua32.svc_value(ids.string_chars)
 end

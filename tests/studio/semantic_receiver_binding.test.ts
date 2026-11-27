@@ -156,7 +156,7 @@ return original:change(), original:read()`;
 		assert.deepEqual(targets, index === 0 ? ['first.read', 'second.read', 'third.read'] : ['first.read']);
 	}
 	// Publish the same resident Value as BIOS base.lua, not a fixture implementation.
-	const bootSource = 'setmetatable = require([[kernel/gc_barrier]]).set_metatable';
+	const bootSource = 'setmetatable = require([[kernel/set_metatable]])';
 	const entrySource = `require('test_boot')\n${source}`;
 	for (const level of [3] as const) {
 		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, PATH), [

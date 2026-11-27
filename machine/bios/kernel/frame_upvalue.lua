@@ -42,54 +42,34 @@ end
 
 -- Integer operands admit exactly the nonnegative integral values below
 -- the selected physical extent, including integral floats.
-local bounded_ordinal<const> = function(argument, address, count)
-	local value<const>: *value = address
-	local kind<const>: *u8 = address + layout.value_cell_tag_offset
-	*value = argument
-	if *kind ~= integer_tag and *kind ~= float_tag then return -1 end
+local bounded_ordinal<const> = function(word, tag, count)
+	local argument = word
+	if tag == float_tag then argument = blua32.float_from_bits(word)
+	elseif tag ~= integer_tag then return -1 end
 	if not (argument >= 0 and argument < count) then return -1 end
 	if argument // 1 ~= argument then return -1 end
 	return argument & -1
 end
 
-local set_frame_upvalue<const> = function(target, index, ordinal, replacement)
-	local port<const>: *u32 = layout.management_address
-	local fault<const>: *u32 = layout.call_fault_address
-	local management<const> = *port
+local store_value<const> = function(target, target_tag, index, index_tag, ordinal, ordinal_tag, payload, kind)
+	local management<const> = layout.management_offset
 	local arena<const> = management + layout.arena_offset
-	local address<const> = layout.ram_base + management + layout.value_cell_offset
-	local value<const>: *value = address
-	local word<const>: *u32 = address
-	local tag<const>: *u8 = address + layout.value_cell_tag_offset
-	*value = target
-	if *tag ~= thread_tag then
-		*fault = invalid_argument
-		return
-	end
-	local offset<const> = *word & record_mask
+	if target_tag ~= thread_tag then return invalid_argument end
+	local offset<const> = target & record_mask
 	local thread<const>: *diagnostic_thread = layout.ram_base + offset
 	if thread.kind ~= thread_kind or allocator.bmsx_dlmalloc_is_object(arena, offset - object_prefix) == 0 then
-		*fault = invalid_argument
-		return
+		return invalid_argument
 	end
-	local frame<const> = bounded_ordinal(index, address, thread.frame_depth & control_count_mask)
-	if frame < 0 then
-		*fault = invalid_argument
-		return
-	end
+	local frame<const> = bounded_ordinal(index, index_tag, thread.frame_depth & control_count_mask)
+	if frame < 0 then return invalid_argument end
 	local closure_word<const>: *addr = layout.ram_base + ((thread.frame_block + frame_bytes * frame + frame_closure) & word_mask)
 	local closure<const> = *closure_word
 	-- Hardware-only frames have no Closure and therefore no captures.
 	local count<const> = closure == 0 and 0 or captures.internal.capture_count(closure)
-	local capture<const> = bounded_ordinal(ordinal, address, count)
-	if capture < 0 then
-		*fault = invalid_argument
-		return
-	end
+	local capture<const> = bounded_ordinal(ordinal, ordinal_tag, count)
+	if capture < 0 then return invalid_argument end
 	local cell_offset<const> = captures.internal.capture_address(closure, capture) & record_mask
 	local cell<const>: *diagnostic_upvalue = layout.ram_base + cell_offset
-	*value = replacement
-	local kind<const>, payload<const> = *tag, *word
 	if (cell.flags & upvalue_open_bit) ~= 0 then
 		local owner<const>: *diagnostic_thread = layout.ram_base + (cell.owner & word_mask)
 		local block<const>, slot<const> = owner.stack_block & word_mask, cell.word
@@ -100,6 +80,10 @@ local set_frame_upvalue<const> = function(target, index, ordinal, replacement)
 	else
 		barrier.store_closed_value(management + layout.control_offset, arena, management + layout.metadata_offset, cell_offset, kind, payload, 1)
 	end
+	return nil
 end
 
-return { set_frame_upvalue = set_frame_upvalue, internal = { bounded_ordinal = bounded_ordinal } }
+return {
+	store_value = store_value,
+	internal = { bounded_ordinal = bounded_ordinal },
+}

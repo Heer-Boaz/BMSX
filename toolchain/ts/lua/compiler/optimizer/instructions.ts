@@ -23,6 +23,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	target: instruction.target,
 	callProtoIndex: instruction.callProtoIndex,
 	tableConstructor: instruction.tableConstructor,
+	inlineSupervisorWindow: instruction.inlineSupervisorWindow,
 	closureAddressRegister: instruction.closureAddressRegister,
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
@@ -205,7 +206,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 
 // A dead result is not permission to remove an instruction that can raise a Lua fault.
 export const createsTable = (instruction: Instruction): boolean =>
-	instruction.op === OpCode.CALL && instruction.tableConstructor === true;
+	instruction.op === OpCode.SVC && instruction.tableConstructor === true;
 
 export const isPureInstruction = (instruction: Instruction): boolean => {
 	if (instruction.op === OpCode.MOV && instruction.c !== ValueMoveKind.Copy) return false;
@@ -226,8 +227,8 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.ARGC:
 		case OpCode.VARARG:
 			return true;
-		case OpCode.CALL:
-			// Preserve elimination of an unobserved fresh table, not other calls.
+		case OpCode.SVC:
+			// Preserve elimination of an unobserved fresh table, not other traps.
 			return createsTable(instruction);
 		default:
 			return false;

@@ -1051,7 +1051,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const layout = decodeBlua32Image(bytes, input.loadAddress);
 	if (input.domain === 'system') {
 		const fixedEntries = input.biosExports.flatMap((entry, index) => entry.fixedStack ? [index] : []);
-		linkBlua32ResidentFunctions(layout, localFunctionAddressBySymbol, object.link.constValueRelocs, fixedEntries);
+		linkBlua32ResidentFunctions(layout, object.link.constValueRelocs, fixedEntries);
 		return {
 			domain: 'system',
 			bytes,

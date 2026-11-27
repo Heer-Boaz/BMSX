@@ -352,6 +352,7 @@ function verifyStringChar(rom: string, native: string, dir: string, optLevel: Op
 mem[${IO_IRQ_MASK}] = 0
 local char = string.char
 assert(type(char) == 'function' and char() == '')
+assert(select('#', char(65, 66)) == 1)
 local mixed = char(255.75, -0.75, 4294967296.0, 65, 128)
 assert(#mixed == 5)
 assert(string.byte(mixed, 1) == 255 and string.byte(mixed, 2) == 0 and string.byte(mixed, 3) == 0)
@@ -359,7 +360,8 @@ assert(string.byte(mixed, 4) == 65 and string.byte(mixed, 5) == 128)
 assert(char(table.unpack({255, 0, 0, 65, 128}, 1, 5)) == mixed)
 assert(char(255, 0, 0, 65, 128) == mixed)
 for _, bad in ipairs({-1, 256, -1.75, 0/0, 1/0, false, '65'}) do
-	assert(not pcall(char, 65, bad))
+	local ok, message = pcall(char, 65, bad)
+	assert(not ok and message == 'Invalid argument.')
 end
 local ok, result = pcall(char, 23, 7)
 assert(ok and #result == 2 and string.byte(result, 1) == 23 and string.byte(result, 2) == 7)
@@ -388,7 +390,6 @@ halt_until_irq
 		].join(' '));
 	}
 	assert.equal(memory.readMappedU32LE(report), 43);
-	assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	trace.observe(`M ${report}`, '43 0');
 	trace.replay('stock string.char with fixed, open and protected argument windows', rom);
 }

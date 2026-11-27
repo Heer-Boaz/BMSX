@@ -22,7 +22,7 @@ const boot = {
 	source: `
 local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
 fixture_anchor = { answer = 43 }
-fixture_weak = require([[kernel/gc_barrier]]).set_metatable({ { answer = 17 }, fixture_anchor }, { __mode = 'v' })
+fixture_weak = require([[kernel/set_metatable]])({ { answer = 17 }, fixture_anchor }, { __mode = 'v' })
 `,
 };
 const remarkWeak = 2 << GC_GRAY_INDEX_BITS, remarkRoots = 3 << GC_GRAY_INDEX_BITS;

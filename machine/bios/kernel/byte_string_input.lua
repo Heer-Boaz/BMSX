@@ -13,21 +13,15 @@ local strings<const> = require('kernel/gc_strings')
 local allocation<const> = require('kernel/allocate_string_slice').internal
 local collector<const> = require('kernel/gc_step')
 local records<const> = require('kernel/dlmalloc_record')
-local frames<const> = require('kernel/thread_frame_storage').internal
-local _stopped_layout<const> = require('kernel/thread_retire')
 local tags<const> = require('kernel/value_type')
 local string_record<const> = require('kernel/string_record')
 
-local syscall_id<const> = 0x10000
 local invalid_argument<const> = 10
 local out_of_memory<const> = 9
 local management<const> = layout.management_offset
 local metadata<const> = management + layout.metadata_offset
 local arena<const> = management + layout.arena_offset
 local occupied<const> = management + layout.occupied_offset
-local control_count_mask<const> = (1 << 18) - 1
-local window_mask<const> = (1 << 20) - 1
-local ram_word_mask<const> = 0x003ffffc
 local header_bytes<const> = 16
 local cart_rom_base<const> = 0x10000000
 local cart_ram_base<const> = 0x30000000
@@ -122,31 +116,4 @@ local intern<const> = function(address, count)
 	return id, nil
 end
 
-local receive<const> = function(owner, destination, argc)
-	if argc ~= 2 then return nil, invalid_argument end
-	local context<const>: *stopped_thread = owner
-	local depth<const> = context.frame_depth & control_count_mask
-	local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
-	local slot<const> = (frame.stack_base & window_mask) + destination
-	local words<const>, tags_address<const> = frames.value_planes(owner, slot + 1)
-	local arguments<const>: *u32 = words
-	local kinds<const>: *u8 = tags_address
-	if kinds[0] ~= tags.integer_tag or kinds[1] ~= tags.integer_tag then return nil, invalid_argument end
-	local id<const>, reason<const> = intern(arguments[0], arguments[1])
-	if not id then return nil, reason end
-	-- Read the result planes from the stopped context after any collection.
-	local result_words<const>, result_tags<const> = frames.value_planes(owner, slot)
-	local result<const>: *u32 = result_words
-	local kind<const>: *u8 = result_tags
-	*result, *kind = id, tags.string_tag
-	if (frame.top & window_mask) <= destination then
-		frame.top = (frame.top & ~window_mask) | (destination + 1)
-	end
-	return true, nil
-end
-
-return {
-	syscall_id = syscall_id,
-	receive = receive,
-	internal = { admit_span = admit_span, lookup = lookup, intern = intern },
-}
+return { internal = { admit_span = admit_span, lookup = lookup, intern = intern } }

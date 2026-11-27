@@ -1,4 +1,4 @@
-local string_index<const> = require('kernel/string_index')
+local ids<const> = require('kernel/heap_control_ids')
 local string<const> = require('string/base')
 
 local pattern<const> = require('string/pattern')
@@ -17,6 +17,6 @@ string.pack = pack.pack
 string.packsize = pack.packsize
 string.unpack = pack.unpack
 
-string_index.install(string)
+blua32.svc_value(ids.string_index, string)
 
 return string

@@ -4,17 +4,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_CHANGED_HEAD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
-import { valueBool, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valueBool, valueInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileCartlibProgram } from '../../helpers/cartlib_cpu';
@@ -57,23 +56,25 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 
 for (const optLevel of [0, 3] as const) test(`stock rawset O${optLevel} runs the table barrier and assignment on the BIOS stack`, () => {
 	const { images } = compileCartlibProgram(source, { optLevel });
-	const target = images.systemSymbols.metadata.functionIds.findIndex(id =>
-		id.startsWith('module:kernel/table_grow/') && id.endsWith('|constant|raw_set'));
-	assert.notEqual(target, -1);
-	const functionAddress = images.systemImage.functions[target].address;
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes),
 		machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = cpu;
-	const frame = arena.managementOffset() + HEAP_SERVICE_FRAME_OFFSET;
 	const grant = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-	const atStore = () => cpu.heapServiceActive()
-		&& memory.readRamRecordWord(frame + FrameField.Function) === functionAddress;
-	for (let i = 0; i < 20_000 && !atStore(); ++i) grant(1024);
-	assert.ok(atStore(), `no BIOS raw-set: Cause=${cpu.readCauseWord()} EPC=${cpu.readEpcWord().toString(16)} reason=${cpu.readLuaFaultReasonWord()}`);
-	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 2), 0, 'the cartridge called the public function');
-	const argumentsFrame = cpu.activeThread.currentFrame!;
-	const table = argumentsFrame.registers.get(0);
+	const atVector = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL;
+	const atRawSet = () => atVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10021);
+	for (let i = 0; i < 250_000 && !atRawSet(); ++i) grant(23);
+	assert.ok(atRawSet(), `no BIOS raw-set: Cause=${cpu.readCauseWord()} EPC=${cpu.readEpcWord().toString(16)} reason=${cpu.readLuaFaultReasonWord()}`);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), cpu.rootThread.address);
+	const frame = cpu.rootThread.frameDepth - 1;
+	assert.equal(cpu.rootThread.frameAtDepth(frame - 1).savedExecutionBank, 0, 'the cartridge called the public function');
+	const destination = asInteger(cpu.activeThread.frameAtDepth(0).registers.get(1));
+	const issuer = cpu.rootThread.frameAtDepth(frame);
+	const successor = cpu.readEpcWord();
+	assert.equal(issuer.pc, successor);
+	const atStore = () => atVector() && cpu.readEpcWord() === successor;
+	const table = issuer.registers.get(destination + 1);
 	assert.equal(valueTag(table), ValueTag.Table);
 	const address = valuePayload(table), control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	// Exact barrier state at the admitted store: the new value is an edge

@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
-import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, MAX_EXT_REGISTER_A, MAX_EXT_REGISTER_BC, MIN_SIGNED_BX, ValueMoveKind, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { compileLuaChunkToProgram, type CompiledProgram } from '../../toolchain/ts/lua/compiler';
@@ -13,11 +12,8 @@ import { computeMaxRegister, isPureInstruction } from '../../toolchain/ts/lua/co
 import { collectInstructionDefs, collectInstructionUses } from '../../toolchain/ts/lua/compiler/optimizer/liveness';
 import { encodeWideIntegerLoad } from '../../toolchain/ts/lua/compiler/wide_integer';
 import { decodeBlua32InstructionAtPc, type DecodedInstruction } from '../../toolchain/ts/rompack/blua32_instruction_decode';
-import { describeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/disassembler';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaSource, parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
-import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
 function body(compiled: CompiledProgram, functionName?: string): DecodedInstruction[] {
 	const index = functionName === undefined ? compiled.entryProtoIndex
@@ -45,17 +41,17 @@ function integer(instruction: DecodedInstruction): number {
 }
 
 function tableCall(instructions: readonly DecodedInstruction[]): number {
-	return instructions.findIndex((instruction, index) => instruction.op === OpCode.CALL && instruction.b === 3
-		&& instructions[index - 1].op === OpCode.CLOSURE && instructions[index - 1].a === instruction.a);
+	return instructions.findIndex((instruction, index) => instruction.op === OpCode.SVC && instruction.b === 3
+		&& instructions[index - 1].op === OpCode.K0 && instructions[index - 1].a === instruction.a);
 }
 
 function tableCapacities(instructions: readonly DecodedInstruction[], site: number): number[] {
 	const call = instructions[site];
-	assert.equal(call.op, OpCode.CALL);
+	assert.equal(call.op, OpCode.SVC);
 	assert.equal(call.b, 3);
-	assert.equal(call.c, 2);
+	assert.equal(call.c, 0);
 	const binding = instructions[site - 1];
-	assert.equal(binding.op, OpCode.CLOSURE);
+	assert.equal(binding.op, OpCode.K0);
 	assert.equal(binding.a, call.a);
 	const args = instructions.slice(site - 3, site - 1);
 	assert.deepEqual(args.map(arg => arg.a), [call.a + 1, call.a + 2]);
@@ -86,10 +82,10 @@ return empty, hinted, prepared, effects, virtual
 `;
 
 for (const opt of [0, 2, 3] as const) {
-	test(`the resident constructor uses an ordinary fixed call window and preserves table sizing at O${opt}`, () => {
+	test(`the constructor uses the original SVC window and preserves table sizing at O${opt}`, () => {
 		const compiled = compileLuaSource(source, 'bioscall-shapes.lua', opt);
 		const empty = body(compiled, 'empty');
-		assert.deepEqual(empty.slice(0, 5).map(instruction => instruction.op), [OpCode.K0, OpCode.K0, OpCode.CLOSURE, OpCode.CALL, OpCode.RET]);
+		assert.deepEqual(empty.slice(0, 5).map(instruction => instruction.op), [OpCode.K0, OpCode.K0, OpCode.K0, OpCode.SVC, OpCode.RET]);
 		assert.deepEqual(tableCapacities(empty, 3), [0, 0]);
 		assert.equal(empty[3].a, empty[4].a, 'a free suffix needs no result move');
 		const hinted = body(compiled, 'hinted');
@@ -117,7 +113,7 @@ for (const opt of [0, 2, 3] as const) {
 		assert.ok(stores.every(instruction => instruction.a === record[site].a));
 		if (opt === 3) {
 			const { a } = record[site];
-			assert.ok(reads.every(instruction => instruction.a < a), 'fixed RET keeps both prepared RHS roots live');
+			assert.ok(reads.every(instruction => instruction.a < a), 'both prepared RHS roots remain live');
 		}
 		const effects = body(compiled, 'effects');
 		const allocation = tableCall(effects);
@@ -130,10 +126,10 @@ for (const opt of [0, 2, 3] as const) {
 	});
 }
 
-test('only a constructor recognized by the compiler is removable; it uses the ordinary CALL liveness window', () => {
-	const instruction: Instruction = { op: OpCode.CALL, format: 'ABC', a: 9, b: 3, c: 2, rkMask: 0, target: null, tableConstructor: true };
+test('only a constructor recognized by the compiler is removable; its SVC keeps the explicit liveness window', () => {
+	const instruction: Instruction = { op: OpCode.SVC, format: 'ABC', a: 9, b: 3, c: 0, rkMask: 0, target: null, tableConstructor: true };
 	assert.deepEqual(collectInstructionUses(instruction, 15, () => []), [9, 10, 11]);
-	assert.deepEqual(collectInstructionDefs(instruction, 15), [9, 10, 11, 12, 13, 14, 15]);
+	assert.deepEqual(collectInstructionDefs(instruction, 15), [9, 10, 11]);
 	assert.equal(computeMaxRegister([instruction]), 11);
 	assert.equal(isPureInstruction(instruction), true);
 	assert.equal(isPureInstruction({ ...instruction, tableConstructor: undefined }), false);
@@ -195,21 +191,6 @@ test('slot compaction keeps the complete saved SVC argument window', () => {
 	assert.ok(allocated.maxStack < 18);
 });
 
-test('linked disassembly shows a real constructor binding and an ordinary CALL', () => {
-	const compiled = compileHeapServiceSystem('return {}', 0);
-	const image = linkTestSystemBlua32(compiled);
-	const bodyAddress = image.image.functions.find(fn => fn.address === image.vectors.entryFunctionAddress)!.codeAddress;
-	const code = body(compiled);
-	const site = tableCall(code);
-	const bindingPc = bodyAddress + code[site - 1].pc - compiled.program.protos[compiled.entryProtoIndex].entryPC - INSTRUCTION_BYTES;
-	const binding = decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, bindingPc);
-	const { slotName } = compiled.program.moduleExports.find(entry => entry.path === 'kernel/bios_create_table' && entry.exportPathKey === 'create_table')!;
-	const index = image.symbols.metadata.functionIds.indexOf(compiled.metadata.exportProtoIdBySlot[slotName]);
-	assert.equal(binding.bx * 16, image.symbols.functionAddresses[index]);
-	const described = describeBlua32InstructionAtPc(image.image, image.symbols, binding.pc + INSTRUCTION_BYTES);
-	assert.match(described.instructionText, /^CALL r\d+, 2, 1$/);
-});
-
 test('static fixed modules may not construct a managed Table', () => {
 	const moduleSource = 'module<const>\nlocal make<const> = function() return {} end\nreturn {make = make}';
 	const entry = 'halt_until_irq';
@@ -227,7 +208,7 @@ test('literal capacities travel as tagged Integer values rather than instruction
 		/constructor capacity exceeds 32767 slots/);
 });
 
-test('inlining rebases the complete constructor window and keeps its relocated target', () => {
+test('inlining rebases the complete constructor window without changing its width', () => {
 	const compiled = compileLuaSource(`
 local function make(v) return {v} end
 local kept = 17
@@ -237,40 +218,23 @@ return kept, t
 	const instructions = body(compiled);
 	const site = tableCall(instructions);
 	assert.ok(site >= 0, 'the allocating callee was inlined into the entry body');
-	assert.equal(instructions.filter(instruction => instruction.op === OpCode.CALL).length, 1);
+	assert.equal(instructions.filter(instruction => instruction.op === OpCode.CALL).length, 0);
 	assert.deepEqual(tableCapacities(instructions, site), [1, 0]);
 });
 
-test('a constructor above 4100 locals materializes both tagged capacities in their high argument slots', () => {
+test('a constructor above 4100 locals keeps the token and hints in its existing high register window', () => {
 	const locals = Array.from({ length: 4100 }, (_, index) => `v${index}`).join(',');
 	for (const opt of [0, 2, 3] as const) {
-		for (const [fields, array, hash] of [['0,1', 2, 0], ['0,1,0,1,0; x=1,y=0,z=1', 5, 3]] as const) {
-			const compiled = compileHeapServiceSystem(`local ${locals}\nreturn {${fields}}`, opt, [], 'high-bioscall.lua');
-			const proto = compiled.program.protos[compiled.entryProtoIndex];
-			const instructions = body(compiled);
-			const site = tableCall(instructions);
-			assert.ok(site >= 0);
-			const call = instructions[site];
-			assert.equal(call.a, 4100);
-			assert.equal(call.b, 3);
-			assert.equal(call.c, 2);
-			assert.equal(proto.maxStack, call.a + 3, 'Integer materialization uses no extra slot');
-			const image = linkTestSystemBlua32(compiled);
-			const fn = image.image.functions.find(candidate => candidate.address === image.vectors.entryFunctionAddress)!;
-			const pc = fn.codeAddress + (call.pc - proto.entryPC) - INSTRUCTION_BYTES; // WIDE head
-			const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
-			cpu.setExecutionHook((_domain, at) => at === pc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			assert.equal(runCpuWithinBudget(cpu, 1_000_000), RunResult.ExecutionStopped);
-			const frame = cpu.getFrameDepth() - 1;
-			assert.equal(cpu.readFramePc(frame), pc);
-			assert.equal(valueTag(cpu.readFrameRegister(frame, call.a)), ValueTag.ResidentFunction);
-			const binding = instructions[site - 1];
-			assert.equal(binding.a, call.a, 'the 14-bit CLOSURE destination is the high CALL base');
-			const linkedBinding = decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, pc - 2 * INSTRUCTION_BYTES);
-			assert.equal(valuePayload(cpu.readFrameRegister(frame, call.a)), linkedBinding.bx * 16);
-			assert.equal(cpu.readFrameRegister(frame, call.a + 1), valueInteger(array));
-			assert.equal(cpu.readFrameRegister(frame, call.a + 2), valueInteger(hash));
-		}
+		const compiled = compileLuaSource(`local ${locals}\nreturn {0,1,0,1,0; x=1,y=0,z=1}`, 'high-table.lua', opt);
+		const proto = compiled.program.protos[compiled.entryProtoIndex];
+		const instructions = body(compiled);
+		const site = tableCall(instructions);
+		assert.ok(site >= 0);
+		const call = instructions[site], token = instructions[site - 1];
+		assert.deepEqual([call.a, call.b, call.c], [4100, 3, 0]);
+		assert.equal(proto.maxStack, call.a + 3, 'Integer materialization uses no extra slot');
+		assert.equal(token.op, OpCode.K0);
+		assert.equal(token.a, call.a);
 	}
 });
 

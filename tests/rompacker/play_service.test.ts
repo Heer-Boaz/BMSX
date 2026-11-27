@@ -44,7 +44,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, onSessionCreated?: (
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SCENE }], {
 		cartOptLevel: optLevel,
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')", launchCartridge: true,
-		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=require([[kernel/gc_barrier]]).set_metatable' }, ...COROUTINE_FIRMWARE_MODULES],
+		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=require([[kernel/set_metatable]])' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: `module<entry>
 local game<const> = require('game')
 function irq(flags) mem[0x08000064]=1; mem[0x08000004]=flags end

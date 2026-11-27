@@ -1,28 +1,28 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { valueInteger, valueResidentFunction, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueInteger, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { BiosFunction } from '../../../machine/ts/spec/bmsx/bios';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { executionDomainBit } from '../../../machine/ts/spec/blua32/execution_domain';
+import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkTestBlua32Pair } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
+import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../../helpers/managed_system';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const boot = 'cop0.exec = mem32le[0x10000028]';
 const locals = Array.from({ length: 4100 }, (_, index) => `slot${index}`).join(',');
 const entrySource = `
 local ${locals}
@@ -30,31 +30,31 @@ local probe = {0,17,0,0,0; x=31,y=41,z=3}
 return probe[2] * 10 + probe.z, probe
 `;
 
-mkdirSync('tmp', { recursive: true });
-const folder = mkdtempSync(join('tmp', 'bmsx-high-constructor-'));
+const folder = mkdtempSync('/tmp/bmsx-high-constructor-');
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
 		const cart = compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel });
-		const pair = linkTestBlua32Pair(compileHeapServiceSystem(boot, optLevel), cart);
-		const target = pair.systemBiosImports.functions[BiosFunction.CreateTable].functionAddress;
-		const layout = pair.cartImage, { textAddress } = layout.header;
-		const code = layout.functions.find(fn => fn.address === pair.cartVectors.entryFunctionAddress)!;
-		let bindingPc = code.codeAddress;
-		for (; bindingPc < code.codeAddress + code.codeByteCount;) {
-			const op = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, bindingPc);
-			if (op.op === OpCode.CLOSURE && op.bx * 16 === target) break;
-			bindingPc = op.pc + INSTRUCTION_BYTES;
+		const system = linkManagedTestSystem(TEST_CART_TRANSFER_SOURCE, optLevel);
+		const { layout, ...linked } = linkCartBlua32Image(system.biosImports, encodeCompiledProgramObject(cart), cart.metadata,
+			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+		const cartRomBytes = writeTestBlua32Rom({ layout, ...linked });
+		const systemRomBytes = writeTestBlua32Rom(system);
+		const { textAddress } = layout.header;
+		const code = layout.functions.find(fn => fn.codeAddress === layout.header.textAddress)!;
+		let callPc = code.codeAddress;
+		for (; callPc < code.codeAddress + code.codeByteCount;) {
+			const op = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, callPc);
+			if (op.op === OpCode.SVC) break;
+			callPc = op.pc + INSTRUCTION_BYTES;
 		}
-		assert.ok(bindingPc < code.codeAddress + code.codeByteCount);
-		const binding = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, bindingPc);
-		const callPc = binding.pc + INSTRUCTION_BYTES;
+		assert.ok(callPc < code.codeAddress + code.codeByteCount);
 		const call = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, callPc);
-		assert.ok(binding.a > 4095);
-		assert.deepEqual([call.op, call.a, call.b, call.c], [OpCode.CALL, binding.a, 3, 2]);
+		assert.ok(call.a > 4095);
+		assert.deepEqual([call.op, call.b, call.c], [OpCode.SVC, 3, 0]);
 
 		const runtime = new Runtime({
-			systemRomBytes: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes),
+			systemRomBytes, cartridgeSlots: cartridgeSlots(cartRomBytes),
 			machineModel: PSX_MACHINE_SPEC,
 		}, input);
 		runtime.boot();
@@ -62,14 +62,16 @@ try {
 		const arena = cpu.heapAllocator;
 		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		const caller = () => cpu.getFrameDepth() - 1;
-		for (let i = 0; i < 32768 && cpu.readFramePc(caller()) !== bindingPc; ++i)
-			assert.notEqual(slice(1), RunResult.Halted);
-		assert.equal(cpu.readFramePc(caller()), bindingPc);
+		cpu.setExecutionHook((_domain, at) => at === callPc, executionDomainBit(0), 0);
+		for (let i = 0; i < 256 && cpu.readFramePc(caller()) !== callPc; ++i)
+			assert.notEqual(slice(4096), RunResult.Halted);
+		assert.equal(cpu.readFramePc(caller()), callPc);
+		cpu.setExecutionHook(null, 0, 0);
 		const stem = join(folder, `O${optLevel}`);
 		const seed = stem + '.seed', rom = stem + '.rom', cartRom = stem + '.cart', trace = stem + '.trace';
 		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		writeFileSync(rom, pair.systemRomBytes);
-		writeFileSync(cartRom, pair.cartRomBytes);
+		writeFileSync(rom, systemRomBytes);
+		writeFileSync(cartRom, cartRomBytes);
 
 		const commands = ['X'], rows: string[] = [];
 		function grant(cycles: number): number {
@@ -79,14 +81,12 @@ try {
 			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
-		assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
-		assert.equal(cpu.readFramePc(caller()), callPc);
-		assert.equal(cpu.heapServiceActive(), false, 'loading the ROM binding does not allocate');
-		assert.equal(cpu.readFrameRegister(caller(), binding.a), valueResidentFunction(target));
-		assert.equal(cpu.readFrameRegister(caller(), binding.a + 1), valueInteger(5));
-		assert.equal(cpu.readFrameRegister(caller(), binding.a + 2), valueInteger(3));
-		assert.equal(grant(1), BASE_CYCLES[OpCode.CALL] + 2);
-		assert.equal(cpu.heapServiceActive(), true);
+		assert.equal(cpu.readFrameRegister(caller(), call.a), valueInteger(0));
+		assert.equal(cpu.readFrameRegister(caller(), call.a + 1), valueInteger(5));
+		assert.equal(cpu.readFrameRegister(caller(), call.a + 2), valueInteger(3));
+		assert.ok(grant(1) >= BASE_CYCLES[OpCode.SVC]);
+		assert.ok(cpu.fixedInterruptActive());
+		assert.equal(cpu.heapServiceActive(), false);
 		for (let i = 0; i < 256 && cpu.getFrameDepth(); ++i) grant(191);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		const values = runtime.readCompletionValues();
@@ -100,7 +100,7 @@ try {
 		writeFileSync(trace, commands.join('\n'));
 		const seen = execFileSync(native, [rom, trace, seed, cartRom], { encoding: 'utf8' }).trimEnd().split('\n');
 		assert.deepEqual(seen, rows);
-		console.log(`HIGH-TABLE-CONSTRUCTOR:PASS O${optLevel} R${binding.a} (resident cartridge import, exact TS/C++ grants and heap)`);
+		console.log(`HIGH-TABLE-CONSTRUCTOR:PASS O${optLevel} R${call.a} (original cartridge window, exact TS/C++ grants and heap)`);
 	}
 	rmSync(folder, { recursive: true });
 } catch (error) {

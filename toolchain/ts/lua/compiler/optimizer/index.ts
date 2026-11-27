@@ -55,6 +55,8 @@ export type Instruction = {
 	target: number | null;
 	callProtoIndex?: number | null;
 	tableConstructor?: true;
+	/** Only the explicit window is observed; the issuer frame identity is immaterial. */
+	inlineSupervisorWindow?: true;
 	closureAddressRegister?: boolean;
 	symbolicReloc?:
 		| { kind: 'module_init'; symbol: string }
@@ -513,7 +515,7 @@ const computeBlockConstantIn = (
 						break;
 					}
 					case OpCode.SVC:
-						if (instruction.b !== 0) constants.delete(instruction.a);
+						clearRegisterRange(constants, instruction.a, instruction.b);
 						break;
 					case OpCode.CALL: {
 						clearRegisterRange(constants, instruction.a, null);
@@ -662,7 +664,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 					break;
 				}
 				case OpCode.SVC:
-					if (instruction.b !== 0) constants.delete(instruction.a);
+					clearRegisterRange(constants, instruction.a, instruction.b);
 					break;
 				case OpCode.CALL: {
 					clearRegisterRange(constants, instruction.a, null);
@@ -972,7 +974,8 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				}
 				case OpCode.SVC:
 					if (instruction.b === 0) rewriteCopyInstructionOperand(instruction, 'a', copies);
-					else killRegister(constants, copies, instruction.a);
+					else for (let slot = instruction.a; slot < instruction.a + instruction.b; slot++)
+						killRegister(constants, copies, slot);
 					break;
 				case OpCode.LOADK: {
 					const value = loadKConstValueForOptimization(instruction, context);
@@ -1438,7 +1441,7 @@ const applyClosureTransferForInlining = (
 			closures.delete(instruction.a + 1);
 			return;
 		case OpCode.SVC:
-			if (instruction.b !== 0) closures.delete(instruction.a);
+			clearRegisterRange(closures, instruction.a, instruction.b);
 			return;
 		default:
 			return;
@@ -1838,6 +1841,7 @@ const buildInlineExpansion = (
 			case OpCode.RFE:
 				return null;
 			case OpCode.CALL:
+			case OpCode.SVC:
 				mapped.a = mapRegister(mapped.a);
 				break;
 			case OpCode.LOAD_MEM:
@@ -2001,7 +2005,7 @@ const inlineFunctionCalls = (
 				|| instruction.op === OpCode.VARARG
 				|| instruction.op === OpCode.ARGC
 				|| instruction.op === OpCode.HALT
-				|| instruction.op === OpCode.SVC
+				|| (instruction.op === OpCode.SVC && !instruction.inlineSupervisorWindow)
 				|| instruction.op === OpCode.RFE) {
 				calleeCache.set(protoIndex, null);
 				return null;

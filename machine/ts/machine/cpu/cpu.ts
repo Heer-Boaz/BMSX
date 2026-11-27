@@ -1796,6 +1796,8 @@ export class CPU implements MappedPageInvalidator {
 	private resumeInterruptedContext(): void {
 		const context = this.memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, 0, 0);
+		this.globalBank.bind();
+		this.systemGlobalBank.bind();
 		const thread = this.bindThread(context);
 		if (thread.currentFrameViewMatches()) thread.bindStack(true);
 		else this.bindPhysicalFrames(thread);
