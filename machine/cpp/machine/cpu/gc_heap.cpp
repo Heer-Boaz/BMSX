@@ -736,7 +736,6 @@ size_t GcHeap::finishAtomicCollection(size_t work) {
 	// Reprice the remaining runway against the post-mark reclamation work.
 	beginPaceCredit(memory.readRamRecordWord(m_controlOffset + GC_OBJECT_COUNT) + m_stringPool.estimateSweepWork(), 0u);
 	setPhase(GcPhase::Sweep);
-	memory.writeRamRecordWord(arena.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET, 0u);
 	return work;
 }
 
@@ -1013,8 +1012,6 @@ size_t GcHeap::finishMajorTrace(Value root0, Value root1, Value root2, size_t li
 	if (work >= limit) return work;
 	if (phase() == GcPhase::MarkAgain) {
 		setPhase(GcPhase::Atomic);
-		memory.writeRamRecordWord(arena.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET,
-			static_cast<u32>(HeapServiceOperation::StoppedFinalMark) + 1u);
 		return work;
 	}
 	setRemarkStage(RemarkStage::Threads);

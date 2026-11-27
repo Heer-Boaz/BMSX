@@ -10,10 +10,9 @@ import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executo
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
 	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
-	HeapServiceClosureField, HeapServiceOperation, HeapServiceResidentField,
+	HeapServiceClosureField, HeapServiceResidentField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -49,8 +48,6 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	const callerPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 16);
-	for (let i = 0; i < 32 && !cpu.gc.finalMarkPending(); ++i) cpu.gc.step();
-	assert.equal(cpu.queuedFixedWork(), HeapServiceOperation.StoppedFinalMark + 1);
 
 	const floor = 0x80000;
 	const limit = floor + 0x10000;
@@ -70,8 +67,6 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(cpu.gc.phase(), GcPhase.Atomic);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.notDeepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end), 'arena reset is incomplete at the edge');
 	const partial = captureRuntimeSaveState(runtime);
 	const start = scheduler.nowCycles;
@@ -80,16 +75,11 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 		assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), callerPc);
-		assert.equal(cpu.gc.phase(), GcPhase.Atomic, 'the stopped collector did not run inside a service grant');
 		assert.deepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end));
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK, 'service retirement leaves hardware pending state intact');
 		if (attempt === 0) finish = scheduler.nowCycles;
 		else assert.equal(scheduler.nowCycles, finish);
 		assert.ok(finish > start);
-		assert.equal(frames.advanceLogicalTick(0), LogicalTickResult.Incomplete);
-		assert.equal(cpu.gc.phase(), GcPhase.Atomic, "no untimed final mark after a resident service");
-		assert.equal(scheduler.nowCycles, finish, 'independent stopped final mark does not get a timed grant in this synthetic ROM');
-		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 		if (attempt === 0) applyRuntimeSaveState(runtime, partial);
 	}
 });

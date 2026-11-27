@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, StoppedFinalMark, CapturedClosure, Count,
+	AllocateRecord, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -28,9 +28,6 @@ constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTI
 
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
-// A BIOS write posts a verified fixed descriptor ordinal plus one. Zero
-// means no work to admit at the post-retirement boundary.
-constexpr uint32_t HEAP_SERVICE_FIXED_WORK_OFFSET = 0x7f0;
 constexpr uint32_t HEAP_SERVICE_THREAD_OFFSET = 0x800;
 constexpr uint32_t HEAP_SERVICE_RESULT_OFFSET = 0x850;
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = CPU_FIXED_FRAME_OFFSET;

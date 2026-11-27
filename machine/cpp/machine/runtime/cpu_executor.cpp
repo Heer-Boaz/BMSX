@@ -84,7 +84,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive() || !cpu.queuedFixedWork())) {
+	while (running && !runtime.vblank.tickCompleted()) {
 		if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()
 			&& runtime.machine.scheduler.acceptedCpuCycles() == 0) break;
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
@@ -146,7 +146,6 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
-	cpu.admitFixedWork(CpuRunKind::Direct);
 	runDueRuntimeTimers(runtime);
 	// A fixed service can own the next grant without a deeper guest frame.
 	while (cpu.heapServiceActive()
@@ -194,14 +193,8 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		if (!cpu.heapServiceActive()) {
-			if (cpu.admitFixedWork(CpuRunKind::Direct)) {
-				if (result == RunResult::ExecutionStopped) return CpuSuspendedRunResult::ExecutionStopped;
-				continue;
-			}
-			if (!cpu.hasFramesAbove(targetThread, targetDepth))
-				return CpuSuspendedRunResult::Completed;
-		}
+		if (!cpu.heapServiceActive() && !cpu.hasFramesAbove(targetThread, targetDepth))
+			return CpuSuspendedRunResult::Completed;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
 		}
@@ -315,7 +308,6 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 				tickCompleted = advanceRuntimeTime(runtime, consumed);
 			}
 		}
-		if (result == RunResult::CollectionProgress) return CpuSliceResult::Advanced;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSliceResult::ExecutionStopped;
 		}

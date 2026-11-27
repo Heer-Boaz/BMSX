@@ -169,7 +169,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, FRAME_RESIDENT_ACTIVATION, FRAME_FIXED_WORK, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, FRAME_RESIDENT_ACTIVATION, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -179,7 +179,7 @@ import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
+	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
 	HeapServiceCaptureBindingField,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceClosureField, HeapServiceOperation,
@@ -253,7 +253,6 @@ export const enum RunResult {
 	Halted,
 	Yielded,
 	ExecutionStopped,
-	CollectionProgress = 4,
 }
 
 export const enum CpuRunKind { Idle, Direct, Scheduled }
@@ -295,7 +294,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
-	private readonly fixedWorkArgs: [number, CpuRunKind];
 	private readonly closureArgs: number[];
 	public readonly stringPool: StringPool;
 	private haltedUntilIrqFrameDepth = -1;
@@ -407,7 +405,6 @@ export class CPU implements MappedPageInvalidator {
 		memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
-		this.fixedWorkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
 		this.luaHeap = new LuaHeap(this);
 		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
@@ -684,21 +681,6 @@ export class CPU implements MappedPageInvalidator {
 		this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
 		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
 		frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
-	}
-
-	public queuedFixedWork(): number {
-		// An ordinary vector owns the machine until it retires, even across grants.
-		return this.resetBankSelected() || this.fixedInterruptActive() ? 0
-			: this.memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
-	}
-
-	public admitFixedWork(kind: CpuRunKind): boolean {
-		const work = this.queuedFixedWork();
-		if (work === 0) return false;
-		this.fixedWorkArgs[1] = kind;
-		if (!this.beginHeapService(this.systemImage.heapServiceFunctions![work - 1], this.fixedWorkArgs)) return false;
-		this.memory.writeRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags, FRAME_FIXED_WORK);
-		return true;
 	}
 
 	private finishTableAssignment(frame: CallFrame, key: Value, value: Value, assignment: TableLookupResult): boolean {
@@ -2407,8 +2389,7 @@ export class CPU implements MappedPageInvalidator {
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address,
 		kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
 		if (this.heapServiceActive()) {
-			const flags = this.memory.readRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags);
-			const resident = (flags & FRAME_RESIDENT_ACTIVATION) !== 0;
+			const resident = (this.memory.readRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION) !== 0;
 			this.runKind = kind;
 			this.deviceClock = deviceClock;
 			try {
@@ -2431,9 +2412,7 @@ export class CPU implements MappedPageInvalidator {
 						this.handleRunLoopError(error);
 					}
 				}
-				if (this.hardHalted) return RunResult.Halted;
-				return (flags & FRAME_FIXED_WORK) !== 0 && kind === CpuRunKind.Scheduled
-					? RunResult.CollectionProgress : RunResult.Yielded;
+				return this.hardHalted ? RunResult.Halted : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;
 				this.deviceClock = null;
@@ -2488,7 +2467,6 @@ export class CPU implements MappedPageInvalidator {
 						if (canInterrupt && (this.nonMaskableInterruptPending || this.canAcceptMaskableInterruptLine())) {
 								if (scalarFrame !== null) { this.publishScalarFrontier(scalarFrame, nextPc); scalarFrame = null; }
 							this.enterPendingInterrupt();
-							if (this.heapServiceActive()) return RunResult.CollectionProgress;
 							if (thread !== this.activeThread) {
 								this.threadSwitchRequested = true;
 								return RunResult.Yielded;
@@ -2611,7 +2589,6 @@ export class CPU implements MappedPageInvalidator {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
-						if (this.heapServiceActive()) return RunResult.CollectionProgress;
 						if (thread !== this.activeThread) {
 							this.threadSwitchRequested = true;
 							return RunResult.Yielded;

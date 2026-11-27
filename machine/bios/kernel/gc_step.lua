@@ -10,6 +10,8 @@ local admission<const> = require('kernel/heap_admission') -- C:1257
 local mark<const> = require('kernel/gc_mark_quantum') -- C:1093-1158
 local atomic<const> = require('kernel/gc_atomic_quantum') -- C:705-714,1241
 local sweep<const> = require('kernel/gc_sweep_quantum') -- C:1019-1042 T:973-986
+local root_inputs<const> = require('kernel/gc_root_inputs')
+local operands<const> = require('kernel/gc_operand_roots')
 local atomic_phase<const> = 3 -- H:20
 local step_words<const> = 4096 -- H:18 L:16 C:1229
 
@@ -66,4 +68,38 @@ local finish_epoch<const> = function(management, limit, growing_thread, compact_
 	return work -- C:911; unsigned difference between the final and initial epoch counters
 end
 
-return { step = step, finish_atomic = finish_atomic, finish_epoch = finish_epoch, step_words = step_words }
+-- An allocation must not issue a new object while an earlier final pass
+-- is already clearing weak entries. Keep the original assist credit,
+-- then drain the partially executed pass before reserving storage.
+local assist<const> = function(management, limit, growing_thread, scope)
+	local control<const> = management + layout.control_offset
+	local started<const> = scope == 0 and gc.internal.phase(control) == atomic_phase
+	local work<const> = step(management, limit, growing_thread, 0, scope)
+	if started and gc.internal.phase(control) == atomic_phase then finish_atomic(management, 0, false) end
+	return work
+end
+
+-- Do not include final-mark work in the earlier assist's allowance. The
+-- mutating operation settles it after committing its writes, while the
+-- roots are still borrowed and before returning to the stopped program.
+local finish_operation<const> = function(management, scope)
+	if gc.internal.phase(management + layout.control_offset) == atomic_phase then
+		finish_atomic(management, scope, false)
+	end
+	root_inputs.release_string_work(management)
+end
+
+-- A newly issued Value is not yet in the caller's receiving window.
+-- Publish that single temporary root through the existing operand scope.
+local finish_result<const> = function(management, tag, word)
+	if gc.internal.phase(management + layout.control_offset) == atomic_phase then
+		local scope<const> = word ~= 0 and operands.single_value_scope(management, tag, word) or 0
+		finish_atomic(management, scope, false)
+	end
+	root_inputs.release_string_work(management)
+end
+
+return {
+	step = step, finish_atomic = finish_atomic, finish_epoch = finish_epoch, step_words = step_words,
+	assist = assist, finish_operation = finish_operation, finish_result = finish_result,
+}

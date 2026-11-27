@@ -203,7 +203,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- T:79 C:89-90 X:5203-5206 Y:2811-2814
 			publish_frame_roots(management, interrupted) -- X:3997-4007 S:169-178 T:79 C:90
 			projected = true -- X:3997-4007 S:169-178
-			local work<const> = collector.step(management, words, address, 0, root) -- T:79 C:90 X:5207 Y:2815
+			local work<const> = collector.assist(management, words, address, root) -- T:79 C:90 X:5207 Y:2815
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5208 Y:2816
 			admission.credit_logical_assist(arena, charged, debt, pressure, work) -- T:80 C:91
 		end
@@ -214,11 +214,11 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 			publish_frame_roots(management, interrupted) -- X:3997-4007 S:169-178
 			projected = true -- X:3997-4007 S:169-178
 		end
-		collector.step(management, words, address, 0, root) -- T:105,203,226 C:116,212,233 X:5207 Y:2815
+		collector.assist(management, words, address, root) -- T:105,203,226 C:116,212,233 X:5207 Y:2815
 	end
 	while true do -- T:204,228 C:213,235
 		if reserve_frame_storage(management, address, values, frames) ~= 0 then -- T:205-206,229-235 C:214,238-243
-			if projected then root_inputs.release_string_work(management) end -- X:4009-4013 S:180-184
+			if projected then collector.finish_operation(management, root) end -- X:4009-4013 S:180-184
 			return 0, 0, 0 -- T:206,234 C:214,242; original CALL owner receives no Lua Value from reservation
 		end
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:207,238 C:215,246 L:1110-1117 N:1213-1220
@@ -229,7 +229,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 		end
 		collector.finish_epoch(management, collector.step_words, address, 0, root) -- L:1123 N:1226; retry starts at the original physical reservation
 	end
-	if projected then root_inputs.release_string_work(management) end -- X:4009-4013 S:180-184
+	if projected then collector.finish_operation(management, root) end -- X:4009-4013 S:180-184
 	return out_of_memory + 1, 0, 0 -- L:1111 N:1214 E:43
 end
 

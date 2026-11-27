@@ -18,6 +18,8 @@ local word_arithmetic<const> = require('kernel/word_arithmetic')
 local allocator<const> = require('kernel/dlmalloc') -- T:101-104 C:834; Integer bands
 local admission<const> = require('kernel/heap_admission') -- T:785-793 C:252-256,349-356
 local collection<const> = require('kernel/gc_step') -- P:828-837 Q:207-223
+local gc<const> = require('kernel/gc_control').internal
+local atomic<const> = 3
 local ram_base<const> = layout.ram_base -- P:4047-4049,5245 X:170-172 Y:3252; BLua private address view
 local ram_word_mask<const> = 0x003ffffc -- H:55; raw RAM address view
 local nil_tag<const>, true_tag<const>, float_tag<const> = 0, 2, 4
@@ -236,7 +238,13 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				else -- T:868 C:285
 					result = table_resize.execute_table_resize(management, record, array, hash, scratch) -- T:868-908 C:285,415-459
 				end
-				if result ~= 0 then return true end -- T:796 C:358; operation and epilogue already completed
+				if result ~= 0 then -- T:796 C:358; operation and epilogue already completed
+					if projected and gc.phase(management + layout.control_offset) == atomic then
+						root_inputs.borrow_string_work(management) -- include marks made by the resize publication
+						collection.finish_operation(management, 0)
+					end
+					return true
+				end
 			end
 			if extra == 0 then break end -- T:798-802 C:360-365
 			extra = 0 -- T:799 C:361; same attempt and remaining allowance

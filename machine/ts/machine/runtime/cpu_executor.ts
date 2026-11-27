@@ -95,7 +95,7 @@ export class CpuExecutionState {
 		let result = CpuExecutionResult.Yielded;
 		const { machine: { cpu, scheduler, systemController }, vblank } = this.runtime;
 		let running = true;
-		while (running && !vblank.tickCompleted && (cpu.heapServiceActive() || !cpu.queuedFixedWork())) {
+		while (running && !vblank.tickCompleted) {
 			if (systemController.hasResetRequest() && !cpu.systemResetInhibited() && scheduler.acceptedCpuCycles === 0) break;
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
@@ -150,7 +150,6 @@ export class CpuExecutionState {
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
-		cpu.admitFixedWork(CpuRunKind.Direct);
 		runDueRuntimeTimers(runtime);
 		// A fixed service can own the next grant without a deeper guest frame.
 		while (cpu.heapServiceActive() || cpu.hasFramesAbove(targetThread, targetDepth)) {
@@ -195,13 +194,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			if (!cpu.heapServiceActive()) {
-				if (cpu.admitFixedWork(CpuRunKind.Direct)) {
-					if (result === RunResult.ExecutionStopped) return CpuSuspendedRunResult.ExecutionStopped;
-					continue;
-				}
-				if (!cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
-			}
+			if (!cpu.heapServiceActive() && !cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
 			}
@@ -309,7 +302,6 @@ export class CpuExecutionState {
 					tickCompleted = advanceRuntimeTime(runtime, consumed);
 				}
 			}
-			if (result === RunResult.CollectionProgress) return CpuSliceResult.Advanced;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
 			}

@@ -1,5 +1,5 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
-import { HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceOperation, HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
+import { HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -692,7 +692,6 @@ export class GcHeap {
 		// Reprice the remaining runway against the post-mark reclamation work.
 		this.beginPaceCredit(this.memory.readRamRecordWord(this.controlOffset + GC_OBJECT_COUNT) + this.cpu.stringPool.estimateSweepWork(), 0);
 		this.setPhase(GcPhase.Sweep);
-		this.memory.writeRamRecordWord(this.arena.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET, 0);
 		return work;
 	}
 	private clearWeakQuantum(limit: number): number {
@@ -940,8 +939,6 @@ export class GcHeap {
 		if (work >= limit) return work;
 		if (this.phase() === GcPhase.MarkAgain) {
 			this.setPhase(GcPhase.Atomic);
-			this.memory.writeRamRecordWord(this.arena.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET,
-				HeapServiceOperation.StoppedFinalMark + 1);
 			return work;
 		}
 		this.setRemarkStage(RemarkStage.Threads);

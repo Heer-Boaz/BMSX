@@ -4,7 +4,6 @@ module<const>
 -- T/C/H: mirrored collector owners; L/B: logical budget; A/N: arena;
 -- S/R: String pool; M: RAM spec. The BIOS caller owns the epoch. The
 -- sampled capacity is the arena extent, not a host admission decision.
-local layout<const> = require('kernel/gc_runtime_layout') -- T:769 C:794; post-retirement fixed-work latch
 local gc<const> = require('kernel/gc_control') -- T:76-92,761-770,992-1016 C:788-795,1072-1082,1202-1213
 local pace<const> = require('kernel/gc_pace') -- T:768,1000-1002,1155 C:793,1079-1080,1257
 local strings<const> = require('kernel/gc_strings') -- T:768,1008,1012,1041 C:793,1117,1205,1209 S:445,454-460 R:438,443-450
@@ -69,10 +68,6 @@ local finish_atomic_collection<const> = function(control, arena, metadata, capac
 	pace.begin_pace_credit(control, occupied, capacity, estimate, 0) -- T:768 C:793
 	local phase<const>: *u8 = base + gc.internal.phase_offset -- T:86,769 C:794
 	*phase = sweep -- T:769 C:794
-	-- An epoch that completed its own Atomic does not post a second
-	-- activation after its return.
-	local pending<const>: *u32 = base - layout.control_offset + layout.fixed_work_offset -- T:769 C:794; CPU continuation boundary
-	*pending = 0 -- T:769 C:794; retracts unneeded fixed work rather than polling the phase
 	return work -- T:770 C:795
 end
 

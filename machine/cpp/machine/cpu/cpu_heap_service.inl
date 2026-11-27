@@ -19,8 +19,7 @@ static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResiden
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
-static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
+static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
@@ -40,22 +39,6 @@ bool CPU::heapServiceActive() const {
 
 u32 CPU::heapServiceResult() const {
 	return m_memory.readRamRecordWord(RAM_BASE + m_heapAllocator.managementOffset() + HEAP_SERVICE_RESULT_OFFSET);
-}
-
-u32 CPU::queuedFixedWork() const {
-	// An ordinary vector owns the machine until it retires, even across grants.
-	return resetBankSelected() || fixedInterruptActive()
-		? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
-}
-
-bool CPU::admitFixedWork(CpuRunKind kind) {
-	const u32 work = queuedFixedWork();
-	if (work == 0u) return false;
-	const auto function = m_systemImage->heapServiceFunctions[work - 1u];
-	const std::array args{m_heapAllocator.managementOffset(), static_cast<u32>(kind)};
-	if (!beginHeapService(function, args)) return false;
-	m_heapServiceView.firstFrame->writeControl(FrameField::Flags, FRAME_FIXED_WORK);
-	return true;
 }
 
 bool CPU::beginHeapService(u32 functionAddress, std::span<const u32> args) {

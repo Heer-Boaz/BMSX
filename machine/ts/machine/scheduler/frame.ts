@@ -1,4 +1,3 @@
-import { CpuRunKind } from '../cpu/cpu';
 import { Runtime } from '../runtime/runtime';
 import { InstructionStepResult } from '../runtime/frame/state';
 import { HistoryMode } from '../runtime/history/history';
@@ -76,10 +75,7 @@ export class FrameSchedulerState {
 		if (runtime.history.executionPaused || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
 		const cpu = runtime.machine.cpu;
-		if (!cpu.heapServiceActive()) {
-			if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
-			if (cpu.queuedFixedWork()) return false;
-		}
+	if (!cpu.heapServiceActive() && runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
 			|| this.accumulatedHostTimeMs > 0;
@@ -101,10 +97,6 @@ export class FrameSchedulerState {
 		const backendBlocked = runtime.machine.gxGpu.backendServiceBlocksMachine();
 		if (!backendBlocked && !this.backendServiceSuspended) this.accumulateHostTime(hostDeltaMs);
 		this.backendServiceSuspended = backendBlocked;
-		const cpu = runtime.machine.cpu;
-		if (runtime.machine.scheduler.acceptedCpuCycles !== 0 || cpu.heapServiceActive()
-			|| (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
-		if (!backendBlocked) cpu.admitFixedWork(CpuRunKind.Scheduled);
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}
 

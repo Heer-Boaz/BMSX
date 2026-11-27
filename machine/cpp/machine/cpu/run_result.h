@@ -8,7 +8,6 @@ enum class RunResult {
 	Halted,
 	Yielded,
 	ExecutionStopped,
-	CollectionProgress = 4,
 };
 
 enum class CpuRunKind : uint8_t { Idle, Direct, Scheduled };

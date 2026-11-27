@@ -41,7 +41,7 @@ local reserve_initial_directory<const> = function(management, arena, scope, sour
 	if words >= 0 then -- L:104-106,162 N:113-116,175
 		begin_string_work(management, projected) -- L:162 N:175
 		published = true -- L:162 N:175
-		local work<const> = collector.step(management, words, 0, 0, scope) -- L:105,162 N:116,175
+		local work<const> = collector.assist(management, words, 0, scope) -- L:105,162 N:116,175
 		source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5366-5378 Y:2782-2794
 	end
 	local recovery = current_or_fresh -- L:160-161 N:173-174
@@ -102,7 +102,7 @@ local reserve_string_record<const> = function(management, metadata, length, scop
 			begin_string_work(management, projected) -- L:79 N:90
 			published = true -- L:79 N:90
 		end
-		local work<const> = collector.step(management, words, 0, 0, scope) -- L:79 N:90
+		local work<const> = collector.assist(management, words, 0, scope) -- L:79 N:90
 		source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5366-5378 Y:2782-2794
 		admission.credit_logical_assist(arena, bytes, debt, pressure, work) -- L:80 N:91
 	end
@@ -112,7 +112,7 @@ local reserve_string_record<const> = function(management, metadata, length, scop
 			begin_string_work(management, projected) -- L:105 N:116
 			published = true -- L:105 N:116
 		end
-		collector.step(management, words, 0, 0, scope) -- L:105 N:116
+		collector.assist(management, words, 0, scope) -- L:105 N:116
 	end
 	local occupied<const> = management + layout.occupied_offset -- L:128 N:135
 	local offset -- L:151-153 N:151-154
@@ -154,7 +154,7 @@ local allocate_slice<const> = function(management, source, first, length, source
 	if offset ~= 0 then -- L:153 N:152
 		id = slices.publish(metadata, layout.ram_base + offset, start, head, length, hash) -- T:394-428 C:384-415
 	end
-	if published then root_inputs.release_string_work(management) end -- G:657 Q:678
+	if published then collector.finish_result(management, string_tag, id) end -- G:657 Q:678
 	return id, 0 -- T:428 C:415 G:1111 Q:1214; zero is allocation refusal after all retries
 end
 
@@ -200,7 +200,7 @@ local intern_value_window<const> = function(management, owner, first, count, mod
 			id = slices.publish_chars(metadata, layout.ram_base + offset, live_words, live_tags, count, hash) -- J:1737-1739 K:5078-5080 T:414-428
 		end -- W:54-55 C:342-344,384-415 T:394-428
 	end
-	if published then root_inputs.release_string_work(management) end -- X:4128-4131 Z:309-312
+	if published then collector.finish_result(management, string_tag, id) end -- X:4128-4131 Z:309-312
 	return id, 0 -- W:54-56 C:328-344 T:428 L:155 N:155
 end
 

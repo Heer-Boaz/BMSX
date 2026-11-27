@@ -1796,7 +1796,6 @@ RunResult CPU::runLoop(
 						return RunResult::ExecutionStopped;
 					}
 					enterPendingInterrupt();
-					if (heapServiceActive()) return RunResult::CollectionProgress;
 					if (&thread != m_activeThread) {
 						m_runSignals |= RunThreadSwitch;
 						return RunResult::Yielded;
@@ -1812,7 +1811,6 @@ RunResult CPU::runLoop(
 					nativeState.hotSidePc.reset();
 #endif
 					enterPendingInterrupt();
-					if (heapServiceActive()) return RunResult::CollectionProgress;
 					if (&thread != m_activeThread) {
 						m_runSignals |= RunThreadSwitch;
 						return RunResult::Yielded;
@@ -2356,8 +2354,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (flags & FRAME_FIXED_WORK) != 0u && kind == CpuRunKind::Scheduled
-			? RunResult::CollectionProgress : RunResult::Yielded;
+		return RunResult::Yielded;
 	}
 	m_runKind = kind;
 	ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });

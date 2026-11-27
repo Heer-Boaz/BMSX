@@ -69,7 +69,7 @@ local reserve<const> = function(management, root, key, charged, requested, charg
 		local allowance<const> = policy.limit_assist_allowance(policy.logical_assist_allowance(debt, pressure), source_cycles) -- L:80 N:89-90
 		local scope<const> = publish_roots(management, root, key, pending_tag, pending_word) -- T:5312 C:2737-2744
 		local work<const> = step(management, control, allowance, scope) -- T:5312 C:2737-2744
-		root_inputs.release_string_work(management) -- T:4160-4163
+		collector.finish_operation(management, scope) -- T:4160-4163; the pending name and value remain explicit roots
 		policy.credit_logical_assist(state, charged, debt, pressure, work) -- L:81 N:91
 		if root == 0 then source_cycles = policy.spend_assist_allowance(source_cycles, work) end -- T:5302-5304 C:2733-2735
 	end
@@ -78,7 +78,7 @@ local reserve<const> = function(management, root, key, charged, requested, charg
 	if allowance >= 0 then -- G:906 H:974-975; zero is a real collector step
 		local scope<const> = publish_roots(management, root, key, pending_tag, pending_word) -- T:5312 C:2737-2744
 		local work<const> = step(management, control, allowance, scope) -- G:906 H:974-975
-		root_inputs.release_string_work(management) -- T:4160-4163 F:340-343
+		collector.finish_operation(management, scope) -- T:4160-4163 F:340-343; this reservation does not issue a traced object
 		if root == 0 then source_cycles = policy.spend_assist_allowance(source_cycles, work) end -- T:5302-5304 C:2733-2735
 	end
 	while true do -- L:151-155,163-167 N:151-154,176-179

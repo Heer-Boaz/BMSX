@@ -23,10 +23,8 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.history.executionPaused() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
 	const auto& cpu = runtime.machine.cpu;
-	if (!cpu.heapServiceActive()) {
-		if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
-		if (cpu.queuedFixedWork()) return false;
-	}
+	if (!cpu.heapServiceActive() && runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())
+		return true;
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0
 		|| m_accumulatedHostTimeMs > 0.0;
@@ -47,10 +45,6 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	const bool backendBlocked = runtime.machine.gxGpu.backendServiceBlocksMachine();
 	if (!backendBlocked && !m_backendServiceSuspended) accumulateHostTime(hostDeltaMs);
 	m_backendServiceSuspended = backendBlocked;
-	auto& cpu = runtime.machine.cpu;
-	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || cpu.heapServiceActive()
-		|| (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
-	if (!backendBlocked) cpu.admitFixedWork(CpuRunKind::Scheduled);
 	return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 }
 

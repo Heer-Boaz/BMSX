@@ -61,7 +61,7 @@ try {
 		}
 		function finish() {
 			let result = RunResult.Yielded;
-			for (let i = 0; i < 128 && (result === RunResult.Yielded || result === RunResult.CollectionProgress); ++i) result = grant(4096);
+			for (let i = 0; i < 128 && result === RunResult.Yielded; ++i) result = grant(4096);
 			assert.equal(result, RunResult.Halted);
 		}
 		function replay() {

@@ -131,7 +131,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 	while true do -- T:178 C:190
 		local offset<const> = create_thread(management, entry) -- T:179-193 C:191-203
 		if offset ~= 0 then -- T:184-189 C:193-199
-			if roots_published then root_inputs.release_string_work(management) end -- X:4007-4010 Y:181-184
+			if roots_published then collection.finish_result(management, thread_tag, layout.ram_base + offset) end -- X:4007-4010 Y:181-184
 			return offset -- T:189 C:199; physical result remains an arena offset
 		end
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:195 C:205 U:1110-1117 V:1213-1224
@@ -142,7 +142,7 @@ local allocate_coroutine<const> = function(management, entry, source_cycles) -- 
 		end
 		collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; retry starts at raw reservation, not admission
 	end
-	if roots_published then root_inputs.release_string_work(management) end -- X:4007-4010 Y:181-184
+	if roots_published then collection.finish_operation(management, entry) end -- X:4007-4010 Y:181-184
 	return 0 -- U:1111 V:1214 D:43
 end
 

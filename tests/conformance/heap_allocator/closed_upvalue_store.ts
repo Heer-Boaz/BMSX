@@ -18,7 +18,6 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_REFERENCE_STORE } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FIXED_WORK_OFFSET, HeapServiceOperation } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -119,11 +118,6 @@ return set(incoming)
 	assert.equal(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), ValueTag.Integer);
 	assert.equal(gc.isAlive(child), immediate);
 	assert.equal(memory.readRamRecordWord(changed), immediate ? originalChanged : cell >>> GC_RECORD_SHIFT);
-	const fixedWork = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET;
-	const pending = memory.readRamRecordWord(fixedWork);
-	memory.writeRamRecordWord(fixedWork, HeapServiceOperation.StoppedFinalMark + 1);
-	assert.equal(cpu.admitFixedWork(CpuRunKind.Scheduled), false, 'maintenance cannot enter during a split reference publication');
-	memory.writeRamRecordWord(fixedWork, pending);
 	observeCell();
 	writeFileSync(tsMid, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	commands.push(`x ${cppMid}`, 'l', 's');

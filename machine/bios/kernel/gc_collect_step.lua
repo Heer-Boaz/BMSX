@@ -21,8 +21,8 @@ local collect_step<const> = function() -- C:286-289 T:283-286
 	else -- G:1008; the normal step owns one quantum
 		collector.step(management, collector.step_words, 0, 0, 0) -- C:287 T:284 G:1005-1008; no compact thread work
 	end
-	if borrows_roots then root_inputs.release_string_work(management) end -- G:1284,1312-1314
 	local finished<const> = admission.finish_explicit_step(management + layout.arena_offset) -- C:288-289 T:285-286
+	if borrows_roots then collector.finish_operation(management, 0) end -- G:1284,1312-1314; final mark follows the Step epilogue
 	return finished -- C:289 T:286; ordinary Boolean result
 end
 

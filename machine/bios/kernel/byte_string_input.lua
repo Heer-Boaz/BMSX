@@ -11,7 +11,7 @@ local layout<const> = require('kernel/gc_runtime_layout')
 local slices<const> = require('kernel/string_slice')
 local strings<const> = require('kernel/gc_strings')
 local allocation<const> = require('kernel/allocate_string_slice').internal
-local roots<const> = require('kernel/gc_root_inputs')
+local collector<const> = require('kernel/gc_step')
 local records<const> = require('kernel/dlmalloc_record')
 local frames<const> = require('kernel/thread_frame_storage').internal
 local _stopped_layout<const> = require('kernel/thread_retire')
@@ -84,10 +84,16 @@ local intern<const> = function(address, count)
 	end
 
 	local offset<const>, published<const> = allocation.reserve_string_record(management, metadata, count, 0, cop0.event_cycles, false)
-	if published then roots.release_string_work(management) end
-	if offset == 0 then return nil, out_of_memory end
+	if offset == 0 then
+		if published then collector.finish_operation(management, 0) end
+		return nil, out_of_memory
+	end
 	local address<const> = layout.ram_base + offset
-	if not mutable then return (slices.publish(metadata, address, source, count, count, hash)), nil end
+	if not mutable then
+		id = slices.publish(metadata, address, source, count, count, hash)
+		if published then collector.finish_result(management, tags.string_tag, id) end
+		return id, nil
+	end
 
 	-- Copy directly into the unpublished record. DMA may have changed the
 	-- backing since lookup; hash the stored sample, not a second source read.
@@ -103,12 +109,17 @@ local intern<const> = function(address, count)
 	id, fault = lookup(payload, count, hash, system, cart0, cart1)
 	if fault ~= 0 or id ~= 0 then
 		records.bmsx_dlmalloc_release_record(arena, offset, header_bytes + count, occupied)
-		if fault ~= 0 then return nil, invalid_argument end
+		if fault ~= 0 then
+			if published then collector.finish_operation(management, 0) end
+			return nil, invalid_argument
+		end
 		strings.mark(metadata, id)
-		return id, nil
+	else
+		local bucket<const> = slices.internal.begin_record(metadata, address, count, hash)
+		id = slices.internal.finish_record(metadata, bucket, address)
 	end
-	local bucket<const> = slices.internal.begin_record(metadata, address, count, hash)
-	return (slices.internal.finish_record(metadata, bucket, address)), nil
+	if published then collector.finish_result(management, tags.string_tag, id) end
+	return id, nil
 end
 
 local receive<const> = function(owner, destination, argc)

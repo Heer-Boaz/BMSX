@@ -29,7 +29,6 @@ const FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 export const FRAME_EXTEND_RESULT_TOP = 1 << 5;
 // Fixed-root activation takes the ordinary VM return/fault path.
 export const FRAME_RESIDENT_ACTIVATION = 1 << 6;
-export const FRAME_FIXED_WORK = 1 << 10;
 
 export function registerWindowBucket(required: number): number {
 	return Math.max(8, 1 << (32 - Math.clz32(required - 1)));

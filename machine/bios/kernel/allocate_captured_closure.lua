@@ -8,6 +8,7 @@ local root_inputs<const> = require('kernel/gc_root_inputs') -- H:95 C:106 G:1121
 local closure<const> = require('kernel/closure_capture_create') -- T:4151-4197 N:3012-3068
 local admission<const> = require('kernel/heap_admission') -- H:42-106 C:41-117
 local collector<const> = require('kernel/gc_step') -- G:1119-1125 R:1223-1229
+local closure_tag<const> = require('kernel/value_type').closure_tag
 local object_prefix<const> = require('kernel/dlmalloc_record').internal.object_prefix -- H:247 C:254
 local current_or_fresh<const> = 0 -- H:91 C:103
 local out_of_memory<const> = 9 -- H:86 C:98
@@ -40,7 +41,7 @@ local allocate_captured_closure<const> = function(management, frame, owner, bind
 		local allowance<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- H:79 C:89-90
 		root_inputs.publish(management) -- H:79 C:90
 		roots_published = true -- H:79 C:90
-		local work<const> = collector.step(management, allowance, 0, 0, 0) -- H:79 C:90
+		local work<const> = collector.assist(management, allowance, 0, 0) -- H:79 C:90
 		source_cycles = admission.spend_assist_allowance(source_cycles, work) -- H:79 C:90
 		admission.credit_logical_assist(state, charged, debt, pressure, work) -- H:80 C:91
 	end
@@ -53,7 +54,7 @@ local allocate_captured_closure<const> = function(management, frame, owner, bind
 				root_inputs.publish(management) -- H:105 C:116
 				roots_published = true -- H:105 C:116
 			end
-			collector.step(management, allowance, 0, 0, 0) -- H:105 C:116
+			collector.assist(management, allowance, 0, 0) -- H:105 C:116
 		end
 	end
 
@@ -69,7 +70,7 @@ local allocate_captured_closure<const> = function(management, frame, owner, bind
 		end
 		collector.finish_epoch(management, collector.step_words, 0, 0, 0) -- H:272 C:278 G:1122-1125 R:1225-1229; physical retry does not repeat admission or prep
 	end
-	if roots_published then root_inputs.release_string_work(management) end -- H:272 C:278 G:1122-1125 R:1225-1229; release borrowed roots at activation boundary
+	if roots_published then collector.finish_result(management, closure_tag, offset ~= 0 and layout.ram_base + offset or 0) end -- H:272 C:278 G:1122-1125 R:1225-1229
 	return offset -- H:267,272 T:4197 C:273,278 N:3068
 end
 

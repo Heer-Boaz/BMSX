@@ -16,6 +16,7 @@ local collector<const> = require('kernel/gc_step') -- C:154-159,181-186 A:238-25
 local records<const> = require('kernel/dlmalloc_record') -- C:55-57 L:119-139,145
 local tables<const> = require('kernel/table_create') -- C:7-8,78-83 T:803-804,855-861
 local closures<const> = require('kernel/closure_create') -- C:8,84-86 T:804,863-866
+local tags<const> = require('kernel/value_type')
 
 local table_kind<const> = 0 -- S:49 C:6 T:802
 local table_copy_kind<const> = 3 -- B:33-37 J:69-73; firmware-only operation using the same Direct admission
@@ -79,7 +80,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- C:43 T:832 L:89
 			root_inputs.publish(management) -- C:154-158 G:1228; first GC call in the assist branch
 			roots_published = true -- C:154-158 G:1228
-			local work<const> = collector.step(management, words, 0, 0, scope) -- C:43,154-158 T:873-874
+			local work<const> = collector.assist(management, words, 0, scope) -- C:43,154-158 T:873-874
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973
 			admission.credit_logical_assist(state, charged, debt, pressure, work) -- C:215-217 T:974-976 L:91
 		end
@@ -90,7 +91,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 					root_inputs.publish(management) -- C:154-158 G:1228
 					roots_published = true -- C:154-158 G:1228
 				end
-				collector.step(management, words, 0, 0, scope) -- C:63,154-159 T:848,873-874
+				collector.assist(management, words, 0, scope) -- C:63,154-159 T:848,873-874
 			end
 		end
 	end
@@ -116,7 +117,9 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 		collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
 		admitted = mode == direct or admission.logical_fits(state, charged) ~= 0 -- C:9-14,206-208 A:299-300 T:807 L:152-153,162; direct physical retries never re-admit
 	end
-	if roots_published then root_inputs.release_string_work(management) end -- C:154-158 G:1228; return only the work left in the borrowed String latch
+	if roots_published then
+		collector.finish_result(management, table and tags.table_tag or tags.closure_tag, offset ~= 0 and layout.ram_base + offset or 0) -- C:154-158 G:1228
+	end
 	return offset -- C:102-142 T:889-920; 0 is the original terminal OOM signal before CPU fault delivery
 end
 

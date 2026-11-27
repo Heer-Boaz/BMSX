@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
@@ -15,36 +16,41 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { residentFunctionAddress } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const source = 'fixture_collect()\nreturn 73';
+const source = "require('fixture_collect_boot')\nhalt_until_irq\nfixture_collect()\nreturn 73";
 const boot = { path: 'fixture_collect_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
 const deadText = 'full collection must reclaim an unrooted Text value'.repeat(256);
 
-mkdirSync('tmp', { recursive: true });
-const directory = mkdtempSync(join('tmp', 'bmsx-gc-full-'));
+const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-full-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [boot]));
+		const linked = linkManagedTestSystem(source, opt, [boot]);
+		const romBytes = writeTestBlua32Rom(linked);
 		const rom = join(directory, `O${opt}.rom`);
-		writeFileSync(rom, system.romBytes);
+		writeFileSync(rom, romBytes);
 		for (const alreadyActive of [false, true]) {
 			const name = `O${opt}-${alreadyActive ? 'active' : 'paused'}`;
-			const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
+			const configuration = { systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena } = cpu;
+			for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i)
+				scheduler.runCpuSlice(0, 4096, 0, CpuRunKind.Scheduled);
+			assert.ok(cpu.isHaltedUntilIrq());
+			cpu.clearHaltUntilIrq();
 			const management = arena.managementOffset(), traceLimit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
 			const control = management + HEAP_GC_CONTROL_OFFSET;
 			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			cpu.activeThread.resizeStack(512);
 			const weak = cpu.createTable(4, 0), metatable = cpu.createTable(0, 1), hidden = cpu.createTable(), floating = cpu.createTable();
-			gc.tables.set(metatable, valueString(gc['modeKey']), valueString(cpu.stringPool.intern('v')));
+			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));
 			cpu.setGlobalByKey(cpu.stringPool.intern('full-collection-root'), valueTable(weak));
@@ -68,10 +74,10 @@ try {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 				const used = cycles - cpu.instructionBudgetRemaining;
 				observe(`L ${cycles}`, `${result} ${used} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
-				if (cycles > 0) assert.ok(used > 0, 'an admitted quantum pays ordinary instruction cycles');
+				if (cycles > 0) assert.ok(used > 0, `an admitted quantum pays ordinary instruction cycles (result=${result}, phase=${gc.phase()}, depth=${cpu.getFrameDepth()}, cause=${cpu.readCauseWord()}, reason=${cpu.readLuaFaultReasonWord()}, pc=${cpu.lastPc})`);
 				return result;
 			}
-			const entry = residentFunctionAddress(system, 'kernel/gc_full', 'collect_full');
+			const entry = residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/gc_full', 'collect_full');
 			const root = management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
 			const explicitCollection = () => cpu.heapServiceActive() && memory.readRamRecordWord(root) === entry;
 			for (let i = 0; i < 4096 && !explicitCollection(); ++i) grant(1);
@@ -115,7 +121,7 @@ try {
 				}
 				assert.equal(reductions, epochs);
 				assert.equal(gc.fullEpochs(), 0);
-				assert.equal(cpu.queuedFixedWork(), 0, 'full collection completes its own final mark without a second activation');
+				assert.equal(gc.phase(), GcPhase.Pause, 'full collection completes its own final mark and sweep before returning');
 				assert.equal(gc.tableRecordAddress(hidden), 0);
 				assert.equal(gc.tableRecordAddress(floating), 0);
 				assert.equal(cpu.stringPool.find(deadText), undefined);

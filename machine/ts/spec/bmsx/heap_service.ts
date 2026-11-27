@@ -7,7 +7,7 @@ export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
 export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
-	AllocateRecord, StoppedFinalMark, CapturedClosure, Count,
+	AllocateRecord, CapturedClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -18,9 +18,6 @@ export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OF
 
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
-// A BIOS write posts a verified fixed descriptor ordinal plus one. Zero
-// means no work to admit at the post-retirement boundary.
-export const HEAP_SERVICE_FIXED_WORK_OFFSET = 0x7f0;
 export const HEAP_SERVICE_THREAD_OFFSET = 0x800;
 export const HEAP_SERVICE_RESULT_OFFSET = 0x850;
 export const HEAP_SERVICE_FRAME_OFFSET = CPU_FIXED_FRAME_OFFSET;

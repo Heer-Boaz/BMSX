@@ -20,7 +20,6 @@ export const HEAP_SERVICE_REMARK_MODULE_PATH = 'kernel/gc_remark';
 export const HEAP_SERVICE_ROOT_BANKS_MODULE_PATH = 'kernel/gc_root_banks';
 export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
 const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
-const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
 const CAPTURED_CLOSURE_MODULE = 'kernel/allocate_captured_closure';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
@@ -33,17 +32,15 @@ export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
 	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, 'kernel/table_plan', 'kernel/table_insert_existing',
-	STOPPED_FINAL_MARK_MODULE,
 	CAPTURED_CLOSURE_MODULE, 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
-	'kernel/gc_runtime_layout', 'kernel/global_bank', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
+	'kernel/gc_runtime_layout', 'kernel/global_bank', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic', 'kernel/value_type',
 	'kernel/allocate_string_slice', 'kernel/string_slice', 'kernel/string_char_bytes', 'kernel/number_bytes', 'kernel/boot_image_admission', 'kernel/gc_stopped_roots',
 ] as const;
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
-	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
 	[HeapServiceOperation.CapturedClosure]: ['allocate_captured_closure', 6, CAPTURED_CLOSURE_MODULE],
 };
 

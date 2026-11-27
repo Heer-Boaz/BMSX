@@ -1,268 +1,192 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { FRAME_FIXED_WORK, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../../machine/ts/machine/cpu/lua_heap';
-import { ValueTag, valueBool, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../../machine/ts/machine/cpu/value';
-import { CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
+import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { LogicalTickResult } from '../../../machine/ts/machine/scheduler/frame';
-import { HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceOperation } from '../../../machine/ts/spec/bmsx/heap_service';
-import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
+import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
+import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
-import { runGuestToHalt } from '../../helpers/cpu_execution';
+import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const source = 'function exception() end\nwhile true do halt_until_irq end';
+const source = `bss report: word[3]
+function irq()
+	mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+	report[1] = report[1] + 1
+end
+final_mark_weak_root = false
+final_mark_result_root = false
+mem[${IO_IRQ_MASK}] = 0
+mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+while report[0] == 0 do halt_until_irq end
+if report[0] == 1 then
+	report[2] = collectgarbage('step') and -1 or 1
+elseif report[0] == 2 then
+	mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
+	while report[1] == 0 do halt_until_irq end
+	report[2] = 2
+else
+	final_mark_result_root = {3}
+	report[2] = final_mark_result_root[1]
+end
+return 73`;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-mkdirSync('tmp', { recursive: true });
-const directory = mkdtempSync(join('tmp', 'bmsx-stopped-final-mark-'));
-
-function proveGuestProducer(native: string, opt: 0 | 3) {
-	const entry = `
-local collector<const> = require('kernel/gc_collect_step')
-halt_until_irq
-return collector.collect_step()
-`;
-	const system = linkTestSystemBlua32(compileHeapServiceSystem(entry, opt));
-	const step = residentFunctionAddress(system, 'kernel/gc_collect_step', 'collect_step');
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { gc, luaHeap, heapAllocator } = cpu;
-	runGuestToHalt(cpu, 65_536);
-	assert.ok(cpu.isHaltedUntilIrq());
-	luaHeap.setCollectionTarget(luaHeap.capacity());
-	for (let i = 0; i < 4096 && gc.phase() !== GcPhase.MarkAgain; ++i)
-		gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-	assert.equal(gc.phase(), GcPhase.MarkAgain);
-	const management = heapAllocator.managementOffset(), pending = management + HEAP_SERVICE_FIXED_WORK_OFFSET;
-	const request = HeapServiceOperation.StoppedFinalMark + 1;
-	const depth = cpu.getFrameDepth(), caller = depth - 1;
-	assert.equal(memory.readRamRecordWord(pending), 0);
-	const rom = join(directory, `guest-O${opt}.rom`), trace = join(directory, `guest-O${opt}.trace`);
-	writeFileSync(rom, system.romBytes);
-	function save(name: string) {
-		const path = join(directory, `guest-O${opt}.${name}`);
-		writeFileSync(path, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		return path;
-	}
-	const seed = save('seed'), cppQueued = join(directory, `guest-O${opt}.cpp-queued`);
-	const commands: string[] = ['X'], rows: string[] = [];
-	function record(command: string, output?: string | number) {
-		commands.push(command);
-		if (output !== undefined) rows.push(String(output));
-	}
-	function grant(cycles: number) {
-		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		const spent = cycles - cpu.instructionBudgetRemaining;
-		assert.equal(result, RunResult.Yielded);
-		record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${luaHeap.usedBytes()}`);
-		return spent;
-	}
-	function instruction() {
-		return decodeBlua32InstructionAtPc(system.image.textBytes, system.image.header.textAddress, cpu.readFramePc(caller));
-	}
-	function atStep() {
-		const { op, a } = instruction();
-		return op === OpCode.CALL && valuePayload(cpu.readFrameRegister(caller, a)) === step;
-	}
-	cpu.clearHaltUntilIrq();
-	record('h');
-	for (let n = 0; n < 64 && !atStep(); ++n) grant(1);
-	assert.ok(atStep());
-	const call = instruction(), successor = call.pc + INSTRUCTION_BYTES;
-	assert.equal(valueTag(cpu.readFrameRegister(caller, call.a)), ValueTag.ResidentFunction);
-	assert.equal(grant(1), BASE_CYCLES[OpCode.CALL]);
-	assert.ok(cpu.heapServiceActive());
-	const fixed = management + HEAP_SERVICE_FRAME_OFFSET;
-	assert.equal(memory.readRamRecordWord(fixed + FrameField.Function), step);
-	for (let i = 0; i < 4096 && memory.readRamRecordWord(pending) === 0; ++i) grant(1);
-	assert.ok(cpu.heapServiceActive(), 'the running BIOS, not host admission, posts the request');
-	assert.equal(gc.phase(), GcPhase.Atomic);
-	assert.equal(memory.readRamRecordWord(pending), request);
-	assert.equal(memory.readRamRecordWord(fixed + FrameField.Flags) & FRAME_FIXED_WORK, 0);
-	assert.equal(valueTag(cpu.readFrameRegister(caller, call.a)), ValueTag.ResidentFunction, 'the ordinary result has not yet retired');
-	for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) grant(1);
-	assert.equal(cpu.heapServiceActive(), false);
-	assert.equal(cpu.readFramePc(caller), successor);
-	assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(false), 'the ordinary result is committed before admission');
-	assert.equal(cpu.queuedFixedWork(), request);
-	const queued = save('queued'), commandCut = commands.length, rowCut = rows.length;
-	record(`x ${cppQueued}`);
-	function settle() {
-		let spent = 0;
-		function pulse(cycles: number) {
-			const before = scheduler.nowCycles;
-			const result = runtime.cpuExecution.runSuspendedUntilDepth(depth, cycles);
-			const elapsed = scheduler.nowCycles - before;
-			assert.equal(result, cpu.heapServiceActive() ? CpuSuspendedRunResult.Yielded : CpuSuspendedRunResult.Completed);
-			assert.equal(cpu.readFramePc(caller), successor);
-			record(`q ${depth} ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${depth} ${successor} 0`);
-			return elapsed;
-		}
-		assert.equal(pulse(0), 0);
-		assert.equal(memory.readRamRecordWord(fixed + FrameField.Flags), FRAME_FIXED_WORK);
-		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) spent += pulse(137);
-		assert.ok(spent > 0);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.queuedFixedWork(), 0);
-		assert.equal(gc.phase(), GcPhase.Sweep);
-		assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(false));
-		const lo = memory.ramBusEnd() - RAM_BASE, hi = memory.ramData().length;
-		record(`H ${lo} ${hi}`, hashBytes(memory.ramData(), lo, hi - lo));
-	}
-	settle();
-	const tail = commands.slice(commandCut + 1), expected = rows.slice(rowCut);
-	function check(path: string, input: string[], output: string[]) {
-		writeFileSync(trace, input.join('\n'));
-		assert.deepEqual(execFileSync(native, [rom, trace, path], { encoding: 'utf8' }).trimEnd().split('\n'), output);
-	}
-	check(seed, commands, rows);
-	check(queued, ['X', ...tail], expected);
-	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(cppQueued), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-	commands.length = commandCut;
-	rows.length = rowCut;
-	settle();
-	assert.deepEqual(rows.slice(rowCut), expected);
-	console.log(`BIOS-FIXED-WORK-QUEUE:PASS O${opt} (guest post, ordinary result publication, bidirectional pre-admission save)`);
-}
+const directory = mkdtempSync(join(tmpdir(), 'bmsx-final-mark-'));
+const slots = 2 * GC_STEP_WORDS;
 
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, opt));
-		const rom = join(directory, `system-O${opt}.rom`);
-		writeFileSync(rom, system.romBytes);
-		for (const mode of [CpuRunKind.Scheduled, CpuRunKind.Direct] as const) {
-			const id = `O${opt}-${mode === CpuRunKind.Direct ? 'direct' : 'scheduled'}`;
-			const config = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
-			const runtime = new Runtime(config, input), oracle = new Runtime(config, input);
+		const out = join(directory, `O${opt}`);
+		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
+			'--mode', 'bios', '-respath', 'machine/bios/res', '--debug', `-O${opt}`, '--output-dir', out,
+			'--store-dir', join(directory, 'store')], { encoding: 'utf8' });
+		const rom = join(out, 'system', 'bmsx-bios.debug.rom'), system = readFileSync(rom);
+		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'final-mark.lua'), [], { entrySource: source, optLevel: opt });
+		const linked = linkCartBlua32Image(readBlua32BiosImports(system), encodeCompiledProgramObject(program), program.metadata,
+			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+		const cart = writeTestBlua32Rom(linked), cartFile = join(out, 'fixture.rom');
+		writeFileSync(cartFile, cart);
+		for (const [name, mode] of [['step', 1], ['irq', 2], ['allocation', 3]] as const) {
+			const irq = mode === 2, allocation = mode === 3;
+			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			oracle.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc } = cpu;
-			for (let n = 0; n < 256 && !cpu.isHaltedUntilIrq(); ++n) scheduler.runCpuSlice(0, 1024, undefined, CpuRunKind.Scheduled);
-			assert.ok(cpu.isHaltedUntilIrq(), 'the ordinary System frame is stopped at a real HALT');
-			assert.equal(cpu.heapServiceActive(), false);
-			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), origin = scheduler.nowCycles;
-			const slots = 2 * GC_STEP_WORDS, weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1);
-			gc.tables.set(meta, valueString(gc['modeKey']), valueString(cpu.stringPool.intern('v')));
+			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine;
+			const { gc, heapAllocator: arena, luaHeap } = cpu;
+			const report = linked.layout.header.bssAddress, offset = report - RAM_BASE;
+			const word = (slot: number) => memory.readRamRecordWord(report + 4 * slot);
+			for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
+				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
+				runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
+			}
+			assert.equal(cpu.activeCartridgeSlot(), 0);
+			assert.ok(cpu.isHaltedUntilIrq());
+			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
+			if (irq) {
+				memory.writeMappedWord(report, mode);
+				cpu.clearHaltUntilIrq();
+				slice(1024);
+				assert.ok(cpu.isHaltedUntilIrq());
+				assert.equal(memory.readIoU32(IO_IRQ_MASK), IRQ_VBLANK);
+			}
+
+			// Construct one identical fixture; production guest code runs all
+			// collector work from this exact MarkAgain boundary onward.
+			luaHeap.setCollectionTarget(luaHeap.capacity());
+			const weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1);
+			gc.tables.set(meta, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(1), valueTable(cpu.createTable()));
 			gc.tables.set(weak, valueInteger(slots), valueTable(cpu.createTable()));
-			cpu.setGlobalByKey(cpu.stringPool.intern('stopped remark weak array'), valueTable(weak));
-			for (let n = 0; n < 64 && !gc.finalMarkPending(); ++n) gc.step();
-			assert.equal(gc.phase(), GcPhase.Atomic);
-			assert.equal(cpu.queuedFixedWork(), HeapServiceOperation.StoppedFinalMark + 1);
-			const target = cpu['systemImage'].heapServiceFunctions![HeapServiceOperation.StoppedFinalMark];
-			const activation = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
-			const epochWork = gc.epochWork(), initial = captureRuntimeSaveState(runtime);
-			const seed = join(directory, `${id}.seed`);
-			writeFileSync(seed, encodeRuntimeSaveState(initial));
-			applyRuntimeSaveState(oracle, initial);
-			const reference = oracle.machine.cpu.gc;
-			if (mode === CpuRunKind.Direct) reference.finishFinalMark();
-			else do { reference.stepFinalMark(GC_STEP_WORDS); } while (reference.finalMarkPending());
-			assert.equal(reference.phase(), GcPhase.Sweep);
-			assert.ok(reference.epochWork() - epochWork > GC_STEP_WORDS, 'the stopped source consists of multiple native quanta');
-
-			const trace: string[] = [], expected: string[] = [];
-			function observe(command: string, result?: string | number) {
-				trace.push(command);
-				if (result !== undefined) expected.push(String(result));
-			}
-			function grant(cycles: number, scheduled = mode === CpuRunKind.Scheduled) {
-				const elapsed = scheduler.nowCycles, previous = runtime.frameScheduler.lastTickSequence;
-				if (scheduled) {
-					const result = runtime.frameScheduler.advanceLogicalTick(cycles);
-					assert.notEqual(result, LogicalTickResult.Maintenance);
-					observe(`p ${cycles}`, `${+(result === LogicalTickResult.Completed)} ${scheduler.nowCycles - elapsed} ${runtime.frameScheduler.lastTickSequence - previous} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
-				} else {
-					const result = runtime.cpuExecution.runSuspendedUntilDepth(depth, cycles);
-					assert.equal(result, cpu.heapServiceActive() ? CpuSuspendedRunResult.Yielded : CpuSuspendedRunResult.Completed);
-					observe(`q ${depth} ${cycles}`, `${result} ${scheduler.nowCycles - elapsed} ${+cpu.heapServiceActive()} ${cpu.getFrameDepth()} ${cpu.readFramePc(depth - 1)} ${+cpu.isHaltedUntilIrq()}`);
-				}
-				return scheduler.nowCycles - elapsed;
-			}
-			assert.equal(grant(0), 0);
-			assert.ok(cpu.heapServiceActive());
-			assert.equal(memory.readRamRecordWord(activation), target);
-			assert.equal(gc.epochWork(), epochWork);
-			assert.equal(gc.phase(), GcPhase.Atomic);
-			assert.equal(cpu.readFramePc(depth - 1), pc);
-			assert.ok(grant(1) > 0, 'ordinary instructions, not a zero-clock maintenance pulse');
-			let observedIntermediateCredit = false;
-			for (let i = 0; i < 4096 && gc.tables.getInteger(weak, 1) !== valueNil(); ++i) {
-				assert.ok(grant(251) > 0);
-				if (gc.epochWork() !== epochWork) observedIntermediateCredit = true;
-			}
-			assert.ok(cpu.heapServiceActive());
-			assert.equal(gc.phase(), GcPhase.Atomic);
-			assert.equal(gc.tables.getInteger(weak, 1), valueNil());
-			assert.equal(valueTag(gc.tables.getInteger(weak, slots)), ValueTag.Table);
-			assert.equal(cpu.readFramePc(depth - 1), pc);
-			assert.ok(scheduler.nowCycles > origin);
-			cpu.requestNonMaskableInterrupt();
-			observe('N');
-			assert.equal(cpu.enterPendingInterrupt(), false);
-			observe('I', 0);
-
-			const partial = captureRuntimeSaveState(runtime), prefix = trace.length, prefixResults = expected.length;
-			const resume = join(directory, `${id}.partial`), nativeSave = join(directory, `${id}.cpp`);
-			writeFileSync(resume, encodeRuntimeSaveState(partial));
-			function complete() {
-				let intermediate = observedIntermediateCredit;
-				// The Direct executor can stop at the exact depth at which the
-				// already admitted activation returns; the pinned mode is unchanged.
-				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) {
-					assert.ok(grant(509, false) > 0);
-					if (gc.phase() === GcPhase.Atomic && gc.epochWork() !== epochWork) intermediate = true;
-				}
-				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(gc.phase(), GcPhase.Sweep);
-				assert.equal(cpu.queuedFixedWork(), 0);
-				assert.equal(intermediate, mode === CpuRunKind.Scheduled, 'source chooses which accumulated work is published between native chunks');
-				assert.equal(gc.epochWork(), reference.epochWork());
-				assert.equal(gc.tables.getInteger(weak, slots), valueNil());
-				assert.equal(cpu.readFramePc(depth - 1), pc);
-				assert.equal(cpu.isHaltedUntilIrq(), true);
-				observe('P', `${depth} ${pc}`);
-				const first = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
-				observe(`H ${first} ${end}`, hashBytes(memory.ramData(), first, end - first));
+			cpu.setGlobalByKey(cpu.stringPool.find('final_mark_weak_root')!, valueTable(weak));
+			if (irq) assert.notEqual(arena.allocate(arena.capacityBytes() >>> 1, true), 0);
+			if (gc.phase() === GcPhase.Pause) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+			for (let i = 0; i < 65536 && gc.phase() === GcPhase.Mark; ++i)
+				gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+			assert.equal(gc.phase(), GcPhase.MarkAgain, 'the reference prepares but does not execute Atomic');
+			// Enough logical debt for the constructor's ordinary assist, without
+			// exhausting the arena and forcing the separate full-epoch recovery.
+			if (allocation) luaHeap.setCollectionTarget(luaHeap.usedBytes() - 2 * GC_STEP_WORDS);
+			const save = (suffix: string) => {
+				const file = join(out, `${name}-${suffix}.state`);
+				writeFileSync(file, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+				return file;
+			};
+			const seed = save('seed'), partial = join(out, `${name}-cpp.state`);
+			const commands: string[] = ['X'], rows: string[] = [];
+			const observe = (command: string, row?: string) => { commands.push(command); if (row !== undefined) rows.push(row); };
+			if (irq) {
+				irqController.raise(IRQ_VBLANK);
+				observe(`i ${IRQ_VBLANK}`);
 				assert.equal(cpu.enterPendingInterrupt(), true);
-				observe('I', 1);
+				observe('I', '1');
+			} else {
+				memory.writeMappedWord(report, mode);
+				cpu.clearHaltUntilIrq();
+				observe(`O ${report} ${mode}`);
+				observe('h');
 			}
-			complete();
-			const tail = trace.slice(prefix), rows = expected.slice(prefixResults);
-			function check(label: string, state: string, commands: string[], results: string[]) {
-				const input = join(directory, `${id}-${label}.trace`);
-				writeFileSync(input, commands.join('\n'));
-				const output = execFileSync(native, [rom, input, state], { encoding: 'utf8' }).trimEnd().split('\n');
-				const diff = output.findIndex((actual, index) => actual !== results[index]);
-				assert.equal(diff, -1, `${id}/${label} native=${output[diff]} TS=${results[diff]} at row ${diff}`);
-				assert.equal(output.length, results.length);
-			}
-			check('admission', seed, ['X', ...trace], expected);
-			check('resume', resume, ['X', 'l', 's', `x ${nativeSave}`, ...tail, 'u', ...tail], [...rows, ...rows]);
-			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativeSave), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-			trace.length = prefix;
-			expected.length = prefixResults;
-			complete();
-			assert.deepEqual(expected.slice(prefixResults), rows);
-			console.log(`BIOS-STOPPED-FINAL-MARK:PASS ${id} (${gc.epochWork() - epochWork} policy words, timed grants and bidirectional checkpoint)`);
+			const grant = (cycles: number) => {
+				const result = slice(cycles), used = cycles - cpu.instructionBudgetRemaining;
+				observe(`L ${cycles}`, [result, used, +cpu.heapServiceActive(), gc.fullEpochs(), gc.phase(), luaHeap.usedBytes()].join(' '));
+				assert.ok(used > 0, `${opt}/${name}: result=${result} phase=${gc.phase()} depth=${cpu.getFrameDepth()} cause=${cpu.readCauseWord()} reason=${cpu.readLuaFaultReasonWord()} pc=${cpu.lastPc}`);
+				return result;
+			};
+			const active = () => irq ? cpu.fixedInterruptActive() : cpu.heapServiceActive();
+			for (let i = 0; i < 8192 && gc.tables.getInteger(weak, 1) !== valueNil(); ++i) grant(137);
+			assert.equal(gc.phase(), GcPhase.Atomic);
+			assert.ok(active());
+			if (irq) assert.equal(cpu.heapServiceActive(), false, 'the installed System IRQ owns the work');
+			assert.equal(word(1), 0, 'the cartridge has not acknowledged its pending IRQ');
+			assert.equal(word(2), 0, 'the mutator cannot pass the collection boundary');
+			assert.equal(gc.tables.getInteger(weak, 1), valueNil());
+			assert.notEqual(gc.tables.getInteger(weak, slots), valueNil());
+			const atomicWork = gc.epochWork(), suspended = save('partial');
+			cpu.requestNonMaskableInterrupt();
+			assert.equal(cpu.enterPendingInterrupt(), false);
+			cpu.cancelNonMaskableInterrupt();
+			const prefix = commands.length, rowPrefix = rows.length;
+			const finish = () => {
+				let interimCredit = false, result = RunResult.Yielded;
+				for (let i = 0; i < 8192 && result !== RunResult.Halted; ++i) {
+					result = grant(251);
+					if (gc.phase() === GcPhase.Atomic) {
+						assert.ok(active());
+						assert.equal(word(2), 0);
+						if (gc.epochWork() !== atomicWork) interimCredit = true;
+					}
+				}
+				assert.equal(result, RunResult.Halted);
+				assert.equal(interimCredit, irq, 'IRQ accounts source quanta; Step and allocation account the completed final mark once');
+				assert.equal(gc.phase(), GcPhase.Sweep);
+				assert.equal(gc.tables.getInteger(weak, slots), valueNil());
+				assert.equal(word(1), +irq);
+				assert.equal(word(2), mode);
+				assert.equal(asInteger(runtime.readCompletionValues()[0]), 73);
+				observe('C', '73');
+				if (allocation) {
+					const value = cpu.getGlobalByKey(cpu.stringPool.find('final_mark_result_root')!);
+					assert.equal(valueTag(value), ValueTag.Table);
+					const record = valuePayload(value);
+					assert.equal(gc.sweepGarbage(record), false, 'the constructor result was marked before the mutator received it');
+					assert.equal(gc.tables.getInteger(record, 1), valueInteger(3));
+					const start = record - RAM_BASE;
+					observe(`H ${start} ${start + 8}`, String(hashBytes(memory.ramData(), start, 8)));
+				}
+				const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+				for (const [first, length] of [[offset, 12], [control, 0xac]])
+					observe(`H ${first} ${first + length}`, String(hashBytes(memory.ramData(), first, length)));
+			};
+			finish();
+			const tail = commands.slice(prefix), tailRows = rows.slice(rowPrefix);
+			const replay = (checkpoint: string, script: string[], expected: string[]) => {
+				const trace = join(out, `${name}.trace`);
+				writeFileSync(trace, script.join('\n'));
+				assert.deepEqual(execFileSync(native, [rom, trace, checkpoint, cartFile], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
+			};
+			replay(seed, commands, rows);
+			replay(suspended, ['X', 'l', 's', `x ${partial}`, ...tail, 'u', ...tail], [...tailRows, ...tailRows]);
+			applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(partial), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+			commands.length = prefix;
+			rows.length = rowPrefix;
+			finish();
+			assert.deepEqual(rows.slice(rowPrefix), tailRows);
+			console.log(`BIOS-FINAL-MARK:PASS O${opt}-${name} (timed owning boundary, weak-array quanta, portable restore and rewind)`);
 		}
-		proveGuestProducer(native, opt);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {
