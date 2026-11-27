@@ -4712,12 +4712,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	public createThread(entry: number): number {
-		const address = this.luaHeap.allocateThreadRecord(entry);
-		if (this.localRootScopeDepth > 0) this.localRoots.push(valueThread(address));
-		return address;
-	}
-
 	private coroutineYieldable(address: number): boolean {
 		if (address === this.rootThread.address) return false;
 		for (let index = 0, depth = this.readThreadFrameDepth(address); index < depth; ++index)

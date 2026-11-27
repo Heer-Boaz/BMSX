@@ -12,6 +12,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../helpers/cartridge';
 import * as v from '../../machine/ts/machine/cpu/value';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 const runner = process.env.BMSX_CPU32_RUNNER;
 
 type Scenario = 'chain' | 'table' | 'memory' | 'upvalue' | 'words' | 'control' | 'loop';
@@ -25,7 +26,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	firstFrame.closureAddress = closure;
 	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
 	const upvalue = cells[0];
-	const other = cpu.bindThread(cpu.createThread(0));
+	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
 	other.resizeStack(24);
 	function setup(scenario: Scenario, value = v.valueInteger(3), source = 'closed') {
 		const frame = cpu.activeThread.currentFrame!, r = frame.registers;

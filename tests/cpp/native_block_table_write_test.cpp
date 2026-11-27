@@ -8,6 +8,7 @@
 #include "spec/bmsx/model.h"
 #include "support/native_region_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -712,7 +713,7 @@ void remarkTableStoresForwardTheCommittedValue() {
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		test::seedManagedHeapFixture(cpu);
 		auto owner = field ? cpu.createTable(0, 1) : cpu.createTable(2, 0);
-		const Value child = field ? valueThread(cpu.luaHeap().allocateThreadRecord(0u)) : valueTable(cpu.createTable().address());
+		const Value child = field ? valueThread(bmsx::test::allocateThreadRecordReference(cpu, 0u)) : valueTable(cpu.createTable().address());
 		const auto name = cpu.stringPool().intern("remark field");
 		const int prediction = field ? owner.setStringKey(name, valueInteger(17)) : -1;
 		const auto control = cpu.heapAllocator().managementOffset() + HEAP_GC_CONTROL_OFFSET;

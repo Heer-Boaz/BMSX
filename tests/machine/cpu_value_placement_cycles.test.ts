@@ -13,6 +13,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 // A raw placement test supplies a real open Cell in its measured frame. Its
 // ROM intentionally has no allocation firmware or descriptor-execution setup.
@@ -145,7 +146,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		] });
 		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+		cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
 		for (const [name, id] of [['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern(name), valueBuiltinFunction(id));
 		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
@@ -176,7 +177,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		] });
 		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		const target = cpu.createThread(entry), receiver = valueThread(target);
+		const target = allocateThreadRecordReference(cpu, entry), receiver = valueThread(target);
 		cpu.rootThread.currentFrame!.registers.set(0, receiver);
 		// Keep allocation outside this placement timing probe. The separate
 		// first-resume integration tests exercise growth and the BIOS grants.

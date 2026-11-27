@@ -4,6 +4,7 @@
 #include "spec/blua32/opcode.h"
 #include "blua32_test_rom.h"
 #include "spec/bmsx/heap_service.h"
+#include "thread_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -54,7 +55,7 @@ inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd) {
 	memory.writeRamRecordWord(remark + static_cast<u32>(Remark::FaultIds), RAM_BASE + faults);
 	for (u32 reason = 0; reason < faultIds.size(); ++reason)
 		memory.writeRamRecordWord(faults + reason * sizeof(u32), faultIds[reason]);
-	const u32 root = cpu.luaHeap().allocateThreadRecord(0u);
+	const u32 root = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	memory.writeRamRecordWord(root + static_cast<u32>(ThreadField::Status), static_cast<u32>(ThreadStatus::Running));
 	return root;
 }

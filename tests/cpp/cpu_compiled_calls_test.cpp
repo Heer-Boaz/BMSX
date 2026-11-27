@@ -13,6 +13,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -1471,7 +1472,7 @@ void coroutineReturnPlacementCycles() {
 		image.systemGlobalNames = {"resume"};
 		CpuMachine machine(image, scalar);
 		const u32 entry = test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		machine.cpu.rootThread()->currentFrame->registers.set(0, valueThread(machine.cpu.luaHeap().allocateThreadRecord(entry)));
+		machine.cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(machine.cpu, entry)));
 		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("resume"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		const u32 root = machine.cpu.activeThread()->address;
 		for (int step = 0; step < 8 && machine.cpu.activeThread()->address == root; ++step) machine.cpu.runUntilDepth(0, 1);

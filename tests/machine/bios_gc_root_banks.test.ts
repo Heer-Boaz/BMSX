@@ -26,6 +26,7 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { admitTestHeapServiceCpu, compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const ROOTS = 'kernel/gc_root_banks', PORT = 'test/gc_root_port', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', ROOTS].map(path => {
@@ -110,8 +111,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 
 	const name = string('system variable'), first = string('system root Value');
 	const table = equal(target => target.createTable(1, 0)), otherTable = equal(target => target.createTable(0, 1));
-	const active = equal(target => target.createThread(0)), completionThread = equal(target => target.createThread(0));
-	const halted = equal(target => target.createThread(0));
+	const active = equal(target => allocateThreadRecordReference(target, 0)), completionThread = equal(target => allocateThreadRecordReference(target, 0));
+	const halted = equal(target => allocateThreadRecordReference(target, 0));
 	for (const [kind, key, value] of [
 		[GcRootBank.SystemGlobals, name, valueString(first)],
 		[GcRootBank.SystemGlobals, string('second system variable'), valueTable(table)],

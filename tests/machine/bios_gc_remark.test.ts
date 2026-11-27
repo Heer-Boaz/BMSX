@@ -18,6 +18,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const MODULE = 'kernel/gc_remark', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', MODULE].map(path => {
@@ -49,7 +50,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const put = (field: number, word: number) => same(t => t.memory.writeRamRecordWord(control + field, word));
 	const get = (field: number) => memory.readRamRecordWord(control + field);
-	const thread = () => same(t => t.createThread(0));
+	const thread = () => same(t => allocateThreadRecordReference(t, 0));
 	const table = () => same(t => t.createTable(0, 0));
 	const [t0, t1, t2] = [thread(), thread(), thread()];
 	const [w0, w1, w2, staleTrace, changed, stringIndex, receiver, value] = Array.from({ length: 8 }, table);

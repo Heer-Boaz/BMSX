@@ -21,6 +21,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const OBJECTS = 'kernel/gc_objects';
@@ -170,7 +171,7 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, oracle, memory, control, occupied, allocate, cell, color, setCursor, compare,
 			begin, grant, finish } = fixture(optLevel);
 		const deadThread = allocate(target => {
-			const address = target.createThread(0);
+			const address = allocateThreadRecordReference(target, 0);
 			target.luaHeap.reserveThreadControls(address, ThreadField.ProtectedBlock, 4, 0, valueThread(address));
 			const mem = target.memory;
 			mem.writeRamRecordWord(address + ThreadField.FrameCapacity, mem.readRamRecordWord(address + ThreadField.FrameCapacity) | 0xa0000000);
@@ -196,9 +197,9 @@ for (const optLevel of [0, 3] as const) {
 		const canonical = closure(2, true, true);
 		const opaque = closure(0x2001, false, false, ValueTag.DeadKey);
 		const ordinary = closure(7, false, true);
-		const unchangedThread = allocate(target => target.createThread(0));
+		const unchangedThread = allocate(target => allocateThreadRecordReference(target, 0));
 		const liveThread = allocate(target => {
-			const address = target.createThread(0);
+			const address = allocateThreadRecordReference(target, 0);
 			target.luaHeap.reserveThreadFrameStorage(address, 32, 8, valueThread(address));
 			return address;
 		});
@@ -293,7 +294,7 @@ for (const optLevel of [0, 3] as const) {
 			begin, finish } = fixture(optLevel);
 		const successor = allocate(target => target.createTable(0, 0));
 		const thread = allocate(target => {
-			const address = target.createThread(0);
+			const address = allocateThreadRecordReference(target, 0);
 			target.luaHeap.reserveThreadFrameStorage(address, 32, 8, valueThread(address));
 			return address;
 		});
@@ -311,7 +312,7 @@ for (const optLevel of [0, 3] as const) {
 	});
 	test(`a swept borrowed Thread address reattaches to the new lifetime at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, allocate, color, setCursor, begin, finish } = fixture(optLevel);
-		const dead = allocate(target => target.createThread(0));
+		const dead = allocate(target => allocateThreadRecordReference(target, 0));
 		const loan = cpu.bindThread(dead);
 		const original = cpu.rootThread.currentFrame!, saved = loan.acquireFrame();
 		saved.initializeControl(original.functionAddress, original.pc, 0, false, SYSTEM_EXECUTION_DOMAIN_ID,
@@ -327,7 +328,7 @@ for (const optLevel of [0, 3] as const) {
 		function complete() {
 			assert.equal(finish(), 1);
 			assert.equal(cpu.gc.threadRecordAddress(dead), 0);
-			const fresh = cpu.createThread(0);
+			const fresh = allocateThreadRecordReference(cpu, 0);
 			assert.equal(fresh, dead, 'the allocator really reused the object address');
 			const view = cpu.bindThread(fresh);
 			assert.equal(view.frameDepth, 0);

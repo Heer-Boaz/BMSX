@@ -23,6 +23,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { allocateThreadRecordReference } from '../../helpers/thread_allocation_reference';
 
 const TRACE = 'kernel/gc_thread_trace', PROBE = 'test/native_gc_thread_trace';
 const entrySource = 'halt_until_irq';
@@ -67,7 +68,7 @@ try {
 		const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 		const arena = cpu.heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
 		memory.writeRamRecordWord(control, GcPhase.Mark | 0x100);
-		const thread = cpu.createThread(0), cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+		const thread = allocateThreadRecordReference(cpu, 0), cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 		initializeCell(memory, cell, cpu.gc.white());
 		cpu.gc.publishObject(cell);
 		bindOpen(memory, cell, thread, 0, 0);

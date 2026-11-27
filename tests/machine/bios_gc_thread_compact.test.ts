@@ -13,6 +13,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const PATH = 'kernel/gc_thread_compact';
 const entrySource = 'halt_until_irq';
@@ -32,7 +33,7 @@ interface Shape {
 
 function installThread(cpu: CPU, shape: Shape) {
 	const { memory } = cpu, threads = cpu.gc.threads;
-	const thread = cpu.createThread(0);
+	const thread = allocateThreadRecordReference(cpu, 0);
 	assert.ok(threads.resizeStackBacking(thread, shape.values));
 	const frames = threads.growControls(thread, ThreadField.FrameBlock, shape.frames);
 	const protectedBlock = shape.protectedFrames === 0 ? 0

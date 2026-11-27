@@ -18,6 +18,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const TRACE = 'kernel/gc_trace', entrySource = 'halt_until_irq';
 const modules = [
@@ -133,7 +134,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`Trace quantum drains and resumes the same mixed native gray queue at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, compare, word, byte, add, queue, string, cell, closure, pendingString, beginning, grant, finish, check, head, frontier } = fixture(optLevel);
-		const thread = add(target => target.createThread(0)), table = add(target => target.createTable(2, 0));
+		const thread = add(target => allocateThreadRecordReference(target, 0)), table = add(target => target.createTable(2, 0));
 		const frame = memory.readRamRecordWord(thread + ThreadField.FrameBlock);
 		word(thread + ThreadField.FrameDepth, 1);
 		word(frame + FrameField.StackCapacity, 8);

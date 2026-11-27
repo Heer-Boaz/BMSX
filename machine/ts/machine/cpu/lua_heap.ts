@@ -5,9 +5,9 @@ import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCC
 import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
-import { valueClosure, valueNil, type Value } from './value';
+import { valueNil, type Value } from './value';
 import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES } from './call_state';
-import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
+import { THREAD_CONTROL_COUNT_MASK, THREAD_STACK_SLOT_BYTES, ThreadField } from './thread_record';
 
 const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
@@ -163,35 +163,6 @@ export class LuaHeap {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
-		}
-	}
-
-	public allocateThreadRecord(entry: number): number {
-		const valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
-		const frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-		const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
-		const root = entry === 0 ? valueNil() : valueClosure(entry);
-		let recovery = this.admit(charged, root);
-		this.assistBeforeReservation(charged + GC_OBJECT_PREFIX, root);
-		const arena = this.cpu.heapAllocator;
-		for (;;) {
-			const base = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false);
-			if (base !== 0) {
-				const values = arena.allocate(valueBytes, true);
-				if (values !== 0) {
-					const frames = arena.allocate(frameBytes, true);
-					if (frames !== 0) {
-						const address = base + GC_OBJECT_PREFIX;
-						this.cpu.gc.threads.initializeRecord(address, values, frames, entry, this.cpu.gc.white());
-						this.cpu.gc.publishObject(address);
-						this.accountAllocation(charged);
-						return address;
-					}
-					arena.free(values);
-				}
-				arena.free(base);
-			}
-			recovery = this.cpu.gc.recoverAllocation(recovery, root);
 		}
 	}
 

@@ -178,33 +178,6 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	}
 }
 
-u32 LuaHeap::allocateThreadRecord(u32 entry) {
-	constexpr u32 valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
-	constexpr u32 frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
-	const u32 charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;
-	const Value root = entry != 0u ? valueClosure(entry) : valueNil();
-	auto recovery = admit(charged, root);
-	assistBeforeReservation(charged + GC_OBJECT_PREFIX, root);
-	auto& arena = m_cpu.heapAllocator();
-	for (;;) {
-		if (const u32 block = arena.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, false)) {
-			if (const u32 values = arena.allocate(valueBytes, true)) {
-				if (const u32 frames = arena.allocate(frameBytes, true)) {
-					const u32 address = block + GC_OBJECT_PREFIX;
-					auto& gc = m_cpu.gcHeap();
-					ThreadRecord::initialize(gc, address, values, frames, entry);
-					gc.publishObject(address);
-					accountAllocation(charged);
-					return address;
-				}
-				arena.free(values);
-			}
-			arena.free(block);
-		}
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root);
-	}
-}
-
 u32 LuaHeap::reserveThreadControls(u32 address, ThreadField field, u32 capacity, u32 previous, Value root) {
 	const u32 stride = field == ThreadField::FrameBlock ? FRAME_CONTROL_BYTES : PROTECTED_CALL_BYTES;
 	auto recovery = admit((capacity - previous) * stride, root, valueNil(), valueNil(), address);

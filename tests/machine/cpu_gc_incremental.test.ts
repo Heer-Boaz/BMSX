@@ -23,6 +23,7 @@ import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_forma
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 // Exercise the independent native oracle from an already admitted RAM state.
 function machine() {
@@ -436,7 +437,7 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 	}, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	const run = () => {
 		const entry = seedTestRomClosure(cpu, rom.symbols.functionAddresses[1]);
-		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+		cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
 		for (const { functionIndex } of closureRelocations) seedTestRomClosure(cpu, rom.symbols.functionAddresses[functionIndex]);
 		for (let i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) === RunResult.Halted && cpu.activeThread === cpu.rootThread) return;
@@ -1081,7 +1082,7 @@ test('a native Step reference already in Atomic finishes all remaining final-mar
 test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {
 	const cpu = machine(), { gc, memory } = cpu;
 	const baselineWork = gc.collect(), baselineBytes = cpu.heapAllocator.occupiedBytes();
-	const address = cpu.createThread(0);
+	const address = allocateThreadRecordReference(cpu, 0);
 	memory.writeRamRecordWord(address + ThreadField.Status, ThreadStatus.Suspended);
 	const wide = 64;
 	cpu.luaHeap.reserveThreadFrameStorage(address, wide, 0, valueNil());
@@ -1146,7 +1147,7 @@ test('a collected coroutine releases its object and stack allocations', () => {
 	});
 	const { cpu } = createTestHeapServiceCpu(image);
 	const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+	cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;
 	const address = valuePayload(frame.registers.get(0));
 	const bytes = gc.allocationBytes(address);

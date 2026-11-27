@@ -69,25 +69,6 @@ void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, 
 	}
 }
 
-void initialize(GcHeap& heap, u32 address, u32 valueBlock, u32 frameBlock, u32 entry) {
-	auto& memory = heap.memory;
-	const u32 offset = address & RAM_RECORD_WORD_MASK;
-	auto* record = memory.ramData() + offset;
-	std::fill_n(record, THREAD_HEAP_BYTES, u8{0});
-	writeLE32(record, THREAD_RECORD_KIND | (static_cast<u32>(heap.white()) << 8u));
-	writeLE32(record + static_cast<u32>(ThreadField::Entry), entry);
-	writeLE32(record + static_cast<u32>(ThreadField::StackBlock), valueBlock);
-	writeLE32(record + static_cast<u32>(ThreadField::FrameBlock), frameBlock);
-	writeLE32(record + static_cast<u32>(ThreadField::StackCapacity), THREAD_INITIAL_VALUES);
-	writeLE32(record + static_cast<u32>(ThreadField::FrameCapacity), THREAD_INITIAL_FRAMES);
-	const ThreadStorageLayout layout{valueBlock, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, 0u, frameBlock, 0u};
-	const u32 control = layout.frameAddress(0);
-	std::fill_n(memory.ramData() + control, layout.frameBytes(), u8{0});
-	memory.invalidateRamWrite(control, layout.frameBytes());
-	memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
-	layout.slots(memory).clear(0, THREAD_INITIAL_VALUES);
-}
-
 bool resizeStackBacking(GcHeap& heap, u32 address, u32 capacity) {
 	auto& memory = heap.memory;
 	const u32 old = read(memory, address, ThreadField::StackBlock);

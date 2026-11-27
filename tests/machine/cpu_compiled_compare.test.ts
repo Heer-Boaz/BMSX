@@ -15,6 +15,7 @@ import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_F
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure, type TestBlua32Source } from '../helpers/blua32';
 import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -36,7 +37,7 @@ function values(cpu: CPU): Value[] {
 		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
 		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(closure),
-		valueThread(cpu.rootThread.address), valueThread(cpu.createThread(closure)),
+		valueThread(cpu.rootThread.address), valueThread(allocateThreadRecordReference(cpu, closure)),
 		valueBuiltinFunction(BuiltinFunctionId.Type), valueBuiltinFunction(BuiltinFunctionId.Next)];
 }
 

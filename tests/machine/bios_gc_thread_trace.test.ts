@@ -18,6 +18,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const TRACE = 'kernel/gc_thread_trace', PROBE = 'test/gc_thread_trace';
 const entrySource = 'halt_until_irq';
@@ -128,7 +129,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`BLua Thread trace matches native frame, open-chain, protected, and value continuations at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, add, word, cell, closure, value, step } = fixture(optLevel);
-		const thread = add(target => target.createThread(0)), resumer = add(target => target.createThread(0));
+		const thread = add(target => allocateThreadRecordReference(target, 0)), resumer = add(target => allocateThreadRecordReference(target, 0));
 		const entry = closure(), framed = closure(), handler = closure(), ignored = closure();
 		const open = cell(), stale = cell();
 		const string = add(target => target.stringPool.intern('thread-open-value'));

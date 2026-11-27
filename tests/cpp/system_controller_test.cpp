@@ -21,6 +21,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <array>
 #include <limits>
@@ -705,7 +706,7 @@ void testRuntimeSystemRebootBoundary() {
 		&& cpu.heapAllocator().occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
 	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
 	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd);
-	const bmsx::u32 warm = cpu.luaHeap().allocateThreadRecord(0u);
+	const bmsx::u32 warm = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	// Initial physical test data; neither context is selected by the host.
 	const bmsx::u32 pc = fixture.systemRom.textAddress;
 	const bmsx::FrameEntryControl entry{

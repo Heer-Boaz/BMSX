@@ -8,6 +8,7 @@
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <algorithm>
 #include <array>
@@ -646,7 +647,7 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		root.setMetatableAddress(meta.address());
-		const u32 thread = cpu.luaHeap().allocateThreadRecord(entry);
+		const u32 thread = bmsx::test::allocateThreadRecordReference(cpu, entry);
 		frame->registers.set(0, valueThread(thread));
 		// Isolate the yielding index operation from first-resume allocation.
 		cpu.luaHeap().reserveThreadFrameStorage(thread, image.functions[1].maxStack, THREAD_INITIAL_FRAMES, valueClosure(entry));

@@ -2,7 +2,6 @@ import type { Memory } from '../memory/memory';
 import type { HeapAllocator } from './heap_allocator';
 import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { writeLE32 } from '../../common/endian';
 import { ValueSlots } from './value_slots';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../spec/blua32/cop0';
@@ -96,24 +95,6 @@ export class ThreadRecords {
 			if (writing) Upvalue.store(heap, cell, registers.getTag(base + 3), registers.getPayload(base + 3));
 			else out.push(Upvalue.load(memory, cell));
 		}
-	}
-	public initializeRecord(address: number, block: number, frameBlock: number, entry: number, white: number): void {
-		const memory = this.memory, ram = memory.ramData(), offset = address & RAM_RECORD_WORD_MASK;
-		const start = block & RAM_RECORD_WORD_MASK, control = frameBlock & RAM_RECORD_WORD_MASK;
-		ram.fill(0, offset, offset + THREAD_HEAP_BYTES);
-		writeLE32(ram, offset + ThreadField.Header, THREAD_RECORD_KIND | (white << 8));
-		writeLE32(ram, offset + ThreadField.Entry, entry);
-		writeLE32(ram, offset + ThreadField.StackBlock, block);
-		writeLE32(ram, offset + ThreadField.FrameBlock, frameBlock);
-		writeLE32(ram, offset + ThreadField.StackCapacity, THREAD_INITIAL_VALUES);
-		writeLE32(ram, offset + ThreadField.FrameCapacity, THREAD_INITIAL_FRAMES);
-		ram.fill(0, control, control + THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-		memory.invalidateRamWrite(control, THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES);
-		memory.invalidateRamWrite(offset, THREAD_HEAP_BYTES);
-		memory.ramWords.fill(0, start >>> 2, (start >>> 2) + THREAD_INITIAL_VALUES);
-		ram.fill(0, start + THREAD_INITIAL_VALUES * 4, start + THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES);
-		memory.invalidateRamWrite(start, THREAD_INITIAL_VALUES * 4);
-		memory.invalidateRamWrite(start + THREAD_INITIAL_VALUES * 4, THREAD_INITIAL_VALUES);
 	}
 	public readLayout(address: number, target: ThreadLayout): void {
 		const memory = this.memory;

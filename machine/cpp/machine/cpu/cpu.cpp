@@ -1374,12 +1374,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 	}
 }
 
-u32 CPU::createThread(u32 entry) {
-	const u32 address = m_luaHeap.allocateThreadRecord(entry);
-	trackLocalRoot(valueThread(address));
-	return address;
-}
-
 bool CPU::coroutineYieldable(u32 address) const {
 	if (address == m_rootView.address) return false;
 	const auto layout = ThreadRecord::storageLayout(m_memory, address);

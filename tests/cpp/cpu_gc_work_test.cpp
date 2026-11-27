@@ -10,6 +10,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <array>
 #include <iostream>
@@ -401,7 +402,7 @@ void collectorWorkIgnoresInactiveThreadFrames() {
 		Machine machine(image()); auto& cpu = machine.cpu; auto& heap = cpu.gcHeap();
 		const auto retained = cpu.createTable().address();
 		auto& thread = *cpu.rootThread();
-		const u32 doomed = cpu.luaHeap().allocateThreadRecord(0u);
+		const u32 doomed = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 		if (reservedFrames != THREAD_INITIAL_FRAMES) {
 			cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0u, reservedFrames, valueNil());
 			thread.bindStack();
@@ -1519,7 +1520,7 @@ void collectUnattachedThreadRecord() {
 	Machine machine(image()); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap(); auto& memory = machine.memory;
 	const size_t baselineWork = gc.collect();
 	const size_t baselineBytes = cpu.heapAllocator().occupiedBytes();
-	const u32 address = cpu.luaHeap().allocateThreadRecord(0u);
+	const u32 address = bmsx::test::allocateThreadRecordReference(cpu, 0u);
 	constexpr u32 capacity = 64u;
 	cpu.luaHeap().reserveThreadFrameStorage(address, capacity, 0, valueNil());
 	const u32 block = ThreadRecord::read(memory, address, ThreadField::StackBlock);
@@ -1585,7 +1586,7 @@ void sweepCoroutineRecord() {
 	program.functions = {{.firstWord=0, .wordCount=1, .maxStack=8}, {.firstWord=1, .wordCount=1, .maxStack=2}};
 	Machine machine(program); auto& cpu = machine.cpu; auto& gc = cpu.gcHeap();
 	const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
-	const u32 address = cpu.luaHeap().allocateThreadRecord(entry);
+	const u32 address = bmsx::test::allocateThreadRecordReference(cpu, entry);
 	auto& frame = *cpu.rootThread()->currentFrame;
 	frame.registers.set(0, valueThread(address));
 	require(gc.threadRecordAddress(address) == address, "fixture published a physical Thread reference");
@@ -1654,7 +1655,7 @@ void sweepUnselectsSuspendedTransferFrames() {
 	}, &observation, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	const auto run = [&] {
 		const u32 entry = test::seedTestRomClosure(cpu, machine.rom.functionAddresses[1]);
-		cpu.rootThread()->currentFrame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
+		cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(cpu, entry)));
 		for (const auto& relocation : program.closureRelocations) test::seedTestRomClosure(cpu, relocation.functionAddress);
 		for (int i = 0; i < 16; ++i)
 			if (cpu.runUntilDepth(0, 1000) == RunResult::Halted && cpu.activeThread() == cpu.rootThread()) return;

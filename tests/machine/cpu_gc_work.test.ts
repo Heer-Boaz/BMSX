@@ -40,6 +40,7 @@ import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/he
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 // Native measurements deliberately assemble an image without resident GC services.
 function source(operation: OpCode = OpCode.HALT, wide = false) {
@@ -123,7 +124,7 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 	const image = linkRawTestSystemBlua32(source());
 	const collect = (reservedFrames: number) => {
 		const { cpu, memory } = createTestHeapServiceCpu(image), { gc, rootThread: thread } = cpu;
-		const retained = cpu.createTable(), doomed = cpu.createThread(0);
+		const retained = cpu.createTable(), doomed = allocateThreadRecordReference(cpu, 0);
 		if (reservedFrames !== THREAD_INITIAL_FRAMES) {
 			cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, reservedFrames, valueNil());
 			thread.bindStack();

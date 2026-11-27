@@ -18,6 +18,7 @@ import { seedTestRomClosure } from '../helpers/blua32';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valueThread, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 test('all nominal opcode prices include instruction issue, while WIDE remains free', () => {
 	const expected = [
@@ -227,7 +228,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		] });
 		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+			cpu.rootThread.currentFrame!.registers.set(0, valueThread(allocateThreadRecordReference(cpu, entry)));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 		for (let grant = 0; grant < 32 && (cpu.activeThread === cpu.rootThread); ++grant) cpu.runUntilDepth(0, 1);
 		assert.ok(!(cpu.activeThread === cpu.rootThread), 'fixture reached its measured instruction');

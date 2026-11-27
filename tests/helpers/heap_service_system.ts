@@ -19,6 +19,7 @@ import type { ProgramModule } from '../../toolchain/ts/lua/compiler/passes/modul
 import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
+import { allocateThreadRecordReference } from './thread_allocation_reference';
 
 const testBiosUtilityModules = ['math/sin', 'string/float/decode', 'gpu/system_vram_region', 'tty/layout'];
 const testSystemAssets = {
@@ -127,7 +128,7 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 		memory.writeRamRecordWord(faults + 4 * reason, id);
 	}
 
-	const raw = cpu.activeThread, root = luaHeap.allocateThreadRecord(0);
+	const raw = cpu.activeThread, root = allocateThreadRecordReference(cpu, 0);
 	const adopted = new Thread(gc);
 	adopted.bindAddress(root);
 	adopted.bindStack();

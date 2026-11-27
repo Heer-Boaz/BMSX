@@ -17,6 +17,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/managed_fixture.h"
+#include "support/thread_allocation_reference.h"
 
 #include <memory>
 #include <utility>
@@ -119,7 +120,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 		auto& machine = fixture->runtime.machine;
 		auto& cpu = machine.cpu;
 		const u32 entry = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
-		cpu.rootThread()->currentFrame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
+		cpu.rootThread()->currentFrame->registers.set(0, valueThread(bmsx::test::allocateThreadRecordReference(cpu, entry)));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("resume"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		cpu.setSystemGlobalByKey(cpu.stringPool().intern("yield"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		for (u32 step = 0; step < 12 && cpu.activeThread() == cpu.rootThread(); ++step) cpu.runUntilDepth(0, 1);
@@ -161,7 +162,7 @@ void replacementAdmitsRetainedCoroutinesAndClosures() {
 	auto& machine = fixture->runtime.machine;
 	auto& cpu = machine.cpu;
 	const u32 entry = test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
-	const u32 thread = cpu.luaHeap().allocateThreadRecord(entry);
+	const u32 thread = bmsx::test::allocateThreadRecordReference(cpu, entry);
 	cpu.rootThread()->currentFrame->registers.set(0, valueThread(thread));
 	cpu.rootThread()->currentFrame->extendTop(1);
 	require(ThreadRecord::read(machine.memory, thread, ThreadField::Status) == static_cast<u32>(ThreadStatus::New)

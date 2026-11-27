@@ -17,6 +17,7 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const TRACE = 'kernel/gc_capture_trace', PROBE = 'test/gc_capture_trace';
 const entrySource = 'halt_until_irq';
@@ -120,7 +121,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua Closure fast trace matches native open, closed, duplicate and unissued capture lanes at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, add, cell, closure, enqueue, word, begin, finish, compare } = fixture(optLevel);
 		const open = cell(), closed = cell();
-		const owner = add(target => target.createThread(0)), table = add(target => target.createTable());
+		const owner = add(target => allocateThreadRecordReference(target, 0)), table = add(target => target.createTable());
 		const fake = add(target => target.heapAllocator.allocate(32, true)) + GC_OBJECT_PREFIX;
 		const string = add(target => target.stringPool.intern('bios-trace-closed-value'));
 		const prior = add(target => target.stringPool.intern('bios-trace-prior-work'));

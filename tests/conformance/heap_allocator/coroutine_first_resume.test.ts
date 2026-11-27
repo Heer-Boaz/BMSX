@@ -24,6 +24,7 @@ import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { allocateThreadRecordReference } from '../../helpers/thread_allocation_reference';
 
 // Reference at 1e4283127: TS cpu.ts:4621-4677 and C++ cpu.cpp:1357-1411
 // select the new target before admitting its first frame, retain Entry at
@@ -65,7 +66,7 @@ for (const opt of [0, 3] as const) test(`first coroutine resume keeps the physic
 		heap.setCollectionTarget(heap.capacity());
 		// Test setup only: start two issued Thread records, with no admitted
 		// frames. The nested CALLs below are the real coroutine.resume builtin.
-		const parent = cpu.createThread(outer), child = cpu.createThread(body), box = cpu.createTable(0, 1);
+		const parent = allocateThreadRecordReference(cpu, outer), child = allocateThreadRecordReference(cpu, body), box = cpu.createTable(0, 1);
 		gc.tables.setStringKey(box, cpu.stringPool.intern('marker'), valueInteger(67));
 		const resume = valueBuiltinFunction(BuiltinFunctionId.CoroutineResume);
 		cpu.beginCompletionCall(start, [resume, valueThread(parent), valueThread(child), valueTable(box)]);

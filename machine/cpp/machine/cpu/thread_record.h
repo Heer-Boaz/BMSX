@@ -73,7 +73,6 @@ inline Value error(const Memory& memory, u32 address) {
 		read(memory, address, ThreadField::ErrorWord));
 }
 void invokeDiagnostic(GcHeap&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
-void initialize(GcHeap&, u32 address, u32 valueBlock, u32 frameBlock, u32 entry);
 bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
 u32 growControls(GcHeap&, u32 address, ThreadField field, u32 capacity, u32 staged = 0u);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);

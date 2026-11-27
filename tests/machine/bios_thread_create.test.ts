@@ -15,10 +15,11 @@ import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
+import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
 const path = 'kernel/thread_create', port = `machine/bios/${path}.lua`, source = readFileSync(port, 'utf8');
 const valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES, frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
@@ -38,7 +39,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 	const fn = functionIndex('create_thread'), whole = functionIndex('internal.allocate_coroutine');
 	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, [fn, whole]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
-	const { cpu, memory } = createTestSystemCpu(image), oracle = createTestSystemCpu(image).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(image), oracle = createTestHeapServiceCpu(image).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 65_536);
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
@@ -85,7 +86,7 @@ for (const opt of [0, 3] as const) {
 		const oldHead = memory.readRamRecordWord(control + objectHead);
 		const oldCount = memory.readRamRecordWord(control + objectCount);
 		const charge = cpu.luaHeap.usedBytes();
-		const record = oracle.createThread(entry);
+		const record = allocateThreadRecordReference(oracle, entry);
 		const stack = oracle.memory.readRamRecordWord(record + ThreadField.StackBlock);
 		const frames = oracle.memory.readRamRecordWord(record + ThreadField.FrameBlock);
 		// Seed the exact payload lanes chosen by the independent allocator
@@ -206,7 +207,7 @@ for (const opt of [0, 3] as const) {
 		restoreCpuCheckpoint(oracle, seed);
 		oracle['runKind'] = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
-		const record = oracle.createThread(entry);
+		const record = allocateThreadRecordReference(oracle, entry);
 		oracle['runKind'] = CpuRunKind.Idle;
 		assert.notEqual(record, 0);
 		assert.equal(oracle.gc.tableRecordAddress(victim), 0);
@@ -247,7 +248,7 @@ for (const opt of [0, 3] as const) {
 		const head = memory.readRamRecordWord(control + objectHead);
 		oracle['runKind'] = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = sourceCycles;
-		const record = oracle.createThread(entry);
+		const record = allocateThreadRecordReference(oracle, entry);
 		oracle['runKind'] = CpuRunKind.Idle;
 		assert.ok(oracle.gc.epochWork() > work, 'the old source granted a positive mark quantum');
 		assert.ok(oracle.luaHeap.collectionTarget() > target);
@@ -280,7 +281,7 @@ for (const opt of [0, 3] as const) {
 		const white = cpu.gc.white();
 		oracle['runKind'] = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
-		assert.throws(() => oracle.createThread(entry), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+		assert.throws(() => allocateThreadRecordReference(oracle, entry), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 		oracle['runKind'] = CpuRunKind.Idle;
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) f.grant(4096);

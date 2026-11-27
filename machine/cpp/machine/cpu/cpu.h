@@ -664,7 +664,6 @@ private:
 	u32 m_nmiReturnExceptionDomainWord = 0;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
-	u32 createThread(u32 entry);
 	Thread& bindThread(u32 address);
 	void retireThreadView(u32 address);
 	void rebindRelocatedThread(u32 address);
