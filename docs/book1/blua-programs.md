@@ -985,16 +985,19 @@ complete source-visible field set is:
 | `cop0.cause` | 13 | Read only |
 | `cop0.epc` | 14 | Read and write; compound assignment permitted |
 | `cop0.exec` | 15 | Write only; compound assignment rejected |
+| `cop0.ram_end` | 17 | Write only; compound assignment rejected |
 
-Other field names are rejected. Reading `cop0.exec` or assigning a read-only field is also rejected,
+Other field names are rejected. Reading `cop0.exec` or `cop0.ram_end`, or assigning a read-only field, is also rejected,
 rather than providing another control-register operation. Every permitted read and write still
 requires supervisor mode. In user mode it raises a coprocessor-unusable synchronous exception;
 ordinary program code does not gain privileged access by using this syntax.
 
 `cop0.status` and `cop0.epc` writes supply raw unsigned 32-bit words. In `status`, bit 0 is current
-interrupt enable and bit 1 is current user mode. Writing `cop0.exec` requests execution of the
-supplied function-record address; it is not an ordinary field update or a substitute for a normal
-function call. The execution-transfer and exception contracts belong to the [CPU reference](cpu.md#sec-cpu).
+interrupt enable and bit 1 is current user mode. Bit 8 inhibits system reset
+and can be changed only by System ROM. Writing `cop0.exec` starts execution
+at the supplied function-record address; it is not a normal function call.
+A System ROM write to `cop0.ram_end` changes the main RAM boundary. See
+[CPU control](cpu.md#sec-cpu-cp0-and-execution-control) for these effects.
 
 #### Source access and control instructions {#sec-cpu-blua-control-syntax}
 

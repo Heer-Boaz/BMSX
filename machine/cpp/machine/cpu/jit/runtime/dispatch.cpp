@@ -262,9 +262,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			cpu.executeControlWrite(*frame, exit->operands.control.slot, exit->operands.control.field);
 			transition = NativeBlockTransition::Redispatch;
 			break;
-		case NativeBlockExit::ControlBoundary:
-			transition = NativeBlockTransition::Redispatch;
-			break;
 		case NativeBlockExit::ExceptionReturn:
 			cpu.returnFromException(*frame);
 			transition = NativeBlockTransition::Redispatch;

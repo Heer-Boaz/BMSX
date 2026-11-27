@@ -24,7 +24,7 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
 	const auto& cpu = runtime.machine.cpu;
 	if (!cpu.heapServiceActive()) {
-		if (runtime.machine.systemController.hasResetRequest()) return true;
+		if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
 		if (cpu.allocationParked()) return cpu.allocationReady();
 		if (cpu.queuedFixedWork()) return false;
 	}
@@ -50,7 +50,7 @@ FrameSchedulerState::Pulse FrameSchedulerState::beginScheduledExecution(Runtime&
 	m_backendServiceSuspended = backendBlocked;
 	auto& cpu = runtime.machine.cpu;
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || cpu.heapServiceActive()
-		|| runtime.machine.systemController.hasResetRequest()) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
+		|| (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())) return backendBlocked ? Pulse::Blocked : Pulse::Ready;
 	if (cpu.allocationParked()) {
 		// Device edges during timed recovery must not displace its retry.
 		if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) {

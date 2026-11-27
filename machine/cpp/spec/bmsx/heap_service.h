@@ -13,7 +13,6 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	SetFloor,
 	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
@@ -32,11 +31,6 @@ constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTI
 constexpr uint32_t HEAP_SERVICE_FIXED_WORK_OFFSET = 0x7f0;
 constexpr uint32_t HEAP_SERVICE_THREAD_OFFSET = 0x800;
 constexpr uint32_t HEAP_SERVICE_RESULT_OFFSET = 0x850;
-constexpr uint32_t HEAP_SERVICE_EXEC_TARGET_OFFSET = 0x858;
-constexpr uint32_t HEAP_SERVICE_EXEC_FLOOR_OFFSET = 0x85c;
-constexpr uint32_t HEAP_SERVICE_EXEC_PENDING_OFFSET = 0x860;
-constexpr uint32_t HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
-constexpr uint32_t HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 constexpr uint32_t HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 // Cart lane (socket + 1) is the presence word. The vector word itself can
 // fault and is not a sentinel.

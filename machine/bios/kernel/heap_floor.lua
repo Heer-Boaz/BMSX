@@ -29,4 +29,17 @@ local reserve_floor<const> = function(management, floor) -- T:1865-1868 C:913-92
 	return (allocator.bmsx_dlmalloc_set_floor(arena, floor)) -- T:1886-1891 C:946-950; exactly one retry
 end
 
-return { reserve_floor = reserve_floor }
+-- The caller reads its image header on the mapped bus. Only the
+-- allocator's existing private state is accessed in this activation.
+local admit_static_end<const> = function(static_end)
+	local management_port<const>: *u32 = layout.management_address
+	local management<const> = *management_port
+	if static_end < 0x08040000 then static_end = 0x08040000 end
+	local offset = static_end - layout.ram_base
+	if offset > management then offset = management end
+	local floor<const> = (offset + 4095) & ~4095
+	if reserve_floor(management, floor) == 0 then return 0 end
+	return layout.ram_base + floor
+end
+
+return { internal = { reserve_floor = reserve_floor }, admit_static_end = admit_static_end }

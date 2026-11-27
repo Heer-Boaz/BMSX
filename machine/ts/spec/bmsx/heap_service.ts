@@ -5,7 +5,6 @@ export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
 export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
-	SetFloor,
 	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 }
 
@@ -22,11 +21,6 @@ export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OF
 export const HEAP_SERVICE_FIXED_WORK_OFFSET = 0x7f0;
 export const HEAP_SERVICE_THREAD_OFFSET = 0x800;
 export const HEAP_SERVICE_RESULT_OFFSET = 0x850;
-export const HEAP_SERVICE_EXEC_TARGET_OFFSET = 0x858;
-export const HEAP_SERVICE_EXEC_FLOOR_OFFSET = 0x85c;
-export const HEAP_SERVICE_EXEC_PENDING_OFFSET = 0x860;
-export const HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
-export const HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 export const HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 // Cart lane (socket + 1) is the presence word. The vector word itself can
 // fault and is not a sentinel.

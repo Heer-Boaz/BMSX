@@ -45,7 +45,7 @@ and [Sample RAM transfer](apu.md#sec-apu-sample-ram-transfer).
 
 ## Reserved and cartridge storage in main RAM {#sec-memory-reserved-and-cartridge-storage-in-main-ram}
 
-The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, the system's static storage and the cartridge program's static storage, and the language runtime's heap and management storage above them.
+The installed main RAM occupies `08000000H` through `083FFFFFH`, a total of 4 MiB. This is a physical storage extent, not a cartridge allocation range. It includes the I/O reservation, the system's static storage and the cartridge program's static storage, and a private range above the end accessible on the system bus.
 
 Static storage includes DATA, whose initial bytes are copied from ROM, and
 BSS, which startup initializes to zero. Both use assigned main-RAM addresses.
@@ -53,9 +53,8 @@ The firmware and the cartridge each have their own occupied sections.
 
 Subtracting the 256 KiB I/O reservation leaves **3.75 MiB** in
 `[08040000H, 08400000H)`. Static storage occupies the
-beginning of this span, the 16 KiB runtime management area its end, and the
-language heap the space between them. The installed firmware occupies the
-beginning of the static storage. Its actual DATA/BSS footprint, rather than
+beginning of this span, and a 16 KiB System work area occupies its end.
+The installed firmware occupies the beginning of the static storage. Its actual DATA/BSS footprint, rather than
 the total span alone, determines where cartridge placement can begin.
 
 The following ranges use an exclusive end: the end address is the first byte outside the range.
@@ -65,8 +64,8 @@ The following ranges use an exclusive end: the end address is the first byte out
 | Declared I/O reservation | `08000000H` | `08040000H` | 256 KiB |
 | System static storage | `08040000H` | Actual end of system BSS | Specified by the system executable image |
 | Cartridge static storage, compact layout below | Actual end of system BSS | Actual end of cartridge BSS | Specified by the cartridge executable image |
-| Language heap | Heap floor | `083FC000H` | Remainder of installed RAM |
-| Runtime management area | `083FC000H` | `08400000H` | 16 KiB |
+| Private storage | `RAM_END` | `083FC000H` | Not mapped on the system bus |
+| System work area | `083FC000H` | `08400000H` | 16 KiB; not mapped on the system bus |
 
 The decoded I/O register aperture ends at `08010448H`, before the end of the declared I/O reservation. This smaller aperture does not make the remainder of the reservation available for cartridge variables or buffers.
 
@@ -81,9 +80,9 @@ The following compact layout places cartridge DATA at the system BSS end and
 cartridge BSS immediately after that DATA. This adjacency is a layout choice,
 **not a hardware requirement**. Another cartridge placement can use different
 unreserved RAM addresses; its records, code and startup initialization must all
-use that chosen placement without overwriting firmware storage. The heap floor
-follows the highest static byte, so a placement high in RAM leaves less space
-for the language heap.
+use that chosen placement without overwriting firmware storage. A placement
+higher in RAM requires a higher mapped end and leaves less space in the
+private range.
 
 | Section in the compact layout, in address order | Run address |
 |---|---|
@@ -102,31 +101,21 @@ reserved storage.
 Choosing a static layout is not a hardware allocation service. Use the actual
 installed system image when calculating firmware occupancy.
 
-### Language heap and runtime management area {#sec-memory-language-heap}
+### Main RAM on the system bus {#sec-memory-language-heap}
 
-The language runtime owns main RAM above the active program's static storage.
-Its heap extends from the **heap floor** to `083FC000H`; the 16 KiB from
-`083FC000H` to the end of installed RAM hold its management data. Do not
-place DATA, BSS or buffers in either range. Their contents are not a
-programming interface. The CPU accesses them through its language-runtime
-port, not through the system bus. To ordinary loads and stores, instruction
-fetches, DMA, and other devices, addresses in these ranges are unmapped.
-The normal bus-fault rules apply. DATA and BSS below the floor remain
-accessible on the system bus and may contain executable code.
-Language references identify objects, not bus addresses. Neither an
-object's storage nor the processor's active register or frame storage
-can be reassigned by ordinary memory writes.
+Main RAM is installed up to `08400000H`, but only the range from `08040000H`
+up to `RAM_END` is available as ordinary RAM on the system bus. The I/O
+reservation below that range is separate. The firmware can change the end
+in 4 KiB units up to `083FC000H` using
+[[CP0 RAM_END](cpu.md#sec-cpu-ram-end)]{.content-visible when-format="html"}[Book II, CPU control reference]{.content-visible when-format="pdf"}.
+The last 16 KiB of installed RAM are always outside the ordinary range. The
+BIOS uses private RAM for language values and other work.
 
-The heap floor is the end of the active image's static storage, the larger
-of its DATA run end and its BSS end, rounded up to a multiple of 4 KiB. It is
-never below `08040000H`, where static storage begins. The CPU sets the floor
-from the system image at reset. EXEC sets it from the target image before
-that image's first instruction, and refuses a target whose static storage
-would cover heap storage still in use; see
-[[EXEC](cpu.md#sec-cpu-exec)]{.content-visible when-format="html"}[Book II, §1.13.4]{.content-visible when-format="pdf"}.
-The runtime takes new heap space from the top of the range downward and can
-reuse space freed by collection. Raising the floor requires a contiguous
-range below the retained allocations, not just enough unused bytes in total.
+For instruction fetch, loads, stores and DMA, addresses from `RAM_END` up
+to the installed RAM end are unmapped. An access there takes the ordinary
+bus-fault path (UNMAPPED). Moving the boundary changes which bytes can be
+accessed, without changing their contents. Place program sections and device
+buffers within the mapped range.
 
 ## Firmware reservation in VRAM {#sec-memory-firmware-reservation-in-vram}
 

@@ -39,9 +39,9 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction, 
 	case OpCode::MFC0: case OpCode::MTC0: {
 		const bool implemented = cop0FieldImplemented(b);
 		const auto mode = op == OpCode::MFC0
-			? !implemented ? NativeControlMode::ReadFault : b == COP0_EXEC ? NativeControlMode::ReadZero : NativeControlMode::ReadWord
-			: !implemented || b == COP0_EXEC ? NativeControlMode::WriteSemantic
-			: b == COP0_STATUS || b == COP0_EPC ? NativeControlMode::WriteWord : NativeControlMode::ConsumeWord;
+			? !implemented ? NativeControlMode::ReadFault : cop0ReadAsZero(b) ? NativeControlMode::ReadZero : NativeControlMode::ReadWord
+			: !implemented || cop0WriteRetiresControl(b) ? NativeControlMode::WriteSemantic
+			: b == COP0_EPC ? NativeControlMode::WriteWord : NativeControlMode::ConsumeWord;
 		return NativeControlAccess{a, static_cast<u16>(b), mode, true};
 	}
 	case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:

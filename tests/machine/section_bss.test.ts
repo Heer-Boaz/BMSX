@@ -14,7 +14,11 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import {
+	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
 import {
@@ -121,7 +125,12 @@ for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33])
 });
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
-	const launcher = `bss system_scratch: word[9]\ncop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+	const launcher = `local floor<const> = require('kernel/heap_floor')
+bss system_scratch: word[9]\nlocal image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
+local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
+cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 	const cartridge = `data prefix: word = 305419896\nbss scratch: word[17]\nreturn *prefix`;
 	const system = compileTestSystemWithHeap(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
 	const cart = compileLuaChunkToProgram(parseSource(cartridge, 'cart_bss.lua'), [], { entrySource: cartridge, programDomain: 'cart', optLevel });

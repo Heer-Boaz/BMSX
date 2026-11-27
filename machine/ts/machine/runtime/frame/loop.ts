@@ -156,7 +156,7 @@ export class FrameLoopState {
 
 	private consumeSystemReset(): boolean {
 		const runtime = this.runtime;
-		if (runtime.machine.cpu.heapServiceActive() || runtime.machine.scheduler.acceptedCpuCycles !== 0) return false;
+		if (runtime.machine.cpu.systemResetInhibited() || runtime.machine.scheduler.acceptedCpuCycles !== 0) return false;
 		if (!runtime.machine.systemController.takeResetRequest()) {
 			return false;
 		}

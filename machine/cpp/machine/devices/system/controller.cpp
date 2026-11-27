@@ -91,7 +91,7 @@ u32 SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
 void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
 	if ((value & SYS_CONTROL_RESET) != 0u) {
 		requestReset();
-		m_cpu.requestYield();
+		if (!m_cpu.systemResetInhibited()) m_cpu.requestYield();
 	}
 	if (!m_cpu.isUserMode()) {
 		if ((value & SYS_CONTROL_SUPERVISOR_ENTER) != 0u) {

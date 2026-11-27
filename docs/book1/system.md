@@ -385,19 +385,19 @@ inspection and continuation procedure is described in
 
 ## Reset requests {#sec-system-reset-requests}
 
-RESET is available in either CPU mode. It latches one pending request for service
-at a CPU execution boundary; repeated RESET writes coalesce until the request
-is consumed. CONTROL reads zero, and STATUS has no reset-pending flag. Reading
-either word neither consumes the request nor proves that reboot has occurred.
-Other admitted command bits in the same write are still processed in the
-defined order.
+A write of RESET latches one request in either CPU mode. Further RESET writes
+coalesce until the request is serviced. CONTROL reads zero; STATUS does not
+report whether reset is pending. Other admitted bits in the same write are
+still processed in the defined order.
 
-A pending request is serviced at a CPU execution boundary. If a BIOS memory
-operation is in progress, it finishes before reset. The processor services
-the request before resuming the interrupted program. Servicing it clears
-I/O and bus faults, resets hardware and CPU execution state, and starts
-firmware again. There is no fixed request-to-reboot cycle latency. This is
-not a local device reset or a bus-fault acknowledgement, and it is not a
-promise that all RAM or every device buffer is zeroed.
+While [CP0 Status bit 8](cpu.md#sec-cpu-cp0-fields) is set, the request remains
+pending; the bit does not itself suspend execution. Once the bit is cleared,
+the CPU accepts the request at the next execution boundary, after completing
+the current instruction and before starting another. There is no fixed
+request-to-reset time.
+
+Servicing the request clears the I/O and bus-fault state, resets the CPU and
+devices, and restarts System ROM. It does not clear all RAM or every device
+buffer.
 
 At SYSTEM reset, CONTROL, STATUS and all six fault words are zero; no supervisor transition, exit request or resumable context remains. These are the reset values of this unit, not a substitute for the reset and acknowledgement rules of other devices. Automatic zero readback after a CONTROL write is command-port behavior, not an acknowledgement of a bus fault or completion of a machine reboot.

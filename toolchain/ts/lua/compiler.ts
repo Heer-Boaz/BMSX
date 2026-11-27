@@ -147,7 +147,7 @@ import {
 	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_RAM_END, COP0_STATUS, cop0ReadAsZero } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	buildProgramDebugPoints,
 	buildProgramStatementPoints,
@@ -4041,7 +4041,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
-					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && !cop0ReadAsZero(cop0Register)) {
 						throw new Error(`cop0.${(expr as LuaMemberExpression).member.name} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
@@ -4266,8 +4266,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				return;
 			}
 			case 'cop0':
-				if (target.register === COP0_EXEC) {
-					throw new Error('cop0.exec does not support compound assignment.');
+				if (cop0ReadAsZero(target.register)) {
+					throw new Error(`cop0.${target.register === COP0_EXEC ? 'exec' : 'ram_end'} does not support compound assignment.`);
 				}
 				this.emitABC(OpCode.MFC0, temp, target.register, 0);
 				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
@@ -4803,8 +4803,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileMemberExpression(expression: LuaMemberExpression, target: number): void {
 		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
 		if (cop0Register) {
-			if (cop0Register === COP0_EXEC) {
-				throw new Error('cop0.exec is write-only.');
+			if (cop0ReadAsZero(cop0Register)) {
+				throw new Error(`cop0.${cop0Register === COP0_EXEC ? 'exec' : 'ram_end'} is write-only.`);
 			}
 			this.emitABC(OpCode.MFC0, target, cop0Register, 0);
 			return;
@@ -4848,6 +4848,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;
 			case 'exec': return COP0_EXEC;
+			case 'ram_end': return COP0_RAM_END;
 			default: throw new Error(`Unknown cop0 register '${expression.member.name}'.`);
 		}
 	}

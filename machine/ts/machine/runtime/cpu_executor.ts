@@ -99,7 +99,7 @@ export class CpuExecutionState {
 		let running = true;
 		while (running && !vblank.tickCompleted && (cpu.heapServiceActive()
 			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.queuedFixedWork()))) {
-			if (systemController.hasResetRequest() && !cpu.heapServiceActive() && scheduler.acceptedCpuCycles === 0) break;
+			if (systemController.hasResetRequest() && !cpu.systemResetInhibited() && scheduler.acceptedCpuCycles === 0) break;
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;

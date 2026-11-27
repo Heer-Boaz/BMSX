@@ -124,9 +124,8 @@ writable static contents with their initial values.
 
 ### From reset to the system program {#sec-memory-from-reset-to-the-system-program}
 
-At reset the CPU selects system ROM, sets the language-heap floor from the
-system image's static storage and enters the startup function specified in
-its ROM header. The call stack and transient execution state are cleared,
+At reset the CPU selects System ROM, maps the System image's DATA and BSS
+range and enters the startup function specified in its ROM header. The call stack and transient execution state are cleared,
 there are no supplied arguments, and Status starts at `00000001H`: supervisor
 mode with current interrupt enable set.
 
@@ -138,12 +137,13 @@ executable cartridge and performs the handoff described below.
 
 The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:
 
+- the fitted ROM contains at least 60 bytes;
 - ROM magic is `58534D42H`;
 - the header-size word is at least 60;
-- the executable-image-offset word is nonzero;
+- the executable-image offset is at least 60 and word-aligned, and its 92-byte header fits in the fitted ROM;
 - the startup-function word is nonzero.
 
-The first candidate passing all four checks supplies the startup-function
+The first candidate that passes these checks supplies the startup-function
 address. The CPU then applies the function-record and program rules specified
 in the record reference below.
 
@@ -151,8 +151,20 @@ The boot screen updates at VBlank. BIOS hands over when an executable cartridge
 is ready and its boot-frame counter has reached at least 50. A change between
 the missing, invalid and ready cartridge states resets that counter; changing
 the selected card while its classification remains ready does not by itself
-reset it. At handoff BIOS clears and flushes terminal status, masks central IRQ
-delivery, and writes the selected startup-function address to CP0 EXEC.
+reset it. At handoff the BIOS clears and flushes terminal status and masks
+central IRQ delivery.
+
+At handoff the BIOS reads the selected cartridge's DATA run address and byte
+count, and its BSS address and byte count. For sections that fit in RAM, it
+rounds the larger exclusive end up to a 4 KiB boundary, using at least
+`08040000H` even when the cartridge has no mapped sections. With system
+reset inhibited, it makes the range available and writes
+[`RAM_END`](cpu.md#sec-cpu-ram-end).
+It releases reset inhibition before writing the startup-function address to
+[`EXEC`](cpu.md#sec-cpu-exec). If the firmware cannot make the range available,
+it does not start the cartridge.
+The section contents are copied or cleared by the cartridge's own startup
+instructions, not by either CP0 write.
 
 ### EXEC and cartridge entry {#sec-memory-exec-and-cartridge-entry}
 
@@ -165,13 +177,6 @@ For a cartridge image, CPU Status has interrupt enable and user mode set
 occurs before the later application-entry call. The BIOS's zero IRQ-mask write
 masks source delivery without clearing CPU interrupt enable. The full
 [EXEC reference](cpu.md#sec-cpu-exec) specifies execution-state changes.
-
-Before the startup function's first instruction, EXEC raises the language-heap
-floor to the end of the cartridge's static storage. The BIOS has allocated its
-own language data from the top of the heap, so the cartridge's DATA and BSS
-are free of it. If a target's static storage would still cover heap storage in
-use after a full collection, EXEC hard-halts before writing any of it; see the
-[EXEC reference](cpu.md#sec-cpu-exec).
 
 The selected cartridge startup routine performs the DATA copy, BSS clear,
 module initialization and entry call described under
@@ -312,12 +317,10 @@ has a 96-byte header. Cartridge images leave bit 1 clear. The private system
 descriptor is not part of the cartridge BIOS call table and does not
 publish additional BIOS calls.
 
-Reset and EXEC also read
-the DATA byte count and run address (`40H`, `44H`) and the BSS address and
-byte count (`48H`, `4CH`): the larger of the two section ends sets the
-language-heap floor; see
-[[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
-DATA and BSS are initialized by the startup instructions.
+The DATA byte count and run address (`40H`, `44H`) and the BSS address and
+byte count (`48H`, `4CH`) locate the memory needed by startup. These fields
+do not change the memory map when a function is entered. DATA and BSS are
+initialized by the startup instructions.
 
 With flag bit 0 clear, the image publishes a nonempty function directory.
 The directory begins on a 16-byte boundary and its records are

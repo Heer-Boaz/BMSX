@@ -11,7 +11,7 @@ import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
-import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
+import { COP0_STATUS, COP0_RAM_END, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
 import type { CallFrame } from './call_state';
 
@@ -43,8 +43,7 @@ export const enum CompiledBlockExit {
 	WriteInteger,
 	Length,
 	ControlFault,
-	ControlBoundary,
-	ExecuteFunction,
+	WriteControl,
 	ExceptionReturn,
 	Concat,
 	ConcatRange,
@@ -176,7 +175,7 @@ for (const op of [OpCode.JMP, OpCode.JMPIF, OpCode.JMPIFNOT, OpCode.HALT,
 
 export function compiledBlockEndsBlock(op: number, field: number): boolean {
 	return blockBoundaryOps[op] !== 0
-		|| (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_EXEC || !cop0FieldImplemented(field)));
+		|| (op === OpCode.MTC0 && (cop0WriteRetiresControl(field) || !cop0FieldImplemented(field)));
 }
 
 const continuationOps = new Uint8Array(256);
@@ -187,7 +186,7 @@ for (const op of [OpCode.GETFIELD, OpCode.SETFIELD, OpCode.SELF, OpCode.GETT, Op
 
 /** Returning semantic operations have a statically known continuation PC. */
 export function compiledBlockHasContinuation(op: number, field: number): boolean {
-	return continuationOps[op] !== 0 || (op === OpCode.MTC0 && field === COP0_STATUS);
+	return continuationOps[op] !== 0 || (op === OpCode.MTC0 && (field === COP0_STATUS || field === COP0_RAM_END));
 }
 
 export function compiledBlockComparison(op: number): boolean {
@@ -336,9 +335,8 @@ export function emitJavaScriptBlock(
 		case OpCode.CONCAT: terminalExit = CompiledBlockExit.Concat; break;
 		case OpCode.CONCATN: terminalExit = CompiledBlockExit.ConcatRange; break;
 		case OpCode.CLOSURE: terminalExit = CompiledBlockExit.CreateClosure; break;
-		case OpCode.MTC0: terminalExit = page.b[finalWord] === COP0_EXEC
-			? CompiledBlockExit.ExecuteFunction : page.b[finalWord] === COP0_STATUS
-			? CompiledBlockExit.ControlBoundary : CompiledBlockExit.Continue; break;
+		case OpCode.MTC0: terminalExit = cop0WriteRetiresControl(page.b[finalWord])
+			? CompiledBlockExit.WriteControl : CompiledBlockExit.Continue; break;
 		case OpCode.RFE: terminalExit = CompiledBlockExit.ExceptionReturn; break;
 	}
 	const terminal: CompiledBlockExitSite = {

@@ -146,7 +146,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		const registers = js.rootThread.frameAtDepth(0).registers;
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a508));
+			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408));
 		}
 		const original = registers.get(12);
 		runCpuParity(js, ref, 900);
@@ -172,7 +172,7 @@ test('a warmed WIDE RFE rejects an ordinary frame after returning to the active 
 	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a508)); cpu.runUntilDepth(0, 900);
+		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408)); cpu.runUntilDepth(0, 900);
 		for (let step = 0; step < 8 && cpu.rootThread.frameDepth > 1; ++step) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.rootThread.frameDepth, 1); cpu.runUntilDepth(0, 1);
 		cpu.writeEpcWord(image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
@@ -200,7 +200,7 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 	let generated = false;
 	for (const page of js.rootThread.frameAtDepth(0).executionImage.decodedPages.values()) if (page.compiledBlocks !== null) {
 		const block = page.compiledBlocks.entries[entry];
-		generated ||= block !== null && block.terminal.exit === CompiledBlockExit.ExecuteFunction && block.terminal.currentPc === image.image.functions[0].codeAddress + INSTRUCTION_BYTES;
+		generated ||= block !== null && block.terminal.exit === CompiledBlockExit.WriteControl && block.terminal.currentPc === image.image.functions[0].codeAddress + INSTRUCTION_BYTES;
 	}
 	assert.equal(generated, true, 'the context-replacing EXEC has a real generated body even before the next frame fetch');
 	for (const cpu of [js, ref]) {

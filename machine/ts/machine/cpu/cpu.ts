@@ -4,7 +4,7 @@ import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -24,11 +24,11 @@ import type { IrqController } from '../devices/irq/controller';
 import type { DeviceScheduler } from '../scheduler/device';
 import { BASE_CYCLES, INLINE_CONCAT_BYTES, INLINE_CONCAT_OPERANDS, INLINE_STRING_COMPARE_BYTES, TABLE_INDEX_VISIT_CYCLES, OPCODE_COUNT, OPCODE_USES_BX, OPCODE_USES_DISP, OPCODE_RK_OPERANDS, RK_OPERAND_B, RK_OPERAND_C, OpCode, decodeValueCount } from '../../spec/blua32/opcode';
 import {
-	cop0FieldImplemented,
+	cop0FieldImplemented, cop0ReadAsZero,
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
-	COP0_EXEC,
+	COP0_EXEC, COP0_RAM_END,
 	COP0_LUA_FAULT_REASON,
 	COP0_STATUS,
 	CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD,
@@ -45,7 +45,7 @@ import {
 	CPU_STATUS_MODE_STACK_MASK,
 	CPU_STATUS_RFE_RESTORE_MASK,
 	CPU_STATUS_SYSTEM_ENTRY,
-	CPU_STATUS_USER_MODE_CURRENT,
+	CPU_STATUS_USER_MODE_CURRENT, CPU_STATUS_INHIBIT_RESET,
 	LUA_FAULT_REASON_ASSIGN_NON_TABLE,
 	LUA_FAULT_REASON_CALL_NON_FUNCTION,
 	LUA_FAULT_REASON_EXPLICIT_ERROR,
@@ -182,8 +182,6 @@ import {
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
 	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
 	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
-	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
-	HEAP_SERVICE_EXEC_PENDING_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_PENDING_TOP_OFFSET,
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
@@ -313,7 +311,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
-	private readonly execFloorArgs = [0, 0];
 	private readonly fixedWorkArgs: [number, CpuRunKind];
 	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
@@ -929,7 +926,10 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = false;
 		this.staticClosures.clear();
 		this.memory.clearMappedPageWriteWatches();
-		if (!this.setProgramHeapFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
+		if (!this.heapAllocator.setFloor(systemBoot.staticEnd)) {
+			this.luaHeap.collectRuntime();
+			if (!this.heapAllocator.setFloor(systemBoot.staticEnd)) { this.hardHalt(); return; }
+		}
 		for (const image of this.executionImagesByDomain) {
 			if (image === null) continue;
 			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), image.executionDomainId);
@@ -1841,6 +1841,10 @@ export class CPU implements MappedPageInvalidator {
 		return image !== null && this.readFunctionRecord(image, address, busSignals);
 	}
 
+	public systemResetInhibited(): boolean {
+		return this.heapServiceActive() || (this.cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) !== 0;
+	}
+
 	public isCartridgeExecutionActive(): boolean {
 		return this.activeExecutionDomainId >= 0;
 	}
@@ -1853,60 +1857,51 @@ export class CPU implements MappedPageInvalidator {
 		return this.executionBusSignals;
 	}
 
-	private executeFunctionAddress(functionAddress: number): void {
-		// The target image's static storage must be free of live heap pages before
-		// its activation or startup can write there.
-		const targetDomainId = this.executionAddressSpace.domainIdOnBus(functionAddress, MAPPED_BUS_MASTER_CPU);
-		const targetBoot = targetDomainId === null ? null : this.executionAddressSpace.resolveDomain(targetDomainId);
-		const staticEnd = targetDomainId === null ? this.activeExecutionImage.staticEnd : targetBoot?.staticEnd;
-		if (staticEnd !== undefined) {
-			if (this.systemImage.heapServiceFunctions !== null) {
-				const management = this.heapAllocator.managementOffset();
-				const floor = this.heapAllocator.floorOffset(staticEnd);
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET, functionAddress);
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET, floor);
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, this.currentInstructionPc);
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET, targetDomainId === null
-					? MAPPED_BUS_MASTER_CPU : CPU.executionBusSignalsForDomain(targetDomainId));
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PENDING_OFFSET, 1);
-				this.execFloorArgs[0] = management;
-				this.execFloorArgs[1] = floor;
-				this.beginHeapService(this.systemImage.heapServiceFunctions[HeapServiceOperation.SetFloor], this.execFloorArgs);
+	private executeControlWrite(frame: CallFrame, source: number, field: number): void {
+		if (this.isUserMode()) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+			return;
+		}
+		if (source >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const value = wordOperand(frame.registers.get(source));
+		switch (field) {
+			case COP0_STATUS: {
+				const writeMask = this.activeExecutionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+					&& ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE ? -1 : ~CPU_STATUS_INHIBIT_RESET;
+				const previous = this.cop0Words[COP0_STATUS], status = (previous & ~writeMask) | (value & writeMask);
+				this.cop0Words[COP0_STATUS] = status;
+				if ((previous & ~status & CPU_STATUS_INHIBIT_RESET) !== 0) this.requestYield();
+				return;
+			}
+			case COP0_RAM_END: {
+				if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
+					|| ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE) {
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+					return;
+				}
+				const end = (value & ~(HEAP_PAGE_SIZE - 1)) >>> 0;
+				if (end < DYNAMIC_RAM_BASE || end > RAM_BASE + this.memory.ramByteCount() - RUNTIME_MANAGEMENT_SIZE) {
+					this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, value);
+					return;
+				}
+				this.memory.setRamBusEnd(end);
 				this.requestYield();
 				return;
 			}
-			if (!this.setProgramHeapFloor(staticEnd)) {
-				this.hardHalt();
-				return;
-			}
+			case COP0_EPC: this.cop0Words[COP0_EPC] = value; return;
+			case COP0_EXEC: this.executeFunctionAddress(value); return;
+			case COP0_BAD_ADDRESS:
+			case COP0_LUA_FAULT_REASON:
+			case COP0_CAUSE: return;
+			default: this.hardHalt(); return;
 		}
-		this.commitExecutionTransfer(functionAddress);
 	}
 
-	private finishExecFloorService(): void {
-		const management = this.heapAllocator.managementOffset();
-		const pending = management + HEAP_SERVICE_EXEC_PENDING_OFFSET;
-		if (this.memory.readRamRecordWord(pending) === 0) return;
-		this.memory.writeRamRecordWord(pending, 0);
-		this.currentInstructionPc = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
-		this.lastPc = this.activeThread.currentFrame!.pc - INSTRUCTION_BYTES;
-		this.lastExecutionDomainId = this.activeExecutionDomainId;
-		if (this.heapServiceResult() === 0) {
-			this.hardHalt();
-			return;
-		}
-		this.heapAllocator.publishFloor(this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET));
-		this.commitExecutionTransfer(
-			this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
-			this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET),
-		);
-	}
-
-	private commitExecutionTransfer(functionAddress: number, busSignals = MAPPED_BUS_MASTER_CPU): void {
+	private executeFunctionAddress(functionAddress: number): void {
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,
 			functionAddress,
-			busSignals,
+			MAPPED_BUS_MASTER_CPU,
 		)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
@@ -1930,14 +1925,6 @@ export class CPU implements MappedPageInvalidator {
 		this.hardHalted = false;
 		this.yieldRequested = false;
 		this.enterDirectFrame();
-	}
-
-	private setProgramHeapFloor(staticEnd: number): boolean {
-		if (this.heapAllocator.setFloor(staticEnd)) {
-			return true;
-		}
-		this.luaHeap.collectRuntime();
-		return this.heapAllocator.setFloor(staticEnd);
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
@@ -2359,7 +2346,6 @@ export class CPU implements MappedPageInvalidator {
 						} else if (completion !== HeapServiceBiosCallKind.Idle) {
 							this.finishBiosCall(completion);
 						} else {
-							this.finishExecFloorService();
 							this.finishClosureReservation();
 						}
 					} catch (error) {
@@ -3459,9 +3445,8 @@ export class CPU implements MappedPageInvalidator {
 					if (this.isUserMode()) this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 					else this.hardHalt();
 					redispatch = true; break;
-				case CompiledBlockExit.ControlBoundary: redispatch = true; break;
-				case CompiledBlockExit.ExecuteFunction:
-					this.executeFunctionAddress(wordOperand(registers.get(exit.exitA))); redispatch = true; break;
+				case CompiledBlockExit.WriteControl:
+					this.executeControlWrite(frame, exit.exitA, exit.exitB); redispatch = true; break;
 				case CompiledBlockExit.ExceptionReturn: this.returnFromException(frame); redispatch = true; break;
 				case CompiledBlockExit.CreateClosure:
 					this.executeClosure(frame, exit.exitA, exit.exitBx, exit.exitC); redispatch = true; break;
@@ -3821,28 +3806,12 @@ export class CPU implements MappedPageInvalidator {
 					const field = page.b[pageOffset];
 					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
 					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					const value = field === COP0_EXEC ? 0 : this.cop0Words[field];
-					this.setRegisterIntegerFast(frame, registers, a, value);
+					this.setRegisterIntegerFast(frame, registers, a, cop0ReadAsZero(field) ? 0 : this.cop0Words[field]);
 					return;
 				}
-				case OpCode.MTC0: {
-					if (this.isUserMode()) {
-						this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
-						return;
-					}
-					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					const value = wordOperand(registers.get(a));
-					switch (page.b[pageOffset]) {
-						case COP0_STATUS: this.cop0Words[COP0_STATUS] = value; return;
-						case COP0_EPC: this.cop0Words[COP0_EPC] = value; return;
-						case COP0_EXEC: this.executeFunctionAddress(value); return;
-						case COP0_BAD_ADDRESS:
-						case COP0_LUA_FAULT_REASON:
-						case COP0_CAUSE:
-							return;
-						default: this.hardHalt(); return;
-					}
-				}
+				case OpCode.MTC0:
+					this.executeControlWrite(frame, a, page.b[pageOffset]);
+					return;
 				case OpCode.RFE:
 					this.returnFromException(frame);
 					return;

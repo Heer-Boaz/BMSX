@@ -88,7 +88,7 @@ inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 		case OpCode::CONCAT: case OpCode::CONCATN:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return true;
-		case OpCode::MTC0: return field == COP0_STATUS;
+		case OpCode::MTC0: return field == COP0_STATUS || field == COP0_RAM_END;
 		default: return false;
 	}
 }
@@ -117,7 +117,7 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 inline constexpr bool nativeBlockEndsBlock(u8 op, int field, bool privateFirmware = false) {
 	if (privateFirmware && op == static_cast<u8>(OpCode::CLOSURE)) return false;
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
-		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
+		|| (op == static_cast<u8>(OpCode::MTC0) && (cop0WriteRetiresControl(field) || !cop0FieldImplemented(field)));
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

@@ -11,7 +11,11 @@ import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import {
+	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
+	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
+} from '../../machine/ts/spec/blua32/image_format';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
@@ -20,7 +24,12 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
-const BOOT_SOURCE = `cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+const BOOT_SOURCE = `local floor<const> = require('kernel/heap_floor')
+local image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
+local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
+local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
+cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const CART_SOURCE = 'bss level: u8[0x20000]\nlevel[0] = 7\nreturn level[0]';
 
 function pageRound(address: number): number {
@@ -39,7 +48,7 @@ function bootPair(executionBackend?: CpuExecutionBackend) {
 	return { ...system, systemEnd, cartEnd };
 }
 
-test('reset, EXEC and restore use the heap capacity of the active image', () => {
+test('explicit launcher admission maps cartridge sections and RAM restore restores the aperture', () => {
 	const { cpu, memory, systemEnd, cartEnd } = bootPair();
 	const limit = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
 	assert.equal(cpu.heapAllocator.floorAddress(), pageRound(systemEnd));
@@ -53,20 +62,6 @@ test('reset, EXEC and restore use the heap capacity of the active image', () => 
 	memory.restoreSaveState(savedMemory);
 	cpu.restoreRuntimeState(savedCpu);
 	assert.equal(cpu.luaHeap.capacity(), limit - pageRound(systemEnd));
-});
-
-test('EXEC refuses a cartridge whose statics overlap a live heap page before writing them', () => {
-	const { cpu, memory, systemEnd, cartEnd } = bootPair();
-	const heap = cpu.heapAllocator;
-	let live: number;
-	do { live = heap.allocate(HEAP_PAGE_SIZE, true); } while (live >= pageRound(cartEnd));
-	assert.ok(live >= pageRound(systemEnd), 'the new static region overlaps a live allocation');
-	const marker = cartEnd - 4 - RAM_BASE;
-	memory.ramView.setUint32(marker & ~3, 0x5eed5eed, true);
-	runCpuWithinBudget(cpu, 100_000);
-	assert.equal(cpu.captureRuntimeState().hardHalted, true);
-	assert.equal(heap.floorAddress(), pageRound(systemEnd));
-	assert.equal(memory.ramView.getUint32(marker & ~3, true), 0x5eed5eed, 'cartridge BSS stays untouched');
 });
 
 test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {

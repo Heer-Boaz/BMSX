@@ -158,7 +158,7 @@ void rawNativeControlWrites() {
 	image.functions = {{.firstWord = 0, .wordCount = 1}};
 	CpuMachine machine(image);
 	ValueSlots registers(1);
-	for (const u8 field : {COP0_EPC, COP0_CAUSE, COP0_STATUS}) {
+	for (const u8 field : {COP0_EPC, COP0_CAUSE}) {
 		const auto op = static_cast<u8>(OpCode::MTC0);
 		const DecodedInstruction decoded{.b = field, .op = op, .width = 1, .baseCycles = BASE_CYCLES[op]};
 		const std::array source{NativeBlockInstruction{&decoded, machine.rom.textAddress}};
@@ -176,6 +176,22 @@ void rawNativeControlWrites() {
 				"CP0 writes convert both numeric tags and leave the raw source and its extent unchanged");
 		}
 	}
+	// These selectors require the live control owner, not direct twiddling
+	// of an array in generated code.
+	for (const u8 field : {COP0_STATUS, COP0_RAM_END, COP0_EXEC}) {
+		const auto op = static_cast<u8>(OpCode::MTC0);
+		const DecodedInstruction decoded{.b = field, .op = op, .width = 1, .baseCycles = BASE_CYCLES[op]};
+		const std::array source{NativeBlockInstruction{&decoded, machine.rom.textAddress}};
+		auto block = test::compileNative(source, machine.memory, machine.cpu.stringPool());
+		registers.set(0, valueInteger(0x08041000));
+		std::array<u32, COP0_EXEC + 1u> cp{};
+		NativeBlockRunState run{}; run.cop0Words = cp.data(); run.remainingCycles = 9;
+		const auto* exit = block->run(registers.view(), run);
+		require(exit->exit == NativeBlockExit::WriteControl && exit->operands.control.field == field
+			&& cp[COP0_STATUS] == 0u && registers.get(0) == valueInteger(0x08041000),
+			"generated semantic control writes defer to the CPU owner with the untouched operand");
+	}
+
 }
 #endif
 
@@ -245,7 +261,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a508u));
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a408u));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	requireParity(native, scalar);

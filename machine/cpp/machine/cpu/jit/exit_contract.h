@@ -30,7 +30,6 @@ enum class NativeBlockExit : u8 {
 	WriteInteger,
 	Length,
 	ControlFault,
-	ControlBoundary,
 	ExceptionReturn,
 	Concat,
 	ConcatRange,

@@ -450,7 +450,7 @@ DISPATCH_LABEL(MFC0) {
 	}
 	if (!cop0FieldImplemented(b)) { PUBLISH_SCALAR_FRONTIER(); hardHalt(); DISPATCH_CONTINUE(); }
 	if (static_cast<size_t>(a) >= FRAME.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 value = b == COP0_EXEC ? 0u : m_cop0Words[b];
+	const u32 value = cop0ReadAsZero(b) ? 0u : m_cop0Words[b];
 	SET_REGISTER_FAST(a, valueInteger(static_cast<i32>(value)));
 	PUBLISH_SCALAR_FRONTIER();
 	DISPATCH_CONTINUE();

@@ -31,7 +31,7 @@ struct OperationFlow {
 	Flow operator()(const NativeControlAccess& op) const {
 		switch (op.mode) {
 		case NativeControlMode::ReadWord: case NativeControlMode::ReadZero: return Flow::Linear;
-		case NativeControlMode::WriteWord: return op.field == COP0_STATUS ? Flow::Terminal : Flow::Checkpoint;
+		case NativeControlMode::WriteWord: return Flow::Checkpoint;
 		case NativeControlMode::ConsumeWord: return Flow::Checkpoint;
 		case NativeControlMode::ReadFault: case NativeControlMode::WriteSemantic: return Flow::LeavesNative;
 		}

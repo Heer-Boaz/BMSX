@@ -110,10 +110,8 @@ struct NativeTerminalExit {
 	NativeExitPlan operator()(const NativeClosure& closure) const { return {closure.terminalExit, {.closure = closure}}; }
 
 	NativeExitPlan operator()(const NativeControlAccess& access) const {
-		if (access.mode == NativeControlMode::WriteSemantic && access.field == COP0_EXEC)
+		if (access.mode == NativeControlMode::WriteSemantic && cop0WriteRetiresControl(access.field))
 			return {NativeBlockExit::WriteControl, {.control = {access.slot, access.field}}};
-		if (access.mode == NativeControlMode::WriteWord && access.field == COP0_STATUS)
-			return {NativeBlockExit::ControlBoundary};
 		return {};
 	}
 };

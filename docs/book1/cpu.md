@@ -2081,10 +2081,9 @@ supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 At CPU reset, Status is `00000001H`; Cause, EPC, BadAddress, LuaFaultReason and
 the exception-domain word are zero. Retained pre-NMI report words are also
 zero. Interrupt-wait, blocked-store, hard-halt and pending interrupt states are
-cleared. The CPU discards the active call stack, initializes the runtime
-management area, sets the language-heap floor from the system image
-([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}) and enters the system startup
-static function with no arguments.
+cleared. The CPU discards the active call stack and enters the System ROM
+startup static function with no arguments. The System image's DATA and BSS
+range is mapped at entry.
 
 The first PC comes from that startup function's record, not an assumed
 instruction address zero. Reset is not the same edge as `EXEC`: the latter
@@ -2098,9 +2097,7 @@ separate software reset request and device-context transitions.
 
 A reserved opcode, a WIDE body containing another WIDE, or an unreadable
 required function record causes a hard halt. EXEC also hard-halts when its
-record lacks STATIC, or when its target's static storage would cover
-language-heap storage still in use. Execution and interrupt acceptance stop
-until reset.
+record lacks STATIC. Execution and interrupt acceptance stop until reset.
 HALT, in contrast, is a resumable interrupt wait.
 
 Misaligned instruction addresses and mapped instruction-read faults take the
@@ -2122,14 +2119,35 @@ For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field
 |---:|---|---|---|
 | 8 | `BadAddress` | Raw word as an Integer | Ignored |
 | 9 | `LuaFaultReason` | Raw word as an Integer | Ignored |
-| 12 | `Status` | Raw word as an Integer | Replace the complete word, without masking |
+| 12 | `Status` | Raw word as an Integer | Replace the word; bit 8 is restricted to System ROM |
 | 13 | `Cause` | Raw word as an Integer | Ignored |
 | 14 | `EPC` | Raw word as an Integer | Replace the complete word, without an alignment check |
 | 15 | `EXEC` | Zero | Replace execution with the addressed static function |
+| 17 | `RAM_END` | Zero | Set the end of ordinary RAM on the bus; see below |
 
 
 
 `MTC0` converts `R[A]` to an unsigned 32-bit word before applying the selected field's write behavior, including an ignored write. An unknown field number hard-halts in supervisor mode. This is not a coprocessor-unusable exception, and a rejected `MFC0` does not update its destination. A hard halt does not itself assign a new CP0 Cause.
+
+Status bit 8 (`00000100H`) inhibits system reset. In supervisor mode, only an
+instruction executing from System ROM in the System execution domain can
+change this bit; other Status writes leave it unchanged. A pending reset
+request is not cleared by changing this bit. See
+[[System — Reset](system.md#sec-system-reset-requests)]{.content-visible when-format="html"}[Book I, SYSTEM reset requests]{.content-visible when-format="pdf"}.
+
+#### RAM_END {#sec-cpu-ram-end}
+
+`RAM_END` sets the exclusive end of main RAM visible on the system bus.
+A supervisor instruction may write it only when it executes from System ROM
+in the System execution domain. Otherwise the write raises Coprocessor
+Unusable.
+
+The CPU discards bits 11–0 of the supplied address. The resulting end must be
+between `08040000H` and `083FC000H`, inclusive. An end outside that range raises
+AddressErrorStore, records the supplied address in BadAddress, and leaves
+the map unchanged. A successful write changes the bus map immediately; it
+does not alter the contents of RAM. See
+[[Memory — Main RAM on the system bus](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
 
 ### Exception entry and cartridge dispatch {#sec-cpu-exception-entry-and-cartridge-dispatch}
 
@@ -2165,23 +2183,20 @@ Returning from an NMI-marked exception frame also restores the retained pre-NMI 
 
 ### EXEC {#sec-cpu-exec}
 
-Writing `EXEC` supplies a **function-record address**, not an instruction-entry address. The record is read on the CPU bus and must identify a static function; otherwise execution hard-halts.
+Writing `EXEC` supplies a **function-record address**, not an instruction-entry
+address. The CPU reads the record on its ordinary bus; the cartridge ROM
+window uses the socket selected for that access. An unreadable record or one
+without the STATIC flag causes a hard halt.
 
-Before reading the record, `EXEC` sets the language-heap floor from the target image's static storage ([[Memory — Language heap](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}). A record address in system ROM selects the system image, and one in the cartridge window selects the image in the selected socket; a record elsewhere keeps the active image's floor. Lowering the floor always succeeds. If raising it would cover heap storage still in use, `EXEC` first completes a full collection. If storage below the new floor is still in use, execution hard-halts before any instruction of the target runs, so none of its DATA or BSS has been written. A floor change applies to the system bus at once. Lowering the floor removes the newly covered range from the bus; raising it makes the released range available, with its current contents. This applies to instruction fetch and data transfer alike.
+A successful `EXEC` clears the active call stack, selects the function's
+image, and starts the static function with zero arguments. It clears HALT,
+retained-interrupt-event, blocked-write and hard-halt state. The new Status
+is 3 for a cartridge program and 1 for the System program. It does not
+acknowledge the interrupt controller's pending requests.
 
-When the [system image supplies a heap-service descriptor](program-images.md#sec-memory-blua32-executable-image),
-the floor operation runs in the resident firmware and consumes ordinary
-processor cycles. Both the old program and entry into the target wait while
-the service is running. Device time advances and interrupt requests remain
-pending; an interrupt handler does not enter during the transfer. The
-cartridge socket is selected when `EXEC` begins. The old bus limit holds
-until the new floor is admitted. If the first attempt refuses the new
-floor, the firmware completes a full collection and tries once more in the
-same operation before admitting or refusing the transfer. Collection uses
-ordinary processor cycles; the transfer does not carry a separate charge
-for collector work.
-
-A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write and hard-halt state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
+`EXEC` neither changes `RAM_END` nor initializes DATA or BSS. It replaces
+execution: it is neither a call with a saved return address nor an exception
+return.
 
 ### HALT {#sec-cpu-halt}
 
@@ -2192,7 +2207,7 @@ A successful `EXEC` clears the active call stack, selects the function's image, 
 
 | Opcode | Instruction and operands | Effect | Nominal cost |
 |---|---|---|---:|
-| `26H` | `MFC0 A, B` | Supervisor only: copy CP0 field `B` into `R[A]` as an Integer with the same raw word bits; EXEC reads zero; unknown fields hard-halt | 2 |
+| `26H` | `MFC0 A, B` | Supervisor only: copy CP0 field `B` into `R[A]` as an Integer with the same raw word bits; EXEC and RAM_END read zero; unknown fields hard-halt | 2 |
 | `27H` | `MTC0 A, B` | Supervisor only: convert `R[A]` to an unsigned word and apply the CP0 field's write behavior; EXEC replaces execution; unknown fields hard-halt | 2 |
 | `34H` | `RFE` | Supervisor only: return from the current exception frame using active EPC and the Status restoration above; a non-exception frame hard-halts | 2 |
 | `3FH` | `HALT` | Consume a retained interrupt event, or record the current thread/frame-depth HALT condition | 2 |

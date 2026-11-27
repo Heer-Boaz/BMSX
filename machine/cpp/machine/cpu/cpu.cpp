@@ -219,7 +219,10 @@ void CPU::reset() {
 	m_nmiReturnExceptionDomainWord = 0u;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	if (!setProgramHeapFloor(systemBoot.staticEnd)) { hardHalt(); return; }
+	if (!m_heapAllocator.setFloor(systemBoot.staticEnd)) {
+		m_luaHeap.collectRuntime();
+		if (!m_heapAllocator.setFloor(systemBoot.staticEnd)) { hardHalt(); return; }
+	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
@@ -926,67 +929,11 @@ bool CPU::readFunctionRecordOnBus(
 	return image && readFunctionRecord(*image, address, busSignals);
 }
 
-bool CPU::setProgramHeapFloor(u32 staticEnd) {
-	if (m_heapAllocator.setFloor(staticEnd)) return true;
-	m_luaHeap.collectRuntime();
-	return m_heapAllocator.setFloor(staticEnd);
-}
-
 void CPU::executeFunctionAddress(u32 functionAddress) {
-	// The target image's static storage must be free of live heap pages before
-	// its activation or startup can write there.
-	const auto targetDomainId = m_executionAddressSpace.domainIdOnBus(functionAddress, MAPPED_BUS_MASTER_CPU);
-	std::optional<u32> staticEnd;
-	if (!targetDomainId) {
-		staticEnd = m_activeExecutionImage->staticEnd;
-	} else if (const auto targetBoot = m_executionAddressSpace.resolveDomain(*targetDomainId)) {
-		staticEnd = targetBoot->staticEnd;
-	}
-	if (staticEnd) {
-		if (const u32 service = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::SetFloor)]) {
-			const u32 management = m_heapAllocator.managementOffset();
-			const u32 floor = m_heapAllocator.floorOffset(*staticEnd);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET, functionAddress);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET, floor);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, m_currentInstructionPc);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET,
-				targetDomainId ? executionBusSignalsForDomain(*targetDomainId) : MAPPED_BUS_MASTER_CPU);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PENDING_OFFSET, 1u);
-			const std::array arguments{management, floor};
-			beginHeapService(service, arguments);
-			requestYield();
-			return;
-		}
-		if (!setProgramHeapFloor(*staticEnd)) {
-			hardHalt();
-			return;
-		}
-	}
-	commitExecutionTransfer(functionAddress, MAPPED_BUS_MASTER_CPU);
-}
-
-void CPU::finishExecutionFloor() {
-	const u32 management = m_heapAllocator.managementOffset();
-	const u32 pending = management + HEAP_SERVICE_EXEC_PENDING_OFFSET;
-	if (m_memory.readRamRecordWord(pending) == 0u) return;
-	m_memory.writeRamRecordWord(pending, 0u);
-	m_currentInstructionPc = m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
-	lastPc = m_activeThread->currentFrame->readControl(FrameField::Pc) - INSTRUCTION_BYTES;
-	m_lastExecutionDomainId = m_activeExecutionDomainId;
-	if (heapServiceResult() == 0u) {
-		hardHalt();
-		return;
-	}
-	m_heapAllocator.publishFloor(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET));
-	commitExecutionTransfer(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
-		static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET)));
-}
-
-void CPU::commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSignals) {
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
 		functionAddress,
-		busSignals
+		MAPPED_BUS_MASTER_CPU
 	)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
@@ -2580,7 +2527,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				} else if (completion != HeapServiceBiosCallKind::Idle) {
 					finishBiosCall(completion);
 				} else {
-					finishExecutionFloor();
 					finishClosureReservation();
 				}
 			} catch (const LuaOutOfMemorySignal&) {

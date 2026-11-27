@@ -139,7 +139,7 @@ export class SystemController {
 	private static writeControl(context: SystemController, _address: number, value: number): void {
 		if ((value & SYS_CONTROL_RESET) !== 0) {
 			context.requestReset();
-			context.cpu.requestYield();
+			if (!context.cpu.systemResetInhibited()) context.cpu.requestYield();
 		}
 		if (!context.cpu.isUserMode()) {
 			if ((value & SYS_CONTROL_SUPERVISOR_ENTER) !== 0) {

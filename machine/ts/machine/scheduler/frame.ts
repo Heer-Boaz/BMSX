@@ -77,7 +77,7 @@ export class FrameSchedulerState {
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
 		const cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive()) {
-			if (runtime.machine.systemController.hasResetRequest()) return true;
+			if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
 			if (cpu.allocationParked()) return cpu.allocationReady();
 			if (cpu.queuedFixedWork()) return false;
 		}
@@ -104,7 +104,7 @@ export class FrameSchedulerState {
 		this.backendServiceSuspended = backendBlocked;
 		const cpu = runtime.machine.cpu;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0 || cpu.heapServiceActive()
-			|| runtime.machine.systemController.hasResetRequest()) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
+			|| (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 		if (cpu.allocationParked()) {
 			// A parked instruction owns its recovery and retry even when a
 			// device edge occurred during the timed part of that recovery.

@@ -253,6 +253,9 @@ public:
 	// Trusted entry to an immutable, link-verified system routine.
 	bool beginHeapService(u32 functionAddress, std::span<const u32> args);
 	bool heapServiceActive() const;
+	bool systemResetInhibited() const {
+		return heapServiceActive() || (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u;
+	}
 	u32 heapServiceResult() const;
 	// Move an evicted snapshot here to reuse its storage without copying it.
 	CpuRuntimeState captureRuntimeState(std::vector<Value> completionStorage = {}) const;
@@ -459,9 +462,6 @@ private:
 		MappedBusSignals busSignals
 	);
 	void executeFunctionAddress(u32 functionAddress);
-	void commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSignals);
-	void finishExecutionFloor();
-	bool setProgramHeapFloor(u32 staticEnd);
 	void executeControlWrite(CallFrame& frame, int source, int field);
 	bool retargetsHaltedFrame(const Thread& thread, int depth) const {
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;

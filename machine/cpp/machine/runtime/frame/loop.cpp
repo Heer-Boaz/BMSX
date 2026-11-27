@@ -49,7 +49,7 @@ void FrameLoopState::abandonFrameState(Runtime& runtime) {
 }
 
 bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
-	if (runtime.machine.cpu.heapServiceActive() || runtime.machine.scheduler.acceptedCpuCycles() != 0) return false;
+	if (runtime.machine.cpu.systemResetInhibited() || runtime.machine.scheduler.acceptedCpuCycles() != 0) return false;
 	if (!runtime.machine.systemController.takeResetRequest()) {
 		return false;
 	}

@@ -53,18 +53,22 @@ struct Machine {
 	Machine(test::Blua32TestRom systemRom, test::Blua32TestRom cartRom)
 		: system(std::move(systemRom)), cart(std::move(cartRom)),
 		memory(MemoryInit{system.bytes, test::cartridgeSlots(cart.bytes)}, PSX_MACHINE_SPEC.ramBytes),
-		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
-	}
+		irq(memory), addresses(memory), cpu(memory, irq, addresses) {}
 };
 
-Machine bootPair() {
+Machine bootPair(bool publishCartAperture = false) {
 	test::Blua32TestImage boot;
-	boot.constants = {static_cast<i32>(test::blua32TestFunctionAddress(RomImageDomain::Cartridge, 0))};
-	boot.text.resize(2u * INSTRUCTION_BYTES);
-	writeInstruction(boot.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(boot.text, 1, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
-	boot.functions = {{.firstWord = 0, .wordCount = 2, .maxStack = 1}};
+	boot.constants = {static_cast<i32>(test::blua32TestFunctionAddress(RomImageDomain::Cartridge, 0)),
+		static_cast<i32>(pageRound(CART_BSS + CART_BSS_BYTES))};
+	u32 word = 0;
+	boot.text.resize((publishCartAperture ? 4u : 2u) * INSTRUCTION_BYTES);
+	if (publishCartAperture) {
+		writeInstruction(boot.text, word++, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
+		writeInstruction(boot.text, word++, static_cast<u8>(OpCode::MTC0), 0, COP0_RAM_END, 0);
+	}
+	writeInstruction(boot.text, word++, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
+	writeInstruction(boot.text, word++, static_cast<u8>(OpCode::MTC0), 0, COP0_EXEC, 0);
+	boot.functions = {{.firstWord = 0, .wordCount = word, .maxStack = 1}};
 	test::Blua32TestImage cart;
 	cart.text.resize(INSTRUCTION_BYTES);
 	writeInstruction(cart.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0);
@@ -76,18 +80,21 @@ Machine bootPair() {
 	return Machine(std::move(systemRom), std::move(cartRom));
 }
 
-void capacityFollowsTheFloorAcrossResetExecAndRestore() {
-	Machine machine = bootPair();
+void explicitRamEndPrecedesExecAndSurvivesRestore() {
+	Machine machine = bootPair(true);
 	constexpr u32 limit = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
 	const u32 systemFloor = pageRound(SYSTEM_BSS + 0x100u);
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
-	require(machine.cpu.heapAllocator().floorAddress() == systemFloor, "reset takes the system static end");
+	machine.cpu.reset();
+	require(machine.cpu.heapAllocator().floorAddress() == systemFloor, "the admitted BIOS context maps its static extent");
 	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "the BIOS has the system heap extent");
 	const auto savedMemory = machine.memory.captureSaveState();
 	const auto savedCpu = machine.cpu.captureRuntimeState();
+	require(machine.cpu.runUntilDepth(0, 100) == RunResult::Yielded, "RAM_END changes the aperture at its own boundary");
+	require(!machine.cpu.isCartridgeExecutionActive() && machine.memory.ramBusEnd() == cartFloor, "RAM_END changes the aperture before EXEC");
 	machine.cpu.runUntilDepth(0, 100);
 	require(machine.cpu.isCartridgeExecutionActive(), "EXEC entered the cartridge");
-	require(machine.cpu.heapAllocator().floorAddress() == cartFloor, "EXEC takes the cartridge static end");
+	require(machine.memory.ramBusEnd() == cartFloor, "EXEC does not change the aperture");
 	require(machine.cpu.luaHeap().capacity() == limit - cartFloor, "the cartridge has its own heap extent");
 	machine.memory.restoreSaveState(savedMemory);
 	machine.cpu.restoreRuntimeState(savedCpu);
@@ -96,6 +103,7 @@ void capacityFollowsTheFloorAcrossResetExecAndRestore() {
 
 void instructionFetchFollowsTheLiveFloor() {
 	Machine machine = bootPair();
+	machine.cpu.reset();
 	auto& cpu = machine.cpu;
 	auto& memory = machine.memory;
 	const u32 pc = cpu.heapAllocator().floorAddress();
@@ -147,8 +155,9 @@ void instructionFetchFollowsTheLiveFloor() {
 		"a WIDE body faults across the floor without retiring the prefix");
 }
 
-void execRefusesLiveChunksBelowTheFloor() {
+void execLeavesLiveChunksAndTheApertureUntouched() {
 	Machine machine = bootPair();
+	machine.cpu.reset();
 	HeapAllocator& heap = machine.cpu.heapAllocator();
 	const u32 floor = heap.floorAddress();
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
@@ -156,18 +165,19 @@ void execRefusesLiveChunksBelowTheFloor() {
 	do { claimed = heap.allocate(4088u, true); } while (claimed >= cartFloor);
 	require(claimed >= CART_BSS, "the new static region overlaps a live allocation");
 	machine.memory.writeRamRecordWord(claimed, 0x5eed5eedu);
+	const u32 occupied = heap.occupiedBytes();
 	machine.cpu.runUntilDepth(0, 100);
-	require(machine.cpu.captureRuntimeState().hardHalted, "EXEC hard-halts over a live chunk");
-	require(heap.floorAddress() == floor, "the refused floor is not applied");
-	require(machine.memory.readRamRecordWord(claimed) == 0x5eed5eedu, "the overlapping BSS payload stays untouched");
+	require(machine.cpu.isCartridgeExecutionActive(), "EXEC selects the static cartridge function without a heap check");
+	require(machine.memory.ramBusEnd() == floor, "EXEC does not expose the cartridge static extent");
+	require(heap.occupiedBytes() == occupied, "EXEC does not change the allocations in the static extent");
+	require(machine.memory.readRamRecordWord(claimed) == 0x5eed5eedu, "the live payload stays untouched");
 }
 
 void reclaimLargeChunkAcrossHistoryPages() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	HeapAllocator heap(memory);
 	constexpr u32 bytes = 400u * HEAP_PAGE_SIZE - 8;
-	require(heap.setFloor(RAM_BASE + heap.managementOffset() - 404u * HEAP_PAGE_SIZE),
-		"the arena has room for the large chunk and its two smaller companions");
+	heap.reset(RAM_BASE + heap.managementOffset() - 404u * HEAP_PAGE_SIZE);
 	const u32 high = heap.allocate(2u * HEAP_PAGE_SIZE - 8u, true);
 	const u32 run = heap.allocate(bytes, false);
 	const u32 low = heap.allocate(4088u, true);
@@ -204,9 +214,9 @@ void reclaimLargeChunkAcrossHistoryPages() {
 
 int main() {
 	try {
-		capacityFollowsTheFloorAcrossResetExecAndRestore();
+		explicitRamEndPrecedesExecAndSurvivesRestore();
 		instructionFetchFollowsTheLiveFloor();
-		execRefusesLiveChunksBelowTheFloor();
+		execLeavesLiveChunksAndTheApertureUntouched();
 		reclaimLargeChunkAcrossHistoryPages();
 	} catch (const std::exception& error) {
 		std::cerr << error.what() << '\n';
