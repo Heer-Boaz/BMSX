@@ -99,10 +99,9 @@ export class Runtime {
 			throw new Error('External Lua closure execution requires a settled CPU and device frontier.');
 		}
 		const cpu = this.machine.cpu;
-		this.history.stop();
 		const depth = cpu.getFrameDepth();
-		this.completionValues.length = 0;
 		cpu.beginCompletionCall(fn, args);
+		this.history.stop();
 		this.cpuExecution.runSuspendedUntilDepth(depth);
 		return this.readCompletionValues();
 	}

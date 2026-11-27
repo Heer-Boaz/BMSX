@@ -522,7 +522,7 @@ export function seedTestRomClosure(cpu: CPU, address: number, domain: ExecutionD
 	const prototype = cpu['functionRecordLatch'];
 	assert.equal(prototype.romBacked, true);
 	assert.equal(prototype.recordUpvalueCount, 0);
-	return cpu['staticClosureFromLatch']();
+	return issueTestClosureRecord(cpu, prototype, false);
 }
 
 /**
@@ -537,7 +537,7 @@ export function seedTestMappedStaticClosure(cpu: CPU, address: number,
 	assert.equal(prototype.romBacked, false);
 	assert.equal(prototype.recordUpvalueCount, 0);
 	assert.ok(prototype.flags & BLUA32_FUNCTION_STATIC);
-	return cpu['staticClosureFromLatch']();
+	return issueTestClosureRecord(cpu, prototype, true);
 }
 
 /** Provision raw capture records when a fixture measures another instruction or GC. */
@@ -546,11 +546,17 @@ export function seedTestCapturedClosure(cpu: CPU, address: number, newCells: Uin
 	const image = cpu['executionImageForDomain'](domain);
 	assert.ok(image);
 	assert.ok(cpu['readFunctionRecordOnBus'](image, address, CPU['executionBusSignalsForDomain'](domain)));
-	const prototype = cpu['functionRecordLatch'], count = prototype.recordUpvalueCount, latched = !prototype.romBacked;
-	assert.equal(captures.length, count);
-	const record = cpu.luaHeap.allocateClosureRecord(count, latched, newCells, newCells.length);
+	const prototype = cpu['functionRecordLatch'];
+	assert.equal(captures.length, prototype.recordUpvalueCount);
+	return issueTestClosureRecord(cpu, prototype, !prototype.romBacked, newCells, captures);
+}
+
+function issueTestClosureRecord(cpu: CPU, prototype: Readonly<ClosureRecord.FunctionPrototype>, latched: boolean,
+	newCells?: Uint32Array, captures?: ArrayLike<number>): number {
+	const count = prototype.recordUpvalueCount;
+	const record = cpu.luaHeap.allocateClosureRecord(count, latched, newCells, newCells?.length ?? 0);
 	ClosureRecord.initializeRecord(cpu.memory, record, prototype, false, cpu.gc.white(), count, latched);
-	for (let i = 0; i < count; ++i) ClosureRecord.setCaptureAddress(cpu.memory, record, i, captures[i]);
+	for (let i = 0; i < count; ++i) ClosureRecord.setCaptureAddress(cpu.memory, record, i, captures![i]);
 	cpu.gc.publishObject(record);
 	return record;
 }

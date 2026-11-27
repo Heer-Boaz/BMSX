@@ -24,13 +24,6 @@ export type FunctionPrototype = FunctionEntry & {
 	executionDomainId: ExecutionDomainId;
 };
 
-export function sameFunctionPrototype(a: Readonly<FunctionPrototype>, b: Readonly<FunctionPrototype>): boolean {
-	return a.functionAddress === b.functionAddress && a.executionDomainId === b.executionDomainId
-		&& a.codeAddress === b.codeAddress && a.numParams === b.numParams && a.maxStack === b.maxStack
-		&& a.flags === b.flags && a.upvalueTableAddress === b.upvalueTableAddress
-		&& a.recordUpvalueCount === b.recordUpvalueCount;
-}
-
 export const CLOSURE_BINDING_FLAGS = 2;
 export const CLOSURE_BINDING_DOMAIN_MASK = 3;
 export const CLOSURE_CANONICAL = 4;

@@ -208,6 +208,26 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.readFramePc(depth - 1) << ' ' << cpu.isHaltedUntilIrq() << '\n';
 					break;
 				}
+				case 'T': {
+					char source;
+					u32 target;
+					trace >> source >> target;
+					const auto budget = cpu.instructionBudgetRemaining;
+					const auto cycle = scheduler.nowCycles();
+					bool admitted = true;
+					try {
+						if (source == 'n') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target);
+						else if (source == 'b') cpu.beginCompletionCall(target, BuiltinArgsView{cpu.readCompletionValues()});
+						else throw std::runtime_error("Expected a named Function or borrowed completion Values.");
+					} catch (const std::runtime_error& error) {
+						if (std::string_view(error.what()) != "External call exceeds the admitted register window.") throw;
+						admitted = false;
+					}
+					std::cout << admitted << ' ' << budget - cpu.instructionBudgetRemaining << ' ' << scheduler.nowCycles() - cycle
+						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
 				case 'D': {
 					int cycles;
 					trace >> cycles;

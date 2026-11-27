@@ -33,10 +33,10 @@ auto Runtime::callClosure(u32 fn, BuiltinArgsView args) -> ConstValueSpan {
 		|| machine.cpu.fixedInterruptActive()) {
 		throw std::runtime_error("External Lua closure execution requires a settled CPU and device frontier.");
 	}
-	history.stop();
 	CPU& cpu = machine.cpu;
 	const int depth = cpu.getFrameDepth();
 	cpu.beginCompletionCall(fn, args);
+	history.stop();
 	cpuExecution.runSuspendedUntilDepth(*this, depth);
 	return readCompletionValues();
 }

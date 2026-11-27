@@ -108,7 +108,7 @@ export function scheduleRuntimeGuestCall(
 		runtime.history.stop();
 		const cpu = runtime.machine.cpu;
 		const depth = cpu.getFrameDepth();
-		const args = call.args();
+		cpu.beginCompletionCall(call.closure, call.args());
 		let retained: RuntimeDebuggerSourceStop | undefined;
 		const plan = new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, request.admission === 'at-stop' ? completed => {
 			if (completed && retained !== undefined && debuggerState.source.returnToStop(retained)) {
@@ -116,9 +116,7 @@ export function scheduleRuntimeGuestCall(
 			}
 			finish(completed);
 		} : finish);
-		// Source suppression belongs to the stopped caller, not the newly pushed root.
 		retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', request.admission === 'at-stop' ? 'retain' : 'resume');
-		cpu.beginCompletionCall(call.closure, args);
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
 		if (!request.isCurrent() || !runtime.admitExternalCpuMutation()) { finished(false); return false; }

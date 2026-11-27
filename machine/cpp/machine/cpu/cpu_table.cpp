@@ -16,11 +16,11 @@ void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value 
 	if (valueIsClosure(method)) {
 		const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(method));
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true);
+		pushDetachedFrame(resolveFunctionActivation(closure, 0u), closure, BuiltinArgsView(args.data(), args.size()), placement, m_currentInstructionPc);
 		return;
 	}
 	if (valueTag(method) == ValueTag::CodeFunction) {
-		pushFrame(0u, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true, valuePayload(method));
+		pushDetachedFrame(resolveFunctionActivation(0u, valuePayload(method)), 0u, BuiltinArgsView(args.data(), args.size()), placement, m_currentInstructionPc);
 		return;
 	}
 	auto roots = acquireLocalRoots();

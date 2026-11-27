@@ -216,7 +216,7 @@ public:
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
 
-	void beginCompletionCall(u32 closure, BuiltinArgsView args = {}, u32 codeFunction = 0u);
+	void beginCompletionCall(u32 closure, BuiltinArgsView args = {});
 	void beginCompletionCallInExecutionDomain(
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
@@ -387,8 +387,6 @@ private:
 	void enterResidentFrame(CallFrame&);
 	void enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress = 0u);
 	void enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value);
-	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
-		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);
 	u32 allocateClosure(const FunctionPrototype&, u32 count);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
@@ -426,6 +424,8 @@ private:
 
 	struct FunctionActivation { Blua32ExecutionImage* image; FunctionCallEntry function; };
 	FunctionActivation resolveFunctionActivation(u32 closure, u32 codeFunction);
+	FunctionActivation resolveClosureActivation(Blua32ExecutionImage&, u32 closure, ClosureRecord::BindingFlags);
+	CallFrame* pushDetachedFrame(FunctionActivation, u32 closure, BuiltinArgsView, CallResultPlacement, std::optional<u32> callSitePc = {});
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);

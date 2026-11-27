@@ -15,6 +15,7 @@ export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
 export type RuntimeDebuggerSourceStop = {
 	readonly id: number;
 	readonly thread: number;
+	readonly depth: number;
 	readonly media: Blua32InstalledMedia;
 	readonly domain: ExecutionDomainId;
 	readonly pc: number;
@@ -102,7 +103,7 @@ export class SourceDebugger {
 		// A selected-thread step never suppresses a breakpoint in another thread or domain.
 		if (inlineDepth === undefined) inlineDepth = this.breakpoints[index].get(pc);
 		if (inlineDepth === undefined) return false;
-		this.stop = { id: ++this.stopSerial, thread: thread.address, media: this.media, domain, pc, inlineDepth, reason };
+		this.stop = { id: ++this.stopSerial, thread: thread.address, depth, media: this.media, domain, pc, inlineDepth, reason };
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();
 		return true;
@@ -115,7 +116,9 @@ export class SourceDebugger {
 			this.stepDepth = this.cpu.getFrameDepth(); this.stepInlineDepth = this.stop === undefined ? 0 : this.stop.inlineDepth;
 			this.prepareSteps();
 		}
-		if (this.stop !== undefined && (this.stepping || this.breakpoints[this.stop.domain + 1].has(this.stop.pc))) this.suppressCurrentInstruction();
+		if (this.stop !== undefined && (this.stepping || this.breakpoints[this.stop.domain + 1].has(this.stop.pc))) {
+			this.suppression.push({ thread: this.stop.thread, depth: this.stop.depth });
+		}
 		this.stop = undefined;
 		this.changed();
 	}
@@ -136,10 +139,6 @@ export class SourceDebugger {
 		this.changed();
 		return true;
 	}
-	private suppressCurrentInstruction(): void {
-		const thread = this.cpu.activeThread, depth = thread.frameDepth;
-		this.suppression.push({ thread: thread.address, depth });
-	}
 	public interrupt(): void {
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined; this.changed();
 	}
@@ -158,7 +157,7 @@ export class SourceDebugger {
 		this.didExecute();
 		const depth = this.cpu.getFrameDepth();
 		if (wasStopped && this.breakpoints[this.cpu.readFrameExecutionDomain(depth - 1) + 1].has(this.cpu.readFramePc(depth - 1))) {
-			this.suppressCurrentInstruction();
+			this.suppression.push({ thread: this.cpu.activeThread.address, depth });
 		}
 		this.changed();
 	}

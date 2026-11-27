@@ -2,6 +2,7 @@ import { retireRuntimeFrameScopes } from './frame_scopes';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -53,6 +54,7 @@ import {
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 
 export type BuiltBlua32Revision = {
 	sourceEditDomains: ExecutionDomainMask;
@@ -404,6 +406,31 @@ export function admitHotResume(
 			relocation = prepared.built === null
 				? null
 				: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
+			if (prepared.initCalls.length !== 0) {
+				// Install the revision only if the complete nested init batch has backing.
+				const thread = cpu.activeThread;
+				let end = 0;
+				for (let index = 0; index < retainedFrameCount; ++index) {
+					const base = cpu.readThreadFrameWord(thread.address, index, FrameField.StackBase) & FRAME_WINDOW_MASK;
+					let width = cpu.readThreadFrameWord(thread.address, index, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+					const target = relocation?.frames[index];
+					if (target != null) {
+						const image = blua32ToolingImageForDomain(freshMedia, target.domain)!.layout;
+						const fn = image.functions[blua32FunctionIndexAtAddress(image, target.functionAddress)];
+						const required = Math.max(fn.maxStack, fn.numParams);
+						if (required > width) width = registerWindowBucket(required);
+					}
+					end = Math.max(end, base + width);
+				}
+				for (const call of prepared.initCalls) {
+					const image = blua32ToolingImageForDomain(freshMedia, call.executionDomain)!.layout;
+					const fn = image.functions[blua32FunctionIndexAtAddress(image, call.functionAddress)];
+					end += Math.max(1, fn.maxStack, fn.numParams);
+				}
+				if (end > thread.stackRegisters.capacity() || retainedFrameCount + prepared.initCalls.length + 1 > thread.frameBackingBytes / FRAME_CONTROL_BYTES) {
+					throw new Error('Hot Resume init calls exceed the prepared frame backing.');
+				}
+			}
 		} catch (error) {
 			// Unsupported live edits reject before any media/CPU write. They
 			// must not fault the mutation queue or stop the installed program.

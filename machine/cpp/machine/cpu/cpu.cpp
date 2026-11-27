@@ -1071,25 +1071,15 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 #endif
 }
 
-void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args, u32 codeFunction) {
+void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
-	auto roots = acquireLocalRoots();
-	if (closure != 0u) trackLocalRoot(valueClosure(closure));
-	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
-	m_heap.finishFinalMark();
-	// Call injection takes over the physical instruction stream. The suspended
-	// frame retains its PC; an unaccepted endpoint access must not follow it.
-	abortStalledMemoryWrite();
-	// The input span may borrow the completion latch being cleared below.
-	if (!args.empty())
-		args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
-	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	m_completionThreadAddress = m_activeThread->address;
-	m_runSignals &= ~RunYield;
-	pushFrame(closure, args, {}, FRAME_COMPLETION, std::nullopt, false, codeFunction);
+	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
+	auto* image = m_executionImagesByDomain[static_cast<size_t>(binding.domain() + 1)].get();
+	if (!image) throw BMSX_RUNTIME_ERROR("External call requires a resident execution bank.");
+	pushDetachedFrame(resolveClosureActivation(*image, closure, binding), closure, args, {});
 }
 
 void CPU::beginCompletionCallInExecutionDomain(
@@ -1098,19 +1088,14 @@ void CPU::beginCompletionCallInExecutionDomain(
 ) {
 	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
-	m_heap.finishFinalMark();
-	auto* image = executionImageForDomain(executionDomainId);
-	if (!image || !readFunctionRecord(*image, functionAddress, executionBusSignalsForDomain(executionDomainId))) {
-		hardHalt();
-		return;
-	}
-	const auto& record = m_functionRecordLatch;
-	constexpr u32 direct = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
-	if (record.romBacked && executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
-		&& record.upvalueCount == 0u && (record.flags & direct) == direct)
-		beginCompletionCall(0u, {}, functionAddress);
-	else
-		beginCompletionCall(staticClosureForRecord(decodePrototype(record)));
+	if (m_unpublishedRomMask != 0u)
+		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
+	auto* image = m_executionImagesByDomain[static_cast<size_t>(executionDomainId + 1)].get();
+	if (!image) throw BMSX_RUNTIME_ERROR("External call requires a resident execution bank.");
+	const auto* record = image->romFunctions.find(functionAddress);
+	if (!record || record->upvalueCount != 0u || (record->entry.flags & BLUA32_FUNCTION_STATIC) == 0u)
+		throw BMSX_RUNTIME_ERROR("External call requires a static capture-free Function.");
+	pushDetachedFrame({image, {functionAddress, record->entry}}, 0u, {}, {});
 }
 
 CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
@@ -2563,12 +2548,15 @@ CPU::FunctionActivation CPU::resolveFunctionActivation(u32 closure, u32 codeFunc
 	if (closure == 0u)
 		return {m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
-	auto* image = executionImageForDomain(binding.domain());
+	return resolveClosureActivation(*executionImageForDomain(binding.domain()), closure, binding);
+}
+
+CPU::FunctionActivation CPU::resolveClosureActivation(Blua32ExecutionImage& image, u32 closure, ClosureRecord::BindingFlags binding) {
 	const u32 prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-	if (binding.latched()) return {image, {prototype, ClosureRecord::readLatchedEntry(m_memory, closure)}};
-	const auto* rom = image->bindRomFunction(m_memory, prototype);
+	if (binding.latched()) return {&image, {prototype, ClosureRecord::readLatchedEntry(m_memory, closure)}};
+	const auto* rom = image.bindRomFunction(m_memory, prototype);
 	// No ROM driver: the sampled entry words are zero.
-	return {image, {prototype, rom ? rom->entry : FunctionEntry{}}};
+	return {&image, {prototype, rom ? rom->entry : FunctionEntry{}}};
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
@@ -2611,33 +2599,35 @@ void CPU::placeSharedFormals(CallFrame& frame, int first, int copied, int padded
 	instructionBudgetRemaining -= relocate ? copied + padded : padded;
 }
 
-CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
-	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall, u32 codeFunction) {
-	const auto [image, functionRecord] = resolveFunctionActivation(closure, codeFunction);
+CallFrame* CPU::pushDetachedFrame(FunctionActivation activation, u32 closure, BuiltinArgsView args,
+	CallResultPlacement result, std::optional<u32> callSitePc) {
+	const auto& [image, functionRecord] = activation;
 	const size_t argCount = args.size();
 	auto& thread = *m_activeThread;
-	const int argumentBase = thread.stackTop();
+	int argumentBase = thread.stackTop();
+	if (!callSitePc) {
+		if (argCount > MAX_THREAD_VALUE_SLOTS)
+			throw BMSX_RUNTIME_ERROR("External call exceeds the admitted register window.");
+		// A debugger call must not overlay any suspended register window.
+		for (auto* frame = thread.currentFrame; frame; frame = frame->previous)
+			argumentBase = std::max(argumentBase, frame->stackBase() + frame->stackCapacity());
+	}
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
-	if (!admitted) throw LuaOutOfMemorySignal{};
-	const auto& placement = *admitted;
-	const FrameEntryControl entry{
-		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
-		frameBankWord(image->executionDomainId) | flags,
-		placement.varargBase, static_cast<int>(argCount), result, placement.top(),
-		closure, placement.stackBase, static_cast<int>(placement.capacity),
-	};
-	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
-		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
+	const u32 bank = frameBankWord(image->executionDomainId);
+	if (!admitted || !thread.frameSpaceFits(admitted->stackEnd())) {
+		if (!callSitePc) throw BMSX_RUNTIME_ERROR("External call exceeds the admitted register window.");
+		if (!admitted || resetBankSelected()) throw LuaOutOfMemorySignal{};
 		// This instruction has already resolved the callable and consumed
 		// the lookup. Its successor stays in the caller's physical frame.
+		const auto& placement = *admitted;
 		constexpr size_t firstArgument = 12u;
 		std::array<Value, firstArgument + 3u> operands{
 			valueInteger(static_cast<i32>(placement.stackEnd())),
 			valueInteger(static_cast<i32>(thread.frameDepth()) + 2),
 			valueInteger(0), valueInteger(remainingDeviceCycles()),
-			valueInteger(static_cast<i32>(entry.function)), valueInteger(static_cast<i32>(entry.pc)),
+			valueInteger(static_cast<i32>(functionRecord.functionAddress)), valueInteger(static_cast<i32>(functionRecord.entry.codeAddress)),
 			valueInteger(static_cast<i32>(closure)),
-			valueInteger(static_cast<i32>(entry.flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u))),
+			valueInteger(static_cast<i32>(bank | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u))),
 			valueInteger(placement.top()), valueInteger(placement.stackBase),
 			valueInteger(result.base), valueInteger(static_cast<i32>(result.countWord())),
 		};
@@ -2646,18 +2636,32 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 			m_currentInstructionPc, {operands.data(), firstArgument + argCount});
 		return nullptr;
 	}
+	const auto& placement = *admitted;
+	const FrameEntryControl entry{
+		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
+		bank | (callSitePc ? 0u : FRAME_COMPLETION),
+		placement.varargBase, static_cast<int>(argCount), result, placement.top(),
+		closure, placement.stackBase, static_cast<int>(placement.capacity),
+	};
 	auto* frame = thread.acquireFrame();
-	if (!instructionCall) thread.reserveFrame(placement.stackEnd(), valueClosure(closure), (flags & FRAME_EXCEPTION) != 0u);
 	frame->executionImage = image;
 	frame->initializeControl(entry);
 	const auto [copied, padded] = placement.formals;
-	for (int i = 0; i < copied; ++i) frame->registers.set(i, args[i]);
-	frame->registers.clear(copied, padded);
-	for (int i = 0; i < placement.varargCount; ++i)
-		m_activeThread->stack.set(placement.varargBase + i, args[placement.top() + i]);
-	if (callSitePc && (flags & FRAME_EXCEPTION) == 0u) instructionBudgetRemaining -= placement.cycles(false);
-	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
-	m_activeThread->enterFrame(frame);
+	args.placeInto(frame->registers, 0, copied, padded);
+	if (placement.varargCount != 0)
+		args.tailFrom(placement.top()).placeInto(thread.stack, placement.varargBase, placement.varargCount, 0);
+	if (callSitePc) {
+		instructionBudgetRemaining -= placement.cycles(false);
+	} else {
+		// Input can borrow the previous completion Values. The new frame
+		// already owns its operands before the result latch is cleared.
+		abortStalledMemoryWrite();
+		m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
+		m_completionThreadAddress = thread.address;
+		m_runSignals &= ~RunYield;
+	}
+	thread.setStackTop(static_cast<int>(placement.stackEnd()));
+	thread.enterFrame(frame);
 	latchActiveExecutionImage(image->executionDomainId, frame->executionImage);
 	return frame;
 }
