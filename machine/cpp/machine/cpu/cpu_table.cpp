@@ -14,7 +14,7 @@ u32 CPU::tableIndexAddress(Value base) const {
 
 void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value method, std::span<const Value> args) {
 	if (valueIsClosure(method)) {
-		const u32 closure = asClosure(method, m_heap);
+		const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(method));
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true);
 		return;

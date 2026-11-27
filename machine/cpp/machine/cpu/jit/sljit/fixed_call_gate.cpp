@@ -49,14 +49,15 @@ sljit_label* emitFixedResidentCall(sljit_compiler* c, sljit_label* bindWindow, s
 	sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM2(words, SLJIT_R1), 2);
 	if constexpr (std::endian::native == std::endian::big)
 		sljit_emit_op1(c, SLJIT_REV_U32, SLJIT_R2, 0, SLJIT_R2, 0);
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), callClosure, SLJIT_R2, 0);
 	sljit_emit_op2(c, SLJIT_AND, saved, 0, SLJIT_R2, 0, SLJIT_IMM, GC_RECORD_MASK);
+	sljit_emit_op2(c, SLJIT_OR32, SLJIT_MEM1(SLJIT_SP), callClosure, saved, 0, SLJIT_IMM, RAM_BASE);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, saved);
-	sljit_emit_op1(c, SLJIT_MOV32_U8, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), CLOSURE_BINDING_FLAGS);
-	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM,
-		CLOSURE_BINDING_DOMAIN_MASK | CLOSURE_LATCHED_PROTOTYPE);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), 0);
+	if constexpr (std::endian::native == std::endian::big)
+		sljit_emit_op1(c, SLJIT_REV32, SLJIT_R2, 0, SLJIT_R2, 0);
+	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, ClosureRecord::fixedCallHeaderMask);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_MEM1(state),
-		offsetof(NativeCpuRunState, closureDomain)), semanticCall);
+		offsetof(NativeCpuRunState, closureCallHeader)), semanticCall);
 	sljit_emit_op2(c, SLJIT_ADD, SLJIT_R3, 0, saved, 0, SLJIT_IMM, CLOSURE_PROTOTYPE_ADDRESS);
 	sljit_emit_op2(c, SLJIT_AND, SLJIT_R3, 0, SLJIT_R3, 0, SLJIT_IMM, RAM_RECORD_WORD_MASK);
 	NativeBlockAbi::emitRamAddress(c, SLJIT_R3, SLJIT_R3);

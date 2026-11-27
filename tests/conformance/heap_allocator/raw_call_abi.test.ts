@@ -6,16 +6,25 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
+import { CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
-import { valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { ThreadField, ThreadStatus } from '../../../machine/ts/machine/cpu/thread_record';
+import { UPVALUE_RECORD_KIND, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
+import { valueInteger, valueNil, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { COP0_CONTEXT } from '../../../machine/ts/spec/blua32/cop0';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
+import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode, BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { CPU_RESET_BANK_ADDRESS, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
@@ -104,4 +113,119 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 	writeFileSync(nativeRom, rom);
 	writeFileSync(trace, commands.join('\n'));
 	assert.deepEqual(execFileSync(native, [nativeRom, trace, join(temp, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
+});
+
+test('bare System ROM enters closures from its own private arena, including a captured value', t => {
+	// This ROM uses fixed slices of a page it owns. No dlmalloc header or
+	// collector metadata is needed to describe these two call targets.
+	const context = CPU_FIXED_STACK_BASE - 0x1000, frames = context + 0x100, values = context + 0x200;
+	const plain = context + 0x300, captured = plain + 0x10, cell = captured + 0x10;
+	const slots = 16, window = 8, repetitions = 96;
+	const capturedValue = -0x12345678;
+	const constants: number[] = [];
+	const instructions: [OpCode, number, number, number, number?][] = [];
+	const bindingLanes: { slot: number; fn: number; code: boolean }[] = [];
+	function load(register: number, value: number) {
+		const index = constants.length;
+		constants.push(value);
+		instructions.push([OpCode.LOADK, register, index >>> 6, index & 63]);
+	}
+	function store(address: number, value: number, kind = MemoryAccessKind.Word) {
+		load(0, value); load(1, address);
+		instructions.push([OpCode.STORE_MEM, 0, 1, kind]);
+	}
+	function bind(address: number, fn: number, code = false) {
+		bindingLanes.push({ slot: constants.length, fn, code });
+		store(address, -1 - constants.length);
+	}
+	store(context + ThreadField.Status, ThreadStatus.Running);
+	store(context + ThreadField.StackTop, window);
+	store(context + ThreadField.StackBlock, values);
+	store(context + ThreadField.StackCapacity, slots);
+	store(context + ThreadField.FrameCapacity, 4);
+	store(context + ThreadField.FrameDepth, 1);
+	store(context + ThreadField.FrameBlock, frames);
+	bind(frames + FrameField.Function, 1);
+	bind(frames + FrameField.Pc, 1, true);
+	store(frames + FrameField.Top, 7);
+	store(frames + FrameField.StackCapacity, window);
+	store(values, plain);
+	store(values + 6 * 4, captured);
+	store(values + 4 * slots, ValueTag.Closure, MemoryAccessKind.U8);
+	store(values + 4 * slots + 6, ValueTag.Closure, MemoryAccessKind.U8);
+	store(plain, ValueTag.Closure);
+	bind(plain + CLOSURE_PROTOTYPE_ADDRESS, 2);
+	store(captured, ValueTag.Closure);
+	store(captured + GC_RECORD_LINK, 1 << GC_GRAY_INDEX_BITS);
+	bind(captured + CLOSURE_PROTOTYPE_ADDRESS, 3);
+	store(captured + CLOSURE_CAPTURE_WORDS, cell);
+	store(cell, UPVALUE_RECORD_KIND | (ValueTag.Integer << (UPVALUE_VALUE_TAG * 8)));
+	store(cell + UPVALUE_VALUE_WORD, capturedValue);
+	load(0, context);
+	instructions.push([OpCode.MTC0, 0, COP0_CONTEXT, 0], [OpCode.RET, 0, 1, 0]);
+	const caller = instructions.length;
+	instructions.push([OpCode.CALL, 0, 1, 2], [OpCode.KSMI, 4, repetitions >>> 6, repetitions & 63], [OpCode.K1, 5, 0, 0], [OpCode.K0, 7, 0, 0]);
+	// Warm the same guest CALL edge without any host completion-call inputs.
+	instructions.push([OpCode.MOV, 2, 6, 0], [OpCode.CALL, 2, 1, 2], [OpCode.SUB, 4, 4, 5],
+		[OpCode.EQ, 0, 4, 7], [OpCode.JMP, 0, 63, 59, 255]); // repeat while R4 != 0; displacement -5
+	instructions.push([OpCode.MOV, 1, 2, 0], [OpCode.RET, 0, 3, 0]);
+	const plainBody = instructions.length;
+	instructions.push([OpCode.KSMI, 0, 0, 37], [OpCode.RET, 0, 2, 0]);
+	instructions.push([OpCode.GETUP, 0, 0, 0], [OpCode.RET, 0, 2, 0]);
+	const text = new Uint8Array(instructions.length * INSTRUCTION_BYTES);
+	for (const [index, op] of instructions.entries()) writeInstruction(text, index, ...op);
+	const linked = linkRawTestSystemBlua32({ text, constants: constants.map(integerConstant), verifiedControlFlow: true,
+		functions: [
+			{ firstWord: 0, wordCount: caller, maxStack: 2 },
+			{ firstWord: caller, wordCount: plainBody - caller, maxStack: window },
+			{ firstWord: plainBody, wordCount: 2, maxStack: 1 },
+			{ firstWord: plainBody + 2, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
+		],
+	});
+	assert.equal(linked.image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
+	const rom = linked.romBytes;
+	for (const { slot, fn, code } of bindingLanes) {
+		const entry = linked.image.functions[fn];
+		writeLE32(rom, linked.image.header.constantTableAddress - SYSTEM_ROM_BASE
+			+ BLUA32_CONSTANT_RECORD_SIZE * slot + BLUA32_CONSTANT_PAYLOAD_OFFSET, code ? entry.codeAddress : entry.address);
+	}
+	function exercise(cpuExecutionBackend: CpuExecutionBackend) {
+		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, input);
+		const { cpu, memory, scheduler } = runtime.machine;
+		const management = cpu.heapAllocator.managementOffset();
+		const first = management + HEAP_STRING_METADATA_OFFSET, end = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		const empty = new Uint8Array(end - first);
+		assert.deepEqual(memory.ramData().subarray(first, end), empty);
+		runtime.boot();
+		const commands: string[] = [], rows: string[] = [];
+		let result = RunResult.Yielded, plainVisits = 0, capturedVisits = 0;
+		for (let n = 0; result === RunResult.Yielded && n < instructions.length + repetitions * 7; ++n) {
+			const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+			if (depth === 2 && pc === linked.image.functions[2].codeAddress) ++plainVisits;
+			if (depth === 2 && pc === linked.image.functions[3].codeAddress) ++capturedVisits;
+			commands.push('P', 'E 1');
+			result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+			assert.equal(cpu.heapServiceActive(), false);
+			rows.push(`${depth} ${pc}`, `${result} ${1 - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} -1`);
+		}
+		assert.equal(result, RunResult.Halted);
+		assert.equal(cpu.rootThread.address, context);
+		assert.equal(cpu.readCauseWord(), 0);
+		assert.equal(plainVisits, 1);
+		assert.equal(capturedVisits, repetitions);
+		const output = [valueInteger(37), valueInteger(capturedValue)];
+		assert.deepEqual(runtime.readCompletionValues(), output);
+		assert.deepEqual(memory.ramData().subarray(first, end), empty);
+		commands.push('c', `H ${first} ${end}`);
+		rows.push([output.length, ...output.flatMap(v => [valueTag(v), valuePayload(v)])].join(' '), String(hashBytes(empty, 0, empty.length)));
+		return { commands, rows };
+	}
+	const interpreter = exercise(CpuExecutionBackend.Interpreter);
+	assert.deepEqual(exercise(CpuExecutionBackend.JavaScript), interpreter);
+	const temp = mkdtempSync(join(tmpdir(), 'raw-closure-abi-'));
+	t.after(() => rmSync(temp, { recursive: true, force: true }));
+	const nativeRom = join(temp, 'system.rom'), trace = join(temp, 'trace');
+	writeFileSync(nativeRom, rom);
+	writeFileSync(trace, interpreter.commands.join('\n'));
+	assert.deepEqual(execFileSync(native, [nativeRom, trace, join(temp, 'unused.state')], { encoding: 'utf8' }).trimEnd().split('\n'), interpreter.rows);
 });

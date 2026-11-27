@@ -1,9 +1,10 @@
-import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from './gc_object';
+import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GC_RECORD_MASK } from './gc_object';
 import { ValueTag } from './value';
 import { readLE32 } from '../../common/endian';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import { readRomEntry, readPublishedPrototype, romFunctionVersionLane, type Blua32RomFunctionDirectory } from './execution_image';
 import type { ExecutionDomainId } from '../../spec/blua32/execution_domain';
+import { RAM_BASE } from '../../spec/bmsx/memory_map';
 import {
 	BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
@@ -39,6 +40,14 @@ const CLOSURE_COUNT_LOW_BITS = 32 - GC_GRAY_INDEX_BITS;
 export const CLOSURE_PROTOTYPE_ADDRESS = 8;
 export const CLOSURE_CAPTURE_WORDS = 12;
 const CLOSURE_LATCHED_PROTOTYPE_BYTES = 6 * 4;
+
+// CALL decodes an architectural reference. Allocator ownership is not
+// part of the binding record used to enter a function.
+export function recordAddress(memory: Memory, reference: number): number {
+	const offset = reference & GC_RECORD_MASK;
+	return memory.readRamRecordByte(offset) === ValueTag.Closure ? RAM_BASE + offset : 0;
+}
+
 export function closureRecordBytes(captures: number, latched = false): number {
 	return CLOSURE_CAPTURE_WORDS + 4 * captures + (latched ? CLOSURE_LATCHED_PROTOTYPE_BYTES : 0);
 }

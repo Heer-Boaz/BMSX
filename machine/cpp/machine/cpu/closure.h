@@ -70,6 +70,12 @@ constexpr u32 domainBits(ExecutionDomainId domain) {
 	return static_cast<u32>(domain + 1);
 }
 
+constexpr u32 fixedCallHeaderMask = 0xffu
+	| ((CLOSURE_BINDING_DOMAIN_MASK | CLOSURE_LATCHED_PROTOTYPE) << (8u * CLOSURE_BINDING_FLAGS));
+constexpr u32 fixedCallHeader(ExecutionDomainId domain) {
+	return static_cast<u32>(ValueTag::Closure) | (domainBits(domain) << (8u * CLOSURE_BINDING_FLAGS));
+}
+
 struct BindingFlags {
 	u8 bits;
 	constexpr ExecutionDomainId domain() const {
@@ -78,6 +84,7 @@ struct BindingFlags {
 	}
 	constexpr bool latched() const { return (bits & CLOSURE_LATCHED_PROTOTYPE) != 0u; }
 };
+u32 recordAddress(const Memory&, u32 payload);
 void initialize(Memory&, u32 address, const FunctionPrototype&, u8 white, u32 count, bool canonical, bool latched);
 FunctionPrototype readBinding(const Memory&, u32 address, BindingFlags, const Blua32RomFunctionDirectory&);
 FunctionEntry readLatchedEntry(const Memory&, u32 address);

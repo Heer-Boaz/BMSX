@@ -542,7 +542,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		run->codeRoot = lookup->root(slot);
 		run->cartridgeSlot = slot;
 		run->frameBank = frameBankWord(frame->executionImage->executionDomainId);
-		run->closureDomain = ClosureRecord::domainBits(frame->executionImage->executionDomainId);
+		run->closureCallHeader = ClosureRecord::fixedCallHeader(frame->executionImage->executionDomainId);
 		if (!sameFrame) {
 			state.constants = frame->executionImage->constPool;
 			state.closure = frame->closureAddress();

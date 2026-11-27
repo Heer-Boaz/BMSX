@@ -601,7 +601,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 			switch (tag) {
 				case ValueTag.Closure: {
-					const closure = this.gc.closureRecordAddress(valuePayload(method));
+					const closure = Closure.recordAddress(this.memory, valuePayload(method));
 					if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length, true);
 					break;
@@ -3157,7 +3157,7 @@ export class CPU implements MappedPageInvalidator {
 				return false;
 			}
 			case ValueTag.Closure: {
-				const closure = this.gc.closureRecordAddress(registers.getPayload(a));
+				const closure = Closure.recordAddress(this.memory, registers.getPayload(a));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 				return this.pushFrame(closure, frame, a, c, false, false, frame.pc - INSTRUCTION_BYTES, a + 1, argCount, true) !== null;
 			}

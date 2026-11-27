@@ -101,7 +101,7 @@ void CPU::observeNativeCallTarget(CallFrame& frame, DecodedInstructionPage& page
 	if (decoded.nativeCallTarget() != DecodedInstruction::CALL_TARGET_UNSEEN || decoded.a >= frame.registers.size()) return;
 	const auto value = frame.registers.get(decoded.a);
 	if (!valueIsClosure(value)) return;
-	const u32 closure = asClosure(value, m_heap);
+	const u32 closure = ClosureRecord::recordAddress(m_memory, valuePayload(value));
 	if (!closure) return;
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto& image = *frame.executionImage;
@@ -142,7 +142,7 @@ void* CPU::tryCallNativeFrame(NativeCpuRunState* run, const NativeBlockExitSite*
 		default: return nullptr;
 	}
 
-	const u32 closure = cpu.m_heap.closureRecordAddress(caller.registers.admittedPayload(base));
+	const u32 closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
 	if (!closure) return nullptr;
 	const ClosureRecord::BindingFlags binding{cpu.m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto& image = *caller.executionImage;
@@ -236,7 +236,7 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 	if (static_cast<ValueTag>(caller.registers.tags()[base]) != ValueTag::Closure) {
 		return miss();
 	}
-	const u32 closure = cpu.m_heap.closureRecordAddress(caller.registers.admittedPayload(base));
+	const u32 closure = ClosureRecord::recordAddress(cpu.m_memory, caller.registers.admittedPayload(base));
 	if (!closure) {
 		return miss();
 	}

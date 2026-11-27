@@ -45,7 +45,7 @@ struct NativeCpuRunState {
 	size_t nativeStackCapacity = 0;
 	u32 nativeFrameLimit = 0;
 	i32 haltedCallDepth = -1;
-	u32 closureDomain = 0;
+	u32 closureCallHeader = 0;
 	CallFrame* firstPendingFrame = nullptr;
 	// Materialize in the admitted RAM extent. Even a frame that returns
 	// entirely within the native grant leaves the ordinary retired words.

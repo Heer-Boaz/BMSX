@@ -22,7 +22,7 @@ void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
 	const auto& image = *frame.executionImage;
 	thread.recordNativeWrites(cpu->m_memory.ramWriteWatches());
 	frameBank = frameBankWord(image.executionDomainId);
-	closureDomain = ClosureRecord::domainBits(image.executionDomainId);
+	closureCallHeader = ClosureRecord::fixedCallHeader(image.executionDomainId);
 	nativeStackCapacity = thread.stackCapacity;
 	nativeFrameLimit = thread.retainedFrameLimit();
 	haltedCallDepth = cpu->m_haltedUntilIrqThreadAddress == thread.address ? cpu->m_haltedUntilIrqFrameDepth : -1;

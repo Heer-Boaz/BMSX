@@ -15,6 +15,11 @@ FunctionEntry readEntryTail(const Memory& memory, u32 tail) {
 }
 } // namespace
 
+u32 recordAddress(const Memory& memory, u32 payload) {
+	const u32 offset = payload & GC_RECORD_MASK;
+	return memory.readRamRecordByte(offset) == static_cast<u8>(ValueTag::Closure) ? RAM_BASE + offset : 0u;
+}
+
 void initialize(Memory& memory, u32 address, const FunctionPrototype& prototype, u8 white, u32 count, bool canonical, bool latched) {
 	const u32 flags = domainBits(prototype.executionDomainId)
 		| (canonical ? CLOSURE_CANONICAL : 0u) | (latched ? CLOSURE_LATCHED_PROTOTYPE : 0u);
