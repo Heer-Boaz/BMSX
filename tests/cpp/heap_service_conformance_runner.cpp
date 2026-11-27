@@ -199,13 +199,21 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'q': {
+					u32 target;
 					int depth, cycles;
-					trace >> depth >> cycles;
+					trace >> target >> depth >> cycles;
 					const auto before = scheduler.nowCycles();
-					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, depth, cycles);
+					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, depth, cycles, target);
+					const auto runningDepth = cpu.getFrameDepth();
 					std::cout << static_cast<unsigned>(result) << ' ' << scheduler.nowCycles() - before
-						<< ' ' << cpu.getFrameDepth()
-						<< ' ' << cpu.readFramePc(depth - 1) << ' ' << cpu.isHaltedUntilIrq() << '\n';
+						<< ' ' << runningDepth
+						<< ' ' << cpu.readFramePc(runningDepth - 1) << ' ' << cpu.isHaltedUntilIrq() << '\n';
+					break;
+				}
+				case '?': {
+					u32 valueEnd, frameEnd, deadline;
+					trace >> valueEnd >> frameEnd >> deadline;
+					cpu.requestRegisterWindow(valueEnd, frameEnd, deadline);
 					break;
 				}
 				case 'T': {

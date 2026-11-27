@@ -1374,6 +1374,13 @@ void CPU::enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 fram
 		m_currentInstructionPc, arguments);
 }
 
+void CPU::requestRegisterWindow(u32 valueEnd, u32 frameEnd, u32 deadline) {
+	const std::array arguments{valueInteger(static_cast<i32>(valueEnd)), valueInteger(static_cast<i32>(frameEnd)),
+		valueNil(), valueInteger(static_cast<i32>(deadline))};
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+		m_activeThread->currentFrame->readControl(FrameField::Pc), arguments);
+}
+
 CallFrame* CPU::enterException(
 	Blua32ExecutionImage& vectorImage,
 	u32 functionAddress,

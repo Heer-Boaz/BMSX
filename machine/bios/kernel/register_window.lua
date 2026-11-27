@@ -21,11 +21,17 @@ local frame_window_mask<const> = (1 << 20) - 1
 local recover<const> = function(values, depth, instruction, deadline)
 	local interrupted_port<const>: *addr = layout.interrupted_context_address
 	local interrupted<const> = *interrupted_port
+	local management<const> = layout.management_offset
+	-- A request without an issuing instruction only prepares backing.
+	-- Return to the unchanged EPC whether or not the extents now fit.
+	if instruction == nil then
+		frames.prepare_frame_space(management, interrupted, values, depth, 0, deadline)
+		return true
+	end
 	local source_cycles = deadline
 	local thread<const>: *thread_storage_record = interrupted
 	local frame_depth<const> = thread.frame_depth & control_count_mask
 	local address<const> = layout.ram_base + ((thread.frame_block + (frame_depth - 1) * sizeof(frame_record)) & word_mask)
-	local management<const> = layout.management_offset
 	local op<const> = instruction & 0xff
 	local root = 0
 	if op == isa.op_ret or op == isa.op_jmp then

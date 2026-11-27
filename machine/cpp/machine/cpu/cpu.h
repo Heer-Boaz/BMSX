@@ -221,6 +221,8 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
+	// The issuer is a settled, non-reset activation outside exception execution.
+	void requestRegisterWindow(u32 valueEnd, u32 frameEnd, u32 deadline);
 	bool fixedInterruptActive() const { return m_activeThread == &m_irqView; }
 	bool fixedInterruptDefersReset() const { return fixedInterruptActive() && (m_runSignals & RunHardHalted) == 0u; }
 	bool systemResetInhibited() const {

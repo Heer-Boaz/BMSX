@@ -1643,6 +1643,12 @@ export class CPU implements MappedPageInvalidator {
 		this.beginCompletionActivation(functionAddress, EMPTY_CALL_ARGS, executionDomainId);
 	}
 
+	/** Request physical window extents at a settled, non-exception activation. */
+	public requestRegisterWindow(valueEnd: number, frameEnd: number, deadline: number): void {
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
+			this.activeThread.currentFrame!.pc, valueInteger(valueEnd), valueInteger(frameEnd), valueNil(), valueInteger(deadline));
+	}
+
 	private beginCompletionActivation(target: number, args: ReadonlyArray<Value>, namedDomain?: ExecutionDomainId): void {
 		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
