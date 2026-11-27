@@ -5,17 +5,15 @@ static_assert(HEAP_SERVICE_RESULT_OFFSET + sizeof(u32) <= HEAP_SERVICE_FRAME_OFF
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_CLOSURE_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_FIRMWARE_DATA_OFFSET);
 static_assert(HEAP_SERVICE_FIRMWARE_DATA_OFFSET < RUNTIME_MANAGEMENT_SIZE);
-static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
+static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_RESIDENT_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
 static_assert(HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32) <= RAM_BASE);
 static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STRIDE);
-static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
+static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ComparisonRight) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
-static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32)
-	<= HEAP_SERVICE_RESIDENT_OFFSET);
 static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::RunKind) + sizeof(u32)
 	<= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
@@ -48,13 +46,13 @@ u32 CPU::heapServiceResult() const {
 
 u32 CPU::queuedFixedWork() const {
 	// An ordinary vector owns the machine until it retires, even across grants.
-	return resetBankSelected() || fixedInterruptActive() || tableRebuild.record
+	return resetBankSelected() || fixedInterruptActive()
 		? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
 }
 
 bool CPU::admitFixedWork(CpuRunKind kind) {
 	const u32 work = queuedFixedWork();
-	if (work == 0u || allocationParked()) return false;
+	if (work == 0u) return false;
 	const auto function = m_systemImage->heapServiceFunctions[work - 1u];
 	const std::array args{m_heapAllocator.managementOffset(), static_cast<u32>(kind)};
 	if (!beginHeapService(function, args)) return false;
@@ -140,15 +138,8 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceResidentField::SourceBase), base, produced);
 	} else {
 		const u32 management = m_heapAllocator.managementOffset();
-		const u32 biosCall = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-		if (m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)) != static_cast<u32>(HeapServiceBiosCallKind::Idle)) {
-			m_memory.writeRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Status), valuePayload(frame.registers.get(base)));
-			m_memory.writeRamRecordPair(biosCall + static_cast<u32>(HeapServiceBiosCallField::Tag),
-				valuePayload(frame.registers.get(base + 1)), valuePayload(frame.registers.get(base + 2)));
-		} else {
-			const u32 result = produced == 0 ? 0u : valuePayload(frame.registers.get(base));
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_RESULT_OFFSET, result);
-		}
+		const u32 result = produced == 0 ? 0u : valuePayload(frame.registers.get(base));
+		m_memory.writeRamRecordWord(management + HEAP_SERVICE_RESULT_OFFSET, result);
 		instructionBudgetRemaining -= produced;
 	}
 	m_heapServiceView.leaveFrame();
@@ -214,8 +205,6 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
 	} else if (address - HEAP_SERVICE_ROOT_PORT_BASE < HEAP_SERVICE_ROOT_PORT_BYTES) {
 		word = readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
-	} else if (address == HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS && kind != MemoryAccessKind::U8) {
-		word = static_cast<u32>(remainingDeviceCycles());
 	} else if (address == HEAP_SERVICE_MANAGEMENT_ADDRESS && kind != MemoryAccessKind::U8) {
 		word = m_heapAllocator.managementOffset();
 	} else if (kind != MemoryAccessKind::U8

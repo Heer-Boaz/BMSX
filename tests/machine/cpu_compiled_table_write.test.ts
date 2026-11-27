@@ -1,11 +1,10 @@
-import { HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
+import { CPU_CAUSE_CODE_STORAGE_WINDOW } from '../../machine/ts/spec/blua32/cop0';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { ValueTag, valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { valueBool, valueFloat, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { INSTRUCTION_BYTES, packInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
@@ -13,10 +12,10 @@ import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
-import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
+import { runCpuParity } from '../helpers/cpu_execution';
 
 test('next charges only the primitive and the receiving range even when traversal crosses vacant slots', () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -42,12 +41,15 @@ test('next charges only the primitive and the receiving range even when traversa
 	}
 });
 
-test('a WIDE SETFIELD hint affects only growth at its original table and follows code replacement', () => {
+test('a WIDE SETFIELD faults with the current hint only for the original table', () => {
 	const code = new Uint8Array(4 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 6);
 	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
+	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [
+		{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1, maxStack: 5 },
+	], exceptionFunctionIndex: 1 }, 0x10000);
 	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestHeapServiceCpu(image, mode));
 	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
 	for (const { cpu, memory } of machines) {
@@ -64,7 +66,7 @@ test('a WIDE SETFIELD hint affects only growth at its original table and follows
 	const decoded = frame.executionImage.decodedPages.get(pc)!;
 	assert.ok(decoded.compiledBlocks!.entries[0], 'the first hinted store has a generated entry before code replacement');
 
-	const assign = (capacity: number, value: number | null, throughMetatable: boolean, expected: number, width: number) => {
+	const assign = (capacity: number, value: number | null, throughMetatable: boolean, hint: number | null, width: number) => {
 		const cases = machines.map(({ cpu }) => {
 			const tables = cpu.gc.tables, registers = cpu.rootThread.frameAtDepth(0).registers;
 			const table = cpu.createTable(0, capacity), oldKey = cpu.stringPool.intern('before'), key = cpu.stringPool.find('field')!;
@@ -84,81 +86,34 @@ test('a WIDE SETFIELD hint affects only growth at its original table and follows
 		for (const { cpu, table, source, oldKey, key } of cases) {
 			const tables = cpu.gc.tables;
 			assert.equal(cpu.instructionBudgetRemaining, 1 - cycles - (throughMetatable ? TABLE_INDEX_VISIT_CYCLES : 0));
-			assert.equal(cpu.readFramePc(0), pc + width * INSTRUCTION_BYTES);
-			assert.equal(tables.hashSize(table), expected);
+			assert.equal(cpu.rootThread.frameAtDepth(0).pc, pc + width * INSTRUCTION_BYTES);
+			assert.equal(cpu.fixedInterruptActive(), hint !== null);
+			assert.equal(tables.hashSize(table), capacity);
 			assert.equal(tables.getStringKey(table, oldKey), valueInteger(9));
-			assert.equal(tables.getStringKey(table, key), value === null ? valueNil() : valueInteger(value));
+			assert.equal(tables.getStringKey(table, key), value === null || hint !== null ? valueNil() : valueInteger(value));
+			if (hint !== null) {
+				assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
+				assert.equal(cpu.readEpcWord(), pc);
+				const { argumentCount, registers } = cpu.activeThread.currentFrame!;
+				assert.equal(argumentCount, 5);
+				assert.deepEqual([registers.get(0), registers.get(1), registers.get(2), registers.get(3)],
+					[valueTable(table), valueString(key), valueInteger(value!), valueInteger(hint)]);
+			}
 			if (throughMetatable) assert.equal(tables.getStringKey(source, key), valueNil());
 		}
+		if (hint !== null) {
+			assert.equal(runCpuParity(cases[0].cpu, cases[1].cpu, 1), RunResult.Yielded);
+			for (const { cpu } of cases) assert.equal(cpu.fixedInterruptActive(), false);
+		}
 	};
-	assign(2, 73, false, 2, 2); // No growth.
-	assign(1, null, false, 1, 2); // Nil to missing.
-	assign(1, 73, true, 2, 2); // No hint on the forwarded table.
-	assign(1, 73, false, 8, 2); // One existing + one insertion + six more.
+	assign(2, 73, false, null, 2); // No growth.
+	assign(1, null, false, null, 2); // Nil to missing.
+	assign(1, 73, true, 0, 2); // No hint on the forwarded table.
+	assign(1, 73, false, 6, 2);
 	for (const { memory } of machines) memory.writeU32(pc, packInstructionWord(OpCode.WIDE, 0, 0, 0, 7));
-	assign(1, 73, false, 16, 2); // Only the prefix changed; round 9 up.
+	assign(1, 73, false, 7, 2); // Only the prefix changed.
 	for (const { memory } of machines) memory.writeU32(pc, packInstructionWord(OpCode.SETFIELD, 0, 0, 1));
-	assign(1, 73, false, 2, 1); // No retained hint after removing WIDE.
-});
-
-for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFIELD under ${pressure} pressure`, () => {
-	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0, 31);
-	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
-	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
-	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
-	const tables = cpu.gc.tables, arena = cpu.heapAllocator, budget = cpu.luaHeap;
-	const table = cpu.createTable(512, 1), beforeKey = cpu.stringPool.intern('before'), field = cpu.stringPool.find('field')!;
-	tables.setStringKey(table, beforeKey, valueInteger(9));
-	const regs = cpu.rootThread.frameAtDepth(0).registers;
-	regs.setTable(0, table); regs.setInteger(1, 73);
-	budget.setCollectionTarget(budget.capacity());
-	const backing = TableRecords.storageBytes(0, 64);
-	cpu.createTable(1024, 0); // Recoverable storage for the hinted growth.
-	if (pressure === 'budget') {
-		const required = TableRecords.allocationCharge(512, 2) - TableRecords.allocationCharge(512, 1);
-		cpu.memory.writeRamRecordWord(arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, budget.capacity() - required);
-	} else {
-		const minimum = TableRecords.storageBytes(0, 2);
-		const hole = arena.allocate(minimum, true);
-		while (arena.allocate(backing, true) !== 0) {}
-		while (arena.allocate(minimum, true) !== 0) {}
-		if (pressure === 'fragmented') arena.free(hole);
-	}
-	const oldStorage = tables.hashAddress(table);
-	const pc = cpu.readFramePc(0);
-	const used = budget.usedBytes();
-	const result = cpu.runUntilDepth(0, 1, cpu.rootThread.address, CpuRunKind.Scheduled);
-	if (pressure !== 'exhausted') {
-		assert.equal(result, RunResult.Yielded);
-		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
-		assert.equal(tables.hashSize(table), 2);
-		assert.equal(tables.getStringKey(table, beforeKey), valueInteger(9));
-		assert.equal(tables.getStringKey(table, field), valueInteger(73));
-		assert.equal(budget.usedBytes() - used, TableRecords.allocationCharge(512, 2) - TableRecords.allocationCharge(512, 1));
-		return;
-	}
-	assert.equal(result, RunResult.ParkedAllocation);
-	assert.equal(tables.hashAddress(table), oldStorage);
-	assert.equal(tables.getStringKey(table, field), valueNil());
-	const pending = cpu.captureRuntimeState().pendingAllocation;
-	assert.ok(pending);
-	assert.equal(pending.extraHashSlots, 31);
-	const checkpoint = captureCpuCheckpoint(cpu);
-	for (let replay = 0; replay < 2; ++replay) {
-		for (let work = 0; work < 512 && !cpu.allocationReady(); ++work) cpu.advanceAllocationRecovery();
-		assert.ok(cpu.allocationReady(), 'the recovery completes with reclaimable backing');
-		cpu.instructionBudgetRemaining = 0;
-		cpu.resumeAllocation();
-		assert.equal(cpu.instructionBudgetRemaining, 0, 'no second charge or execution on resume');
-		assert.ok(!cpu.allocationParked());
-		assert.equal(cpu.readFramePc(0), pc + 2 * INSTRUCTION_BYTES);
-		assert.equal(tables.hashSize(table), 64);
-		assert.equal(tables.getStringKey(table, beforeKey), valueInteger(9));
-		assert.equal(tables.getStringKey(table, field), valueInteger(73));
-		if (replay === 0) restoreCpuCheckpoint(cpu, checkpoint);
-	}
+	assign(1, 73, false, 0, 1); // No retained hint after removing WIDE.
 });
 
 test('ordinary bus writes cannot rebind an array or alter its private elements', () => {
@@ -251,13 +206,16 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 	});
 }
 
-for (const generic of [false, true]) test(`growing string stores publish moved roots before collection (generic=${generic})`, () => {
+for (const generic of [false, true]) test(`a storage-window vector receives a moved reference from a generated string write (generic=${generic})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.MOV, 7, 9, 0);
 	writeInstruction(text, 1, OpCode.KNIL, 9, 0, 0);
 	writeInstruction(text, 2, generic ? OpCode.SETT : OpCode.SETFIELD, 0, generic ? 1 : 0, 7);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 4, maxStack: 16 }] });
+	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
+		{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, maxStack: 5 },
+	], exceptionFunctionIndex: 1 });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
@@ -272,15 +230,16 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const retained = cpu.createTable(1024, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
 		r.setTable(0, cpu.createTable()); r.setTable(9, retained); frame.top = 0;
-		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.setCollectionTarget(trackedBytes);
+
 	}
 	runCpuParity(js, ref, 516);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers, retained = r.getPayload(7);
-		assert.ok(cpu.gc.active() && cpu.gc.memory.readRamRecordByte(retained + GC_COLOR_OFFSET) === 3, 'the hash growth assist traced the moved reference');
-		assert.equal(cpu.gc.tables.getStringKey(retained, cpu.stringPool.find('payload')!), valueString(cpu.stringPool.find('retained')!));
-		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueTable(retained));
+		assert.equal(r.get(9), valueNil());
+		assert.equal(cpu.fixedInterruptActive(), true);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
+		assert.equal(cpu.activeThread.currentFrame!.registers.get(2), valueTable(retained));
+		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueNil());
 	}
 });

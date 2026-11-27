@@ -1,12 +1,11 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { HeapServiceBiosCallKind, HeapServiceRemarkHeadField, HeapServiceTableGrowthMode, HeapServiceTableGrowthStage } from '../../spec/bmsx/heap_service';
+import { HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
 import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import { LuaAllocationRecovery } from './lua_heap';
 import { gcPacedPhase, type GcHeap } from './gc_heap';
-import type { CPU } from './cpu';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
@@ -22,8 +21,6 @@ const TABLE_HASH_SLOT_BUDGET_BYTES = 10;
 // including a matched tombstone.
 export const TABLE_HASH_UNPROBED = -2;
 export const HASH_STORE_DECLINED = -3;
-export const HASH_STORE_PENDING = -4;
-const enum HashStore { General, Scheduled, Resume }
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const enum TableLookupStatus { Resolved, ChainExhausted, Invoke, Forward, Store }
 type TableLookupSlot = { value: Value; slot: number };
@@ -35,17 +32,7 @@ export interface TableStringProbe extends TableLookupSlot { node: number; remain
 export const enum TableHeader {
 	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
 }
-export const enum TableStoreReturn { None, Call }
-export const enum TableCensus { None, General, Scheduled, RetryCurrent, RetryFresh }
 class ArrayDensity { scanned = 0; live = 0; slots = 0; kept = 0; }
-export class TableRebuild extends ArrayDensity {
-	census = TableCensus.None; recovery = LuaAllocationRecovery.CurrentOrFresh;
-	record = 0; source = 0; count = 0; storage = 0; capacity = 0;
-	arrayStorage = 0; arraySlots = 0; arrayCleared = 0;
-	cleared = 0; homes = 0; cursor = 0; free = 0; collisions = 0;
-	key = valueNil(); value = valueNil();
-	result = TableStoreReturn.None; destination = 0; wanted = 0; instructionPc = 0;
-}
 export class TableRecords {
 	private readonly directDensity = new ArrayDensity();
 	private readonly resizePlan = { array: 0, hash: 0, keepHash: false };
@@ -488,20 +475,13 @@ export class TableRecords {
 		}
 		result.slot = -1; result.extraVisits = TABLE_INDEX_CHAIN_LIMIT - 1; result.status = TableLookupStatus.ChainExhausted;
 	}
-	public set(record: number, key: Value, value: Value, budget?: CPU,
-		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
-		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.General, 0, budget, HeapServiceTableGrowthStage.Idle, kind, target, resultWord);
+	public set(record: number, key: Value, value: Value): number {
+		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, false);
 	}
-	public assignScheduled(record: number, key: Value, value: Value, budget: CPU, slot = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
-		return this.setOwn(record, key, value, slot, HashStore.Scheduled, extraHashSlots, budget);
+	public tryStore(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED): number {
+		return this.setOwn(record, key, value, resolved, true);
 	}
-	public resumeAssignment(record: number, key: Value, value: Value, extraHashSlots: number, budget?: CPU,
-		growthStage = HeapServiceTableGrowthStage.Idle): boolean {
-		return this.setOwn(record, key, value, TABLE_HASH_UNPROBED, HashStore.Resume, extraHashSlots, budget, growthStage) !== HASH_STORE_DECLINED;
-	}
-	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, policy: HashStore, extraHashSlots = 0, budget?: CPU,
-		growthStage = policy === HashStore.Scheduled ? HeapServiceTableGrowthStage.Scheduled : HeapServiceTableGrowthStage.Idle,
-		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
+	private setOwn(record: number, rawKey: Value, value: Value, resolved: number, existingOnly: boolean): number {
 		if (isNil(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 		if (valueIsNaN(rawKey)) throw new LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 		const key = canonicalTableKey(rawKey);
@@ -513,13 +493,12 @@ export class TableRecords {
 			const words = this.arrayAddress(record);
 			this.writeSlot(words, words + array * 4, slot, tag, word); this.updateLengthHint(record, slot, tag !== ValueTag.Nil); return -1;
 		}
-		const node = this.setHash(record, key, value, resolved, policy, extraHashSlots, budget, growthStage, kind, target, resultWord);
-		if (node !== HASH_STORE_DECLINED && node !== HASH_STORE_PENDING && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
+		const node = this.setHash(record, key, value, resolved, existingOnly);
+		if (node !== HASH_STORE_DECLINED && slot >= 0) this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
 		return node;
 	}
 	private setHash(record: number, key: Value, value: Value, resolved = TABLE_HASH_UNPROBED,
-		policy = HashStore.General, extraHashSlots = 0, budget?: CPU, growthStage = HeapServiceTableGrowthStage.Idle,
-		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
+		existingOnly = false, extraHashSlots = 0): number {
 		const tag = valueTag(value), word = valuePayload(value);
 		if (tag === ValueTag.Nil) { this.removeFromHash(record, key, resolved); return -1; }
 		const keyTag = valueTag(key), keyWord = valuePayload(key);
@@ -552,9 +531,10 @@ export class TableRecords {
 				return index;
 			}
 		}
-		index = this.insertHashWithAdmission(record, key, value, policy, extraHashSlots, budget, undefined,
-			LuaAllocationRecovery.CurrentOrFresh, growthStage, kind, target, resultWord);
-		if (index === HASH_STORE_DECLINED || index === HASH_STORE_PENDING) return index;
+		// Guest writes stop at admitted backing. The host-side setup/reference
+		// setter alone can invoke the synchronous native planner below.
+		if (existingOnly) return HASH_STORE_DECLINED;
+		index = this.insertHashWithAdmission(record, key, value, extraHashSlots);
 		// resize() invalidates an outstanding scan; relocated old edges keep their marks.
 		this.publishHashInsertion(record, key, tag, word);
 		return index;
@@ -568,8 +548,8 @@ export class TableRecords {
 	}
 	public setStringKey(record: number, key: StringId, value: Value): void { this.setHash(record, valueString(key), value); }
 	public storeStringKey(record: number, key: StringId, tag: ValueTag, word: number,
-		resolved = TABLE_HASH_UNPROBED, extraHashSlots = 0, budget?: CPU): number {
-		return this.setHash(record, valueString(key), valueFromTag(tag, word), resolved, HashStore.General, extraHashSlots, budget);
+		resolved = TABLE_HASH_UNPROBED, extraHashSlots = 0): number {
+		return this.setHash(record, valueString(key), valueFromTag(tag, word), resolved, false, extraHashSlots);
 	}
 	public storePredictedStringKey(record: number, key: StringId, predicted: number, tag: ValueTag, word: number): boolean {
 		if (tag === ValueTag.Nil || predicted < 0) return false;
@@ -673,11 +653,6 @@ export class TableRecords {
 			if (stop === power && d.live > power / 2) { d.slots = power; d.kept = d.live; }
 		}
 	}
-	private spendCensusGrant(record: number, capacity: number, d: ArrayDensity, cpu: CPU): void {
-		const paidStart = Math.max(d.scanned, 64), n = Math.min(capacity - paidStart, 4 * Math.max(0, cpu.instructionBudgetRemaining));
-		this.countArrayRange(record, capacity, d, paidStart + n);
-		cpu.instructionBudgetRemaining -= (n + 3) >>> 2;
-	}
 	private planRehash(record: number, key: Value, extraHashSlots: number, counted?: ArrayDensity): void {
 		const plan = this.resizePlan;
 		const added = valueTag(key) === ValueTag.Integer ? asInteger(key) - 1 : -1;
@@ -746,52 +721,27 @@ export class TableRecords {
 		plan.hash = TableRecords.hashCapacity(hashKeys);
 		plan.keepHash = arraySize > oldArray && added < arraySize && plan.hash === oldHash && firstHashArrayKey > arraySize;
 	}
-	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU,
-		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh, growthStage = HeapServiceTableGrowthStage.Idle,
-		kind = HeapServiceBiosCallKind.Discard, target = 0, resultWord = 0): number {
-		if (policy !== HashStore.Resume && !counted && cycleBudget?.beginTableGrowth(record, key, value, extraHashSlots,
-			policy === HashStore.Scheduled ? HeapServiceTableGrowthMode.Scheduled : HeapServiceTableGrowthMode.General, kind, target, resultWord))
-			return HASH_STORE_PENDING;
+	private insertHashWithAdmission(record: number, key: Value, value: Value, extraHashSlots: number): number {
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
-		const arrayCycles = array > 64 && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
-			? (array - 64 + 3) >>> 2 : 0;
-		const hashCycles = hash > 64 && hash < TableRecords.HASH_BAND_CAPACITY && valueTag(key) === ValueTag.Integer && asInteger(key) > 0
-			? (hash - 64) >>> 1 : 0;
+		let recovery = LuaAllocationRecovery.CurrentOrFresh;
 		for (;;) {
-			if (cycleBudget && !counted && array >= 1024 && arrayCycles &&
-				(policy === HashStore.Resume || arrayCycles > cycleBudget.instructionBudgetRemaining)) {
-				const j = cycleBudget.tableRebuild;
-				j.record = record; j.key = key; j.value = value; j.instructionPc = cycleBudget.readCurrentInstructionPc();
-				j.census = policy === HashStore.General ? TableCensus.General : policy === HashStore.Scheduled ? TableCensus.Scheduled
-					: growthStage === HeapServiceTableGrowthStage.RetryFresh ? TableCensus.RetryFresh : TableCensus.RetryCurrent;
-				j.recovery = recovery; j.scanned = j.live = j.slots = j.kept = 0;
-				j.source = j.count = j.storage = j.capacity = j.arrayStorage = j.arraySlots = j.arrayCleared = 0;
-				j.cleared = j.homes = j.cursor = j.free = j.collisions = j.destination = j.wanted = 0; j.result = TableStoreReturn.None;
-				if (policy !== HashStore.Resume) this.spendCensusGrant(record, array, j, cycleBudget);
-				return HASH_STORE_PENDING;
-			}
-			if (cycleBudget) cycleBudget.instructionBudgetRemaining -= (counted ? 0 : arrayCycles) + hashCycles;
-			this.planRehash(record, key, extraHashSlots, counted);
-			counted = undefined;
+			this.planRehash(record, key, extraHashSlots);
 			const requested = TableRecords.allocationCharge(plan.array, plan.hash);
-			const admitted = requested <= previous || (policy === HashStore.Resume || recovery !== LuaAllocationRecovery.CurrentOrFresh
+			const admitted = requested <= previous || (recovery !== LuaAllocationRecovery.CurrentOrFresh
 				? budget.usedBytes() + requested - previous <= budget.capacity()
 				: budget.prepareAllocation(requested - previous, owner, key, value));
 			if (admitted) {
 				const bytes = TableRecords.storageBytes(plan.array > array ? plan.array : 0, plan.keepHash ? 0 : plan.hash);
-				if (policy !== HashStore.Resume && gcPacedPhase(this.heap.phase())) {
-					this.heap.assistBeforeReservation(bytes, owner, key, value);
-				}
-				const slot = this.resize(record, key, value, previous, requested, cycleBudget);
+				if (gcPacedPhase(this.heap.phase())) this.heap.assistBeforeReservation(bytes, owner, key, value);
+				const slot = this.resize(record, key, value, previous, requested);
 				if (slot !== HASH_STORE_DECLINED) return slot;
 			}
 			if (extraHashSlots) {
 				extraHashSlots = 0;
 				continue;
 			}
-			if (policy !== HashStore.General) return HASH_STORE_DECLINED;
 			recovery = this.heap.recoverAllocation(recovery, owner, key, value);
 			// Weak clearing can make the existing reservation fit.
 			if (hash !== 0) {
@@ -802,40 +752,21 @@ export class TableRecords {
 			}
 		}
 	}
-	public installTableRebuild(j: TableRebuild, record: number, key: Value, value: Value,
-		array: number, hash: number, keepHash: boolean, storage: number, base: number): void {
-		const oldArray = this.arrayCapacity(record);
-		j.census = TableCensus.None; j.recovery = LuaAllocationRecovery.CurrentOrFresh;
-		j.scanned = j.live = j.slots = j.kept = 0;
-		j.record = record; j.source = keepHash ? 0 : this.hashAddress(record); j.count = keepHash ? 0 : this.hashSize(record);
-		j.storage = keepHash ? 0 : storage; j.capacity = keepHash ? 0 : hash;
-		j.arraySlots = array !== oldArray ? array : 0; j.arrayStorage = array !== oldArray ? base : 0; j.arrayCleared = 0;
-		j.cleared = j.homes = j.cursor = j.collisions = 0; j.free = (j.capacity - 1) >>> 0; j.key = key; j.value = value;
-		j.result = TableStoreReturn.None; j.destination = j.wanted = j.instructionPc = 0;
-	}
-	private resize(record: number, key: Value, value: Value, previous: number, requested: number, budget?: CPU): number {
+	private resize(record: number, key: Value, value: Value, previous: number, requested: number): number {
 		const { array, hash, keepHash } = this.resizePlan;
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const oldWords = this.hashAddress(record), oldTags = oldWords + oldHash * 8;
 		const memory = this.heap.memory, arena = this.heap.arena;
-		const oldBase = this.arrayAddress(record), stagedGrowth = oldArray >= 1024 && array > oldArray;
-		const staged = stagedGrowth || (oldArray >= 1024 && array < oldArray) || (oldHash > 64 && (oldArray === array || !oldArray) && !keepHash);
+		const oldBase = this.arrayAddress(record);
 		const storage = keepHash ? oldWords : hash ? arena.allocate(TableRecords.hashStorageBytes(hash), true) : 0;
 		if (hash && !storage) return HASH_STORE_DECLINED;
 		let base = oldBase;
 		if (array > oldArray) {
-			base = !oldBase ? arena.allocate(array * 5, true) : budget && stagedGrowth
-				? arena.reserveBacking(oldBase, array * 5) : arena.resizeBacking(oldBase, array * 5);
+			base = !oldBase ? arena.allocate(array * 5, true) : arena.resizeBacking(oldBase, array * 5);
 			if (!base) {
 				if (storage && !keepHash) arena.free(storage);
 				return HASH_STORE_DECLINED;
 			}
-		}
-		if (budget && staged) {
-			const j = budget.tableRebuild;
-			this.installTableRebuild(j, record, key, value, array, hash, keepHash, storage, base);
-			budget.instructionBudgetRemaining = this.advanceRebuild(j, budget.instructionBudgetRemaining);
-			return HASH_STORE_PENDING;
 		}
 		this.heap.tableEntriesMoved(record);
 		this.writeHeader(record, TableHeader.Array, array);
@@ -877,194 +808,6 @@ export class TableRecords {
 		if (!keepHash && hash > TableRecords.HASH_CENSUS_LIMIT) memory.writeRamRecordWord(storage + TableRecords.hashNodeBytes(hash), live + (slot >= 0 ? 1 : 0));
 		this.heap.budget.replaceRecord(keepHash ? 0 : oldWords, previous, requested);
 		return slot;
-	}
-	public advanceCensus(cpu: CPU): boolean {
-		const j = cpu.tableRebuild, record = j.record, capacity = this.arrayCapacity(record);
-		this.spendCensusGrant(record, capacity, j, cpu);
-		if (j.scanned !== capacity) return true;
-		const policy = j.census === TableCensus.General ? HashStore.General : j.census === TableCensus.Scheduled ? HashStore.Scheduled : HashStore.Resume;
-		const growthStage = j.census === TableCensus.Scheduled ? HeapServiceTableGrowthStage.Scheduled
-			: j.census === TableCensus.RetryCurrent ? HeapServiceTableGrowthStage.RetryCurrent
-			: j.census === TableCensus.RetryFresh ? HeapServiceTableGrowthStage.RetryFresh : HeapServiceTableGrowthStage.Idle;
-		const { key, value, result, instructionPc, destination, wanted } = j;
-		j.record = 0; j.census = TableCensus.None;
-		const slot = this.insertHashWithAdmission(record, key, value, policy, 0, cpu, j, j.recovery, growthStage);
-		if (slot === HASH_STORE_DECLINED) return false;
-		j.result = result; j.instructionPc = instructionPc; j.destination = destination; j.wanted = wanted;
-		if (slot !== HASH_STORE_PENDING) {
-			this.heap.writeTableAssignment(record, valueTag(value), valuePayload(value), key);
-			this.updateLengthHint(record, this.getArrayIndex(key), true);
-		}
-		return true;
-	}
-	private emptyTailSlots(tagOffset: number, remaining: number, cycles: number): number {
-		const ram = this.heap.memory.ramData(), limit = Math.min(remaining, cycles * 4);
-		let n = 0;
-		while (n < limit && !ram[tagOffset + n]) ++n;
-		return n;
-	}
-	public advanceRebuild(j: TableRebuild, cycles: number): number {
-		if (cycles <= 0) return cycles;
-		const memory = this.heap.memory;
-		const tags = j.storage + 8 * j.capacity, oldTags = j.source + 8 * j.count;
-		const mask = j.capacity - 1, bytes = TableRecords.hashNodeBytes(j.capacity);
-		const oldArray = this.arrayCapacity(j.record), array = j.arrayStorage ? j.arraySlots : oldArray;
-		const oldBase = this.arrayAddress(j.record), base = j.arrayStorage || oldBase, trigger = this.getArrayIndex(j.key) >>> 0;
-		const inPlace = j.arrayStorage !== 0 && j.arrayStorage === oldBase;
-		const shrinking = array < oldArray, sources = j.count + (shrinking ? oldArray - array : 0);
-		const transfer = shrinking ? 0 : 5 * j.arraySlots - (inPlace ? 4 * oldArray : 0);
-		if (j.arrayCleared < transfer) {
-			const n = Math.min(transfer - j.arrayCleared, 16 * cycles);
-			const start = (j.arrayStorage & RAM_RECORD_WORD_MASK) + j.arrayCleared;
-			const ram = memory.ramData(), target = base & RAM_RECORD_WORD_MASK, end = j.arrayCleared + n;
-			if (inPlace) {
-				// The tag planes can overlap. Move from the high end first, then clear the two extensions.
-				const payloadEnd = transfer - (array - oldArray);
-				for (let at = j.arrayCleared; at < end;) {
-					const next = Math.min(end, at < oldArray ? oldArray : at < payloadEnd ? payloadEnd : transfer);
-					const dest = target + (at < oldArray ? 4 * array + oldArray - next :
-						at < payloadEnd ? 4 * oldArray + at - oldArray : 4 * array + oldArray + at - payloadEnd);
-					if (at < oldArray) {
-						const source = target + 5 * oldArray - next;
-						ram.copyWithin(dest, source, source + next - at);
-					} else ram.fill(0, dest, dest + next - at);
-					memory.invalidateRamWrite(dest, next - at);
-					at = next;
-				}
-			} else if (!oldArray) ram.fill(0, start, start + n);
-			else {
-				const source = this.arrayAddress(j.record) & RAM_RECORD_WORD_MASK;
-				for (let at = j.arrayCleared; at < end;) {
-					const next = Math.min(end, at < oldArray * 4 ? oldArray * 4 : at < array * 4 ? array * 4
-						: at < array * 4 + oldArray ? array * 4 + oldArray : 5 * array);
-					if (at < oldArray * 4) ram.copyWithin(target + at, source + at, source + next);
-					else if (at >= array * 4 && at < array * 4 + oldArray) {
-						const tag = source + oldArray * 4 + (at - array * 4);
-						ram.copyWithin(target + at, tag, tag + next - at);
-					} else ram.fill(0, target + at, target + next);
-					at = next;
-				}
-			}
-			if (!inPlace) memory.invalidateRamWrite(start, n);
-			j.arrayCleared += n;
-			cycles -= (n + 15) >>> 4;
-			if (j.arrayCleared < transfer || (cycles === 0 && j.cleared < bytes)) return cycles;
-		}
-		if (j.cleared < bytes) {
-			const n = Math.min(bytes - j.cleared, 16 * cycles);
-			const end = j.cleared + n, split = Math.max(j.cleared, Math.min(end, 10 * j.capacity));
-			const ram = memory.ramData(), base = j.storage & RAM_RECORD_WORD_MASK;
-			ram.fill(0, base + j.cleared, base + split);
-			ram.fill(0xff, base + split, base + end);
-			memory.invalidateRamWrite(base + j.cleared, n);
-			j.cleared = end;
-			cycles -= (n + 15) >>> 4;
-			if (end < bytes) return cycles;
-			if (j.capacity > TableRecords.HASH_CENSUS_LIMIT) {
-				const source = j.source + TableRecords.hashNodeBytes(j.count);
-				memory.writeRamRecordWord(j.storage + bytes, (j.count > TableRecords.HASH_CENSUS_LIMIT ? memory.readRamRecordWord(source) : 0) + (trigger >= array ? 1 : 0));
-				if (j.capacity >= TableRecords.HASH_BAND_CAPACITY) {
-					const target = (j.storage + bytes + 4) & RAM_RECORD_WORD_MASK;
-					memory.ramData().fill(0, target, target + 32 * 4);
-					memory.invalidateRamWrite(target, 32 * 4);
-					if (trigger >= array) this.adjustIntegerBand(j.storage, j.capacity, valueTag(j.key), valuePayload(j.key), 1);
-				}
-			}
-			const home = hashCanonicalTableKey(j.key) & mask;
-			if (trigger >= array) {
-				this.writeSlot(j.storage, tags, home, valueTag(j.key), valuePayload(j.key));
-				this.writeSlot(j.storage, tags, j.capacity + home, valueTag(j.value), valuePayload(j.value));
-			}
-		}
-		while (j.homes < sources && cycles > 0) {
-			const slot = array + j.homes - j.count;
-			if (j.homes >= j.count) {
-				const n = this.emptyTailSlots((oldBase & RAM_RECORD_WORD_MASK) + 4 * oldArray + slot, sources - j.homes, cycles);
-				if (n) { j.homes += n; cycles -= (n + 3) >>> 2; continue; }
-			}
-			const i = j.homes++;
-			cycles -= 8;
-			const tail = i >= j.count;
-			const kt = tail ? ValueTag.Integer : memory.readRamRecordByte(oldTags + i);
-			const vt = memory.readRamRecordByte(tail ? oldBase + 4 * oldArray + slot : oldTags + j.count + i);
-			const valueAddress = tail ? oldBase + 4 * slot : j.source + 4 * (j.count + i);
-			if (kt === ValueTag.Nil || vt === ValueTag.Nil) continue;
-			const kw = tail ? slot + 1 : memory.readRamRecordWord(j.source + 4 * i), vw = memory.readRamRecordWord(valueAddress);
-			const index = (kw - 1) >>> 0;
-			if (kt === ValueTag.Integer && index < array) {
-				this.writeSlot(base, base + 4 * array, index, vt, vw);
-				if (j.count > TableRecords.HASH_CENSUS_LIMIT) this.adjustHashLive(j.storage, j.capacity, -1);
-				continue;
-			}
-			if (tail || j.count <= TableRecords.HASH_CENSUS_LIMIT) this.adjustHashLive(j.storage, j.capacity, 1);
-			this.adjustIntegerBand(j.storage, j.capacity, kt, kw, 1);
-			const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
-			if (memory.readRamRecordByte(tags + home) === ValueTag.Nil) {
-				this.writeSlot(j.storage, tags, home, kt, kw);
-				this.writeSlot(j.storage, tags, j.capacity + home, vt, vw);
-			} else ++j.collisions;
-		}
-		if (j.homes < sources) return cycles;
-		const links = tags + 2 * j.capacity;
-		while (j.collisions && j.cursor < sources && cycles > 0) {
-			const slot = array + j.cursor - j.count;
-			if (j.cursor >= j.count) {
-				const n = this.emptyTailSlots((oldBase & RAM_RECORD_WORD_MASK) + 4 * oldArray + slot, sources - j.cursor, cycles);
-				if (n) { j.cursor += n; cycles -= (n + 3) >>> 2; continue; }
-			}
-			cycles -= 8;
-			const i = j.cursor;
-			const tail = i >= j.count;
-			const kt = tail ? ValueTag.Integer : memory.readRamRecordByte(oldTags + i);
-			const vt = memory.readRamRecordByte(tail ? oldBase + 4 * oldArray + slot : oldTags + j.count + i);
-			const valueAddress = tail ? oldBase + 4 * slot : j.source + 4 * (j.count + i);
-			const kw = tail ? slot + 1 : memory.readRamRecordWord(j.source + 4 * i);
-			if (kt !== ValueTag.Nil && vt !== ValueTag.Nil && !(kt === ValueTag.Integer && ((kw - 1) >>> 0) < array)) {
-				const home = hashCanonicalTableKey(valueFromTag(kt, kw)) & mask;
-				if (memory.readRamRecordByte(tags + home) !== kt || memory.readRamRecordWord(j.storage + 4 * home) !== kw) {
-					const free = j.free & mask;
-					j.free = (j.free - 1) >>> 0;
-					if (memory.readRamRecordByte(tags + free) !== ValueTag.Nil) continue;
-					this.writeSlot(j.storage, tags, free, kt, kw);
-					this.writeSlot(j.storage, tags, j.capacity + free, vt, memory.readRamRecordWord(valueAddress));
-					this.setHashNext(links, j.capacity, free, this.hashNext(links, j.capacity, home));
-					this.setHashNext(links, j.capacity, home, free);
-					--j.collisions;
-				}
-			}
-			++j.cursor;
-		}
-		if (j.collisions && j.cursor < sources) return cycles;
-		if (shrinking && j.arrayCleared < array) {
-			if (cycles <= 0) return cycles;
-			const n = Math.min(array - j.arrayCleared, 16 * cycles);
-			const dest = (oldBase & RAM_RECORD_WORD_MASK) + 4 * array + j.arrayCleared;
-			const from = dest + 4 * (oldArray - array);
-			memory.ramData().copyWithin(dest, from, from + n);
-			memory.invalidateRamWrite(dest, n);
-			j.arrayCleared += n; cycles -= (n + 15) >>> 4;
-			if (j.arrayCleared < array) return cycles;
-		}
-		this.heap.tableEntriesMoved(j.record);
-		const oldHash = this.hashSize(j.record);
-		if (j.arrayStorage) {
-			if (shrinking && array) this.heap.arena.shrinkBacking(oldBase, 5 * array);
-			else if (!array || (oldArray && !inPlace)) this.heap.arena.free(oldBase);
-			this.writeHeader(j.record, TableHeader.ArrayStorage, array ? base : 0);
-			this.writeHeader(j.record, TableHeader.Array, array);
-		}
-		if (trigger < array) this.writeSlot(base, base + 4 * array, trigger, valueTag(j.value), valuePayload(j.value));
-		if (j.source || j.storage) {
-			this.bindHash(j.record, j.capacity, j.storage);
-			if (j.free !== mask) this.writeHeader(j.record, TableHeader.Free, j.free);
-		}
-		this.heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(oldArray, oldHash), TableRecords.allocationCharge(array, this.hashSize(j.record)));
-		if (valueTag(j.key) === ValueTag.String && valuePayload(j.key) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
-		this.heap.writeTableAssignment(j.record, valueTag(j.value), valuePayload(j.value), j.key);
-		const index = this.getArrayIndex(j.key);
-		if (index >= 0) this.updateLengthHint(j.record, index, true);
-		j.record = 0;
-		return cycles;
 	}
 	private rebuildHashOnly(record: number, oldWords: number, oldHash: number, storage: number, hash: number,
 		key: Value, value: Value): number {

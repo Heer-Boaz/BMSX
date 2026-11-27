@@ -85,7 +85,6 @@ try {
 		function held() {
 			assert.equal(cpu.isHaltedUntilIrq(), true);
 			assert.equal(cpu.readFramePc(caller), waitPc);
-			assert.equal(cpu.allocationParked(), false, 'no host-owned retry was parked');
 			observe('P', `${caller + 1} ${waitPc}`);
 		}
 		function grant(cycles: number) {
@@ -95,7 +94,6 @@ try {
 			assert.ok(used > 0, 'recovery spends ordinary guest instruction cycles');
 			assert.equal(stage, 0);
 			assert.equal(cpu.readFramePc(caller), waitPc);
-			assert.equal(cpu.allocationParked(), false);
 			observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 		}
 		const args = [management, HeapServiceRecordKind.Table, requestedArray, requestedHash, HeapServiceRecordMode.Direct, 0];

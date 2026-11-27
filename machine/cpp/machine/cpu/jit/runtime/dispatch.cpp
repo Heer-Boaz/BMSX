@@ -42,10 +42,6 @@ i32 CPU::assignNativeTableField(CPU* cpu, u32 receiver, StringId key, const Valu
 	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, *value);
 }
 
-i32 CPU::assignNativeHintedTableField(CPU* cpu, u32 receiver, StringId key, const NativeHintedFieldWrite* write) noexcept {
-	return TableRecord(cpu->m_heap, receiver).tryAssignStringField(key, write->value, write->extraHashSlots);
-}
-
 NativeBuiltinCallOutcome CPU::runNativeBuiltinLeaf(CPU* cpu, NativeBlockRunState* state, const NativeBlockExitSite* exit, u32 builtinWord) noexcept {
 	const auto& call = exit->operands.call;
 	const int base = call.callee;
@@ -449,7 +445,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			BMSX_UNREACHABLE();
 		}
 		if (transition == NativeBlockTransition::Redispatch
-			&& (cpu.allocationParked() || cpu.m_runSignals || cpu.canAcceptMaskableInterruptLine())) {
+			&& (cpu.m_runSignals || cpu.canAcceptMaskableInterruptLine())) {
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			++gateProfile.returns;
 #endif

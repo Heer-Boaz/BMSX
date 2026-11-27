@@ -188,14 +188,6 @@ void CPU::reset() {
 		m_executionAddressSpace.resolveSystemDomain();
 	const u32 systemResetFunctionAddress = systemBoot.startupFunctionAddress;
 	const u32 systemExceptionFunctionAddress = systemBoot.exceptionFunctionAddress;
-	if (tableRebuild.record && tableRebuild.arrayStorage) {
-		TableRecord table(m_heap, tableRebuild.record);
-		if (table.arrayAddress() == tableRebuild.arrayStorage) {
-			if (tableRebuild.arraySlots < table.arrayCapacity() && !tableRebuild.arrayCleared)
-				tableRebuild.arrayStorage = 0; // The old allocation still belongs entirely to the record.
-			else table.advanceRebuild(tableRebuild, std::numeric_limits<int>::max());
-		}
-	}
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_systemGlobalBank.detach();
 	m_globalBank.detach();
@@ -206,13 +198,7 @@ void CPU::reset() {
 	m_runSignals = 0u;
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
-	m_pendingAllocation = {};
 	m_stringComparison = {};
-	if (tableRebuild.record) {
-		if (tableRebuild.storage) m_heapAllocator.free(tableRebuild.storage);
-		if (tableRebuild.arrayStorage) m_heapAllocator.free(tableRebuild.arrayStorage);
-	}
-	tableRebuild = {};
 	m_programExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_SYSTEM_ENTRY;
 	m_cop0Words[COP0_CAUSE] = 0u;
@@ -1105,7 +1091,6 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 	m_runSignals &= ~(RunMemoryBlocked | RunHardHalted | RunYield);
 	m_memoryWriteBlockedAddress = 0u;
 	m_pendingMemory.kind = PendingMemoryKind::None;
-	m_pendingAllocation = {};
 	m_stringComparison = {};
 	[[maybe_unused]] const auto* entry = enterDirectFrame(0u);
 	if (!entry) return;
@@ -1119,7 +1104,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
 	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
@@ -1142,7 +1127,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	u32 functionAddress
 ) {
 	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	if (allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	auto* image = executionImageForDomain(executionDomainId);
 	if (!image || !readFunctionRecord(*image, functionAddress, executionBusSignalsForDomain(executionDomainId))) {
@@ -1178,8 +1163,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.memoryWriteBlockedAddress = m_memoryWriteBlockedAddress;
 	state.pendingMemory = m_pendingMemory;
 	state.stringComparison = m_stringComparison;
-	if (tableRebuild.record) state.rebuild = tableRebuild;
-	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.systemVectorWord = m_cop0Words[COP0_SYSTEM_VECTOR];
 	state.previousRootContextWord = m_cop0Words[COP0_CONTEXT];
@@ -1268,8 +1251,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
 	m_pendingMemory = state.pendingMemory;
 	m_stringComparison = state.stringComparison;
-	tableRebuild = state.rebuild;
-	m_pendingAllocation = state.pendingAllocation;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
 	m_cop0Words[COP0_SYSTEM_VECTOR] = state.systemVectorWord;
 	m_cop0Words[COP0_CONTEXT] = state.previousRootContextWord;
@@ -1448,7 +1429,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 
 bool CPU::enterPendingInterrupt() {
 	if (fixedInterruptActive() || heapServiceActive()) return false;
-	if (m_pendingMemory.kind != PendingMemoryKind::None || allocationParked() || m_stringComparison.remaining || tableRebuild.record) return false;
+	if (m_pendingMemory.kind != PendingMemoryKind::None || m_stringComparison.remaining) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
@@ -1704,7 +1685,6 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_heap_service.inl"
-#include "machine/cpu/cpu_bios_call.inl"
 #include "machine/cpu/cpu_heap_record.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
@@ -1797,11 +1777,6 @@ RunResult CPU::runLoop(
 				}
 				if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
 					advanceStringComparison(*thread.currentFrame);
-					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-				}
-				if (admission == GrantAdmission::Admitted && tableRebuild.record) {
-					advanceTableStore(*thread.currentFrame);
-					if (allocationParked()) return RunResult::ParkedAllocation;
 					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
 				}
 				switch (admission) {
@@ -2249,9 +2224,6 @@ dispatch_native_block: {
 				total.concatn += counts.concatn;
 #endif
 				if (nativeState.error) std::rethrow_exception(std::exchange(nativeState.error, {}));
-				if constexpr (!HeapService) {
-					if (allocationParked()) return RunResult::ParkedAllocation;
-				}
 				DISPATCH_CONTINUE();
 			}
 #endif
@@ -2366,8 +2338,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 	m_deviceClock = deviceClock;
 	ScopeExit endClock([this] { m_deviceClock = nullptr; });
 	if (heapServiceActive()) {
-		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
-		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
 		const u32 flags = m_heapServiceView.firstFrame->readControl(FrameField::Flags);
 		const bool resident = (flags & FRAME_RESIDENT_ACTIVATION) != 0u;
 		m_runKind = kind;
@@ -2391,11 +2361,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				if (&view != m_activeThread && view.address != 0u) view.select(0u);
 			try {
 				if (resident) finishResidentCall(flags);
-				else if (completion != HeapServiceBiosCallKind::Idle) {
-					finishBiosCall(completion);
-				} else {
-					finishClosureReservation();
-				}
+				else finishClosureReservation();
 			} catch (const LuaOutOfMemorySignal&) {
 				retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 			} catch (const LuaThrownValueError& error) {
@@ -2407,10 +2373,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
 		return (flags & FRAME_FIXED_WORK) != 0u && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
-	}
-	if (allocationParked()) {
-		instructionBudgetRemaining = instructionBudget;
-		return RunResult::ParkedAllocation;
 	}
 	m_runKind = kind;
 	ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
@@ -2437,7 +2399,7 @@ RunResult CPU::runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBud
 	if (auto* image = cpu.m_activeExecutionImage; image && image->nativeWarmup.entryPc
 		&& cpu.admitGrant(*cpu.m_activeThread, targetDepth, instructionBudget) == GrantAdmission::Admitted
 		&& cpu.m_activeThread->currentFrame->executionImage == image
-		&& !cpu.tableRebuild.record && !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
+		&& !cpu.m_stringComparison.remaining && cpu.m_pendingMemory.kind == PendingMemoryKind::None
 		&& cpu.peekPendingInterrupt() == AcceptedInterruptKind::None) {
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 		// Preserve the request until no worker snapshot can overlap it.
@@ -2655,7 +2617,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (heapServiceActive() || fixedInterruptActive() || allocationParked() || m_stringComparison.remaining || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (heapServiceActive() || fixedInterruptActive() || m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	auto* publishedImage = executionImageForDomain(executionDomainId);
 	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))
@@ -2944,15 +2906,6 @@ void CPU::publishHeapRemarkHead() {
 	if (m_stringComparison.remaining) {
 		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ComparisonLeft), m_stringComparison.left, m_stringComparison.right);
 	}
-	if (allocationParked()) {
-		const auto& assignment = m_pendingAllocation;
-		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), assignment.receiver);
-		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(assignment.key)), valuePayload(assignment.key));
-		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(assignment.value)), valuePayload(assignment.value));
-		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 1u);
-	} else {
-		m_memory.writeRamRecordWord(head + static_cast<u32>(Field::HasPendingAssignment), 0u);
-	}
 }
 
 void CPU::markRootHead(GcHeap& heap) {
@@ -2968,11 +2921,6 @@ void CPU::markRootHead(GcHeap& heap) {
 	heap.markValue(valueFromTag(static_cast<ValueTag>(heap.diagnosticWord(Field::StringIndexTag)),
 		heap.diagnosticWord(Field::StringIndexWord)));
 	if (m_stringComparison.remaining) { heap.markString(m_stringComparison.left); heap.markString(m_stringComparison.right); }
-	if (allocationParked()) {
-		heap.markValue(valueTable(m_pendingAllocation.receiver));
-		heap.markValue(m_pendingAllocation.key);
-		heap.markValue(m_pendingAllocation.value);
-	}
 }
 
 void CPU::markScopedRoots(GcHeap& heap) {

@@ -33,7 +33,7 @@ local hash_band_threshold<const> = 1024 -- T:97 C:834
 local general_mode<const> = 1
 local scheduled_mode<const> = 0 -- P:669-679,852-856 Q:301-314; General covers Direct and RAWSET
 local current_or_fresh<const> = 0 -- P:806-808 Q:198
-local out_of_memory<const> = 9 -- P:867 Q:267; tag-result gate reserves zero for success
+local out_of_memory<const> = 9 -- P:867 Q:267
 local cpp_policy<const> = 1 -- K:95-102; use the existing C++ color-write policy
 
 struct growth_receiver
@@ -77,9 +77,10 @@ end
 -- GC root banks remain stationary until RET. Its old split-path String
 -- transport is borrowed alongside their initial projection, and refilled
 -- from the canonical latch only if a later GC fork follows a reserve.
-local borrow_collection_roots<const> = function(management, projected) -- P:4043-4053 X:165-177
+local borrow_collection_roots<const> = function(management, projected, interrupted) -- P:4043-4053 X:165-177
 	if not projected then -- P:4044 X:167
-		root_inputs.publish(management) -- P:4043-4053 X:165-177
+		if interrupted then root_inputs.publish_interrupt(management)
+		else root_inputs.publish(management) end -- P:4043-4053 X:165-177
 	else -- P:4049 X:172; the banks are already projected
 		root_inputs.borrow_string_work(management) -- S:452-455 J:442-445 G:751 K:777
 	end
@@ -147,7 +148,7 @@ local retry_old_hash<const> = function(management, record, hash, kt, kw, vt, vw)
 	return true -- T:560 C:838
 end
 
-local grow_table<const> = function(management, source_cycles, preferred_extra, mode) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
+local grow_table<const> = function(management, source_cycles, preferred_extra, mode, interrupted) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
 	local scheduled<const> = mode == scheduled_mode -- T:769-771,802 C:322-325,364-368; admission policy, not the CPU's run-kind
 	local state<const> = management + layout.arena_offset -- T:792 C:252
 	local head<const> = management + layout.remark_head_offset -- P:5245 Y:3252
@@ -161,7 +162,6 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 	local scratch<const> = management + layout.table_plan_offset -- T:670-756 C:155-246; raw density/bands, then reservation request
 	local density<const>: *growth_density = ram_base + scratch -- T:774-778 C:325-330
 	local request<const>: *growth_request = ram_base + scratch -- P:693-704,714-715 Q:105-124,128-129; same phase-disjoint bytes
-	local device_cycles<const>: *word = layout.remaining_device_cycles_address -- T:685-688 C:166-170; real source allowance frontier
 	local array_cycles<const>, hash_cycles<const> = table_plan.census_cycles(old_array, old_hash, kt, kw) -- T:764-767 C:313-317
 	local projected, borrowed = false, false -- P:4043-4058 X:165-182; root publication is lazy
 	local recovery = current_or_fresh -- P:806-808 Q:197-199
@@ -177,7 +177,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				density.kept = 0 -- T:775 C:326-330
 				if not resume then source_cycles = table_plan.spend_census_grant(record, scratch, source_cycles) end -- T:778 C:330
 				while density.cursor ~= old_array do -- T:911-913 C:391-393
-					source_cycles = *device_cycles -- T:911 C:392; only at a genuine census resumption
+					source_cycles = cop0.event_cycles -- T:911 C:392; only at a genuine census resumption
 					source_cycles = table_plan.spend_census_grant(record, scratch, source_cycles) -- T:912 C:392
 				end
 				counted = 1 -- T:920 C:402-405
@@ -197,7 +197,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 						local pressure<const> = admission.logical_assist_pressure(state, charged) -- H:88 N:88
 						local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- H:89 N:89
 						if not borrowed then -- P:4043-4053 X:165-177
-							borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177
+							borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177
 							projected, borrowed = true, true -- P:4043-4053 X:165-177
 						end
 						local work<const> = collection.step(management, words, 0, 0, operands_offset) -- H:89 N:89; explicit receiver/key/value scope
@@ -210,7 +210,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				local words<const> = admission.reservation_assist_allowance(state, bytes, source_cycles) -- T:792-793 C:255; zero is an admitted quantum
 				if words >= 0 then -- G:934-953 K:986-1003
 					if not borrowed then -- P:4043-4053 X:165-177
-						borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177
+						borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177
 						projected, borrowed = true, true -- P:4043-4053 X:165-177
 					end
 					local work<const> = collection.step(management, words, 0, 0, operands_offset) -- T:793 C:255
@@ -236,22 +236,22 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				else -- T:868 C:285
 					result = table_resize.execute_table_resize(management, record, array, hash, scratch) -- T:868-908 C:285,415-459
 				end
-				if result ~= 0 then return 0, table_tag, record end -- T:796 C:358; operation and epilogue already completed
+				if result ~= 0 then return true end -- T:796 C:358; operation and epilogue already completed
 			end
 			if extra == 0 then break end -- T:798-802 C:360-365
 			extra = 0 -- T:799 C:361; same attempt and remaining allowance
 		end
 		recovery = admission.begin_allocation_recovery(state, recovery) -- P:806-808,828-865 Q:197,207-269 G:1110-1115,1121 K:1213-1220,1224; Current if active, then Fresh once
-		if recovery < 0 then return out_of_memory + 1, 0, 0 end -- P:861-869 Q:259-268 G:1111 K:1214; terminal OOM at the original issuer
-		borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177; no pending borrowed work at this point
+		if recovery < 0 then return false end -- P:861-869 Q:259-268 G:1111 K:1214; terminal OOM at the original issuer
+		borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177; no pending borrowed work at this point
 		projected = true -- P:4043-4053 X:165-177
 		if scheduled then -- T:802 C:364-366; Scheduled owns its stopped, parked recovery
 			*parked = 1 -- P:5252-5259 Y:3258-3265; native parked root, not an explicit assist triple
 			collection.finish_epoch(management, collection.step_words, 0, 0, 0) -- P:828-838 Q:211-225
 			*parked = 0 -- P:853-863 Q:251-268
 			root_inputs.release_string_work(management) -- P:4055-4058 X:179-182
-			source_cycles = *device_cycles -- P:849-854 Q:245-250; a resumed instruction's allowance
-			if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return 0, table_tag, record end -- P:852-858 Q:249-257
+			source_cycles = cop0.event_cycles -- P:849-854 Q:245-250; a resumed instruction's allowance
+			if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return true end -- P:852-858 Q:249-257
 			resume = true -- T:510,770,786,791 C:740,323,351
 		else -- T:803-809 C:367-373; General does not park or repeat the own-key probe
 			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, operands_offset) -- T:803 C:367 G:1119-1124 K:1223-1227; scoped operands, original fixed epoch quantum
@@ -261,11 +261,29 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				local slot<const> = existing.insert_hash_without_growth(management + layout.control_offset, record, kt, kw, vt, vw, cpp_policy) -- T:806-809 C:370-372; weak clearing may have opened the old backing
 				if slot >= 0 then -- T:809 C:373
 					assignment.finish_table_insertion(management, record, kt, kw, vt, vw, cpp_policy) -- T:524-526,565-566 C:761,847-848; continue the original successful insertion epilogue
-					return 0, table_tag, record -- T:809 C:373
+					return true -- T:809 C:373
 				end
 			end
 		end
 	end
+end
+
+-- A backing fault supplies the already-resolved own assignment. Do not
+-- repeat the metatable traversal, probe or key canonicalization.
+local store_without_backing<const> = function(receiver, key, value, extra, cycles)
+	local management<const> = layout.management_offset
+	local scratch<const> = ram_base + management + layout.value_cell_offset
+	local operand<const>: *value = scratch
+	local word<const>: *u32 = scratch
+	local tag<const>: *u8 = scratch + layout.value_cell_tag_offset
+	local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
+	*operand = receiver
+	operands.receiver = *word
+	*operand = key
+	operands.key_tag, operands.key_word = *tag, *word
+	*operand = value
+	operands.value_tag, operands.value_word = *tag, *word
+	return (grow_table(management, cycles, extra, scheduled_mode, true))
 end
 
 -- RawSet uses the existing normal tagged CALL transport. No metamethod
@@ -325,9 +343,8 @@ local raw_set<const> = function(target, key, value, supplied)
 		operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
 		operands.value_tag, operands.value_word = vt, vw
 		local cycles<const>: *u32 = layout.call_cycles_address
-		local status<const> = grow_table(management, *cycles, 0, general_mode)
-		if status ~= 0 then
-			*fault = status - 1
+		if not grow_table(management, *cycles, 0, general_mode, false) then
+			*fault = out_of_memory
 			return nil
 		end
 	end
@@ -341,5 +358,5 @@ end
 
 return {
 	internal = { borrow_collection_roots = borrow_collection_roots, retry_old_hash = retry_old_hash, find_hash_node = find_hash_node },
-	grow_table = grow_table, raw_set = raw_set,
+	grow_table = grow_table, raw_set = raw_set, store_without_backing = store_without_backing,
 }

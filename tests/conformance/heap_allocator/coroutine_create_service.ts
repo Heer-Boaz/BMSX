@@ -16,8 +16,8 @@ import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } fro
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_RESULT_FAULT, HeapServiceBiosCallKind, HeapServiceResidentField,
+	HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_RESULT_FAULT, HeapServiceResidentField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -99,11 +99,9 @@ try {
 			const originalWhite = gc.white();
 			const raised = invalid ? LUA_FAULT_REASON_INVALID_ARGUMENT : LUA_FAULT_REASON_OUT_OF_MEMORY;
 			const faultId = failure ? cpu.stringPool.find(invalid ? 'Invalid argument.' : 'Out of memory.')! : 0;
-			const mailbox = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
 			const context = management + HEAP_SERVICE_RESIDENT_OFFSET;
 			const pinned = management + HEAP_SERVICE_FRAME_OFFSET, pinnedValues = management + HEAP_SERVICE_VALUE_OFFSET;
 			const read = (field: HeapServiceResidentField) => memory.readRamRecordWord(context + field);
-			const oldKind = () => memory.readRamRecordWord(mailbox + HeapServiceBiosCallField.Kind);
 			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const file = join(directory, `O${optLevel}-${name}`), nativePartial = `${file}.native`;
 			writeFileSync(`${file}.seed`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -112,7 +110,6 @@ try {
 			function checksum(first: number, last: number) { observe(`H ${first} ${last}`, hashBytes(memory.ramData(), first, last - first)); }
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-				assert.equal(cpu.allocationParked(), false);
 				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				return result;
 			}
@@ -121,7 +118,6 @@ try {
 			const baseline = history.capture(memory, null);
 			for (let i = 0; i < 64 && !cpu.heapServiceActive(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(cpu.heapServiceActive(), true);
-			assert.equal(oldKind(), HeapServiceBiosCallKind.Idle);
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.Function), residentFunctionAddress({ image: system.layout, symbols: system.symbols }, 'kernel/thread_create', 'create_coroutine'));
 			assert.notEqual(memory.readRamRecordWord(pinned + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION, 0);
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.ReturnCount), fixed ? 2 : 0);
@@ -154,7 +150,6 @@ try {
 			function finish() {
 				for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) assert.equal(grant(113), RunResult.Yielded);
 				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(oldKind(), HeapServiceBiosCallKind.Idle);
 				assert.equal(read(HeapServiceResidentField.SourceCount), failure ? HEAP_SERVICE_RESULT_FAULT : 1);
 				if (failure) assert.equal(read(HeapServiceResidentField.SourceBase), raised);
 				if (invalid) {

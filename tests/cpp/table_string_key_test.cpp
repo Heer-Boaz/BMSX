@@ -42,7 +42,7 @@ void alignedStringHomesDisplaceOnlyCollisions(CPU& cpu) {
 	int prediction = slot;
 	require(table.readOwnStringField(collided, prediction) == valueInteger(22) && prediction != slot,
 		"a displaced own field repairs its site from the live collision chain");
-	require(table.tryAssignCachedStringField(incoming, valueBool(false), prediction, 0) == slot
+	require(table.tryAssignCachedStringField(incoming, valueBool(false), prediction) == slot
 		&& table.getStringKey(collided) == valueInteger(22),
 		"a displaced write hint cannot overwrite a different live key");
 	require(table.readOwnStringField(incoming, prediction) == valueBool(false) && prediction == slot,
@@ -182,8 +182,8 @@ void collisionAndMutationParity(CPU& cpu) {
 	require(holder.storePredictedStringKey(keys[0], valueFloatBits(0x80000000u), assignment.slot)
 		&& holder.getStringKey(keys[0]) == valueFloatBits(0x80000000u),
 		"a warmed owned slot accepts an exact tagged overwrite");
-	require(holder.tryAssignCachedStringField(keys[0], valueNil(), assignment.slot, 0) == -1
-		&& holder.tryAssignCachedStringField(keys[0], valueInteger(47), holderSlot, 0) == TableRecord::HASH_STORE_DECLINED
+	require(holder.tryAssignCachedStringField(keys[0], valueNil(), assignment.slot) == -1
+		&& holder.tryAssignCachedStringField(keys[0], valueInteger(47), holderSlot) == TableRecord::HASH_STORE_DECLINED
 		&& isNil(holder.getStringKey(keys[0])), "deletion makes a matching hint defer to the live __newindex");
 	holderMeta.setStringKey(newIndex, valueNil());
 	source.resolveStringAssignment(keys[0], assignment);

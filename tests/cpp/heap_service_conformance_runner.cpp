@@ -271,37 +271,13 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y' && opcode != 'V')
-						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET, coroutine.create or VARARG");
+					if (opcode != 'C' && opcode != 'F' && opcode != 'Y' && opcode != 'V')
+						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, coroutine.create or VARARG");
 					const bool growField = opcode == 'F';
-					const bool rawSet = opcode == 'R';
 					const bool coroutine = opcode == 'Y';
 					const bool vararg = opcode == 'V';
-					const auto gate = vararg ? NativeBlockExit::Vararg : rawSet || coroutine ? NativeBlockExit::Call
+					const auto gate = vararg ? NativeBlockExit::Vararg : coroutine ? NativeBlockExit::Call
 						: growField ? NativeBlockExit::WriteField : NativeBlockExit::CreateClosure;
-					if (rawSet) {
-						auto& frame = *cpu.activeThread()->currentFrame;
-						const u32 closure = frame.readControl(FrameField::Closure);
-						const std::array original{frame.registers.get(0), frame.registers.get(1), frame.registers.get(2), frame.registers.get(3)};
-						const std::array overwrite{original[0], valueInteger(-1), valueInteger(1), original[3]};
-						// Use the restored completion frame for the first overwrite,
-						// then warm that exact guest CALL PC with ordinary activations.
-						frame.registers.set(1, overwrite[1]);
-						frame.registers.set(2, overwrite[2]);
-						for (int visit = 0; visit < 128; ++visit) {
-							if (visit != 0) cpu.beginCompletionCall(closure, {overwrite.data(), overwrite.size()});
-							auto warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-							for (int grant = 0; grant < 8 && warm == RunResult::Yielded && !cpu.heapServiceActive(); ++grant)
-								warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-							if (warm != RunResult::Halted || cpu.heapServiceActive())
-								throw std::runtime_error("Warm RAWSET overwrite did not complete without a service (grant "
-									+ std::to_string(static_cast<int>(warm)) + ", pinned " + std::to_string(cpu.heapServiceActive())
-									+ ", visit " + std::to_string(visit) + ", target " + std::to_string(valuePayload(original[0]))
-									+ ", PC " + std::to_string(cpu.readCurrentInstructionPc()) + ")");
-
-						}
-						cpu.beginCompletionCall(closure, {original.data(), original.size()});
-					}
 					u32 coroutineRoot = 0u;
 					if (coroutine) {
 						auto& frame = *cpu.activeThread()->currentFrame;
@@ -347,52 +323,39 @@ int main(int argc, char** argv) {
 					for (int grant = 0; grant < 512 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
 						result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
 					const u32 management = cpu.heapAllocator().managementOffset();
-					const u32 frontier = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-					const auto completion = static_cast<HeapServiceBiosCallKind>(memory.readRamRecordWord(
-						frontier + static_cast<u32>(HeapServiceBiosCallField::Kind)));
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once: "
 							+ std::to_string(allocation.entries - before.entries) + " entries, "
 							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
 							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
-					if (vararg) {
-						// The ordinary vector can finish the transfer within
-						// the grant, without entering a private service.
+					if (vararg || growField) {
+						const u32 cause = vararg ? CPU_CAUSE_CODE_REGISTER_WINDOW : CPU_CAUSE_CODE_STORAGE_WINDOW;
 						if (result != RunResult::Halted || cpu.heapServiceActive() || cpu.fixedInterruptActive()
-							|| cpu.readCauseWord() != CPU_CAUSE_CODE_REGISTER_WINDOW || cpu.activeThread()->address != owner
+							|| cpu.readCauseWord() != cause || cpu.activeThread()->address != (growField ? cpu.rootThread()->address : owner)
 							|| memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) != 0u)
-							throw std::runtime_error("Generated instruction did not retire through its register-window exception");
+							throw std::runtime_error("Generated instruction did not retire through its ordinary window exception: cause "
+								+ std::to_string(cpu.readCauseWord()) + ", run " + std::to_string(static_cast<int>(result)));
 						std::cout << allocation.entries - before.entries << ' ' << cpu.readCauseWord() << ' ' << cpu.readEpcWord() << '\n';
 						break;
 					}
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					if (result != RunResult::Yielded || !cpu.heapServiceActive())
 						throw std::runtime_error("The generated allocation did not suspend");
-					if (growField || rawSet || coroutine) {
-						const u32 imageAddress = SYSTEM_ROM_BASE
-							+ memory.readMappedU32LE(SYSTEM_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
-						const u32 descriptor = memory.readMappedU32LE(imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
-						const u32 root = coroutine ? coroutineRoot : memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
-							+ static_cast<u32>(HeapServiceOperation::TableGrow) * sizeof(u32));
-						const u32 activeRoot = memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Function));
-						const u32 origin = coroutine
-							? memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc))
-							: memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
-						const auto want = coroutine ? HeapServiceBiosCallKind::Idle
-							: rawSet ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
-						if (coroutine && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != FRAME_RESIDENT_ACTIVATION)
-							throw std::runtime_error("The fixed root did not retain its resident receiving mode");
-						if (completion != want || cpu.allocationParked() || activeRoot != root
-							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
+					if (coroutine) {
+						const u32 frame = management + HEAP_SERVICE_FRAME_OFFSET;
+						const u32 activeRoot = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
+						const u32 origin = memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc));
+						if (activeRoot != coroutineRoot || origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES
+							|| memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags)) != FRAME_RESIDENT_ACTIVATION)
 							throw std::runtime_error("The generated instruction did not issue its bound resident continuation");
 					} else if (memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
 							+ static_cast<u32>(HeapServiceClosureField::Destination)) == 0u || caller != cpu.readCurrentInstructionPc()) {
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
 					}
 					std::cout << allocation.entries - before.entries;
-					if (growField || rawSet || coroutine)
-						std::cout << ' ' << (coroutine ? FRAME_RESIDENT_ACTIVATION : static_cast<u32>(completion))
+					if (coroutine)
+						std::cout << ' ' << FRAME_RESIDENT_ACTIVATION
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else
@@ -409,7 +372,7 @@ int main(int argc, char** argv) {
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
 					const u32 management = cpu.heapAllocator().managementOffset();
 					std::cout << result << ' ' << (scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
-						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
+						<< ' ' << cpu.heapServiceActive()
 						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';

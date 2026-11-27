@@ -33,13 +33,10 @@ void FrameLoopState::resetFrameState(Runtime& runtime) {
 void FrameLoopState::beginFrameState(Runtime& runtime, i64 budget, i64 carry) {
 	frameActive = true;
 	runtime.vblank.beginTick();
-	// A timed service can cross a display tick while its caller's
-	// already admitted allocation prefix still owes cycle settlement.
 	frameState = {
 		.cycleBudgetRemaining = budget,
 		.cycleBudgetGranted = budget,
 		.cycleCarryGranted = carry,
-		.deferredAllocationCycles = frameState.deferredAllocationCycles,
 	};
 }
 
@@ -61,8 +58,7 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 	if (!frameActive) {
 		return runtime.frameScheduler.startScheduledFrame(runtime);
 	}
-	const auto& cpu = runtime.machine.cpu;
-	if (runtime.machine.scheduler.acceptedCpuCycles() != 0 || (!cpu.heapServiceActive() && cpu.allocationReady())) return true;
+	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
 	if (frameState.cycleBudgetRemaining <= 0) {
 		return runtime.frameScheduler.refillFrameBudget(runtime, frameState);
 	}
@@ -84,8 +80,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 			|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		if (consumeSystemReset(runtime)) return false;
 		const auto& cpu = runtime.machine.cpu;
-		if (!cpu.heapServiceActive() && !cpu.allocationParked()
-			&& cpu.queuedFixedWork()) return false;
+		if (!cpu.heapServiceActive() && cpu.queuedFixedWork()) return false;
 	}
 	if (runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) {
 		const bool executionStopped = runUpdatePhase(runtime);

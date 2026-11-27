@@ -14,7 +14,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -60,8 +60,6 @@ try {
 			oracle.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { gc, luaHeap: budget, heapAllocator: arena } = cpu;
 			const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-			const state = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-			const completion = () => memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind);
 			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const instruction = () => decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, pc());
@@ -105,7 +103,6 @@ try {
 			function grant(cycles: number) {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(spent > 0);
-				assert.equal(completion(), HeapServiceBiosCallKind.Idle, 'ordinary CALL never uses the selector mailbox');
 				record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
 				return { result, spent };
 			}
@@ -135,7 +132,6 @@ try {
 			function drain() {
 				for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) grant(1);
 				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(completion(), HeapServiceBiosCallKind.Idle);
 				assert.equal(cpu.getFrameRegisterCount(caller), resultTop);
 				assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(finished));
 				assert.equal(gc.epochWork(), ref.gc.epochWork());

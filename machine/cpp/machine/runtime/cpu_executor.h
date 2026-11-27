@@ -37,7 +37,6 @@ private:
 		Advanced,
 		InstructionYielded,
 		InstructionHalted,
-		ParkedAllocation,
 		ExecutionStopped,
 		Halted,
 	};

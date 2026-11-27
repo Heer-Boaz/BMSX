@@ -2418,83 +2418,6 @@ void nativeFixedStringMissReturnsWithinTheGrant([[maybe_unused]] u8 extraHashSlo
 #endif
 }
 
-enum class FieldPressure { Budget, Fragmented, Exhausted };
-
-void hintedFieldUnderPressure(FieldPressure pressure, bool weak = false) {
-	test::Blua32TestImage image;
-	image.mappedCode = false;
-	image.text.resize(3u * INSTRUCTION_BYTES);
-	image.constants = {std::string("new field")};
-	constexpr u8 extraHashSlots = 255;
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::WIDE), 0, 0, 0, extraHashSlots);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::SETFIELD), 0, 0, 1);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 0, 1, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 2}};
-	CpuMachine machine(image); // First execution takes the ordinary cold dispatch.
-	auto& cpu = machine.cpu;
-	auto& budget = cpu.luaHeap();
-	budget.setCollectionTarget(static_cast<u32>(budget.capacity()));
-	auto owner = bmsx::test::allocateTableReference(cpu, 0, 1);
-	auto regs = cpu.activeThread()->currentFrame->registers;
-	regs.set(0, valueTable(owner.address()));
-	regs.set(1, valueInteger(91));
-	cpu.activeThread()->currentFrame->setTop(2);
-	const auto field = *cpu.stringPool().find("new field");
-	const auto resident = cpu.stringPool().intern("resident field");
-	if (weak) {
-		auto mode = bmsx::test::allocateTableReference(cpu, 0, 1);
-		mode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
-		owner.setMetatableAddress(mode.address());
-		owner.setStringKey(resident, valueTable(bmsx::test::allocateTableReference(cpu).address()));
-	} else {
-		owner.setStringKey(resident, valueInteger(37));
-	}
-	const u32 originalStorage = owner.hashAddress();
-	bmsx::test::allocateTableReference(cpu, 2048, 0); // Unreachable; completes the refused backing reservation after GC.
-	auto& arena = cpu.heapAllocator();
-	const auto grownHash = TableRecord::hashCapacity(2 + extraHashSlots);
-	if (pressure == FieldPressure::Budget) {
-		const u32 required = TableRecord::allocationCharge(0, 2) - TableRecord::allocationCharge(0, 1);
-		cpu.memory().writeRamRecordWord(arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET, budget.capacity() - required);
-	} else {
-		const u32 minimum = TableRecord::storageBytes(0, 2);
-		const u32 hole = arena.allocate(minimum, true);
-		while (arena.allocate(4088u, true)) {}
-		while (arena.allocate(minimum, true)) {}
-		if (pressure == FieldPressure::Fragmented) arena.free(hole);
-		require(!arena.allocate(TableRecord::storageBytes(0, grownHash), true), "force a physical refusal of the preferred layout");
-	}
-	const auto budgetBefore = budget.usedBytes();
-	const int cycles = BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)];
-	const u32 pc = machine.rom.textAddress;
-	const auto result = cpu.runUntilDepth(0, cycles, 0u, CpuRunKind::Scheduled);
-	if (pressure != FieldPressure::Exhausted) {
-		require(result == RunResult::Yielded && !cpu.allocationParked() && cpu.readFramePc(0) == pc + 2u * INSTRUCTION_BYTES
-			&& owner.hashSlots() == 2 && owner.getStringKey(field) == valueInteger(91)
-			&& owner.getStringKey(resident) == valueInteger(37)
-			&& budget.usedBytes() - budgetBefore == TableRecord::allocationCharge(0, 2) - TableRecord::allocationCharge(0, 1),
-			"only the minimum reservation fits and is charged; the write completes without parking");
-		return;
-	}
-	require(result == RunResult::ParkedAllocation, "SETFIELD parks when even minimum backing is unavailable");
-	const auto pending = cpu.captureRuntimeState().pendingAllocation;
-	require(cpu.readFramePc(0) == pc && pending.instructionPc == pc && pending.lastPc == pc + INSTRUCTION_BYTES
-		&& pending.nextPc == pc + 2u * INSTRUCTION_BYTES
-		&& pending.receiver == owner.address() && pending.key == valueString(field)
-		&& pending.value == valueInteger(91) && pending.extraHashSlots == extraHashSlots
-		&& owner.hashAddress() == originalStorage && budget.usedBytes() == budgetBefore,
-		"the WIDE reservation and canonical operands are parked without publishing the store");
-	for (int step = 0; !cpu.allocationReady() && step < 120; ++step) cpu.advanceAllocationRecovery();
-	require(cpu.allocationReady(), "collection makes the retired decision retryable");
-	cpu.resumeAllocation();
-	require(!cpu.allocationParked() && cpu.readFramePc(0) == pending.nextPc && owner.getStringKey(field) == valueInteger(91),
-		"recovery completes exactly the parked assignment");
-	if (weak) require(owner.hashSlots() == 1 && owner.hashAddress() == originalStorage && isNil(owner.getStringKey(resident)),
-		"weak clearing opens a slot, so the hint does not force unnecessary growth");
-	else require(owner.hashSlots() == grownHash && owner.hashAddress() != originalStorage && owner.getStringKey(resident) == valueInteger(37),
-		"if growth is still required, it retains the exact extra-slot count");
-}
-
 void nativeDynamicStringMissReturnsWithinTheGrant() {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	test::Blua32TestImage image;
@@ -2650,10 +2573,6 @@ int main() {
 		nativeIntegerGrowthReturnsWithinTheGrant();
 		nativeFixedStringMissReturnsWithinTheGrant(0);
 		nativeFixedStringMissReturnsWithinTheGrant(7);
-		hintedFieldUnderPressure(FieldPressure::Budget);
-		hintedFieldUnderPressure(FieldPressure::Fragmented);
-		hintedFieldUnderPressure(FieldPressure::Exhausted);
-		hintedFieldUnderPressure(FieldPressure::Exhausted, true);
 		nativeDynamicStringMissReturnsWithinTheGrant();
 		std::cout << "Compiled table tests passed\n";
 	} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

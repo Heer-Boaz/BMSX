@@ -19,7 +19,6 @@ export const HEAP_SERVICE_WEAK_MODULE_PATH = 'kernel/gc_weak_quantum';
 export const HEAP_SERVICE_REMARK_MODULE_PATH = 'kernel/gc_remark';
 export const HEAP_SERVICE_ROOT_BANKS_MODULE_PATH = 'kernel/gc_root_banks';
 export const HEAP_SERVICE_CLOSURE_MODULE_PATH = 'kernel/closure_create';
-const TABLE_GROW_MODULE = 'kernel/table_grow';
 const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
 const CAPTURED_CLOSURE_MODULE = 'kernel/allocate_captured_closure';
@@ -44,7 +43,6 @@ const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
-	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
 	[HeapServiceOperation.CapturedClosure]: ['allocate_captured_closure', 6, CAPTURED_CLOSURE_MODULE],
 };

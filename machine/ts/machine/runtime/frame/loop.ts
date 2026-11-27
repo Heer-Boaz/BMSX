@@ -17,7 +17,6 @@ export class FrameLoopState {
 		cycleBudgetGranted: 0,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 0,
-		deferredAllocationCycles: 0,
 	};
 	public frameActive = false;
 
@@ -37,7 +36,6 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = 0;
 		state.cycleCarryGranted = 0;
 		state.activeCpuUsedCycles = 0;
-		state.deferredAllocationCycles = 0;
 	}
 
 	public captureState(): FrameLoopStateSnapshot {
@@ -55,7 +53,6 @@ export class FrameLoopState {
 		state.cycleBudgetGranted = snapshot.frameState.cycleBudgetGranted;
 		state.cycleCarryGranted = snapshot.frameState.cycleCarryGranted;
 		state.activeCpuUsedCycles = snapshot.frameState.activeCpuUsedCycles;
-		state.deferredAllocationCycles = snapshot.frameState.deferredAllocationCycles;
 		this.frameActive = snapshot.frameActive;
 	}
 
@@ -168,8 +165,8 @@ export class FrameLoopState {
 		if (!this.frameActive) {
 			return this.runtime.frameScheduler.startScheduledFrame();
 		}
-		const { cpu, scheduler } = this.runtime.machine;
-		if (scheduler.acceptedCpuCycles !== 0 || (!cpu.heapServiceActive() && cpu.allocationReady())) return true;
+		const { scheduler } = this.runtime.machine;
+		if (scheduler.acceptedCpuCycles !== 0) return true;
 		if (this.frameState.cycleBudgetRemaining <= 0) {
 			return this.runtime.frameScheduler.refillFrameBudget(this.frameState);
 		}
@@ -185,8 +182,7 @@ export class FrameLoopState {
 				|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 			if (this.consumeSystemReset()) return false;
 			const cpu = runtime.machine.cpu;
-			if (!cpu.heapServiceActive() && !cpu.allocationParked()
-				&& cpu.queuedFixedWork()) return false;
+			if (!cpu.heapServiceActive() && cpu.queuedFixedWork()) return false;
 		}
 		const state = this.frameState;
 		if (runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) {

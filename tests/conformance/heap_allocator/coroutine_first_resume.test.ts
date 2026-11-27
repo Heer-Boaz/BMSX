@@ -98,7 +98,6 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(cpu.heapServiceActive(), false);
-			assert.equal(cpu.allocationParked(), false);
 			assert.ok(paid > 0);
 			commands.push(`g ${cycles} 0`);
 			expected.push(`${result} ${paid} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);

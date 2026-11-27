@@ -20,8 +20,6 @@ constexpr auto wordOffset = NativeTableScratch::wordOffset;
 constexpr auto tagOffset = NativeTableScratch::tagOffset;
 constexpr auto hashOperand = (NativeBlockAbi::helperResultOffset + alignof(Value) - 1) & ~(alignof(Value) - 1);
 static_assert(hashOperand + sizeof(Value) <= NativeBlockAbi::stackBytes);
-static_assert(alignof(NativeHintedFieldWrite) == alignof(Value));
-static_assert(hashOperand + sizeof(NativeHintedFieldWrite) <= NativeBlockAbi::stackBytes);
 
 u32 SLJIT_FUNC assignNativeTableIdentity(GcHeap* heap, u32 receiverAddress, u32 keyAddress, const Value* value) noexcept {
 	return TableRecord(*heap, receiverAddress).tryAssignIdentityHash(valueTable(keyAddress), *value);
@@ -379,15 +377,10 @@ void NativeLowering::emitStringStoreMisses() {
 		if (store.keyIndex) emitPoolWord(*store.keyIndex, SLJIT_R2);
 		else sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_SP), keyWord);
 		emitValueTransportStore(c, SLJIT_SP, hashOperand, SLJIT_R0, SLJIT_R3);
-		const u8 extraHashSlots = store.exit->operands.table.extraHashSlots;
-		if (extraHashSlots)
-			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_SP), hashOperand + offsetof(NativeHintedFieldWrite, extraHashSlots),
-				SLJIT_IMM, extraHashSlots);
 		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.cpu));
 		sljit_get_local_base(c, SLJIT_R3, 0, hashOperand);
-		const auto target = extraHashSlots ? SLJIT_FUNC_ADDR(&CPU::assignNativeHintedTableField) : SLJIT_FUNC_ADDR(&CPU::assignNativeTableField);
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, target);
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4(32, P, 32, 32, P), SLJIT_IMM, SLJIT_FUNC_ADDR(&CPU::assignNativeTableField));
 		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		fault(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM,
 			TableRecord::HASH_STORE_DECLINED), *store.exit, store.registers);

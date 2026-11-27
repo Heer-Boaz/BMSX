@@ -51,7 +51,6 @@ template<class Writer> void writeFrameState(Writer& writer, const FrameState& st
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
-	writer.i32(state.deferredAllocationCycles);
 }
 
 FrameState readFrameState(BinaryReader& reader) {
@@ -61,7 +60,6 @@ FrameState readFrameState(BinaryReader& reader) {
 	state.cycleBudgetGranted = reader.i64();
 	state.cycleCarryGranted = reader.i64();
 	state.activeCpuUsedCycles = reader.i64();
-	state.deferredAllocationCycles = reader.i32();
 	return state;
 }
 
@@ -1174,32 +1172,6 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 	const auto& scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.boolean(scan.skipLess); writer.boolean(scan.skipTie);
-	const auto& j = state.rebuild;
-	writer.u32(j.record);
-	if (j.record) {
-		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
-		writer.u32(j.arrayStorage); writer.u32(j.arraySlots); writer.u32(j.arrayCleared);
-		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
-		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
-		writer.u64(j.key); writer.u64(j.value);
-		writer.u32(static_cast<u32>(j.result)); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
-		writer.u32(static_cast<u32>(j.census));
-		if (j.census != TableCensus::None) {
-			writer.u32(static_cast<u32>(j.recovery)); writer.u32(j.density.cursor); writer.u32(j.density.live);
-			writer.u32(j.density.slots); writer.u32(j.density.kept);
-		}
-	}
-	const auto& pending = state.pendingAllocation;
-	writer.u32(static_cast<u32>(pending.recovery));
-	if (pending.recovery != AllocationRecovery::None) {
-		writer.u32(pending.instructionPc);
-		writer.u32(pending.lastPc);
-		writer.u32(pending.nextPc);
-		writer.u32(pending.receiver);
-		writer.u64(pending.key);
-		writer.u64(pending.value);
-		writer.u8(pending.extraHashSlots);
-	}
 	writer.u32(state.statusWord);
 	writer.u32(state.systemVectorWord);
 	writer.u32(state.previousRootContextWord);
@@ -1243,32 +1215,6 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 	state.pendingMemory.registerIndex = reader.i32();
 	state.pendingMemory.wordCount = reader.i32();
 	state.stringComparison = {reader.u32(), reader.u32(), reader.u32(), reader.u32(), reader.i32(), reader.boolean(), reader.boolean()};
-	auto& j = state.rebuild;
-	j.record = reader.u32();
-	if (j.record) {
-		j.source = reader.u32(); j.count = reader.u32(); j.storage = reader.u32();
-		j.arrayStorage = reader.u32(); j.arraySlots = reader.u32(); j.arrayCleared = reader.u32();
-		j.capacity = reader.u32(); j.cleared = reader.u32(); j.homes = reader.u32();
-		j.cursor = reader.u32(); j.free = reader.u32(); j.collisions = reader.u32();
-		j.key = reader.u64(); j.value = reader.u64();
-		j.result = static_cast<TableStoreReturn>(reader.u32()); j.destination = reader.u32(); j.wanted = reader.u32(); j.instructionPc = reader.u32();
-		j.census = static_cast<TableCensus>(reader.u32());
-		if (j.census != TableCensus::None) {
-			j.recovery = static_cast<LuaAllocationRecovery>(reader.u32());
-			j.density = {reader.u32(), reader.u32(), reader.u32(), reader.u32()};
-		}
-	}
-	auto& pending = state.pendingAllocation;
-	pending.recovery = static_cast<AllocationRecovery>(reader.u32());
-	if (pending.recovery != AllocationRecovery::None) {
-		pending.instructionPc = reader.u32();
-		pending.lastPc = reader.u32();
-		pending.nextPc = reader.u32();
-		pending.receiver = reader.u32();
-		pending.key = reader.u64();
-		pending.value = reader.u64();
-		pending.extraHashSlots = reader.u8();
-	}
 	state.statusWord = reader.u32();
 	state.systemVectorWord = reader.u32();
 	state.previousRootContextWord = reader.u32();

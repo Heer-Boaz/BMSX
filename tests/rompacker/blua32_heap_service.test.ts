@@ -67,7 +67,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 
 	const entryBindings = [
 		['kernel/allocate_record', 'allocate_record'],
-		['kernel/table_grow', 'grow_table'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/allocate_captured_closure', 'allocate_captured_closure'],
 	];

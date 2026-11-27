@@ -9,10 +9,12 @@ local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
 local coroutine_transfer<const> = require('kernel/coroutine_transfer')
 local barrier<const> = require('kernel/gc_barrier')
+local table_growth<const> = require('kernel/table_grow')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
 local reference_store<const> = 15 << 2
+local storage_window<const> = 16 << 2
 local explicit_error<const> = 8
 local out_of_memory<const> = 9
 local string_tag<const> = 5
@@ -109,8 +111,16 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		blua32.rfe()
 	end
 	local denied_window<const> = cause == register_window
+	local denied_storage<const> = cause == storage_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
 	local transfer_fault
+	if denied_storage and table_growth.store_without_backing(values, depth, instruction, source_cycles, r4) then
+		local context<const>: *stopped_thread = *interrupted
+		local depth<const> = context.frame_depth & control_count_mask
+		local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & ram_word_mask)
+		cop0.epc = frame.pc
+		blua32.rfe()
+	end
 	if cause == syscall and *interrupted ~= 0 then
 		local handled<const>, pc<const>, thread<const>, reason<const> = transfer_coroutine(*interrupted, values)
 		if handled then
@@ -141,8 +151,9 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			end
 		elseif window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
 	end
-	local reason<const> = transfer_fault or (denied_window and out_of_memory) or cop0.lua_fault_reason
-	local raised<const> = cause == trap or denied_window or transfer_fault ~= nil
+	local denied_backing<const> = denied_window or denied_storage
+	local reason<const> = transfer_fault or (denied_backing and out_of_memory) or cop0.lua_fault_reason
+	local raised<const> = cause == trap or denied_backing or transfer_fault ~= nil
 	local payload, tag = 0, 0
 	if raised then
 		if reason == explicit_error then
@@ -160,7 +171,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			local fault_ids<const>: *u32 = diagnostics.fault_ids
 			payload, tag = fault_ids[reason], string_tag
 		end
-		local deadline<const> = denied_window and source_cycles or 0
+		local deadline<const> = denied_window and source_cycles or (denied_storage and r4 or 0)
 		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
 		if caught then
 			if resume_context then *interrupted = resume_context end
@@ -187,7 +198,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			entry.status = cop0.status
 			-- A physical Window fault is still visible in SYSTEM. The stock
 			-- monitor presents the language error after recovery was denied.
-			entry.cause = (denied_window or transfer_fault ~= nil) and trap or cause
+			entry.cause = (denied_backing or transfer_fault ~= nil) and trap or cause
 			entry.epc = cop0.epc
 			entry.bad_address = cop0.bad_address
 			entry.lua_fault_reason = reason

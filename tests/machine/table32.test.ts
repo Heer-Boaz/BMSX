@@ -379,10 +379,23 @@ test('machine snapshots restore table records and their references to a differen
 });
 
 test('failed array growth releases the provisional hash without changing the live mixed table', () => {
-	const { cpu } = bootManagedTestSystem(tableRom);
+	const { cpu } = bootManagedTestSystem(linkManagedTestSystem(`
+local entries<const> = require('bmsx/startup')
+local protect<const> = blua32.closure(entries.protected_call)
+local function set(t)
+	t[7] = true
+end
+return function(t) return protect(set, t) end
+`, 0));
+	runGuestToHalt(cpu, 4_194_304);
+	const results: v.Value[] = [];
+	cpu.readCompletionValues(results);
 	const { tables } = cpu.gc, arena = cpu.heapAllocator;
 	const table = cpu.createTable(4, 4);
 	for (const key of [1, 3, 4, -1, -3, 5, 6]) tables.setInteger(table, key, v.valueInteger(key));
+	cpu.beginCompletionCall(v.valuePayload(results[0]), [v.valueTable(table)]);
+	cpu.gc.collect();
+	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const array = tables.arrayAddress(table), hash = tables.hashAddress(table);
 	// Repartitioning for key 7 needs a 28-byte hash and a 40-byte array.
 	// Isolate one hash-sized hole so the first reservation succeeds and the second cannot.
@@ -391,7 +404,9 @@ test('failed array growth releases the provisional hash without changing the liv
 	for (const size of [4096, 256, 8]) while (arena.allocate(size, true) !== 0) {}
 	arena.free(hole);
 	const used = cpu.luaHeap.usedBytes(), occupied = arena.occupiedBytes();
-	assert.equal(tables.resumeAssignment(table, v.valueInteger(7), v.valueBool(true), 0), false);
+	runGuestToHalt(cpu, 4_194_304);
+	cpu.readCompletionValues(results);
+	assert.deepEqual(results, [v.valueBool(false), v.valueString(cpu.stringPool.find('Out of memory.')!)]);
 	assert.equal(tables.arrayAddress(table), array);
 	assert.equal(tables.hashAddress(table), hash);
 	assert.equal(arena.occupiedBytes(), occupied);

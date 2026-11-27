@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, TableGrow, StoppedFinalMark, CapturedClosure, Count,
+	AllocateRecord, StoppedFinalMark, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -54,19 +54,6 @@ constexpr uint32_t HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
-enum class HeapServiceTableGrowthMode : uint32_t { Scheduled = 0, General = 1 };
-enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
-
-constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
-// Tagged firmware return frontier. The selected ordinary Thread and its
-// successor PC are already committed by opcode dispatch, and remain selected
-// through the pinned grant. Targets are slot indices or Protected indices.
-enum class HeapServiceBiosCallKind : uint32_t { Idle, Discard, Call };
-enum class HeapServiceBiosCallField : uint32_t {
-	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
-	ResultBase = 24, ResultWord = 28,
-};
-
 // BIOS-owned data in the unused tail of the physical management reservation.
 constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.
@@ -90,9 +77,7 @@ enum class HeapServiceRootPlane : uint32_t {
 	CompletionPayloads, CompletionTags, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
-// A word load samples time to the next device deadline after paying the load.
-constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = 0x02c00000u;
-constexpr uint32_t HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4u;
+constexpr uint32_t HEAP_SERVICE_MANAGEMENT_ADDRESS = 0x02c00004u;
 constexpr uint32_t HEAP_SERVICE_CALL_CYCLES_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 4u;
 constexpr uint32_t HEAP_SERVICE_CALL_RUN_KIND_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 8u;
 constexpr uint32_t HEAP_SERVICE_CALL_FAULT_ADDRESS = HEAP_SERVICE_MANAGEMENT_ADDRESS + 12u;
@@ -104,7 +89,6 @@ constexpr uint32_t HEAP_SERVICE_REMARK_FAULTS_OFFSET = 0x6c8;
 enum class HeapServiceRemarkHeadField : uint32_t {
 	PendingStringWork = 0, Mode = 4, Index = 8, NewIndex = 12, Length = 16, Error = 20, FaultIds = 24,
 	StringIndexTag = 28, StringIndexWord = 32, ComparisonRemaining = 36, ComparisonLeft = 40, ComparisonRight = 44,
-	HasPendingAssignment = 48, Receiver = 52, KeyTag = 56, KeyWord = 60, ValueTag = 64, ValueWord = 68,
 };
 
 constexpr uint32_t HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;

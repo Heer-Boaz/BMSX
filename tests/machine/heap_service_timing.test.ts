@@ -12,20 +12,21 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
-	HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
-	HeapServiceClosureField, HeapServiceOperation, HeapServiceRemarkHeadField, HeapServiceResidentField, HeapServiceTableGrowthMode,
+	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
+	HeapServiceClosureField, HeapServiceOperation, HeapServiceResidentField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
+import { CPU_CAUSE_CODE_STORAGE_WINDOW } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 
 test('a real VBlank latches its IRQ across allocator service grants and restore', () => {
 	const path = 'kernel/dlmalloc';
@@ -203,10 +204,9 @@ test('the resident full collection crosses VBlank during String reclamation', ()
 	assert.equal(finish(), finishedAt);
 });
 
-test('a suspended SETT retains only its published roots across a timed recovery VBlank and restore', () => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('return function(owner, key, value)\nowner[key] = value\nreturn 42\nend', 0));
-	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+test('a storage-window exception preserves the resolved operands across a recovery VBlank and restore', () => {
+	const system = linkManagedTestSystem('return function(owner, key, value)\nowner[key] = value\nreturn 42\nend', 0);
+	const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(system), cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
@@ -217,75 +217,70 @@ test('a suspended SETT retains only its published roots across a timed recovery 
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	const edge = scheduler.nowCycles;
 	applyRuntimeSaveState(runtime, boot);
-	let result = cpu.runUntilDepth(0, 60_000);
-	for (let grant = 0; grant < 8 && result === RunResult.Yielded; ++grant) result = cpu.runUntilDepth(0, 60_000);
-	assert.equal(result, RunResult.Halted);
+	runGuestToHalt(cpu, 4_194_304);
 	const [setter] = runtime.readCompletionValues();
 	assert.equal(valueTag(setter), ValueTag.Closure);
 
 	budget.setCollectionTarget(budget.capacity());
 	const slots = 8192, owner = cpu.createTable(slots, 0);
 	for (let i = 1; i <= slots; ++i) tables.setInteger(owner, i, valueInteger(i));
-	const payload = valueString(cpu.stringPool.intern('live-only-through-parked-sett'));
+	const payload = valueString(cpu.stringPool.intern('live-only-through-sett'));
 	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-sett-string-${i}`);
 	cpu.beginCompletionCall(valuePayload(setter), [valueTable(owner), valueInteger(slots + 1), payload]);
 	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
 	assert.ok(budget.usedBytes() + 5 * slots > budget.capacity());
 
-	const management = cpu.heapAllocator.managementOffset();
-	const gate = management + HEAP_SERVICE_BIOS_CALL_OFFSET, head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	const parked = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment);
-	assert.equal(frames.runCyclesToNextLogicalTick(512), false);
-	for (let i = 0; i < 131072 && !parked() && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
-	assert.equal(parked(), 1, 'the activation has declared its parked operand roots before collecting');
-	assert.equal(gc.phase(), GcPhase.Pause);
-	assert.equal(memory.readRamRecordWord(gate + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Discard);
-	assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.Receiver), owner);
-	assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.ValueWord), valuePayload(payload));
-	assert.equal(cpu.allocationParked(), false, 'the CPU has no native allocation retry state');
-	const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
-	assert.ok(successor > memory.readRamRecordWord(gate + HeapServiceBiosCallField.InstructionPc));
-	// Only the published operand roots now retain the reached Table and its String.
 	const frame = cpu.activeThread.currentFrame!;
+	const pc = () => frame.pc;
+	const op = () => instructionOpcode(memory.readMappedU32LE(pc()));
+	for (let i = 0; i < 16 && op() !== OpCode.SETT; ++i) {
+		assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+	}
+	assert.equal(op(), OpCode.SETT);
+	const issue = pc();
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - BASE_CYCLES[OpCode.SETT] - 32);
+	assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
+	const packet = cpu.activeThread.currentFrame!.registers;
+	assert.equal(packet.get(0), valueTable(owner));
+	assert.equal(packet.get(2), payload);
+	const successor = pc();
+	assert.equal(successor, issue + INSTRUCTION_BYTES);
+	// The fault's architectural operands now retain the Table and its String.
 	frame.registers.clear(frame.top);
 	frame.top = 0;
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
 	const before = scheduler.nowCycles;
+	advanceRuntimeTime(runtime, BASE_CYCLES[OpCode.SETT]);
 	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
 	assert.ok(scheduler.nowCycles >= edge && scheduler.nowCycles > before);
 	assert.ok(frames.lastTickCpuUsedCycles > 0, 'the recovery pays ordinary CPU time');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(cpu.readFramePc(caller), successor);
-	assert.equal(parked(), 1);
+	assert.equal(pc(), successor);
 	const checkpoint = captureRuntimeSaveState(runtime);
 
 	function finish() {
 		assert.equal(tables.getInteger(owner, slots + 1), valueNil());
 		const grants: number[][] = [];
-		// Two bounded trace quanta walk the 8192-entry rooted Table on the
-		// guest clock. Keep the same timed grant and compare replay, rather
-		// than relying on the old native loop's low grant count.
 		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) {
 			frames.runCyclesToNextLogicalTick(100_000);
-			grants.push([scheduler.nowCycles, gc.phase(), parked(), +cpu.heapServiceActive()]);
+			grants.push([scheduler.nowCycles, gc.phase(), +cpu.fixedInterruptActive()]);
 		}
-		assert.equal(cpu.allocationParked(), false);
+		assert.equal(cpu.fixedInterruptActive(), false);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
 		assert.equal(gc.tableRecordAddress(garbage), 0);
 		assert.equal(gc.tableRecordAddress(owner), owner);
 		assert.equal(tables.getInteger(owner, slots + 1), payload);
-		assert.equal(cpu.stringPool.find('live-only-through-parked-sett'), valuePayload(payload));
+		assert.equal(cpu.stringPool.find('live-only-through-sett'), valuePayload(payload));
 		assert.equal(cpu.stringPool.find('dead-sett-string-23'), undefined);
 		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
 		return grants;
 	}
 	const completed = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
-	assert.equal(parked(), 1);
-	assert.equal(cpu.allocationParked(), false);
 	assert.deepEqual(finish(), completed);
 });
 
@@ -421,15 +416,15 @@ test('a requested system reset waits for the current BIOS operation and skips th
 	assert.equal(scheduler.nowCycles, 0);
 });
 
-test('direct table growth samples one hardware allowance across differently sized grants', () => {
+test('the storage-window deadline is the hardware allowance, not the caller grant', () => {
 	const source = 'return function(t, k, v) t[k] = v; return t[k] end';
-	const { romBytes } = linkTestSystemBlua32(compileHeapServiceSystem(source, 3));
+	const romBytes = writeTestBlua32Rom(linkManagedTestSystem(source, 3));
 	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine;
-	runGuestToHalt(cpu, 65536);
+	runGuestToHalt(cpu, 4_194_304);
 	const closure = valuePayload(runtime.readCompletionValues()[0]);
 	const table = cpu.createTable(0, 1);
 	cpu.gc.tables.set(table, valueInteger(-1), valueInteger(1));
@@ -444,25 +439,27 @@ test('direct table growth samples one hardware allowance across differently size
 	const start = scheduler.nowCycles, next = scheduler.nextDeadline();
 	assert.ok(next > start + BASE_CYCLES[OpCode.SETT] + 3, 'a real device edge is still ahead after the store base charge');
 	const snapshot = captureRuntimeSaveState(runtime);
-	const args = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_VALUE_OFFSET;
 	let elapsed = 0;
 	for (const budget of [1, 16384]) {
 		applyRuntimeSaveState(runtime, snapshot);
-		assert.equal(scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Direct), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), true);
+		cpu.setExecutionHook(() => cpu.fixedInterruptActive(), SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		assert.equal(scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Direct),
+			budget === 1 ? RunResult.Yielded : RunResult.ExecutionStopped);
+		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		assert.equal(cpu.fixedInterruptActive(), true);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 		const issue = budget - cpu.instructionBudgetRemaining;
 		assert.equal(issue, BASE_CYCLES[OpCode.SETT]);
-		assert.equal(memory.readRamRecordWord(args + 4), next - start - issue);
-		assert.equal(memory.readRamRecordWord(args + 12), HeapServiceTableGrowthMode.General);
+		assert.equal(cpu.activeThread.currentFrame!.registers.get(4), valueInteger(next - start - issue));
 		advanceRuntimeTime(runtime, issue);
 		let paid = issue;
-		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) {
+		for (let i = 0; i < 4096 && cpu.fixedInterruptActive(); ++i) {
 			assert.equal(scheduler.runCpuSlice(0, 1), RunResult.Yielded);
 			const spent = 1 - cpu.instructionBudgetRemaining;
 			paid += spent;
 			advanceRuntimeTime(runtime, spent);
 		}
-		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.fixedInterruptActive(), false);
 		assert.equal(cpu.gc.tables.get(table, valueInteger(-2)), valueInteger(2));
 		if (budget === 1) elapsed = paid;
 		else assert.equal(paid, elapsed);

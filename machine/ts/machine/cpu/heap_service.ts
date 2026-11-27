@@ -1,5 +1,5 @@
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET,
 	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET,
 	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
 } from '../../spec/bmsx/heap_service';
@@ -13,7 +13,6 @@ export class HeapService {
 	public readonly thread: Thread;
 	public readonly resultAddress: number;
 	public readonly projectionAddress: number;
-	public readonly biosCallAddress: number;
 	public readonly closureContinuationAddress: number;
 
 	public constructor(heap: GcHeap) {
@@ -22,7 +21,6 @@ export class HeapService {
 		const thread = management + HEAP_SERVICE_THREAD_OFFSET;
 		this.resultAddress = management + HEAP_SERVICE_RESULT_OFFSET;
 		this.projectionAddress = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
-		this.biosCallAddress = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		this.closureContinuationAddress = management + HEAP_SERVICE_CLOSURE_OFFSET;
 		this.thread = new Thread(heap);
 		memory.writeRamRecordWord(thread + ThreadField.StackBlock, management + HEAP_SERVICE_VALUE_OFFSET);

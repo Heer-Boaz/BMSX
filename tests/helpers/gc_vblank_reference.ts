@@ -8,10 +8,10 @@ const GC_PHYSICAL_OCCUPIED_AT_TICK = GC_LAST_EPOCH_WORK + 4;
 const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 
 // Frozen TS admission reference for kernel/gc_vblank.lua.
-export function assistPhysicalPressureAtTickReference(cpu: CPU): void {
+export function assistPhysicalPressureAtTickReference(cpu: CPU, rebuilding = 0): void {
 	const { gc, heapAllocator: arena, memory } = cpu;
 	const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	if (cpu.tableRebuild.record) return;
+	if (rebuilding) return;
 	if (gc.fullEpochs()) return;
 	const occupied = arena.occupiedBytes();
 	const previousOccupied = memory.readRamRecordWord(control + GC_PHYSICAL_OCCUPIED_AT_TICK);

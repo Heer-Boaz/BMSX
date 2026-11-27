@@ -17,6 +17,7 @@ constexpr uint8_t COP0_PREVIOUS_ACTIVE = 19u;
 constexpr uint8_t COP0_EXCEPTION_TARGET = 20u;
 constexpr uint8_t COP0_IRQ_VECTOR = 21u;
 constexpr uint8_t COP0_CURRENT = 22u;
+constexpr uint8_t COP0_EVENT_CYCLES = 23u;
 // Only the target control word carries a physical socket; execution PCs stay mapped addresses.
 constexpr uint32_t CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31u;
 constexpr uint32_t CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffffu;
@@ -31,8 +32,8 @@ constexpr bool cop0WriteRetiresControl(int field) {
 
 constexpr bool cop0FieldImplemented(int field) {
 	constexpr uint32_t fields = (1u << COP0_BAD_ADDRESS) | (1u << COP0_LUA_FAULT_REASON)
-		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR) | (1u << COP0_CURRENT);
-	return static_cast<uint32_t>(field) <= COP0_CURRENT && ((fields >> field) & 1u) != 0u;
+		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR) | (1u << COP0_CURRENT) | (1u << COP0_EVENT_CYCLES);
+	return static_cast<uint32_t>(field) <= COP0_EVENT_CYCLES && ((fields >> field) & 1u) != 0u;
 }
 
 constexpr uint32_t CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;
@@ -57,6 +58,7 @@ constexpr uint32_t CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE = 11u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_TRAP = 13u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_REGISTER_WINDOW = 14u << 2u;
 constexpr uint32_t CPU_CAUSE_CODE_REFERENCE_STORE = 15u << 2u;
+constexpr uint32_t CPU_CAUSE_CODE_STORAGE_WINDOW = 16u << 2u;
 
 constexpr uint32_t LUA_FAULT_REASON_UNKNOWN = 0u;
 constexpr uint32_t LUA_FAULT_REASON_CALL_NON_FUNCTION = 1u;

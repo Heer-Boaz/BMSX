@@ -31,7 +31,7 @@ struct FrameSchedulerStateSnapshot {
 	i64 lastTickConsumedSequence = 0;
 };
 
-enum class LogicalTickResult { Incomplete, Completed, Maintenance, DeferredCpu };
+enum class LogicalTickResult { Incomplete, Completed };
 
 class FrameSchedulerState {
 public:
@@ -55,7 +55,6 @@ public:
 	// Debugger device settlement. CPU and pending interrupt entry remain stopped.
 	bool runDevicesToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	bool runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs);
-	u64 maintenancePulseSequence() const { return m_maintenancePulseSequence; }
 	InstructionStepResult stepInstruction(Runtime& runtime, f64 hostDeltaMs);
 	// Reconcile backend suspension without executing or admitting another tick.
 	void synchronizeBackendService(Runtime& runtime);
@@ -70,7 +69,7 @@ public:
 	i64 lastTickConsumedSequence = 0;
 
 private:
-	enum class Pulse { Ready, Blocked, Maintenance };
+	enum class Pulse { Ready, Blocked };
 	Pulse beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs);
 	void beginScheduledFrame(Runtime& runtime, i64 budget, i64 carry);
 	void accumulateHostTime(f64 deltaMs);
@@ -81,7 +80,6 @@ private:
 	f64 m_cycleGrantRemainder = 0.0;
 	i64 m_carriedCycleBudget = 0;
 	// Host observation only; not machine state or part of the guest grant.
-	u64 m_maintenancePulseSequence = 0;
 	bool m_tickCompletionPending = false;
 	bool m_tickCompletionVisualCommitted = false;
 	bool m_backendServiceSuspended = false;

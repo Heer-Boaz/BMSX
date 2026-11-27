@@ -7,7 +7,7 @@ import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBa
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -35,7 +35,7 @@ function fixture(optLevel: 0 | 3) {
 	const arena = cpu.heapAllocator.allocatorStateOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
 	// The fixture borrows the shape of a parked root-head triple. It does not
 	// set HasPendingAssignment or exercise the distinct parked-root path.
-	const operands = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + HeapServiceRemarkHeadField.Receiver;
+	const operands = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + 52;
 	const floor = memory.ramBusEnd() - RAM_BASE;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 

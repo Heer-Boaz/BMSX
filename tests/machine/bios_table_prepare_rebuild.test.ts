@@ -1,3 +1,4 @@
+import { advanceTableRebuildReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -7,7 +8,7 @@ import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { TableHeader, TableRebuild, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
 import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -53,14 +54,14 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const jobOffset = same(target => target.heapAllocator.allocate(64, true) - RAM_BASE);
 	assert.ok(jobOffset > 0);
-	function seed(job: TableRebuild): void {
+	function seed(job: TableRebuildReference): void {
 		const words = [job.source, job.count, job.storage, job.capacity, job.arrayStorage, job.arraySlots, job.arrayCleared, job.cleared,
 			valueTag(job.key), valuePayload(job.key), valueTag(job.value), valuePayload(job.value),
 			job.homes, job.cursor, job.free, job.collisions];
 		same(target => words.forEach((word, index) => target.memory.writeRamRecordWord(jobOffset + index * 4, word)));
 	}
-	function begin(job: TableRebuild, allowance: number, placement = false) {
-		const expected = oracle.gc.tables.advanceRebuild(job, allowance);
+	function begin(job: TableRebuildReference, allowance: number, placement = false) {
+		const expected = advanceTableRebuildReference(oracle.gc, job, allowance);
 		assert.notEqual(job.record, 0, 'the policy grant stops before native publication');
 		if (!placement) assert.equal(job.homes, 0, 'the prepare grants do not reach placement');
 		const oracleMemory = oracle.memory;
@@ -96,9 +97,9 @@ function fixture(optLevel: 0 | 3) {
 		compare();
 		return spent;
 	}
-	function beginPublication(job: TableRebuild, allowance: number) {
+	function beginPublication(job: TableRebuildReference, allowance: number) {
 		const record = job.record, management = cpu.heapAllocator.managementOffset();
-		const expected = oracle.gc.tables.advanceRebuild(job, allowance);
+		const expected = advanceTableRebuildReference(oracle.gc, job, allowance);
 		assert.equal(job.record, 0, 'the old operation reached its epilogue');
 		const oracleMemory = oracle.memory;
 		oracleMemory.writeRamRecordPair(jobOffset + 24, job.arrayCleared, job.cleared);
@@ -145,7 +146,7 @@ for (const opt of [0, 3] as const) {
 				}
 				target.gc.tables.set(record, valueInteger(-5), valueInteger(71));
 			});
-			const j = Object.assign(new TableRebuild(), { record, source, count: oldHash, storage, capacity: hash,
+			const j = Object.assign(new TableRebuildReference(), { record, source, count: oldHash, storage, capacity: hash,
 				arrayStorage: base, arraySlots: array, key: valueInteger(kind === 'fresh' ? 4 : array + 1), value: valueInteger(913) });
 			f.seed(j);
 			assert.equal(f.begin(j, -2), -2);
@@ -216,7 +217,7 @@ for (const opt of [0, 3] as const) {
 				for (const key of colliders.slice(1)) gc.tables.set(record, valueInteger(key), valueInteger(-key + 7));
 				if (!shrinking) gc.tables.set(record, valueInteger(oldArray + 1), valueInteger(8801));
 			});
-			const j = Object.assign(new TableRebuild(), { record, source, count: oldHash, storage, capacity: hash,
+			const j = Object.assign(new TableRebuildReference(), { record, source, count: oldHash, storage, capacity: hash,
 				arrayStorage: base, arraySlots: array, free: mask, key: valueInteger(colliders[0]), value: valueInteger(387) });
 			f.seed(j);
 			const nodeBytes = hash * (hash <= 128 ? 11 : 14);
@@ -302,7 +303,7 @@ for (const opt of [0, 3] as const) {
 			const base = array > oldArray ? f.same(cpu => cpu.heapAllocator.allocate(5 * array, true)) : oldBase;
 			const storage = keepHash ? 0 : f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			const key = valueInteger(array === 0 ? 1025 : 3), value = valueInteger(787);
-			const j = Object.assign(new TableRebuild(), { record, source: keepHash ? 0 : oldStorage, count: keepHash ? 0 : oldHash,
+			const j = Object.assign(new TableRebuildReference(), { record, source: keepHash ? 0 : oldStorage, count: keepHash ? 0 : oldHash,
 				storage, capacity: hash, arrayStorage: base, arraySlots: array, free: hash - 1 >>> 0, key, value });
 			f.same(cpu => {
 				cpu.gc.tables.set(record, valueInteger(1), valueInteger(11));
@@ -368,7 +369,7 @@ for (const opt of [0, 3] as const) {
 			cpu.memory.writeRamRecordByte(record + 1, 3);
 		});
 		assert.equal(f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent), 1);
-		const j = Object.assign(new TableRebuild(), { record, source, count: oldHash, storage, capacity: hash, free: hash - 1, key, value });
+		const j = Object.assign(new TableRebuildReference(), { record, source, count: oldHash, storage, capacity: hash, free: hash - 1, key, value });
 		f.seed(j);
 		f.finish(f.begin(j, hash * 14 + 15 >>> 4));
 		const expected = f.beginPublication(j, 4096);

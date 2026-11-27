@@ -369,32 +369,4 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-	test(`an integer store pays for the scanned array, not merely its capacity (${backend})`, () => {
-		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
-		writeInstruction(text, 0, OpCode.MOV, 6, 0, 0);
-		writeInstruction(text, 1, OpCode.SETT, 6, 1, 2);
-		writeInstruction(text, 2, OpCode.MOV, 8, 6, 0);
-		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 12 }] });
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, start = frame.pc;
-		const r = frame.registers, tables = cpu.gc.tables;
-		r.setTable(0, cpu.createTable(1, 0)); r.setInteger(1, 1); r.set(2, valueBool(false)); frame.top = 9;
-		cpu.runUntilDepth(0, 2000);
-		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(start & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-		for (const capacity of [64, 65, 68, 69, 8192]) for (const spare of [0, 1]) {
-			const table = cpu.createTable(capacity, spare);
-			for (let i = 1; i <= capacity; ++i) tables.setInteger(table, i, valueInteger(i));
-			r.setTable(0, table); r.set(1, valueFloat(capacity + 1)); r.setInteger(8, 91);
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
-			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
-			assert.equal(3 - cpu.instructionBudgetRemaining, 18 + (spare || capacity >= 1024 ? 0 : (capacity - 64 + 3) >>> 2));
-			if (capacity === 8192 && !spare) {
-				cpu.runUntilDepth(0, (capacity - 64) / 4); assert.ok(cpu.tableRebuild.arrayStorage);
-				assert.equal(cpu.tableRebuild.record, table); assert.equal(tables.getInteger(table, capacity + 1), valueNil());
-				cpu.runUntilDepth(0, 2 * capacity * 5 / 16); assert.equal(cpu.instructionBudgetRemaining, 0);
-			}
-			assert.equal(tables.getInteger(table, capacity + 1), valueBool(false));
-			assert.equal(r.get(8), valueInteger(91));
-		}
-	});
 }

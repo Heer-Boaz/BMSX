@@ -148,7 +148,7 @@ import {
 	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
-import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_CURRENT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_CURRENT, COP0_EPC, COP0_EVENT_CYCLES, COP0_EXCEPTION_TARGET, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	buildProgramDebugPoints,
 	buildProgramStatementPoints,
@@ -4884,6 +4884,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case 'exec': return COP0_EXEC;
 			case 'context': return COP0_CONTEXT;
 			case 'current': return COP0_CURRENT;
+			case 'event_cycles': return COP0_EVENT_CYCLES;
 			case 'ram_end': return COP0_RAM_END;
 			case 'system_vector': return COP0_SYSTEM_VECTOR;
 			case 'exception_target': return COP0_EXCEPTION_TARGET;

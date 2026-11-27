@@ -102,10 +102,9 @@ for (const opt of [0, 3] as const) {
 			f.seed(phase, sampled, credit, done, last, epochs);
 			if (waiting) oracle.haltUntilIrq(); else oracle.clearHaltUntilIrq();
 			assert.equal(oracle.isHaltedUntilIrq(), waiting);
-			oracle.tableRebuild.record = rebuilding;
 			const before = nativeStep.mock.callCount();
 			allowance = 0;
-			assistPhysicalPressureAtTickReference(oracle);
+			assistPhysicalPressureAtTickReference(oracle, rebuilding);
 			assert.equal(nativeStep.mock.callCount() - before, +(expected !== 0));
 			assert.equal(allowance, expected, `native decision in phase ${phase}`);
 			f.begin(waiting, rebuilding);

@@ -154,38 +154,6 @@ void grantsAndRestore() {
 	}
 }
 
-void integerStoreCensus() {
-	Program program(OpCode::SETT, false);
-	writeInstruction(program.image.text, 1, static_cast<u8>(OpCode::SETT), 6, 1, 2);
-	Machine generated(program.image, false), scalar(program.image, true);
-	for (const int capacity : {64, 65, 68, 69, 8192}) for (const int spare : {0, 1}) {
-		for (auto* m : {&generated, &scalar}) {
-			auto& cpu = m->cpu;
-			auto table = bmsx::test::allocateTableReference(cpu, capacity, spare);
-			for (int i = 1; i <= capacity; ++i) table.setInteger(i, valueInteger(i));
-			auto r = cpu.activeThread()->currentFrame->registers;
-			r.set(0, valueTable(table.address())); r.set(1, valueFloat(capacity + 1));
-			r.set(2, valueBool(false)); r.set(8, valueInteger(91));
-			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		}
-		test::runCpuParity(generated.cpu, scalar.cpu, 3);
-		const int scan = spare ? 0 : (capacity - 64 + 3) / 4;
-		require(3 - generated.cpu.instructionBudgetRemaining == 18 + (capacity >= 1024 ? 0 : scan)
-			&& generated.cpu.readFrameRegister(0, 8) == valueInteger(91),
-			"only an actual positive-integer repartition charges its array scan before the suffix");
-		auto table = asTable(generated.cpu.readFrameRegister(0, 0), generated.cpu.gcHeap());
-		if (capacity == 8192 && !spare) {
-			test::runCpuParity(generated.cpu, scalar.cpu, scan);
-			require(generated.cpu.tableRebuild.arrayStorage && generated.cpu.tableRebuild.record == table.address() && isNil(table.getInteger(capacity+1)),
-				"the large store has reserved but not copied its destination");
-			test::runCpuParity(generated.cpu, scalar.cpu, 2 * capacity * 5 / 16);
-			require(generated.cpu.instructionBudgetRemaining == 0, "transfer retires at the exact byte grant");
-		}
-		require(table.getInteger(capacity+1) == valueBool(false) && generated.cpu.readFrameRegister(0, 8) == valueInteger(91),
-			"the store is published without issuing the suffix");
-	}
-}
-
 void exhaustedStringChainCharges() {
 	for (int capacity : {8, 256}) for (const auto op : {OpCode::GETFIELD, OpCode::GETT, OpCode::SELF}) {
 		Program program(op, false);
@@ -701,7 +669,7 @@ void stringReceiver() {
 } // namespace
 int main() {
 	try {
-		grantsAndRestore(); integerStoreCensus(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
+		grantsAndRestore(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
 		suspendedIndexRestoresItsPlacement(); stringReceiver();
 	}

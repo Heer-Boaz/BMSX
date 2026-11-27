@@ -298,7 +298,6 @@ add_library(bmsx_core STATIC
 	../common/dlmalloc/dlmalloc.c
 	machine/cpu/lua_heap.cpp
 	machine/cpu/table.cpp
-	machine/cpu/table_rebuild.cpp
 	machine/cpu/value.cpp
 	machine/execution_address_space.cpp
 	spec/blua32/pow.cpp

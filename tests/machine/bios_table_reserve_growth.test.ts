@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -122,15 +121,7 @@ for (const optLevel of [0, 3] as const) {
 			f.same(target => target.memory.writeRamRecordWord(oldBase, 0x378422bc));
 			let base: number;
 			if (staged) {
-				const native = f.oracle, tables = native.gc.tables;
-				const plan = tables['resizePlan'];
-				plan.array = array; plan.hash = hash; plan.keepHash = true;
-				native.instructionBudgetRemaining = 0;
-				const slot = tables['resize'](record, valueInteger(array), valueInteger(7),
-					TableRecords.allocationCharge(oldArray, hash), TableRecords.allocationCharge(array, hash), native);
-				assert.equal(slot, -4, 'native semantic rebuild starts only after reservation');
-				assert.equal(native.tableRebuild.record, record);
-				base = native.tableRebuild.arrayStorage;
+				base = f.oracle.heapAllocator.reserveBacking(oldBase, 5 * array);
 				assert.notEqual(base, oldBase, 'blocked old array reserves a separate raw backing');
 			} else {
 				base = f.oracle.heapAllocator.resizeBacking(oldBase, 5 * array);

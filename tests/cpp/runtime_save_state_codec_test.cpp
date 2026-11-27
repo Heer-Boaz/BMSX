@@ -68,20 +68,12 @@ int main() {
 	state.machineState.schedulerNowCycles = (i64{1} << 40) + 17;
 	state.cpuState.stringComparison = {0x80000100u, 0x1000u, 129, 199, -1, true, false};
 	state.cpuState.pendingMemory = {PendingMemoryKind::WordStores, 0xfffffffcu, 0u, 0x12345678u, MemoryAccessKind::Word, 7, 9};
-	state.cpuState.rebuild = {.record=0x8100u, .key=valueInteger(8193), .value=valueInteger(-9),
-		.instructionPc=0x5020u, .census=TableCensus::General, .recovery=LuaAllocationRecovery::Fresh, .density={4100, 3100, 4096, 3096}};
 	state.cpuState.rootThreadAddress = 0x083fa000u;
 	state.cpuState.activeThreadAddress = 0x083fa040u;
 	state.cpuState.completionValues = {valueInteger(INT32_MIN), valueFloatBits(0xffc12345u), valueBuiltinFunction(BuiltinFunctionId::Next)};
-	const size_t withoutAssignment = encodeRuntimeSaveState(state).size();
-	state.cpuState.pendingAllocation = {
-		AllocationRecovery::RetryCurrent, 0x2000u, 0x2004u, 0x2008u,
-		0x12345678u, 9u, valueString(0x298u), valueFloatBits(0xffc12345u),
-	};
 	const size_t beforeOwned = allocations;
 	const auto expected = encodeRuntimeSaveState(state);
 	require(allocations == beforeOwned + 1, "owned encoding allocates exactly its final byte buffer, not an object tree");
-	require(expected.size() - withoutAssignment == 33u, "a parked assignment adds four words, two Values and one byte, with no discriminator");
 	std::vector<u8> output(expected.size() + 2, 0xa5);
 	const size_t beforeDirect = allocations;
 	const auto written = encodeRuntimeSaveState(state, std::span<u8>(output).subspan(1, expected.size()));
@@ -93,10 +85,7 @@ int main() {
 	require(std::ranges::all_of(output, [](u8 value) { return value == 0xa5; }), "capacity admission happens before any output writes");
 	const auto decoded = decodeRuntimeSaveState(expected, state.ram.size(), machine.gxGpu.vramBytes.size());
 	require(encodeRuntimeSaveState(decoded) == expected, "every stored bit round-trips through typed state");
-	require(decoded.cpuState.rebuild == state.cpuState.rebuild, "the partial band and recovery phase survive a binary checkpoint");
 	require(decoded.cpuState.stringComparison == state.cpuState.stringComparison, "String comparison restores both ROM socket identity and scan progress");
-	require(decoded.cpuState.pendingAllocation == state.cpuState.pendingAllocation,
-		"a parked assignment keeps its exact issue, growth hint and raw guest operands");
 	require(decoded.machineState.machine.cartridge.slots[0]->ram.has_value()
 		&& !decoded.machineState.machine.cartridge.slots[1].has_value(), "empty RAM and an absent card remain distinct");
 }

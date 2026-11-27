@@ -11,7 +11,7 @@ import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
 import { compiledContextSupports, emitContext } from './compiled_block_context';
 import { compiledTableSupports, emitTableOperation } from './compiled_block_table';
-import { COP0_STATUS, COP0_RAM_END, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
+import { COP0_STATUS, COP0_RAM_END, COP0_EVENT_CYCLES, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
 import type { CallFrame } from './call_state';
 import { SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
@@ -266,7 +266,8 @@ export function emitJavaScriptBlock(
 		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D || op === OpCode.STORE_MEM_WORDS_D;
 		if (op === OpCode.SELF) registerTop = Math.max(registerTop, page.a[word] + 2);
 		const control = compiledControlSupports(op);
-		const sideExit = control && controlAccess && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
+		const eventCycles = op === OpCode.MFC0 && page.b[word] === COP0_EVENT_CYCLES;
+		const sideExit = control && controlAccess && !eventCycles && cop0FieldImplemented(page.b[word]) ? undefined : sideExitKinds[op];
 		if (sideExit === CompiledBlockExit.StringOrder) stringOrderExit = exitIndex;
 		if (sideExit !== undefined) {
 			exits.push({ exit: sideExit, resumesFrame: compiledBlockExitResumesFrame(sideExit),
@@ -295,7 +296,7 @@ export function emitJavaScriptBlock(
 			source.push(`if(${registers.tagOperand(b)}!==${from}) ${numericFault}${registers.writeEncoded(page.a[word], `${to}`, registers.wordOperand(b))}`);
 		} else if (control) {
 			source.push(emitControl(op, page, word, registers, sideExit === undefined ? null : exitIndex, !controlAccess, numericFault));
-			controlAccess = true;
+			if (!eventCycles) controlAccess = true;
 		} else if (compiledContextSupports(op)) {
 			source.push(emitContext(op, page, word, registers, exitIndex));
 		} else if (compiledTableSupports(op)) {

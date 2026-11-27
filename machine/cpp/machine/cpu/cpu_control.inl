@@ -40,6 +40,7 @@ inline void CPU::executeControlWrite(CallFrame& frame, int source, int field) {
 		transferExceptionVector(frame, value);
 		return;
 	case COP0_PREVIOUS_ACTIVE:
+	case COP0_EVENT_CYCLES:
 	case COP0_BAD_ADDRESS:
 	case COP0_LUA_FAULT_REASON:
 	case COP0_CAUSE:

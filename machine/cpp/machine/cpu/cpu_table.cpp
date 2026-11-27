@@ -92,135 +92,43 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
-bool CPU::beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion) {
-	if (m_runKind == CpuRunKind::Idle) return false;
-	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::TableGrow)];
-	if (function == 0u) return false;
-	const u32 management = m_heapAllocator.managementOffset();
-	const u32 head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	using Field = HeapServiceRemarkHeadField;
-	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::Receiver), receiver);
-	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::KeyTag), static_cast<u32>(valueTag(key)), valuePayload(key));
-	m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ValueTag), static_cast<u32>(valueTag(value)), valuePayload(value));
-	const std::array args{management, static_cast<u32>(remainingDeviceCycles()), static_cast<u32>(extra), static_cast<u32>(mode)};
-	armBiosCall(completion.kind, completion.target, completion.word);
-	beginHeapService(function, args);
-	requestYield();
+bool CPU::enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots) {
+	const std::array arguments{valueTable(receiver), canonicalTableKey(key), value,
+		valueInteger(extraHashSlots), valueInteger(remainingDeviceCycles())};
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_STORAGE_WINDOW,
+		m_currentInstructionPc, arguments);
 	return true;
-}
-
-bool CPU::parkTableWrite(CallFrame& frame, u32 receiver, Value key, Value value, u8 extraHashSlots) {
-	const Value canonical = canonicalTableKey(key);
-#if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
-	++m_diagnosticGcProfile.fullCollections;
-#endif
-	m_pendingAllocation = {
-		m_heap.active() ? AllocationRecovery::Current : AllocationRecovery::Fresh,
-		m_currentInstructionPc, lastPc, frame.readControl(FrameField::Pc), receiver, extraHashSlots, canonical, value
-	};
-	frame.writeControl(FrameField::Pc, m_pendingAllocation.instructionPc);
-	// The final root head visits parked operands after detaching the
-	// changed queue and before clearing weak references.
-	return true;
-}
-
-bool CPU::advanceAllocationRecovery() {
-	switch (m_pendingAllocation.recovery) {
-		case AllocationRecovery::RetryCurrent:
-		case AllocationRecovery::RetryFresh: return false;
-		case AllocationRecovery::Current:
-		case AllocationRecovery::Fresh: {
-			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
-			else m_heap.step(valueNil(), valueNil(), valueNil());
-			finishAllocationRecovery();
-			return true;
-		}
-		case AllocationRecovery::None: BMSX_UNREACHABLE();
-	}
-	BMSX_UNREACHABLE();
-}
-
-void CPU::finishAllocationRecovery() {
-	if (!m_heap.active()) {
-		auto& recovery = m_pendingAllocation.recovery;
-		recovery = recovery == AllocationRecovery::Current ? AllocationRecovery::RetryCurrent : AllocationRecovery::RetryFresh;
-	}
-}
-
-void CPU::resumeAllocation() {
-	const auto& pending = m_pendingAllocation;
-	auto& frame = *m_activeThread->currentFrame;
-	m_currentInstructionPc = pending.instructionPc;
-	lastPc = pending.lastPc;
-	m_lastExecutionDomainId = m_activeExecutionDomainId;
-	const auto stage = pending.recovery == AllocationRecovery::RetryFresh
-		? HeapServiceTableGrowthStage::RetryFresh : HeapServiceTableGrowthStage::RetryCurrent;
-	const bool retired = TableRecord(m_heap, pending.receiver).resumeAssignment(
-		pending.key, pending.value, pending.extraHashSlots, this, stage);
-	if (heapServiceActive()) {
-		m_pendingAllocation = {};
-		return;
-	}
-	if (retired) {
-		frame.writeControl(FrameField::Pc, pending.nextPc);
-		m_pendingAllocation = {};
-		return;
-	}
-	if (pending.recovery == AllocationRecovery::RetryCurrent) {
-		m_pendingAllocation.recovery = AllocationRecovery::Fresh;
-		return;
-	}
-
-	m_pendingAllocation = {};
-	retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
-}
-
-void CPU::advanceTableStore(CallFrame& frame) {
-	const u32 receiver = tableRebuild.record;
-	TableRecord table(m_heap, receiver);
-	const auto phase = tableRebuild.census;
-	if (phase == TableCensus::None) instructionBudgetRemaining = table.advanceRebuild(tableRebuild, instructionBudgetRemaining);
-	else {
-		m_currentInstructionPc = tableRebuild.instructionPc;
-		if (!table.advanceCensus(*this)) {
-			if (phase == TableCensus::RetryFresh) throw LuaOutOfMemorySignal{};
-			parkTableWrite(frame, receiver, tableRebuild.key, tableRebuild.value);
-			if (phase == TableCensus::RetryCurrent) m_pendingAllocation.recovery = AllocationRecovery::Fresh;
-			return;
-		}
-		if (heapServiceActive()) {
-			requestYield();
-			return;
-		}
-	}
-	if (tableRebuild.record || tableRebuild.result == TableStoreReturn::None) return;
-	// Retire the result only after publishing the replacement and its edge.
-	m_currentInstructionPc = tableRebuild.instructionPc;
-	const auto value = valueTable(receiver);
-	writeReturnValues(frame, {static_cast<int>(tableRebuild.destination), tableRebuild.wanted}, {&value, 1});
 }
 
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveAssignment(key, result);
-	if (finishTableAssignment(frame, key, value, result)) return true;
-	TableRecord table(m_heap, result.receiver);
-	const auto slot = m_runKind == CpuRunKind::Scheduled ? table.assignScheduled(key, value, *this) : table.set(key, value, this);
-	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, key, value);
-	return slot == TableRecord::HASH_STORE_PENDING && heapServiceActive();
+	u32 receiver = valuePayload(base);
+	const TableRecord table(m_heap, receiver);
+	if (table.metatableAddress() != 0u) {
+		TableLookupResult result;
+		table.resolveAssignment(key, result);
+		if (finishTableAssignment(frame, key, value, result)) return true;
+		receiver = result.receiver;
+	}
+	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value) != TableRecord::HASH_STORE_DECLINED)
+		return false;
+	return enterStorageWindowException(receiver, key, value, 0u);
 }
 
 bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
-	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveIntegerAssignment(index, result);
-	if (finishTableAssignment(frame, valueInteger(index), value, result)) return true;
-	TableRecord table(m_heap, result.receiver);
+	u32 receiver = valuePayload(base);
 	const Value key = valueInteger(index);
-	const auto slot = m_runKind == CpuRunKind::Scheduled ? table.assignScheduled(key, value, *this) : table.set(key, value, this);
-	if (slot == TableRecord::HASH_STORE_DECLINED) return parkTableWrite(frame, result.receiver, key, value);
-	return slot == TableRecord::HASH_STORE_PENDING && heapServiceActive();
+	const TableRecord table(m_heap, receiver);
+	if (table.metatableAddress() != 0u) {
+		TableLookupResult result;
+		table.resolveIntegerAssignment(index, result);
+		if (finishTableAssignment(frame, key, value, result)) return true;
+		receiver = result.receiver;
+	}
+	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value) != TableRecord::HASH_STORE_DECLINED)
+		return false;
+	return enterStorageWindowException(receiver, key, value, 0u);
 }
 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots) {
@@ -229,13 +137,10 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
 	if (result.extraVisits != 0u) extraHashSlots = 0;
-	TableRecord table(m_heap, result.receiver);
-	const int slot = m_runKind == CpuRunKind::Scheduled
-		? table.assignScheduled(valueString(key), value, *this, result.slot, extraHashSlots)
-		: table.setStringKey(key, value, result.slot, extraHashSlots, this);
+	const Value field = valueString(key);
+	const int slot = TableRecord(m_heap, result.receiver).tryAssignOwn(field, value, result.slot);
 	if (slot == TableRecord::HASH_STORE_DECLINED)
-		return parkTableWrite(frame, result.receiver, valueString(key), value, extraHashSlots);
-	if (slot == TableRecord::HASH_STORE_PENDING && heapServiceActive()) return true;
+		return enterStorageWindowException(result.receiver, field, value, extraHashSlots);
 	if (result.extraVisits == 0) predictedSlot = slot;
 	return false;
 }

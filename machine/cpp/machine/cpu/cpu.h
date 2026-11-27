@@ -36,7 +36,6 @@
 #include "spec/blua32/cop0.h"
 #include "spec/blua32/opcode.h"
 #include "machine/cpu/table.h"
-#include "machine/cpu/table_rebuild.h"
 #include "machine/cpu/value.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
@@ -98,16 +97,6 @@ private:
 	BuiltinResults* m_out = nullptr;
 };
 
-enum class AllocationRecovery : u32 { None, Current, RetryCurrent, Fresh, RetryFresh };
-struct PendingAllocation {
-	AllocationRecovery recovery = AllocationRecovery::None;
-	u32 instructionPc = 0, lastPc = 0, nextPc = 0;
-	u32 receiver = 0;
-	u8 extraHashSlots = 0;
-	Value key = valueNil(), value = valueNil();
-	bool operator==(const PendingAllocation&) const = default;
-};
-
 // Host-only configuration. Registers are borrowed; never retain them or execute guest code.
 struct InstructionObserverBinding {
 	std::array<std::unordered_set<u32>, EXECUTION_DOMAIN_COUNT> points;
@@ -151,8 +140,6 @@ struct CpuRuntimeState {
 	uint32_t memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation pendingMemory;
 	StringComparisonLatch stringComparison;
-	TableRebuild rebuild;
-	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 systemVectorWord = 0u;
 	u32 previousRootContextWord = 0u, previousActiveContextWord = 0u;
@@ -269,15 +256,8 @@ public:
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, u32 target = 0u,
 		CpuRunKind kind = CpuRunKind::Direct, const DeviceScheduler* deviceClock = nullptr);
-	bool allocationParked() const { return m_pendingAllocation.recovery != AllocationRecovery::None; }
-	bool allocationReady() const {
-		return m_pendingAllocation.recovery == AllocationRecovery::RetryCurrent
-			|| m_pendingAllocation.recovery == AllocationRecovery::RetryFresh;
-	}
-	bool advanceAllocationRecovery();
 	u32 queuedFixedWork() const;
 	bool admitFixedWork(CpuRunKind kind);
-	void resumeAllocation();
 	size_t collectHeap(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
 	void chargeCollectionWork(size_t work);
 	size_t assistAllocation(Value root0, Value root1, Value root2, u32 growingThread, size_t words, const int* sourceBudget = nullptr);
@@ -343,7 +323,6 @@ public:
 
 	// Current runUntilDepth grant; consumed by the caller, not checkpoint state.
 	int instructionBudgetRemaining = 0;
-	TableRebuild tableRebuild;
 	u32 lastPc = 0;
 
 private:
@@ -364,8 +343,6 @@ private:
 	void initializeHeapService();
 	CallFrame& prepareHeapServiceFrame(u32 functionAddress, int base, int supplied,
 		CallResultPlacement result, std::optional<u32> callSite);
-	void armBiosCall(HeapServiceBiosCallKind kind, u32 target, u32 resultWord);
-	void finishBiosCall(HeapServiceBiosCallKind kind);
 	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result);
 	void finishResidentCall(u32 flags);
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
@@ -438,9 +415,7 @@ private:
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
-	void advanceTableStore(CallFrame& frame);
-	friend class TableRecord;
-	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion);
+	bool enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced, bool fromArguments = false);
@@ -466,8 +441,6 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
-	bool parkTableWrite(CallFrame&, u32 receiver, Value key, Value value, u8 extraHashSlots = 0);
-	void finishAllocationRecovery();
 	void beginClosureReservation(CallFrame&, int destination, HeapServiceRecordKind, u32 prototype, u32 domain, u32 nextPc);
 	void finishClosureReservation();
 	void beginCapturedClosure(CallFrame&, int destination, bool canonical);
@@ -495,7 +468,6 @@ private:
 	static void* tryReturnNativeFrame(NativeCpuRunState*, const NativeBlockExitSite*) noexcept;
 	static u32 readNativeLength(GcHeap*, const StringPool*, Value* operand) noexcept;
 	static i32 assignNativeTableField(CPU*, u32 receiver, StringId key, const Value*) noexcept;
-	static i32 assignNativeHintedTableField(CPU*, u32 receiver, StringId key, const NativeHintedFieldWrite*) noexcept;
 	static int placeNativeVarargs(NativeBlockRunState*, int first, int requested) noexcept;
 	friend class NativeLowering;
 	static void* dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite* exit) noexcept;
@@ -602,7 +574,6 @@ private:
 	uint32_t m_memoryWriteBlockedAddress = 0;
 	PendingMemoryOperation m_pendingMemory;
 	StringComparisonLatch m_stringComparison;
-	PendingAllocation m_pendingAllocation;
 	int remainingDeviceCycles() const;
 	CpuRunKind m_runKind = CpuRunKind::Idle;
 	const DeviceScheduler* m_deviceClock = nullptr;

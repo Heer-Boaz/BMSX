@@ -33,8 +33,8 @@ type BudgetFrameState = {
 	cycleBudgetGranted: number;
 };
 
-export const enum LogicalTickResult { Incomplete, Completed, Maintenance, DeferredCpu }
-const enum Pulse { Ready, Blocked, Maintenance }
+export const enum LogicalTickResult { Incomplete, Completed }
+const enum Pulse { Ready, Blocked }
 
 const MAX_CATCH_UP_MS = 1000 / 12;
 export class FrameSchedulerState {
@@ -78,7 +78,6 @@ export class FrameSchedulerState {
 		const cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive()) {
 			if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
-			if (cpu.allocationParked()) return cpu.allocationReady();
 			if (cpu.queuedFixedWork()) return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -105,13 +104,7 @@ export class FrameSchedulerState {
 		const cpu = runtime.machine.cpu;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0 || cpu.heapServiceActive()
 			|| (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())) return backendBlocked ? Pulse.Blocked : Pulse.Ready;
-		if (cpu.allocationParked()) {
-			// A parked instruction owns its recovery and retry even when a
-			// device edge occurred during the timed part of that recovery.
-			if (cpu.advanceAllocationRecovery() && !cpu.heapServiceActive()) return Pulse.Maintenance;
-		} else if (!backendBlocked) {
-			cpu.admitFixedWork(CpuRunKind.Scheduled);
-		}
+		if (!backendBlocked) cpu.admitFixedWork(CpuRunKind.Scheduled);
 		return backendBlocked ? Pulse.Blocked : Pulse.Ready;
 	}
 
@@ -218,17 +211,9 @@ export class FrameSchedulerState {
 	public advanceLogicalTick(tickBudget: number): LogicalTickResult {
 		const runtime = this.runtime;
 		const admission = this.beginScheduledExecution(0);
-		if (admission === Pulse.Maintenance) return LogicalTickResult.Maintenance;
-		const cpu = runtime.machine.cpu;
-		const parked = !cpu.heapServiceActive() && cpu.allocationParked();
-		if ((tickBudget === 0 && !parked && runtime.machine.scheduler.acceptedCpuCycles === 0)
+		if ((tickBudget === 0 && runtime.machine.scheduler.acceptedCpuCycles === 0)
 			|| admission === Pulse.Blocked) return LogicalTickResult.Incomplete;
-		if (parked) {
-			if (!this.logicalTickRunPending) {
-				this.logicalTickRunPending = true;
-				this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
-			}
-		} else if (!this.logicalTickRunPending) {
+		if (!this.logicalTickRunPending) {
 			this.logicalTickRunPending = true;
 			this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
 			if (runtime.frameLoop.frameActive) {
@@ -258,7 +243,7 @@ export class FrameSchedulerState {
 		}
 		this.synchronizeBackendService();
 		if (this.lastTickSequence !== targetSequence) {
-			return !cpu.heapServiceActive() && cpu.allocationParked() ? LogicalTickResult.DeferredCpu : LogicalTickResult.Incomplete;
+			return LogicalTickResult.Incomplete;
 		}
 		this.logicalTickRunPending = false;
 		this.logicalTickRunTargetSequence = 0;
@@ -296,8 +281,7 @@ export class FrameSchedulerState {
 			if (carry === 0 && cycleGrant === 0 && runtime.machine.scheduler.acceptedCpuCycles === 0) return false;
 			this.beginScheduledFrame(carry + cycleGrant, carry);
 		}
-		const cpu = runtime.machine.cpu;
-		if (this.beginScheduledExecution(0) !== Pulse.Ready || (!cpu.heapServiceActive() && cpu.allocationParked())) return false;
+		if (this.beginScheduledExecution(0) !== Pulse.Ready) return false;
 		const previous = this.lastTickSequence, state = runtime.frameLoop.frameState, scheduler = runtime.machine.scheduler;
 		if (scheduler.acceptedCpuCycles !== 0) settleAcceptedCpuTime(runtime);
 		else runDueRuntimeTimers(runtime);
@@ -393,8 +377,7 @@ export class FrameSchedulerState {
 		if (budget === 0) {
 			budget = this.takeScheduledCycleBudget();
 			if (budget <= 0) {
-				const { cpu, scheduler } = this.runtime.machine;
-				if (scheduler.acceptedCpuCycles === 0 && (cpu.heapServiceActive() || !cpu.allocationReady())) return false;
+				if (this.runtime.machine.scheduler.acceptedCpuCycles === 0) return false;
 				budget = 0;
 			}
 		}

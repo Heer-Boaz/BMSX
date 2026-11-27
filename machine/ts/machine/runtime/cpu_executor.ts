@@ -29,7 +29,6 @@ const enum CpuSliceResult {
 	Advanced,
 	InstructionYielded,
 	InstructionHalted,
-	ParkedAllocation,
 	ExecutionStopped,
 	Halted,
 }
@@ -43,7 +42,6 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const service = cpu.heapServiceActive();
-		if (!service && cpu.allocationParked()) return false;
 		const gxGpu = machine.gxGpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (gxGpu.backendServiceBlocksMachine()) {
@@ -97,8 +95,7 @@ export class CpuExecutionState {
 		let result = CpuExecutionResult.Yielded;
 		const { machine: { cpu, scheduler, systemController }, vblank } = this.runtime;
 		let running = true;
-		while (running && !vblank.tickCompleted && (cpu.heapServiceActive()
-			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.queuedFixedWork()))) {
+		while (running && !vblank.tickCompleted && (cpu.heapServiceActive() || !cpu.queuedFixedWork())) {
 			if (systemController.hasResetRequest() && !cpu.systemResetInhibited() && scheduler.acceptedCpuCycles === 0) break;
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
@@ -121,7 +118,6 @@ export class CpuExecutionState {
 					result = CpuExecutionResult.Halted;
 					running = false;
 					continue;
-				case CpuSliceResult.ParkedAllocation:
 				case CpuSliceResult.Blocked:
 					running = false;
 					continue;
@@ -140,7 +136,6 @@ export class CpuExecutionState {
 				return InstructionStepResult.Executed;
 			case CpuSliceResult.ExecutionStopped:
 				return InstructionStepResult.ExecutionStopped;
-			case CpuSliceResult.ParkedAllocation:
 			case CpuSliceResult.Blocked:
 			case CpuSliceResult.Halted:
 				return InstructionStepResult.Blocked;
@@ -152,7 +147,6 @@ export class CpuExecutionState {
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
-		if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 		// Scheduled work still owes physical edges to the frame owner.
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
@@ -207,7 +201,6 @@ export class CpuExecutionState {
 					continue;
 				}
 				if (!cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
-				if (cpu.allocationParked()) return CpuSuspendedRunResult.Halted;
 			}
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
@@ -266,33 +259,6 @@ export class CpuExecutionState {
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
 		const service = cpu.heapServiceActive();
-		if (service && cpu.allocationParked() && state.deferredAllocationCycles !== 0) {
-			// Charge the issuing instruction's accepted prefix before its
-			// first timed recovery grant, not again when it retries.
-			const deferred = state.deferredAllocationCycles;
-			state.deferredAllocationCycles = 0;
-			settleRetiredCpuGrant(runtime, state, deferred);
-			return CpuSliceResult.Advanced;
-		}
-		if (!service && cpu.allocationParked()) {
-			if (!cpu.allocationReady()) return CpuSliceResult.ParkedAllocation;
-			const deferred = state.deferredAllocationCycles;
-			cpu.instructionBudgetRemaining = 0;
-			scheduler.beginCpuSlice(deferred);
-			try {
-				cpu.resumeAllocation();
-			} finally {
-				scheduler.endCpuSlice();
-			}
-			const consumed = deferred - cpu.instructionBudgetRemaining;
-			if (cpu.allocationParked()) {
-				state.deferredAllocationCycles = consumed;
-				return CpuSliceResult.ParkedAllocation;
-			}
-			state.deferredAllocationCycles = 0;
-			settleRetiredCpuGrant(runtime, state, consumed);
-			return cpu.getFrameDepth() !== 0 ? CpuSliceResult.InstructionYielded : CpuSliceResult.InstructionHalted;
-		}
 		let advanced = scheduler.hasDueTimer();
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		while (state.cycleBudgetRemaining > 0
@@ -332,10 +298,6 @@ export class CpuExecutionState {
 			}
 			const result = scheduler.runCpuSlice(0, sliceBudget, undefined, CpuRunKind.Scheduled);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
-			if (result === RunResult.ParkedAllocation) {
-				state.deferredAllocationCycles = consumed;
-				return CpuSliceResult.ParkedAllocation;
-			}
 			if (consumed > 0) {
 				// Device timers publish this frame's remainder at the VBlank edge.
 				advanced = true;

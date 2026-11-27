@@ -414,9 +414,8 @@ local finish_reserved_rebuild<const> = function(management, record, array, hash,
 	job.value_word = vw -- T:833 V:24 W:30 B:293
 
 	local prepared = false -- T:940,977 C:19,53; the preparation phase returns whether the next phase can start
-	local device_cycles<const>: *word = layout.remaining_device_cycles_address -- T:827,930-931 B:281 C:6-7; use the hardware horizon, not host's fragment
 	while true do -- T:827,930 C:6; the native caller continued the same job
-		local allowance = *device_cycles -- T:827,930-931 B:281 C:6-7; sample only at the source quantum frontier
+		local allowance = cop0.event_cycles -- T:827,930-931 B:281 C:6-7; sample only at the source quantum frontier
 		if allowance > 0 then -- T:931 C:7
 			if not prepared then -- T:940,977 C:19,53
 				allowance, prepared = prepare_table_rebuild(record, job_offset, allowance) -- T:940-1001 C:19-76; completion comes from the original exits

@@ -1,10 +1,11 @@
+import { TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { TableRebuild, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, type Value, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -89,7 +90,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(memory.readRamRecordWord(scratch + SCRATCH_BYTES + 28), 0x27a0bf63);
 		return cpu.heapServiceResult() | 0;
 	}
-	function plan(record: number, key: Value, extra: number, counted?: TableRebuild) {
+	function plan(record: number, key: Value, extra: number, counted?: TableRebuildReference) {
 		const { tables } = oracle.gc;
 		tables['planRehash'](record, key, extra, counted);
 		const { array, hash, keepHash } = tables['resizePlan'];
@@ -160,7 +161,7 @@ for (const opt of [0, 3] as const) {
 			for (const key of [4097, 5119, 8193]) cpu.gc.tables.set(address, int(key), int(key));
 			return address;
 		});
-		const job = new TableRebuild();
+		const job = new TableRebuildReference();
 		for (const budget of [0, 3, -2, 147, 23, 2000]) {
 			f.oracle.instructionBudgetRemaining = budget;
 			f.oracle.gc.tables['spendCensusGrant'](record, array, job, f.oracle);

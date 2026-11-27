@@ -147,10 +147,7 @@ DISPATCH_LABEL(SETI) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) {
-		if (allocationParked()) return RunResult::ParkedAllocation;
-		DISPATCH_CONTINUE();
-	}
+	if (storeTableIntegerIndex(FRAME, tableValue, b, value)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
@@ -197,7 +194,7 @@ DISPATCH_LABEL(SETFIELD) {
 	if (isTable) {
 		TableRecord table(m_heap, valuePayload(base));
 		if constexpr (!Instrumented) {
-			const int slot = table.tryAssignCachedStringField(key, value, predicted, extraHashSlots);
+			const int slot = table.tryAssignCachedStringField(key, value, predicted);
 			if (slot != TableRecord::HASH_STORE_DECLINED) {
 				predicted = slot;
 				DISPATCH_NEXT();
@@ -207,10 +204,7 @@ DISPATCH_LABEL(SETFIELD) {
 		}
 	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value, extraHashSlots)) {
-		if (allocationParked()) return RunResult::ParkedAllocation;
-		DISPATCH_CONTINUE();
-	}
+	if (storeTableFieldIndexCached(FRAME, predicted, base, key, value, extraHashSlots)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
@@ -254,10 +248,7 @@ DISPATCH_LABEL(SETT) {
 		DISPATCH_NEXT();
 	}
 	PUBLISH_SCALAR_FRONTIER();
-	if (storeTableIndex(FRAME, tableValue, key, value)) {
-		if (allocationParked()) return RunResult::ParkedAllocation;
-		DISPATCH_CONTINUE();
-	}
+	if (storeTableIndex(FRAME, tableValue, key, value)) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }
@@ -434,14 +425,15 @@ DISPATCH_COMPARISON(LE)
 DISPATCH_LABEL(MFC0) {
 	const int a = decoded->a;
 	const int b = decoded->b;
-	if (isUserMode()) {
+	if (b != COP0_EVENT_CYCLES && isUserMode()) {
 		PUBLISH_SCALAR_FRONTIER();
 		enterSynchronousException(FRAME, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		DISPATCH_CONTINUE();
 	}
 	if (!cop0FieldImplemented(b)) { PUBLISH_SCALAR_FRONTIER(); hardHalt(); DISPATCH_CONTINUE(); }
 	if (static_cast<size_t>(a) >= FRAME.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 value = b == COP0_CURRENT ? FRAME.thread->address : cop0ReadAsZero(b) ? 0u : m_cop0Words[b];
+	const u32 value = b == COP0_EVENT_CYCLES ? static_cast<u32>(remainingDeviceCycles())
+		: b == COP0_CURRENT ? FRAME.thread->address : cop0ReadAsZero(b) ? 0u : m_cop0Words[b];
 	SET_REGISTER_FAST(a, valueInteger(static_cast<i32>(value)));
 	PUBLISH_SCALAR_FRONTIER();
 	DISPATCH_CONTINUE();

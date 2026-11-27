@@ -263,7 +263,6 @@ try {
 		assert.ok(cpu.heapServiceActive(), 'cache miss executes a private BIOS reservation');
 		assert.ok(pending() > 0, 'the CLOSURE latch holds only its marked destination');
 		assert.equal(memory.readRamRecordWord(root), operation);
-		assert.equal(cpu.allocationParked(), false);
 		const destination = pending() - 1;
 		const targetIndex = system.symbols.metadata.functionIds.findIndex(id => id.startsWith('module:fixture/canonical/') && id.endsWith('|function|canonical'));
 		assert.ok(targetIndex >= 0);
@@ -276,7 +275,6 @@ try {
 			assert.equal(memory.readRamRecordWord(root), operation, 'one record activation owns the request through GC and retry');
 			assert.equal(cpu.readFramePc(caller), pc);
 			assert.equal(cpu.readFrameRegister(caller, destination), oldValue);
-			assert.equal(cpu.allocationParked(), false);
 			observe('P', `${caller + 1} ${pc}`);
 		}
 		checkCaller();

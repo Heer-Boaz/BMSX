@@ -99,7 +99,7 @@ function fixture(optLevel: 0 | 3) {
 		return result;
 	}
 	function publishRoots(receiver: number, key: Value, value: Value) {
-		const operands = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + HeapServiceRemarkHeadField.Receiver;
+		const operands = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + 52;
 		same(target => {
 			target.memory.writeRamRecordWord(operands, receiver);
 			target.memory.writeRamRecordPair(operands + 4, valueTag(key), valuePayload(key));

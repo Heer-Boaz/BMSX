@@ -29,7 +29,6 @@ bool settleRetiredCpuGrant(Runtime& runtime, FrameState& state, int cycles) {
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	const bool service = cpu.heapServiceActive();
-	if (!service && cpu.allocationParked()) return false;
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
@@ -85,9 +84,7 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
 	bool running = true;
-	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive()
-		|| (cpu.allocationParked() ? cpu.allocationReady()
-			: !cpu.queuedFixedWork()))) {
+	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive() || !cpu.queuedFixedWork())) {
 		if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()
 			&& runtime.machine.scheduler.acceptedCpuCycles() == 0) break;
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
@@ -111,7 +108,6 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 				result = CpuExecutionResult::Halted;
 				running = false;
 				continue;
-			case CpuSliceResult::ParkedAllocation:
 			case CpuSliceResult::Blocked:
 				running = false;
 				continue;
@@ -130,7 +126,6 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 			return InstructionStepResult::Executed;
 		case CpuSliceResult::ExecutionStopped:
 			return InstructionStepResult::ExecutionStopped;
-		case CpuSliceResult::ParkedAllocation:
 		case CpuSliceResult::Blocked:
 		case CpuSliceResult::Halted:
 			return InstructionStepResult::Blocked;
@@ -148,7 +143,6 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
 	if (targetThread == 0u) targetThread = cpu.activeThread()->address;
-	if (!cpu.heapServiceActive() && cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 	// Scheduled work still owes physical edges to the frame owner.
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
@@ -207,7 +201,6 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			}
 			if (!cpu.hasFramesAbove(targetThread, targetDepth))
 				return CpuSuspendedRunResult::Completed;
-			if (cpu.allocationParked()) return CpuSuspendedRunResult::Halted;
 		}
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
@@ -269,32 +262,6 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
 	const bool service = cpu.heapServiceActive();
-	if (service && cpu.allocationParked() && frameState.deferredAllocationCycles != 0) {
-		// Settle the caller's accepted prefix before granting timed recovery.
-		const int deferred = frameState.deferredAllocationCycles;
-		frameState.deferredAllocationCycles = 0;
-		settleRetiredCpuGrant(runtime, frameState, deferred);
-		return CpuSliceResult::Advanced;
-	}
-	if (!service && cpu.allocationParked()) {
-		if (!cpu.allocationReady()) return CpuSliceResult::ParkedAllocation;
-		// Late fault handling observes the same effective clock as the original slice.
-		const int deferred = frameState.deferredAllocationCycles;
-		cpu.instructionBudgetRemaining = 0;
-		{
-			scheduler.beginCpuSlice(deferred);
-			ScopeExit activeSlice([&scheduler]() { scheduler.endCpuSlice(); });
-			cpu.resumeAllocation();
-		}
-		const int consumed = deferred - cpu.instructionBudgetRemaining;
-		if (cpu.allocationParked()) {
-			frameState.deferredAllocationCycles = consumed;
-			return CpuSliceResult::ParkedAllocation;
-		}
-		frameState.deferredAllocationCycles = 0;
-		settleRetiredCpuGrant(runtime, frameState, consumed);
-		return cpu.getFrameDepth() != 0 ? CpuSliceResult::InstructionYielded : CpuSliceResult::InstructionHalted;
-	}
 	bool advanced = scheduler.hasDueTimer();
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (frameState.cycleBudgetRemaining > 0
@@ -337,10 +304,6 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		}
 		const RunResult result = scheduler.runCpuSlice(0, sliceBudget, 0u, CpuRunKind::Scheduled);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
-		if (result == RunResult::ParkedAllocation) {
-			frameState.deferredAllocationCycles = consumed;
-			return CpuSliceResult::ParkedAllocation;
-		}
 		if (consumed > 0) {
 			// Device timers publish this frame's remainder at the VBlank edge.
 			advanced = true;

@@ -13,14 +13,14 @@ import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METAD
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
 import { THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { isOpen, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_WORD } from '../../../machine/ts/machine/cpu/upvalue';
-import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_STORAGE_WINDOW, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
-import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
@@ -598,7 +598,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	trace.observe(`O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
 	const prior = scheduler.nowCycles, tick = frames.lastTickSequence;
 	const step = frames.stepInstruction(1);
-	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick), +cpu.allocationParked(), +cpu.allocationReady(), +cpu.heapServiceActive(),
+	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick), +cpu.heapServiceActive(),
 		memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.equal(scheduler.nowCycles, 0);
@@ -664,7 +664,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const secondBefore = scheduler.nowCycles, secondTick = frames.lastTickSequence;
 	const held = frames.stepInstruction(1);
 	trace.observe('d', [held, scheduler.nowCycles - secondBefore, +(frames.lastTickSequence !== secondTick),
-		+cpu.allocationParked(), +cpu.allocationReady(), +cpu.heapServiceActive(),
+		+cpu.heapServiceActive(),
 		memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.ok(scheduler.nowCycles >= secondBefore);
@@ -703,7 +703,6 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	const rt = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu, systemController } = rt.machine, frames = rt.frameScheduler;
 	const { heapAllocator: arena } = cpu, scratch = arena.managementOffset();
-	const operand = scratch + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 	const gate = image.layout.header.bssAddress, progress = gate + 4;
 	const tsState = join(dir, 'reset-growth-ts.state'), nativeState = join(dir, 'reset-growth-native.state');
 	const trace = new Trace(native, join(dir, 'reset-growth.trace'), cartPath);
@@ -729,12 +728,35 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	const root = cpu.rootThread.address;
 	memory.writeMappedWord(gate, 1);
 	trace.observe(`O ${gate} 1`);
+	function issueGrant() {
+		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		trace.observe('E 1', `${result} ${1 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		assert.equal(result, RunResult.Yielded);
+	}
+	const stopped = cpu.activeThread, frame = stopped.currentFrame!, depth = stopped.frameDepth;
+	const decode = () => decodeBlua32InstructionAtPc(cart, CART_ROM_BASE, frame.pc);
+	for (let i = 0; i < 32 && decode().op !== OpCode.SETI && decode().op !== OpCode.SETT; ++i) issueGrant();
+	const issue = frame.pc, write = decode();
+	assert.ok(write.op === OpCode.SETI || write.op === OpCode.SETT);
+	const receiver = valuePayload(frame.registers.get(write.a));
+	const successor = write.pc + INSTRUCTION_BYTES;
+	assert.equal(memory.readRamRecordWord(receiver + TableHeader.Array), 1024);
+	issueGrant();
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.heapServiceActive(), false);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
+	assert.equal(cpu.readEpcWord(), issue);
+	assert.equal(cpu.readThreadFrameWord(stopped.address, depth - 1, FrameField.Pc), successor);
+	const request = cpu.activeThread.currentFrame!;
+	assert.equal(request.argumentCount, 5);
+	assert.deepEqual([request.registers.get(0), request.registers.get(1), request.registers.get(2), request.registers.get(3)],
+		[valueTable(receiver), valueInteger(1025), valueInteger(17), valueInteger(0)]);
+	assert.equal(valueTag(request.registers.get(4)), ValueTag.Integer);
+	trace.observe('Z', `${CPU_CAUSE_CODE_STORAGE_WINDOW} 0 ${issue}`);
 	function partialTransfer() {
-		if (!cpu.heapServiceActive()
-			|| memory.readRamRecordWord(operand + HeapServiceRemarkHeadField.KeyWord) !== 1025) return false;
-		const receiver = memory.readRamRecordWord(operand + HeapServiceRemarkHeadField.Receiver);
-		// The firmware's staged rebuild job owns the destination; the published
-		// record still uses the old tag plane. See table_prepare_rebuild.lua.
+		if (!cpu.fixedInterruptActive()) return false;
+		// The firmware's own staged rebuild job holds the candidate backing.
+		// Do not infer progress from a host continuation.
 		const storage = memory.readRamRecordWord(scratch + 16);
 		if (memory.readRamRecordWord(scratch + 20) !== 2048 || memory.readRamRecordWord(scratch + 36) !== 1025
 			|| memory.readRamRecordWord(receiver + TableHeader.Array) !== 1024) return false;
@@ -744,7 +766,6 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	}
 	for (let i = 0; i < 4096 && !partialTransfer(); ++i) grant(31);
 	assert.equal(partialTransfer(), true, 'stop between actual Array tag-plane stores, before publishing the new header');
-	const receiver = memory.readRamRecordWord(operand + HeapServiceRemarkHeadField.Receiver);
 	const storage = memory.readRamRecordWord(scratch + 16);
 	fingerprint(receiver, 36);
 	fingerprint(storage + 4 * 2048, 1024);
@@ -755,7 +776,8 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	assert.ok(scheduler.nowCycles > beforeHeld, 'the in-flight guest instruction still consumes cycles');
 	assert.equal(systemController.hasResetRequest(), true);
 	assert.equal(cpu.rootThread.address, root);
-	assert.equal(cpu.heapServiceActive(), true);
+	assert.equal(cpu.fixedInterruptActive(), true);
+	assert.equal(cpu.heapServiceActive(), false);
 	trace.observe('l');
 	trace.observe('s');
 	trace.observe(`x ${nativeState}`);

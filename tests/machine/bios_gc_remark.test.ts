@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { AllocationRecovery, type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	GC_CHANGED_HEAD, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_THREAD_VISITS, GC_TRACE_HEAD,
 	GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcRootBank,
@@ -76,10 +76,6 @@ function fixture(optLevel: 0 | 3) {
 		t['stringComparison'].left = left;
 		t['stringComparison'].right = right;
 		t['stringComparison'].remaining = 1;
-		t['pendingAllocation'] = {
-			recovery: AllocationRecovery.Current, instructionPc: 0, lastPc: 0, nextPc: 0,
-			receiver, key: valueString(key), value: valueTable(value), extraHashSlots: 0,
-		};
 		for (const [list, records] of [[GC_THREAD_VISITS, [t0, t1, t2]], [GC_WEAK_VISITS, [w0, w1, w2]]] as const) {
 			for (const record of records) {
 				ram.writeRamRecordByte(record + GC_VISIT_HEADER_BYTE, 0x80);
@@ -123,7 +119,16 @@ function fixture(optLevel: 0 | 3) {
 		return cycles;
 	}
 	function verify(allowance: number) {
-		const expected = oracle.gc['remarkVisits'](allowance), carry = oracle.stringPool.takeMarkWork();
+		const stage = control + GC_REMARK_VISIT_STATE;
+		const before = oracle.memory.readRamRecordWord(stage);
+		const expected = oracle.gc['remarkVisits'](allowance);
+		if (before !== ROOTS && oracle.memory.readRamRecordWord(stage) === ROOTS) {
+			// The old native rule is retained only on this reference side.
+			oracle.gc.markValue(valueTable(receiver));
+			oracle.gc.markValue(valueString(key));
+			oracle.gc.markValue(valueTable(value));
+		}
+		const carry = oracle.stringPool.takeMarkWork();
 		oracle.stringPool.resumeMarkWork(carry);
 		oracle.memory.writeRamRecordWord(descriptor, carry);
 		assert.equal(cpu.heapServiceResult(), expected);

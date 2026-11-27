@@ -24,7 +24,7 @@ export class GuestFixture {
 	private readonly suiteSlot: string;
 	private readonly stoppedGrant: FrameState = {
 		updateExecuted: false, cycleBudgetRemaining: 0, cycleBudgetGranted: 0,
-		cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredAllocationCycles: 0,
+		cycleCarryGranted: 0, activeCpuUsedCycles: 0,
 	};
 
 	public constructor(public readonly runtime: Runtime, public readonly program: BuiltTestCartridge) {

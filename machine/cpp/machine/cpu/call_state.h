@@ -74,11 +74,6 @@ struct CallResultPlacement {
 };
 
 // Explicit tagged completion at a semantic call or instruction boundary.
-struct BiosCallContinuation {
-	HeapServiceBiosCallKind kind = HeapServiceBiosCallKind::Discard;
-	u32 target = 0u;
-	u32 word = 0u;
-};
 
 // Architectural words for a new activation. The same record is published
 // through the RAM port or into a backing already admitted by a native grant.

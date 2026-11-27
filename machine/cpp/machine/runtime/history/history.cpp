@@ -33,9 +33,7 @@ void RuntimeHistory::start(const HistoryOptions& options) {
 
 void RuntimeHistory::resetFrameAdmission() {
 	runtime.frameScheduler.reset();
-	// Dropping host pacing must not discard an accepted instruction whose
-	// cycles are still waiting to become visible to the emulated devices.
-	if (!runtime.machine.cpu.allocationParked()) runtime.frameLoop.abandonFrameState(runtime);
+	runtime.frameLoop.abandonFrameState(runtime);
 }
 
 void RuntimeHistory::stop() {
@@ -118,14 +116,12 @@ HistorySeekResult RuntimeHistory::advanceSeek(i64 cycleGrant) {
 	if (mode == HistoryMode::Reviewing) return HistorySeekResult::Complete;
 	const i64 before = runtime.machine.scheduler.currentNowCycles();
 	const i64 budgetBefore = runtime.frameScheduler.remainingCycleBudget(runtime);
-	const auto result = runtime.frameScheduler.advanceLogicalTick(runtime, cycleGrant);
+	runtime.frameScheduler.advanceLogicalTick(runtime, cycleGrant);
 	if (runtime.frameScheduler.lastTickSequence == targetTick) {
 		mode = HistoryMode::Reviewing;
 		return HistorySeekResult::Complete;
 	}
 	if (runtime.machine.gxGpu.backendServicePending() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return HistorySeekResult::BackendPending;
-	if (result == LogicalTickResult::Maintenance || result == LogicalTickResult::DeferredCpu)
-		return HistorySeekResult::Progressed;
 	// A grant can pay for an indivisible instruction already executed without advancing the clock.
 	if (runtime.machine.scheduler.currentNowCycles() != before
 		|| (budgetBefore < 0 && runtime.frameScheduler.remainingCycleBudget(runtime) > budgetBefore)) return HistorySeekResult::Progressed;

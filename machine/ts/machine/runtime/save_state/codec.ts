@@ -1,10 +1,8 @@
-import { TableCensus } from '../../cpu/table';
-import { LuaAllocationRecovery } from '../../cpu/lua_heap';
 import type { PendingMemoryKind } from '../../cpu/memory_operation';
 import type { MemoryAccessKind } from '../../../spec/blua32/memory_access_kind';
 import { BinaryReader, BinarySize, BinaryWriter, type BinarySink } from '../../../common/serializer/binary_stream';
 import type { MachineSaveState } from '../../save_state';
-import { AllocationRecovery, type CpuRuntimeState, type PendingAllocation } from '../../cpu/cpu';
+import type { CpuRuntimeState } from '../../cpu/cpu';
 import type { Value } from '../../cpu/value';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { CartridgeCardState, CartridgeControllerState, CartridgeMailboxState } from '../../devices/cartridge/contracts';
@@ -89,7 +87,6 @@ function writeFrameState(writer: BinarySink, state: FrameState): void {
 	writer.i64(state.cycleBudgetGranted);
 	writer.i64(state.cycleCarryGranted);
 	writer.i64(state.activeCpuUsedCycles);
-	writer.i32(state.deferredAllocationCycles);
 }
 
 function readFrameState(reader: BinaryReader): FrameState {
@@ -99,7 +96,6 @@ function readFrameState(reader: BinaryReader): FrameState {
 		cycleBudgetGranted: reader.i64(),
 		cycleCarryGranted: reader.i64(),
 		activeCpuUsedCycles: reader.i64(),
-		deferredAllocationCycles: reader.i32(),
 	};
 }
 
@@ -1145,31 +1141,6 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	const scan = state.stringComparison;
 	writer.u32(scan.left); writer.u32(scan.right); writer.u32(scan.offset); writer.u32(scan.remaining);
 	writer.i32(scan.order); writer.bool(scan.skipLess); writer.bool(scan.skipTie);
-	const j = state.rebuild;
-	writer.u32(j === null ? 0 : j.record);
-	if (j !== null) {
-		writer.u32(j.source); writer.u32(j.count); writer.u32(j.storage);
-		writer.u32(j.arrayStorage); writer.u32(j.arraySlots); writer.u32(j.arrayCleared);
-		writer.u32(j.capacity); writer.u32(j.cleared); writer.u32(j.homes);
-		writer.u32(j.cursor); writer.u32(j.free); writer.u32(j.collisions);
-		writer.u64(j.key); writer.u64(j.value);
-		writer.u32(j.result); writer.u32(j.destination); writer.u32(j.wanted); writer.u32(j.instructionPc);
-		writer.u32(j.census);
-		if (j.census !== TableCensus.None) {
-			writer.u32(j.recovery); writer.u32(j.scanned); writer.u32(j.live); writer.u32(j.slots); writer.u32(j.kept);
-		}
-	}
-	const pending = state.pendingAllocation;
-	writer.u32(pending === null ? AllocationRecovery.None : pending.recovery);
-	if (pending !== null) {
-		writer.u32(pending.instructionPc);
-		writer.u32(pending.lastPc);
-		writer.u32(pending.nextPc);
-		writer.u32(pending.receiver);
-		writer.u64(pending.key);
-		writer.u64(pending.value);
-		writer.u8(pending.extraHashSlots);
-	}
 	writer.u32(state.statusWord);
 	writer.u32(state.systemVectorWord);
 	writer.u32(state.previousRootContextWord);
@@ -1186,29 +1157,6 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	writer.u32(state.nmiReturnExceptionDomainWord);
 	writer.bool(state.nonMaskableInterruptPending);
 	writer.bool(state.yieldRequested);
-}
-
-function readPendingAllocation(reader: BinaryReader): PendingAllocation | null {
-	const recovery = reader.u32() as AllocationRecovery;
-	if (recovery === AllocationRecovery.None) return null;
-	const instructionPc = reader.u32(), lastPc = reader.u32(), nextPc = reader.u32();
-	return { recovery, instructionPc, lastPc, nextPc, receiver: reader.u32(),
-		key: reader.u64() as Value, value: reader.u64() as Value, extraHashSlots: reader.u8() };
-}
-
-function readTableRebuild(reader: BinaryReader) {
-	const record = reader.u32();
-	if (!record) return null;
-	const j = { record, source: reader.u32(), count: reader.u32(), storage: reader.u32(),
-		arrayStorage: reader.u32(), arraySlots: reader.u32(), arrayCleared: reader.u32(), capacity: reader.u32(),
-		cleared: reader.u32(), homes: reader.u32(), cursor: reader.u32(), free: reader.u32(), collisions: reader.u32(),
-		key: reader.u64() as Value, value: reader.u64() as Value,
-		result: reader.u32(), destination: reader.u32(), wanted: reader.u32(), instructionPc: reader.u32(), census: reader.u32(),
-		recovery: LuaAllocationRecovery.CurrentOrFresh, scanned: 0, live: 0, slots: 0, kept: 0 };
-	if (j.census !== TableCensus.None) {
-		j.recovery = reader.u32(); j.scanned = reader.u32(); j.live = reader.u32(); j.slots = reader.u32(); j.kept = reader.u32();
-	}
-	return j;
 }
 
 function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
@@ -1238,8 +1186,6 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 			left: reader.u32(), right: reader.u32(), offset: reader.u32(), remaining: reader.u32(),
 			order: reader.i32(), skipLess: reader.bool(), skipTie: reader.bool(),
 		},
-		rebuild: readTableRebuild(reader),
-		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),
 		systemVectorWord: reader.u32(),
 		previousRootContextWord: reader.u32(),

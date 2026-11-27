@@ -161,7 +161,6 @@ test('core golden: the GPU VBlank edge presents and completes the active runtime
 		cycleBudgetGranted: 100,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 80,
-		deferredAllocationCycles: 0,
 	};
 	const runtime = {
 		machine: {

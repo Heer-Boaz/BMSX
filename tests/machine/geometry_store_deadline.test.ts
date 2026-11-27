@@ -81,7 +81,7 @@ function observe(mode: CpuExecutionBackend, crossing: boolean, doorbell = false)
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
 		frame.registers.setInteger(0, io.IO_GEO_CMD);
 		frame.registers.setInteger(1, geo.IO_CMD_GEO_OVERLAP2D_PASS);
-		const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredAllocationCycles: 0 };
+		const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0 };
 		assert.equal(runtime.cpuExecution.runInstruction(state), InstructionStepResult.Executed);
 		assert.equal(scheduler.nowCycles, 3);
 		assert.equal(geoController.captureState().pendingCycles, 4, 'GEO charge begins at the doorbell, not the start of the CPU grant');
@@ -103,7 +103,7 @@ function observe(mode: CpuExecutionBackend, crossing: boolean, doorbell = false)
 	else assert.equal(geoController.captureState().xform.vertices[0], 0, 'non-crossing control samples before the write');
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, frame.functionAddress, entry);
 	frame.registers.setInteger(0, vertex); frame.registers.setInteger(1, 0x10000);
-	const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0, deferredAllocationCycles: 0 };
+	const state = { updateExecuted: false, cycleBudgetRemaining: 100, cycleBudgetGranted: 100, cycleCarryGranted: 0, activeCpuUsedCycles: 0 };
 	const start = scheduler.nowCycles;
 	assert.equal(runtime.cpuExecution.runInstruction(state), InstructionStepResult.Executed);
 	assert.equal(state.cycleBudgetRemaining, 97, 'the runtime grants one instruction and charges all three cycles');

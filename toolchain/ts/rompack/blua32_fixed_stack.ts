@@ -1,4 +1,4 @@
-import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EVENT_CYCLES, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -162,7 +162,7 @@ export function deriveBlua32FixedStack(
 					registers[a] = 0;
 					break;
 				case OpCode.MFC0:
-					if (boundary?.ordinaryCode === undefined || !cop0FieldImplemented(b) || a >= width)
+					if ((boundary?.ordinaryCode === undefined && b !== COP0_EVENT_CYCLES) || !cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control read');
 					registers[a] = 0;
 					break;

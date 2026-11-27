@@ -1,6 +1,3 @@
-import { AllocationRecovery, type PendingAllocation } from '../../machine/ts/machine/cpu/cpu';
-import { TableCensus, TableRebuild } from '../../machine/ts/machine/cpu/table';
-import { LuaAllocationRecovery } from '../../machine/ts/machine/cpu/lua_heap';
 import { PendingMemoryKind } from '../../machine/ts/machine/cpu/memory_operation';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import assert from 'node:assert/strict';
@@ -523,7 +520,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					cycleBudgetGranted: 23_456,
 					cycleCarryGranted: 34_567,
 					activeCpuUsedCycles: 45_678,
-					deferredAllocationCycles: 0,
 				},
 				frameActive: true,
 			},
@@ -549,11 +545,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
-			rebuild: { record: 0x8100, source: 0x8200, count: 256, storage: 0x9200, capacity: 512,
-				arrayStorage: 0x9100, arraySlots: 256, arrayCleared: 1280, cleared: 7168, homes: 256, cursor: 7, free: 498, collisions: 19, key: valueInteger(-9), value: valueTable(0x8500),
-				census: 0, recovery: 0, scanned: 0, live: 0, slots: 0, kept: 0, result: 1, destination: 2, wanted: 3, instructionPc: 0x5020 },
 			stringComparison: { left: 0x80000100, right: 0x1000, offset: 129, remaining: 199, order: -1, skipLess: true, skipTie: false },
-			pendingAllocation: null,
 			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,
 			previousRootContextWord: 0x083fcd28,
@@ -583,15 +575,6 @@ for (const domain of [-1, 0, 1] as const) test(`runtime save-state codec preserv
 	const restored = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.equal(restored.cpuState.programExecutionDomainId, domain);
 	assert.equal(restored.cpuState.executionCartridgeSlot, state.cpuState.executionCartridgeSlot);
-});
-
-test('runtime save-state codec preserves a census partway through a density band', () => {
-	const state = createRuntimeSaveState();
-	const j = state.cpuState.rebuild = { ...new TableRebuild(), record: 0x8100, instructionPc: 0x5020,
-		key: valueInteger(8193), value: valueInteger(7), census: TableCensus.General,
-		recovery: LuaAllocationRecovery.Fresh, scanned: 4100, live: 3100, slots: 4096, kept: 3096 };
-	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-	assert.deepEqual(decoded.cpuState.rebuild, j);
 });
 
 test('runtime save-state codec preserves RAM, device, scheduler and CPU state', () => {
@@ -677,19 +660,6 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	);
 
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
-});
-
-test('parked Table writes preserve their exact issue and raw operands without a kind word', () => {
-	const state = createRuntimeSaveState();
-	const emptyLength = encodeRuntimeSaveState(state).length;
-	const pending: PendingAllocation = {
-		recovery: AllocationRecovery.RetryCurrent, instructionPc: 0x2000, lastPc: 0x2004, nextPc: 0x2008,
-		receiver: 0x12345678, key: valueString(0x01023458), value: valueFloatBits(0xffc12345), extraHashSlots: 255,
-	};
-	state.cpuState.pendingAllocation = pending;
-	const encoded = encodeRuntimeSaveState(state);
-	assert.equal(encoded.length - emptyLength, 33); // four u32 words, two Values and one u8
-	assert.deepEqual(decodeRuntimeSaveState(encoded, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes).cpuState.pendingAllocation, pending);
 });
 
 test('runtime save-state codec retains the USER ingress bank', () => {

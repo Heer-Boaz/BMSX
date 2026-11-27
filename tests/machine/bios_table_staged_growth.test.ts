@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { HASH_STORE_DECLINED, HASH_STORE_PENDING, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
+import { advanceTableRebuildReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import { type Value, hashCanonicalTableKey, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -10,42 +10,34 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { writeTestBlua32Rom } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { admitTestHeapServiceCpu, compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 
 const ENTRY = 'kernel/table_resize', NAME = 'execute_staged_table_growth';
-const modules = ['kernel/table_prepare_rebuild'].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
 const halt = 'halt_until_irq';
 const jobSentinel = 0xb9c82f31;
 const oldResult = [0x142d231d, 0xd62c1a75] as const;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(halt), modules, { entrySource: halt, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
+	const linked = linkManagedTestSystem(halt, optLevel), { object } = linked;
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === ENTRY && entry.exportPathKey === NAME);
 	assert.ok(symbol);
 	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 	assert.ok(root >= 0);
-	assert.equal(linked.image.functions[root].numParams, 6);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
+	assert.equal(linked.layout.functions[root].numParams, 6);
+	const { frames, valueSlots } = deriveBlua32FixedStack(linked.layout, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack ${frames}/${valueSlots}`);
 	function runtime() {
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(linked), cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 		});
 		runtime.boot();
-		admitTestHeapServiceCpu(runtime.machine.cpu, runtime.machine.executionAddressSpace);
-		runGuestToHalt(runtime.machine.cpu, 10_000);
+		runGuestToHalt(runtime.machine.cpu, 4_194_304);
 		return runtime;
 	}
-	return { runtime, entry: linked.image.functions[root].address };
+	return { runtime, entry: linked.layout.functions[root].address };
 }
 
 for (const optLevel of [0, 3] as const) {
@@ -90,12 +82,22 @@ for (const optLevel of [0, 3] as const) {
 					0, 0, +keep, TableRecords.hashStorageBytes(hash)];
 				for (const [index, word] of request.entries()) target.memory.writeRamRecordWord(reservation + index * 4, word);
 			});
-			const tables = oracle.gc.tables, plan = tables['resizePlan'];
-			plan.array = array; plan.hash = hash; plan.keepHash = keep;
-			oracle.instructionBudgetRemaining = 1 << 24;
-			assert.equal(tables['resize'](record, key, value, TableRecords.allocationCharge(oldArray, oldHash),
-				TableRecords.allocationCharge(array, hash), oracle), blocked ? HASH_STORE_DECLINED : HASH_STORE_PENDING);
-			assert.equal(oracle.tableRebuild.record, 0, 'reference passes the original whole rebuild');
+			const arena = oracle.heapAllocator;
+			const storage = keep ? 0 : arena.allocate(TableRecords.hashStorageBytes(hash), true);
+			assert.ok(keep || storage);
+			const base = array > oldArray ? arena.reserveBacking(oldWords, 5 * array) : oldWords;
+			if (blocked) {
+				assert.equal(base, 0);
+				arena.free(storage);
+			} else {
+				const capacity = keep ? 0 : hash, moved = array !== oldArray;
+				const reference = Object.assign(new TableRebuildReference(), {
+					record, source: keep ? 0 : oldStorage, count: keep ? 0 : oldHash, storage, capacity,
+					arrayStorage: moved ? base : 0, arraySlots: moved ? array : 0, free: capacity - 1, key, value,
+				});
+				advanceTableRebuildReference(oracle.gc, reference, 1 << 24);
+				assert.equal(reference.record, 0, 'reference completes the original staged rebuild');
+			}
 			const initial = captureRuntimeSaveState(guest);
 			const begin = () => assert.ok(cpu.beginHeapService(entry, [management, record, array, hash, +(array > oldArray && oldArray >= 1024), reservation]));
 			const pay = (fragment: number) => {

@@ -50,11 +50,6 @@ struct NativeArithmeticFeedback {
 	bool operator==(const NativeArithmeticFeedback&) const = default;
 };
 
-struct NativeHintedFieldWrite {
-	Value value;
-	u8 extraHashSlots;
-};
-
 // Runtime operands accompany the exit kind. Counts for activation transfers
 // are actual counts; -1 selects the open window. Guest frame words retain
 // the instruction encoding at the frame-control boundary.

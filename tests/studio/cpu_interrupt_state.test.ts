@@ -308,7 +308,6 @@ function makeFrameState(): FrameState {
 		cycleBudgetGranted: 100,
 		cycleCarryGranted: 0,
 		activeCpuUsedCycles: 0,
-		deferredAllocationCycles: 0,
 	};
 }
 
