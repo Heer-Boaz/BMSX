@@ -19,7 +19,7 @@ export type RuntimeGuestCall = {
 export type RuntimeGuestCallBoundary = {
 	/** Ask the guest owner for an admission receipt using its ordinary API. */
 	readonly request: RuntimeGuestCall;
-	/** Bind a condition from the returned values without retaining guest references. */
+	/** Bind a condition to the receipt returned by that call, not UI heap borrows. */
 	readonly condition: (values: readonly Value[]) => () => boolean;
 };
 export type RuntimeGuestCallRequest = {
@@ -146,7 +146,7 @@ export function scheduleRuntimeGuestCall(
 					cpu.readCompletionValues(values);
 					const reached = boundary.condition(values);
 					// Leave the completion plan before installing the rendezvous. The
-					// condition must resolve its guest owner anew rather than keep returned heap Values alive.
+					// receipt is owned by this control operation, never a pane borrower.
 					void tasks.schedule(() => {
 						if (!request.isCurrent()) { finished(false); return; }
 						guest.invalidate();

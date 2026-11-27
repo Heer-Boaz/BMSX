@@ -26,32 +26,13 @@ import { eventHistoryRuntime } from '../helpers/event_history';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { afterTest } from '../helpers/test_cleanup';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
-import { runCpuWithinBudget } from '../helpers/cpu_execution';
-import { asClosure, valueBool, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { applyRuntimeCheckpointState, captureRuntimeCheckpointState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
-import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 
 const WORLD = `local actor<const> = { id = 'actor', definition_id = 'fixture', active = true, _components = {}, _components_by_class = {} }
 function actor:mark_for_disposal() self.active = false end
 function actor:rename(name) self.id = name end
 actor.data = actor.rename
-local world<const> = { _objects = { actor }, _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 },
-	_mutation_boundary_sequence = 0 }
-defer_boundary = false
-function world:publish_boundary()
-	local receipt<const> = self._mutation_boundary_request
-	receipt.reached = true
-	self._mutation_boundary_sequence = receipt.ticket
-	self._mutation_boundary_request = nil
-end
-function world:request_mutation_boundary()
-	local ticket<const> = self._mutation_boundary_sequence + 1
-	local receipt<const> = { reached = false, ticket = ticket }
-	self._mutation_boundary_request = receipt
-	if not defer_boundary then self:publish_boundary() end
-	return receipt, ticket
-end
-return world`;
+return { _objects = { actor }, _objects_revision = 0, _spatial_hierarchy = { _topology_revision = 0 },
+	request_mutation_boundary = function() return { reached = true } end }`;
 const ENTRY = "return require('cartlib/world/world')";
 const images = createCartlibProgramHarness(ENTRY, { optLevel: 0,
 	modules: [{ path: 'cartlib/world/world', source: WORLD }] }).images;
@@ -211,7 +192,7 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 	for (const phase of ['request', 'rendezvous']) {
 		assert.equal(f.ide.debugger.plans.controlActive, true, phase);
 		willExecuteRuntimeDebuggerPlan(f.ide.debugger);
-		runCpuWithinBudget(f.cpu, 1_000_000);
+		f.host.runtime.machine.scheduler.runCpuSlice(0, 1_000_000);
 		didExecuteRuntimeDebuggerPlan(f.ide.debugger);
 		await f.host.tasks.join();
 	}
@@ -219,7 +200,7 @@ test('Actor same-input reopening preserves queued admission, and an entered call
 	assert.equal(f.parts.moveEditor(f.origin.activeGroup, f.input, { kind: 'group', group: f.destination.activeGroup }), true);
 	const target = f.destination.activeGroup.panes.activePane!.commandTarget;
 	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	runCpuWithinBudget(f.cpu, 1_000_000);
+	f.host.runtime.machine.scheduler.runCpuSlice(0, 1_000_000);
 	didExecuteRuntimeDebuggerPlan(f.ide.debugger);
 	await f.host.tasks.join(); f.ide.actorExecution.afterHostFrame();
 	assert.equal((await operation.completion).status, 'completed');
@@ -238,65 +219,6 @@ test('Actor reveal cannot start a picker after focus callbacks replace its reque
 	assert.equal(f.origin.activeGroup.model.activeTab, replacement);
 	assert.equal(f.origin.quickInput.visible, false);
 	assert.equal(f.parts.findGroup(f.input), f.origin.activeGroup, 'the hidden retained subject is not disposed or moved by focus');
-});
-
-for (const outcome of ['publish', 'remove', 'rewind'] as const) test(`Actor mutation requests handle ${outcome} without a borrowed receipt`, async t => {
-	const f = fixture(t), { cpu } = f, runtime = f.host.runtime, pool = cpu.stringPool;
-	const key = pool.find(buildModuleExportSlotName('cartlib/world/world', []))!;
-	const world = cpu.getGlobalByKey(key);
-	cpu.setGlobalByKey(pool.intern('defer_boundary'), valueBool(true));
-	const checkpoint = captureRuntimeCheckpointState(runtime), ram = cpu.memory.captureSaveState();
-	f.editor.commands.execute('actorLab.actions', f.pane.commandTarget);
-	const picker = f.origin.quickInput;
-	const action = picker.model.list.rows.findIndex(row => 'method' in row.item && row.item.method === 'mark_for_disposal');
-	assert.ok(action >= 0); picker.model.list.selectionIndex = action;
-	f.key('Enter');
-	const operation = f.ide.actorExecution.active!;
-	await f.host.tasks.join();
-	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	runCpuWithinBudget(cpu, 1_000_000);
-	const receipt = valuePayload(runtime.readCompletionValues()[0]);
-	assert.notEqual(receipt, 0);
-	didExecuteRuntimeDebuggerPlan(f.ide.debugger);
-
-	if (outcome === 'rewind') {
-		await f.host.tasks.join();
-		cpu.memory.restoreSaveState(ram);
-		applyRuntimeCheckpointState(runtime, checkpoint, RuntimeRestoreOrigin.HistorySeek);
-		assert.equal((await operation.completion).status, 'interrupted');
-		assert.equal(operation.invoked, false);
-		return;
-	}
-
-	if (outcome === 'publish') {
-		// Before the next control plan begins, ordinary guest work can use
-		// the completion latch again. The ticket, not that old Value, remains.
-		const publish = asClosure(f.ide.guest.readStringMember(world, 'publish_boundary'), cpu.gc);
-		cpu.beginCompletionCall(publish, [world]);
-		runGuestToHalt(cpu, 1000);
-		assert.equal(runtime.readCompletionValues().length, 0);
-		cpu.collectTrackedHeapBytes();
-		assert.equal(cpu.gc.tableRecordAddress(receipt), 0, 'the retired receipt need not survive collection');
-	} else cpu.setGlobalByKey(key, valueNil());
-
-	await f.host.tasks.join();
-	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	runCpuWithinBudget(cpu, 1_000_000);
-	didExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	await f.host.tasks.join();
-	if (outcome === 'remove') {
-		assert.equal((await operation.completion).status, 'rejected');
-		assert.equal(operation.invoked, false);
-		return;
-	}
-	assert.equal(operation.invoked, true);
-	willExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	runCpuWithinBudget(cpu, 1_000_000);
-	didExecuteRuntimeDebuggerPlan(f.ide.debugger);
-	await f.host.tasks.join(); f.ide.actorExecution.afterHostFrame();
-	assert.equal((await operation.completion).status, 'completed');
-	f.editor.update(0);
-	assert.equal(f.input.runtime.roots[0].active, false);
 });
 
 test('Actor Details source navigation belongs to the moved concrete pane', async t => {

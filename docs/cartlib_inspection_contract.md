@@ -49,12 +49,6 @@ Constructors and world structural barriers own these invariants. A generic
 value viewer can show arbitrary values; a cartlib-specific inspector consumes
 this layout directly. Do not add runtime schema validation to every read.
 Existing Lua APIs continue to own deliberate mutations and test execution.
-`World:request_mutation_boundary()` returns its pending receipt and an integer
-ticket. Guest waiters can keep the receipt; Studio keeps only the ticket and
-observed World lifetime. The scheduled World publishes the ticket in
-`_mutation_boundary_sequence` and retires `_mutation_boundary_request` after
-committing its lifecycle work. Studio resolves the current export before
-admitting the edit; a removed World or replaced machine cannot satisfy the wait.
 
 ## Event entry
 

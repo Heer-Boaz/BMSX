@@ -110,25 +110,16 @@ function actor:change()
  game.marker=33
  return game.marker
 end
-local world<const> = {_objects={actor},_mutation_boundary_sequence=0}
+local world<const> = {_objects={actor}}
 function world:request_mutation_boundary()
-	local ticket<const> = self._mutation_boundary_sequence+1
-	self._mutation_boundary_request={reached=false,ticket=ticket}
-	return self._mutation_boundary_request,ticket
-end
-function world:publish_boundary()
-	local receipt<const> = self._mutation_boundary_request
-	if receipt ~= nil then
-		receipt.reached=true
-		self._mutation_boundary_sequence=receipt.ticket
-		self._mutation_boundary_request=nil
-	end
+ self.receipt={reached=false}
+ return self.receipt
 end
 return world`;
 
 for (const optLevel of [3] as const) for (const closeAtStop of [false, true]) test(`O${optLevel}: Play actor calls ${closeAtStop ? 'retire at close' : 'resume and settle'} on their own CPU plan`, async t => {
 	const gameSource = GAME.replace('local game<const>', "local world<const> = require('cartlib/world/world')\nlocal game<const>")
-		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n world:publish_boundary()');
+		.replace('game.updates=game.updates+1', 'game.updates=game.updates+1\n if world.receipt ~= nil then world.receipt.reached=true end');
 	const f = await fixture(t, optLevel, SCENE, gameSource, 0, [{ path: 'cartlib/world/world', source: ACTOR_WORLD }]);
 	const session = f.session, guest = session.guest, world = runtimeWorld(session, guest, 0)!;
 	const actor = f.target.runtime.machine.cpu.gc.tables.getInteger(valuePayload(guest.readStringMember(world, '_objects')), 1);

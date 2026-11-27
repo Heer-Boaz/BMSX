@@ -405,13 +405,9 @@ assert(early_count==1 and late_count==1 and world._executing_tick_group==nil,
  'normal update exit retained a live group context')
 expected=2
 stop=true
-local receipt<const>, ticket<const> = world:request_mutation_boundary()
-local shared<const>, shared_ticket<const> = world:request_mutation_boundary()
-assert(shared == receipt and shared_ticket == ticket and not receipt.reached
- and world._mutation_boundary_sequence ~= ticket, 'overlapping requests must share an unpublished boundary')
+local receipt<const> = world:request_mutation_boundary()
 running()
-assert(early_count==2 and late_count==1 and receipt.reached and world._executing_tick_group==nil
- and world._mutation_boundary_sequence == ticket and world._mutation_boundary_request == nil,
+assert(early_count==2 and late_count==1 and receipt.reached and world._executing_tick_group==nil,
  'schedule-abort exit ran late work or retained a live group context')
 expected=3
 stop=false
