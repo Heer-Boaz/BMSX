@@ -11,7 +11,7 @@ import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EMPTY_CALL_ARGS, type Value, asInteger, asStringId, asClosure, isTruthy, valueNil, valuePayload, valueIsTable, valueToString, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import { observedRecordLifetime } from './record_lifetimes';
+import { observedRecordLifetime, retireObservedRecordLifetimes } from './record_lifetimes';
 
 export type SuspendedGuestValue = Value;
 /** Owned semantic identity within one physical heap; RAM String addresses can be reused. */
@@ -97,6 +97,7 @@ export class SuspendedGuestSession {
 	}
 
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
+		if (reason === 'heap-replaced') retireObservedRecordLifetimes(this.cpu.gc);
 		for (const listener of this.invalidationListeners) listener(reason);
 	}
 

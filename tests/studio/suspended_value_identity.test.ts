@@ -95,3 +95,14 @@ test('suspended member reads and enumeration follow the runtime index field', ()
 	guest.visitTableStringMembers(value, (name, entry) => members.set(name, entry));
 	assert.deepEqual(members, new Map([['member-shadow', valueBool(false)], ['member-inherited', valueInteger(17)]]));
 });
+
+test('a replaced heap retires tool lifetime tokens without a collector notification', () => {
+	const runtime = createTestRuntime(createTestRuntimeRomPayload()), { cpu } = runtime.machine;
+	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
+	const table = valueTable(cpu.createTable());
+	const previous = observer.identity(table);
+	guest.invalidate('execution');
+	assert.equal(observer.matchesIdentity(table, previous), true, 'suspending the same live heap retains the observation');
+	guest.invalidate('heap-replaced');
+	assert.equal(observer.matchesIdentity(table, previous), false, 'a replacement can reuse exactly the same encoded address');
+});

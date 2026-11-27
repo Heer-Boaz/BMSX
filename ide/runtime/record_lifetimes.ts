@@ -21,3 +21,8 @@ export function observedRecordLifetime(heap: GcHeap, address: number): number {
 	lifetimes.observed.set(address, id);
 	return id;
 }
+
+/** A replacement ends all observations but must not recycle their tokens. */
+export function retireObservedRecordLifetimes(heap: GcHeap): void {
+	byHeap.get(heap)?.observed.clear();
+}
