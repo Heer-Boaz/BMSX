@@ -338,12 +338,12 @@ export type Blua32ExecutionImage = {
 	irqFunctionAddress: number;
 	staticEnd: number;
 	heapServiceFunctions: Uint32Array | null;
-	constantBase: number;
 	constTags: Uint8Array;
 	constWords: Uint32Array;
-	// Derived from the immutable pool, including during restore.
+	// Derived from the String identities stored in the image bindings.
 	readonly constantStringRoots: readonly StringId[];
-	globalMapBase: number;
+	imageBindingBase: number;
+	imageBindingBytes: number;
 	globalNameCount: number;
 	systemNameCount: number;
 	romFunctions: Blua32RomFunctionDirectory;

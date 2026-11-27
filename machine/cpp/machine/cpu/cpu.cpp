@@ -238,18 +238,12 @@ void CPU::reset() {
 	collectHeap();
 }
 
-void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddress, ValueSpan constPool) {
-	const u32 constantCount = static_cast<u32>(constPool.size());
-	if (constantCount == 0u) return;
-	m_executionAddressSpace.bindReadOnlyView(
-		executionDomainId,
-		tableAddress,
-		static_cast<size_t>(constantCount) * BLUA32_CONSTANT_RECORD_SIZE,
-		m_executionTableView
-	);
-	for (u32 index = 0; index < constantCount; ++index) {
-		const u8* record = m_executionTableView.data()
-			+ static_cast<size_t>(index) * BLUA32_CONSTANT_RECORD_SIZE;
+void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring) {
+	auto& storage = image.decodedConstants;
+	ValueSpan constPool(storage.words(), storage.tags(), storage.capacity());
+	const auto executionDomainId = image.executionDomainId;
+	for (size_t index = 0; index < constPool.size(); ++index) {
+		const u8* record = records.data() + index * BLUA32_CONSTANT_RECORD_SIZE;
 		switch (static_cast<Blua32ConstantTag>(
 			readLE32(record + BLUA32_CONSTANT_TAG_OFFSET)
 		)) {
@@ -275,24 +269,29 @@ void CPU::decodeConstantPool(ExecutionDomainId executionDomainId, u32 tableAddre
 				constPool.set(index, valueBuiltinFunction(static_cast<BuiltinFunctionId>(id)));
 				break;
 			}
-			case Blua32ConstantTag::String:
-				constPool.set(index, valueString(m_stringPool.resolveImageRecord(
-					executionDomainId,
-					readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
-				)));
+			case Blua32ConstantTag::String: {
+				StringId id;
+				if (restoring) {
+					id = m_memory.readRamRecordWord(stringBinding);
+				} else {
+					id = m_stringPool.resolveImageRecord(executionDomainId, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+					m_memory.writeRamRecordWord(stringBinding, id);
+				}
+				stringBinding += sizeof(u32);
+				constPool.set(index, valueString(id));
+				if (isRamStringId(id)) image.constantStringRoots.push_back(id);
 				break;
+			}
 			default:
 				throw BMSX_RUNTIME_ERROR("BLua32 constant tag is invalid.");
 		}
 	}
+	image.constPool = constPool;
 }
 
 void CPU::releaseImageData(Blua32ExecutionImage& image) {
-	if (const u32 base = std::exchange(image.globalMapBase, 0u)) {
-		m_luaHeap.releaseRecord(base, image.globalMapBytes());
-	}
-	if (const u32 base = std::exchange(image.constantBase, 0u)) {
-		m_luaHeap.releaseRecord(base, static_cast<u32>(image.constPool.size()) * (sizeof(u32) + sizeof(u8)));
+	if (const u32 base = std::exchange(image.imageBindingBase, 0u)) {
+		m_luaHeap.releaseRecord(base, image.imageBindingBytes);
 	}
 }
 
@@ -308,9 +307,9 @@ void CPU::registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 na
 }
 
 std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
-	Blua32ExecutionBoot executionBoot, std::optional<std::array<u32, 2>> restoredBases, ExecutionImageUpdate update
+	Blua32ExecutionBoot executionBoot, std::optional<u32> restoredBindingBase, ExecutionImageUpdate update
 ) {
-	const bool restoring = restoredBases.has_value();
+	const bool restoring = restoredBindingBase.has_value();
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -344,11 +343,20 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 systemGlobalNameCount = readLE32(
 		header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET
 	);
-	constexpr u32 constantSlotBytes = sizeof(u32) + sizeof(u8);
-	if (constantCount > MAIN_RAM_SIZE / constantSlotBytes
-		|| static_cast<u64>(globalNameCount) + systemGlobalNameCount > MAIN_RAM_SIZE / sizeof(u32)) {
-		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
+	if (constantCount > CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE)
+		throw BMSX_RUNTIME_ERROR("BLua32 constant table exceeds the ROM address window.");
+	Span<const u8> records;
+	u32 stringCount = 0;
+	if (constantCount != 0u) {
+		m_executionAddressSpace.bindReadOnlyView(executionDomainId, constantTableAddress,
+			constantCount * BLUA32_CONSTANT_RECORD_SIZE, records);
+		for (u32 i = 0; i < constantCount; ++i)
+			stringCount += readLE32(records.data() + i * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET)
+				== static_cast<u32>(Blua32ConstantTag::String);
 	}
+	const u64 nameCount = static_cast<u64>(globalNameCount) + systemGlobalNameCount;
+	if (nameCount + stringCount > MAIN_RAM_SIZE / sizeof(u32))
+		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
 	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
 	if ((readLE32(header + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) != 0u) {
 		if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || image->romFunctions.mappedCode
@@ -396,26 +404,18 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
 	image->systemNameCount = systemGlobalNameCount;
-	if (const u32 bytes = image->globalMapBytes()) {
-		image->globalMapBase = restoring ? (*restoredBases)[1] : m_luaHeap.allocateRecord(bytes, false, 0, 0);
-		const u32 base = image->globalMapBase;
+	image->imageBindingBytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
+	if (const u32 bytes = image->imageBindingBytes) {
+		image->imageBindingBase = restoring ? *restoredBindingBase : m_luaHeap.allocateRecord(bytes, false, 0, 0);
 		if (!restoring) {
+			const u32 base = image->imageBindingBase;
 			registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
 			registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 				m_systemGlobalBank, base + 4u * globalNameCount);
 		}
 	}
-	if (constantCount != 0u) {
-		image->constantBase = restoring ? (*restoredBases)[0] : m_luaHeap.allocateRecord(constantCount * constantSlotBytes, false, 0, 0);
-		const ValueSpan constants(m_memory, image->constantBase, image->constantBase + constantCount * 4u, constantCount);
-		if (!restoring) decodeConstantPool(executionDomainId, constantTableAddress, constants);
-		image->constPool = constants;
-		for (u32 slot = 0; slot < constantCount; ++slot) {
-			if (constants.tag(slot) != ValueTag::String) continue;
-			const StringId id = constants.payload(slot);
-			if (isRamStringId(id)) image->constantStringRoots.push_back(id);
-		}
-	}
+	image->decodedConstants.resize(constantCount);
+	decodeConstantPool(*image, records, image->imageBindingBase + static_cast<u32>(nameCount) * sizeof(u32), restoring);
 	return image;
 }
 
@@ -1031,8 +1031,7 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
 			state.executionResidencyMask |= 1u << index;
-			state.constantPoolBases[index] = m_executionImagesByDomain[index]->constantBase;
-			state.globalMapBases[index] = m_executionImagesByDomain[index]->globalMapBase;
+			state.imageBindingBases[index] = m_executionImagesByDomain[index]->imageBindingBase;
 		}
 	}
 	state.hardHalted = (m_runSignals & RunHardHalted) != 0u;
@@ -1099,7 +1098,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
-			m_executionImagesByDomain[index] = activateExecutionImage(*boot, std::array{state.constantPoolBases[index], state.globalMapBases[index]});
+			m_executionImagesByDomain[index] = activateExecutionImage(*boot, state.imageBindingBases[index]);
 		}
 	}
 	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();

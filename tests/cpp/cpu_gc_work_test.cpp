@@ -55,10 +55,10 @@ struct Machine {
 };
 
 // Thread232 (80-byte header, 40 Value bytes and two 56-byte frame records)
-// + Closure12, a 15-byte constant bank (three slots), 17 machine Strings charged 697 bytes
+// + Closure12, a 4-byte String binding, 17 machine Strings charged 697 bytes
 // and two registered globals with a 16-byte image map. Both lookup indexes
 // are uncharged. The collector visits allocated objects and intern buckets.
-constexpr int bootBytes = 232 + 12 + 15 + 697 + 16 + 2 * 9;
+constexpr int bootBytes = 232 + 12 + 4 + 697 + 16 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and a sweep visit.
 constexpr int bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
@@ -515,50 +515,44 @@ void logicalAdmissionFailure() {
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
 }
 
-void constantBankUsesGuestRam() {
+void romLiteralsDoNotUseGuestRam() {
 	auto source = image();
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
 	writeInstruction(source.text, 1, static_cast<u8>(OpCode::ADD), 1, 0, 0);
 	writeInstruction(source.text, 2, static_cast<u8>(OpCode::JMP), 0, 63, 61, 255);
 	source.functions[0].wordCount = 3;
+	source.globalNames.clear();
+	source.systemGlobalNames.clear();
+	source.constants = {i32{31}, i32{12}, i32{1024}};
+	auto bare = source;
+	bare.constants.clear();
 	for (bool scalar : {false, true}) {
-		Machine machine(source, scalar);
+		Machine machine(source, scalar), empty(bare, scalar);
 		auto& cpu = machine.cpu;
-		const u32 base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1];
-		const u32 tag = base + 3 * sizeof(u32) + 1;
-		require(base >= RAM_BASE && machine.memory.readRamRecordWord(base + 4) == 12
-			&& machine.memory.readRamRecordByte(tag) == static_cast<u8>(ValueTag::Integer), "ROM loader installed the compact RAM bank");
-		cpu.runUntilDepth(0, 1000);
-		require(cpu.readFrameRegister(0, 1) == valueInteger(24), "LOADK and ADD use the decoded bank");
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		if (!scalar) {
-			const auto* page = cpu.rootThread()->currentFrame->decodedPage;
-			const u32 entry = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
-			require(page, "execution has bound the bank's decoded page");
-			test::waitForNativeEntry(cpu, *page, entry);
-		}
-#endif
-		auto ram = machine.memory.captureSaveState();
+		const auto occupied = empty.cpu.heapAllocator().occupiedBytes();
+		require(cpu.captureRuntimeState().imageBindingBases[SYSTEM_EXECUTION_DOMAIN_ID + 1] == 0u
+			&& cpu.luaHeap().usedBytes() == empty.cpu.luaHeap().usedBytes()
+			&& cpu.heapAllocator().occupiedBytes() == occupied, "numeric ROM literals have no guest binding allocation");
+		const auto ram = machine.memory.captureSaveState();
 		const auto state = cpu.captureRuntimeState();
-		const auto occupied = cpu.heapAllocator().occupiedBytes();
-		// Restore binds the image to the saved physical bytes. Compiled
-		// execution must consume those lanes rather than the old ROM value.
-		ram.ram[tag - RAM_BASE] = static_cast<u8>(ValueTag::Float);
-		for (const auto [payload, result] : {std::pair{0x3fa00000u, 0x40200000u}, std::pair{0x40000000u, 0x40800000u},
-				std::pair{0x3fa00000u, 0x40200000u}}) {
-			writeLE32(ram.ram.data() + base - RAM_BASE + 4, payload);
+		for (int replay = 0; replay < 2; ++replay) {
+			cpu.runUntilDepth(0, 1000);
+			require(cpu.readFrameRegister(0, 1) == valueInteger(24), "LOADK and ADD use the ROM literal");
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+			if (!scalar) {
+				const auto* page = cpu.rootThread()->currentFrame->decodedPage;
+				const u32 entry = (machine.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
+				require(page, "execution has bound a decoded page");
+				test::waitForNativeEntry(cpu, *page, entry);
+			}
+#endif
 			machine.memory.restoreSaveState(ram);
 			cpu.restoreRuntimeState(state);
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			if (!scalar) cpu.prepareSystemNativeCode();
-#endif
-			cpu.runUntilDepth(0, 1000);
-			require(cpu.readFrameRegister(0, 1) == valueFloatBits(result) && cpu.heapAllocator().occupiedBytes() == occupied,
-				"each restored bank supplies both constant lanes without charging another allocation");
+			require(machine.memory.captureSaveState().ram == ram.ram && cpu.heapAllocator().occupiedBytes() == occupied,
+				"restoring ROM literals writes no guest RAM and reserves no storage");
 		}
-		const auto startup = cpu.heapAllocator().occupiedBytes();
 		cpu.reset(); cpu.reset();
-		require(cpu.heapAllocator().occupiedBytes() == startup, "reset replaces rather than leaking the bank");
+		require(cpu.heapAllocator().occupiedBytes() == occupied, "reset still reserves no constant storage");
 	}
 }
 
@@ -578,8 +572,8 @@ void allActivatedImagesAndUniqueGlobals() {
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);
 	cpu.collectHeap();
-	require(cpu.luaHeap().usedBytes() == bootBytes + (20 + 20) + (5 + 16) + 2 * 9,
-		"each card charges its constant bank, name-slot map and new unique global");
+	require(cpu.luaHeap().usedBytes() == bootBytes + (4 + 20) + (4 + 16) + 2 * 9,
+		"each card charges its String bindings, name-slot map and new unique global");
 	cpu.instructionBudgetRemaining = 5;
 	// Only the two new globals add work to the initial root pass.
 	const size_t work = bootCollectionWork + 3 * 2;
@@ -1863,7 +1857,7 @@ int main(int argc, char** argv) {
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes();
 		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure();
-		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
+		romLiteralsDoNotUseGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
 		resumesTableAfterPrimitiveDisplacement(); weakKeysTraceStrongValues();

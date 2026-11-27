@@ -190,7 +190,7 @@ void CPU::decodeInstructionWords(
 	if (decoded.op >= static_cast<u8>(OpCode::GETSYS) && decoded.op <= static_cast<u8>(OpCode::SETGL)) {
 		const bool system = op <= static_cast<u8>(OpCode::SETSYS);
 		const u32 index = instructionBx(bodyWord, wideB, true);
-		const u32 base = image.globalMapBase + (system ? 4u * image.globalNameCount : 0u);
+		const u32 base = image.imageBindingBase + (system ? 4u * image.globalNameCount : 0u);
 		decoded.setBx(m_memory.readRamRecordWord(base + 4u * index));
 	}
 	decoded.dispatchOp = decoded.op;

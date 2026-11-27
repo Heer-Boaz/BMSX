@@ -32,7 +32,7 @@ import {
 	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -52,10 +52,10 @@ function source(operation: OpCode = OpCode.HALT, wide = false) {
 
 // The root Thread owns an 80-byte header, 40 bytes for eight Value slots
 // and 112 bytes for two reserved activations. The remainder is a
-// Closure, 17 RAM String records, two names and an 8-byte image map.
+// Closure, 17 RAM String records, two names and a map of their slots and the String binding.
 // Both lookup indexes are storage, not logical occupancy.
 const bootThreadBytes = 80 + 40 + 112;
-const bootBytes = bootThreadBytes + 12 + 15 + 697 + 8 + 2 * 9;
+const bootBytes = bootThreadBytes + 12 + 4 + 697 + 8 + 2 * 9;
 // Two Thread traces of its header and one active frame, an atomic trace
 // that also clears eight Value slots, two remark visits and one sweep visit.
 const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 3 + 1 + 6 + 2 * 17 + 32;
@@ -458,7 +458,7 @@ test('ROM constants need no collector visits even with multiple resident images'
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
 	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (20 + 12) + (5 + 12) + 2 * 9, 'each card charges its constant bank, name-slot map and new unique global');
+	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (4 + 12) + (4 + 12) + 2 * 9, 'each card charges its String bindings, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
 	const work = bootCollectionWork + 3 * 2;
 	assert.equal(cpu.gc.collect(), work, 'only the registered namespace slots add root work');
@@ -531,14 +531,14 @@ test('absolute ROM String references resolve even when backing and directory own
 	assert.throws(() => strings.find('slot-one!'), { message: 'BLua32 ROM String is truncated.' });
 });
 
-test('image replacement rejects bank extents beyond main RAM before changing runtime records', () => {
+test('image replacement rejects unrepresentable table and binding extents before changing runtime records', () => {
 	const image = linkRawTestSystemBlua32(source());
 	for (const constants of [false, true]) {
 		const { cpu, memory, executionAddressSpace } = createTestSystemCpu(image);
 		const rom = image.romBytes.slice();
 		const header = image.image.address - SYSTEM_ROM_BASE;
 		if (constants) {
-			writeLE32(rom, header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, ((MAIN_RAM_SIZE / 5) | 0) + 1);
+			writeLE32(rom, header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, ((CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE) | 0) + 1);
 		} else {
 			// Each namespace fits the map on its own; their combined extent does not.
 			writeLE32(rom, header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / 4);
@@ -547,39 +547,39 @@ test('image replacement rejects bank extents beyond main RAM before changing run
 		memory.installSystemRom(rom);
 		const boot = executionAddressSpace.resolveSystemDomain();
 		const before = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-		assert.throws(() => cpu.replaceExecutionImages([boot]), { message: 'BLua32 image bank extents exceed main RAM.' });
+		assert.throws(() => cpu.replaceExecutionImages([boot]), { message: constants ? 'BLua32 constant table exceeds the ROM address window.' : 'BLua32 image bank extents exceed main RAM.' });
 		assert.deepEqual(cpu.captureRuntimeState(), before);
 		assert.deepEqual(memory.captureSaveState(), ram);
 	}
 });
 
-test('constant loads, compiled operands and checkpoints use the physical bank', () => {
+test('ROM literals use no guest backing and survive checkpoints in both execution backends', () => {
 	const program = source();
 	writeInstruction(program.text, 0, OpCode.LOADK, 0, 0, 1);
 	writeInstruction(program.text, 1, OpCode.ADD, 1, 0, 0);
 	writeInstruction(program.text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32(program);
+	program.globalNames = [];
+	program.systemGlobalNames = [];
+	const image = linkRawTestSystemBlua32({ ...program, constants: [integerConstant(31), integerConstant(12), integerConstant(1024)] });
+	const bare = linkRawTestSystemBlua32({ ...program, constants: [] });
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const { cpu, memory } = createTestSystemCpu(image, backend);
-		const base = cpu.captureRuntimeState().constantPoolBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], tag = base + 3 * 4 + 1;
-		assert.equal(memory.readRamRecordWord(base + 4), 12);
-		assert.equal(memory.readRamRecordByte(tag), ValueTag.Integer);
-		cpu.runUntilDepth(0, 4000);
-		assert.equal(cpu.readFrameRegister(0, 1), valueInteger(24));
-		if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
-		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState(), occupied = cpu.heapAllocator.occupiedBytes();
-		const bytes = new DataView(ram.ram.buffer);
-		// A checkpoint restores the private bank, not writes through the public bus.
-		ram.ram[tag - RAM_BASE] = ValueTag.Float;
-		for (const [payload, result] of [[0x3fa00000, 0x40200000], [0x40000000, 0x40800000], [0x3fa00000, 0x40200000]]) {
-			bytes.setUint32(base - RAM_BASE + 4, payload, true);
-			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+		const empty = createTestSystemCpu(bare, backend).cpu;
+		const occupied = empty.heapAllocator.occupiedBytes();
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
+		assert.equal(cpu.luaHeap.usedBytes(), empty.luaHeap.usedBytes());
+		assert.equal(cpu.captureRuntimeState().imageBindingBases[SYSTEM_EXECUTION_DOMAIN_ID + 1], 0);
+		const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
+		for (let replay = 0; replay < 2; ++replay) {
 			cpu.runUntilDepth(0, 4000);
-			assert.equal(cpu.readFrameRegister(0, 1), valueFloatBits(result), 'restore reattaches RAM instead of decoding ROM');
-			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'restore does not allocate another bank');
+			assert.equal(cpu.readFrameRegister(0, 1), valueInteger(24));
+			if (backend === CpuExecutionBackend.JavaScript) assert.ok(cpu.rootThread.currentFrame!.decodedPage!.compiledBlocks);
+			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
+			assert.deepEqual(memory.captureSaveState().ram, ram.ram, 'restoring the literal cache performs no guest writes');
+			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		}
 		cpu.reset(); cpu.reset();
-		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied, 'reset does not leak the superseded bank');
+		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 	}
 });
 

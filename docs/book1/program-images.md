@@ -280,8 +280,8 @@ selection and instruction operation.
 ## BLua32 executable image {#sec-memory-blua32-executable-image}
 
 The base BLua32 program header occupies **92 bytes** in ROM. Its offsets are
-relative to the program-header address obtained above. The CPU uses these six unsigned
-32-bit little-endian fields to establish the program's constants and name banks:
+relative to the program-header address obtained above. These six unsigned
+32-bit little-endian fields locate the program's constants and names:
 
 | Image byte offset | Field | Unit and interpretation |
 | --- | --- | --- |
@@ -357,10 +357,11 @@ of the declared image extent. Cartridge ROM reads select the program's
 execution socket, while system-ROM addresses select system ROM. A zero table
 count leaves its address unused.
 
-The decoded constant bank and the combined name map must each fit in main
-RAM. An image with a count that cannot fit either bank is rejected before
-the banks are installed. The available language-allocation budget still
-applies to valid sizes.
+Numeric, Boolean, nil and built-in function constants are immutable ROM
+operands and need no writable backing. A String constant binds to its
+canonical String when the image is activated. The String bindings and name
+maps occupy main RAM; the console rejects an image whose bindings cannot
+fit.
 
 ### Constant and name records {#sec-memory-constant-and-name-records}
 

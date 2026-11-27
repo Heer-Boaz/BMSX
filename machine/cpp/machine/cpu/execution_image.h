@@ -180,12 +180,12 @@ struct Blua32ExecutionImage {
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
 	HeapServiceFunctions heapServiceFunctions{};
-	u32 constantBase = 0;
+	ValueStorage decodedConstants;
 	ConstValueSpan constPool;
-	// Derived from the immutable pool, including during restore. Only a
+	// Derived from the String identities stored in the image bindings. Only a
 	// String resolved to a RAM record is an edge to the language heap.
 	std::vector<StringId> constantStringRoots;
-	u32 globalMapBase = 0;
+	u32 imageBindingBase = 0, imageBindingBytes = 0;
 	u32 globalNameCount = 0, systemNameCount = 0;
 	Blua32RomFunctionDirectory romFunctions{};
 	std::array<RomCallBinding, RomCallBinding::slotCount> romCallBindings{};
@@ -193,7 +193,6 @@ struct Blua32ExecutionImage {
 		auto& binding = romCallBindings[(address / BLUA32_FUNCTION_RECORD_SIZE) % RomCallBinding::slotCount];
 		return binding.functionAddress == address ? &binding : loadRomFunction(memory, address, binding);
 	}
-	u32 globalMapBytes() const { return 4u * (globalNameCount + systemNameCount); }
 	bool admitsFunctionPc(u32 record, u32 pc) const;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	NativeImageWarmup nativeWarmup;

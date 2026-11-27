@@ -2026,7 +2026,7 @@ void imageBankExtentsAreAdmittedBeforeBinding() {
 		const auto state = restore ? cpu.captureRuntimeState() : CpuRuntimeState{};
 		auto* header = rom.bytes.data() + test::BLUA32_TEST_IMAGE_OFFSET;
 		if (constants) {
-			writeLE32(header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, MAIN_RAM_SIZE / (sizeof(u32) + sizeof(u8)) + 1u);
+			writeLE32(header + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE + 1u);
 		} else {
 			writeLE32(header + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, MAIN_RAM_SIZE / sizeof(u32));
 			writeLE32(header + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET, 1u);
@@ -2036,7 +2036,8 @@ void imageBankExtentsAreAdmittedBeforeBinding() {
 			if (restore) cpu.restoreRuntimeState(state);
 			else cpu.reset();
 		} catch (const std::exception& error) {
-			rejected = std::string_view(error.what()).find("BLua32 image bank extents exceed main RAM.") != std::string_view::npos;
+			rejected = std::string_view(error.what()).find(constants ? "BLua32 constant table exceeds the ROM address window."
+				: "BLua32 image bank extents exceed main RAM.") != std::string_view::npos;
 		}
 		require(rejected, "activation and restore reject an unplaceable image bank at the header");
 	}

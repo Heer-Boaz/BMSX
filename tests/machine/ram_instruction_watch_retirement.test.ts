@@ -64,13 +64,13 @@ test('ordinary writes cannot mutate private image maps or embedded constants', (
 	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
 	assert.equal(frame.registers.getInteger(2), 17);
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(image.image.functions[0].codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2], 'the fixture exercises a real compiled region');
-	for (const [address, replacement] of [[execution.globalMapBase, memory.readRamRecordWord(execution.globalMapBase + 4)], [execution.constantBase, 13]]) {
-		assert.ok(address >= memory.ramBusEnd()); const before = memory.readRamRecordWord(address);
-		memory.clearBusFault(); memory.writeMappedU32LE(address, replacement);
-		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
-		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
-		assert.equal(memory.readRamRecordWord(address), before, 'private image words are not a public mutation interface');
-	}
+	const address = execution.imageBindingBase, before = memory.readRamRecordWord(address);
+	assert.ok(address >= memory.ramBusEnd());
+	memory.clearBusFault();
+	memory.writeMappedU32LE(address, memory.readRamRecordWord(address + 4));
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+	assert.equal(memory.readRamRecordWord(address), before, 'private image bindings are not a public mutation interface');
 	cpu.runUntilDepth(0, 128);
 	assert.equal(frame.registers.getInteger(2), 17, 'compiled guest lookup and constants retain their original semantics');
 });

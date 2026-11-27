@@ -217,8 +217,7 @@ export type CpuRuntimeState = {
 	systemGlobals: GlobalBankState;
 	globals: GlobalBankState;
 	executionResidencyMask: ExecutionDomainMask;
-	constantPoolBases: number[];
-	globalMapBases: number[];
+	imageBindingBases: number[];
 	hardHalted: boolean;
 	stringIndexTable: Value;
 	rootThreadAddress: number;
@@ -962,21 +961,11 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodeConstantPool(
 		executionDomainId: ExecutionDomainId,
-		tableAddress: number,
-		constTags: Uint8Array,
-		constWords: Uint32Array,
+		bytes: Uint8Array, byteOffset: number,
+		constTags: Uint8Array, constWords: Uint32Array,
+		stringBinding: number, restoring: boolean,
+		constantStringRoots: StringId[],
 	): void {
-		if (constTags.length === 0) {
-			return;
-		}
-		this.executionAddressSpace.bindReadOnlyView(
-			executionDomainId,
-			tableAddress,
-			constTags.length * BLUA32_CONSTANT_RECORD_SIZE,
-			this.executionTableView,
-		);
-		const bytes = this.executionTableView.bytes;
-		const byteOffset = this.executionTableView.byteOffset;
 		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
@@ -1007,13 +996,21 @@ export class CPU implements MappedPageInvalidator {
 					constWords[index] = id;
 					break;
 				}
-				case Blua32ConstantTag.String:
+				case Blua32ConstantTag.String: {
+					let id: StringId;
+					if (restoring) {
+						id = this.memory.readRamRecordWord(stringBinding);
+					} else {
+						id = this.stringPool.resolveImageRecord(executionDomainId,
+							readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET));
+						this.memory.writeRamRecordWord(stringBinding, id);
+					}
+					stringBinding += 4;
 					constTags[index] = ValueTag.String;
-					constWords[index] = this.stringPool.resolveImageRecord(
-						executionDomainId,
-						readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET),
-					);
+					constWords[index] = id;
+					if (isRamStringId(id)) constantStringRoots.push(id);
 					break;
+				}
 				default:
 					throw new Error('BLua32 constant tag is invalid.');
 			}
@@ -1022,14 +1019,9 @@ export class CPU implements MappedPageInvalidator {
 
 	private releaseImageData(image: Blua32ExecutionImage): void {
 		for (const bank of this.threadBanks) bank.dropParkedFrameViews();
-		const names = image.globalMapBase, constants = image.constantBase;
-		if (names !== 0) {
-			image.globalMapBase = 0;
-			this.luaHeap.releaseRecord(names, 4 * (image.globalNameCount + image.systemNameCount));
-		}
-		if (constants !== 0) {
-			image.constantBase = 0;
-			this.luaHeap.releaseRecord(constants, 5 * image.constTags.length);
+		if (image.imageBindingBase !== 0) {
+			this.luaHeap.releaseRecord(image.imageBindingBase, image.imageBindingBytes);
+			image.imageBindingBase = 0;
 		}
 	}
 
@@ -1059,9 +1051,24 @@ export class CPU implements MappedPageInvalidator {
 		const constantCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
 		const globalNameCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET);
 		const systemGlobalNameCount = readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
-		if (constantCount > MAIN_RAM_SIZE / 5 || globalNameCount + systemGlobalNameCount > MAIN_RAM_SIZE / 4) {
-			throw new Error('BLua32 image bank extents exceed main RAM.');
+		if (constantCount > CART_ROM_SIZE / BLUA32_CONSTANT_RECORD_SIZE) {
+			throw new Error('BLua32 constant table exceeds the ROM address window.');
 		}
+		const constantTableAddress = readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
+		let constantBytes = bytes, constantOffset = 0, stringCount = 0;
+		if (constantCount !== 0) {
+			this.executionAddressSpace.bindReadOnlyView(executionBoot.executionDomainId, constantTableAddress,
+				constantCount * BLUA32_CONSTANT_RECORD_SIZE, this.executionTableView);
+			constantBytes = this.executionTableView.bytes;
+			constantOffset = this.executionTableView.byteOffset;
+			for (let i = 0; i < constantCount; ++i) {
+				const tag = readLE32(constantBytes, constantOffset + i * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_TAG_OFFSET);
+				stringCount += +(tag === Blua32ConstantTag.String);
+			}
+		}
+		const nameBytes = 4 * (globalNameCount + systemGlobalNameCount);
+		const imageBindingBytes = nameBytes + 4 * stringCount;
+		if (imageBindingBytes > MAIN_RAM_SIZE) throw new Error('BLua32 image bank extents exceed main RAM.');
 		const romFunctions = readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView);
 		let heapServiceFunctions: Uint32Array | null = null;
 		if ((readLE32(bytes, byteOffset + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) !== 0) {
@@ -1098,8 +1105,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		return {
-			constantTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET),
-			constantCount,
+			constantBytes, constantOffset, constantCount, nameBytes, imageBindingBytes,
 			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
 			globalNameCount,
 			systemGlobalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
@@ -1119,49 +1125,34 @@ export class CPU implements MappedPageInvalidator {
 	private materializeExecutionImage(
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
-		restoredConstantBase: number | null = null,
-		restoredMapBase = 0,
+		restoredBindingBase: number | null = null,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
-		const { constantTableAddress, constantCount, globalNameTableAddress, globalNameCount,
+		const { constantBytes, constantOffset, constantCount, nameBytes, imageBindingBytes, globalNameTableAddress, globalNameCount,
 			systemGlobalNameTableAddress, systemGlobalNameCount } = header;
-		const restoring = restoredConstantBase !== null;
-		const mapBytes = 4 * (globalNameCount + systemGlobalNameCount);
-		const globalMapBase = restoring ? restoredMapBase : mapBytes === 0 ? 0
-			: this.luaHeap.allocateRecord(mapBytes, false, 0, 0);
-		if (mapBytes !== 0) {
-			if (!restoring) {
-				this.registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, this.globalBank, globalMapBase);
-				this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
-					this.systemGlobalBank, globalMapBase + 4 * globalNameCount);
-			}
-		}
-		const constantBase = restoring ? restoredConstantBase : constantCount === 0 ? 0
-			: this.luaHeap.allocateRecord(constantCount * 5, false, 0, 0);
-		const offset = constantBase & RAM_RECORD_WORD_MASK;
-		const buffer = this.memory.ramData().buffer;
-		const constWords = new Uint32Array(buffer, offset, constantCount);
-		const constTags = new Uint8Array(buffer, offset + constantCount * 4, constantCount);
+		const restoring = restoredBindingBase !== null;
+		const imageBindingBase = restoring ? restoredBindingBase : imageBindingBytes === 0 ? 0
+			: this.luaHeap.allocateRecord(imageBindingBytes, false, 0, 0);
 		if (!restoring) {
-			this.decodeConstantPool(executionDomainId, constantTableAddress, constTags, constWords);
-			this.memory.invalidateRamWrite(offset, constantCount * 5);
+			this.registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, this.globalBank, imageBindingBase);
+			this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
+				this.systemGlobalBank, imageBindingBase + 4 * globalNameCount);
 		}
+		const buffer = new ArrayBuffer(constantCount * 5);
+		const constWords = new Uint32Array(buffer, 0, constantCount);
+		const constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 		const constantStringRoots: StringId[] = [];
-		for (let slot = 0; slot < constantCount; ++slot) {
-			if (constTags[slot] === ValueTag.String && isRamStringId(constWords[slot])) {
-				constantStringRoots.push(constWords[slot]);
-			}
-		}
+		this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
+			imageBindingBase + nameBytes, restoring, constantStringRoots);
 		const image: Blua32ExecutionImage = {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
 			heapServiceFunctions: header.heapServiceFunctions,
-			constantBase,
 			constTags,
 			constWords,
 			constantStringRoots,
-			globalMapBase, globalNameCount, systemNameCount: systemGlobalNameCount,
+			imageBindingBase, imageBindingBytes, globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
 			romCallBindings: new RomCallBindings(),
 			decodedPages: new Map(),
@@ -1645,7 +1636,7 @@ export class CPU implements MappedPageInvalidator {
 			if (index >= (system ? image.systemNameCount : image.globalNameCount)) {
 				page.ops[pageOffset] = DecodedDispatchOp.InvalidImageOperand;
 			} else {
-				const base = image.globalMapBase + (system ? 4 * image.globalNameCount : 0);
+				const base = image.imageBindingBase + (system ? 4 * image.globalNameCount : 0);
 				page.bx[pageOffset] = this.memory.readRamRecordWord(base + 4 * index);
 			}
 		}
@@ -5085,14 +5076,12 @@ export class CPU implements MappedPageInvalidator {
 		for (let i = 0; i < this.completionValueCount; ++i)
 			completionValues[i] = this.completionValueSlots.get(i);
 		let executionResidencyMask = 0;
-		const constantPoolBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
-		const globalMapBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
+		const imageBindingBases = new Array<number>(EXECUTION_DOMAIN_COUNT).fill(0);
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			const image = this.executionImagesByDomain[index];
 			if (image !== null) {
 				executionResidencyMask |= 1 << index;
-				constantPoolBases[index] = image.constantBase;
-				globalMapBases[index] = image.globalMapBase;
+				imageBindingBases[index] = image.imageBindingBase;
 			}
 		}
 		return {
@@ -5101,7 +5090,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobals: this.systemGlobalBank.captureState(),
 			globals: this.globalBank.captureState(),
 			executionResidencyMask,
-			constantPoolBases, globalMapBases,
+			imageBindingBases,
 			hardHalted: this.hardHalted,
 			stringIndexTable: this.stringIndexTable,
 			rootThreadAddress: this.rootThread.address,
@@ -5152,7 +5141,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
 				const boot = this.executionAddressSpace.resolveDomain((index - 1) as ExecutionDomainId)!;
-				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.constantPoolBases[index], state.globalMapBases[index]);
+				this.executionImagesByDomain[index] = this.materializeExecutionImage(boot, this.readExecutionImageHeader(boot), state.imageBindingBases[index]);
 			}
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;

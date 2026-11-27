@@ -1135,8 +1135,7 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 	for (const value of state.completionValues) writer.u64(value);
 	writer.i32(state.lastExecutionDomainId);
 	writer.u32(state.executionResidencyMask);
-	writer.u32s(state.constantPoolBases);
-	writer.u32s(state.globalMapBases);
+	writer.u32s(state.imageBindingBases);
 	writer.bool(state.hardHalted);
 	writer.u32(state.lastPc);
 	writer.u32(state.haltedUntilIrqThreadAddress);
@@ -1247,8 +1246,7 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		completionValues: reader.u64s(reader.u32()) as Value[],
 		lastExecutionDomainId: reader.i32() as ExecutionDomainId,
 		executionResidencyMask: reader.u32(),
-		constantPoolBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
-		globalMapBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
+		imageBindingBases: reader.u32s(EXECUTION_DOMAIN_COUNT),
 		hardHalted: reader.bool(),
 		lastPc: reader.u32(),
 		haltedUntilIrqThreadAddress: reader.u32(),
