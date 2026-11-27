@@ -163,6 +163,7 @@ import {
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
+	IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding, storeImageStringBinding,
 	type Blua32ExecutionImage,
 	type ExecutionImageRelocation,
 	type Blua32FunctionRecordLatch,
@@ -960,9 +961,10 @@ export class CPU implements MappedPageInvalidator {
 		bytes: Uint8Array, byteOffset: number,
 		constTags: Uint8Array, constWords: Uint32Array,
 		stringBinding: number, restoring: boolean,
-		constantStringSlots: Uint32Array, constantStringRoots: StringId[],
-	): void {
-		let stringIndex = 0;
+		constantStringSlots: Uint32Array,
+	): number {
+		let stringIndex = 0, ramCount = 0;
+		const stringCount = constantStringSlots.length;
 		for (let index = 0; index < constTags.length; index += 1) {
 			const recordOffset = index * BLUA32_CONSTANT_RECORD_SIZE;
 			const recordByteOffset = byteOffset + recordOffset;
@@ -996,23 +998,23 @@ export class CPU implements MappedPageInvalidator {
 				case Blua32ConstantTag.String: {
 					let id: StringId;
 					if (restoring) {
-						id = this.memory.readRamRecordWord(stringBinding);
+						id = loadImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount);
+						ramCount += +isRamStringId(id);
 					} else {
 						id = this.stringPool.resolveImageRecord(executionDomainId,
 							readLE32(bytes, recordByteOffset + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-						this.memory.writeRamRecordWord(stringBinding, id);
+						ramCount = storeImageStringBinding(this.memory, stringBinding, stringCount, stringIndex, ramCount, id);
 					}
-					stringBinding += 4;
 					constantStringSlots[stringIndex++] = index;
 					constTags[index] = ValueTag.String;
 					constWords[index] = id;
-					if (isRamStringId(id)) constantStringRoots.push(id);
 					break;
 				}
 				default:
 					throw new Error('BLua32 constant tag is invalid.');
 			}
 		}
+		return ramCount;
 	}
 
 	private releaseImageData(base: number, bytes: number): void {
@@ -1140,25 +1142,23 @@ export class CPU implements MappedPageInvalidator {
 			this.registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 				this.systemGlobalBank, imageBindingBase + 4 * globalNameCount);
 		}
-		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, constantStringRoots: StringId[];
+		let constWords: Uint32Array, constTags: Uint8Array, constantStringSlots: Uint32Array, constantStringRootCount = 0;
 		const stringBinding = imageBindingBase + nameBytes;
 		if (reused === null) {
 			const buffer = new ArrayBuffer(constantCount * 5);
 			constWords = new Uint32Array(buffer, 0, constantCount);
 			constTags = new Uint8Array(buffer, constantCount * 4, constantCount);
 			constantStringSlots = new Uint32Array(stringCount);
-			constantStringRoots = [];
-			this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
-				stringBinding, restoring, constantStringSlots, constantStringRoots);
+			constantStringRootCount = this.decodeConstantPool(executionDomainId, constantBytes, constantOffset, constTags, constWords,
+				stringBinding, restoring, constantStringSlots);
 		} else {
 			// Only the String bindings belong to the restored guest state.
 			// Literal words and tags still belong to the mounted ROM.
-			({ constWords, constTags, constantStringSlots, constantStringRoots } = reused);
-			constantStringRoots.length = 0;
+			({ constWords, constTags, constantStringSlots } = reused);
 			for (let i = 0; i < constantStringSlots.length; ++i) {
-				const id = this.memory.readRamRecordWord(stringBinding + 4 * i);
+				const id = loadImageStringBinding(this.memory, stringBinding, stringCount, i, constantStringRootCount);
 				constWords[constantStringSlots[i]] = id;
-				if (isRamStringId(id)) constantStringRoots.push(id);
+				constantStringRootCount += +isRamStringId(id);
 			}
 		}
 		const image: Blua32ExecutionImage = {
@@ -1171,7 +1171,8 @@ export class CPU implements MappedPageInvalidator {
 			constantRecordBytes: constantBytes,
 			constantRecordOffset: constantOffset,
 			constantStringSlots,
-			constantStringRoots,
+			constantStringBase: stringBinding,
+			constantStringRootCount,
 			globalNameCount, systemNameCount: systemGlobalNameCount,
 			romFunctions: header.romFunctions,
 			romCallBindings: new RomCallBindings(),
@@ -5390,8 +5391,8 @@ export class CPU implements MappedPageInvalidator {
 		let destination = banks + 2 * HEAP_SERVICE_ROOT_BANK_SIZE;
 		for (let plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
 			const image = this.executionImagesByDomain[plane];
-			this.writeHeapRootBank(destination, image === null ? 0 : image.constantStringRoots.length,
-				HEAP_SERVICE_ROOT_PORT_BASE + plane * HEAP_SERVICE_ROOT_PORT_STRIDE, 0, 0);
+			this.writeHeapRootBank(destination, image === null ? 0 : image.constantStringRootCount,
+				image === null ? 0 : image.constantStringBase, 0, 0);
 		}
 		this.writeHeapRootBank(destination, this.completionValueCount,
 			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE,
@@ -5409,13 +5410,6 @@ export class CPU implements MappedPageInvalidator {
 		const byte = kind === MemoryAccessKind.U8;
 		const slot = byte ? address : address >>> 2;
 		switch (plane) {
-			case HeapServiceRootPlane.SystemConstants:
-			case HeapServiceRootPlane.Cart0Constants:
-			case HeapServiceRootPlane.Cart1Constants: {
-				const image = this.executionImagesByDomain[plane];
-				if (!byte && image !== null && slot < image.constantStringRoots.length) return image.constantStringRoots[slot];
-				break;
-			}
 			case HeapServiceRootPlane.CompletionPayloads:
 			case HeapServiceRootPlane.CompletionTags:
 				if (byte === (plane === HeapServiceRootPlane.CompletionTags) && slot < this.completionValueCount)
@@ -5440,7 +5434,7 @@ export class CPU implements MappedPageInvalidator {
 		if (bank === GcRootBank.Completion) return this.completionValueCount;
 		if (bank === GcRootBank.ConcatOperands) return this.concat.active ? this.concat.values.length - this.concat.source : 0;
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants];
-		return image === null ? 0 : image.constantStringRoots.length;
+		return image === null ? 0 : image.constantStringRootCount;
 	}
 
 	public markRootBank(heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
@@ -5465,7 +5459,8 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const image = this.executionImagesByDomain[bank - GcRootBank.SystemConstants]!;
-		for (let slot = first; slot < end; ++slot) heap.markString(image.constantStringRoots[slot]);
+		for (let slot = first; slot < end; ++slot)
+			heap.markString(this.memory.readRamRecordWord(image.constantStringBase + 4 * slot) & ~IMAGE_STRING_RAM_ORDINAL);
 	}
 
 	public markRootThreads(heap: GcHeap): void {

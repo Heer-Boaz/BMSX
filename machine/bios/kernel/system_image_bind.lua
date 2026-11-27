@@ -11,6 +11,7 @@ local admission<const> = require('kernel/heap_admission') -- L:75-98,132-138 N:8
 local slices<const> = require('kernel/string_slice') -- S:161-230 R:176-235
 local strings<const> = require('kernel/gc_strings') -- S:244-254,438-442 R:247-253,427-430
 local names<const> = require('kernel/global_bank') -- G:71-109 H:59-101
+local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; compact physical root prefix
 
 local string_constant_tag<const> = 4 -- F:67-75
 local immutable_string_kind<const> = 0x10005 -- F:58-59 S:145 R:160
@@ -130,14 +131,14 @@ local bind_initial_image<const> = function(management, header, output, system_by
 		local system_base<const> = base + 4 * global_count -- T:1143-1144 C:425-426
 		fault = bind_name_table(management, image.system_names, system_count, &view.system_base, system_base, system_bytes, cart0_bytes) -- T:1143-1144 C:425-426
 		if fault ~= 0 then return fault end -- T:1143 C:425
-		local target<const>: *u32 = system_base + 4 * system_count -- T:1147 C:440
-		local slot = 0 -- T:1005-1006 C:282,291
+		local target<const> = system_base + 4 * system_count -- T:1147 C:440
+		local slot, ram_count = 0, 0 -- T:1005-1006 C:282,291
 		local metadata<const> = management + layout.metadata_offset -- T:1001-1002 C:288 S:65
 		for index = 0, count - 1 do -- T:968,996 C:282; copy only the decoded String ordinals into binding RAM
 			if constants[index].tag == string_constant_tag then -- T:996 C:270-272
 				local id<const>, reason<const> = resolve_initial_string(metadata, constants[index].word, system_bytes, cart0_bytes) -- T:1001-1003 C:287-289
 				if reason ~= 0 then return reason end -- S:253 R:253; same external-data failure, before the CPU sees bindings
-				target[slot] = id -- T:1003 C:289
+				ram_count = string_bindings.store_binding(target, strings_count, slot, ram_count, id) -- T:1003,1009 C:289,301
 				slot = slot + 1 -- T:1005 C:291
 			end
 		end

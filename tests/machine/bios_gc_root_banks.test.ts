@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding, storeImageStringBinding } from '../../machine/ts/machine/cpu/execution_image';
+import { isRamStringId } from '../../machine/ts/machine/cpu/string_pool';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_ROOT_CURSOR, GC_TRACE_HEAD, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
@@ -12,7 +14,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_BANKS_SIZE, HEAP_SERVICE_ROOT_PORT_BASE,
-	HEAP_SERVICE_ROOT_PORT_STRIDE, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRootPlane,
+	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -91,7 +93,11 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const constants = ['retained cart0 one', 'retained cart0 two', 'retained cart1'].map(string);
 	for (const slot of [0, 1] as const)
-		equal(target => [...target['executionImageForDomain'](slot)!.constantStringRoots]);
+		assert.deepEqual(equal(target => {
+			const image = target['executionImageForDomain'](slot)!;
+			return Array.from({ length: image.constantStringRootCount }, (_, i) =>
+				target.memory.readRamRecordWord(image.constantStringBase + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL);
+		}), slot === 0 ? constants.slice(0, 2) : constants.slice(2));
 	assert.equal(cpu.rootBankSlots(GcRootBank.SystemConstants), 0);
 	assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 2);
 	assert.equal(cpu.rootBankSlots(GcRootBank.Cart1Constants), 1);
@@ -252,11 +258,34 @@ for (const optLevel of [0, 3] as const) {
 }
 
 for (const operation of ['read_byte', 'write_word'] as const) {
-	test(`CPU-private root port rejects ${operation} on a compact constant word`, () => {
+	test(`the retired constant projection address rejects ${operation}`, () => {
 		const f = fixture(0);
-		const address = HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.Cart0Constants * HEAP_SERVICE_ROOT_PORT_STRIDE;
+		const address = HEAP_SERVICE_ROOT_PORT_BASE - 0x800000;
 		assert.equal(f.memory.isReadableMainMemoryRange(address, 4), false, 'ordinary bus has no root plane');
 		f.beginPort(operation, address);
-		assert.throws(() => f.finish(), operation === 'read_byte' ? /outside its root port/ : /outside its private RAM port/);
+		assert.throws(() => f.finish(), operation === 'read_byte' ? /outside installed RAM and ROM/ : /outside its private RAM port/);
 	});
 }
+
+
+test('compact resident String bindings preserve ordinal identity and root order over dirty backing', () => {
+	const { memory } = fixture(0);
+	const base = RAM_BASE + 0x20000, count = 7;
+	for (let mask = 0; mask < 1 << count; ++mask) {
+		for (let slot = 0; slot < count; ++slot) memory.writeRamRecordWord(base + 4 * slot, 0xfffffff9);
+		const words = Array.from({ length: count }, (_, i) => ((mask & (1 << i)) !== 0
+			? RAM_BASE + 0x20000 + 8 * i : (((i & 1) === 0 ? 0x90000000 : 0x10000000) + 8 * i)));
+		let ram = 0;
+		for (const [slot, word] of words.entries()) ram = storeImageStringBinding(memory, base, count, slot, ram, word);
+		const roots = words.filter(isRamStringId);
+		assert.equal(ram, roots.length);
+		assert.deepEqual(roots, Array.from({ length: ram }, (_, i) =>
+			memory.readRamRecordWord(base + 4 * i) & ~IMAGE_STRING_RAM_ORDINAL));
+		ram = 0;
+		for (const [slot, word] of words.entries()) {
+			const original = loadImageStringBinding(memory, base, count, slot, ram);
+			assert.equal(original, word);
+			ram += +isRamStringId(original);
+		}
+	}
+});

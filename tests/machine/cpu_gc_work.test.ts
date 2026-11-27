@@ -9,6 +9,7 @@ import { RunResult, CPU, CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
+import { IMAGE_STRING_RAM_ORDINAL } from '../../machine/ts/machine/cpu/execution_image';
 import { GcPhase, GC_LAST_EPOCH_WORK, GC_PACE_PAID, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -582,7 +583,9 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 			const id = cpu.stringPool.intern(literal);
 			assert.ok(id >= RAM_BASE);
 			cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
-			assert.deepEqual(cpu['executionImageForDomain'](0)!.constantStringRoots, [id]);
+			const image = cpu['executionImageForDomain'](0)!;
+			assert.equal(image.constantStringRootCount, 1);
+			assert.equal(memory.readRamRecordWord(image.constantStringBase) & ~IMAGE_STRING_RAM_ORDINAL, id);
 			return id;
 		};
 		const first = activate();
@@ -604,7 +607,8 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		assert.deepEqual(memory.ramData(), original.memory.ram);
 		const restored = cpu['executionImageForDomain'](0)!;
 		assert.equal(restored.constWords, words, 'same mounted literals reuse their decoded backing');
-		assert.deepEqual(restored.constantStringRoots, [first]);
+		assert.equal(restored.constantStringRootCount, 1);
+		assert.equal(memory.readRamRecordWord(restored.constantStringBase) & ~IMAGE_STRING_RAM_ORDINAL, first);
 		cpu.collectTrackedHeapBytes();
 		assert.equal(cpu.stringPool.find(literal), first);
 		cpu.runUntilDepth(0, 4096);

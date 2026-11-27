@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { loadImageStringBinding } from '../../../machine/ts/machine/cpu/execution_image';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
@@ -76,17 +77,18 @@ try {
 		const readHeader = (field: number) => readLE32(linked.romBytes, header + field);
 		const nameCount = readHeader(BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET) + readHeader(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
 		const constant = readHeader(BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET), count = readHeader(BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
-		let stringCount = 0, aliasCount = 0;
+		const stringCount = (memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) >>> 2) - nameCount;
+		let slot = 0, aliasCount = 0;
 		for (let record = constant; record < constant + count * BLUA32_CONSTANT_RECORD_SIZE; record += BLUA32_CONSTANT_RECORD_SIZE) {
 			if (readLE32(linked.romBytes, record) !== Blua32ConstantTag.String) continue;
-			const canonical = memory.readRamRecordWord(expectedBase + 4 * (nameCount + stringCount++));
+			const canonical = loadImageStringBinding(memory, expectedBase + 4 * nameCount, stringCount, slot++, aliasCount);
 			const original = readLE32(linked.romBytes, record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
 			if (canonical !== original) {
 				assert.ok(canonical >= RAM_BASE);
 				++aliasCount;
 			}
 		}
-		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 4 * (nameCount + stringCount));
+		assert.equal(slot, stringCount, 'every original String ordinal has exactly one binding word');
 		assert.ok(aliasCount >= 2, 'literal relocation must retain the original RAM diagnostic aliases');
 
 		// Keep existing machine Frame/Value execution controls as harness only.

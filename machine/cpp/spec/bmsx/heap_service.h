@@ -95,11 +95,11 @@ enum class HeapServiceRootBankField : uint32_t { Count = 0, Payloads = 4, Tags =
 
 // CPU-private load selectors for the existing non-RAM root storage. These
 // logical planes do not occupy memory or participate in ordinary bus decode.
-constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BASE = 0x01000000;
+constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BASE = 0x01c00000;
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_STRIDE = 1u << HEAP_SERVICE_ROOT_PORT_SHIFT;
 enum class HeapServiceRootPlane : uint32_t {
-	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+	CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.

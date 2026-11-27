@@ -84,11 +84,11 @@ export const enum HeapServiceRootBankField { Count = 0, Payloads = 4, Tags = 8, 
 
 // CPU-private load selectors for the existing non-RAM root storage. These
 // logical planes do not occupy memory or participate in ordinary bus decode.
-export const HEAP_SERVICE_ROOT_PORT_BASE = 0x01000000;
+export const HEAP_SERVICE_ROOT_PORT_BASE = 0x01c00000;
 export const HEAP_SERVICE_ROOT_PORT_SHIFT = 22;
 export const HEAP_SERVICE_ROOT_PORT_STRIDE = 1 << HEAP_SERVICE_ROOT_PORT_SHIFT;
 export const enum HeapServiceRootPlane {
-	SystemConstants, Cart0Constants, Cart1Constants, CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
+	CompletionPayloads, CompletionTags, ConcatPayloads, ConcatTags, Count,
 }
 export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.

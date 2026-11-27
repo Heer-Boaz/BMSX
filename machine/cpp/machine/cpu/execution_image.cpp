@@ -1,6 +1,7 @@
 #include "machine/cpu/execution_image.h"
 
 #include "common/endian.h"
+#include "machine/cpu/string_pool.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
@@ -10,6 +11,29 @@
 #include <numeric>
 
 namespace bmsx {
+
+u32 storeImageStringBinding(Memory& memory, u32 base, u32 count, u32 slot, u32 ramCount, StringId id) {
+	const u32 ram = isRamStringId(id);
+	const u32 right = count - 1u - (slot - ramCount);
+	const u32 dest = ram ? ramCount : right;
+	const u32 sourceAddress = base + 4u * slot;
+	if (dest == slot) {
+		memory.writeRamRecordWord(sourceAddress, id | ram);
+	} else {
+		const u32 address = base + 4u * dest;
+		const u32 flag = dest < slot ? memory.readRamRecordWord(address) & IMAGE_STRING_RAM_ORDINAL : 0u;
+		memory.writeRamRecordWord(address, id | flag);
+		const u32 payload = (slot < ramCount || slot > right) ? memory.readRamRecordWord(sourceAddress) & ~IMAGE_STRING_RAM_ORDINAL : 0u;
+		memory.writeRamRecordWord(sourceAddress, payload | ram);
+	}
+	return ramCount + ram;
+}
+
+StringId loadImageStringBinding(const Memory& memory, u32 base, u32 count, u32 slot, u32 ramCount) {
+	const u32 word = memory.readRamRecordWord(base + 4u * slot);
+	const u32 source = (word & IMAGE_STRING_RAM_ORDINAL) != 0u ? ramCount : count - 1u - (slot - ramCount);
+	return (slot == source ? word : memory.readRamRecordWord(base + 4u * source)) & ~IMAGE_STRING_RAM_ORDINAL;
+}
 
 RomCallBinding* Blua32ExecutionImage::loadRomFunction(const Memory& memory, u32 address, RomCallBinding& binding) {
 	FunctionEntry entry;

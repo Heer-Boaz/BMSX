@@ -289,19 +289,23 @@ void CPU::decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records
 
 void CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring) {
 	auto& storage = image.decodedConstants;
+	const u32 count = static_cast<u32>(image.constantStringSlots.size());
+	u32 ramCount = 0, slot = 0;
 	for (const u32 index : image.constantStringSlots) {
 		StringId id;
 		if (restoring) {
-			id = m_memory.readRamRecordWord(stringBinding);
+			id = loadImageStringBinding(m_memory, stringBinding, count, slot, ramCount);
+			ramCount += isRamStringId(id);
 		} else {
 			const u8* record = records.data() + index * BLUA32_CONSTANT_RECORD_SIZE;
 			id = m_stringPool.resolveImageRecord(image.executionDomainId, readLE32(record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
-			m_memory.writeRamRecordWord(stringBinding, id);
+			ramCount = storeImageStringBinding(m_memory, stringBinding, count, slot, ramCount, id);
 		}
-		stringBinding += sizeof(u32);
+		++slot;
 		storage.words()[index] = id;
-		if (isRamStringId(id)) image.constantStringRoots.push_back(id);
 	}
+	image.constantStringBase = stringBinding;
+	image.constantStringRootCount = ramCount;
 	image.constPool = ConstValueSpan(storage.words(), storage.tags(), storage.capacity());
 }
 
@@ -433,8 +437,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	if (reuseConstants) {
 		image->decodedConstants = std::move(previous->decodedConstants);
 		image->constantStringSlots = std::move(previous->constantStringSlots);
-		image->constantStringRoots = std::move(previous->constantStringRoots);
-		image->constantStringRoots.clear();
 	} else {
 		image->decodedConstants.resize(constantCount);
 		image->constantStringSlots.reserve(stringCount);
@@ -3285,8 +3287,8 @@ void CPU::publishHeapRootBanks() {
 	u32 destination = banks + 2u * HEAP_SERVICE_ROOT_BANK_SIZE;
 	for (u32 plane = 0; plane < EXECUTION_DOMAIN_COUNT; ++plane, destination += HEAP_SERVICE_ROOT_BANK_SIZE) {
 		const auto& image = m_executionImagesByDomain[plane];
-		publish(destination, image ? static_cast<u32>(image->constantStringRoots.size()) : 0u,
-			HEAP_SERVICE_ROOT_PORT_BASE + plane * HEAP_SERVICE_ROOT_PORT_STRIDE, 0u, 0u);
+		publish(destination, image ? image->constantStringRootCount : 0u,
+			image ? image->constantStringBase : 0u, 0u, 0u);
 	}
 	publish(destination, static_cast<u32>(m_completionValueCount),
 		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE,
@@ -3304,13 +3306,6 @@ u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {
 	const bool byte = kind == MemoryAccessKind::U8;
 	const u32 slot = byte ? address : address >> 2u;
 	switch (plane) {
-		case HeapServiceRootPlane::SystemConstants:
-		case HeapServiceRootPlane::Cart0Constants:
-		case HeapServiceRootPlane::Cart1Constants: {
-			const auto& image = m_executionImagesByDomain[static_cast<u32>(plane)];
-			if (!byte && image && slot < image->constantStringRoots.size()) return image->constantStringRoots[slot];
-			break;
-		}
 		case HeapServiceRootPlane::CompletionPayloads:
 		case HeapServiceRootPlane::CompletionTags:
 			if (byte == (plane == HeapServiceRootPlane::CompletionTags) && slot < m_completionValueCount)
@@ -3336,7 +3331,7 @@ size_t CPU::rootBankSlots(GcRootBank bank) const {
 	if (bank == GcRootBank::Completion) return m_completionValueCount;
 	if (bank == GcRootBank::ConcatOperands) return m_concat.active() ? m_concat.sources.size() - m_concat.source : 0u;
 	const auto& image = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)];
-	return image ? image->constantStringRoots.size() : 0u;
+	return image ? image->constantStringRootCount : 0u;
 }
 
 void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) {
@@ -3360,8 +3355,9 @@ void CPU::markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end) 
 		}
 		return;
 	}
-	const auto& roots = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constantStringRoots;
-	for (size_t slot = first; slot < end; ++slot) heap.markString(roots[slot]);
+	const u32 roots = m_executionImagesByDomain[static_cast<u32>(bank) - static_cast<u32>(GcRootBank::SystemConstants)]->constantStringBase;
+	for (size_t slot = first; slot < end; ++slot)
+		heap.markString(m_memory.readRamRecordWord(roots + static_cast<u32>(slot) * 4u) & ~IMAGE_STRING_RAM_ORDINAL);
 }
 
 void CPU::markRootThreads(GcHeap& heap) {

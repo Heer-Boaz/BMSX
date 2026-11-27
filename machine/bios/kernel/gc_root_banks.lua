@@ -5,6 +5,7 @@ module<const>
 -- Q/R: Thread records; O: RAM map.
 local mark<const> = require('kernel/gc_mark') -- T:307-309,331-338 U:5087,5092,5108-5109 P:3157-3158,3163,3178-3181
 local strings<const> = require('kernel/gc_strings') -- T:178,603 U:5087,5099,5104 P:3157,3169,3174 C:636
+local string_bindings<const> = require('kernel/image_string_bindings') -- U:5104 P:3174; peel the ordinal bit from the physical payload
 local ram_base<const> = 0x08000000 -- O:6
 local trace_head<const> = 4 -- T:25,313 H:23
 local root_cursor<const> = 0x58 -- T:43 H:42
@@ -19,8 +20,8 @@ local thread_kind<const> = 4 -- T:307-309 C:272-274 Q:33 R:18
 
 -- The stopped caller publishes descriptors, not copied global Values.
 -- GlobalBank planes are the existing b, b+12*c, b+16*c (c is capacity).
--- Constant planes contain only resolved RAM String ids, in pool ordinal
--- order, not all constant slots. Completion counts its live RET Values;
+-- Constant planes borrow the resolved RAM String prefix of the physical
+-- binding backing, in pool ordinal order, not all constant slots. Completion counts its live RET Values;
 -- Concat counts every unread captured slot (but traces only Strings).
 -- The last two planes begin at the start of the live span. The descriptors
 -- are a private read contract; this module does not materialize those spans.
@@ -74,7 +75,7 @@ local mark_root_bank<const> = function(control, arena, metadata, bank_address, k
 		return work -- U:5101 P:3171 T:603 C:636
 	end
 	while first < stop do -- U:5104 P:3174
-		work = work + strings.mark(metadata, words[first]) -- U:5104 P:3174
+		work = work + strings.mark(metadata, words[first] & ~string_bindings.ordinal_ram_bit) -- U:5104 P:3174
 		first = first + 1 -- U:5104 P:3174
 	end
 	return work -- U:5104 P:3174 T:603 C:636
