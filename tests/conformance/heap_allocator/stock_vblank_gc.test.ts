@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { GC_LAST_EPOCH_WORK, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../../machine/ts/machine/cpu/gc_heap';
@@ -243,6 +244,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 }
 
 test('stock PCRTC VBlank runs BIOS collection before cartridge IRQ acknowledgment', async t => {
+	t.mock.method(Memory.prototype, 'bindDlmalloc', () => assert.fail('stock boot and collection must not instantiate the allocator oracle'));
 	mkdirSync('tmp', { recursive: true });
 	const dir = mkdtempSync(join('tmp', 'stock-vblank-gc-'));
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner', { buildDirectory: join(dir, 'native') });
