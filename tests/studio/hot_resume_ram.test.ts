@@ -2,6 +2,8 @@ import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { isOpen, load as readCapture } from '../../machine/ts/machine/cpu/upvalue';
 import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
@@ -16,11 +18,14 @@ import { compileCoroutineTest } from '../helpers/coroutine';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestRuntime } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
-import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { createTestSystemCpu, linkRawTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
+import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
 
 test('Hot Resume admits numeric edits but rejects equal-sized retargeting of installed operand slots', () => {
 	const text = new Uint8Array(4);
@@ -127,25 +132,75 @@ test('Hot Resume preserves a direct-entry record count independently of captured
 	assert.equal(ClosureRecord.captureCount(cpu.memory, closure), 0);
 });
 
-test('Hot Resume rejects a replaced ROM body retained by an inactive coroutine before mounting', () => {
-	const image = compileFrameEvaluationTest(`
-worker = coroutine.create(function() coroutine.yield(42) end)
-local ok, result = coroutine.resume(worker)
-assert(ok and result == 42)
+test('Hot Resume preserves a suspended coroutine and its open capture at a proven physical continuation', () => {
+	const source = `module<entry>
+local coroutines<const> = require('coroutine')
+function edited(value) return value + 1951 end
+read_back = false
+worker = coroutines.create(function(captured)
+	read_back = function() return captured end
+	coroutines.yield(captured)
+	captured = edited(captured)
+	return read_back()
+end)
+local ok, first = coroutines.resume(worker, 42)
 halt_until_irq
-`, 3);
-	const { cpu } = createTestSystemCpu(image);
-	let result = RunResult.Yielded;
-	for (let step = 0; step < 10 && result === RunResult.Yielded; ++step) result = cpu.runUntilDepth(0, 1_000_000);
-	assert.equal(result, RunResult.Halted);
+local finished, last = coroutines.resume(worker)
+return ok, first, finished, last, read_back()
+`;
+	const initial = linkManagedTestSystem(source, 3, COROUTINE_FIRMWARE_MODULES);
+	const fresh = linkManagedTestSystem(source.replace('1951', '1953'), 3, COROUTINE_FIRMWARE_MODULES);
+	const runtime = createTestRuntime(writeTestBlua32Rom(initial));
+	runtime.boot();
+	const { cpu, memory, executionAddressSpace } = runtime.machine;
+	runGuestToHalt(cpu, 1_000_000);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.activeThread, cpu.rootThread);
-	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.intern('worker')), cpu.gc);
+	const worker = asThread(cpu.getGlobalByKey(cpu.stringPool.find('worker')!), cpu.gc);
 	assert.notEqual(worker, 0);
 	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Suspended);
-	assert.ok(cpu.readThreadFrameDepth(worker) > 0);
+	const bodyFrame = Array.from({ length: cpu.readThreadFrameDepth(worker) }, (_, index) => index)
+		.find(index => cpu.readThreadFrameWord(worker, index, FrameField.OpenHead) !== 0)!;
+	const readBack = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('read_back')!), cpu.gc);
+	const cell = ClosureRecord.captureAddress(memory, readBack, 0);
+	assert.equal(cpu.readThreadFrameWord(worker, bodyFrame, FrameField.OpenHead), cell);
+	assert.equal(isOpen(memory, cell), true);
+	assert.equal(readCapture(memory, cell), valueInteger(42));
+
+	const sources = (image: typeof initial) => new Map(Array.from(image.diagnosticSources, ([path, diagnostic]) => [path, diagnostic.source]));
+	const previousImage = initial.layout, nextImage = fresh.layout;
+	const revision = buildBlua32ExecutionRevision(previousImage, initial.symbols, sources(initial), fresh, sources(fresh));
+	const plan = { previousImage, nextImage, revision };
+	const bodyPc = cpu.readThreadFrameWord(worker, bodyFrame, FrameField.Pc);
+	const bodyWord = (bodyPc - previousImage.header.textAddress) / INSTRUCTION_BYTES;
+	assert.equal(revision.pcAddresses[bodyWord], bodyPc);
+	const moved = { ...plan, revision: { ...revision, pcAddresses: revision.pcAddresses.slice() } };
+	moved.revision.pcAddresses[bodyWord] += INSTRUCTION_BYTES;
+	const framesOffset = cpu.readThreadFrameAddress(worker, 0);
+	const frameBytes = cpu.readThreadFrameDepth(worker) * FRAME_CONTROL_BYTES;
+	const controlBefore = memory.ramData().slice(framesOffset, framesOffset + frameBytes);
 	const before = cpu.captureRuntimeState();
-	assert.throws(() => buildHotResumeRelocation(cpu, [identityHotResumeRevision(image.image), null, null], cpu.getFrameDepth()), /inactive thread .* frame 0/);
+	assert.throws(() => buildHotResumeRelocation(cpu, [moved, null, null], cpu.getFrameDepth()), /inactive thread .* continuation/);
 	assert.deepEqual(cpu.captureRuntimeState(), before);
+	assert.deepEqual(memory.ramData().subarray(framesOffset, framesOffset + frameBytes), controlBefore);
+
+	verifyHotResumeBinding(cpu, SYSTEM_EXECUTION_DOMAIN_ID, previousImage, nextImage);
+	const accepted = buildHotResumeRelocation(cpu, [plan, null, null], cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh));
+	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+	applyHotResumeRelocation(cpu, accepted);
+	assert.deepEqual(memory.ramData().subarray(framesOffset, framesOffset + frameBytes), controlBefore);
+	assert.equal(isOpen(memory, cell), true);
+	assert.equal(readCapture(memory, cell), valueInteger(42));
+
+	cpu.clearHaltUntilIrq();
+	runGuestToHalt(cpu, 1_000_000);
+	const result: Value[] = [];
+	cpu.readCompletionValues(result);
+	assert.deepEqual(result, [valueBool(true), valueInteger(42), valueBool(true), valueInteger(1995), valueInteger(1995)]);
+	assert.equal(cpu.readThreadStatus(worker), ThreadStatus.Dead);
+	assert.equal(isOpen(memory, cell), false);
+	assert.equal(readCapture(memory, cell), valueInteger(1995));
 });
 
 test('Hot Resume retains a closure held only by the xpcall argument window', () => {

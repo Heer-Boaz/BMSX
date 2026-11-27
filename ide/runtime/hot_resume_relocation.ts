@@ -1,5 +1,5 @@
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
-import { FRAME_WINDOW_MASK, FrameField, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_COMPLETION, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameCaptureCount, frameExecutionBank, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
@@ -87,10 +87,42 @@ export function buildHotResumeRelocation(
 		if (address !== binding.functionAddress) closures.set(closure, address);
 	}, (thread, depth) => {
 		if (thread === cpu.activeThread.address) return;
+		let caller: HotResumeRevision | null = null;
 		for (let index = 0; index < depth; ++index) {
-			const target = revisions[cpu.readThreadFrameExecutionDomain(thread, index) + 1];
-			if (target !== null && blua32FunctionIndexAtAddress(target.previousImage, cpu.readThreadFrameWord(thread, index, FrameField.Function)) !== -1)
-				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index}`);
+			const flags = cpu.readThreadFrameWord(thread, index, FrameField.Flags);
+			if (caller !== null && (flags & FRAME_COMPLETION) === 0) {
+				const callSite = cpu.readThreadFrameWord(thread, index, FrameField.CallSite);
+				if ((flags & FRAME_EXCEPTION) !== 0 || relocatedCallSitePc(caller.revision, caller.previousImage, callSite) !== callSite)
+					unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} call site 0x${callSite.toString(16)}`);
+			}
+			caller = null;
+			const domain = frameExecutionBank(flags);
+			const target = revisions[domain + 1];
+			if (target === null) continue;
+			const address = cpu.readThreadFrameWord(thread, index, FrameField.Function);
+			const oldIndex = blua32FunctionIndexAtAddress(target.previousImage, address);
+			if (oldIndex < 0) continue;
+			const pc = cpu.readThreadFrameWord(thread, index, FrameField.Pc);
+			// A suspended thread keeps its physical frame words and aliases.
+			// Only an unchanged, proven continuation needs no relocation.
+			if ((flags & FRAME_EXCEPTION) !== 0 || target.revision.functionAddresses[oldIndex] !== address
+				|| relocatedContinuationPc(target.revision, target.previousImage, pc) !== pc) {
+				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} continuation 0x${pc.toString(16)}`);
+				continue;
+			}
+			const previous = target.previousImage.functions[oldIndex];
+			const next = target.nextImage.functions[blua32FunctionIndexAtAddress(target.nextImage, address)];
+			const width = cpu.readThreadFrameWord(thread, index, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+			const closure = cpu.readThreadFrameWord(thread, index, FrameField.Closure);
+			const captures = frameCaptureCount(cpu.memory, closure);
+			if (next.numParams !== previous.numParams || next.isVararg !== previous.isVararg
+				|| next.upvalues.length !== captures || Math.max(next.numParams, next.maxStack) > width
+				|| (captures !== 0 && (closureExecutionDomain(cpu.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)) !== domain
+					|| cpu.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) !== address))) {
+				unmappedWords.push(`inactive thread 0x${thread.toString(16)} frame ${index} argument, capture or register layout`);
+				continue;
+			}
+			caller = target;
 		}
 	});
 
