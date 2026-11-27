@@ -1051,7 +1051,7 @@ test('an ordinary assist keeps debt beyond its bounded quantum and stops credit 
 	assert.equal(gc.phase(), GcPhase.Mark);
 });
 
-test('even a long explicit final mark earns only the fixed logical allocation credit', () => {
+test('a native Step reference already in Atomic finishes all remaining final-mark quanta', () => {
 	const cpu = machine(), { gc, memory } = cpu;
 	const weak = cpu.createTable(2 * GC_STEP_WORDS, 0), meta = cpu.createTable(0, 1);
 	gc.tables.setStringKey(meta, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
@@ -1061,14 +1061,11 @@ test('even a long explicit final mark earns only the fixed logical allocation cr
 	for (let i = 0; !gc.finalMarkPending() && i < 20; ++i) gc.step();
 	assert.equal(gc.phase(), GcPhase.Atomic);
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-	assert.ok(gc.finishFinalMark() > GC_STEP_WORDS, 'the synchronous final step spans several physical quanta');
+	const work = gc.finishFinalMark();
+	assert.ok(work > GC_STEP_WORDS, 'the synchronous final step spans several physical quanta');
 	memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-	const occupied = cpu.luaHeap.usedBytes();
-	cpu.instructionBudgetRemaining = 7;
-	assert.equal(cpu.luaHeap.stepRuntime(), false);
+	assert.equal(gc.step(), work);
 	assert.equal(gc.phase(), GcPhase.Sweep);
-	assert.equal(cpu.luaHeap.collectionTarget(), occupied + GC_ASSIST_BYTES);
-	assert.equal(cpu.instructionBudgetRemaining, 7);
 });
 
 test('a rooted raw Thread frame retains its table edge and is collected without an execution view', () => {

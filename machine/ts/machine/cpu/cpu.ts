@@ -2299,7 +2299,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.registers.setInteger(0, this.heapAllocator.managementOffset());
 		frame.registers.setInteger(1, Math.max(0, this.instructionBudgetRemaining));
 		frame.registers.setInteger(2, this.runKind);
-		this.bumpRegisterTop(caller, destination + supplied);
+		if (supplied !== 0) this.bumpRegisterTop(caller, destination + supplied);
 		for (let index = 0; index < supplied; ++index) {
 			const input = destination + 1 + index;
 			frame.registers.setInteger(BIOS_CALL_CONTEXT_WORDS + 2 * index, caller.registers.getTag(input));
@@ -2327,7 +2327,9 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const tag = memory.readRamRecordWord(state + HeapServiceBiosCallField.Tag) as ValueTag;
 		const word = memory.readRamRecordWord(state + HeapServiceBiosCallField.Word);
-		this.activeThread.currentFrame!.registers.setEncoded(destination - 1, tag, word);
+		const caller = this.activeThread.currentFrame!;
+		caller.registers.setEncoded(destination - 1, tag, word);
+		this.bumpRegisterTop(caller, destination - 1);
 	}
 
 	/** Internal CPU entry. The host supplies a linked, fixed-stack firmware function. */
@@ -4440,7 +4442,6 @@ export class CPU implements MappedPageInvalidator {
 						out.push(valueInteger(this.luaHeap.usedBytes()));
 						out.push(valueInteger(this.luaHeap.capacity()));
 						break;
-					case GarbageCollectionOperation.Step: out.push(valueBool(this.luaHeap.stepRuntime())); break;
 					default: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				}
 				break;

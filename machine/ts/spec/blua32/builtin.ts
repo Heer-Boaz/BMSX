@@ -37,7 +37,7 @@ export const enum BuiltinFunctionId {
 
 export const BUILTIN_FUNCTION_COUNT = 34;
 
-export const enum GarbageCollectionOperation { Collect = 0, Count = 1, Step = 2 }
+export const enum GarbageCollectionOperation { Collect = 0, Count = 1 }
 
 export interface LuaBootPrimitive {
 	readonly name: string;

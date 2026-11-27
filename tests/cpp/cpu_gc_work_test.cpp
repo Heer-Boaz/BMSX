@@ -504,32 +504,6 @@ void logicalAdmissionFailure() {
 	require(cpu.instructionBudgetRemaining == -1, "the next grant pays only for HALT");
 }
 
-void collectionStepPaysActualWork() {
-	auto source = image(OpCode::CALL);
-	writeInstruction(source.text, 0, static_cast<u8>(OpCode::CALL), 0, 2, 2);
-	size_t previousWork = 0;
-	for (u32 capacity : {1u, 8192u}) {
-		Machine generated(source), scalar(source, true), inspected(source, true);
-		for (auto* machine : {&generated, &scalar, &inspected}) {
-			auto& cpu = machine->cpu;
-			auto& frame = *cpu.rootThread()->currentFrame;
-			if (capacity > 1) cpu.rootThread()->resizeStack(capacity);
-			frame.registers.set(0, cpu.createBuiltinFunction(BuiltinFunctionId::CollectGarbage));
-			frame.registers.set(1, valueInteger(static_cast<i32>(GarbageCollectionOperation::Step)));
-			frame.registers.set(5, valueTable(cpu.createTable(capacity, 0).address()));
-			frame.setTop(6);
-			cpu.setGlobalByKey(cpu.stringPool().intern("kept across CALL"), frame.registers.get(5));
-		}
-		const size_t work = inspected.cpu.stepHeap(valueNil(), valueNil(), valueNil());
-		require(work > previousWork, "the same guest instruction causes different physical work");
-		previousWork = work;
-		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded, "the primitive is issued once");
-		require(1 - generated.cpu.instructionBudgetRemaining == 32 + 4 + 1 + 3 * static_cast<int>(work)
-			&& generated.cpu.readFrameRegister(0, 0) == valueBool(false) && generated.cpu.collecting(),
-			"both execution routes pay CALL, primitive, placement and the measured collector work");
-	}
-}
-
 void constantBankUsesGuestRam() {
 	auto source = image();
 	writeInstruction(source.text, 0, static_cast<u8>(OpCode::LOADK), 0, 0, 1);
@@ -1437,7 +1411,7 @@ void automaticAssistDefersScopedRoots() {
 		"a preliminary assist does not keep released host roots alive");
 }
 
-void explicitAtomicCreditIgnoresPhysicalWork() {
+void referenceExplicitAtomicOwnsOnePass() {
 	Machine machine(image()); auto& cpu = machine.cpu;
 	auto& heap = cpu.gcHeap();
 	auto weak = cpu.createTable(2 * GC_STEP_WORDS, 0), meta = cpu.createTable(0, 1);
@@ -1449,13 +1423,11 @@ void explicitAtomicCreditIgnoresPhysicalWork() {
 	require(heap.finalMarkPending(), "the final pass is ready");
 	const auto state = cpu.captureRuntimeState();
 	const auto ram = machine.memory.captureSaveState();
-	require(heap.finishFinalMark() > GC_STEP_WORDS, "the synchronous final step spans several physical quanta");
+	const auto work = heap.finishFinalMark();
+	require(work > GC_STEP_WORDS, "the synchronous final step spans several physical quanta");
 	machine.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-	const auto occupied = cpu.luaHeap().usedBytes();
-	cpu.instructionBudgetRemaining = 7;
-	require(!cpu.luaHeap().stepRuntime() && heap.phase() == GcPhase::Sweep
-		&& cpu.luaHeap().collectionTarget() == occupied + GC_ASSIST_BYTES && cpu.instructionBudgetRemaining == 7,
-		"explicit final work earns only fixed logical credit and does not debit the guest");
+	require(heap.step(valueNil(), valueNil(), valueNil()) == work && heap.phase() == GcPhase::Sweep,
+		"explicit Step's Atomic admission is a whole final pass, not a single atomic quantum");
 }
 
 void collectUnattachedThreadRecord() {
@@ -1872,7 +1844,7 @@ int main(int argc, char** argv) {
 		physicalReservationsPaySweepWork(GcPhase::Strings);
 		weakTableAdmissionReplansAfterCollection();
 		threadReplacementAdmitsOnlyItsLogicalIncrease(); fullCollectionTrimsWithoutFreeBacking(); valueStackGrowsWithOnlyTheIncrementFree(); failedThreadReplacementLeavesBothOwnedLanes(); unboundExplicitCollectionDoesNotUseNativeFallback();
-		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure(); collectionStepPaysActualWork();
+		scheduledLogicalRefusalParks(); refusedCensusRetriesAtIssuePc(); concatRecoveryChargesIssuingInstruction(); logicalAdmissionFailure();
 		constantBankUsesGuestRam(); allActivatedImagesAndUniqueGlobals(); temporaryRootsAndUnreachablePool();
 		incrementalStateAndBarriers();
 		resumesRootBanksBeforeTracing(); resumesCompletionRootBank(); resumesLargeClosureCaptures(); resumesOpenThreadAfterClosingInstruction();
@@ -1880,7 +1852,7 @@ int main(int argc, char** argv) {
 		weakHashClearingOnlyMarksSurvivingStrings(); weakValuesSkipMarkingStorageWithoutStrongEdges(); incrementalSharedWeakMode();
 		resumesFinalWeakCleanup(); resumesMetatableModeProbe(); resumesWeakTableRemark(); consumesSelfLinkedGrayEdge();
 		secondMarkPassAndCredit(); strongWritesLeaveLargeTablesOutOfFinalRemark(false); strongWritesLeaveLargeTablesOutOfFinalRemark(true);
-		automaticAssistDefersScopedRoots(); explicitAtomicCreditIgnoresPhysicalWork();
+		automaticAssistDefersScopedRoots(); referenceExplicitAtomicOwnsOnePass();
 		collectUnattachedThreadRecord(); sweepCoroutineRecord(); sweepUnselectsSuspendedTransferFrames(); stackShrinkAndAdmission(); highRetainedPacing();
 		std::cout << "guest GC work tests passed\n";
 		return 0;

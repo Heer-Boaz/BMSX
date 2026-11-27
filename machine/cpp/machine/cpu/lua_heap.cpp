@@ -283,12 +283,6 @@ void LuaHeap::collectRuntime(Value root0, Value root1, Value root2, u32 growingT
 	m_cpu.chargeCollectionWork(m_cpu.collectHeap(root0, root1, root2, growingThread));
 }
 
-bool LuaHeap::stepRuntime() {
-	m_cpu.chargeCollectionWork(m_cpu.stepHeap(valueNil(), valueNil(), valueNil()));
-	if (m_cpu.collecting()) setCollectionTarget(static_cast<u32>(usedBytes() + GC_ASSIST_BYTES));
-	return !m_cpu.collecting();
-}
-
 void LuaHeap::accountAllocation(u32 bytes) {
 	auto& memory = m_cpu.memory();
 	memory.writeRamRecordWord(m_occupiedAddress, memory.readRamRecordWord(m_occupiedAddress) + bytes);

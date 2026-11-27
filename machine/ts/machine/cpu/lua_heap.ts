@@ -280,12 +280,6 @@ export class LuaHeap {
 		this.cpu.chargeCollectionWork(this.cpu.gc.collect(root0, root1, root2, growingThread));
 	}
 
-	public stepRuntime(): boolean {
-		this.cpu.chargeCollectionWork(this.cpu.gc.step());
-		if (this.cpu.gc.active()) this.setCollectionTarget(this.usedBytes() + GC_ASSIST_BYTES);
-		return !this.cpu.gc.active();
-	}
-
 	private accountAllocation(bytes: number): void {
 		const memory = this.cpu.memory;
 		memory.writeRamRecordWord(this.occupiedOffset, memory.readRamRecordWord(this.occupiedOffset) + bytes);

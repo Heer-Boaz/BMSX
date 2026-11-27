@@ -103,15 +103,19 @@ local cycle_finished = collectgarbage('step')
 ```
 
 A step does not wait for a display frame and does not guarantee a maximum
-pause. A full collection does not return control to the program until the fresh
-cycle finishes. It draws from successive CPU grants: display and timer events
-continue, but no interrupt handler or following instruction runs during the
-collection. Use it at a suitable point, such as a loading screen. Each
-underlying collection-control primitive call adds 4 base cycles beyond
-`CALL`, with ordinary result placement. A full collection, including any
-work left in the active cycle, costs the ordinary CPU cycles of the resident
-routine. A step costs three cycles per work word actually performed.
-Reading counts does not incur a collector work charge.
+pause. It uses the incremental collection selector of
+[`BIOSCALL`](cpu.md#sec-cpu-calls-and-captured-values) and consumes ordinary CPU cycles.
+If the step starts during final marking, it finishes that pass before
+returning, which does not necessarily finish the cycle.
+A full collection does not return until the fresh cycle finishes. Both
+operations can continue across CPU grants while display and timer events
+advance; neither can be interrupted by an interrupt handler. Use a full
+collection at a suitable point, such as a loading screen.
+
+The control primitive for the full collection and the two budget queries
+adds 4 base cycles beyond `CALL`, with ordinary result placement. Reading a
+count does not perform collection. Work words do not add a second charge to
+the ordinary cycles of either collection routine.
 
 ## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
 

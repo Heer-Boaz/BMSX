@@ -19,7 +19,7 @@ import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../h
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
-const MODULE = 'kernel/gc_atomic_quantum', entrySource = 'return 11, 17, 23';
+const MODULE = 'kernel/gc_step', entrySource = 'return 11, 17, 23';
 const modules = [
 	'dlmalloc', 'gc_control', 'gc_strings', 'word_arithmetic', 'gc_pace', 'heap_admission', 'gc_epoch', 'gc_runtime_layout',
 	'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head', 'gc_table_mode', 'gc_weak_mode', 'gc_table_trace',
@@ -35,7 +35,7 @@ const arraySlots = 16;
 function fixture(optLevel: 0 | 3) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
 	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'atomic_quantum');
+	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'step');
 	assert.ok(exported);
 	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(fn >= 0);
@@ -73,7 +73,7 @@ function fixture(optLevel: 0 | 3) {
 	const [weak, array, firstDead, secondDead, retained] = records[0];
 	function begin(limit: number) {
 		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
-		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit]));
+		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -188,7 +188,7 @@ test('The Atomic source map pins native gates, transport and weak retirement', (
 		}
 	}
 	const native = sources.get('C')!;
-	for (const [first, last] of [[713, 713], [717, 720], [725, 726], [742, 743], [748, 749], [751, 751],
+	for (const [first, last] of [[717, 720], [725, 726], [742, 743], [748, 749], [751, 751],
 		[759, 761], [764, 768], [784, 784], [787, 795]]) {
 		for (let line = first; line <= last; ++line) {
 			const text = native.lines[line - 1].trim();

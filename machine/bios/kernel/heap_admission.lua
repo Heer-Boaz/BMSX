@@ -177,9 +177,19 @@ local begin_allocation_recovery<const> = function(state, next) -- G:1111-1117 K:
 	return continue_current and recovery_fresh or recovery_exhausted -- G:1116,1122-1125 K:1222,1226-1229; caller completes one epoch before retry
 end
 
+local finish_explicit_step<const> = function(state) -- T:283-286 C:286-289
+	local management<const> = state - allocator_offset -- T:27-30 C:23-25
+	if not collector.internal.active(management + control_offset) then return true end -- T:285-286 C:288-289
+	local occupied<const>: *u32 = ram_base + management + occupied_offset -- T:322 C:38
+	local target<const>: *u32 = ram_base + management + target_offset -- T:38-39 C:33-34
+	*target = *occupied + assist_bytes -- T:285 C:288
+	return false -- T:286 C:289
+end
+
 return {
 	internal = { admitted_total = admitted_total, control_delta = control_delta, work_word_cycles = work_word_cycles },
-	heap_capacity = heap_capacity, allocation_debt = allocation_debt, logical_fits = logical_fits,
+	heap_capacity = heap_capacity,
+	finish_explicit_step = finish_explicit_step, allocation_debt = allocation_debt, logical_fits = logical_fits,
 	logical_assist_pressure = logical_assist_pressure, logical_assist_allowance = logical_assist_allowance,
 	limit_assist_allowance = limit_assist_allowance, spend_assist_allowance = spend_assist_allowance,
 	credit_logical_assist = credit_logical_assist, finish_collection = finish_collection, reservation_assist_allowance = reservation_assist_allowance,

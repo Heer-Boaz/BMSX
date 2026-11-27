@@ -1555,11 +1555,10 @@ Completed work counts toward the collector's next allowance without a second
 CPU charge. Other assists performed as part of the issuing instruction pay
 **3 cycles per collector work word** actually performed, not per word requested.
 That charge remains even if a reservation later fails or parks, and a retry
-does not repay completed work. An explicit incremental step also pays
-3 cycles per work word. A full collection requested by the BIOS collection
-service uses ordinary CPU cycles instead, including work to finish an active
-cycle. Program replacement can separately request collection to free its
-static region.
+does not repay completed work. An explicit step or full collection requested
+by the BIOS collection service uses ordinary CPU cycles instead, including
+work to finish an active cycle. Program replacement can separately request
+collection to free its static region.
 In emergency recovery, the issuing instruction pays the same price for any
 collector work it performs itself, even if the retry fails. Resident work
 run on ordinary grants is not charged a second time. A VBlank IRQ assist
@@ -1634,7 +1633,9 @@ service, or a count different from that service's fixed argument count, raises
 a reserved-instruction exception. A service reports any language error at
 the call instruction without publishing a result. The
 [BIOS reference](bios-table.md#sec-bios-table-construction) specifies the
-selector and accepted values for Table construction.
+selector and accepted values for Table construction. Selector `01H` takes no
+arguments and performs the [incremental collection step](bios-base.md#sec-bios-base-collectgarbage),
+returning a Boolean.
 
 A BIOS call uses a separate reserved execution context. Its code consumes
 ordinary CPU cycles and may continue across grants while devices advance.

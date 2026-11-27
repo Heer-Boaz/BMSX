@@ -516,7 +516,7 @@ class ProgramBuilder {
 	public readonly staticModulePaths: string[] = [];
 	private readonly staticModulePathSet: Set<string> = new Set();
 	private readonly initParticipantsByModule = new Map<string, InitParticipantBinding[]>();
-	private readonly programDomain: ProgramCompileDomain;
+	public readonly programDomain: ProgramCompileDomain;
 	public readonly traceChannels: ReadonlySet<string> | undefined;
 
 	public constructor(
@@ -5840,6 +5840,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (callee.member.name === 'trace' || callee.member.name === 'trace_sink') {
 			throw new Error(`blua32.${callee.member.name} is a statement-only compiler intrinsic.`);
+		}
+		if (callee.member.name === 'collect_step') {
+			if (this.program.programDomain !== 'system') throw new Error('blua32.collect_step is a System ROM intrinsic.');
+			if (expression.arguments.length !== 0) throw new Error('blua32.collect_step expects no arguments.');
+			this.emitABC(OpCode.BIOSCALL, target, BiosCall.CollectStep, 0);
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return true;
 		}
 		if (callee.member.name === 'float_bits' || callee.member.name === 'float_from_bits') {
 			if (expression.arguments.length !== 1) throw new Error(`blua32.${callee.member.name} expects one argument.`);

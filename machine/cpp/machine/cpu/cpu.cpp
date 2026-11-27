@@ -1324,8 +1324,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			} else if (operation == static_cast<int>(GarbageCollectionOperation::Count)) {
 				out.push_back(valueInteger(m_luaHeap.usedBytes()));
 				out.push_back(valueInteger(m_luaHeap.capacity()));
-			} else if (operation == static_cast<int>(GarbageCollectionOperation::Step)) out.push_back(valueBool(m_luaHeap.stepRuntime()));
-			else throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			} else throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			break;
 		}
 		case BuiltinFunctionId::Error:

@@ -24,9 +24,10 @@ export const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
 const FULL_COLLECTION_MODULE = 'kernel/gc_full';
 const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
+const BIOS_COLLECT_STEP_MODULE = 'kernel/gc_collect_step';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE,
+	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE, BIOS_COLLECT_STEP_MODULE,
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -68,6 +69,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 
 const guestCalls: Record<Exclude<BiosCall, BiosCall.Count>, readonly [string, string]> = {
 	[BiosCall.CreateTable]: ['create_table', BIOS_CREATE_TABLE_MODULE],
+	[BiosCall.CollectStep]: ['collect_step', BIOS_COLLECT_STEP_MODULE],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */

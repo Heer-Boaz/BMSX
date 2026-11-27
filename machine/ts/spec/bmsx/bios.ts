@@ -8,11 +8,12 @@ export const enum BiosFunction {
 /** Guest BIOSCALL selectors; these do not name ordinary BIOS function slots. */
 export const enum BiosCall {
 	CreateTable = 0,
+	CollectStep = 1,
 	Count,
 }
 
 export const BIOS_CALL_CONTEXT_WORDS = 3;
-export const BIOS_CALL_ARITY = new Uint8Array([2]);
+export const BIOS_CALL_ARITY = new Uint8Array([2, 0]);
 
 export const BIOS_FUNCTION_MODULE_PATHS = [
 	'math/sin',

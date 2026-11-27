@@ -21,7 +21,7 @@ import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
-import { BuiltinFunctionId, GarbageCollectionOperation } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import {
@@ -430,32 +430,6 @@ test('fixed admission distinguishes an impossible size from a recoverable shorta
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes);
 	assert.equal(cpu.instructionBudgetRemaining, 1, 'host admission is outside guest execution');
 	runGuestToHalt(cpu, 1); assert.equal(cpu.instructionBudgetRemaining, -1);
-});
-
-test('collectgarbage step charges CALL, placement and actual work across heap shapes', () => {
-	const program = source(OpCode.CALL);
-	writeInstruction(program.text, 0, OpCode.CALL, 0, 2, 2);
-	const image = linkRawTestSystemBlua32(program);
-	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const physicalWork: number[] = [];
-		for (const capacity of [1, 8192]) {
-			const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-			if (capacity > 1) cpu.rootThread.resizeStack(capacity);
-			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.CollectGarbage);
-			frame.registers.setInteger(1, GarbageCollectionOperation.Step);
-			frame.registers.setTable(5, cpu.createTable(capacity, 0)); frame.top = 6;
-			cpu.setGlobalByKey(cpu.stringPool.intern('kept across CALL'), frame.registers.get(5));
-			const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
-			const work = cpu.gc.step();
-			physicalWork.push(work);
-			memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			assert.equal(1 - cpu.instructionBudgetRemaining, 32 + 4 + 1 + 3 * work);
-			assert.equal(cpu.readFrameRegister(0, 0), valueBool(false));
-			assert.equal(cpu.gc.active(), true);
-		}
-		assert.ok(physicalWork[1] > physicalWork[0], 'the larger scan incurs a larger charge');
-	}
 });
 
 test('ROM constants need no collector visits even with multiple resident images', () => {

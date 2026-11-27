@@ -60,7 +60,6 @@ public:
 	void resizeRecordCharge(u32 oldBytes, u32 newBytes);
 	void replaceRecord(u32 oldAddress, u32 oldBytes, u32 newBytes);
 	void collectRuntime(Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
-	bool stepRuntime();
 	void finishCollection();
 	size_t usedBytes() const;
 	u32 collectionTarget() const;

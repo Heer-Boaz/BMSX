@@ -15,11 +15,12 @@ enum class BiosFunction : uint32_t {
 
 enum class BiosCall : uint32_t {
 	CreateTable = 0,
+	CollectStep = 1,
 	Count,
 };
 
 inline constexpr int BIOS_CALL_CONTEXT_WORDS = 3;
-inline constexpr std::array<int, static_cast<uint32_t>(BiosCall::Count)> BIOS_CALL_ARITY{2};
+inline constexpr std::array<int, static_cast<uint32_t>(BiosCall::Count)> BIOS_CALL_ARITY{2, 0};
 
 inline constexpr std::array<std::string_view, 3> BIOS_FUNCTION_MODULE_PATHS = {
 	"math/sin",

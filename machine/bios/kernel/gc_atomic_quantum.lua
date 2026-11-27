@@ -36,7 +36,7 @@ struct atomic_context
 	pending_string_work: u32 -- C:772,1273 S:438-440
 end
 
-local atomic_quantum<const> = function(state, limit) -- C:705-715
+local atomic_work<const> = function(state, limit) -- C:716-724
 	local control<const>, arena<const> = state + layout.control_offset, state + layout.arena_offset -- C:1270,1276
 	local metadata<const>, context<const> = state + layout.metadata_offset, state + layout.trace_context_offset -- C:1262,1276
 	local quantum<const>: *atomic_context = layout.ram_base + context -- C:718,1264-1265
@@ -55,8 +55,7 @@ local atomic_quantum<const> = function(state, limit) -- C:705-715
 		quantum.pending_string_work = *mark_work -- C:1313-1315 S:438-440
 		stage = *remark_state >> remark_shift -- C:726 H:214
 		if stage ~= roots then -- C:726
-			local accounted<const> = control_layout.account_epoch_work(control, work) -- C:713
-			return accounted -- C:713,726
+			return work -- C:726
 		end
 	end
 	if work < limit and stage == roots then -- C:742-743
@@ -67,8 +66,7 @@ local atomic_quantum<const> = function(state, limit) -- C:705-715
 		end
 		local cursor<const>: *u32 = layout.ram_base + control + control_layout.internal.root_cursor_offset -- C:682
 		if *cursor ~= 0 then -- C:682,749
-			local accounted<const> = control_layout.account_epoch_work(control, work) -- C:713
-			return accounted -- C:713,749
+			return work -- C:749
 		end
 		*remark_state = gray << remark_shift -- C:683 H:217
 		stage = gray -- C:751
@@ -82,8 +80,7 @@ local atomic_quantum<const> = function(state, limit) -- C:705-715
 			arguments.active_thread, arguments.pending_top, cpp_policy) -- C:759,1274-1277
 		local frontier<const>: *u32 = layout.ram_base + control + control_layout.internal.trace_record_offset -- C:765
 		if *frontier ~= 0 or control_layout.internal.index_word(control, trace_head) ~= 0 then -- C:765
-			local accounted<const> = control_layout.account_epoch_work(control, work) -- C:713
-			return accounted -- C:713,766
+			return work -- C:766
 		end
 		*remark_state = clear_weak << remark_shift -- C:767 H:217
 	end
@@ -94,8 +91,7 @@ local atomic_quantum<const> = function(state, limit) -- C:705-715
 		local floor<const> = allocator.bmsx_dlmalloc_floor(arena) -- C:793 A:49-50
 		work = epoch.finish_atomic_collection(control, arena, metadata, state - floor, work) -- C:784,787-795 A:50
 	end
-	local accounted<const> = control_layout.account_epoch_work(control, work) -- C:713
-	return accounted -- C:713
+	return work -- C:801
 end
 
-return { atomic_quantum = atomic_quantum }
+return { atomic_work = atomic_work }

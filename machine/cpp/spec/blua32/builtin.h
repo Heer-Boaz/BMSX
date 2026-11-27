@@ -48,7 +48,7 @@ enum class BuiltinFunctionId : uint8_t {
 
 constexpr size_t BUILTIN_FUNCTION_COUNT = 34u;
 
-enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1, Step = 2 };
+enum class GarbageCollectionOperation : int32_t { Collect = 0, Count = 1 };
 
 struct LuaBootPrimitive {
 	std::string_view name;

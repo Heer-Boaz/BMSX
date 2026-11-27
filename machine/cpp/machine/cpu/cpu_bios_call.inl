@@ -13,7 +13,7 @@ void CPU::enterBiosCall(CallFrame& caller, int destination, u32 selector, int su
 	frame.registers.set(0, valueInteger(static_cast<i32>(management)));
 	frame.registers.set(1, valueInteger(std::max(0, instructionBudgetRemaining)));
 	frame.registers.set(2, valueInteger(static_cast<i32>(m_runKind)));
-	caller.extendTop(destination + supplied + 1);
+	if (supplied != 0) caller.extendTop(destination + supplied + 1);
 	for (int index = 0; index < supplied; ++index) {
 		const Value value = caller.registers.get(destination + 1 + index);
 		frame.registers.set(BIOS_CALL_CONTEXT_WORDS + 2 * index, valueInteger(static_cast<i32>(valueTag(value))));
@@ -43,6 +43,7 @@ void CPU::finishBiosCall(u32 destination) {
 	const auto tag = static_cast<ValueTag>(m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Tag)));
 	const u32 word = m_memory.readRamRecordWord(state + static_cast<u32>(HeapServiceBiosCallField::Word));
 	caller.registers.set(destination - 1u, valueFromTag(tag, word));
+	caller.extendTop(destination);
 	// The argument window remains part of the caller; this definition
 	// overwrites only the declared destination.
 }

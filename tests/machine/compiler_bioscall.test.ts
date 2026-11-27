@@ -132,6 +132,7 @@ test('only the table selector is removable; BIOSCALL uses just the implicit inpu
 	assert.equal(computeMaxRegister([instruction]), 11);
 	assert.equal(isPureInstruction(instruction), true);
 	assert.equal(isPureInstruction({ ...instruction, b: BiosCall.Count }), false);
+	assert.equal(isPureInstruction({ ...instruction, b: BiosCall.CollectStep, c: 0 }), false);
 	assert.equal(isPureInstruction({ ...instruction, c: 1 }), false);
 	const zeroArgs = { ...instruction, c: 0 };
 	assert.deepEqual(collectInstructionUses(zeroArgs, 15, () => []), []);
@@ -144,6 +145,24 @@ test('only the table selector is removable; BIOSCALL uses just the implicit inpu
 	assert.deepEqual([...allocated.slots.slice(9, 12)], [9, 10, 11], 'compaction does not split the window');
 	assert.equal(allocated.instructions[2].a, 9);
 	assert.ok(allocated.maxStack < 16, 'unrelated registers can still move');
+});
+
+test('the System collection intrinsic emits an ordered zero-argument Boolean service', () => {
+	const entrySource = `
+local function collect()
+	local ignored = blua32.collect_step()
+	return blua32.collect_step()
+end
+return collect`;
+	const chunk = parseLuaChunk(entrySource);
+	assert.throws(() => compileLuaChunkToProgram(chunk, [], { entrySource, programDomain: 'cart' }),
+		/blua32.collect_step is a System ROM intrinsic/);
+	for (const optLevel of [0, 3] as const) {
+		const calls = body(compileLuaChunkToProgram(chunk, [], { entrySource, programDomain: 'system', optLevel }), 'collect')
+			.filter(instruction => instruction.op === OpCode.BIOSCALL);
+		assert.deepEqual(calls.map(call => [call.b, call.c]), [[BiosCall.CollectStep, 0], [BiosCall.CollectStep, 0]],
+			'discarding the first result does not erase its collector work');
+	}
 });
 
 test('disassembly names the ABI fields, without treating selector or count as registers', () => {

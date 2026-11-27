@@ -118,7 +118,7 @@ collectgarbage = function(option)
 		local _<const>, bytes<const> = vm_collect_garbage(1)
 		return bytes / 1024
 	elseif option == 'step' then
-		return vm_collect_garbage(2)
+		return blua32.collect_step()
 	end
 	vm_error('invalid collectgarbage option')
 end

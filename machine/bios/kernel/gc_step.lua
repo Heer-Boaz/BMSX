@@ -22,8 +22,9 @@ local step<const> = function(management, limit, growing_thread, compact_threads)
 	local control<const> = management + layout.control_offset -- C:1270
 	local current<const> = gc.internal.phase(control) -- C:1008,1019,1093,1108
 	if current == atomic_phase then -- C:1008,1241
-		local work<const> = atomic.atomic_quantum(management, limit) -- C:705-714,1241
-		return work -- C:713-714
+		local work<const> = atomic.atomic_work(management, limit) -- C:712,1241
+		local accounted<const> = gc.account_epoch_work(control, work) -- C:713
+		return accounted -- C:713
 	end
 	if current > atomic_phase then -- C:1019-1042
 		local work<const> = sweep.sweep_quantum(management, limit, growing_thread, compact_threads) -- C:1027-1042,1166-1176
