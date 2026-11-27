@@ -302,10 +302,13 @@ int main(int argc, char** argv) {
 						}
 						cpu.beginCompletionCall(closure, {original.data(), original.size()});
 					}
+					u32 coroutineRoot = 0u;
 					if (coroutine) {
 						auto& frame = *cpu.activeThread()->currentFrame;
 						const u32 closure = frame.readControl(FrameField::Closure);
 						const std::array original{frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)};
+						if (valueTag(original[0]) != ValueTag::ResidentFunction) throw std::runtime_error("Expected a linked resident argument");
+						coroutineRoot = valuePayload(original[0]);
 						// Same CALL site, a real nonallocating builtin with a valid argument.
 						const std::array warmArgs{valueBuiltinFunction(BuiltinFunctionId::GetMetatable), original[2]};
 						frame.registers.set(0, warmArgs[0]);
@@ -391,16 +394,16 @@ int main(int argc, char** argv) {
 						const u32 imageAddress = SYSTEM_ROM_BASE
 							+ memory.readMappedU32LE(SYSTEM_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 						const u32 descriptor = memory.readMappedU32LE(imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
-						const u32 root = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
-							+ static_cast<u32>(acquiresFrameSpace ? HeapServiceOperation::ReserveFrameSpace : coroutine ? HeapServiceOperation::CreateCoroutine : HeapServiceOperation::TableGrow) * sizeof(u32));
+						const u32 root = coroutine ? coroutineRoot : memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
+							+ static_cast<u32>(acquiresFrameSpace ? HeapServiceOperation::ReserveFrameSpace : HeapServiceOperation::TableGrow) * sizeof(u32));
 						const u32 activeRoot = memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Function));
-						const u32 origin = acquiresFrameSpace
+						const u32 origin = acquiresFrameSpace || coroutine
 							? memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc))
 							: memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
-						const auto want = acquiresFrameSpace ? HeapServiceBiosCallKind::Idle
-							: rawSet || coroutine ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
-						const u32 receiver = vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY;
-						if (acquiresFrameSpace && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != (FRAME_RESIDENT_ACTIVATION | receiver))
+						const auto want = acquiresFrameSpace || coroutine ? HeapServiceBiosCallKind::Idle
+							: rawSet ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
+						const u32 receiver = coroutine ? 0u : vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY;
+						if ((acquiresFrameSpace || coroutine) && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != (FRAME_RESIDENT_ACTIVATION | receiver))
 							throw std::runtime_error("The fixed root did not retain its prepared-activation receiving mode");
 						if (completion != want || cpu.allocationParked() || activeRoot != root
 							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
@@ -411,7 +414,7 @@ int main(int argc, char** argv) {
 					}
 					std::cout << allocation.entries - before.entries;
 					if (growField || rawSet || coroutine || acquiresFrameSpace)
-						std::cout << ' ' << (acquiresFrameSpace ? (FRAME_RESIDENT_ACTIVATION | (vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY)) : static_cast<u32>(completion))
+						std::cout << ' ' << (coroutine ? FRAME_RESIDENT_ACTIVATION : acquiresFrameSpace ? (FRAME_RESIDENT_ACTIVATION | (vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY)) : static_cast<u32>(completion))
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else

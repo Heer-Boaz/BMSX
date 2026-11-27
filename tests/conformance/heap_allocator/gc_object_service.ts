@@ -38,7 +38,8 @@ return value, saved, yielded
 const boot = {
 	path: 'fixture_sweep_boot',
 	source: `
-fixture_thread = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+fixture_thread = creation.create_coroutine
 fixture_resume = __bmsx_coroutine_resume
 fixture_yield = __bmsx_coroutine_yield
 local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end

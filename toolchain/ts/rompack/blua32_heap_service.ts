@@ -23,7 +23,6 @@ const TABLE_GROW_MODULE = 'kernel/table_grow';
 const HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH = 'kernel/table_resize';
 const INTERRUPT_PRELUDE_MODULE = 'kernel/vblank_irq';
 const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
-const THREAD_CREATE_MODULE = 'kernel/thread_create';
 const THREAD_FRAME_STORAGE_MODULE = 'kernel/thread_frame_storage';
 const CAPTURED_CLOSURE_MODULE = 'kernel/allocate_captured_closure';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
@@ -37,7 +36,7 @@ export const HEAP_SERVICE_MODULES = [
 	HEAP_SERVICE_CLOSURE_MODULE_PATH, 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
 	'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
 	'kernel/table_assignment', HEAP_SERVICE_TABLE_RESIZE_MODULE_PATH, TABLE_GROW_MODULE, 'kernel/table_plan', 'kernel/table_insert_existing',
-	INTERRUPT_PRELUDE_MODULE, STOPPED_FINAL_MARK_MODULE, THREAD_CREATE_MODULE, THREAD_FRAME_STORAGE_MODULE,
+	INTERRUPT_PRELUDE_MODULE, STOPPED_FINAL_MARK_MODULE, THREAD_FRAME_STORAGE_MODULE,
 	CAPTURED_CLOSURE_MODULE, 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
 	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
 	'kernel/gc_runtime_layout', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic',
@@ -50,7 +49,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],
 	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
-	[HeapServiceOperation.CreateCoroutine]: ['create_coroutine', 3, THREAD_CREATE_MODULE],
 	[HeapServiceOperation.ReserveFrameSpace]: ['reserve_frame_space', 4, THREAD_FRAME_STORAGE_MODULE],
 	[HeapServiceOperation.StoreClosedUpvalue]: ['store_closed_upvalue', 2, 'kernel/gc_barrier'],
 	[HeapServiceOperation.CapturedClosure]: ['allocate_captured_closure', 6, CAPTURED_CLOSURE_MODULE],

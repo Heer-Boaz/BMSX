@@ -1,3 +1,5 @@
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
+import { compileTestSystemWithHeap, residentFunctionAddress } from '../helpers/heap_service_system';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
@@ -14,7 +16,7 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
-import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload, valueResidentFunction } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
@@ -580,13 +582,14 @@ function makeCompiledCartCpu(
 	systemSource: string,
 	cartSource: string,
 	optLevel: OptimizationLevel = 0,
+	withFirmware = false,
 ): {
 	cpu: CPU;
 	memory: Memory;
 	irqController: IrqController;
 	images: TestBlua32ImagePair;
 } {
-	const system = compileLuaChunkToProgram(
+	const system = (withFirmware ? compileTestSystemWithHeap : compileLuaChunkToProgram)(
 		parseLuaChunk(systemSource, 'system_vector.lua'),
 		[],
 		{ entrySource: systemSource, programDomain: 'system' },
@@ -609,20 +612,23 @@ local worker = coroutine.create(function()
     halt_until_irq
 end)
 coroutine.resume(worker)
-`);
+`, 0, true);
 	const coroutine = cpu.createTable(0, 2);
-	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('create'), valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate));
+	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('create'), valueResidentFunction(residentFunctionAddress(
+		{ image: images.systemImage, symbols: images.systemSymbols }, 'kernel/thread_create', 'create_coroutine')));
 	cpu.gc.tables.setStringKey(coroutine, cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 	cpu.setGlobalByKey(cpu.stringPool.intern('coroutine'), valueTable(coroutine));
-	let result = RunResult.Yielded;
-	for (let step = 0; step < 10 && result === RunResult.Yielded; step += 1) result = cpu.runUntilDepth(0, 100000);
-	assert.equal(result, RunResult.Halted);
+	assert.equal(runCpuWithinBudget(cpu, 100_000), RunResult.Halted);
 	const suspended = cpu.captureRuntimeState();
 	assert.notEqual(suspended.activeThreadAddress, suspended.rootThreadAddress);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.heapServiceActive(), true, 'the registered cartridge prelude precedes vector installation');
+	for (let grant = 0; grant < 64 && cpu.heapServiceActive(); ++grant)
+		assert.equal(cpu.runUntilDepth(0, 128), RunResult.Yielded);
+	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0);
 	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), images.cartVectors.irqFunctionAddress);
 });

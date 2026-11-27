@@ -25,7 +25,8 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const source = `
 local retirement<const> = require('kernel/coroutine_close')
 local close<const> = retirement.close_thread
-local create<const> = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+local create<const> = creation.create_coroutine
 local resume<const> = __bmsx_coroutine_resume
 local suspend<const> = __bmsx_coroutine_yield
 local protect<const> = __bmsx_pcall

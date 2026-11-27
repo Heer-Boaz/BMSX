@@ -1,4 +1,5 @@
-local create<const> = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+local create<const> = creation.create_coroutine
 local resume<const> = __bmsx_coroutine_resume
 local yield<const> = __bmsx_coroutine_yield
 local status<const> = __bmsx_coroutine_status

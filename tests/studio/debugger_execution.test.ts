@@ -19,7 +19,8 @@ import { ThreadStatus } from '../../machine/ts/machine/cpu/thread';
 import { RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
@@ -41,7 +42,7 @@ end
 local answer = parent(41)
 return answer, output`;
 function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: readonly { path: string; source: string }[] = []) {
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'debugger_probe'),
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, 'debugger_probe'),
 		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })),
 		{ entrySource: source, programDomain: 'system', optLevel }), image = linkTestSystemBlua32(compiled);
 	const runtime = createTestRuntime(image.romBytes);
@@ -58,11 +59,11 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 	afterTest(t, () => { owner.dispose(); f.presenter.dispose(); });
 	const execute = () => {
 		owner.beforeHostFrame();
-		if (!f.execution.executionBlocked(runtimeDebuggerExecutionIntent(state)) && !state.plans.controlSuspended) cpu.runUntilDepth(0, 100_000);
+		if (!f.execution.executionBlocked(runtimeDebuggerExecutionIntent(state)) && !state.plans.controlSuspended) runCpuWithinBudget(cpu, 100_000);
 		owner.afterHostFrame();
 	};
 	const line = () => blua32SourceRangeAtPc(image.symbols!, image.image.header.textAddress, state.source.stop!.pc)!.start.line;
-	const stopped = () => { state.breakpoints.set(RESOURCE, [8]); assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); };
+	const stopped = () => { state.breakpoints.set(RESOURCE, [8]); assert.equal(runCpuWithinBudget(cpu, 100_000), RunResult.ExecutionStopped); };
 	return { ...f, state, owner, cpu, execute, stopped, line, image };
 }
 
@@ -259,7 +260,8 @@ test('conversation lifecycle cancels its own execution and keeps persistent brea
 });
 
 const THREAD_PRIMITIVES = [{ path: 'thread_primitives', source: `
-create_co = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+create_co = creation.create_coroutine
 resume_co = __bmsx_coroutine_resume
 raise_error = __bmsx_error
 return true` }];
@@ -274,7 +276,7 @@ local resume<const> = resume_co
 resume(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [6]);
-		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
 		const parent = f.cpu.activeThread.address;
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'step'); assert.equal(f.line(), 7);
@@ -290,7 +292,7 @@ end)
 resume_co(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [3]);
-		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped);
 		const child = f.cpu.activeThread.address;
 		assert.notEqual(child, f.cpu.rootThread.address);
 		assert.equal(f.cpu.getFrameDepth(), 1, 'a coroutine root has a resumer even without a parent frame');
@@ -309,7 +311,7 @@ end)
 resume_co(child)
 root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [2, 4]);
-		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 4);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 4);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
 		assert.equal(f.state.source.stop!.reason, RuntimeDebuggerStopReason.Breakpoint);
@@ -324,19 +326,19 @@ invoke = function() resume_co(child) end
 root_value = 0
 root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [2, 6]);
-		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 6);
 		const depth = f.cpu.getFrameDepth();
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
 		f.cpu.beginCompletionCall(asClosure(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('invoke')), f.cpu.gc));
-		assert.equal(f.cpu.runUntilDepth(depth, 100_000, f.cpu.rootThread.address), RunResult.ExecutionStopped);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000, depth), RunResult.ExecutionStopped);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
 		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread.address);
 		if (recompile) applyRuntimeDebuggerHotResume(f.state, f.state.breakpoints.compile(f.sources.currentBlua32Media));
 		f.state.breakpoints.set(RESOURCE, recompile ? [6] : []);
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
-		f.cpu.runUntilDepth(depth, 100_000, f.cpu.rootThread.address);
+		runCpuWithinBudget(f.cpu, 100_000, depth);
 		assert.notEqual(f.state.source.domainMask, 0, 'the parked parent still owns resume suppression');
-		f.cpu.runUntilDepth(0, 100_000);
+		runCpuWithinBudget(f.cpu, 100_000);
 		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('root_value')), valueInteger(1));
 		f.state.breakpoints.set(RESOURCE, []);
 		assert.equal(f.state.source.domainMask, 0, 'the last suppression releases the instrumented path');
@@ -347,7 +349,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 end)
 resume_co(child)`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [2]);
-		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
+		assert.equal(runCpuWithinBudget(f.cpu, 100_000), RunResult.ExecutionStopped);
 		const child = f.cpu.activeThread.address;
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);
 		// This models the owning completion batch aborting before its resumed instruction.

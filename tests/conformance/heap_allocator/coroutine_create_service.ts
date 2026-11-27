@@ -3,41 +3,42 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { FRAME_CONTROL_BYTES, FrameField } from '../../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FRAME_RESIDENT_ACTIVATION, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { ThreadField, ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES } from '../../../machine/ts/machine/cpu/thread_record';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueTable, valueTag, valueThread, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, valueThread, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField,
-	HeapServiceBiosCallKind,
+	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_RESULT_FAULT, HeapServiceBiosCallKind, HeapServiceResidentField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `
+local creation<const> = require('kernel/thread_create')
 local function fixed(create, entry, spare)
  local thread = create(entry)
  return thread, 183
 end
 local function open(create, entry) return create(entry) end
 local function guarded(create, entry, xpcall, handler) return xpcall(create, handler, entry) end
-local function handler(err) return 431 end
+local function handler(err) return err end
 local kept = 81
 local function entry() return kept end
-return fixed,open,guarded,handler,entry
+return fixed,open,guarded,handler,entry,creation.create_coroutine
 `;
 const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-coroutine-create-service-'));
 const deadText = 'reclaimable backing for a timed Thread create; '.repeat(112);
@@ -51,7 +52,7 @@ try {
 		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };
 		const rom = join(directory, `O${optLevel}.rom`);
 		writeFileSync(rom, system.romBytes);
-		for (const name of ['fixed', 'recovery', 'protected-oom'] as const) {
+		for (const name of ['fixed', 'recovery', 'protected-oom', 'protected-invalid'] as const) {
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
@@ -59,8 +60,10 @@ try {
 			for (let i = 0; i < 32 && boot === RunResult.Yielded; ++i) boot = cpu.runUntilDepth(0, 65536);
 			assert.equal(boot, RunResult.Halted);
 			const entries = runtime.readCompletionValues().slice();
-			const fixed = name === 'fixed', recover = name === 'recovery', failure = name === 'protected-oom';
-			const create = valueBuiltinFunction(BuiltinFunctionId.CoroutineCreate), closure = entries[4];
+			const fixed = name === 'fixed', recover = name === 'recovery', oom = name === 'protected-oom';
+			const invalid = name === 'protected-invalid', failure = oom || invalid;
+			const create = entries[5], closure = invalid ? create : entries[4];
+			assert.equal(valueTag(create), ValueTag.ResidentFunction);
 			heap.setCollectionTarget(heap.capacity());
 			// This fixture owns its pre-existing references. Do not let recovery
 			// accidentally make room by reclaiming one of its test function values.
@@ -87,13 +90,19 @@ try {
 				assert.equal(cpu.stringPool.find(deadText), raw);
 			}
 			if (failure) assert.equal(gc.phase(), GcPhase.Pause);
-			if (!fixed) {
+			if (recover || oom) {
 				while (arena.allocate(4088, true)) { /* occupy pages */ }
 				while (arena.allocate(24, true)) { /* no Thread component still fits */ }
 			}
 			const before = arena.occupiedBytes(), logical = heap.usedBytes(), management = arena.managementOffset();
+			const originalWhite = gc.white();
+			const raised = invalid ? LUA_FAULT_REASON_INVALID_ARGUMENT : LUA_FAULT_REASON_OUT_OF_MEMORY;
+			const faultId = failure ? cpu.stringPool.find(invalid ? 'Invalid argument.' : 'Out of memory.')! : 0;
 			const mailbox = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
-			const read = (field: HeapServiceBiosCallField) => memory.readRamRecordWord(mailbox + field);
+			const context = management + HEAP_SERVICE_RESIDENT_OFFSET;
+			const pinned = management + HEAP_SERVICE_FRAME_OFFSET, pinnedValues = management + HEAP_SERVICE_VALUE_OFFSET;
+			const read = (field: HeapServiceResidentField) => memory.readRamRecordWord(context + field);
+			const oldKind = () => memory.readRamRecordWord(mailbox + HeapServiceBiosCallField.Kind);
 			const caller = cpu.getFrameDepth() - 1, pc = () => cpu.readFramePc(caller);
 			const file = join(directory, `O${optLevel}-${name}`), nativePartial = `${file}.native`;
 			writeFileSync(`${file}.seed`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -111,13 +120,17 @@ try {
 			const baseline = history.capture(memory, null);
 			for (let i = 0; i < 64 && !cpu.heapServiceActive(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(cpu.heapServiceActive(), true);
-			assert.equal(read(HeapServiceBiosCallField.Kind), failure ? HeapServiceBiosCallKind.Protected : HeapServiceBiosCallKind.Call);
-			assert.equal(read(HeapServiceBiosCallField.ResultWord), fixed ? 2 : 0);
-			assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_VALUE_OFFSET + 4), valuePayload(closure));
-			assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Closure), 0);
+			assert.equal(oldKind(), HeapServiceBiosCallKind.Idle);
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Function), residentFunctionAddress(system, 'kernel/thread_create', 'create_coroutine'));
+			assert.notEqual(memory.readRamRecordWord(pinned + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION, 0);
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.ReturnCount), fixed ? 2 : 0);
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Protected), failure ? 0 : 0xffffffff);
+			assert.equal(memory.readRamRecordWord(pinnedValues), valuePayload(closure));
+			assert.equal(memory.readRamRecordByte(pinnedValues + 4 * HEAP_SERVICE_VALUE_COUNT), valueTag(closure));
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Closure), 0);
 			assert.equal(arena.occupiedBytes(), before);
 			assert.equal(heap.usedBytes(), logical);
-			const next = read(HeapServiceBiosCallField.LastPc) + INSTRUCTION_BYTES;
+			const next = read(HeapServiceResidentField.LastPc) + INSTRUCTION_BYTES;
 			assert.equal(instructionOpcode(memory.readMappedU32LE(next - INSTRUCTION_BYTES)), OpCode.CALL);
 			assert.equal(pc(), next);
 			assert.equal(cpu.rootThread.protectedDepth, failure ? 1 : 0);
@@ -129,7 +142,7 @@ try {
 			} else if (recover) {
 				for (let i = 0; i < 8192 && gc.phase() === GcPhase.Strings; ++i) assert.equal(grant(57), RunResult.Yielded);
 				assert.notEqual(gc.phase(), GcPhase.Strings, 'ran a real recovery quantum before the checkpoint');
-			} else {
+			} else if (oom) {
 				for (let i = 0; i < 8192 && !gc.active(); ++i) assert.equal(grant(57), RunResult.Yielded);
 				assert.ok(gc.active(), 'exhausted reservation started a fresh recovery epoch');
 			}
@@ -141,13 +154,21 @@ try {
 			function finish() {
 				for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) assert.equal(grant(113), RunResult.Yielded);
 				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(read(HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Idle);
-				assert.equal(read(HeapServiceBiosCallField.Status), failure ? LUA_FAULT_REASON_OUT_OF_MEMORY + 1 : 0);
+				assert.equal(oldKind(), HeapServiceBiosCallKind.Idle);
+				assert.equal(read(HeapServiceResidentField.SourceCount), failure ? HEAP_SERVICE_RESULT_FAULT : 1);
+				if (failure) assert.equal(read(HeapServiceResidentField.SourceBase), raised);
+				if (invalid) {
+					assert.equal(arena.occupiedBytes(), before);
+					assert.equal(heap.usedBytes(), logical);
+					assert.equal(gc.white(), originalWhite);
+					assert.equal(gc.phase(), GcPhase.Pause);
+				}
 				assert.equal(cpu.readLuaFaultReasonWord(), 0, 'protected OOM is a language error, not a trap');
-				const word = read(HeapServiceBiosCallField.Word);
+				const resultSlot = read(HeapServiceResidentField.SourceBase);
+				const word = failure ? 0 : memory.readRamRecordWord(pinnedValues + 4 * resultSlot);
 				if (!failure) {
 					assert.equal(pc(), next);
-					assert.equal(read(HeapServiceBiosCallField.Tag), ValueTag.Thread);
+					assert.equal(memory.readRamRecordByte(pinnedValues + 4 * HEAP_SERVICE_VALUE_COUNT + resultSlot), ValueTag.Thread);
 					assert.equal(gc.threadRecordAddress(word), word);
 					assert.equal(memory.readRamRecordWord(word + ThreadField.Entry), valuePayload(closure));
 					assert.equal(memory.readRamRecordWord(word + ThreadField.Status), ThreadStatus.New);
@@ -164,7 +185,7 @@ try {
 				assert.equal(cpu.rootThread.protectedDepth, 0);
 				const values = runtime.readCompletionValues();
 				const thread = valueThread(word);
-				assert.deepEqual(values, failure ? [valueBool(false), valueInteger(431)] : fixed ? [thread, valueInteger(183)] : [thread]);
+				assert.deepEqual(values, failure ? [valueBool(false), valueString(faultId)] : fixed ? [thread, valueInteger(183)] : [thread]);
 				observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 				checksum(memory.ramBusEnd() - RAM_BASE, memory.ramData().length);
 			}
@@ -179,7 +200,7 @@ try {
 			}
 			check(`${file}.seed`, ['X', ...allTrace.slice(0, prefix), `x ${nativePartial}`, ...allTrace.slice(prefix)], allExpected);
 			check(`${file}.partial`, ['X', ...allTrace.slice(prefix)], allExpected.slice(prefix));
-			if (fixed) check(`${file}.seed`, ['X', 'K Y'], [`1 ${HeapServiceBiosCallKind.Call} ${before} ${logical}`]);
+			if (fixed) check(`${file}.seed`, ['X', 'K Y'], [`1 ${FRAME_RESIDENT_ACTIVATION} ${before} ${logical}`]);
 			const endRam = history.capture(memory, partialRam);
 			history.restore(memory, endRam, partialRam);
 			applyRuntimeCheckpointState(runtime, partial, RuntimeRestoreOrigin.HistorySeek);

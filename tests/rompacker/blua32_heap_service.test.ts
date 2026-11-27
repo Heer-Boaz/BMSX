@@ -71,7 +71,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/table_grow', 'grow_table'],
 		['kernel/vblank_irq', 'before_cart_irq'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
-		['kernel/thread_create', 'create_coroutine'],
 		['kernel/thread_frame_storage', 'reserve_frame_space'],
 		['kernel/gc_barrier', 'store_closed_upvalue'],
 		['kernel/allocate_captured_closure', 'allocate_captured_closure'],

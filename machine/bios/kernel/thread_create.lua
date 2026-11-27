@@ -18,6 +18,9 @@ local object_prefix<const> = 8 -- T:179,185 C:191,194 P:6,9 Q:9,13
 local thread_kind<const> = 4 -- I:33 H:18
 local thread_tag<const> = 9 -- E:9-11 W:21-22
 local out_of_memory<const> = 9 -- T:86 U:1111 C:98 V:1214 D:43
+local invalid_argument<const> = 10 -- D:44; mismatched Value or nonissued Closure
+local closure_tag<const> = 7 -- E:9-11 W:21-22
+local record_mask<const> = 0x003ffff8 -- P:5-7 Q:12-13
 local current_or_fresh<const> = 0 -- T:92 C:103 U:1112 V:1215
 local values_count<const> = 8 -- T:171 I:31 C:183 H:16
 local frame_count<const> = 2 -- T:172 I:32 C:184 H:17
@@ -88,19 +91,19 @@ local create_thread<const> = function(management, entry) -- T:170,178 C:182,190;
 	return 0 -- T:195 C:205; caller takes the original recovery branch
 end
 
-local create_coroutine<const> = function(management, entry, source_cycles) -- T:170,174-178,195 C:182,186-190,205; ingress has already resolved the Closure
+local allocate_coroutine<const> = function(management, entry, source_cycles) -- T:170,174-178,195 C:182,186-190,205; ingress has already resolved the Closure
 	local arena<const> = management + layout.arena_offset -- T:177 A:25 C:189 B:20
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- X:3996,4007 Y:169,181; private projection borrows ordinary roots
 	local roots_published = false -- X:3996-4010 Y:169-184; no root publication on allocator-only attempts
 	local recovery = current_or_fresh -- T:92,175 C:103,187
 	local debt<const> = admission.allocation_debt(arena, charged) -- T:75,85 C:85,97
 	if debt < 0 then -- T:76,93 C:86,104
-		if charged > admission.heap_capacity(arena) then return out_of_memory + 1, 0, 0 end -- T:86 C:98; impossible request never collects
+		if charged > admission.heap_capacity(arena) then return 0 end -- T:86 C:98; impossible request never collects
 		repeat -- T:94,175 C:105,187
 			recovery = admission.begin_allocation_recovery(arena, recovery) -- T:95 C:106 U:1110-1117 V:1213-1224
 			if recovery < 0 then -- U:1111 V:1214; logical admission exhausted its recovery epochs
 				*effects = layout.release_string_work -- X:4007-4010 Y:181-184
-				return out_of_memory + 1, 0, 0 -- U:1111 V:1214 D:43
+				return 0 -- U:1111 V:1214 D:43
 			end
 			if not roots_published then -- X:3996-4005 Y:169-178
 				*effects = layout.publish_roots -- T:95,174 C:106,186 U:1123 V:1226
@@ -130,7 +133,7 @@ local create_coroutine<const> = function(management, entry, source_cycles) -- T:
 		local offset<const> = create_thread(management, entry) -- T:179-193 C:191-203
 		if offset ~= 0 then -- T:184-189 C:193-199
 			if roots_published then *effects = layout.release_string_work end -- X:4007-4010 Y:181-184
-			return 0, thread_tag, layout.ram_base + offset -- T:189 C:199 E:9-11 W:21-22; tagged result of the original CALL
+			return offset -- T:189 C:199; physical result remains an arena offset
 		end
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:195 C:205 U:1110-1117 V:1213-1224
 		if recovery < 0 then break end -- U:1111 V:1214
@@ -141,7 +144,38 @@ local create_coroutine<const> = function(management, entry, source_cycles) -- T:
 		collection.finish_epoch(management, collection.step_words, 0, 0, entry) -- U:1123 V:1226; retry starts at raw reservation, not admission
 	end
 	if roots_published then *effects = layout.release_string_work end -- X:4007-4010 Y:181-184
-	return out_of_memory + 1, 0, 0 -- U:1111 V:1214 D:43
+	return 0 -- U:1111 V:1214 D:43
 end
 
-return { create_thread = create_thread, create_coroutine = create_coroutine }
+-- CALL ingress basis: f48d8f3c8917ccae4ffded4d790acb9ebd194cfc. K/L: TS/C++ CPU gate; O/R: exact tagged Closure decode.
+local create_coroutine<const> = function(entry) -- K:4559-4570 L:1301-1309
+	local management_port<const>: *u32 = layout.management_address -- K:4564 L:1306; ordinary resident port
+	local source_cycles<const>: *u32 = layout.call_cycles_address -- K:4566 L:1306; latched actual device horizon
+	local fault<const>: *u32 = layout.call_fault_address -- K:4561 L:1303; generic CALL fault retirement
+	local management<const> = *management_port -- K:4564 L:1306
+	local address<const> = layout.ram_base + management + layout.value_cell_offset -- K:4560 L:1302; existing typed cell
+	local cell<const>: *value = address -- K:4560 L:1302
+	local word<const>: *u32 = address -- K:4560 L:1302 O:139-143 R:254-257
+	local tag<const>: *u8 = address + layout.value_cell_tag_offset -- K:4560 L:1302
+	*cell = entry -- K:4560 L:1302; ordinary typed argument
+	if *tag ~= closure_tag then -- K:4560-4561 L:1302-1303
+		*fault = invalid_argument -- K:4561 L:1303
+		return nil -- K:4561 L:1303
+	end
+	local offset<const> = *word & record_mask -- O:139-143,151-153 R:254-257,276-278
+	local kind<const>: *u8 = layout.ram_base + offset -- O:140-142 R:255-257
+	if *kind ~= closure_tag or allocator.bmsx_dlmalloc_is_object(management + layout.arena_offset, offset - object_prefix) == 0 then -- O:140-143 R:255-257
+		*fault = invalid_argument -- K:4561 L:1303
+		return nil -- K:4561 L:1303
+	end
+	local thread<const> = allocate_coroutine(management, layout.ram_base + offset, *source_cycles) -- K:4564-4568 L:1306-1308 T:174-195 C:186-205
+	if thread == 0 then -- T:195 U:1111 C:205 V:1214
+		*fault = out_of_memory -- U:1111 V:1214 D:43
+		return nil -- K:4561 L:1303
+	end
+	*word = layout.ram_base + thread -- T:185,189 C:194,199 E:9-11 W:21-22
+	*tag = thread_tag -- T:189 C:199 E:9-11 W:21-22
+	return *cell -- T:189 C:199 E:9-11 W:21-22; ordinary tagged RET
+end
+
+return { create_thread = create_thread, create_coroutine = create_coroutine, internal = { allocate_coroutine = allocate_coroutine } }

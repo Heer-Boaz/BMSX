@@ -30,7 +30,8 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const path = 'kernel/thread_retire';
 const source = `
-local create<const> = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+local create<const> = creation.create_coroutine
 local resume<const> = __bmsx_coroutine_resume
 
 function inside()

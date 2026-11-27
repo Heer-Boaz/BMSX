@@ -6,7 +6,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	SetFloor,
-	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;

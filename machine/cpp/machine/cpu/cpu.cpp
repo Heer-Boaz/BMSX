@@ -1290,23 +1290,11 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			runBuiltinError(args);
 			break;
 		case BuiltinFunctionId::RawSet:
-		case BuiltinFunctionId::CoroutineCreate:
 			BMSX_UNREACHABLE();
 		case BuiltinFunctionId::PCall:
 		case BuiltinFunctionId::XPCall:
 			throw std::runtime_error("Protected calls execute as Lua CPU microcode.");
 	}
-}
-
-void CPU::beginCoroutineCreate(Value entry, BiosCallContinuation completion) {
-	const u32 closure = valueIsClosure(entry) ? asClosure(entry, m_heap) : 0u;
-	if (closure == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CreateCoroutine)];
-	if (function == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const std::array args{m_heapAllocator.managementOffset(), closure, static_cast<u32>(remainingDeviceCycles())};
-	armBiosCall(completion.kind, completion.target, completion.word);
-	beginHeapService(function, args);
-	requestYield();
 }
 
 u32 CPU::createThread(u32 entry) {
@@ -1421,10 +1409,6 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPl
 		runCoroutineTransfer(fn.id, frame, result, arguments);
 		return;
 	}
-	if (fn.id == BuiltinFunctionId::CoroutineCreate) {
-		beginCoroutineCreate(arguments.values()[0], {HeapServiceBiosCallKind::Call, static_cast<u32>(result.base), result.word});
-		return;
-	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
 	if (fn.id == BuiltinFunctionId::RawSet) {
@@ -1480,10 +1464,6 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 			const auto parent = m_activeThread->protectedResult(continuationIndex);
 			startProtectedCall(builtin.id, parent.extendsTop() ? CallResultPlacement::discard()
 				: CallResultPlacement::call(parent.base, -1), arguments, true);
-			return;
-		}
-		if (builtin.id == BuiltinFunctionId::CoroutineCreate) {
-			beginCoroutineCreate(arguments.values()[0], {HeapServiceBiosCallKind::Protected, continuationIndex, 0u});
 			return;
 		}
 		auto resultsScratch = acquireBuiltinResultScratch();

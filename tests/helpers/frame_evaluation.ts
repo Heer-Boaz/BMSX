@@ -22,7 +22,8 @@ get_frame_register = __bmsx_get_frame_register
 set_frame_register = __bmsx_set_frame_register
 get_frame_upvalue = __bmsx_get_frame_upvalue
 set_frame_upvalue = __bmsx_set_frame_upvalue
-create_thread = __bmsx_coroutine_create
+local creation<const> = require('kernel/thread_create')
+create_thread = creation.create_coroutine
 yield_thread = __bmsx_coroutine_yield
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end` });
 	const source = `require('base')

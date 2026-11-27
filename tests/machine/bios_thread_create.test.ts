@@ -8,7 +8,6 @@ import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -36,7 +35,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 		assert.ok(index >= 0);
 		return index;
 	}
-	const fn = functionIndex('create_thread'), whole = functionIndex('create_coroutine');
+	const fn = functionIndex('create_thread'), whole = functionIndex('internal.allocate_coroutine');
 	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, [fn, whole]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
 	const { cpu, memory } = createTestSystemCpu(image), oracle = createTestSystemCpu(image).cpu;
@@ -223,7 +222,7 @@ for (const opt of [0, 3] as const) {
 			for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) cycles += f.grant(4096);
 			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
-			assert.equal(cpu.heapServiceResult(), 0);
+			assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
 			assert.equal(cpu.gc.white(), oldWhite ^ 1);
 			assert.equal(cpu.gc.tableRecordAddress(victim), 0);
 			assert.equal(cpu.gc.closureRecordAddress(entry), entry);
@@ -261,7 +260,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(cpu.gc.epochWork(), oracle.gc.epochWork());
 		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) f.grant(128);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
 		assert.equal(memory.readRamRecordWord(control + objectHead), record);
 		f.compare(HEAP_SERVICE_ROOT_BANKS_OFFSET);
 	});
@@ -286,7 +285,7 @@ for (const opt of [0, 3] as const) {
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) f.grant(4096);
 		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), LUA_FAULT_REASON_OUT_OF_MEMORY + 1);
+		assert.equal(cpu.heapServiceResult(), 0);
 		assert.equal(cpu.gc.white(), white ^ 1, 'only one fresh epoch was permitted from Pause');
 		assert.equal(cpu.gc.closureRecordAddress(entry), entry);
 		assert.equal(arena.occupiedBytes(), before);
@@ -310,8 +309,14 @@ test('Thread creation maps and pins the original mutations and raw layout', () =
 		D: 'machine/ts/spec/blua32/cop0.ts', E: 'machine/ts/machine/cpu/value.ts', W: 'machine/cpp/machine/cpu/value.h',
 		X: 'machine/ts/machine/cpu/cpu.ts', Y: 'machine/cpp/machine/cpu/cpu_heap_service.inl', Z: 'machine/cpp/machine/cpu/cpu.cpp',
 	};
+	const ingress = 'f48d8f3c8917ccae4ffded4d790acb9ebd194cfc';
+	assert.ok(source.includes(`-- CALL ingress basis: ${ingress}.`));
+	Object.assign(files, {
+		K: 'machine/ts/machine/cpu/cpu.ts', L: 'machine/cpp/machine/cpu/cpu.cpp',
+		O: 'machine/ts/machine/cpu/gc_heap.ts', R: 'machine/cpp/machine/cpu/gc_heap.cpp',
+	});
 	const refs = new Map(Object.entries(files).map(([label, path]) => [label, {
-		lines: execFileSync('git', ['show', `${'DEWXYZ'.includes(label) ? '08c4a76d41e49d689c13a47fed3de37cece84072' : basis}:${path}`], { encoding: 'utf8' }).split('\n'), covered: new Set<number>(),
+		lines: execFileSync('git', ['show', `${'KLOR'.includes(label) ? ingress : 'DEWXYZ'.includes(label) ? '08c4a76d41e49d689c13a47fed3de37cece84072' : basis}:${path}`], { encoding: 'utf8' }).split('\n'), covered: new Set<number>(),
 	}]));
 	for (const [i, line] of source.split('\n').entries()) {
 		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$|return \{)/.test(line)) continue;
