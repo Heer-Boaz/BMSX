@@ -46,13 +46,12 @@ local hash_storage_bytes<const> = function(hash) -- T:98 H:48
 	return nodes + (hash > hash_census_limit and 4 or 0) + (hash >= hash_band_capacity and 32 * 4 or 0) -- T:98 H:48
 end
 
-local plan_creation<const> = function(array, hash_size) -- N:463-466 P:85-89
-	local hash<const> = hash_capacity(hash_size) -- N:464 P:86
+local plan_capacity<const> = function(array, hash) -- N:463-466 P:85-89; BMSX copy source C:34-37 T:70-73
 	local array_bytes<const> = 5 * array -- N:465 T:118-119 P:87 C:69-74
 	local hash_bytes<const> = hash_storage_bytes(hash) -- N:466 T:98 P:89 H:48
 	local charge<const> = header_charge + array_bytes + hash_slot_charge * hash -- N:465 T:119 P:88 C:73-75
 	local payload<const> = sizeof(table_creation_header) + array_bytes + hash_bytes -- T:52 H:43
-	return hash, array_bytes, hash_bytes, charge, payload -- N:465-466 P:87-89; all quantities are latched before admission
+	return array_bytes, hash_bytes, charge, payload -- N:465-466 P:87-89; all quantities are latched before admission
 end
 
 -- Each native byte fill is one range. Keep its boundaries; use word
@@ -116,11 +115,61 @@ local create_table<const> = function(state, control, occupied, array, hash, arra
 	return offset -- N:469 P:92; caller owns the local root and destination register
 end
 
+-- Own-Table copy basis: 8cf6e61b2b8207a31ae7be9c7acb095910ff2793.
+-- C/T: TableRecord::copyOwn / TableRecords.copyOwn. The C++ order copies
+-- array then hash before the header; TS published the header first. Neither
+-- exposes the record before linking. Use the C++ store order on both CPUs.
+local copy_capacities<const> = function(source) -- C:34 T:70
+	local header<const>: *table_creation_header = source -- C:34 T:70
+	return header.array_capacity, header.hash_capacity -- C:34 T:70
+end
+
+local copy_backing<const> = function(dst, src, bytes) -- C:39-44 T:87-91
+	if bytes == 0 then return end -- C:40 T:88
+	-- Both allocator pointers are word-aligned. Private stores invalidate
+	-- written RAM through the same memory owner that native range copies did.
+	local finish<const> = bytes & ~3 -- C:40-43 T:88-90
+	local dst_words<const>: *u32 = dst -- C:41 T:89
+	local src_words<const>: *u32 = src -- C:41 T:89
+	for slot = 0, (finish >> 2) - 1 do -- C:42 T:90
+		dst_words[slot] = src_words[slot] -- C:42-43 T:90-91
+	end
+	local dst_bytes<const>: *u8 = dst_words -- C:42 T:90; trailing byte lanes
+	local src_bytes<const>: *u8 = src_words -- C:42 T:90
+	for byte = finish, bytes - 1 do -- C:42 T:90
+		dst_bytes[byte] = src_bytes[byte] -- C:42-43 T:90-91
+	end
+end
+
+local copy_table<const> = function(state, control, occupied, source, array, hash, array_bytes, hash_bytes, charged) -- C:33-56 T:69-85
+	local offset<const> = reserve.bmsx_dlmalloc_reserve_record(state, sizeof(table_creation_header), 1, array_bytes, offsetof(table_creation_header.array_storage), charged, hash_bytes, offsetof(table_creation_header.hash_storage), occupied) -- C:35-37 T:71-73 L:119-139,152-154 A:109-129,153-155
+	if offset == 0 then return 0 end -- L:152-154 A:153-155; refusal precedes the copy.
+	local address<const> = ram_base + offset -- C:38 T:71
+	local target<const>: *table_creation_header = address -- C:38 T:74-84
+	local original<const>: *table_creation_header = source -- C:45-52 T:76-83; admission can clear weak entries
+	copy_backing(target.array_storage, original.array_storage, array_bytes) -- C:45 T:82
+	copy_backing(target.hash_storage, original.hash_storage, hash_bytes) -- C:46 T:83
+	local absent<const>: *u8 = source + new_index_absent_byte -- C:47 T:76
+	local white<const>: *u8 = ram_base + control + collector.internal.white_offset -- C:48 T:77
+	target.kind = table_kind | ((*white & 1) << 8) | (*absent << (8 * new_index_absent_byte)) -- C:48-50 T:77-78
+	target.gray = 0 -- C:50 T:78
+	target.metatable = 0 -- C:51 T:79
+	target.array_capacity = array -- C:52 T:80
+	target.hash_capacity = hash -- C:52 T:80
+	target.length = original.length -- C:53 T:81
+	target.free = original.free -- C:53 T:81
+	collector.publish_object(control, address) -- C:54 T:84
+	return offset -- C:55 T:85
+end
+
 return {
 	internal = {
 		fill_backing = fill_backing, initialize_array = initialize_array, initialize_hash = initialize_hash,
 		hash_capacity = hash_capacity, hash_storage_bytes = hash_storage_bytes, hash_node_bytes = hash_node_bytes,
+		copy_backing = copy_backing,
 	},
-	plan_creation = plan_creation,
+	plan_capacity = plan_capacity,
 	create_table = create_table,
+	copy_capacities = copy_capacities,
+	copy_table = copy_table,
 }

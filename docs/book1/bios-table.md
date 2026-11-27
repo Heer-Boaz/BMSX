@@ -89,7 +89,7 @@ or a deliberately replaced public dependency can still have its own effects.
 The library's public fields and the `select` global used by pack and unpack
 are ordinary mutable bindings, not permanently reserved operations.
 
-Except for `table.copy`, the functions execute ordinary instructions. Loops, tuple forwarding,
+The functions execute ordinary instructions. Loops, tuple forwarding,
 conversions, temporary Strings and comparison callbacks contribute work; a
 function call is not a single constant-cycle hardware operation. The [CPU reference](cpu.md#sec-cpu) supplies instruction charges.
 
@@ -116,9 +116,7 @@ instance.hp = 10
 A missing argument or any argument other than a Table raises
 `INVALID_ARGUMENT`. The copy reserves the same array and hash capacities as
 the source. If allocation clears weak mappings from the source, only the
-remaining mappings are copied. The service costs two base cycles plus one
-per reserved array slot and two per reserved hash slot, in addition to the
-ordinary call and result placement.
+remaining mappings are copied.
 
 ## Packing and reading table ranges {#sec-bios-table-packing-and-reading-table-ranges}
 

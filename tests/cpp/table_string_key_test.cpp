@@ -240,33 +240,30 @@ void newIndexAbsenceFollowsTheOwnMapping(CPU& cpu) {
 	target.resolveStringAssignment(field, assignment);
 	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
 		"bulk construction must not hide a non-nil false method");
-	auto copy = meta.copyOwn();
-	target.setMetatableAddress(copy.address());
 	meta.clear();
-	target.resolveStringAssignment(field, assignment);
-	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
-		"the copy owns its copied method after the original is cleared");
-	target.setMetatableAddress(meta.address());
 	target.resolveStringAssignment(field, assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
 		"clearing the metatable removes the method");
-	target.setMetatableAddress(copy.address());
-	copy.setStringKey(newIndex, valueNil());
+	meta.setStringKey(newIndex, valueBool(false));
+	target.resolveIntegerAssignment(1, assignment);
+	require(assignment.status == TableLookupStatus::Forward && assignment.value == valueBool(false),
+		"an insertion restores the method for integer assignments");
+	meta.setStringKey(newIndex, valueNil());
 	target.resolveIntegerAssignment(1, assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == target.address(),
-		"raw nil deletion removes the method for integer assignments as well");
+		"raw nil deletion removes the method for integer assignments");
 
 	auto weakMode = cpu.createTable(0, 1);
 	weakMode.setStringKey(cpu.stringPool().intern("__mode"), valueString(cpu.stringPool().intern("v")));
-	copy.setMetatableAddress(weakMode.address());
+	meta.setMetatableAddress(weakMode.address());
 	auto forwarding = cpu.createTable();
-	copy.set(valueString(newIndex), valueTable(forwarding.address()));
+	meta.set(valueString(newIndex), valueTable(forwarding.address()));
 	target.resolveAssignment(valueString(field), assignment);
 	require(assignment.status == TableLookupStatus::Store && assignment.receiver == forwarding.address()
 		&& assignment.extraVisits == 1, "reactivation forwards through the inserted weak value");
 	cpu.gcHeap().collect(valueTable(target.address()));
 	target.resolveAssignment(valueString(field), assignment);
-	require(isNil(copy.getStringKey(newIndex)) && assignment.status == TableLookupStatus::Store
+	require(isNil(meta.getStringKey(newIndex)) && assignment.status == TableLookupStatus::Store
 		&& assignment.receiver == target.address() && assignment.extraVisits == 0,
 		"collector deletion clears the forwarding method without changing the receiver's metatable");
 }
@@ -291,37 +288,40 @@ void rebuildFullCollisionChain(CPU& cpu) {
 	}
 }
 
-void compactCopiedWeakHash(CPU& cpu) {
-	auto source = cpu.createTable(0, 128);
+void compactWeakHash(CPU& cpu) {
+	auto table = cpu.createTable(0, 128);
 	const auto weak = valueTable(cpu.createTable().address());
 	std::array<int, 129> keys;
 	for (int k = -1, i = 0; i < 129; --k) if ((hashCanonicalTableKey(valueInteger(k)) & 127u) == 0) keys[i++] = k;
-	for (int i = 0; i < 128; ++i) source.setInteger(keys[i], i < 31 ? valueInteger(i) : weak);
-	source.setInteger(keys[1], valueNil());
-	source.setInteger(keys[1], valueNil());
-	source.setInteger(keys[1], valueBool(false));
-	source.setInteger(keys[1], valueBool(true));
-	source.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
-	auto copy = source.copyOwn();
-	copy.setInteger(keys[128], valueBool(false));
-	require(copy.hashSlots() == 32 && source.hashSlots() == 128, "31 live entries plus one fit exactly after weak clearing");
-	require(copy.getInteger(keys[1]) == valueBool(true) && isNil(copy.getInteger(keys[31]))
-		&& copy.getInteger(keys[128]) == valueBool(false), "retain the restored key, not the weakly removed entry");
+	for (int i = 0; i < 128; ++i) table.setInteger(keys[i], i < 31 ? valueInteger(i) : weak);
+	table.setInteger(keys[1], valueNil());
+	table.setInteger(keys[1], valueNil());
+	table.setInteger(keys[1], valueBool(false));
+	table.setInteger(keys[1], valueBool(true));
+	table.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
+	require(table.hashSlots() == 128, "weak clearing leaves the reservation until the next rebuild");
+	table.setInteger(keys[128], valueBool(false));
+	require(table.hashSlots() == 32, "31 live entries plus one fit exactly after weak clearing");
+	require(table.getInteger(keys[1]) == valueBool(true) && isNil(table.getInteger(keys[31]))
+		&& table.getInteger(keys[128]) == valueBool(false), "retain the restored key, not the weakly removed entry");
 }
 
-void copiedIntegerPartition(CPU& cpu) {
-	auto table = cpu.createTable(0, 1024);
-	const auto weak = valueTable(cpu.createTable().address());
-	for (int k = 1; k <= 1024; ++k) table.setInteger(k <= 512 ? k : -k, k == 512 ? weak : valueInteger(k));
-	table.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
-	auto copy = table.copyOwn();
-	copy.setInteger(512, valueBool(false)); copy.setInteger(512, valueBool(true));
-	table.setInteger(513, valueInteger(71)); copy.setInteger(513, valueInteger(71));
-	require(table.arrayCapacity() == 512 && copy.arrayCapacity() == 1024 && table.hashSlots() == 1024 && copy.hashSlots() == 512,
-		"only the restored key takes its copy above the half-full partition cutoff");
-	require(isNil(table.getInteger(512)) && copy.getInteger(512) == valueBool(true)
-		&& table.getInteger(513) == valueInteger(71) && copy.getInteger(513) == valueInteger(71),
-		"the new integer can land in different backings without changing its value");
+void restoredIntegerSplitsPartition(CPU& cpu) {
+	for (bool restore : {false, true}) {
+		auto table = cpu.createTable(0, 1024);
+		const auto weak = valueTable(cpu.createTable().address());
+		for (int k = 1; k <= 1024; ++k) table.setInteger(k <= 512 ? k : -k, k == 512 ? weak : valueInteger(k));
+		table.clearWeakEntries(false, true, [weak](Value value) { return value != weak; });
+		if (restore) {
+			table.setInteger(512, valueBool(false));
+			table.setInteger(512, valueBool(true));
+		}
+		table.setInteger(513, valueInteger(71));
+		require(table.arrayCapacity() == (restore ? 1024u : 512u) && table.hashSlots() == (restore ? 512u : 1024u),
+			"only the restored key takes the table above the half-full partition cutoff");
+		require(table.getInteger(512) == (restore ? valueBool(true) : valueNil()) && table.getInteger(513) == valueInteger(71),
+			"the new integer can land in different backings without changing its value");
+	}
 }
 
 void rebuildRoutesStoredIntegerByItsCurrentWord(CPU& cpu, Memory& memory) {
@@ -421,8 +421,8 @@ int main() {
 		inheritedAndFullWordKeys(cpu, memory);
 		fullHashGrowsAndRetainsMappings(cpu);
 		rebuildFullCollisionChain(cpu);
-		compactCopiedWeakHash(cpu);
-		copiedIntegerPartition(cpu);
+		compactWeakHash(cpu);
+		restoredIntegerSplitsPartition(cpu);
 		rebuildRoutesStoredIntegerByItsCurrentWord(cpu, memory);
 		std::cout << "String-key table tests passed\n";
 		return 0;

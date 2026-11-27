@@ -45,9 +45,9 @@ test('the construction source map covers mirrored reservation, initialization an
 		sources.set(name, { lines, mapped: new Set() });
 	}
 	const lines = source.split('\n');
-	const exports = lines.indexOf('return {');
-	assert.ok(exports > 0);
-	for (const [index, line] of lines.slice(0, exports).entries()) {
+	const copy = lines.findIndex(line => line.startsWith('-- Own-Table copy basis:'));
+	assert.ok(copy > 0);
+	for (const [index, line] of lines.slice(0, copy).entries()) {
 		if (/^\s*(?:$|--|module<const>$|struct \w+$|end$)/.test(line)) continue;
 		const mark = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
 		assert.ok(mark, `${path}:${index + 1}: missing origin for ${line.trim()}`);

@@ -215,14 +215,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(tables.getInteger(source, 1), valueInteger(31), 'an own entry is assigned without looking at the hook');
 		assert.equal(tables.getInteger(forwarded, 1), valueNil());
 		tables.setInteger(source, 1, valueNil());
-		const copy = tables.copyOwn(meta);
-		tables.setMetatableAddress(source, copy);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 1);
 		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.SETI] + TABLE_INDEX_VISIT_CYCLES);
 		assert.equal(tables.getInteger(source, 1), valueNil());
-		assert.equal(tables.getInteger(forwarded, 1), valueInteger(31), 'the copied own method still handles assignments');
-		tables.setMetatableAddress(source, meta);
+		assert.equal(tables.getInteger(forwarded, 1), valueInteger(31), 'the installed own method handles the empty slot');
 		tables.setStringKey(meta, newIndex, valueNil());
 		assert.equal(memory.readRamRecordByte(meta + TableHeader.NewIndexAbsent), 1, 'raw erase restores the absence proof');
 		tables.setStringKey(meta, newIndex, valueBool(false));

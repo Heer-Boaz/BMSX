@@ -43,4 +43,18 @@ local mark_operand_roots<const> = function(control, arena, metadata, scope) -- T
 	return key_work + value_work -- T:657,711,1061 C:678,735,1137 S:445,447-450 R:438,440
 end
 
-return { mark_operand_roots = mark_operand_roots }
+-- Table copy basis: 8cf6e61b2b8207a31ae7be9c7acb095910ff2793.
+-- P/Q: Table copy calls admission. No rehash runs in this activation;
+-- borrow the existing planner workspace for its admitted raw root tuple.
+local table_copy_scope<const> = function(management, source) -- P:35-36 Q:71-72
+	local offset<const> = management + layout.table_plan_offset -- P:35-36 Q:71-72; publish the formerly native argument tuple
+	local scope<const>: *table_operand_roots = layout.ram_base + offset -- P:35-36 Q:71-72
+	scope.receiver = source -- P:36 Q:72
+	scope.key_tag = 0 -- P:36 Q:72
+	scope.key_word = 0 -- P:36 Q:72
+	scope.value_tag = 0 -- P:36 Q:72
+	scope.value_word = 0 -- P:36 Q:72
+	return offset -- P:35-36 Q:71-72
+end
+
+return { mark_operand_roots = mark_operand_roots, table_copy_scope = table_copy_scope }

@@ -3,18 +3,21 @@ module<const>
 -- Source basis: 027fe97a6495926028a4cea6ef8cd15af8f5d191.
 -- T/C: the original timed record continuations; L: native LuaHeap;
 -- A: scheduled recovery; G: native collector recovery; S: raw operation
--- selectors. The pinned BLua frame replaces the host's intermediate stages.
+-- selectors. B/J: Table copy in C++/TS still uses the same native LuaHeap by
+-- 8cf6e61b2b8207a31ae7be9c7acb095910ff2793. The pinned BLua frame replaces the host's intermediate stages.
 -- Operands are unrounded constructor hints or a captureless ROM binding.
 -- I: the reference instruction limited the hints to 15 bits. Rounded capacity,
 -- physical extent and logical charge fit a signed Integer.
 local layout<const> = require('kernel/gc_runtime_layout') -- C:71-74 T:843,855-865
 local admission<const> = require('kernel/heap_admission') -- C:9-14,36,43,54-63,174,210-217 T:805-811,827-833,844-849,933,970-976 L:146
+local operand_roots<const> = require('kernel/gc_operand_roots') -- B:35-36 J:71-72
 local collector<const> = require('kernel/gc_step') -- C:154-159,181-186 A:238-251 G:1225-1229
 local records<const> = require('kernel/dlmalloc_record') -- C:55-57 L:119-139,145
 local tables<const> = require('kernel/table_create') -- C:7-8,78-83 T:803-804,855-861
 local closures<const> = require('kernel/closure_create') -- C:8,84-86 T:804,863-866
 
 local table_kind<const> = 0 -- S:49 C:6 T:802
+local table_copy_kind<const> = 3 -- B:33-37 J:69-73; firmware-only operation using the same Direct admission
 local canonical_closure_kind<const> = 1 -- S:49 C:84-86 T:863-866
 local direct<const> = 1 -- S:41 C:118 T:903
 local retry_current<const> = 3 -- S:41 C:5,138-140 T:801,912
@@ -26,10 +29,19 @@ local exhausted<const> = 2 -- G:1216,1222 C:141-142
 local allocate_record<const> = function(management, kind, operand0, operand1, mode, source_cycles) -- C:3-4 T:799-800; destination, fault PC and cache publication stay with CPU retirement
 	local state<const>, control<const>, occupied<const> = management + layout.arena_offset, management + layout.control_offset, management + layout.occupied_offset -- C:71-74
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- C:154-158 G:1228; raw root inputs are published without selecting a collector phase
-	local table<const> = kind == table_kind -- C:6 T:802
-	local binding, array_bytes, hash_bytes, charged, bytes, canonical -- C:7-8,55-57,78-86
-	if table then -- C:6-8 T:802-804
-		binding, array_bytes, hash_bytes, charged, bytes = tables.plan_creation(operand0, operand1) -- C:7-8,56,80-81 T:803-804,843,845
+	local copy<const> = kind == table_copy_kind -- B:33-37 J:69-73
+	local table<const> = kind == table_kind or copy -- C:6 T:802 B:35-37 J:71-73
+	local binding, array_bytes, hash_bytes, charged, bytes, canonical, array -- C:7-8,55-57,78-86
+	local scope = 0 -- B:35-36 J:71-72; no scoped root for the old inputs
+	if table then -- C:6-8 T:802-804 B:35-37 J:71-73
+		if copy then -- B:33-37 J:69-73
+			array, binding = tables.copy_capacities(operand0) -- B:34 J:70
+			scope = operand_roots.table_copy_scope(management, operand0) -- B:35-36 J:71-72
+		else -- C:7-8,56,80-81 T:803-804,843,845
+			array = operand0 -- C:7-8,56,80-81 T:803-804,843,845
+			binding = tables.internal.hash_capacity(operand1) -- C:7-8,56,80-81 T:803-804,843,845
+		end
+		array_bytes, hash_bytes, charged, bytes = tables.plan_capacity(array, binding) -- C:7-8,56,80-81 T:803-804,843,845 B:35-37 J:71-73
 	else -- C:6-8,57,84
 		binding = operand1 -- C:7,85 T:864-865
 		canonical = kind == canonical_closure_kind and 1 or 0 -- C:85-86 T:864-866; dynamic no-capture initialization omits the canonical bit
@@ -56,7 +68,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 						*effects = layout.publish_roots -- C:154-158 G:1228; first GC call borrows the already paused mutator
 						roots_published = true -- C:154-158 G:1228
 					end
-					local work<const> = collector.finish_epoch(management, collector.step_words, 0, 0, 0) -- C:181-186 G:1228-1229; exactly one current or fresh epoch
+					local work<const> = collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 G:1228-1229; exactly one current or fresh epoch
 					source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973; policy cycles, not machine time
 					admitted = admission.logical_fits(state, charged) ~= 0 -- C:218 T:977 L:107
 				until admitted -- L:105-107 C:218-220
@@ -66,7 +78,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- C:43 T:832 L:89
 			*effects = layout.publish_roots -- C:154-158 G:1228; first GC call in the assist branch
 			roots_published = true -- C:154-158 G:1228
-			local work<const> = collector.step(management, words, 0, 0, 0) -- C:43,154-158 T:873-874
+			local work<const> = collector.step(management, words, 0, 0, scope) -- C:43,154-158 T:873-874
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973
 			admission.credit_logical_assist(state, charged, debt, pressure, work) -- C:215-217 T:974-976 L:91
 		end
@@ -77,7 +89,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 					*effects = layout.publish_roots -- C:154-158 G:1228
 					roots_published = true -- C:154-158 G:1228
 				end
-				collector.step(management, words, 0, 0, 0) -- C:63,154-159 T:848,873-874
+				collector.step(management, words, 0, 0, scope) -- C:63,154-159 T:848,873-874
 			end
 		end
 	end
@@ -85,7 +97,9 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 	local offset = 0 -- C:102,118 T:889-890 L:147-153
 	while recovery >= 0 do -- C:118-142 A:225-251,313-314 G:1215-1222 L:150-154; one raw recovery token across both kinds of refusal
 		if admitted then -- C:9-14 T:805-811 L:147
-			if table then -- C:78 T:854
+			if copy then -- B:35-54 J:71-84
+				offset = tables.copy_table(state, control, occupied, operand0, array, binding, array_bytes, hash_bytes, charged) -- B:35-54 J:71-84
+			elseif table then -- C:78 T:854
 				offset = tables.create_table(state, control, occupied, operand0, binding, array_bytes, hash_bytes, charged) -- C:79-83 T:855-861 L:148-152
 			else -- C:84 T:862
 				offset = closures.create_closure(state, control, occupied, operand0, binding, canonical) -- C:85-86 T:863-866 L:148-152
@@ -98,11 +112,11 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			*effects = layout.publish_roots -- C:154-158 G:1228
 			roots_published = true -- C:154-158 G:1228
 		end
-		collector.finish_epoch(management, collector.step_words, 0, 0, 0) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
+		collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
 		admitted = mode == direct or admission.logical_fits(state, charged) ~= 0 -- C:9-14,206-208 A:299-300 T:807 L:152-153,162; direct physical retries never re-admit
 	end
 	if roots_published then *effects = layout.release_string_work end -- C:154-158 G:1228; return only the work left in the borrowed String latch
 	return offset -- C:102-142 T:889-920; 0 is the original terminal OOM signal before CPU fault delivery
 end
 
-return { allocate_record = allocate_record }
+return { allocate_record = allocate_record, table_copy_kind = table_copy_kind, direct_mode = direct }

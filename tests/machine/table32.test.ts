@@ -2,14 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { TableLookupStatus } from '../../machine/ts/machine/cpu/table';
+import { TableLookupStatus, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL } from '../../machine/ts/spec/blua32/cop0';
 import { cartridgeSlots } from '../helpers/cartridge';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { installAllocationStress } from '../helpers/gc_stress';
 import * as v from '../../machine/ts/machine/cpu/value';
@@ -39,10 +41,17 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 });
 
 test('full byte-index chains survive copying and widening during rehash', () => {
-	const cpu = machine(), tables = cpu.gc.tables, source = cpu.createTable(0, 128);
-	for (let key = 1; key <= 128; ++key) tables.setInteger(source, -key, v.valueInteger(key));
-	const copy = tables.copyOwn(source);
-	tables.setInteger(copy, -129, v.valueBool(true));
+	const { cpu } = createCartlibProgramHarness(`
+local source<const> = {}
+for i = 1, 128 do source[-i] = i end
+local copy<const> = table.copy(source)
+copy[-129] = true
+original, duplicate = source, copy
+`);
+	runGuestToHalt(cpu, 20_000_000);
+	const tables = cpu.gc.tables;
+	const source = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('original')!));
+	const copy = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('duplicate')!));
 	assert.equal(tables.hashSize(source), 128);
 	assert.equal(tables.hashSize(copy), 256);
 	for (let key = 1; key <= 128; ++key) {
@@ -51,6 +60,28 @@ test('full byte-index chains survive copying and widening during rehash', () => 
 	}
 	assert.equal(tables.getInteger(source, -129), v.valueNil());
 	assert.equal(tables.getInteger(copy, -129), v.valueBool(true));
+});
+
+test('firmware copy retains the census and density bands of a large hash', () => {
+	const { cpu } = createCartlibProgramHarness(`
+local source<const> = {}
+for i = 1, 1025 do source[-i] = i end
+source[-9] = nil
+source[72] = true
+original, duplicate = source, table.copy(source)
+`);
+	runGuestToHalt(cpu, 20_000_000);
+	const tables = cpu.gc.tables;
+	const source = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('original')!));
+	const copy = v.valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('duplicate')!));
+	assert.equal(tables.hashSize(source), 2048);
+	assert.equal(tables.hashSize(copy), 2048);
+	const sourceBacking = tables.hashAddress(source) & RAM_RECORD_WORD_MASK;
+	const copyBacking = tables.hashAddress(copy) & RAM_RECORD_WORD_MASK;
+	assert.notEqual(sourceBacking, copyBacking);
+	const bytes = TableRecords.hashStorageBytes(2048);
+	const ram = cpu.memory.ramData();
+	assert.deepEqual(ram.subarray(copyBacking, copyBacking + bytes), ram.subarray(sourceBacking, sourceBacking + bytes));
 });
 
 test('array growth keeps a full hash when none of its keys move into the array', () => {

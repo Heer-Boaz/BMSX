@@ -50,7 +50,6 @@ public:
 	static u32 storageBytes(size_t arraySize, size_t hashSize);
 	static u32 allocationCharge(size_t arraySize, size_t hashSize);
 	void initialize(size_t arrayCapacity, size_t hashCapacity);
-	TableRecord copyOwn() const;
 	void freeRecord();
 	u32 address() const { return m_address; }
 	u32 hashAddress() const { return readHeader(TableHeader::HashStorage); }

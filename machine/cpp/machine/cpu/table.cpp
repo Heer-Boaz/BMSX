@@ -30,31 +30,6 @@ void TableRecord::initialize(size_t array, size_t hash) {
 	initializeHash(hashAddress(), hash);
 }
 
-TableRecord TableRecord::copyOwn() const {
-	const u32 array = arrayCapacity(), hash = hashSlots();
-	const u32 target = m_heap->budget.allocateRecord(HEADER_BYTES, true, 5u * array,
-		static_cast<u32>(TableHeader::ArrayStorage), valueTable(m_address), valueNil(), valueNil(), HEADER_CHARGE + allocationCharge(array, hash),
-		LuaAllocationMode::Direct, hashStorageBytes(hash), static_cast<u32>(TableHeader::HashStorage));
-	TableRecord copy(*m_heap, target);
-	const auto copyStorage = [&](u32 target, u32 source, u32 bytes) {
-		if (!bytes) return;
-		const u32 dst = target & RAM_RECORD_WORD_MASK, src = source & RAM_RECORD_WORD_MASK;
-		std::memcpy(m_memory->ramData() + dst, m_memory->ramData() + src, bytes);
-		m_memory->invalidateRamWrite(dst, bytes);
-	};
-	copyStorage(copy.arrayAddress(), arrayAddress(), 5u * array);
-	copyStorage(copy.hashAddress(), hashAddress(), hashStorageBytes(hash));
-	const u32 absent = m_memory->readRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE);
-	const u32 kind = static_cast<u32>(ValueTag::Table) | (u32{m_heap->white()} << 8u)
-		| (absent << (8u * TABLE_NEW_INDEX_ABSENT_BYTE));
-	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Kind), kind, 0u);
-	copy.writeHeader(TableHeader::Metatable, 0u);
-	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Array), array, hash);
-	m_memory->writeRamRecordPair(target + static_cast<u32>(TableHeader::Length), lengthHint(), readHeader(TableHeader::Free));
-	m_heap->publishObject(target);
-	return copy;
-}
-
 void TableRecord::setMetatableAddress(u32 address) {
 	m_heap->writeBarrier(m_address, GC_RECORD_LINK);
 	writeHeader(TableHeader::Metatable, address);

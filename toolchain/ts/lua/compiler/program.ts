@@ -15,6 +15,7 @@ export type ProgramConstant = null | boolean | NumberConstant | string | { reado
 // The compiler must preserve the boundary; the System linker proves it.
 export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_collect_step', exportPathKey: 'collect_step', numParams: 0 },
+	{ path: 'kernel/bios_copy_table', exportPathKey: 'copy_table', numParams: 1 },
 	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },

@@ -174,6 +174,7 @@ for (const optLevel of [0, 3] as const) {
 	});
 }
 
+const copyBasis = '8cf6e61b2b8207a31ae7be9c7acb095910ff2793';
 const pins = [
 	['T', 'machine/ts/machine/cpu/cpu.ts', 'a87b074b0239334eb04874f6e123c7858ef018cf89e2a92a5e952ba3070f3237'],
 	['C', 'machine/cpp/machine/cpu/cpu_heap_record.inl', '04c1252d518bdc9c1dac342fcd1c926c6b5d51dc90722f88669f93184de24bb1'],
@@ -182,13 +183,16 @@ const pins = [
 	['G', 'machine/cpp/machine/cpu/gc_heap.cpp', '642cfe734d09e6ff9137cf072d003b978aed8773db642c435616d145ed9c953d'],
 	['S', 'machine/ts/spec/bmsx/heap_service.ts', 'bc482465da3c8ce3fd1f82417a618446394c5a7327a19ec6af858d50c2f35eba'],
 	['I', 'machine/ts/spec/blua32/instruction_format.ts', 'e00226cca919687ff4d602bfa9864b3e1ec7104940196cda3c2fde7a43ebaefa'],
+	['B', 'machine/cpp/machine/cpu/table.cpp', 'a86cc7968f0dc250348f79e74d3fc8f1b4979fd51b48ff13176587f46bea26bc'],
+	['J', 'machine/ts/machine/cpu/table.ts', '2efe7b0a10f355bb40683bb59cab15a58f0515ee7307e431e86af2fdd336c978'],
 ] as const;
 
 test('record policy maps its original admission, refusal and exact retry sources', () => {
 	const source = readFileSync(sourcePath, 'utf8');
 	assert.match(source, new RegExp(`-- Source basis: ${nativeBasis}\\.`));
 	const refs = new Map(pins.map(([key, file, sum]) => {
-		const text = execFileSync('git', ['show', `${nativeBasis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
+		const basis = key === 'B' || key === 'J' ? copyBasis : nativeBasis;
+		const text = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
 		assert.equal(createHash('sha256').update(text).digest('hex'), sum, file);
 		return [key as string, { lines: text.split('\n'), covered: new Set<number>() }];
 	}));

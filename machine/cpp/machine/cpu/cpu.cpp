@@ -1220,14 +1220,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(result);
 			break;
 		}
-		case BuiltinFunctionId::TableCopy: {
-			const Value source = args[0];
-			if (!valueIsTable(source)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			const auto copy = asTable(source, m_heap).copyOwn();
-			instructionBudgetRemaining -= static_cast<int>(copy.arrayCapacity() + 2u * copy.hashSlots());
-			out.push_back(valueTable(copy.address()));
-			break;
-		}
 		case BuiltinFunctionId::GetGlobal:
 			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			out.push_back(getGlobalByKey(asStringId(args[0])));

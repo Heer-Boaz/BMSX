@@ -66,30 +66,6 @@ export class TableRecords {
 		this.initializeArray(this.arrayAddress(record), array, 0);
 		this.initializeHash(this.hashAddress(record), hash);
 	}
-	public copyOwn(source: number): number {
-		const array = this.arrayCapacity(source), hash = this.hashSize(source);
-		const copy = this.heap.budget.allocateRecord(TableRecords.HEADER_BYTES, true, array * 5, TableHeader.ArrayStorage,
-			valueTable(source), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, hash), LuaAllocationMode.Direct,
-			TableRecords.hashStorageBytes(hash), TableHeader.HashStorage);
-		// The rooted source keeps its layout, but admission can clear weak entries.
-		const memory = this.heap.memory;
-		const absence = memory.readRamRecordByte(source + TableHeader.NewIndexAbsent);
-		const kind = ValueTag.Table | (this.heap.white() << 8) | (absence << (8 * TableHeader.NewIndexAbsent));
-		memory.writeRamRecordPair(copy + TableHeader.Kind, kind, 0);
-		this.writeHeader(copy, TableHeader.Metatable, 0);
-		memory.writeRamRecordPair(copy + TableHeader.Array, array, hash);
-		memory.writeRamRecordPair(copy + TableHeader.Length, this.lengthHint(source), this.readHeader(source, TableHeader.Free));
-		this.copyStorage(this.arrayAddress(copy), this.arrayAddress(source), array * 5);
-		this.copyStorage(this.hashAddress(copy), this.hashAddress(source), TableRecords.hashStorageBytes(hash));
-		this.heap.publishObject(copy);
-		return copy;
-	}
-	private copyStorage(dst: number, src: number, bytes: number): void {
-		if (!bytes) return;
-		const start = src & RAM_RECORD_WORD_MASK, target = dst & RAM_RECORD_WORD_MASK;
-		this.heap.memory.ramData().copyWithin(target, start, start + bytes);
-		this.heap.memory.invalidateRamWrite(target, bytes);
-	}
 	public static hashCapacity(size: number): number { return size > 0 ? nextPowerOfTwo(size) : 0; }
 	// Two word lanes, two tag lanes and a signed chain cursor per node.
 	// A byte covers -1 and every index of a power-of-two table up to 128.

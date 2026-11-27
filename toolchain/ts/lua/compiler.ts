@@ -2773,13 +2773,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private resolveStaticFunctionExportBinding(expression: LuaExpression): ModuleBinding | undefined {
-		const binding = this.resolveStaticModuleBinding(expression, true);
-		if (binding && this.resolveStaticFunctionExportCallTarget(binding)) {
-			return binding;
-		}
-	}
-
 	private resolveConstLocalModuleBinding(expression: LuaExpression): ModuleBinding | undefined {
 		const binding = this.resolveStaticModuleBinding(expression, true);
 		if (binding && this.moduleBindingOwnsCompileTimeLocal(binding)) {
@@ -2796,6 +2789,17 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 
 	private failStaticFunctionExportRuntimeValue(symbol: string): never {
 		throw new Error(`Static function export '${symbol}' is a call target, not a Lua runtime value.`);
+	}
+
+	private isResidentSystemExport(symbol: ModuleFunctionTarget): boolean {
+		return this.program.programDomain === 'system' && symbol.kind === 'export_proto'
+			&& SYSTEM_RESIDENT_EXPORTS.some(entry => entry.path === symbol.path && entry.exportPathKey === symbol.exportPathKey);
+	}
+
+	private emitStaticFunctionExportValue(symbol: ModuleFunctionTarget, binding: ModuleBinding, target: number): void {
+		if (!this.isResidentSystemExport(symbol))
+			this.failStaticFunctionExportRuntimeValue(`${binding.modulePath}:${binding.exportPathKey}`);
+		this.emitModuleFunctionTargetLoad(symbol, target);
 	}
 
 	private failConstModuleValueCall(binding: ModuleBinding): never {
@@ -2862,9 +2866,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (this.moduleBindingOwnsCompileTimeLocal(compileTimeModuleRoot)) {
 				const functionTarget = this.resolveStaticFunctionExportCallTarget(compileTimeModuleRoot);
 				if (functionTarget) {
-					this.failStaticFunctionExportRuntimeValue(
-						`${compileTimeModuleRoot.modulePath}:${compileTimeModuleRoot.exportPathKey}`,
-					);
+					this.emitStaticFunctionExportValue(functionTarget, compileTimeModuleRoot, target);
+					return;
 				}
 				this.failCompileTimeModuleRootRuntimeUse(compileTimeModuleRoot.modulePath);
 			}
@@ -2903,9 +2906,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (binding && binding.moduleBinding) {
 			const functionTarget = this.resolveStaticFunctionExportCallTarget(binding.moduleBinding);
 			if (functionTarget) {
-				this.failStaticFunctionExportRuntimeValue(
-					`${binding.moduleBinding.modulePath}:${binding.moduleBinding.exportPathKey}`,
-				);
+				this.emitStaticFunctionExportValue(functionTarget, binding.moduleBinding, target);
+				return;
 			}
 		}
 		const localReg = this.resolveReferenceLocal(reference);
@@ -4802,9 +4804,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
-		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaMemberExpression);
-		if (staticFunctionExportBinding) {
-			this.failStaticFunctionExportRuntimeValue(`${staticFunctionExportBinding.modulePath}:${staticFunctionExportBinding.exportPathKey}`);
+		const binding = this.resolveStaticModuleBinding(expression, true);
+		if (binding) {
+			const symbol = this.resolveStaticFunctionExportCallTarget(binding);
+			if (symbol) {
+				this.emitStaticFunctionExportValue(symbol, binding, target);
+				return;
+			}
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaMemberExpression);
 		if (structAddress) {
@@ -4842,9 +4848,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			this.emitLoadConstExportValue(target, constExport.value);
 			return;
 		}
-		const staticFunctionExportBinding = this.resolveStaticFunctionExportBinding(expression as LuaIndexExpression);
-		if (staticFunctionExportBinding) {
-			this.failStaticFunctionExportRuntimeValue(`${staticFunctionExportBinding.modulePath}:${staticFunctionExportBinding.exportPathKey}`);
+		const binding = this.resolveStaticModuleBinding(expression, true);
+		if (binding) {
+			const symbol = this.resolveStaticFunctionExportCallTarget(binding);
+			if (symbol) {
+				this.emitStaticFunctionExportValue(symbol, binding, target);
+				return;
+			}
 		}
 		const structAddress = this.resolveStructScalarAddress(expression as LuaIndexExpression);
 		if (structAddress) {
@@ -5825,8 +5835,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedValueCount(callArgs), resultOperand);
 		if (callProtoIndex !== null) {
 			const symbol = moduleCallTarget ?? ownStaticFunctionExportTarget;
-			const resident = this.program.programDomain === 'system' && symbol?.kind === 'export_proto'
-				&& SYSTEM_RESIDENT_EXPORTS.some(entry => entry.path === symbol.path && entry.exportPathKey === symbol.exportPathKey);
+			const resident = symbol !== undefined && this.isResidentSystemExport(symbol);
 			if (!resident) this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
 		}
 		if (!useTarget) {

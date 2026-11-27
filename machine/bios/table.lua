@@ -1,6 +1,7 @@
 require('base')
 local table<const> = {}
-table.copy = __bmsx_table_copy
+local copy<const> = require('kernel/bios_copy_table')
+table.copy = copy.copy_table
 
 table.pack = function(...)
 	local packed<const> = { n = select('#', ...) }

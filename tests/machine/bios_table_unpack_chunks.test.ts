@@ -29,6 +29,10 @@ local function verify()
  assert(next(empty) == nil)
  assert(select('#',table.copy(source)) == 1)
  assert(not pcall(table.copy) and not pcall(table.copy,17))
+ local target<const> = {}
+ local source_with_hook<const> = setmetatable({}, table.copy({__newindex = target}))
+ source_with_hook[1] = 31
+ assert(rawget(source_with_hook, 1) == nil and target[1] == 31)
 end
 observed_ok,observed_error=pcall(verify)
 `, {optLevel});

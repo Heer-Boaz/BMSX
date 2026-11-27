@@ -4425,16 +4425,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.RawGet:
 				this.runBuiltinRawGet(args, out);
 				break;
-			case BuiltinFunctionId.TableCopy: {
-				const { registers, base } = args;
-				if (args.length === 0 || registers.getTag(base) !== ValueTag.Table) {
-					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				}
-				const tables = this.gc.tables, copy = tables.copyOwn(registers.getPayload(base));
-				this.charge(tables.arrayCapacity(copy) + 2 * tables.hashSize(copy));
-				out.push(valueTable(copy));
-				break;
-			}
 			case BuiltinFunctionId.GetGlobal: {
 				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.String) {
 					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);

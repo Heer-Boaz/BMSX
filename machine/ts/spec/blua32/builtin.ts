@@ -30,8 +30,7 @@ export const enum BuiltinFunctionId {
 	NumberType = 28,
 	SetMetatable = 29,
 	StringSlice = 30,
-	TableCopy = 31,
-	StringFromBytes = 32,
+	StringFromBytes = 31,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 33;
+export const BUILTIN_FUNCTION_COUNT = 32;
