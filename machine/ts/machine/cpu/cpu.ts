@@ -294,7 +294,7 @@ export type ExecutionHook = (
 ) => boolean;
 
 
-const enum ExecutionImageUpdate { Install, Restore, Select }
+const enum ExecutionImageUpdate { Replace, Restore, Select }
 
 export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
@@ -1108,16 +1108,10 @@ export class CPU implements MappedPageInvalidator {
 		};
 	}
 
-	private activateExecutionImage(executionBoot: Blua32ExecutionBoot): Blua32ExecutionImage {
-		const header = this.readExecutionImageHeader(executionBoot);
-		this.stringPool.activateRomTable(executionBoot.executionDomainId, header.stringBucketAddress, header.stringBucketCount);
-		return this.materializeExecutionImage(executionBoot, header);
-	}
-
 	private materializeExecutionImage(
 		executionBoot: Blua32ExecutionBoot,
 		header: ReturnType<CPU['readExecutionImageHeader']>,
-		update: ExecutionImageUpdate = ExecutionImageUpdate.Install,
+		update: ExecutionImageUpdate,
 	): Blua32ExecutionImage {
 		const executionDomainId = executionBoot.executionDomainId;
 		const { constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused, globalNameTableAddress, globalNameCount,
@@ -1175,7 +1169,7 @@ export class CPU implements MappedPageInvalidator {
 		return image;
 	}
 
-	private executionImageForDomain(executionDomainId: ExecutionDomainId, installedOnly = false): Blua32ExecutionImage | null {
+	private executionImageForDomain(executionDomainId: ExecutionDomainId): Blua32ExecutionImage | null {
 		const imageIndex = executionDomainId + 1;
 		const residentImage = this.executionImagesByDomain[imageIndex];
 		if (residentImage) {
@@ -1185,13 +1179,10 @@ export class CPU implements MappedPageInvalidator {
 		if (!executionBoot) {
 			return null;
 		}
-		let image: Blua32ExecutionImage;
-		if (installedOnly) {
-			const header = this.readExecutionImageHeader(executionBoot);
-			const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
-			if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes) return null;
-			image = this.materializeExecutionImage(executionBoot, header, ExecutionImageUpdate.Restore);
-		} else image = this.activateExecutionImage(executionBoot);
+		const header = this.readExecutionImageHeader(executionBoot);
+		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), executionDomainId);
+		if (this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) !== header.imageBindingBytes) return null;
+		const image = this.materializeExecutionImage(executionBoot, header, ExecutionImageUpdate.Restore);
 		this.executionImagesByDomain[imageIndex] = image;
 		return image;
 	}
@@ -1347,7 +1338,7 @@ export class CPU implements MappedPageInvalidator {
 				const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), domain);
 				const oldBase = this.memory.readRamRecordWord(binding);
 				const oldBytes = this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-				const image = this.materializeExecutionImage(boot, headers[i]);
+				const image = this.materializeExecutionImage(boot, headers[i], ExecutionImageUpdate.Replace);
 				this.executionImagesByDomain[imageIndex] = image;
 				this.unpublishedRomMask &= ~executionDomainBit(domain);
 				if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
@@ -1824,12 +1815,11 @@ export class CPU implements MappedPageInvalidator {
 		ambientExecutionImage: Blua32ExecutionImage,
 		address: number,
 		busSignals: MappedBusSignals,
-		installedOnly = false,
 	): boolean {
 		const executionDomainId = this.executionAddressSpace.domainIdOnBus(address, busSignals);
 		const image = executionDomainId === null
 			? ambientExecutionImage
-			: this.executionImageForDomain(executionDomainId, installedOnly);
+			: this.executionImageForDomain(executionDomainId);
 		return image !== null && this.readFunctionRecord(image, address, busSignals);
 	}
 
@@ -1973,12 +1963,7 @@ export class CPU implements MappedPageInvalidator {
 	private executeFunctionAddress(functionAddress: number): void {
 		// Publish a receiving bank before a normal execution transfer.
 		if (this.resetBankSelected()) { this.hardHalt(); return; }
-		if (!this.readFunctionRecordOnBus(
-			this.activeExecutionImage,
-			functionAddress,
-			MAPPED_BUS_MASTER_CPU,
-			true,
-		)
+		if (!this.readFunctionRecordOnBus(this.activeExecutionImage, functionAddress, MAPPED_BUS_MASTER_CPU)
 			|| (this.functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) === 0) {
 			this.hardHalt();
 			return;
@@ -2035,7 +2020,8 @@ export class CPU implements MappedPageInvalidator {
 		if (this.heapServiceActive()) throw new Error('Heap service must retire before replacing code execution.');
 		if (this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
-		if (!this.readFunctionRecord(this.executionImageForDomain(executionDomainId)!, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
+		const image = this.executionImageForDomain(executionDomainId);
+		if (image === null || !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId))) {
 			this.hardHalt();
 			return;
 		}
@@ -2848,8 +2834,8 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 	): void {
 		if (this.heapServiceActive() || this.pendingAllocation !== null || this.stringComparison.remaining !== 0 || this.concat.active || this.tableRebuild.record) throw new Error('Pending CPU work must retire before replacing code execution.');
-		const image = this.executionImageForDomain(executionDomainId)!;
-		if (!admitsFunctionPc(image.romFunctions, functionAddress, pc)
+		const image = this.executionImageForDomain(executionDomainId);
+		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
 			throw new Error('Frame execution must enter an instruction of its published function.');
 		const frame = this.activeThread.frameAtDepth(frameIndex);

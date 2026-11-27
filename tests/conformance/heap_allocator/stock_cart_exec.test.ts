@@ -5,23 +5,23 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { CPU, CpuRunKind } from '../../../machine/ts/machine/cpu/cpu';
+import { CPU, CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { asInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { COP0_EXEC } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDING_SIZE, executionDomainBit, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
-import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
-import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
-import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
+import { linkCartBlua32Image, rewriteResolvedABx } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -75,7 +75,7 @@ halt_until_irq
 						&& beforeTransfer(runtime);
 				}, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
 				const frames = runtime.frameScheduler, commands: string[] = [], expected: string[] = [];
-				const systemEnd = runtime.machine.memory.ramBusEnd();
+				const systemEnd = RAM_BASE + cpu.heapAllocator.floorOffset(runtime.machine.executionAddressSpace.resolveSystemDomain().staticEnd);
 				const pulse = (grant: number) => {
 					if (gxGpu.backendCommandDrainPending()) {
 						gxGpu.retireExecutedCommands();
@@ -91,6 +91,13 @@ halt_until_irq
 				assert.ok(done(cpu, runtime), 'the real System startup reached the requested machine boundary');
 				if (beforeTransfer) cpu.setExecutionHook(null, 0, 0);
 				return { runtime, commands, expected, pulse, systemEnd };
+			};
+			const finishReset = (running: ReturnType<typeof boot>) => {
+				const { cpu, memory } = running.runtime.machine;
+				assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'the RESET request has entered immutable System code');
+				for (let grant = 0; grant < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++grant) running.pulse(2048);
+				assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'firmware admitted its replacement context');
+				assert.equal(memory.ramBusEnd(), running.systemEnd, 'firmware restored the System aperture');
 			};
 			const compare = (traceName: string, commands: string[], expected: string[], seed: string, ...carts: string[]) => {
 				const trace = join(output, traceName);
@@ -145,21 +152,60 @@ halt_until_irq
 			const preparedCharge = unentered.cpu.luaHeap.usedBytes();
 			const operandBytes = unentered.memory.readRamRecordWord(installed + 4);
 			const seed = join(output, 'pre-exec.state');
-			writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(preTransfer.runtime)));
+			const prepared = captureRuntimeSaveState(preTransfer.runtime);
+			writeFileSync(seed, encodeRuntimeSaveState(prepared));
+
+			// From the same admitted System frame, try constructing a callable
+			// from a valid record on the socket that has *not* been prepared.
+			// This exercises CLOSURE's lazy image lookup, not the EXEC check.
+			const probeRom = new Uint8Array(system);
+			const actualFrame = unentered.cpu.getFrameDepth() - 1;
+			const word = unentered.cpu.readFramePc(actualFrame) / INSTRUCTION_BYTES;
+			writeInstruction(probeRom, word, OpCode.WIDE, 0, 0, 0);
+			writeInstruction(probeRom, word + 1, OpCode.CLOSURE, 0, 0, 0);
+			rewriteResolvedABx(probeRom, word + 1, OpCode.CLOSURE, slot0.startupFunctionAddress / BLUA32_FUNCTION_ALIGNMENT);
+			const probe = new Runtime({ systemRomBytes: probeRom, cartridgeSlots: cartridgeSlots(other, selected),
+				machineModel: PSX_MACHINE_SPEC }, {
+				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+			});
+			probe.boot();
+			applyRuntimeSaveState(probe, prepared);
+			const attempted = probe.machine;
+			attempted.memory.writeMappedWord(IO_CART_SELECT, 0);
+			const absent = executionImageBindingOffset(attempted.cpu.heapAllocator.managementOffset(), 0);
+			const empty = new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE);
+			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
+			const physicalBytes = attempted.cpu.heapAllocator.occupiedBytes();
+			const attemptedResult = attempted.scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
+			assert.equal(attempted.cpu.luaHeap.usedBytes(), preparedCharge, 'a Function lookup does not initialize an unprepared cartridge');
+			assert.equal(attempted.cpu.heapAllocator.occupiedBytes(), physicalBytes);
+			assert.equal(attemptedResult, RunResult.Halted);
+			assert.equal(attempted.cpu.captureRuntimeState().hardHalted, true);
+			assert.equal(attempted.cpu.isExecutionDomainResident(0), false);
+			assert.deepEqual(attempted.memory.ramData().slice(absent, absent + EXECUTION_IMAGE_BINDING_SIZE), empty);
+			const probeSystem = join(output, 'unprepared-function.rom');
+			const probeTrace = join(output, 'unprepared-function.trace');
+			writeFileSync(probeSystem, probeRom);
+			writeFileSync(probeTrace, ['X', `O ${IO_CART_SELECT} 0`, 'L 1', 'F', `H ${absent} ${absent + EXECUTION_IMAGE_BINDING_SIZE}`].join('\n'));
+			const attemptedRows = execFileSync(native, [probeSystem, probeTrace, seed, otherPath, selectedPath], { encoding: 'utf8' });
+			assert.deepEqual(attemptedRows.trimEnd().split('\n'), [
+				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, 0, attempted.cpu.gc.fullEpochs(),
+					attempted.cpu.gc.phase(), preparedCharge].join(' '),
+				'1', String(hashBytes(empty, 0, empty.length)),
+			]);
+
 			unentered.memory.writeMappedWord(IO_SYS_CONTROL, SYS_CONTROL_RESET);
-			const beforeResetCycles = unentered.scheduler.nowCycles, beforeResetTick = preTransfer.runtime.frameScheduler.lastTickSequence;
-			const complete = preTransfer.runtime.frameScheduler.runCyclesToNextLogicalTick(1);
+			preTransfer.commands.length = preTransfer.expected.length = 0;
+			preTransfer.commands.push('X', `O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
+			preTransfer.pulse(1);
 			assert.equal(unentered.systemController.hasResetRequest(), false);
-			assert.equal(unentered.memory.ramBusEnd(), preTransfer.systemEnd);
+			assert.equal(unentered.memory.ramBusEnd(), floor, 'hardware RESET does not change the aperture');
+			finishReset(preTransfer);
 			assert.deepEqual(unentered.memory.ramData().slice(installed, installed + EXECUTION_IMAGE_BINDING_SIZE),
-				new Uint8Array(EXECUTION_IMAGE_BINDING_SIZE), 'reset retires RAM backing without a host cartridge view');
-			compare('reset-before-exec.trace',
-				['X', `O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`, 'p 1', `H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`],
-				[[+complete, unentered.scheduler.nowCycles - beforeResetCycles,
-					preTransfer.runtime.frameScheduler.lastTickSequence - beforeResetTick, +unentered.cpu.heapServiceActive(),
-					+unentered.cpu.isHaltedUntilIrq()].join(' '),
-					String(hashBytes(unentered.memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE))],
-				seed, otherPath, selectedPath);
+				empty, 'firmware retires RAM backing without a host cartridge view');
+			preTransfer.commands.push(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
+			preTransfer.expected.push(String(hashBytes(empty, 0, empty.length)));
+			compare('reset-before-exec.trace', preTransfer.commands, preTransfer.expected, seed, otherPath, selectedPath);
 
 			// Keep the table sizes, symbol names and String directory intact.
 			// Only the literal's operand points at bytes that aren't a String:
@@ -208,7 +254,8 @@ halt_until_irq
 			fault.pulse(1);
 			assert.equal(rejectedMachine.systemController.hasResetRequest(), false);
 			assert.equal(rejectedMachine.cpu.captureRuntimeState().hardHalted, false);
-			assert.equal(rejectedMachine.memory.ramBusEnd(), fault.systemEnd, 'the existing live native reset returns to the System aperture');
+			assert.equal(rejectedMachine.memory.ramBusEnd(), floor);
+			finishReset(fault);
 			const depth = rejectedMachine.cpu.getFrameDepth();
 			fault.commands.push('F', 'P');
 			fault.expected.push('0', `${depth} ${rejectedMachine.cpu.readFramePc(depth - 1)}`);

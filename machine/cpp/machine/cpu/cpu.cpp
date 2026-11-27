@@ -498,9 +498,7 @@ void CPU::admitImageReplacement(const Blua32ExecutionImage& image) {
 	});
 }
 
-Blua32ExecutionImage* CPU::executionImageForDomain(
-	ExecutionDomainId executionDomainId, bool installedOnly
-) {
+Blua32ExecutionImage* CPU::executionImageForDomain(ExecutionDomainId executionDomainId) {
 	const size_t imageIndex = static_cast<size_t>(executionDomainId + 1);
 	if (Blua32ExecutionImage* image = m_executionImagesByDomain[imageIndex].get()) {
 		return image;
@@ -511,7 +509,7 @@ Blua32ExecutionImage* CPU::executionImageForDomain(
 		return nullptr;
 	}
 	std::unique_ptr<Blua32ExecutionImage> image =
-		activateExecutionImage(*executionBoot, installedOnly ? ExecutionImageUpdate::UseInstalled : ExecutionImageUpdate::Install);
+		activateExecutionImage(*executionBoot, ExecutionImageUpdate::UseInstalled);
 	Blua32ExecutionImage* activatedImage = image.get();
 	m_executionImagesByDomain[imageIndex] = std::move(image);
 	return activatedImage;
@@ -903,13 +901,12 @@ bool CPU::readFunctionRecord(
 bool CPU::readFunctionRecordOnBus(
 	Blua32ExecutionImage& ambientExecutionImage,
 	u32 address,
-	MappedBusSignals busSignals,
-	bool installedOnly
+	MappedBusSignals busSignals
 ) {
 	const std::optional<ExecutionDomainId> executionDomainId =
 		m_executionAddressSpace.domainIdOnBus(address, busSignals);
 	Blua32ExecutionImage* image = executionDomainId
-		? executionImageForDomain(*executionDomainId, installedOnly)
+		? executionImageForDomain(*executionDomainId)
 		: &ambientExecutionImage;
 	return image && readFunctionRecord(*image, address, busSignals);
 }
@@ -1007,12 +1004,7 @@ void CPU::installSystemVector(CallFrame& frame, u32 address) {
 void CPU::executeFunctionAddress(u32 functionAddress) {
 	// A normal transfer reuses the receiving bank; it cannot retain reset authority.
 	if (resetBankSelected()) { hardHalt(); return; }
-	if (!readFunctionRecordOnBus(
-		*m_activeExecutionImage,
-		functionAddress,
-		MAPPED_BUS_MASTER_CPU,
-		true
-	)
+	if (!readFunctionRecordOnBus(*m_activeExecutionImage, functionAddress, MAPPED_BUS_MASTER_CPU)
 		|| (m_functionRecordLatch.flags & BLUA32_FUNCTION_STATIC) == 0u) {
 		hardHalt();
 		return;
@@ -1072,7 +1064,8 @@ void CPU::beginCompletionCallInExecutionDomain(
 	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before replacing code execution.");
 	if (allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
-	if (!readFunctionRecord(*executionImageForDomain(executionDomainId), functionAddress, executionBusSignalsForDomain(executionDomainId))) {
+	auto* image = executionImageForDomain(executionDomainId);
+	if (!image || !readFunctionRecord(*image, functionAddress, executionBusSignalsForDomain(executionDomainId))) {
 		hardHalt();
 		return;
 	}
@@ -2898,10 +2891,11 @@ void CPU::writeFrameExecution(
 	u32 pc
 ) {
 	if (heapServiceActive() || allocationParked() || m_stringComparison.remaining || m_concat.active() || tableRebuild.record) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
-	Blua32ExecutionImage& image = *executionImageForDomain(executionDomainId);
-	if (!image.admitsFunctionPc(functionAddress, pc)
-		|| !readFunctionRecord(image, functionAddress, executionBusSignalsForDomain(executionDomainId)))
+	auto* publishedImage = executionImageForDomain(executionDomainId);
+	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
+		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))
 		throw BMSX_RUNTIME_ERROR("Frame execution must enter an instruction of its published function.");
+	auto& image = *publishedImage;
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const auto prototype = decodePrototype(functionRecord);
 	const u32 registerCount = prototype.entry.registerCapacity();

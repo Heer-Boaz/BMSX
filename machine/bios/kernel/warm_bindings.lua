@@ -35,10 +35,12 @@ local retire_images<const> = function(management, installed) -- T:930-935 C:219,
 		if base ~= 0 then -- T:1016 C:303
 			-- C++ exchanges the host base before free; TS detaches it after.
 			-- Choose the existing C++ order for this now-pausable RAM record.
+			local bytes<const> = bindings[lane].bytes -- 4b2ca9763 CPU C++:231-236; retain charge for release
 			bindings[lane].base = 0 -- T:1018 C:303; no backing in an empty lane
+			bindings[lane].bytes = 0 -- 4b2ca9763 CPU C++:233; a retired lane has no installed extent
 			bindings[lane].strings = 0 -- T:1018 C:303; detach the prefix with its backing
 			bindings[lane].ram_strings = 0 -- T:1018 C:303
-			records.bmsx_dlmalloc_release_record(arena, base - layout.ram_base, bindings[lane].bytes, occupied) -- T:1017 C:304 L:289-291 N:292-294
+			records.bmsx_dlmalloc_release_record(arena, base - layout.ram_base, bytes, occupied) -- T:1017 C:304 L:289-291 N:292-294
 		end
 	end
 	local metadata<const>: *string_metadata = layout.ram_base + management + layout.metadata_offset -- S:20-21,126-128 R:21-22,136-138 M:6

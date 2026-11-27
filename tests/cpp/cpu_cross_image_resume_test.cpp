@@ -87,8 +87,10 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	CPU cpu(memory, irq, addresses);
 	test::seedManagedFixture(cpu, addresses);
 	cpu.setGlobalByKey(shared, valueInteger(19));
+	cpu.replaceExecutionImage(*addresses.resolveDomain(0));
 	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
 	const auto bank0 = cpu.activeThread()->currentFrame->executionImage->constPool;
+	cpu.replaceExecutionImage(*addresses.resolveDomain(1));
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	const auto& image1 = *cpu.activeThread()->currentFrame->executionImage;
 	require(image1.constPool.get(0) == valueString(shared), "socket-one constants retain absolute system String identity");
@@ -281,6 +283,7 @@ void shortGrantsAndRestore(const Images& images, u32 slot, bool restore) {
 
 void returnUsesSavedBank(const Images& images, bool scalar) {
 	Machine machine(images, 0, scalar);
+	machine.cpu.replaceExecutionImage(*machine.addresses.resolveDomain(1));
 	machine.stopBeforeReturn();
 	auto* caller = machine.cpu.rootThread()->firstFrame;
 	const u32 flags = caller->readControl(FrameField::Flags);
