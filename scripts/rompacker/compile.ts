@@ -6,6 +6,7 @@ import {
 	BIOS_FUNCTION_EXPORTS,
 	BIOS_PREPARED_ENTRY,
 	BIOS_USER_IRQ_ENTRY,
+	BIOS_EXCEPTION_BRIDGE,
 	SYSTEM_ROM_NAME,
 } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -81,6 +82,7 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 		exceptionModule: 'kernel/cold_exception',
 		preparedEntry: BIOS_PREPARED_ENTRY,
 		userIrqEntry: BIOS_USER_IRQ_ENTRY,
+		exceptionBridge: BIOS_EXCEPTION_BRIDGE,
 		preloadModules: HEAP_SERVICE_MODULES,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,

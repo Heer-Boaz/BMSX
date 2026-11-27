@@ -8,7 +8,7 @@ import type { Blua32ImageLayout } from './blua32_image';
 // derives code-valued CLOSURE targets from the real reachable vector bodies,
 // not from firmware module names or the legacy fixed-service descriptor.
 export function linkBlua32ResetCode(
-	image: Blua32ImageLayout, reset: number, irq: number, exception: number, userIrq?: number,
+	image: Blua32ImageLayout, reset: number, irq: number, exception: number, detached: readonly (number | undefined)[],
 ): { valueSlots: number; frames: number } {
 	if ((image.header.flags & BLUA32_IMAGE_MAPPED_CODE_FLAG) !== 0)
 		throw new Error('A direct System vector must execute immutable System ROM.');
@@ -30,16 +30,18 @@ export function linkBlua32ResetCode(
 	}
 	if (frames > CPU_FIXED_FRAME_COUNT || valueSlots > CPU_FIXED_VALUE_COUNT)
 		throw new Error(`Direct System vectors require ${frames} frames and ${valueSlots} Values, beyond the fixed CPU bank.`);
-	if (userIrq !== undefined) {
-		// A user IRQ owns this bank alone, rather than nesting on cold reset.
-		const irqSize = deriveBlua32FixedStack(image, [userIrq], {
+	// The authored supervisor IRQ is also a standalone entry after reset.
+	codeTargets.add(irq);
+	for (const vector of detached) {
+		if (vector === undefined) continue;
+		const size = deriveBlua32FixedStack(image, [vector], {
 			functions, lateConstants,
-			ordinaryCode: { exceptionVectors: new Set([userIrq]), interruptible: false, codeTargets },
+			ordinaryCode: { exceptionVectors: new Set([vector]), interruptible: false, codeTargets },
 		});
-		if (irqSize.frames > CPU_FIXED_FRAME_COUNT || irqSize.valueSlots > CPU_FIXED_VALUE_COUNT)
-			throw new Error(`User IRQ requires ${irqSize.frames} frames and ${irqSize.valueSlots} Values, beyond the fixed CPU bank.`);
-		valueSlots = Math.max(valueSlots, irqSize.valueSlots);
-		frames = Math.max(frames, irqSize.frames);
+		if (size.frames > CPU_FIXED_FRAME_COUNT || size.valueSlots > CPU_FIXED_VALUE_COUNT)
+			throw new Error(`Detached vector 0x${image.functions[vector].address.toString(16)} requires ${size.frames} frames and ${size.valueSlots} Values, beyond the fixed CPU bank.`);
+		valueSlots = Math.max(valueSlots, size.valueSlots);
+		frames = Math.max(frames, size.frames);
 	}
 	for (const index of codeTargets) {
 		const offset = image.functions[index].address - image.address + BLUA32_FUNCTION_FLAGS_OFFSET;

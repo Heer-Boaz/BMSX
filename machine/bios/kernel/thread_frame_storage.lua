@@ -21,32 +21,36 @@ local current_or_fresh<const> = 0 -- T:92,225 C:103,232
 local out_of_memory<const> = 9 -- E:43 T:86 L:1111 C:98 N:1214
 
 struct thread_storage_record
-	before_block: u32[6] -- I:21-22 H:20-21
+	before_top: u32[5] -- I:21-22 H:20-21
+	stack_top: u32 -- I:22 H:21
 	stack_block: addr -- I:22,158 H:21 J:93
 	stack_capacity: u32 -- I:22,159 H:21 J:94
 	frame_capacity: u32 -- I:23,187 H:22 J:122-124
-	before_depth: u32[5] -- I:23 H:22
+	protected_capacity: u32 -- I:23 H:22
+	error_word: u32 -- I:23 H:22
+	error_tag: u32 -- I:23 H:22
+	return_window: u32[2] -- I:23 H:22
 	frame_depth: u32 -- I:24,188 H:23 J:123,131
 	protected_depth: u32 -- I:24 H:23
 	frame_block: addr -- I:24,182 H:23 J:125
 end
 
 -- Obtain the architectural Thread and caller while a resident CALL runs.
-local active_call_frame<const> = function(management)
-	local state<const> = layout.ram_base + management
-	local project<const>: *word = state + layout.effect_offset
-	*project = layout.publish_roots
-	local roots<const>: *root_descriptors = state + layout.root_banks_offset
-	local owner<const> = roots.active
-	local thread<const>: *thread_storage_record = owner
-	local depth<const> = thread.frame_depth & control_count_mask
-	return owner, layout.ram_base + ((thread.frame_block + (depth - 1) * frame_bytes) & word_mask)
+local active_call_frame<const> = function(management) -- X:3997-4007; select the resident caller's physical frame
+	local state<const> = layout.ram_base + management -- X:4001-4004
+	local project<const>: *word = state + layout.effect_offset -- X:3987-3991
+	*project = layout.publish_roots -- X:3997-4000
+	local roots<const>: *root_descriptors = state + layout.root_banks_offset -- X:4000,4004-4006
+	local owner<const> = roots.active -- X:4004-4006
+	local thread<const>: *thread_storage_record = owner -- I:20-24 H:20-24
+	local depth<const> = thread.frame_depth & control_count_mask -- I:24,34 H:23,27
+	return owner, layout.ram_base + ((thread.frame_block + (depth - 1) * frame_bytes) & word_mask) -- I:24 H:23 F:21 G:34
 end
 
-local value_planes<const> = function(address, first)
-	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask)
-	local base<const> = layout.ram_base + (thread.stack_block & word_mask)
-	return base + 4 * first, base + 4 * thread.stack_capacity + first
+local value_planes<const> = function(address, first) -- I:156-165 J:91-106; borrow the slot planes without resizing them
+	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- I:157-159 J:92-94
+	local base<const> = layout.ram_base + (thread.stack_block & word_mask) -- I:163 J:101-102
+	return base + 4 * first, base + 4 * thread.stack_capacity + first -- I:164-165 J:103-106
 end
 
 local update_charge<const> = function(occupied, previous, requested) -- T:304-306 C:307-310
@@ -163,7 +167,12 @@ local reserve_frame_storage<const> = function(management, address, values, frame
 	return 0 -- T:238 C:246
 end
 
-local grow_thread_frame_storage<const> = function(management, address, values, frames, root, source_cycles) -- T:200-238 C:209-246
+local publish_frame_roots<const> = function(management, interrupted) -- X:3997-4007 S:169-178; the source context determines publication
+	if interrupted then root_inputs.publish_interrupt(management) -- X:3997-4007 S:169-178; fixed firmware reads the interrupted context directly
+	else root_inputs.publish(management) end -- X:3997-4007 S:169-178
+end
+
+local grow_thread_frame_storage<const> = function(management, address, values, frames, root, source_cycles, interrupted) -- T:200-238 C:209-246
 	local arena<const> = management + layout.arena_offset -- T:227 A:25 C:234 B:20
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- T:215-217 C:223-224
 	local previous_values<const> = values ~= 0 and thread.stack_capacity * value_bytes or 0 -- T:215 C:223
@@ -183,7 +192,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 					return out_of_memory + 1, 0, 0 -- L:1111 N:1214 E:43
 				end
 				if not projected then -- X:3997-4007 S:169-178
-					root_inputs.publish(management) -- T:95,202,224 C:106,211,231 X:3997-4007 S:169-178
+					publish_frame_roots(management, interrupted) -- T:95,202,224 C:106,211,231 X:3997-4007 S:169-178
 					projected = true -- X:3997-4007 S:169-178
 				end
 				local work<const> = collector.finish_epoch(management, collector.step_words, address, 0, root) -- L:1123 N:1226; explicit Closure and growing Thread address
@@ -192,7 +201,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 		elseif debt > 0 and source_cycles >= admission.internal.work_word_cycles then -- T:77-79 C:87-90 X:5201-5207 Y:2809-2815
 			local pressure<const> = admission.logical_assist_pressure(arena, charged) -- T:78 C:88
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- T:79 C:89-90 X:5203-5206 Y:2811-2814
-			root_inputs.publish(management) -- X:3997-4007 S:169-178 T:79 C:90
+			publish_frame_roots(management, interrupted) -- X:3997-4007 S:169-178 T:79 C:90
 			projected = true -- X:3997-4007 S:169-178
 			local work<const> = collector.step(management, words, address, 0, root) -- T:79 C:90 X:5207 Y:2815
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- X:5208 Y:2816
@@ -202,7 +211,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 	local words<const> = admission.reservation_assist_allowance(arena, requested, source_cycles) -- T:101-106,203,226 C:112-116,212,233 L:934-953 N:985-1003
 	if words >= 0 then -- L:952-953 N:1001-1002; zero is a present source allowance
 		if not projected then -- X:3997-4007 S:169-178
-			root_inputs.publish(management) -- X:3997-4007 S:169-178
+			publish_frame_roots(management, interrupted) -- X:3997-4007 S:169-178
 			projected = true -- X:3997-4007 S:169-178
 		end
 		collector.step(management, words, address, 0, root) -- T:105,203,226 C:116,212,233 X:5207 Y:2815
@@ -215,7 +224,7 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 		recovery = admission.begin_allocation_recovery(arena, recovery) -- T:207,238 C:215,246 L:1110-1117 N:1213-1220
 		if recovery < 0 then break end -- L:1111 N:1214
 		if not projected then -- X:3997-4007 S:169-178
-			root_inputs.publish(management) -- T:207,238 C:215,246 X:3997-4007 S:169-178
+			publish_frame_roots(management, interrupted) -- T:207,238 C:215,246 X:3997-4007 S:169-178
 			projected = true -- X:3997-4007 S:169-178
 		end
 		collector.finish_epoch(management, collector.step_words, address, 0, root) -- L:1123 N:1226; retry starts at the original physical reservation
@@ -226,7 +235,7 @@ end
 
 -- The CPU supplies architectural extents (including its exception spare).
 -- Rounding the two reservations is part of backing policy, not CALL decode.
-local prepare_frame_space<const> = function(management, address, value_end, frame_end, root, source_cycles) -- X:517-521 V:159-166 W:181-189
+local prepare_frame_space<const> = function(management, address, value_end, frame_end, root, source_cycles, interrupted) -- X:517-521 V:159-166 W:181-189
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- V:161-164 W:183-188 H:21-22
 	local frames = 0 -- X:4169-4176 Y:3207-3217; no change to frame backing for a Value-only request
 	if frame_end ~= 0 then -- X:4169-4176 Y:3207-3217; a receiving window only reserves Values
@@ -240,7 +249,7 @@ local prepare_frame_space<const> = function(management, address, value_end, fram
 		values = value_end <= 8 and 8 or 1 << (allocator.internal.highest_bit(value_end - 1) + 1) -- X:519 W:187 H:16
 	end
 	if values == 0 and frames == 0 then return 0 end -- V:159 W:181; no reservation required
-	return (grow_thread_frame_storage(management, address, values, frames, root, source_cycles)) -- V:166 W:189
+	return (grow_thread_frame_storage(management, address, values, frames, root, source_cycles, interrupted)) -- V:166 W:189
 end
 
 local reserve_frame_space<const> = function(address, value_end, frame_end, root) -- X:517-521 V:159-166 W:181-189
@@ -263,6 +272,7 @@ return {
 	internal = {
 		update_charge = update_charge, resize_value_stack = resize_value_stack,
 		grow_frame_controls = grow_frame_controls, value_planes = value_planes, active_call_frame = active_call_frame,
+		publish_frame_roots = publish_frame_roots,
 	},
 	reserve_frame_storage = reserve_frame_storage, grow_thread_frame_storage = grow_thread_frame_storage,
 	prepare_frame_space = prepare_frame_space, reserve_frame_space = reserve_frame_space,

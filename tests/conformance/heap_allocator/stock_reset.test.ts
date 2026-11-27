@@ -17,14 +17,14 @@ import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTag,
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { COP0_EXEC, COP0_RAM_END, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EXEC, COP0_RAM_END, CPU_CAUSE_CODE_TRAP, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
 import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, GlobalBankField, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET, executionDomainBit, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
-import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -198,6 +198,50 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(report), 43);
 	trace.observe(`M ${report}`, '43 0');
 	trace.replay('stock string.char with fixed, open and protected argument windows', rom);
+}
+
+function verifyExceptionBridge(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
+	const system = readFileSync(rom);
+	const cart = writeTestBlua32Rom(compileCartridge(system,
+		`error('detached trap: ' .. (mem[${IO_IRQ_MASK}] & 0xff))`, 'detached-trap.lua', optLevel));
+	const cartPath = join(dir, 'detached-trap.rom');
+	writeFileSync(cartPath, cart);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
+	runtime.boot();
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine;
+	const fixedTrap = () => cpu.activeThread.address === CPU_RESET_BANK_ADDRESS && cpu.readCauseWord() === CPU_CAUSE_CODE_TRAP;
+	cpu.setExecutionHook(fixedTrap, executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
+	for (let grant = 0; grant < 2048 && !fixedTrap(); ++grant) {
+		if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
+		runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
+	}
+	cpu.setExecutionHook(null, 0, 0);
+	assert.ok(fixedTrap(), 'unhandled Lua error entered the fixed System vector');
+	const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.String);
+	const thrown = memory.readRamRecordWord(owner + ThreadField.ErrorWord);
+	assert.match(cpu.stringPool.toString(thrown), /^detached trap: \d+$/);
+	const checkpoint = join(dir, 'detached-trap.state');
+	writeFileSync(checkpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+	const trace = new Trace(native, join(dir, 'detached-trap.trace'), cartPath);
+	trace.observe('X');
+	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) {
+		const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
+		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+	}
+	assert.equal(cpu.activeThread.address, owner);
+	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
+	assert.equal(memory.readRamRecordByte(owner + ThreadField.ErrorKind), ValueTag.Nil);
+	const frame = cpu.activeThread.currentFrame!;
+	assert.equal(frame.isExceptionFrame, true);
+	assert.equal(frame.registers.get(0), valueString(thrown));
+	const block = memory.readRamRecordWord(owner + ThreadField.StackBlock) - RAM_BASE;
+	const capacity = memory.readRamRecordWord(owner + ThreadField.StackCapacity);
+	for (const [offset, bytes] of [[block + 4 * frame.stackBase, 4], [block + 4 * capacity + frame.stackBase, 1],
+		[owner - RAM_BASE + ThreadField.ErrorWord, 8]])
+		trace.observe(`H ${offset} ${offset + bytes}`, hashBytes(memory.ramData(), offset, bytes));
+	trace.replay('resume the fixed firmware bridge with the original tagged trap argument', rom, checkpoint);
 }
 
 function verifyWarmReset(rom: string, native: string, dir: string, optLevel: OptimizationLevel): void {
@@ -917,6 +961,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],
 				['string.char handles fixed, open and protected argument windows', () => verifyStringChar(rom, native, output, optLevel)],
+				['fixed exception bridge preserves the original tagged Lua error', () => verifyExceptionBridge(rom, native, output, optLevel)],
 				['warm reset retires a live capture; native rewind and reissued reset', () => verifyWarmReset(rom, native, output, optLevel)],
 				['RESET waits for the active Array tag-plane move and publication', () => verifyResetDuringTableGrowth(rom, native, output, optLevel)],
 				['warm floor retries after collecting an unreachable blocker', () => verifyWarmFloor(rom, native, output, optLevel, false)],

@@ -163,8 +163,8 @@ export class Thread {
 		this.rebindFrames();
 	}
 
-	public frameSpaceFits(valueEnd: number): boolean {
-		return valueEnd <= this.stackRegisters.capacity() && this.frameDepth + 2 <= this.boundFrameCapacity;
+	public frameSpaceFits(valueEnd: number, controls = 2): boolean {
+		return valueEnd <= this.stackRegisters.capacity() && this.frameDepth + controls <= this.boundFrameCapacity;
 	}
 
 	public reserveFrame(values: number, root = valueNil(), exception = false): void {

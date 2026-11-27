@@ -903,6 +903,7 @@ type BuildRomBlua32TailOptions = {
 		exceptionModule?: string;
 		preparedEntry?: Blua32PreparedEntry;
 		userIrqEntry?: Blua32StaticExport;
+		exceptionBridge?: Blua32StaticExport;
 		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
@@ -971,6 +972,7 @@ export function buildRomBlua32Tail(
 			exceptionModule: options.exceptionModule,
 			preparedEntry: options.preparedEntry,
 			userIrqEntry: options.userIrqEntry,
+			exceptionBridge: options.exceptionBridge,
 			biosExports: options.biosExports,
 		});
 		const linked = built.linked;

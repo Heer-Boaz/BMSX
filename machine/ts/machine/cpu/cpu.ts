@@ -1954,6 +1954,8 @@ export class CPU implements MappedPageInvalidator {
 			page.refreshState.fill(DECODED_REFRESH_DECODE);
 		}
 		memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + ThreadField.FrameDepth, 0);
+		this.activeThread.stackTop = 0;
+		this.bindFixedIrqBank();
 		this.rootThread.bindAddress(address);
 		this.bindPhysicalFrames(this.rootThread);
 		this.completionThread = address;
@@ -1978,10 +1980,7 @@ export class CPU implements MappedPageInvalidator {
 				? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, address);
 			return;
 		}
-		if (field === COP0_IRQ_VECTOR) {
-			if (this.irqThread.address !== CPU_RESET_BANK_ADDRESS) this.bindFixedIrqBank();
-			this.memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
-		}
+		if (field === COP0_IRQ_VECTOR) this.memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
 		else this.cop0Words[COP0_SYSTEM_VECTOR] = address;
 	}
 
@@ -2003,16 +2002,21 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		// Only the outer fixed exception can transfer into the retained frame bank.
-		const leavesFixedBank = this.resetBankSelected() && this.functionRecordLatch.executionDomainId >= 0;
-		if (leavesFixedBank && (!this.fixedInterruptActive() || frame.previous !== null)) {
+		const resumesContext = this.fixedInterruptActive() && frame.previous === null;
+		if (this.resetBankSelected() && this.functionRecordLatch.executionDomainId >= 0 && !resumesContext) {
 			this.hardHalt();
 			return;
 		}
 		const nmi = frame.isNonMaskableExceptionFrame;
+		const carriesValue = resumesContext && this.cop0Words[COP0_CAUSE] === CPU_CAUSE_CODE_TRAP;
 		this.charge(this.closeUpvalues(frame));
 		this.activeThread.leaveFrame();
-		if (leavesFixedBank) this.resumeInterruptedContext();
-		this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);
+		if (resumesContext) this.resumeInterruptedContext();
+		const next = this.enterLatchedExceptionFrame(nmi, this.cop0Words[COP0_EPC]);
+		if (next !== null && carriesValue) {
+			next.registers.set(0, this.activeThread.error);
+			this.activeThread.error = valueNil();
+		}
 	}
 
 	private resumeInterruptedContext(): void {
@@ -2237,24 +2241,24 @@ export class CPU implements MappedPageInvalidator {
 		const enabledFlags = (this.cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) !== 0
 			? this.irqController.enabledPendingFlags() : 0;
 		if (enabledFlags !== 0) {
-			// The reset execution bank cannot also hold a detached IRQ activation.
-			const irqVector = this.isUserMode() && !this.resetBankSelected() ? this.memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0;
-			if (irqVector !== 0) {
-				const interrupted = this.activeThread.address, epc = this.activeThread.currentFrame!.pc;
-				const accepted = enabledFlags | (this.isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0);
-				if (this.haltedUntilIrqFrameDepth < 0) this.interruptEventPending = true;
-				this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
-				this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, interrupted, accepted);
-				this.activeThread = this.irqThread;
-				this.placeExceptionVector(this.systemImage, irqVector, false, epc);
+			const user = this.isUserMode(), canDetach = !this.resetBankSelected();
+			const irqVector = user && canDetach ? this.memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0;
+			const domain = user && irqVector === 0 ? this.programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
+			const image = this.executionImageForDomain(domain)!;
+			const vector = irqVector !== 0 ? irqVector : image.irqFunctionAddress;
+			const epc = this.activeThread.currentFrame!.pc;
+			const accepted = enabledFlags | (this.isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0);
+			if (this.haltedUntilIrqFrameDepth < 0) this.interruptEventPending = true;
+			this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+			if (!this.readFunctionRecordOnBus(image, vector, CPU.executionBusSignalsForDomain(domain))) {
+				this.hardHalt();
 				return true;
 			}
-			const domain = this.isUserMode() ? this.programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
-			const image = this.executionImageForDomain(domain)!;
-			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
-			const epc = this.activeThread.currentFrame!.pc;
-			this.enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
-			if (!hadHaltLatch) this.interruptEventPending = true;
+			if (canDetach && (irqVector !== 0 || (!user && (this.functionRecordLatch.flags & BLUA32_FUNCTION_CODE) !== 0))) {
+				this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, this.activeThread.address, accepted);
+				this.activeThread = this.irqThread;
+			}
+			this.enterLatchedExceptionFrame(false, epc);
 			return true;
 		}
 		return false;
@@ -2278,8 +2282,12 @@ export class CPU implements MappedPageInvalidator {
 
 	private enterLuaFaultException(reason: number, error: Value): void {
 		this.cop0Words[COP0_LUA_FAULT_REASON] = reason;
-		const frame = this.enterSynchronousException(this.activeThread.currentFrame!, CPU_CAUSE_CODE_TRAP);
-		if (frame !== null) frame.registers.set(0, error);
+		const interrupted = this.activeThread;
+		const frame = this.enterSynchronousException(interrupted.currentFrame!, CPU_CAUSE_CODE_TRAP);
+		if (frame !== null) {
+			if (this.fixedInterruptActive()) interrupted.error = error;
+			else frame.registers.set(0, error);
+		}
 	}
 
 	private returnFromException(frame: CallFrame): void {
@@ -2326,6 +2334,16 @@ export class CPU implements MappedPageInvalidator {
 		epcWord: number,
 	): CallFrame | null {
 		this.latchExceptionEntry(causeWord, epcWord);
+		if (this.fixedInterruptActive()) {
+			// A second synchronous fault cannot enter another detached context.
+			this.hardHalt();
+			return null;
+		}
+		if (vectorImage === this.systemImage && !this.resetBankSelected()) {
+			this.memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, this.activeThread.address, 0);
+			this.activeThread = this.irqThread;
+			this.threadSwitchRequested = this.yieldRequested = true;
+		}
 		return this.placeExceptionVector(vectorImage, functionAddress, causeWord === CPU_CAUSE_NMI, epcWord);
 	}
 
@@ -2373,13 +2391,15 @@ export class CPU implements MappedPageInvalidator {
 		if (boardBank) {
 			const frames = exception ? thread.frameDepth + 1 : thread.frameDepth + 2;
 			if (end > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		} else if (exception) this.ensureStackCapacity(end, valueNil(), true, true);
+		} else if (exception && !thread.frameSpaceFits(end, 1)) {
+			throw LUA_OUT_OF_MEMORY_SIGNAL;
+		}
 		const frame = thread.acquireFrame();
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(functionAddress, codeAddress, epcWord ?? codeAddress, false, executionDomainId,
 			base + numParams, 0, 0, 0, numParams, 0, base, capacity);
-		frame.registers.clear(numParams);
+		frame.registers.clear(exception ? Math.max(1, numParams) : numParams);
 		if (epcWord !== undefined) frame.enterException(nmi);
 		thread.stackTop = end;
 		thread.enterFrame(frame);
@@ -5167,7 +5187,7 @@ export class CPU implements MappedPageInvalidator {
 		this.bindPhysicalFrames(this.rootThread);
 		this.activeThread = this.rootThread;
 		this.activeThread = this.bindThread(state.activeThreadAddress);
-		if (this.memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) !== 0) {
+		if (!boardBank) {
 			this.bindFixedIrqBank();
 			if (this.fixedInterruptActive()) this.bindPhysicalFrames(this.irqThread);
 		} else {

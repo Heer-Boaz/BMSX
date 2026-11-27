@@ -25,6 +25,7 @@ local vblank<const> = require('kernel/vblank')
 local vblank_irq<const> = require('kernel/vblank_irq')
 local heap_floor<const> = require('kernel/heap_floor')
 local image_bind<const> = require('kernel/system_image_bind')
+local exception_bridge<const> = require('kernel/exception_bridge')
 local vectors<const> = require('bmsx/startup')
 
 local irq_mask<const>: *word = 0x08000008
@@ -46,6 +47,7 @@ local cart1_rom_bytes<const>: *u32 = 0x080101fc
 local cart_rom_base<const> = 0x10000000
 local cart_rom<const>: *word = cart_rom_base
 local cart_irq_target<const>: *word = vblank_irq.cartridge_target
+local cart_irq_frame_width<const>: *word = vblank_irq.cartridge_frame_width
 local image_header_size<const> = 92
 local sys_control<const>: *u32 = 0x0801034c
 local inhibit_reset<const> = 0x100
@@ -151,7 +153,9 @@ local update_boot_screen<const> = function()
 			*sys_control = 8
 			while true do halt_until_irq end
 		end
-		*cart_irq_target = cart_rom[cart_blua32_irq_index] | (slot << 31)
+		local irq_address<const> = cart_rom[cart_blua32_irq_index]
+		*cart_irq_frame_width = exception_bridge.frame_width(irq_address)
+		*cart_irq_target = irq_address | (slot << 31)
 		cop0.status = cop0.status & ~inhibit_reset
 		cop0.exec = startup
 		return
@@ -178,7 +182,7 @@ local init<const> = function()
 end
 
 init()
-cop0.system_vector = vectors.managed_exception
+cop0.system_vector = vectors.exception_bridge
 cop0.irq_vector = vectors.user_irq
 *irq_mask = irq_dma_done | irq_vblank
 *input_control = input_arm

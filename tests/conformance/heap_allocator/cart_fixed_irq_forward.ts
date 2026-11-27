@@ -257,9 +257,11 @@ try {
 			observe('I', 1);
 			assert.equal(cpu.readEpcWord(), cartIrqPc);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_NMI);
-			assert.equal(cpu.getFrameDepth(), depth + 2);
+			assert.equal(cpu.activeThread.address, CPU_RESET_BANK_ADDRESS);
+			assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), ordinaryContext);
+			assert.equal(cpu.getFrameDepth(), 1);
 			observe('Z', `${CPU_CAUSE_NMI} 0 ${cartIrqPc}`);
-			for (let step = 0; step < 64 && cpu.getFrameDepth() > depth + 1; ++step)
+			for (let step = 0; step < 64 && cpu.activeThread.address === CPU_RESET_BANK_ADDRESS; ++step)
 				assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(cpu.readEpcWord(), epc);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_IRQ);

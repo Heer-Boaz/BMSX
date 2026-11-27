@@ -987,6 +987,8 @@ void CPU::activateRootContext(u32 address) {
 		for (auto& decoded : page.words) decoded.width = 0u;
 	}
 	m_memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(F::FrameDepth), 0u);
+	m_activeThread->setStackTop(0);
+	bindFixedIrqBank();
 	m_rootView.select(address);
 	bindPhysicalFrames(m_rootView);
 	m_completionThreadAddress = address;
@@ -1010,10 +1012,7 @@ void CPU::installSystemVector(CallFrame& frame, u32 address, int field) {
 			? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, address);
 		return;
 	}
-	if (field == COP0_IRQ_VECTOR) {
-		if (m_irqView.address != CPU_RESET_BANK_ADDRESS) bindFixedIrqBank();
-		m_memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
-	}
+	if (field == COP0_IRQ_VECTOR) m_memory.writeRamRecordWord(CPU_IRQ_VECTOR_ADDRESS, address);
 	else m_cop0Words[COP0_SYSTEM_VECTOR] = address;
 }
 
@@ -1035,16 +1034,20 @@ void CPU::transferExceptionVector(CallFrame& frame, u32 target) {
 		return;
 	}
 	// Only the outer fixed exception can transfer into the retained frame bank.
-	const bool leavesFixedBank = resetBankSelected() && m_functionRecordLatch.image->executionDomainId >= 0;
-	if (leavesFixedBank && (!fixedInterruptActive() || frame.previous)) {
+	const bool resumesContext = fixedInterruptActive() && !frame.previous;
+	if (resetBankSelected() && m_functionRecordLatch.image->executionDomainId >= 0 && !resumesContext) {
 		hardHalt();
 		return;
 	}
 	const bool nmi = frame.hasControlFlag(FRAME_NMI);
+	const bool carriesValue = resumesContext && m_cop0Words[COP0_CAUSE] == CPU_CAUSE_CODE_TRAP;
 	instructionBudgetRemaining -= closeUpvalues(frame);
 	m_activeThread->leaveFrame();
-	if (leavesFixedBank) resumeInterruptedContext();
-	enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]);
+	if (resumesContext) resumeInterruptedContext();
+	if (auto* next = enterLatchedExceptionFrame(nmi, m_cop0Words[COP0_EPC]); next && carriesValue) {
+		next->registers.set(0, m_activeThread->error());
+		m_activeThread->setError(valueNil());
+	}
 }
 
 void CPU::resumeInterruptedContext() {
@@ -1224,7 +1227,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	bindPhysicalFrames(m_rootView);
 	bindPhysicalFrames(m_heapServiceView);
 	m_activeThread = &bindThread(state.activeThreadAddress);
-	if (m_memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) != 0u) {
+	if (!boardBank) {
 		bindFixedIrqBank();
 		if (fixedInterruptActive()) bindPhysicalFrames(m_irqView);
 	} else m_irqView.select(0u);
@@ -1787,25 +1790,25 @@ bool CPU::enterPendingInterrupt() {
 	const u32 enabledFlags = (m_cop0Words[COP0_STATUS] & CPU_STATUS_INTERRUPT_ENABLE_CURRENT) != 0u
 		? m_irqController.enabledPendingFlags() : 0u;
 	if (enabledFlags != 0u) {
-		// The reset execution bank cannot also hold a detached IRQ activation.
-		const u32 irqVector = isUserMode() && !resetBankSelected() ? m_memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0u;
-		if (irqVector != 0u) {
-			const u32 interrupted = m_activeThread->address;
-			const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
-			const u32 accepted = enabledFlags | (isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0u);
-			if (m_haltedUntilIrqFrameDepth < 0) m_interruptEventPending = true;
-			latchExceptionEntry(CPU_CAUSE_IRQ, epc);
-			m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, interrupted, accepted);
-			m_activeThread = &m_irqView;
-			placeExceptionVector(*m_systemImage, irqVector, false, epc);
+		const bool user = isUserMode();
+		const bool canDetach = !resetBankSelected();
+		const u32 irqVector = user && canDetach ? m_memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS) : 0u;
+		const auto domain = user && irqVector == 0u ? m_programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
+		auto& image = *executionImageForDomain(domain);
+		const u32 vector = irqVector != 0u ? irqVector : image.irqFunctionAddress;
+		const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
+		const u32 accepted = enabledFlags | (isHaltedUntilIrq() ? CPU_INTERRUPT_STATE_HALT : 0u);
+		if (m_haltedUntilIrqFrameDepth < 0) m_interruptEventPending = true;
+		latchExceptionEntry(CPU_CAUSE_IRQ, epc);
+		if (!readFunctionRecordOnBus(image, vector, executionBusSignalsForDomain(domain))) {
+			hardHalt();
 			return true;
 		}
-		const auto domain = isUserMode() ? m_programExecutionDomainId : SYSTEM_EXECUTION_DOMAIN_ID;
-		auto& image = *executionImageForDomain(domain);
-		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
-		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
-		if (!hadHaltLatch) m_interruptEventPending = true;
+		if (canDetach && (irqVector != 0u || (!user && (m_functionRecordLatch.flags & BLUA32_FUNCTION_CODE) != 0u))) {
+			m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, m_activeThread->address, accepted);
+			m_activeThread = &m_irqView;
+		}
+		enterLatchedExceptionFrame(false, epc);
 		return true;
 	}
 	return false;
@@ -1829,8 +1832,11 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
-	if (auto* frame = enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP))
-		frame->registers.set(0, errorValue);
+	auto& interrupted = *m_activeThread;
+	if (auto* frame = enterSynchronousException(*interrupted.currentFrame, CPU_CAUSE_CODE_TRAP)) {
+		if (fixedInterruptActive()) interrupted.setError(errorValue);
+		else frame->registers.set(0, errorValue);
+	}
 }
 
 void CPU::retireNumericLuaFault(u32 reason) {
@@ -1888,6 +1894,16 @@ CallFrame* CPU::enterException(
 	u32 epcWord
 ) {
 	latchExceptionEntry(causeWord, epcWord);
+	if (fixedInterruptActive()) {
+		// A second synchronous fault cannot enter another detached context.
+		hardHalt();
+		return nullptr;
+	}
+	if (&vectorImage == m_systemImage && !resetBankSelected()) {
+		m_memory.writeRamRecordPair(CPU_INTERRUPTED_CONTEXT_ADDRESS, m_activeThread->address, 0u);
+		m_activeThread = &m_irqView;
+		m_runSignals |= RunThreadSwitch | RunYield;
+	}
 	return placeExceptionVector(vectorImage, functionAddress, causeWord == CPU_CAUSE_NMI, epcWord);
 }
 
@@ -1937,14 +1953,14 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
 	if (boardBank) {
 		const auto frames = m_activeThread->frameDepth() + (exception ? 1u : 2u);
 		if (placement.stackEnd() > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LuaOutOfMemorySignal{};
-	} else if (exception) m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), true);
+	} else if (exception && !m_activeThread->frameSpaceFits(placement.stackEnd(), 1u)) throw LuaOutOfMemorySignal{};
 	auto* frame = m_activeThread->acquireFrame();
 	frame->executionImage = image;
 	frame->initializeControl({
 		address, entry.codeAddress, epcWord.value_or(entry.codeAddress), frameBankWord(domain) | flags,
 		placement.varargBase, 0, {}, placement.top(), 0u, placement.stackBase, static_cast<int>(placement.capacity),
 	});
-	frame->registers.clear(0, placement.top());
+	frame->registers.clear(0, exception ? std::max(1, placement.top()) : placement.top());
 	m_activeThread->setStackTop(static_cast<int>(placement.stackEnd()));
 	m_activeThread->enterFrame(frame);
 	latchActiveExecutionImage(domain, image);

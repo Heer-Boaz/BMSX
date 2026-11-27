@@ -21,28 +21,28 @@ import { cartridgeSlots } from '../../helpers/cartridge';
 import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const source = `
+const source = (user: boolean) => `
 bss report: word
 local body<const> = function(seed)
 	local retained<const> = seed + 8
 	*report = 1
-	cop0.status = cop0.status | ${CPU_STATUS_USER_MODE_CURRENT}
+	${user ? `cop0.status = cop0.status | ${CPU_STATUS_USER_MODE_CURRENT}` : ''}
 	halt_until_irq
 	*report = retained
 	return retained
 end
-cop0.irq_vector = mem[${BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET}]
+${user ? `cop0.irq_vector = mem[${BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET}]` : ''}
 local creation<const> = require('kernel/thread_create')
 local co<const> = creation.create_coroutine(body)
 local ok<const>, value<const> = __bmsx_coroutine_resume(co, 33)
 if not ok then return -1 end
 return value
 `;
-const irqSource = `
+const irqSource = (user: boolean) => `
 bss selected_context: word
 local interrupted<const>: *word = ${CPU_INTERRUPTED_CONTEXT_ADDRESS}
 *selected_context = *interrupted
-cop0.irq_vector = cop0.system_vector
+${user ? 'cop0.irq_vector = cop0.system_vector' : ''}
 ` + readFileSync('machine/bios/kernel/irq.lua', 'utf8');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
@@ -50,8 +50,9 @@ mkdirSync('tmp', { recursive: true });
 const dir = mkdtempSync(join('tmp', 'managed-fixed-irq-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
-	for (const optLevel of [0, 3] as const) {
-		const linked = linkManagedTestSystem(source, optLevel, [], [], 'main', { irqSource });
+	for (const optLevel of [0, 3] as const) for (const user of [false, true]) {
+		const mode = user ? 'User' : 'Supervisor';
+		const linked = linkManagedTestSystem(source(user), optLevel, [], [], 'main', { irqSource: irqSource(user) });
 		const rom = writeTestBlua32Rom(linked);
 		const vector = readLE32(rom, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET);
 		const replacement = readLE32(rom, BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET);
@@ -70,7 +71,7 @@ try {
 			root: cpu.rootThread.address, active: cpu.activeThread.address, irq: memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), report,
 			stack: cpu.activeThread.frameDepth,
 		}));
-		assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), vector);
+		assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), user ? vector : 0);
 		const retained = cpu.activeThread.address, root = cpu.rootThread.address;
 		assert.notEqual(retained, root);
 		assert.notEqual(retained, CPU_RESET_BANK_ADDRESS);
@@ -85,8 +86,8 @@ try {
 		assert.equal(arena.allocate(24, true), 0, 'a real arena reservation is refused');
 
 		const seed = captureRuntimeSaveState(runtime);
-		const romPath = join(dir, `O${optLevel}.rom`), seedPath = join(dir, `O${optLevel}.state`);
-		const nativeState = join(dir, `O${optLevel}.native`), script = join(dir, `O${optLevel}.trace`);
+		const romPath = join(dir, `${mode}-O${optLevel}.rom`), seedPath = join(dir, `${mode}-O${optLevel}.state`);
+		const nativeState = join(dir, `${mode}-O${optLevel}.native`), script = join(dir, `${mode}-O${optLevel}.trace`);
 		writeFileSync(romPath, rom);
 		writeFileSync(seedPath, encodeRuntimeSaveState(seed));
 		const commands = ['X'], want: string[] = [];
@@ -140,7 +141,7 @@ try {
 			assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(memory.readRamRecordWord(dma), oldDma + 1);
 		assert.equal(memory.readRamRecordWord(selectedContext), retained);
-		assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), replacement, 'a write to IRQ_VECTOR during the handler does not discard its live context');
+		assert.equal(memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS), user ? replacement : 0, 'the active bank does not depend on the programmed User IRQ vector');
 		assert.equal(memory.readRamRecordWord(vblank), oldVblank);
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS), pending, 'checkpoint remains before the ACK');
 		assert.equal(CPU_INTERRUPTED_CONTEXT_ADDRESS >= memory.ramBusEnd(), true, 'the load used protected RAM, not the ordinary aperture');
@@ -204,7 +205,7 @@ try {
 		assert.equal(cpu.activeThread.address, retained);
 		assert.equal(cpu.readFramePc(depth - 1), epc);
 		assert.equal(memory.readRamRecordWord(report), 1, 'suspended stepping stops at RFE');
-		console.log(`MANAGED-FIXED-IRQ:PASS O${optLevel} full arena, original coroutine/stack retained, protected RAM & mapped ACK, grants, suspended RFE, portable restore`);
+		console.log(`MANAGED-FIXED-IRQ:PASS ${mode} O${optLevel} full arena, original coroutine/stack retained, protected RAM & mapped ACK, grants, suspended RFE, portable restore`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

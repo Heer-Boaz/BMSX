@@ -42,11 +42,12 @@ export type GeneratedLuaModule = {
 	linkValues?: ReadonlyMap<string, number>;
 };
 
-function systemStartupLayoutModule(prepared: boolean, userIrq: boolean): GeneratedLuaModule {
+function systemStartupLayoutModule(prepared: boolean, userIrq: boolean, exceptionBridge: boolean): GeneratedLuaModule {
 	const entries = ['managed_entry'];
 	if (prepared) entries.push('prepared_entry', 'managed_entry_slots');
 	entries.push('managed_exception');
 	if (userIrq) entries.push('user_irq');
+	if (exceptionBridge) entries.push('exception_bridge');
 	return {
 		path: SYSTEM_STARTUP_MODULE_PATH,
 		source: 'module<const>\nreturn { ' + entries.map(entry => entry + ' = 0').join(', ') + ' }',
@@ -91,6 +92,7 @@ type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	exceptionModule?: string;
 	preparedEntry?: Blua32PreparedEntry;
 	userIrqEntry?: Blua32StaticExport;
+	exceptionBridge?: Blua32StaticExport;
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 };
 
@@ -196,7 +198,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	const authoredReset = options.domain === 'system' && options.resetModule !== undefined;
 	const generatedModules = authoredReset
-		? [...options.generatedLuaModules, systemStartupLayoutModule(options.preparedEntry !== undefined, options.userIrqEntry !== undefined)]
+		? [...options.generatedLuaModules, systemStartupLayoutModule(options.preparedEntry !== undefined, options.userIrqEntry !== undefined, options.exceptionBridge !== undefined)]
 		: options.generatedLuaModules;
 	for (const generated of generatedModules) {
 		if (modulePaths.has(generated.path)) {
@@ -225,6 +227,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
 		if (options.preparedEntry !== undefined) moduleRoots.push(options.preparedEntry.path);
 		if (options.userIrqEntry !== undefined) moduleRoots.push(options.userIrqEntry.path);
+		if (options.exceptionBridge !== undefined) moduleRoots.push(options.exceptionBridge.path);
 		if (options.irqModule !== undefined) moduleRoots.push(options.irqModule);
 		if (options.exceptionModule !== undefined) moduleRoots.push(options.exceptionModule);
 		for (const exported of options.biosExports) moduleRoots.push(exported.path);
@@ -319,9 +322,12 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		const userIrq = options.userIrqEntry === undefined ? undefined
 			: resolveStaticEntry(options.userIrqEntry, 'User IRQ entry');
 		if (userIrq !== undefined) values.set('user_irq', linked.layout.functions[userIrq].address);
+		const exception = linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex);
+		const bridge = options.exceptionBridge === undefined ? undefined : resolveStaticEntry(options.exceptionBridge, 'Exception bridge');
+		if (bridge !== undefined) values.set('exception_bridge', linked.layout.functions[bridge].address);
 		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
 		linkBlua32ResetCode(linked.layout, linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
-			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex), userIrq);
+			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), exception, [userIrq, bridge]);
 	}
 	return {
 		linked,

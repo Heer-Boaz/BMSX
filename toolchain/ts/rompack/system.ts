@@ -22,6 +22,10 @@ export const BIOS_USER_IRQ_ENTRY: Blua32StaticExport = {
 	path: 'kernel/vblank_irq', exportPathKey: 'user_irq',
 };
 
+export const BIOS_EXCEPTION_BRIDGE: Blua32StaticExport = {
+	path: 'kernel/exception_bridge', exportPathKey: 'enter',
+};
+
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_BLUA32_IMAGE_LIMIT) {
 		throw new Error(
