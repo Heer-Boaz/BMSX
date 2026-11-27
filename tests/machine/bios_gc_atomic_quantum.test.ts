@@ -73,7 +73,7 @@ function fixture(optLevel: 0 | 3) {
 	const [weak, array, firstDead, secondDead, retained] = records[0];
 	function begin(limit: number) {
 		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
-		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0]));
+		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0, 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);

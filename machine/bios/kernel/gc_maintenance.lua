@@ -18,9 +18,9 @@ local vblank_maintenance<const> = function(management, waiting, rebuilding) -- C
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- C:1274-1277,1300
 	local borrows_roots<const> = gc.internal.phase(control) < atomic_phase -- C:937,1093-1158
 	if borrows_roots then *effects = layout.publish_roots end -- C:1124,1261-1277,1300-1313
-	local work = collector.step(management, limit, 0, 0) -- C:952-953
+	local work = collector.step(management, limit, 0, 0, 0) -- C:952-953
 	while gc.internal.phase(control) == atomic_phase do -- C:689,701 E:155,201
-		work = work + collector.step(management, collector.step_words, 0, 0) -- C:697-701; final mark still uses its original policy quanta
+		work = work + collector.step(management, collector.step_words, 0, 0, 0) -- C:697-701; final mark still uses its original policy quanta
 	end
 	if borrows_roots then *effects = layout.release_string_work end -- C:1273,1313-1315; return unconsumed work to the latch
 	return work -- C:702,1045; not a cycle charge

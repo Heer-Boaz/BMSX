@@ -5,7 +5,6 @@ module<const>
 local layout<const> = require('kernel/gc_runtime_layout') -- G:1270,1276
 local gc<const> = require('kernel/gc_control') -- C:288-289 T:285-286
 local collector<const> = require('kernel/gc_step') -- G:1005-1008
-local atomic<const> = require('kernel/gc_atomic_quantum') -- G:697-703
 local admission<const> = require('kernel/heap_admission') -- C:288-289 T:285-286
 local atomic_phase<const> = 3 -- H:20
 local false_tag<const>, true_tag<const> = 1, 2 -- C:289 T:286; BIOSCALL encodes the guest Boolean tag
@@ -17,13 +16,9 @@ local collect_step<const> = function(management, _source_cycles, _run_kind) -- C
 	local borrows_roots<const> = phase <= atomic_phase -- G:1122-1124,697-703
 	if borrows_roots then *effects = layout.publish_roots end -- G:1122-1124,1274-1276
 	if phase == atomic_phase then -- G:1007
-		local work = 0 -- G:696
-		repeat -- G:698
-			work = work + atomic.atomic_work(management, collector.step_words) -- G:699-700; no Step argument introduces a host scoped root
-		until gc.internal.phase(control) ~= atomic_phase -- G:701
-		gc.account_epoch_work(control, work) -- G:702; once, after the full entry-Atomic pass
+		collector.finish_atomic(management, 0) -- G:696-702; public Step supplies no scoped roots
 	else -- G:1008; the normal step owns one quantum
-		collector.step(management, collector.step_words, 0, 0) -- C:287 T:284 G:1005-1008; no compact thread work
+		collector.step(management, collector.step_words, 0, 0, 0) -- C:287 T:284 G:1005-1008; no compact thread work
 	end
 	if borrows_roots then *effects = layout.release_string_work end -- G:1284,1312-1314
 	local finished<const> = admission.finish_explicit_step(management + layout.arena_offset) -- C:288-289 T:285-286

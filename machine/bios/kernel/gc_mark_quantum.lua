@@ -2,13 +2,14 @@ module<const>
 
 -- Source basis: 04c10f896545d453bd50fe27ccb619b269966607.
 -- C/H: C++ collector; S: StringPool; O: object layout; R: CPU roots;
--- M: RAM. This is the nil-scoped entry of stepWork. The caller publishes
--- roots, a limit and pending String work once. All transitions run before RET.
+-- M: RAM. The caller publishes the ordinary roots, limit and pending String
+-- work once. Only a resolved Table operation supplies explicit operands.
 local allocator<const> = require('kernel/dlmalloc') -- C:1008,1257
 local control_layout<const> = require('kernel/gc_control') -- H:93,213-229
 local epoch<const> = require('kernel/gc_epoch') -- C:1008,1045,1072-1082,1116-1117,1252-1258
 local trace<const> = require('kernel/gc_trace') -- C:546-555,1154
 local remark<const> = require('kernel/gc_remark') -- C:645-670,1104,1197
+local operands<const> = require('kernel/gc_operand_roots') -- C:677-678,1138-1139
 local banks<const> = require('kernel/gc_root_banks') -- C:619-642,681,1135
 local ram_base<const> = 0x08000000 -- M:6
 local phase_offset<const> = control_layout.internal.phase_offset -- H:93,229
@@ -37,7 +38,7 @@ local remark_stage<const> = function(control) -- H:213-214
 	return *state >> remark_stage_shift -- H:214
 end
 
-local visit_and_remark_roots<const> = function(control, arena, metadata, head, descriptor, quantum, work, limit) -- C:673,1104-1107,1197-1199
+local visit_and_remark_roots<const> = function(control, arena, metadata, head, descriptor, quantum, work, limit, operands_offset) -- C:673,1104-1107,1197-1199
 	local state<const>: *mark_context = ram_base + quantum -- C:1262
 	local pending<const>: *u32 = ram_base + head -- C:666 S:438-440; remark head's first field
 	*pending = state.pending_string_work -- C:666 S:438-440
@@ -45,8 +46,12 @@ local visit_and_remark_roots<const> = function(control, arena, metadata, head, d
 	work = work + visits -- C:1104,1197
 	state.pending_string_work = *pending -- C:666 S:438-440; keep credit if visits stopped
 	if remark_stage(control) ~= root_stage then return work end -- C:1105,1198
-	work = work + state.pending_string_work -- C:677-678
-	state.pending_string_work = 0 -- C:678 S:438-440; no scoped Roots in this entry
+	if operands_offset ~= 0 then -- C:677; only the Table write has explicit operands
+		local added<const> = operands.mark_table_operand_roots(control, arena, metadata, operands_offset) -- C:677
+		work = work + added -- C:678; new String work joins the existing latch drain
+	end
+	work = work + state.pending_string_work -- C:678
+	state.pending_string_work = 0 -- C:678 S:438-440
 	if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, concat_operands, cpp_policy) end -- C:681
 	local root_cursor<const>: *u32 = ram_base + control + root_cursor_offset -- C:682
 	if *root_cursor == 0 then -- C:682
@@ -58,13 +63,13 @@ local visit_and_remark_roots<const> = function(control, arena, metadata, head, d
 	return work -- C:686
 end
 
-local mark_quantum<const> = function(control, arena, metadata, head, descriptor, quantum, mode_key, capacity) -- C:1006-1008,1015,1085-1087
+local mark_quantum<const> = function(control, arena, metadata, head, descriptor, quantum, mode_key, capacity, operands_offset) -- C:1006-1008,1015,1085-1087
 	local occupied<const> = allocator.bmsx_dlmalloc_occupied_bytes(arena) -- C:1008
 	local state<const>: *mark_context = ram_base + quantum -- C:1262
 	local limit<const> = state.limit -- C:1086
 	local work = 0 -- C:1092
 	if remark_stage(control) ~= 0 then -- C:1093
-		work = visit_and_remark_roots(control, arena, metadata, head, descriptor, quantum, work, limit) -- C:1104-1106
+		work = visit_and_remark_roots(control, arena, metadata, head, descriptor, quantum, work, limit, operands_offset) -- C:1104-1106
 		if control_layout.internal.phase(control) == mark then -- C:1105,1107
 			local accounted<const> = epoch.finish_step(control, arena, occupied, work) -- C:1045,1072-1082
 			return accounted -- C:1105,1107
@@ -83,7 +88,11 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 			state.pending_string_work = 0 -- C:1128 S:438-440
 			if work < limit then work = banks.trace_root_banks(control, arena, metadata, descriptor, limit, work, concat_operands, cpp_policy) end -- C:1129,1135
 		end
-		work = work + state.pending_string_work -- C:1138-1139; the three temporary roots are nil
+		if operands_offset ~= 0 then -- C:1138; no guard on the remaining root-bank allowance
+			local added<const> = operands.mark_table_operand_roots(control, arena, metadata, operands_offset) -- C:1138
+			work = work + added -- C:1139; new String work joins the existing latch drain
+		end
+		work = work + state.pending_string_work -- C:1139
 		state.pending_string_work = 0 -- C:1139 S:438-440
 	end
 	while work < limit do -- C:1141,1157
@@ -98,7 +107,7 @@ local mark_quantum<const> = function(control, arena, metadata, head, descriptor,
 		end
 		local remark_state<const>: *u32 = ram_base + control + remark_state_offset -- C:1192 H:217
 		*remark_state = threads << remark_stage_shift -- C:1192 H:157,217
-		work = visit_and_remark_roots(control, arena, metadata, head, descriptor, quantum, work, limit) -- C:1156,1197-1199
+		work = visit_and_remark_roots(control, arena, metadata, head, descriptor, quantum, work, limit, operands_offset) -- C:1156,1197-1199
 		if control_layout.internal.phase(control) ~= mark_again then break end -- C:1157-1158
 	end
 	epoch.finish_step(control, arena, occupied, work) -- C:1045,1072-1082

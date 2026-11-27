@@ -56,7 +56,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 						*effects = layout.publish_roots -- C:154-158 G:1228; first GC call borrows the already paused mutator
 						roots_published = true -- C:154-158 G:1228
 					end
-					local work<const> = collector.finish_epoch(management, collector.step_words, 0, 0) -- C:181-186 G:1228-1229; exactly one current or fresh epoch
+					local work<const> = collector.finish_epoch(management, collector.step_words, 0, 0, 0) -- C:181-186 G:1228-1229; exactly one current or fresh epoch
 					source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973; policy cycles, not machine time
 					admitted = admission.logical_fits(state, charged) ~= 0 -- C:218 T:977 L:107
 				until admitted -- L:105-107 C:218-220
@@ -66,7 +66,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- C:43 T:832 L:89
 			*effects = layout.publish_roots -- C:154-158 G:1228; first GC call in the assist branch
 			roots_published = true -- C:154-158 G:1228
-			local work<const> = collector.step(management, words, 0, 0) -- C:43,154-158 T:873-874
+			local work<const> = collector.step(management, words, 0, 0, 0) -- C:43,154-158 T:873-874
 			source_cycles = admission.spend_assist_allowance(source_cycles, work) -- C:210-214 T:970-973
 			admission.credit_logical_assist(state, charged, debt, pressure, work) -- C:215-217 T:974-976 L:91
 		end
@@ -77,7 +77,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 					*effects = layout.publish_roots -- C:154-158 G:1228
 					roots_published = true -- C:154-158 G:1228
 				end
-				collector.step(management, words, 0, 0) -- C:63,154-159 T:848,873-874
+				collector.step(management, words, 0, 0, 0) -- C:63,154-159 T:848,873-874
 			end
 		end
 	end
@@ -98,7 +98,7 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 			*effects = layout.publish_roots -- C:154-158 G:1228
 			roots_published = true -- C:154-158 G:1228
 		end
-		collector.finish_epoch(management, collector.step_words, 0, 0) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
+		collector.finish_epoch(management, collector.step_words, 0, 0, 0) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
 		admitted = mode == direct or admission.logical_fits(state, charged) ~= 0 -- C:9-14,206-208 A:299-300 T:807 L:152-153,162; direct physical retries never re-admit
 	end
 	if roots_published then *effects = layout.release_string_work end -- C:154-158 G:1228; return only the work left in the borrowed String latch

@@ -18,7 +18,7 @@ local collect_full<const> = function(management) -- C:1230-1243 T:1134-1144
 		local words = *device_cycles_remaining // cycles_per_word -- X:2645-2647 Y:2602-2605; decoded CPU cycles interpreted as a signed Integer
 		if words < 1 then words = 1 end -- X:2645-2647 Y:2602-2605
 		if words > collector.step_words then words = collector.step_words end -- X:2645-2647 Y:2602-2605
-		collector.step(management, words, 0, 1) -- C:1239-1241 T:1139-1141; compact live thread backing only on a full collection
+		collector.step(management, words, 0, 1, 0) -- C:1239-1241 T:1139-1141; compact live thread backing only on a full collection
 		if not control_layout.internal.active(control) then *epochs = *epochs - 1 end -- C:1241 T:1142
 	until *epochs == 0 -- X:2643-2654 Y:2600-2609
 	*effects = layout.release_string_work -- C:1284,1312-1314 T:1183,1210-1211
