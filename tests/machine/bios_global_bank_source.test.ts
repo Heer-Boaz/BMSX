@@ -27,7 +27,7 @@ test('BIOS name-bank publication maps the native probe, copy and insertion effec
 	// Admission/retry belongs to the caller. The reference trajectories enter
 	// this leaf with the same selected backing; there are no guest-view caches.
 	verifyPinnedBluaSource(port, basis, sources, [
-		['H', 10, 12], ['T', 60, 68], ['T', 72, 75], ['T', 79, 82], ['T', 84, 86], ['T', 101, 108],
+		['H', 10, 12], ['H', 27, 31], ['T', 26, 31], ['T', 60, 68], ['T', 72, 75], ['T', 79, 82], ['T', 84, 86], ['T', 101, 108],
 		['G', 191, 195], ['J', 112, 116], ['S', 448, 449], ['S', 453, 454], ['R', 439, 439], ['R', 443, 444],
 		['C', 46, 54], ['C', 56, 56], ['C', 60, 63], ['C', 67, 72], ['C', 75, 78], ['C', 92, 100],
 	]);

@@ -50,10 +50,10 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	for (const cpu of [js, ref]) for (let i = 0; i < 257; ++i) {
 		cpu.setGlobalByKey(cpu.stringPool.intern(`grown-${i}`), valueInteger(i));
 	}
-	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(-1), valueFloat(-0), valueFloatBits(0xffa12345), valueFloat(Infinity), 'text'] as const) {
+	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(-1), valueFloat(-0), valueFloatBits(0xffa12345), valueFloat(Infinity)]) {
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers;
-			r.set(12, value === 'text' ? valueString(cpu.stringPool.intern(value)) : value);
+			r.set(12, value);
 			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
 			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), valueInteger(73));
 		}
@@ -63,29 +63,23 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 		assert.equal(js.getGlobalByKey(js.stringPool.find('copied')!), valueInteger(73));
 		assert.equal(frame.top, 3, 'global stores do not extend top to the source register');
 	}
-	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(12, cpu.createTable(0, 0));
-		cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
-	}
-	runCpuParity(js, ref, loopCycles);
-	assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
-	assert.equal(js.getSystemGlobalByKey(js.stringPool.find('copied')!), frame.registers.get(12));
 	assert.ok(page.compiledBlocks!.entries[entry] === block, 'growing the bank does not retire or strand the compiled consumer');
 	const saved = js.captureRuntimeState();
 	js.restoreRuntimeState(saved);
 	assert.deepEqual(js.captureRuntimeState(), saved, 'retained bank capacity is not serialized as extra globals');
 });
 
-test('generated SETGL and SETSYS forward white referents and keep executing', () => {
-	const text = new Uint8Array(5 * INSTRUCTION_BYTES);
+for (const system of [false, true]) test(`generated ${system ? 'SETSYS' : 'SETGL'} sends a reference and its destination to the System vector`, () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.SETGL, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.SETSYS, 1, 0, 0);
 	writeInstruction(text, 2, OpCode.LOADNIL, 0, 2, 0);
 	writeInstruction(text, 3, OpCode.K1, 2, 0, 0);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }],
-		globalNames: ['cart-slot'], systemGlobalNames: ['system-slot'] });
+	writeInstruction(text, 5, OpCode.HALT, 0, 0, 0);
+	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 },
+		{ firstWord: 5, wordCount: 1, maxStack: 2, numParams: 2 }],
+		globalNames: ['cart-slot'], systemGlobalNames: ['system-slot'], exceptionFunctionIndex: 1 });
 	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), gc = cpu.gc;
 	const loopCycles = BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.LOADNIL] + 2
 		+ BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
@@ -94,30 +88,33 @@ test('generated SETGL and SETSYS forward white referents and keep executing', ()
 	const pc = image.image.functions[0].codeAddress, offset = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[offset]!;
 	assert.equal(block.sourceWords, 5);
-	const cart = cpu.createTable(1, 0), system = cpu.createTable(1, 0), descendant = cpu.createTable();
-	gc.tables.setInteger(cart, 1, valueTable(descendant));
-	gc.tables.setInteger(system, 1, valueTable(descendant));
+	const target = cpu.createTable();
 	for (let step = 0; step < 256 && gc.phase() !== GcPhase.MarkAgain; ++step) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	assert.equal(gc.phase(), GcPhase.MarkAgain);
-	assert.equal(gc.isAlive(cart), false);
-	assert.equal(gc.isAlive(system), false);
-	assert.equal(gc.isAlive(descendant), false);
-	frame.registers.setTable(0, cart); frame.registers.setTable(1, system);
+	assert.equal(gc.isAlive(target), false);
+	const source = system ? 1 : 0;
+	const bank = system ? cpu['systemGlobalBank'] : cpu['globalBank'];
+	const slot = bank.find(cpu.stringPool.find(system ? 'system-slot' : 'cart-slot')!)!;
+	const word = RAM_BASE + bank.slots.ramOffset() + 4 * slot;
+	const tag = RAM_BASE + bank.slots.ramOffset() + 4 * bank.slots.capacity() + slot;
+	const successor = pc + (source + 1) * INSTRUCTION_BYTES;
+	frame.registers.setTable(source, target);
 	const run = { remainingCycles: loopCycles, registerTop: frame.top, memoryAddress: 0 };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
-	assert.equal(exit.nextPc, pc);
-	assert.equal(run.remainingCycles, 0);
-	assert.equal(frame.registers.get(0), valueNil());
-	assert.equal(frame.registers.get(1), valueNil());
-	assert.equal(frame.registers.get(2), valueInteger(1));
-	assert.equal(gc.isAlive(cart), true);
-	assert.equal(gc.isAlive(system), true);
-	assert.equal(gc.isAlive(descendant), false);
-	for (let step = 0; gc.active() && step < 16; ++step) gc.step();
-	assert.equal(gc.phase(), GcPhase.Pause);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('cart-slot')!), valueTable(cart));
-	assert.equal(cpu.getSystemGlobalByKey(cpu.stringPool.find('system-slot')!), valueTable(system));
-	assert.equal(gc.tableRecordAddress(descendant), descendant);
+	assert.equal(exit.exit, system ? CompiledBlockExit.WriteSystemGlobal : CompiledBlockExit.WriteGlobal);
+	assert.equal(exit.nextPc, successor);
+	assert.equal(bank.slots.get(slot), valueNil());
+	assert.equal(gc.isAlive(target), false);
+	assert.equal(cpu.runUntilDepth(0, loopCycles), RunResult.Halted);
+	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);
+	assert.equal(cpu.readEpcWord(), successor);
+	assert.equal(cpu.readBadAddressWord(), word);
+	const vector = cpu.activeThread.currentFrame!;
+	assert.equal(vector.argumentCount, 2);
+	assert.equal(vector.registers.get(0), valueTable(target));
+	assert.equal(vector.registers.get(1), valueInteger(tag));
+	assert.equal(bank.slots.get(slot), valueNil(), 'issue does not touch either destination lane');
+	assert.equal(gc.isAlive(target), false);
 });
 
 for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve kinds and raw register indexing (alias=${alias})`, () => {

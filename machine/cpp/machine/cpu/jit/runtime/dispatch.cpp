@@ -301,7 +301,9 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		case NativeBlockExit::WriteGlobal:
 		case NativeBlockExit::WriteSystemGlobal: {
 			auto& bank = exit->exit == NativeBlockExit::WriteGlobal ? cpu.m_globalBank : cpu.m_systemGlobalBank;
-			bank.writeSlot(exit->operands.global.index, frame->registers.get(exit->operands.global.slot));
+			const auto [index, source] = exit->operands.global;
+			const Value value = frame->registers.get(source);
+			if (!bank.tryWriteSlot(index, value)) cpu.enterGlobalReferenceStore(*frame, bank.values(), index, value);
 			transition = NativeBlockTransition::Redispatch;
 			break;
 		}
@@ -317,7 +319,7 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			const u32 cell = frame->captureAddress(access.capture) & UPVALUE_ADDRESS_MASK;
 			const Value value = frame->registers.get(access.slot);
 			if (!Upvalue::tryStoreDirect(cpu.m_memory, cell, value)) {
-				cpu.enterClosedUpvalueStore(*frame, cell, value);
+				cpu.enterReferenceStore(*frame, RAM_BASE + cell, value);
 				transition = NativeBlockTransition::Redispatch;
 			}
 			break;

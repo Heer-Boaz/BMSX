@@ -3,7 +3,6 @@
 #include <bit>
 #include <limits>
 #include "machine/cpu/cpu.h"
-#include "machine/cpu/gc_heap.h"
 #include "machine/cpu/jit/runtime/execution.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
@@ -15,9 +14,6 @@ namespace bmsx {
 namespace {
 u32 SLJIT_FUNC writeLocalIoWord(Memory* memory, u32 address, u32 value) {
 	return memory->tryWriteLocalIoWord(address, value);
-}
-void SLJIT_FUNC markNativeGlobalWrite(GcHeap* heap, u32 word, u32 tag) {
-	heap->markGlobalWrite(valueFromTag(static_cast<ValueTag>(tag), word));
 }
 } // namespace
 
@@ -78,61 +74,24 @@ void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 
 	sljit_set_label(clear, sljit_emit_label(c));
 }
 
-void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, StoreBarrierRecord record, NativeBlockExitSite& exit) {
-	const bool global = record == StoreBarrierRecord::Global;
-	if (barrier == NativeGcBarrier::None || (global && !m_bindings.gcPhase)) return;
+void NativeLowering::emitReferenceStoreGate(NativeGcBarrier plan, sljit_s32 tag, sljit_s32 scratch,
+	NativeBlockExitSite& exit) {
+	if (plan == NativeGcBarrier::None) return;
 	auto* c = m_compiler;
-	const bool cell = record == StoreBarrierRecord::ClosedUpvalue;
-	const auto flags = global ? SLJIT_R1 : cell ? SLJIT_R0 : SLJIT_R2;
-	std::array<sljit_jump*, 2> scalar{};
-	if (barrier == NativeGcBarrier::Dynamic) {
-		// Match valueTagHasGcEdge: BuiltinFunction is not a heap edge.
-		constexpr auto first = static_cast<u8>(ValueTag::String);
-		// Global stores have just written their tag from R1.
-		if (!global) emitTag(source, flags);
-		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, first);
-		scalar = {
-			sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::Thread) - first),
-			sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM, static_cast<u8>(ValueTag::BuiltinFunction) - first),
-		};
-	}
-	sljit_jump* mutation;
-	if (global) {
-		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.gcPhase));
-		sljit_emit_op2(c, SLJIT_AND32, flags, 0, flags, 0, SLJIT_IMM, 7);
-		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, static_cast<u8>(GcPhase::Mark));
-		mutation = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM,
-			static_cast<u8>(GcPhase::Atomic) - static_cast<u8>(GcPhase::Mark));
-	} else {
-		// Private Table and closed-cell references defer before either lane is
-		// written. The System vector owns the store and any collector barrier.
-		mutation = sljit_emit_jump(c, SLJIT_JUMP);
-	}
-	if (barrier == NativeGcBarrier::Dynamic) {
-		auto* ready = sljit_emit_label(c);
-		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
-	}
-	if (!global) {
-		fault(mutation, exit, m_cache.state());
+	if (plan == NativeGcBarrier::Reference) {
+		fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
 		return;
 	}
-	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), source});
-}
-
-void NativeLowering::emitStoreBarriers() {
-	auto* c = m_compiler;
-	for (const auto& barrier : m_workspace.storeBarriers) {
-		sljit_set_label(barrier.mutation, sljit_emit_label(c));
-		m_cache.setState(barrier.registers);
-		// The leaf marks or enqueues the exact input, without tracing,
-		// allocating or inspecting any unpublished activation.
-		emitRawLoad(barrier.source, SLJIT_R1, SLJIT_R2);
-		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
-		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
-		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
-		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resume);
-	}
+	constexpr auto first = static_cast<u8>(ValueTag::String);
+	sljit_emit_op2(c, SLJIT_SUB32, scratch, 0, tag, 0, SLJIT_IMM, first);
+	auto* outside = sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, scratch, 0, SLJIT_IMM,
+		static_cast<u8>(ValueTag::Thread) - first);
+	auto* builtin = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, scratch, 0, SLJIT_IMM,
+		static_cast<u8>(ValueTag::BuiltinFunction) - first);
+	fault(sljit_emit_jump(c, SLJIT_JUMP), exit, m_cache.state());
+	auto* direct = sljit_emit_label(c);
+	sljit_set_label(outside, direct);
+	sljit_set_label(builtin, direct);
 }
 
 void NativeLowering::emitBackingLoad(MemoryAccessKind kind, bool unaligned) {

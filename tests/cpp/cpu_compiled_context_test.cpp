@@ -469,7 +469,7 @@ void hotUpvalueAlias() {
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-void hotGlobalWritesForwardTheirWhiteChildren() {
+void hotGlobalWritesDeferTheirReferences() {
 	test::Blua32TestImage image;
 	const std::array ops{OpCode::SETGL, OpCode::SETSYS, OpCode::LOADNIL, OpCode::K1, OpCode::JMP};
 	image.text.resize(ops.size() * INSTRUCTION_BYTES);
@@ -508,26 +508,32 @@ void hotGlobalWritesForwardTheirWhiteChildren() {
 		const u32 capacity = machine.memory.readRamRecordWord(descriptor + static_cast<u32>(GlobalBankField::Capacity));
 		return ValueSpan(machine.memory, base + 12u * capacity, base + 16u * capacity, capacity);
 	};
-	frame.registers.set(0, valueTable(cart.address()));
-	frame.registers.set(1, valueTable(system.address()));
-	const auto globals = slots(GLOBAL_BANK_OFFSET), systemGlobals = slots(SYSTEM_GLOBAL_BANK_OFFSET);
-	NativeBlockRunState state{.frame = &frame, .heap = &heap,
-		.globalValues = &globals, .systemGlobalValues = &systemGlobals,
-		.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};
-	const auto& exit = *block->run(frame.registers, state);
-	require((exit.exit == NativeBlockExit::Continue || exit.exit == NativeBlockExit::ScalarBoundary)
-		&& exit.nextPc == machine.rom.textAddress && state.remainingCycles == 0
-		&& frame.registers.get(0) == valueNil() && frame.registers.get(1) == valueNil()
-		&& frame.registers.get(2) == valueInteger(1),
-		"the native barrier resumes the same body without a general semantic exit");
-	require(heap.isAlive(cart.address()) && heap.isAlive(system.address()) && !heap.isAlive(child.address()),
-		"both machine-code stores enqueue exactly the new parents, without tracing inside the mutator");
-	for (int step = 0; heap.active() && step < 16; ++step)
-		heap.step(valueNil(), valueNil(), valueNil());
-	require(!heap.active() && heap.tableRecordAddress(child.address()) == child.address()
-		&& cpu.getGlobalByKey(*cpu.stringPool().find("cart-slot")) == valueTable(cart.address())
-		&& cpu.getSystemGlobalByKey(*cpu.stringPool().find("system-slot")) == valueTable(system.address()),
-		"both namespace stores keep the table graph after their source registers are cleared");
+	auto globals = slots(GLOBAL_BANK_OFFSET), systemGlobals = slots(SYSTEM_GLOBAL_BANK_OFFSET);
+	for (const bool systemStore : {false, true}) {
+		const auto cartSource = systemStore ? valueInteger(37) : valueTable(cart.address());
+		const auto systemSource = valueTable(system.address());
+		globals.set(0, valueInteger(17));
+		systemGlobals.set(0, valueInteger(19));
+		frame.registers.set(0, cartSource);
+		frame.registers.set(1, systemSource);
+		frame.registers.set(2, valueInteger(23));
+		NativeBlockRunState state{.frame = &frame, .heap = &heap,
+			.globalValues = &globals, .systemGlobalValues = &systemGlobals,
+			.remainingCycles = loopCycles, .registerTop = 2, .registerCapacity = frame.registers.size()};
+		const auto& exit = *block->run(frame.registers, state);
+		const auto issue = machine.rom.textAddress + (systemStore ? INSTRUCTION_BYTES : 0);
+		const auto spent = BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
+			+ (systemStore ? BASE_CYCLES[static_cast<u8>(OpCode::SETSYS)] : 0);
+		require(exit.exit == (systemStore ? NativeBlockExit::WriteSystemGlobal : NativeBlockExit::WriteGlobal)
+			&& exit.currentPc == issue && exit.nextPc == issue + INSTRUCTION_BYTES
+			&& state.remainingCycles == loopCycles - spent && state.registerTop == 2
+			&& frame.registers.get(0) == cartSource && frame.registers.get(1) == systemSource
+			&& frame.registers.get(2) == valueInteger(23),
+			"the native block publishes the reference source and exact next PC before leaving");
+		require(globals.get(0) == valueInteger(systemStore ? 37 : 17) && systemGlobals.get(0) == valueInteger(19)
+			&& !heap.isAlive(cart.address()) && !heap.isAlive(system.address()) && !heap.isAlive(child.address()),
+			"only the completed primitive prefix changes RAM, without marking any object in native code");
+	}
 }
 
 struct ContextBlock {
@@ -565,20 +571,29 @@ void rawContextValues(CpuMachine& machine) {
 		registers.clear(0, registers.capacity()); ordinary.clear(0, ordinary.size()); system.clear(0, system.size()); registers.set(12, value);
 		NativeBlockRunState state{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
 		const auto& exit = *globals.blocks.front()->run(registers.view(), state);
+		if (valueTagHasGcEdge(valueTag(value))) {
+			require(exit.exit == NativeBlockExit::WriteGlobal && exit.currentPc == globals.source[0].pc
+				&& exit.nextPc == globals.source[1].pc && state.remainingCycles == 100 - BASE_CYCLES[static_cast<u8>(OpCode::SETGL)]
+				&& state.registerTop == 0 && registers.get(12) == value && registers.get(0) == valueNil()
+				&& ordinary.get(1) == valueNil() && system.get(1) == valueNil(),
+				"all reference kinds leave with the sampled source before touching either bank");
+			continue;
+		}
 		require(exit.exit == NativeBlockExit::Continue && exit.currentPc == globals.source.back().pc && exit.nextPc == 0
 			&& registers.get(0) == value && registers.get(1) == value
 			&& ordinary.get(1) == value && system.get(1) == value && ordinary.get(0) == valueInteger(1) && system.get(0) == valueNil()
-			&& state.registerTop == 3, "raw global banks preserve every kind, cached definitions and namespace without a source-top write");
+			&& state.registerTop == 3, "raw global banks preserve primitive values, cached definitions and namespace without a source-top write");
 	}
 	// Growth rebinds a bank descriptor without replacing the bank itself.
 	// A retained grant must use the new lanes, even for an already emitted body.
 	NativeBlockRunState retained{.globalValues = &ordinary, .systemGlobalValues = &system, .remainingCycles = 100};
+	ordinary.set(1, valueInteger(19));
 	const auto oldOrdinary = ordinary;
 	ordinary = ValueSpan(machine.memory, 0x1080u, 0x1088u, 2);
 	registers.set(12, valueInteger(73));
 	globals.blocks.front()->run(registers.view(), retained);
 	require(ordinary.get(1) == valueInteger(73) && system.get(1) == valueInteger(73)
-		&& oldOrdinary.get(1) == values.back(), "a retained grant follows bank relocation without touching the old lanes");
+		&& oldOrdinary.get(1) == valueInteger(19), "a retained grant follows bank relocation without touching the old lanes");
 	ordinary = oldOrdinary;
 	// Arm only the destination tag word. The payload must not change
 	// until the checked store, even though the payload has no watch.
@@ -838,7 +853,7 @@ int main() {
 		nativeGenericVarargCallRetiresPhysicalControl();
 		hotConstantTrap(); hotUpvalueAlias(); hotGlobalBanks();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		hotGlobalWritesForwardTheirWhiteChildren();
+		hotGlobalWritesDeferTheirReferences();
 		test::Blua32TestImage image; image.text.resize(INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::HALT), 0, 0, 0); image.functions = {{.firstWord = 0, .wordCount = 1}};
 		CpuMachine machine(image); rawContextValues(machine); varargAliasesAndSideExits(machine);

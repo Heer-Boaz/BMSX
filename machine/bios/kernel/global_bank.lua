@@ -120,6 +120,16 @@ local commit_name<const> = function(management, address, key, backing, capacity)
 	return slot -- T:108 C:100
 end
 
+-- Shared by name-based writes and the precise split-lane store. The
+-- write has already published its Value before the root barrier runs.
+local mark_written_reference<const> = function(management, tag, payload) -- T:30 H:30 G:202-215 J:110-124
+	local latch<const>: *u32 = layout.ram_base + management + layout.string_mark_work_offset -- G:185 J:108
+	local pending<const> = *latch -- G:185 J:108
+	local work<const> = barrier.mark_global_write(management + layout.control_offset, -- T:30 H:30 G:202-215 J:110-124
+		management + layout.arena_offset, management + layout.metadata_offset, tag, payload, 1, pending)
+	if work ~= pending then *latch = work end -- G:185 J:108; retain only unspent credit
+end
+
 -- Publish the Value in the same order as the register store, then mark its edge.
 local write_slot<const> = function(management, address, slot, tag, payload) -- T:26-31 H:27-31
 	local bank<const>: *namespace_bank = address -- H:28-29
@@ -128,18 +138,29 @@ local write_slot<const> = function(management, address, slot, tag, payload) -- T
 	local tags<const>: *u8 = base + 16 * capacity -- T:29 H:29
 	words[slot] = payload -- T:28 H:28
 	tags[slot] = tag -- T:29 H:29
-	if barrier.internal.has_edge(tag) then -- T:30 H:30
-		local latch<const>: *u32 = layout.ram_base + management + layout.string_mark_work_offset -- G:185 J:108
-		local pending<const> = *latch -- G:185 J:108
-		local work<const> = barrier.mark_global_write(management + layout.control_offset, -- T:30 H:30 G:202-215 J:110-124
-			management + layout.arena_offset, management + layout.metadata_offset, tag, payload, 1, pending)
-		if work ~= pending then *latch = work end -- G:185 J:108; retain only unspent credit
-	end
+	if barrier.internal.has_edge(tag) then mark_written_reference(management, tag, payload) end -- T:30 H:30
+end
+
+-- 8fcebc11c: the SETGL/SETSYS datapath already selected the physical
+-- Value lanes, and has not written either one. No name lookup or growth.
+local store_reference<const> = function(word_address, tag_address, reference) -- T:26 H:27
+	local management<const> = layout.management_offset -- H:30 G:202; firmware owns the control base
+	local scratch<const> = layout.ram_base + management + layout.value_cell_offset -- T:27 H:28-30; tagged argument transport
+	local sampled<const>: *value = scratch -- T:27 H:28-30
+	local sampled_word<const>: *u32 = scratch -- T:27 H:28
+	local sampled_tag<const>: *u8 = scratch + layout.value_cell_tag_offset -- T:27 H:29
+	local word<const>: *u32 = word_address -- T:28 H:28 W:32,48
+	local tag<const>: *u8 = tag_address -- T:29 H:29 W:33,48
+	*sampled = reference -- T:27 H:28-30
+	local payload<const>, kind<const> = *sampled_word, *sampled_tag -- T:27 H:28-29 W:49-50
+	*word = payload -- T:28 H:28 W:49
+	*tag = kind -- T:29 H:29 W:50
+	mark_written_reference(management, kind, payload) -- T:30 H:30
 end
 
 return {
-	internal = { bucket_for = bucket_for, grow = grow },
+	internal = { bucket_for = bucket_for, grow = grow, mark_written_reference = mark_written_reference },
 	find_name = find_name, growth_capacity = growth_capacity, commit_name = commit_name,
-	write_slot = write_slot,
+	write_slot = write_slot, store_reference = store_reference,
 	name_charge = name_charge, backing_slot_bytes = backing_slot_bytes,
 }

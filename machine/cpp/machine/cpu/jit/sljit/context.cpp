@@ -33,13 +33,13 @@ void NativeLowering::lowerOperation(const NativeGlobalAccess& access, const Nati
 		sljit_emit_op2(c, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, tagOffset);
 		emitRamWordWriteWatch(*watched, SLJIT_R0, 0, SLJIT_R1, SLJIT_R3);
 		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
+		emitReferenceStoreGate(access.barrier, SLJIT_R1, SLJIT_R3, *watched);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), wordOffset, SLJIT_R0, 0);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), bank);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), tags);
 		sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R3), tagOffset, SLJIT_R1, 0);
-		emitStoreBarrier(access.slot, access.barrier, StoreBarrierRecord::Global, *watched);
 		return;
 	}
 	const auto demand = m_uses.nextOperandDemand(m_instruction, access.slot);
@@ -100,7 +100,8 @@ void NativeLowering::lowerOperation(const NativeUpvalueAccess& access, const Nat
 		fault(open, slow, m_cache.state());
 		// Both value lanes are in the aligned cell's write-watch group.
 		emitRamWordWriteWatch(slow, SLJIT_R3, 0, SLJIT_R0, SLJIT_R1, 3u);
-		emitStoreBarrier(access.slot, access.barrier, StoreBarrierRecord::ClosedUpvalue, slow);
+		if (access.barrier == NativeGcBarrier::Dynamic) emitTag(access.slot, SLJIT_R0);
+		emitReferenceStoreGate(access.barrier, SLJIT_R0, SLJIT_R0, slow);
 		emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
 		if constexpr (std::endian::native == std::endian::big)
 			sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);

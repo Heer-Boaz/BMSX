@@ -405,7 +405,8 @@ private:
 		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterResidentFrame(CallFrame&);
-	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
+	void enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress = 0u);
+	void enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);

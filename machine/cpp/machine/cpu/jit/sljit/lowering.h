@@ -93,9 +93,7 @@ private:
 	sljit_jump* emitArrayStore(int value, NativeStorePlan store, NativeBlockExitSite&, bool routeOutside);
 	void emitOwnIndexRead(NativeBlockExitSite&, std::optional<ValueTag> keyTag = {});
 	void emitOwnIndexStore(int value, NativeBlockExitSite&, NativeHashStore key);
-	enum class StoreBarrierRecord : u8 { Table, ClosedUpvalue, Global };
-	void emitStoreBarrier(int value, NativeGcBarrier, StoreBarrierRecord, NativeBlockExitSite&);
-	void emitStoreBarriers();
+	void emitReferenceStoreGate(NativeGcBarrier, sljit_s32 tag, sljit_s32 scratch, NativeBlockExitSite&);
 	void assignFieldAddressSpills(std::span<const NativeOwnFieldAddress>);
 	std::array<sljit_jump*, 3> emitStringValueAddress(NativeBlockExitSite&, bool load,
 		std::optional<StringId> fixedKey, std::optional<u8> temporary);
@@ -163,12 +161,6 @@ private:
 		u32 width;
 		MemoryAccessKind format;
 	};
-	struct StoreBarrier {
-		sljit_jump* mutation;
-		State registers;
-		sljit_label* resume;
-		int source;
-	};
 	struct SingleStringRead {
 		std::array<sljit_jump*, 4> ownMisses;
 		std::optional<StringId> fixedKey;
@@ -202,7 +194,6 @@ struct NativeLowering::Workspace {
 	std::vector<Branch> coldBranches;
 	std::vector<RomRead> romReads;
 	std::vector<LocalIoWrite> localIoWrites;
-	std::vector<StoreBarrier> storeBarriers;
 	std::vector<SingleStringRead> singleStringReads;
 	std::vector<StringStoreMiss> stringStoreMisses;
 

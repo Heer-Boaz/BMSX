@@ -98,10 +98,12 @@ DISPATCH_LABEL(GETSYS) {
 }
 
 DISPATCH_LABEL(SETSYS) {
-	const int a = decoded->a;
 	const uint32_t bx = decoded->bx();
-	m_systemGlobalBank.writeSlot(bx, REG(a));
-	DISPATCH_NEXT();
+	const Value value = REG(decoded->a);
+	if (m_systemGlobalBank.tryWriteSlot(bx, value)) DISPATCH_NEXT();
+	PUBLISH_SCALAR_FRONTIER();
+	enterGlobalReferenceStore(FRAME, m_systemGlobalBank.values(), bx, value);
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(GETGL) {
@@ -112,10 +114,12 @@ DISPATCH_LABEL(GETGL) {
 }
 
 DISPATCH_LABEL(SETGL) {
-	const int a = decoded->a;
 	const uint32_t bx = decoded->bx();
-	m_globalBank.writeSlot(bx, REG(a));
-	DISPATCH_NEXT();
+	const Value value = REG(decoded->a);
+	if (m_globalBank.tryWriteSlot(bx, value)) DISPATCH_NEXT();
+	PUBLISH_SCALAR_FRONTIER();
+	enterGlobalReferenceStore(FRAME, m_globalBank.values(), bx, value);
+	DISPATCH_CONTINUE();
 }
 
 DISPATCH_LABEL(GETI) {
@@ -501,7 +505,7 @@ DISPATCH_LABEL(SETUP) {
 	const Value value = REG(a);
 	if (Upvalue::tryStoreDirect(m_memory, cell, value)) DISPATCH_NEXT();
 	PUBLISH_SCALAR_FRONTIER();
-	enterClosedUpvalueStore(FRAME, cell, value);
+	enterReferenceStore(FRAME, RAM_BASE + cell, value);
 	DISPATCH_CONTINUE();
 }
 

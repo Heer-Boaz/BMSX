@@ -124,7 +124,6 @@ public:
 	bool markThread(u32 address, u32 queue = GC_TRACE_HEAD);
 	// Strong name/value edges from the permanently rooted global banks.
 	void markGlobalWrite(Value reference);
-	const u8* phaseAddress() const { return memory.ramData() + m_controlOffset; }
 	void writeBarrier(u32 address, u32 link) {
 		if (markColor(address) == 3u) enqueue(address, link, GC_CHANGED_HEAD);
 	}

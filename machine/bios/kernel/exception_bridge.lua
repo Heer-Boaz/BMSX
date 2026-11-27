@@ -9,6 +9,7 @@ local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
 local coroutine_transfer<const> = require('kernel/coroutine_transfer')
 local barrier<const> = require('kernel/gc_barrier')
+local globals<const> = require('kernel/global_bank')
 local table_growth<const> = require('kernel/table_grow')
 local binding<const> = require('kernel/function_binding')
 local byte_strings<const> = require('kernel/byte_string_input')
@@ -110,7 +111,8 @@ end
 local enter<const> = function(values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14)
 	local cause<const> = cop0.cause
 	if cause == reference_store then
-		barrier.store_closed_upvalue(cop0.bad_address, values)
+		if blua32.argument_count() == 2 then globals.store_reference(cop0.bad_address, depth, values)
+		else barrier.store_closed_upvalue(cop0.bad_address, values) end
 		blua32.rfe()
 	end
 	local denied_window<const> = cause == register_window

@@ -1697,9 +1697,14 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			const jumpOut = this.emitJumpPlaceholder();
 			const callBase = this.allocTempBlock(2);
 			const access = this.program.resolveGlobalAccess('irq');
+			const cartridge = this.program.programDomain === 'cart';
+			// The handler can take a synchronous exception while using the
+			// retained cartridge bank. The vector owns its return address.
+			if (cartridge) this.emitABC(OpCode.MFC0, addrReg, COP0_EPC, 0);
 			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callBase, access.slot);
 			this.emitABC(OpCode.MOV, callBase + 1, flagsReg, 0);
 			this.emitABC(OpCode.CALL, callBase, encodeFixedValueCount(1), encodeFixedValueCount(0));
+			if (cartridge) this.emitABC(OpCode.MTC0, addrReg, COP0_EPC, 0);
 			this.patchJump(jumpOut, this.code.length);
 			this.emitABC(OpCode.RFE, 0, 0, 0);
 			// Hidden remap boundary for the last-executed RFE, even when linking

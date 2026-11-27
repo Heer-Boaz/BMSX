@@ -33,6 +33,7 @@ export class ValueSlots implements ValueWriteTarget {
 	public capacity(): number { return this.size; }
 	public byteLength(): number { return this.size * 5; }
 	public ramOffset(): number { return this.wordBase * 4; }
+	public tagRamOffset(): number { return this.tagBase; }
 	public writeWatched(index: number): boolean {
 		const watches = this.ram!.ramWriteWatches();
 		return watches.anyWatched((this.wordBase + index) * 4, 4) || watches.anyWatched(this.tagBase + index, 1);

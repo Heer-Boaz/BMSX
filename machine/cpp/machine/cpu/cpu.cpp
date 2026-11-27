@@ -1542,11 +1542,17 @@ void CPU::executeSupervisorCall(CallFrame& frame, int source, int width) {
 	}
 }
 
-void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
-	m_cop0Words[COP0_BAD_ADDRESS] = RAM_BASE + cell;
-	const std::array arguments{value};
+void CPU::enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress) {
+	m_cop0Words[COP0_BAD_ADDRESS] = payloadAddress;
+	const std::array arguments{value, valueInteger(static_cast<i32>(tagAddress))};
 	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REFERENCE_STORE,
-		issuer.readControl(FrameField::Pc), arguments);
+		issuer.readControl(FrameField::Pc), std::span{arguments}.first(tagAddress == 0u ? 1u : 2u));
+}
+
+void CPU::enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value) {
+	const u32 word = (bank.wordAddress() + slot * sizeof(u32)) & RAM_RECORD_WORD_MASK;
+	const u32 tag = (bank.tagAddress() + slot) & (MAIN_RAM_SIZE - 1u);
+	enterReferenceStore(issuer, RAM_BASE + word, value, RAM_BASE + tag);
 }
 
 void CPU::enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a) {

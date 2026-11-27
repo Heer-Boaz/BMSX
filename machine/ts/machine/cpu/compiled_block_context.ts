@@ -31,10 +31,9 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 		case OpCode.SETGL:
 		case OpCode.SETSYS: {
 			const bank = op === OpCode.SETGL ? 'gl' : 'sy', slot = page.bx[word];
-			return `{if(${bank}.writeWatched(${slot})) ${registers.exit(exit)}
-				const t=${registers.tagOperand(a)},v=${registers.wordOperand(a)};
-				${bank}.s(${slot},t,v);
-				if(t>=${ValueTag.String}&&t<=${ValueTag.Thread}&&t!==${ValueTag.BuiltinFunction}) h.writeGlobalRoot(t,v);}`;
+			return `{const t=${registers.tagOperand(a)};
+				if((t>=${ValueTag.String}&&t<=${ValueTag.Thread}&&t!==${ValueTag.BuiltinFunction})||${bank}.writeWatched(${slot})) ${registers.exit(exit)}
+				${bank}.s(${slot},t,${registers.wordOperand(a)});}`;
 		}
 		case OpCode.GETUP:
 		case OpCode.SETUP: {

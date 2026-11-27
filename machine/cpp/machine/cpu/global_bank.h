@@ -17,6 +17,11 @@ public:
 		m_values.set(slot, value);
 		if (valueTagHasGcEdge(valueTag(value))) m_heap.markGlobalWrite(value);
 	}
+	bool tryWriteSlot(u32 slot, Value value) {
+		if (valueTagHasGcEdge(valueTag(value))) return false;
+		m_values.set(slot, value);
+		return true;
+	}
 	u32 capacity() const { return static_cast<u32>(m_values.size()); }
 	u32 count() const { return m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(GlobalBankField::Count)); }
 	StringId name(u32 slot) const {

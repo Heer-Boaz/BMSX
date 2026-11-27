@@ -128,7 +128,7 @@ import {
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread, asThread,
-	isNil, valueTag, valueToInteger,
+	isNil, valueTag, valueTagHasGcEdge, valueToInteger,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
@@ -3471,7 +3471,7 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.WriteGlobal:
 				case CompiledBlockExit.WriteSystemGlobal: {
 					const bank = exit.exit === CompiledBlockExit.WriteGlobal ? this.globalBank : this.systemGlobalBank;
-					bank.writeSlot(exit.exitBx, registers.get(exit.exitA));
+					this.copyRegisterToGlobal(frame, bank.slots, exit.exitBx, exit.exitA);
 					redispatch = true;
 					break;
 				}
@@ -3656,14 +3656,14 @@ export class CPU implements MappedPageInvalidator {
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETSYS:
-					this.systemGlobalBank.writeSlot(page.bx[pageOffset], registers.get(a));
+					this.copyRegisterToGlobal(frame, this.systemGlobalBank.slots, page.bx[pageOffset], a);
 					return;
 				case OpCode.GETGL:
 					registers.set(a, this.globalBank.slots.get(page.bx[pageOffset]));
 					this.bumpRegisterTop(frame, a);
 					return;
 				case OpCode.SETGL:
-					this.globalBank.writeSlot(page.bx[pageOffset], registers.get(a));
+					this.copyRegisterToGlobal(frame, this.globalBank.slots, page.bx[pageOffset], a);
 					return;
 				case OpCode.GETI: {
 					const base = registers.get(page.b[pageOffset]), index = page.c[pageOffset];
@@ -4204,6 +4204,19 @@ export class CPU implements MappedPageInvalidator {
 	private copyUpvalueToRegister(frame: CallFrame, registers: ValueSlots, registerIndex: number, address: number): void {
 		registers.set(registerIndex, Upvalue.load(this.memory, address));
 		this.bumpRegisterTop(frame, registerIndex);
+	}
+
+	private copyRegisterToGlobal(frame: CallFrame, slots: ValueSlots, slot: number, registerIndex: number): void {
+		const registers = frame.registers;
+		const tag = registers.getTag(registerIndex), word = registers.getPayload(registerIndex);
+		if (!valueTagHasGcEdge(tag)) {
+			slots.setEncoded(slot, tag, word);
+			return;
+		}
+		this.cop0Words[COP0_BAD_ADDRESS] = RAM_BASE + ((slots.ramOffset() + 4 * slot) & RAM_RECORD_WORD_MASK);
+		const tagAddress = RAM_BASE + ((slots.tagRamOffset() + slot) & (MAIN_RAM_SIZE - 1));
+		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REFERENCE_STORE,
+			frame.pc, valueFromTag(tag, word), valueInteger(tagAddress));
 	}
 
 	private copyRegisterToUpvalue(frame: CallFrame, address: number, registers: ValueSlots, registerIndex: number): boolean {
