@@ -375,9 +375,16 @@ void tableCopyReturnsThroughAllocatingCall() {
 	test::runCpuParity(native.cpu, scalar.cpu, grant);
 	parity(native, scalar);
 	auto& cpu = native.cpu;
-	require(cpu.collecting() && cpu.instructionBudgetRemaining == 0
-		&& cpu.readFramePc(0) == rom.textAddress + 6 * INSTRUCTION_BYTES,
-		"the allocating builtin completes one WIDE CALL and pays its exact grant");
+	// The exact instruction grant excludes the collection quantum. An
+	// admitted assist pays its actual work even when it exhausts the grant.
+	const auto work = cpu.gcHeap().epochWork();
+	require(cpu.collecting() && work > 0
+		&& cpu.instructionBudgetRemaining == -GC_WORK_WORD_CYCLES * static_cast<int>(work)
+		&& cpu.readFramePc(0) == rom.textAddress + 6 * INSTRUCTION_BYTES
+		&& cpu.readCurrentInstructionPc() == rom.textAddress + 4 * INSTRUCTION_BYTES
+		&& cpu.lastPc == rom.textAddress + 5 * INSTRUCTION_BYTES
+		&& cpu.readFrameRegister(0, 8) == valueInteger(-8),
+		"the allocating builtin retires one WIDE CALL, pays the assist and leaves the successor unexecuted");
 	require(cpu.luaHeap().usedBytes() == before + 32 + 4 * 5 + 4 * 10, "the result reserves one complete table");
 	const auto source = asTable(cpu.readFrameRegister(0, 13), cpu.gcHeap());
 	auto copy = asTable(cpu.readFrameRegister(0, 0), cpu.gcHeap());

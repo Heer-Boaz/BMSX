@@ -570,11 +570,26 @@ void pairedWideJumpsRetainBoundariesAndMutableTargets() {
 #endif
 			test::waitForNativeEntry(native.cpu, page, 0);
 			const auto& root = *page.nativeBlocks->entries[0]; const auto& jumped = root.terminal;
-			require(jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
+			const int comparisonCycles = BASE_CYCLES[static_cast<u8>(op)];
+			const int jumpCycles = BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+			const u32 comparisonLast = DYNAMIC_RAM_BASE + (jumpWord - 1u) * INSTRUCTION_BYTES;
+			// Ordering may also guard operand tags with a scalar side exit.
+			// Only the two continuing edges describe a retired comparison.
+			const auto continuesAt = [&](u32 word) {
+				return std::any_of(root.sideExits.begin(), root.sideExits.end(), [&](const auto& exit) {
+					return exit.exit == NativeBlockExit::Continue && exit.currentPc == DYNAMIC_RAM_BASE
+						&& exit.lastPc == comparisonLast && exit.nextPc == DYNAMIC_RAM_BASE + word * INSTRUCTION_BYTES
+						&& exit.cycles == comparisonCycles;
+				});
+			};
+			require(jumped.exit == NativeBlockExit::Continue
+				&& jumped.currentPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES
 				&& jumped.nextPc == DYNAMIC_RAM_BASE + 16u * INSTRUCTION_BYTES
 				&& jumped.lastPc == DYNAMIC_RAM_BASE + jumpBody * INSTRUCTION_BYTES
-				&& jumped.cycles == 4 && root.sideExits.size() == 2 && root.sideExits.back().cycles == 2
-				&& root.sideExits[0].nextPc == DYNAMIC_RAM_BASE + jumpWord * INSTRUCTION_BYTES,
+				&& jumped.cycles == comparisonCycles + jumpCycles
+				&& std::count_if(root.sideExits.begin(), root.sideExits.end(), [](const auto& exit) {
+					return exit.exit == NativeBlockExit::Continue;
+				}) == 2 && continuesAt(jumpWord) && continuesAt(jumpBody + 1u),
 				"paired WIDE comparison/JMP exits preserve the executed prefix PCs and each instruction charge");
 			require(!page.nativeBlocks->entries[jumpWord], "a JMP reached only through its fused comparison has no redundant body");
 #endif
