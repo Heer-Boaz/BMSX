@@ -26,20 +26,51 @@ void SLJIT_FUNC markNativeGlobalWrite(GcHeap* heap, u32 word, u32 tag) {
 } // namespace
 
 void NativeLowering::emitRamWordWriteWatch(NativeBlockExitSite& slow, sljit_s32 address, sljit_sw addressArg,
-	sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords, bool observeBytes) {
-	const u32 ownerFlags = (m_bindings.historyWriteWatches ? MAPPED_WATCH_HISTORY_CLEAN : 0u)
-		| (observeBytes ? MAPPED_WATCH_PHYSICAL_BYTES : 0u);
-	if (!codeWords && ownerFlags == 0u) return;
+	sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords, u32 byteWidth) {
+	const u32 history = m_bindings.historyWriteWatches ? MAPPED_WATCH_HISTORY_CLEAN : 0u;
+	const u32 observe = byteWidth != 0u ? MAPPED_WATCH_PHYSICAL_BYTES : 0u;
+	if (!codeWords && (history | observe) == 0u) return;
 	auto* c = m_compiler;
 	sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, -4);
 	sljit_emit_op1(c, SLJIT_MOV_U32, bits, 0, SLJIT_MEM1(bits), reinterpret_cast<sljit_sw>(m_bindings.ramWriteGroups));
-	auto* clear = codeWords ? sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0) : nullptr;
-	if (ownerFlags != 0u) {
-		sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, ownerFlags);
+	sljit_jump* clear = nullptr;
+	if (codeWords) {
+		clear = sljit_emit_cmp(c, SLJIT_EQUAL, bits, 0, SLJIT_IMM, 0);
+	} else if (history != 0u && observe != 0u) {
+		// The common private path still takes just one page-summary test.
+		sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, history | observe);
+		clear = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0);
+	}
+	if (history != 0u) {
+		sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, history);
 		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0), slow, m_cache.state());
 	}
-	if (!codeWords) return;
+	if (observe != 0u) {
+		// In the private lane with history enabled, a nonempty summary after the
+		// history exit means there is a physical watch on this page.
+		sljit_jump* noWatch = nullptr;
+		if (codeWords || history == 0u) {
+			sljit_emit_op2(c, SLJIT_AND32, group, 0, bits, 0, SLJIT_IMM, observe);
+			noWatch = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, group, 0, SLJIT_IMM, 0);
+		}
+		// A page bit only admits the sparse mask lookup. Aligned byte,
+		// halfword and word transfers fit in one 32-byte mask.
+		sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, MAPPED_PAGE_BYTE_SHIFT);
+		sljit_emit_op1(c, SLJIT_MOV_P, group, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.ramByteMaskPages));
+		sljit_emit_op1(c, SLJIT_MOV_P, group, 0, SLJIT_MEM2(group, bits), std::countr_zero(sizeof(const u32*)));
+		sljit_emit_op2(c, SLJIT_LSHR32, bits, 0, address, addressArg, SLJIT_IMM, 5u);
+		sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, (MAPPED_PAGE_BYTE_SIZE / 32u) - 1u);
+		sljit_emit_op1(c, SLJIT_MOV32, bits, 0, SLJIT_MEM2(group, bits), 2);
+		sljit_emit_op2(c, SLJIT_MLSHR32, bits, 0, bits, 0, address, addressArg);
+		sljit_emit_op2(c, SLJIT_AND32, bits, 0, bits, 0, SLJIT_IMM, (1u << byteWidth) - 1u);
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, bits, 0, SLJIT_IMM, 0), slow, m_cache.state());
+		if (noWatch) sljit_set_label(noWatch, sljit_emit_label(c));
+	}
+	if (!codeWords) {
+		if (clear) sljit_set_label(clear, sljit_emit_label(c));
+		return;
+	}
 	// Retire decoded words only if the write overlaps their exact mask.
 	sljit_emit_op2(c, SLJIT_LSHR32, group, 0, address, addressArg, SLJIT_IMM, MAPPED_WATCH_GROUP_BYTE_SHIFT - 2u);
 	sljit_emit_op2(c, SLJIT_AND32, group, 0, group, 0, SLJIT_IMM, -4);
@@ -254,7 +285,7 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 				SLJIT_IMM, m_bindings.ramBytes - width), slow, m_cache.state());
 		} else {
 			// A watched physical byte or first history write retires at the RAM owner.
-			emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, std::nullopt, true);
+			emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, std::nullopt, width);
 			if (access.store == NativeWordSource::Dynamic)
 				fault(guardTag(access.slot, ValueTag::Integer, SLJIT_R2), slow, m_cache.state());
 		}
@@ -322,10 +353,10 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 		return;
 	}
 	if (!load) {
-		emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, 1u, true);
+		emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, 1u, width == 8u ? 4u : width);
 		if (width == 8) {
 			sljit_emit_op2(m_compiler, SLJIT_ADD, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, 4);
-			emitRamWordWriteWatch(slow, SLJIT_R0, 0, SLJIT_R3, SLJIT_R2, 1u, true);
+			emitRamWordWriteWatch(slow, SLJIT_R0, 0, SLJIT_R3, SLJIT_R2, 1u, 4u);
 		}
 	}
 	NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);

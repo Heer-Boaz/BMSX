@@ -115,12 +115,16 @@ void publishedStoresObserveNewPhysicalByteWatches() {
 		};
 		require(run(41) == &block.terminal && memory.readRamRecordByte(offset) == 41,
 			"the unobserved store retires directly");
+		memory.watchRamByte(offset + 1u);
+		require(run(43) == &block.terminal && memory.readRamRecordByte(offset) == 43,
+			"a neighboring byte in the same watched word does not take the owner exit");
 		memory.watchRamByte(offset);
-		require(run(0)->exit == NativeBlockExit::WriteMemory && memory.readRamRecordByte(offset) == 41,
+		require(run(0)->exit == NativeBlockExit::WriteMemory && memory.readRamRecordByte(offset) == 43,
 			"already published public and firmware code exit before committing the watched byte");
 		memory.unwatchRamByte(offset);
 		require(run(42) == &block.terminal && memory.readRamRecordByte(offset) == 42,
-			"removing the watch readmits the same emitted store without recompilation");
+			"removing the overlapping watch readmits the same emitted store while its neighbor is still watched");
+		memory.unwatchRamByte(offset + 1u);
 	}
 }
 
@@ -211,6 +215,11 @@ void ramScalarDatapathsAndGuards() {
 		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"the high half's code watch exits before either half of a direct F64 store");
 	memory.clearMappedPageWriteWatches();
+	memory.watchRamByte(target + 5u - RAM_BASE);
+	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
+		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
+		"a physical byte in the high half of a cross-page F64 transfer exits before either half is written");
+	memory.unwatchRamByte(target + 5u - RAM_BASE);
 	DecodedInstruction load = store;
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};

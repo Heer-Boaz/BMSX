@@ -19,6 +19,7 @@ NativeCodeBindings::NativeCodeBindings(Memory& memory, StringPool& pool, CPU* cp
 	: ramBytes(memory.ramByteCount()), ram(memory.ramData()), ramBusEnd(memory.ramBusEndAddress()),
 	  ramWriteGroups(memory.ramWriteWatches().groupData()),
 	  ramCodeWatchWords(memory.ramWriteWatches().codeWordMasks()),
+	  ramByteMaskPages(memory.ramWriteWatches().byteMaskPagesAddress()),
 	  gcPhase(cpu ? cpu->gcHeap().phaseAddress() : nullptr),
 	  systemRom(&memory.systemRomStorage()),
 	  cartridgeRom(&memory.cartridgeController().cpuRomStorage()),

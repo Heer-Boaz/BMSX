@@ -6,7 +6,16 @@ namespace bmsx {
 
 void MappedPageWriteWatches::watchByte(u32 offset) {
 	const u32 page = offset >> MAPPED_PAGE_BYTE_SHIFT, byte = offset & MAPPED_PAGE_BYTE_MASK;
-	auto& watched = m_bytePages[page];
+	const auto [pageEntry, added] = m_bytePages.try_emplace(page);
+	auto& watched = pageEntry->second;
+	if (added) {
+		if (!m_byteMaskPages) {
+			m_byteMaskDirectory = std::make_unique<const u32*[]>(m_pageCount);
+			m_byteMaskPages = m_byteMaskDirectory.get();
+		}
+		// unordered_map rehash changes iterators, not stored mask addresses.
+		m_byteMaskPages[page] = watched.masks.data();
+	}
 	auto& bits = watched.masks[byte >> 5u];
 	const u32 bit = 1u << (byte & 31u);
 	if (bits & bit) return;
@@ -22,12 +31,16 @@ void MappedPageWriteWatches::unwatchByte(u32 offset) {
 	watched.masks[byte >> 5u] &= ~(1u << (byte & 31u));
 	if (--watched.count == 0u) {
 		m_groups[page] &= ~MAPPED_WATCH_PHYSICAL_BYTES;
+		m_byteMaskPages[page] = nullptr;
 		m_bytePages.erase(found);
 	}
 }
 
 void MappedPageWriteWatches::detachByteWriteObserver() {
-	for (const auto& [page, watched] : m_bytePages) m_groups[page] &= ~MAPPED_WATCH_PHYSICAL_BYTES;
+	for (const auto& [page, watched] : m_bytePages) {
+		m_groups[page] &= ~MAPPED_WATCH_PHYSICAL_BYTES;
+		m_byteMaskPages[page] = nullptr;
+	}
 	m_bytePages.clear();
 	m_observer = nullptr;
 	m_observerContext = nullptr;
@@ -39,7 +52,7 @@ void MappedPageWriteWatches::notifyByteWrites(u32 page, u32 firstByte, u32 endBy
 		// The observer may remove the exact watch being notified, including
 		// the last watch on this page. Never retain a reference across it.
 		if ((m_groups[page] & MAPPED_WATCH_PHYSICAL_BYTES) == 0u) return;
-		u32 hits = m_bytePages.find(page)->second.masks[group] & mappedWatchWordMask(group, firstByte, lastByte);
+		u32 hits = m_byteMaskPages[page][group] & mappedWatchWordMask(group, firstByte, lastByte);
 		while (hits != 0u) {
 			const u32 byte = (group << 5u) + std::countr_zero(hits);
 			hits &= hits - 1u;

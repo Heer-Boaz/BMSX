@@ -122,6 +122,9 @@ public:
 	u32* groupData() { return m_groups.get(); }
 	const u32* groupData() const { return m_groups.get(); }
 	const u32* codeWordMasks() const { return m_words.get(); }
+	// Native code borrows the directory's stable latch, including code
+	// published before the first physical watch allocates the directory.
+	const u32* const* const* byteMaskPagesAddress() const { return &m_byteMaskPages; }
 
 	explicit MappedPageWriteWatches(size_t byteLength) {
 		m_pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
@@ -208,6 +211,8 @@ private:
 	u32 m_watchedPages = 0;
 	u32 m_historyEpoch = 0;
 	std::unordered_map<u32, ByteWatchPage> m_bytePages;
+	std::unique_ptr<const u32*[]> m_byteMaskDirectory;
+	const u32** m_byteMaskPages = nullptr;
 	void* m_observerContext = nullptr;
 	ByteWriteObserver m_observer = nullptr;
 };
