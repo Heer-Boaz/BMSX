@@ -20,6 +20,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <iostream>
@@ -53,7 +54,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, ramBytes)
 		, irq(memory), executionAddressSpace(memory), cpu(memory, irq, executionAddressSpace) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, executionAddressSpace);
 	}
 };
 
@@ -67,8 +68,7 @@ void capturedClosureRequiresFirmware() {
 		writeInstruction(image.text, 3, static_cast<u8>(OpCode::HALT), 0, 0, 0);
 		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4},
 			{.firstWord = 3, .wordCount = 1, .staticClosure = false, .upvalues = {{true, 0}, {true, 1}}}};
-		// Reuse the root's already-cached closure for exception admission. The
-		// short grant cannot execute another instruction in the handler.
+		// The short grant enters the exception vector but cannot execute it.
 		image.exceptionFunctionIndex = 0;
 		image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 		CpuMachine machine(image);
@@ -88,10 +88,10 @@ void capturedClosureRequiresFirmware() {
 		const u32 open = parent.readControl(FrameField::OpenHead), pc = parent.readControl(FrameField::Pc);
 		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded, "the rejected CLOSURE consumes the short grant without running its handler");
 		require(cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION && cpu.readLuaFaultReasonWord() == 0u
-			&& cpu.readEpcWord() == pc, "a raw image without verified firmware traps at the WIDE head");
+			&& cpu.readEpcWord() == pc, "an image without verified allocation firmware traps at the WIDE head");
 		require(parent.registers.get(2) == valueInteger(91), "the rejected CLOSURE does not write its destination");
 		require(parent.readControl(FrameField::OpenHead) == open,
-			"a raw image cannot execute an alternative captured allocation path");
+			"the missing firmware cannot execute an alternative captured allocation path");
 		require(cpu.heapAllocator().occupiedBytes() == occupied, "capture rejection allocates neither a closure nor captured cells");
 	}
 }
@@ -885,7 +885,7 @@ void compactAndPaddedRomFunctionRecordsAgree() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		const u32 record = rom.functionAddresses[1];
 		test::seedTestRomClosure(cpu, record);
@@ -1318,6 +1318,15 @@ void instructionFetchRejectsCartridgeMmio() {
 		DmaController dma(memory, cpu, irq, scheduler);
 		memory.cartridgeController().connect(memory, irq, dma);
 		cpu.reset();
+		const u32 faultSequence = memory.readBusFaultSequence();
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, rom.functionAddresses[0], CART_MMIO_BASE);
+		require(cpu.runUntilDepth(0, 1) == RunResult::Yielded
+			&& cpu.readCauseWord() == CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR
+			&& cpu.readEpcWord() == CART_MMIO_BASE && cpu.readBadAddressWord() == CART_MMIO_BASE
+			&& memory.readBusFaultSequence() == faultSequence && cpu.heapAllocator().occupiedBytes() == 0u,
+			"the raw reset bank cannot drive an instruction fetch outside System ROM");
+
+		test::seedManagedFixture(cpu, addresses);
 		memory.writeMappedU32LE(IO_CART_SELECT, selected);
 		require(memory.cartridgeController().selectedSlot() == selected, "the data selector reaches the intended card");
 		memory.writeMappedU32LE(CART_MMIO_BASE, 0x12345678u);
@@ -1389,7 +1398,7 @@ void instructionFetchRejectsCartridgeMmio() {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		constexpr u32 pc = CART_MMIO_BASE - INSTRUCTION_BYTES;
 		std::array<u8, INSTRUCTION_BYTES> instruction{};
@@ -1648,7 +1657,7 @@ void writableCodeWatchesBelongToTheirPhysicalSocket() {
 		DeviceScheduler scheduler(cpu);
 		DmaController dma(memory, cpu, irq, scheduler);
 		memory.cartridgeController().connect(memory, irq, dma);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 		std::vector<u8> code(2 * INSTRUCTION_BYTES);
 		writeInstruction(code, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);
@@ -1691,7 +1700,8 @@ void cachedInstructionBindingsFollowThePhysicalSelector() {
 		Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(cards[0], cards[1])}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		DeviceScheduler scheduler(cpu); DmaController dma(memory, cpu, irq, scheduler);
-		memory.cartridgeController().connect(memory, irq, dma); cpu.reset();
+		memory.cartridgeController().connect(memory, irq, dma);
+		test::seedManagedFixture(cpu, addresses);
 		if (instrumented) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], CART_ROM_BASE);
 		require(cpu.runUntilDepth(0, 768) == RunResult::Yielded && cpu.readFramePc(0) == CART_ROM_BASE,

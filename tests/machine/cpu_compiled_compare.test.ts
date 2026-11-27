@@ -13,7 +13,8 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure, type TestBlua32Source } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestBlua32PairCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestRomClosure, type TestBlua32Source } from '../helpers/blua32';
+import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function comparisonImage(op: OpCode, expected: boolean, left = 0, right = 1, constants: TestBlua32Source['constants'] = []) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -42,7 +43,7 @@ function values(cpu: CPU): Value[] {
 for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [false, true]) {
 	test(`generated comparison ${op}, expected ${expected}: kinds, reference identities, NaNs and UTF-8 order`, () => {
 		const image = comparisonImage(op, expected);
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+		const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 		const inputs = machines.map(({ cpu }) => values(cpu));
 		const entry = image.image.functions[0].codeAddress;
 		runCpuParity(machines[0].cpu, machines[1].cpu, 800);
@@ -80,8 +81,8 @@ for (const op of [OpCode.LT, OpCode.LE]) test(`compiled ordering ${op} retains l
 		writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 9 }],
 			constants: [integerConstant(9)] });
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const pc = image.image.functions[0].codeAddress;
 		const entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 		const grant = BASE_CYCLES[OpCode.LOADK] + BASE_CYCLES[OpCode.KSMI] + BASE_CYCLES[op];
@@ -136,7 +137,7 @@ test('comparison RK constants agree after each admitted segment, including short
 	const constants = [null, false, true, ...[-0, NaN, Infinity, 0.25].map(numberConstantFromHost), '', 'a\0b', '\ue000', '\u{10000}'];
 	for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const selectors of [[-1, 1], [0, -2], [-10, -11]]) {
 		const image = comparisonImage(op, true, selectors[0], selectors[1], constants);
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+		const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 		const entry = image.image.functions[0].codeAddress;
 		runCpuParity(machines[0].cpu, machines[1].cpu, 800);
 		for (let grant = 1; grant <= 31; ++grant) for (const value of [valueNil(), valueBool(false), valueFloatBits(0xffc01234), valueFloat(-0), valueFloat(0.25), valueFloat(Infinity)]) {
@@ -163,7 +164,10 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	const replacement = linkRawTestSystemBlua32({ ...source, constants: ['same-slot'] }, RAM_CODE_FIXTURE_BYTES);
 	const machines = [createTestBlua32PairCpu(images, CpuExecutionBackend.JavaScript),
 		createTestBlua32PairCpu(images, CpuExecutionBackend.Interpreter)];
-	for (const { memory } of machines) memory.writeBytes(DYNAMIC_RAM_BASE, text);
+	for (const { cpu, memory, executionAddressSpace } of machines) {
+		admitTestHeapServiceCpu(cpu, executionAddressSpace);
+		memory.writeBytes(DYNAMIC_RAM_BASE, text);
+	}
 	const owners = new Map<number, Blua32ExecutionImage>();
 	for (const domain of [SYSTEM_EXECUTION_DOMAIN_ID, 0, SYSTEM_EXECUTION_DOMAIN_ID, 0] as const) {
 		for (const { cpu } of machines) {
@@ -217,7 +221,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 test('EQ ignores unused Nil/boolean scalar payloads without rewriting either source slot', () => {
 	const image = comparisonImage(OpCode.EQ, false);
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createTestHeapServiceCpu(image, backend);
 		cpu.runUntilDepth(0, 800);
 		for (const kind of [ValueTag.Nil, ValueTag.False, ValueTag.True]) {
 			const frame = cpu.rootThread.frameAtDepth(0);
@@ -239,7 +243,7 @@ test('resolved comparison skips retire when their fetched WIDE width changes', (
 	writeInstruction(text, 4, OpCode.MOV, 5, 2, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1); frame.registers.setInteger(2, 73);
@@ -281,7 +285,7 @@ test('a maximum-length compiled comparison retains both words of its skipped WID
 	writeInstruction(text, 129, OpCode.K1, 2, 0, 0);
 	writeInstruction(text, 130, OpCode.JMP, 0, 61, 61, 255); // -131 words, back to the first prefix.
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 131, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1);
@@ -307,7 +311,7 @@ test('both resolved comparison paths stay in one region and return their full cy
 	writeInstruction(text, 4, OpCode.ADD, 4, 4, 1);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 5 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
@@ -356,7 +360,7 @@ for (const [currentWide, skippedWide] of [[false, false], [true, false], [false,
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-		const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+		const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 		const end = machines[0].memory.ramBusEnd(), nextPc = end - (skippedWide ? INSTRUCTION_BYTES : 0);
 		const pc = nextPc - (currentWide ? 2 : 1) * INSTRUCTION_BYTES;
 		const code = new Uint8Array((currentWide || skippedWide ? 2 : 1) * INSTRUCTION_BYTES);
@@ -408,7 +412,7 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 			const crossPageWord = MAPPED_PAGE_BYTE_SIZE / INSTRUCTION_BYTES, delta = -crossPageWord - 1;
 			writeInstruction(text, crossPageWord, OpCode.JMP, 0, (delta >>> 6) & 63, delta & 63, (delta >>> 12) & 255);
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: crossPageWord + 1, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
-			const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+			const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 			for (const { cpu, memory } of machines) {
 				memory.writeBytes(DYNAMIC_RAM_BASE, text);
 				const r = cpu.rootThread.frameAtDepth(0).registers;
@@ -515,7 +519,7 @@ test('a paired JMP chains to another physical page and unlinks when that target 
 	writeInstruction(text, second, OpCode.ADD, 4, 4, 1);
 	writeInstruction(text, second + 1, OpCode.JMP, 0, (-(second + 2) >>> 6) & 63, -(second + 2) & 63, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: second + 2, maxStack: 5 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		for (let reg = 0; reg < 5; ++reg) cpu.rootThread.frameAtDepth(0).registers.setInteger(reg, reg === 1 ? 1 : 0);
@@ -549,7 +553,7 @@ test('a paired JMP defers the target fetch until positive budget remains', () =>
 	const end = SYSTEM_ROM_SIZE, start = end - MAPPED_PAGE_BYTE_SIZE;
 	const rom = new Uint8Array(end);
 	rom.set(image.romBytes); rom.set(text, start);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.installSystemRom(rom);
 		const r = cpu.rootThread.frameAtDepth(0).registers;

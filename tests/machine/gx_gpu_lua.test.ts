@@ -1,4 +1,7 @@
-import { compileTestSystemWithHeap, loadTestBiosUtilityModules } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
+import { loadTestBiosUtilityModules } from '../helpers/heap_service_system';
+import { cartridgeSlots } from '../helpers/cartridge';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -31,8 +34,6 @@ import {
 	GxGpuPcrtcTiming,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_DISPLAY_DISPFB_GX16_1024_LAYOUT_WORD,
@@ -73,17 +74,12 @@ import {
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
-import {
-	createTestBlua32PairCpu,
-	createTestSystemCpu,
-	linkTestBlua32Pair,
-	linkTestSystemBlua32,
-} from '../helpers/blua32';
+import { linkTestCartBlua32 } from '../helpers/blua32';
 
 const PCRTC_SENTINEL_BASE = 0xa5000000;
 const SYSTEM_BOOT_SOURCE = `
 math = require('math')
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+${TEST_CART_TRANSFER_SOURCE}
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
@@ -157,23 +153,11 @@ const biosModules = [
 	},
 	...sourceModules(BIOS_MODULE_FILES),
 ];
-const systemCompiled = compileTestSystemWithHeap(
-	parseLuaChunk(SYSTEM_BOOT_SOURCE, 'boot.lua'),
+const systemImage = linkManagedTestSystem(SYSTEM_BOOT_SOURCE, 3,
 	[...systemModules, ...loadTestBiosUtilityModules().filter(module => !systemModules.some(input => input.path === module.path))],
-	{ entrySource: SYSTEM_BOOT_SOURCE, optLevel: 3, programDomain: 'system' },
-);
-const biosCompiled = compileTestSystemWithHeap(
-	parseLuaChunk(BIOS_ENTRY_SOURCE, 'bios.lua'),
-	biosModules,
-	{ entrySource: BIOS_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
-);
-const biosImage = linkTestSystemBlua32(biosCompiled);
-const biosResetCompiled = compileTestSystemWithHeap(
-	parseLuaChunk(BIOS_RESET_ENTRY_SOURCE, 'bios_reset.lua'),
-	biosModules,
-	{ entrySource: BIOS_RESET_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
-);
-const biosResetImage = linkTestSystemBlua32(biosResetCompiled);
+	BIOS_FUNCTION_EXPORTS);
+const biosImage = linkManagedTestSystem(BIOS_ENTRY_SOURCE, 3, biosModules);
+const biosResetImage = linkManagedTestSystem(BIOS_RESET_ENTRY_SOURCE, 3, biosModules);
 
 type OutputMode = {
 	reset: string;
@@ -207,7 +191,8 @@ return gx_display.size()
 		cartModules,
 		{ entrySource, optLevel: 3, programDomain: 'cart' },
 	);
-	return createTestBlua32PairCpu(linkTestBlua32Pair(systemCompiled, cartCompiled));
+	const cart = linkTestCartBlua32(systemImage.biosImports, cartCompiled);
+	return bootManagedTestSystem(systemImage, 'main', cartridgeSlots(cart.cartRomBytes));
 }
 
 function runCartMode(reset: string): { memory: Memory; cpu: CPU; initialWords: Uint32Array } {
@@ -299,7 +284,7 @@ test('GX cart SDK holds SMODE1 reset until every timing latch is programmed', ()
 });
 
 test('BIOS GX reset programs the same 320x240 raw preset without touching circuit 2', () => {
-	const { memory, cpu } = createTestSystemCpu(biosResetImage);
+	const { memory, cpu } = bootManagedTestSystem(biosResetImage);
 	const initialWords = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 	for (let wordIndex = 0; wordIndex < initialWords.length; wordIndex += 1) {
 		const word = (PCRTC_SENTINEL_BASE | wordIndex) >>> 0;
@@ -331,7 +316,7 @@ test('BIOS GX reset programs the same 320x240 raw preset without touching circui
 });
 
 test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 DTV origin', () => {
-	const { memory, cpu } = createTestSystemCpu(biosImage);
+	const { memory, cpu } = bootManagedTestSystem(biosImage);
 	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		320,

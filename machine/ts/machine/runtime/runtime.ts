@@ -61,8 +61,6 @@ export class Runtime {
 		this.completionValues.length = 0;
 		this.machine.memory.clearIoSlots();
 		this.resetHardwareState();
-		// History observers reconcile the reviewed heap before its registers are cleared.
-		this.machine.cpu.clearExecutionEnvironment();
 	}
 
 	public boot(): void {

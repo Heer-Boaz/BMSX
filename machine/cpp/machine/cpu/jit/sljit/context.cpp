@@ -75,6 +75,8 @@ void NativeLowering::lowerOperation(const NativePoolRead& read, const NativeInst
 	sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(NativeBlockAbi::state),
 		offsetof(NativeBlockRunState, constants) + ConstValueSpan::tagsOffset());
 	sljit_emit_op1(m_compiler, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM2(SLJIT_R1, SLJIT_R2), 0);
+	fault(sljit_emit_cmp(m_compiler, SLJIT_EQUAL, SLJIT_R1, 0, SLJIT_IMM,
+		static_cast<u8>(ValueTag::UnboundStringLiteral)), invalid, m_cache.state());
 	emitRawStore(read.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, read.result));
 }
 

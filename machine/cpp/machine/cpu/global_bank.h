@@ -28,6 +28,7 @@ public:
 	std::optional<u32> find(StringId key) const;
 	u32 registerName(StringId key, Value pending = valueNil());
 	void bind();
+	void detach() { m_values = {}; }
 	void clear();
 
 private:

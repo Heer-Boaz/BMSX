@@ -11,6 +11,7 @@
 #include "spec/blua32/memory_access_kind.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 #include "support/cpu_execution_parity.h"
 
 #include <algorithm>
@@ -36,10 +37,10 @@ struct CpuMachine {
 	ExecutionAddressSpace addresses;
 	CPU cpu;
 	CpuMachine(const test::Blua32TestImage& image, bool scalar = false, u32 bssBytes = test::RAM_CODE_FIXTURE_BYTES)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, bssBytes))
+		: rom(test::encodeManagedFixtureRom(image, bssBytes))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses, rom, image);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };

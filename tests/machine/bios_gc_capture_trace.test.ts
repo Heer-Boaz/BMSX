@@ -13,10 +13,10 @@ import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALU
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const TRACE = 'kernel/gc_capture_trace', PROBE = 'test/gc_capture_trace';
 const entrySource = 'halt_until_irq';
@@ -54,7 +54,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
@@ -171,13 +171,16 @@ for (const optLevel of [0, 3] as const) {
 		enqueue(head, GC_RECORD_LINK);
 		assert.equal(oracle.gc['trace'](false, 3), 3);
 		begin('queued', head, ValueTag.Closure, 3, 1, 0);
-		assert.deepEqual(finish(), [3, 1], 'no capture visit leaves the old String latch pending');
+		const pendingCarry = oracle.stringPool.takeMarkWork();
+		assert.equal(pendingCarry, 1);
+		assert.deepEqual(finish(), [3, pendingCarry], 'no capture visit leaves the old String latch pending');
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), head);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0);
 		compare();
 
-		let pending = 1;
+		let pending = pendingCarry;
 		for (const [limit, cursor, want] of [[1, 1, 7], [1, 2, 1], [1, 0, 5]]) {
+			oracle.stringPool.resumeMarkWork(pending);
 			const work = oracle.gc['resumeTrace'](head, false, limit);
 			assert.equal(work, want);
 			begin('resumed', head, limit, pending, 0);

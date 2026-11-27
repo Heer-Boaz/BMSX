@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include "memory_map.h"
+
 #include <cstdint>
 
 
@@ -35,10 +37,10 @@ constexpr uint32_t HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 // Cart lane (socket + 1) is the presence word. The vector word itself can
 // fault and is not a sentinel.
 enum class HeapServiceIrqForwardField : uint32_t { CartLane = 0, Vector = 4 };
-constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = 0x880;
-constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = 0x1000;
-constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = 20;
-constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = 384;
+constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = CPU_FIXED_FRAME_OFFSET;
+constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = CPU_FIXED_VALUE_OFFSET;
+constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = CPU_FIXED_FRAME_COUNT;
+constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = CPU_FIXED_VALUE_COUNT;
 
 
 // Pinned CLOSURE return frontier. The marked destination is the presence

@@ -96,36 +96,8 @@ CPU::CPU(
 	, m_staticClosuresByAddress(memory)
 	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
 	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
+	m_memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
-	const StringId indexKey = m_stringPool.intern("__index");
-	const StringId newIndexKey = m_stringPool.intern("__newindex");
-	const StringId lengthKey = m_stringPool.intern("__len");
-	const StringId modeKey = m_stringPool.intern("__mode");
-	const StringId errorInErrorHandling = m_stringPool.intern("error in error handling");
-	std::array<StringId, LUA_FAULT_REASON_INDEX_NAN + 1u> faultIds{};
-	faultIds[LUA_FAULT_REASON_UNKNOWN] = m_stringPool.intern("Attempted to get length of an unsupported value.");
-	faultIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = m_stringPool.intern("Attempted to call a non-function value.");
-	faultIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = m_stringPool.intern("Attempted to index field on a non-table value.");
-	faultIds[LUA_FAULT_REASON_ASSIGN_NON_TABLE] = m_stringPool.intern("Attempted to assign to a non-table value.");
-	faultIds[LUA_FAULT_REASON_INDEX_NIL] = m_stringPool.intern("Table index is nil.");
-	faultIds[LUA_FAULT_REASON_METATABLE_LOOP] = m_stringPool.intern("Metatable index chain too long.");
-	faultIds[LUA_FAULT_REASON_ITERATE_NON_TABLE] = m_stringPool.intern("Attempted to iterate a non-table value.");
-	faultIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = m_stringPool.intern("xpcall error handler must be a function.");
-	faultIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = m_stringPool.intern("Out of memory.");
-	faultIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = m_stringPool.intern("Invalid argument.");
-	faultIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = m_stringPool.intern("invalid key to 'next'");
-	faultIds[LUA_FAULT_REASON_INDEX_NAN] = m_stringPool.intern("Table index is NaN.");
-	// CPU reset keeps the boot-interned records; checkpoints restore these lanes with RAM.
-	using Remark = HeapServiceRemarkHeadField;
-	const u32 management = m_heapAllocator.managementOffset();
-	const u32 remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
-	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::Mode), modeKey);
-	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Index), indexKey, newIndexKey);
-	m_memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Length), lengthKey, errorInErrorHandling);
-	m_memory.writeRamRecordWord(remark + static_cast<u32>(Remark::FaultIds), RAM_BASE + faults);
-	for (u32 reason = 0; reason < faultIds.size(); ++reason) {
-		m_memory.writeRamRecordWord(faults + reason * sizeof(u32), faultIds[reason]);
-	}
 	m_builtinResultScratch.reserve(1);
 	m_builtinResultScratch.get(0).ensureCapacity(8);
 	m_builtinResultScratch.clear();
@@ -137,13 +109,35 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
-	m_rootView.select(createThread(0u));
-	m_rootView.bindStack();
-	m_rootView.setStatus(ThreadStatus::Running);
 	m_activeThread = &m_rootView;
-	m_completionThreadAddress = m_rootView.address;
 	m_memory.attachMappedPageInvalidator(*this);
 	initializeHeapService();
+}
+
+static_assert(CPU_RESET_BANK_ADDRESS + THREAD_HEAP_BYTES == CPU_RESET_BANK_END);
+static_assert(CPU_FIXED_FRAME_ADDRESS + CPU_FIXED_FRAME_COUNT * FRAME_CONTROL_BYTES <= CPU_FIXED_VALUE_ADDRESS);
+static_assert(CPU_FIXED_VALUE_ADDRESS + CPU_FIXED_VALUE_COUNT * THREAD_STACK_SLOT_BYTES == CPU_FIXED_VALUE_END);
+
+void CPU::initializeResetBank() {
+	const u32 offset = CPU_RESET_BANK_ADDRESS - RAM_BASE, bytes = CPU_RESET_BANK_END - CPU_RESET_BANK_ADDRESS;
+	const u32 frames = CPU_FIXED_FRAME_ADDRESS - RAM_BASE, frameBytes = CPU_FIXED_FRAME_COUNT * FRAME_CONTROL_BYTES;
+	const u32 values = CPU_FIXED_VALUE_ADDRESS - RAM_BASE, valueBytes = CPU_FIXED_VALUE_END - CPU_FIXED_VALUE_ADDRESS;
+	std::memset(m_memory.ramData() + offset, 0, bytes);
+	std::memset(m_memory.ramData() + frames, 0, frameBytes);
+	std::memset(m_memory.ramData() + values, 0, valueBytes);
+	m_memory.invalidateRamWrite(offset, bytes);
+	m_memory.invalidateRamWrite(frames, frameBytes);
+	m_memory.invalidateRamWrite(values, valueBytes);
+	m_memory.writeRamRecordPair(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::StackBlock),
+		CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT);
+	m_memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::FrameCapacity), CPU_FIXED_FRAME_COUNT);
+	m_memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(ThreadField::FrameBlock), CPU_FIXED_FRAME_ADDRESS);
+	m_rootView.select(CPU_RESET_BANK_ADDRESS);
+	m_rootView.bindStack();
+	m_rootView.reserveFixedFrameViews();
+	m_rootView.setStatus(ThreadStatus::Running);
+	m_activeThread = &m_rootView;
+	m_completionThreadAddress = CPU_RESET_BANK_ADDRESS;
 }
 
 CPU::~CPU() {
@@ -170,6 +164,11 @@ u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool can
 
 void CPU::reset() {
 	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before CPU reset.");
+	const u32 previousRoot = m_rootView.address;
+	if (previousRoot != 0u && previousRoot != CPU_RESET_BANK_ADDRESS) {
+		m_cop0Words[COP0_CONTEXT] = previousRoot;
+		m_cop0Words[COP0_PREVIOUS_ACTIVE] = m_activeThread->address;
+	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	discardNativeCompilation();
 #endif
@@ -186,11 +185,9 @@ void CPU::reset() {
 		}
 	}
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	clearCallStack();
+	m_systemGlobalBank.detach();
+	m_globalBank.detach();
 	for (auto& view : m_transferViews) view.select(0u);
-	const u32 head = m_heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	m_memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), 0u);
-	m_memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), 0u);
 	m_haltedUntilIrqFrameDepth = -1;
 	m_haltedUntilIrqThreadAddress = 0u;
 	m_interruptEventPending = false;
@@ -219,31 +216,18 @@ void CPU::reset() {
 	m_nmiReturnExceptionDomainWord = 0u;
 	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
-	if (!m_heapAllocator.setFloor(systemBoot.staticEnd)) {
-		m_luaHeap.collectRuntime();
-		if (!m_heapAllocator.setFloor(systemBoot.staticEnd)) { hardHalt(); return; }
-	}
+	initializeResetBank();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	clearNativeContinuationBindings();
 #endif
-	for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane) {
-		const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), static_cast<i32>(lane) - 1);
-		if (const u32 base = m_memory.readRamRecordWord(binding)) {
-			const u32 span = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-			m_memory.writeRamRecordPair(binding, 0u, 0u);
-			m_memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0u, 0u);
-			m_luaHeap.releaseRecord(base, span);
-		}
-		m_executionImagesByDomain[lane].reset();
-	}
+	for (auto& image : m_executionImagesByDomain) image.reset();
 	m_unpublishedRomMask = 0u;
-	m_stringPool.clearRomTables();
 	std::unique_ptr<Blua32ExecutionImage> activatedSystemImage =
-		activateExecutionImage(systemBoot);
+		activateExecutionImage(systemBoot, ExecutionImageUpdate::Select);
 	m_systemImage = activatedSystemImage.get();
 	m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)] =
 		std::move(activatedSystemImage);
-	m_systemExceptionFunctionAddress = systemExceptionFunctionAddress;
+	m_cop0Words[COP0_SYSTEM_VECTOR] = systemExceptionFunctionAddress;
 	latchActiveExecutionImage(SYSTEM_EXECUTION_DOMAIN_ID, m_systemImage);
 	if (!readFunctionRecord(*m_systemImage, systemResetFunctionAddress, executionBusSignalsForDomain(SYSTEM_EXECUTION_DOMAIN_ID))) {
 		hardHalt();
@@ -298,6 +282,12 @@ u32 CPU::bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records
 	const u32 count = static_cast<u32>(image.constantStringSlots.size());
 	u32 ramCount = 0, slot = 0;
 	for (const u32 index : image.constantStringSlots) {
+		if (stringBinding == 0u) {
+			storage.tags()[index] = static_cast<u8>(ValueTag::UnboundStringLiteral);
+			storage.words()[index] = 0u;
+			continue;
+		}
+		storage.tags()[index] = static_cast<u8>(ValueTag::String);
 		StringId id;
 		if (restoring) {
 			id = loadImageStringBinding(m_memory, stringBinding, count, slot, ramCount);
@@ -329,6 +319,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	Blua32ExecutionBoot executionBoot, ExecutionImageUpdate update
 ) {
 	const bool restoring = update == ExecutionImageUpdate::Restore || update == ExecutionImageUpdate::UseInstalled;
+	const bool selecting = update == ExecutionImageUpdate::Select;
 	const ExecutionDomainId executionDomainId = executionBoot.executionDomainId;
 	auto image = std::make_unique<Blua32ExecutionImage>();
 	image->executionDomainId = executionDomainId;
@@ -424,7 +415,7 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		clearNativeContinuationBindings();
 #endif
 	}
-	if (!restoring) m_stringPool.activateRomTable(executionDomainId,
+	if (!restoring && !selecting) m_stringPool.activateRomTable(executionDomainId,
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 		readLE32(header + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
 	image->globalNameCount = globalNameCount;
@@ -433,9 +424,9 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	const u32 bytes = static_cast<u32>(nameCount + stringCount) * sizeof(u32);
 	if (update == ExecutionImageUpdate::UseInstalled &&
 		m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) != bytes) return nullptr;
-	const u32 base = restoring ? m_memory.readRamRecordWord(binding)
+	const u32 base = selecting ? 0u : restoring ? m_memory.readRamRecordWord(binding)
 		: bytes == 0u ? 0u : m_luaHeap.allocateRecord(bytes, false, 0, 0);
-	if (!restoring && bytes != 0u) {
+	if (!restoring && !selecting && bytes != 0u) {
 		registerGlobalNames(executionDomainId, globalNameTableAddress, globalNameCount, m_globalBank, base);
 		registerGlobalNames(executionDomainId, systemGlobalNameTableAddress, systemGlobalNameCount,
 			m_systemGlobalBank, base + 4u * globalNameCount);
@@ -449,10 +440,10 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 		image->constantStringSlots.reserve(stringCount);
 		decodeConstantPool(*image, records);
 	}
-	const u32 strings = restoring ? m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET)
+	const u32 strings = selecting ? 0u : restoring ? m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET)
 		: base + static_cast<u32>(nameCount) * sizeof(u32);
 	const u32 ramStringCount = bindConstantStrings(*image, records, strings, restoring);
-	if (!restoring) {
+	if (!restoring && !selecting) {
 		m_memory.writeRamRecordPair(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, strings, ramStringCount);
 		m_memory.writeRamRecordPair(binding, base, bytes);
 	}
@@ -571,7 +562,6 @@ void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
 	m_unpublishedRomMask &= ~executionDomainBit(activatedImage->executionDomainId);
 	if (activatedImage->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID) {
 		m_systemImage = activatedImage;
-		m_systemExceptionFunctionAddress = executionBoot.exceptionFunctionAddress;
 	}
 	if (previousImage) {
 		visitThreadViews([&](Thread& thread) {
@@ -631,13 +621,6 @@ u32 CPU::allocateStaticClosure(const FunctionPrototype& record) {
 	const u32 closure = allocateClosure(record, 0, true);
 	m_staticClosuresByAddress.insert(record.functionAddress, closure);
 	return closure;
-}
-
-void CPU::clearExecutionEnvironment() {
-	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	clearCallStack();
-	m_systemGlobalBank.clear();
-	m_globalBank.clear();
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
@@ -931,7 +914,99 @@ bool CPU::readFunctionRecordOnBus(
 	return image && readFunctionRecord(*image, address, busSignals);
 }
 
+void CPU::selectRamEnd(CallFrame& frame, u32 address) {
+	if (m_activeExecutionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+		|| m_currentInstructionPc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	const u32 end = address & ~(HEAP_PAGE_SIZE - 1u);
+	if (end < DYNAMIC_RAM_BASE || end > RAM_BASE + m_memory.ramByteCount() - RUNTIME_MANAGEMENT_SIZE) {
+		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+		return;
+	}
+	m_memory.setRamBusEnd(end);
+	requestYield();
+}
+
+void CPU::activateRootContext(u32 address) {
+	using F = ThreadField;
+	if (!resetBankSelected() || isUserMode() || m_activeThread->frameDepth() != 1u
+		|| (address & 3u) != 0u || address < m_memory.ramBusEnd() || !m_memory.isRamRange(address, THREAD_HEAP_BYTES, true)) {
+		hardHalt();
+		return;
+	}
+	const u32 stack = m_memory.readRamRecordWord(address + static_cast<u32>(F::StackBlock));
+	const u32 values = m_memory.readRamRecordWord(address + static_cast<u32>(F::StackCapacity));
+	const u32 frames = m_memory.readRamRecordWord(address + static_cast<u32>(F::FrameBlock));
+	const u32 frameCount = m_memory.readRamRecordWord(address + static_cast<u32>(F::FrameCapacity));
+	if (m_memory.readRamRecordWord(address + static_cast<u32>(F::FrameDepth)) != 1u || frameCount < 2u || frameCount > MAIN_RAM_SIZE / FRAME_CONTROL_BYTES || values > MAX_THREAD_VALUE_SLOTS
+		|| ((stack | frames) & 3u) != 0u || stack < m_memory.ramBusEnd() || frames < m_memory.ramBusEnd()
+		|| !m_memory.isRamRange(stack, static_cast<size_t>(values) * THREAD_STACK_SLOT_BYTES, true)
+		|| !m_memory.isRamRange(frames, static_cast<size_t>(frameCount) * FRAME_CONTROL_BYTES, true)) {
+		hardHalt();
+		return;
+	}
+	const u32 pc = m_memory.readRamRecordWord(frames + static_cast<u32>(FrameField::Pc));
+	const u32 fn = m_memory.readRamRecordWord(frames + static_cast<u32>(FrameField::Function));
+	const u32 flags = m_memory.readRamRecordWord(frames + static_cast<u32>(FrameField::Flags));
+	if (frameExecutionBank(flags) != SYSTEM_EXECUTION_DOMAIN_ID || pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE
+		|| !m_systemImage->admitsFunctionPc(fn, pc)) {
+		hardHalt();
+		return;
+	}
+	// Operand projections describe the newly selected immutable image. The
+	// namespace records and installed backing already belong to machine RAM.
+	m_globalBank.bind();
+	m_systemGlobalBank.bind();
+	auto& image = *m_systemImage;
+	const u32 binding = executionImageBindingOffset(m_heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
+	const u32 strings = m_memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
+	bindConstantStrings(image, image.constantSource, strings, true);
+#if defined(BMSX_NATIVE_COMPILER_WORKER)
+	discardNativeCompilation();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	clearNativeContinuationBindings();
+#endif
+	for (const auto& entry : image.decodedPages.entries()) {
+		auto& page = entry->page;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+		page.retireNativeBlocks(0u, DECODED_PAGE_WORDS);
+#endif
+		page.refreshState.fill(DECODED_REFRESH_DECODE);
+		for (auto& decoded : page.words) decoded.width = 0u;
+	}
+	m_memory.writeRamRecordWord(CPU_RESET_BANK_ADDRESS + static_cast<u32>(F::FrameDepth), 0u);
+	m_rootView.select(address);
+	bindPhysicalFrames(m_rootView);
+	m_completionThreadAddress = address;
+	m_cop0Words[COP0_CONTEXT] = 0u;
+	m_cop0Words[COP0_PREVIOUS_ACTIVE] = 0u;
+	requestYield();
+}
+
+void CPU::installSystemVector(CallFrame& frame, u32 address) {
+	// A cartridge exception frame executes in supervisor mode but cannot
+	// reprogram the System exception vector.
+	if (m_activeExecutionDomainId != SYSTEM_EXECUTION_DOMAIN_ID
+		|| m_currentInstructionPc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	const auto& directory = m_systemImage->romFunctions;
+	const auto* version = directory.mappedCode ? nullptr : directory.find(address);
+	if (!version || version->upvalueCount != 0u || version->entry.codeAddress >= version->endPc) {
+		enterSynchronousAddressException(frame, (address & 3u) != 0u
+			? CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD : CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, address);
+		return;
+	}
+	m_cop0Words[COP0_SYSTEM_VECTOR] = address;
+}
+
 void CPU::executeFunctionAddress(u32 functionAddress) {
+	// A normal transfer reuses the receiving bank; it cannot retain reset authority.
+	if (resetBankSelected()) { hardHalt(); return; }
 	if (!readFunctionRecordOnBus(
 		*m_activeExecutionImage,
 		functionAddress,
@@ -1034,6 +1109,9 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	if (m_concat.active()) state.concat = m_concat;
 	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
+	state.systemVectorWord = m_cop0Words[COP0_SYSTEM_VECTOR];
+	state.previousRootContextWord = m_cop0Words[COP0_CONTEXT];
+	state.previousActiveContextWord = m_cop0Words[COP0_PREVIOUS_ACTIVE];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
 	state.epcWord = m_cop0Words[COP0_EPC];
 	state.badAddressWord = m_cop0Words[COP0_BAD_ADDRESS];
@@ -1059,30 +1137,36 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_staticClosuresByAddress.clear();
 	m_rootView.select(state.rootThreadAddress);
+	const bool boardBank = state.rootThreadAddress == CPU_RESET_BANK_ADDRESS;
 	for (auto& view : m_transferViews) view.select(0u);
 	m_activeThread = &m_rootView;
 	m_memory.clearMappedPageWriteWatches();
-	// This scan is independent of the in-flight collector sweep cursor.
-	m_heap.visitObjectRecords(this, [](void* context, u32 address) {
-		auto& cpu = *static_cast<CPU*>(context);
-		auto& heap = cpu.m_heap;
-		switch (cpu.m_memory.readRamRecordByte(address)) {
-			case static_cast<u8>(ValueTag::Closure): {
-				const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-				if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
-					const u32 functionAddress = cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-					cpu.m_staticClosuresByAddress.insert(functionAddress, address);
+	if (boardBank) {
+		m_systemGlobalBank.detach();
+		m_globalBank.detach();
+	} else {
+		// This scan is independent of the in-flight collector sweep cursor.
+		m_heap.visitObjectRecords(this, [](void* context, u32 address) {
+			auto& cpu = *static_cast<CPU*>(context);
+			auto& heap = cpu.m_heap;
+			switch (cpu.m_memory.readRamRecordByte(address)) {
+				case static_cast<u8>(ValueTag::Closure): {
+					const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
+					if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
+						const u32 functionAddress = cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
+						cpu.m_staticClosuresByAddress.insert(functionAddress, address);
+					}
+					break;
 				}
-				break;
 			}
-		}
-	});
-	m_systemGlobalBank.bind();
-	m_globalBank.bind();
+		});
+		m_systemGlobalBank.bind();
+		m_globalBank.bind();
+	}
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
 			const auto boot = m_executionAddressSpace.resolveDomain(static_cast<ExecutionDomainId>(index) - 1);
-			m_executionImagesByDomain[index] = activateExecutionImage(*boot, ExecutionImageUpdate::Restore);
+			m_executionImagesByDomain[index] = activateExecutionImage(*boot, boardBank ? ExecutionImageUpdate::Select : ExecutionImageUpdate::Restore);
 		} else {
 			m_executionImagesByDomain[index].reset();
 		}
@@ -1114,6 +1198,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	else m_concat.bytes.reserve(m_concat.length);
 	m_pendingAllocation = state.pendingAllocation;
 	m_cop0Words[COP0_STATUS] = state.statusWord;
+	m_cop0Words[COP0_SYSTEM_VECTOR] = state.systemVectorWord;
+	m_cop0Words[COP0_CONTEXT] = state.previousRootContextWord;
+	m_cop0Words[COP0_PREVIOUS_ACTIVE] = state.previousActiveContextWord;
 	m_cop0Words[COP0_CAUSE] = state.causeWord;
 	m_cop0Words[COP0_EPC] = state.epcWord;
 	m_cop0Words[COP0_BAD_ADDRESS] = state.badAddressWord;
@@ -1391,7 +1478,7 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		const auto protectedIndex = static_cast<i32>(continuationIndex);
 		if (arguments.frame) pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {},
-			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, protectedIndex);
+			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, 0u, protectedIndex);
 		else pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc, true, protectedIndex);
 		return;
 	}
@@ -1661,7 +1748,7 @@ bool CPU::enterPendingInterrupt() {
 		const u32 returnExceptionDomainWord = m_exceptionDomainWord;
 		enterException(
 			*m_systemImage,
-			m_systemExceptionFunctionAddress,
+			m_cop0Words[COP0_SYSTEM_VECTOR],
 			CPU_CAUSE_NMI,
 			m_activeThread->currentFrame->readControl(FrameField::Pc)
 		);
@@ -1700,7 +1787,7 @@ bool CPU::enterPendingInterrupt() {
 
 CallFrame* CPU::enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord) {
 	interruptedFrame.writeControl(FrameField::Pc, m_currentInstructionPc);
-	return enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, m_currentInstructionPc);
+	return enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], causeWord, m_currentInstructionPc);
 }
 
 void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address) {
@@ -1711,13 +1798,23 @@ void CPU::enterSynchronousAddressException(CallFrame& interruptedFrame, u32 caus
 void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc) {
 	instructionBudgetRemaining -= 1;
 	interruptedFrame.writeControl(FrameField::Pc, pc);
-	enterException(*m_systemImage, m_systemExceptionFunctionAddress, causeWord, pc);
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], causeWord, pc);
 }
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
 	if (auto* frame = enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP))
 		frame->registers.set(0, errorValue);
+}
+
+void CPU::retireNumericLuaFault(u32 reason) {
+	if (resetBankSelected()) {
+		m_cop0Words[COP0_LUA_FAULT_REASON] = reason;
+		enterSynchronousException(*m_activeThread->currentFrame, CPU_CAUSE_CODE_TRAP);
+		return;
+	}
+	const Value value = luaFaultValue(reason);
+	if (!handleThreadError(value)) enterLuaFaultException(reason, value);
 }
 
 void CPU::returnFromException(CallFrame& frame) {
@@ -1801,7 +1898,11 @@ CallFrame* CPU::enterDirectFrame(u32 flags, std::optional<u32> epcWord) {
 	auto* image = record.image;
 	const auto domain = image->executionDomainId;
 	const u32 address = record.address;
-	m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), (flags & FRAME_EXCEPTION) != 0u);
+	const bool exception = (flags & FRAME_EXCEPTION) != 0u;
+	if (m_activeThread->address == CPU_RESET_BANK_ADDRESS) {
+		const auto frames = m_activeThread->frameDepth() + (exception ? 1u : 2u);
+		if (placement.stackEnd() > CPU_FIXED_VALUE_COUNT || frames > CPU_FIXED_FRAME_COUNT) throw LuaOutOfMemorySignal{};
+	} else m_activeThread->reserveFrame(placement.stackEnd(), valueNil(), exception);
 	frame->executionImage = image;
 	frame->initializeControl({
 		address, entry.codeAddress, epcWord.value_or(entry.codeAddress), frameBankWord(domain) | flags,
@@ -2004,7 +2105,7 @@ dispatch_fetch:
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 				continue;
 			}
-			if (!image) {
+			if (!image || (!HeapService && resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
 				m_cop0Words[COP0_BAD_ADDRESS] = pc;
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				continue;
@@ -2463,8 +2564,7 @@ dispatch_continue:
 		} catch (const LuaOutOfMemorySignal&) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
-			const Value error = luaFaultValue(LUA_FAULT_REASON_OUT_OF_MEMORY);
-			if (!handleThreadError(error)) enterLuaFaultException(LUA_FAULT_REASON_OUT_OF_MEMORY, error);
+			retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 		} catch (const LuaThrownValueError& error) {
 			PUBLISH_SCALAR_FRONTIER();
 			if constexpr (HeapService) throw;
@@ -2477,10 +2577,7 @@ dispatch_continue:
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
-			const Value errorValue = luaFaultValue(error.reason);
-			if (!handleThreadError(errorValue)) {
-				enterLuaFaultException(error.reason, errorValue);
-			}
+			retireNumericLuaFault(error.reason);
 		} catch (...) {
 			PUBLISH_SCALAR_FRONTIER();
 			throw;
@@ -2899,8 +2996,9 @@ CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	CallResultPlacement result, u32 callSitePc, bool ordinaryCall, i32 protectedIndex) {
-	const auto [image, functionRecord] = resolveClosureActivation(closure);
+	CallResultPlacement result, u32 callSitePc, bool ordinaryCall, u32 codeFunction, i32 protectedIndex) {
+	const auto [image, functionRecord] = closure != 0u ? resolveClosureActivation(closure)
+		: ClosureActivation{m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
@@ -2922,6 +3020,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const size_t end = placement.stackEnd();
 	const bool fits = ordinaryCall && thread.frameSpaceFits(end);
 	if (ordinaryCall && !fits) {
+		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
 		const auto function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
 		if (function) {
 			prepareFrameEntry(function, entry, callerArgBase, argCount, placement.relocatesFormals);

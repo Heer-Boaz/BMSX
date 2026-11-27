@@ -6,6 +6,7 @@
 #include "support/boot_rom_fixture.h"
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <cstdarg>
@@ -124,7 +125,8 @@ void cumulativeCountersAndRealGc() {
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, source);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
-	cpu.reset(); cpu.prepareSystemNativeCode();
+	test::seedManagedFixture(cpu, addresses);
+	cpu.prepareSystemNativeCode();
 	resetLibretroNativeGateProfile(); logs.clear();
 	const auto gcBefore = cpu.diagnosticGcProfile().collections;
 	const auto start = now();

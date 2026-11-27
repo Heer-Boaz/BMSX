@@ -11,6 +11,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -37,7 +38,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };

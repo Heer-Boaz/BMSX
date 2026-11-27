@@ -19,9 +19,9 @@ import { BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../../machine/ts/spec/blua3
 import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_RESULT_FAULT, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 // Source basis: 29861d1ce, TS CPU.invokeProtectedTarget / handleProtectedCallError
@@ -60,21 +60,22 @@ const deadText = 'a dead String providing frame backing during synchronized reco
 for (const opt of [0, 3] as const) test(`protected Closure activations preserve the existing record at O${opt}`, async t => {
 	const folder = mkdtempSync(join('tmp', 'protected-closure-admission-'));
 	t.after(() => rmSync(folder, { recursive: true, force: true }));
-	const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, opt));
+	const linked = linkManagedTestSystem(source, opt);
+	const romBytes = writeTestBlua32Rom(linked);
 	const rom = join(folder, 'system.rom');
 	for (const mode of ['body-reclaim', 'body-oom', 'handler', 'detached-handler', 'handler-oom', 'handler-limit'] as const) await t.test(mode, () => {
-		const bytes = linked.romBytes.slice();
+		const bytes = romBytes.slice();
 		const handlerLimit = mode === 'handler-limit';
 		if (handlerLimit) {
 			const index = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(':handler'));
 			assert.ok(index >= 0, 'the deliberate direct-limit fixture owns the handler record');
-			writeLE32(bytes, linked.image.functions[index].address + BLUA32_FUNCTION_MAX_STACK_OFFSET, MAX_THREAD_VALUE_SLOTS);
+			writeLE32(bytes, linked.layout.functions[index].address + BLUA32_FUNCTION_MAX_STACK_OFFSET, MAX_THREAD_VALUE_SLOTS);
 		}
 		writeFileSync(rom, bytes);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
-		runGuestToHalt(cpu, 65_536);
+		runGuestToHalt(cpu, 4_194_304);
 		const entries = runtime.readCompletionValues().slice();
 		const [runBody, runHandler, implicit, body, handler, fail] = entries;
 		const root = cpu.rootThread;

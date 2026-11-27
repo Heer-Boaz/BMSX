@@ -10,36 +10,24 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { GC_STEP_WORDS, LuaAllocationRecovery } from '../../machine/ts/machine/cpu/lua_heap';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 
 const MODULE = 'kernel/heap_admission', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
-const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_pace', 'kernel/word_arithmetic', MODULE].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
 const names = ['heap_capacity', 'allocation_debt', 'logical_fits', 'logical_assist_pressure', 'logical_assist_allowance',
 	'limit_assist_allowance', 'spend_assist_allowance', 'credit_logical_assist', 'finish_collection', 'reservation_assist_allowance', 'begin_allocation_recovery'] as const;
 type Entry = typeof names[number];
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), obj = encodeCompiledProgramObject(compiled);
-	const roots = new Map(names.map(name => {
-		const symbol = obj.sections.rodata.moduleExports.find(value => value.path === MODULE && value.exportPathKey === name);
-		assert.ok(symbol);
-		const index = linked.symbols.metadata.functionIds.indexOf(obj.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-		assert.ok(index >= 0, name);
-		return [name, index];
-	}));
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [...roots.values()]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const linked = linkManagedTestSystem(entrySource, optLevel, [], names.map(exportPathKey =>
+		({ path: MODULE, exportPathKey })));
+	const rootsToCheck = linked.biosImports.functions.map(entry => linked.symbols.functionAddresses.indexOf(entry.functionAddress));
+	const fixed = deriveBlua32FixedStack(linked.layout, rootsToCheck);
+	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	const roots = new Map(linked.biosImports.functions.map(entry => [entry.exportPathKey, entry.functionAddress]));
+	const { cpu, memory } = bootManagedTestSystem(linked), oracle = bootManagedTestSystem(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const arena = cpu.heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, state = arena.allocatorStateOffset();
 	const pace = control + GC_PACE_PAID - 12;
@@ -48,7 +36,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function phase(value: number) { same(target => target.memory.writeRamRecordByte(control, value)); }
 	function begin(name: Entry, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[roots.get(name)!].address, args));
+		assert.ok(cpu.beginHeapService(roots.get(name)!, args));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -196,7 +184,7 @@ const pins = [
 ] as const;
 
 test('firmware admission pins each source decision without moving a native collector loop', () => {
-	const source = modules.find(module => module.path === MODULE)!.source;
+	const source = readFileSync(`machine/bios/${MODULE}.lua`, 'utf8').replaceAll('\r\n', '\n');
 	assert.ok(source.includes(`-- Source basis: ${basis}.`));
 	const references = new Map(pins.map(([key, file, sum]) => {
 		const text = execFileSync('git', ['show', `${basis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');

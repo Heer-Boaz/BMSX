@@ -6,6 +6,7 @@
 #include "spec/bmsx/model.h"
 #include "blua32_test_rom.h"
 #include "cartridge_fixture.h"
+#include "managed_fixture.h"
 
 namespace bmsx::test {
 // This fixture owns actual physical ROM backing, not just image bytes. A full
@@ -18,13 +19,13 @@ struct Number32Machine {
 	CPU cpu;
 	Number32Machine(const Blua32TestImage& image, bool native = true, u32 bssByteCount = 0)
 		: rom([&] {
-			  auto encoded = encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount);
+			  auto encoded = encodeManagedFixtureRom(image, bssByteCount);
 			  encoded.bytes.resize((encoded.bytes.size() + MAPPED_PAGE_BYTE_MASK) & ~size_t{MAPPED_PAGE_BYTE_MASK});
 			  return encoded;
 		  }()),
 		  memory(MemoryInit{rom.bytes, cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes), irq(memory), addresses(memory),
 		  cpu(memory, irq, addresses) {
-		cpu.reset();
+		seedManagedFixture(cpu, addresses, rom, image);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		if (native)
 			cpu.prepareSystemNativeCode();

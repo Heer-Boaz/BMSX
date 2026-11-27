@@ -10,38 +10,28 @@ import {
 import { INSTRUCTION_BYTES, readInstructionWord, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
-import { CART_ROM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import {
-	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
-} from '../../machine/ts/spec/blua32/image_format';
-import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
+import { linkTestCartBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
+import { compileHeapServiceSystem, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 
-const BOOT_SOURCE = `local floor<const> = require('kernel/heap_floor')
-local image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
-local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
-local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
-cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 const CART_SOURCE = 'bss level: u8[0x20000]\nlevel[0] = 7\nreturn level[0]';
 
 function pageRound(address: number): number {
 	return (address + HEAP_PAGE_SIZE - 1) & -HEAP_PAGE_SIZE;
 }
 
-function bootPair(executionBackend?: CpuExecutionBackend) {
-	const bios = compileTestSystemWithHeap(parseLuaChunk(BOOT_SOURCE, 'boot.lua').chunk, [], {
-		entrySource: BOOT_SOURCE, optLevel: 0, programDomain: 'system',
-	});
+function bootPair() {
+	const bios = linkManagedTestSystem(TEST_CART_TRANSFER_SOURCE, 0);
 	const cart = compileLuaChunkToProgram(parseLuaChunk(CART_SOURCE, 'cart.lua').chunk, [], { entrySource: CART_SOURCE, optLevel: 0 });
-	const system = createTestBlua32PairCpu(linkTestBlua32Pair(bios, cart), executionBackend);
+	const linkedCart = linkTestCartBlua32(bios.biosImports, cart);
+	const system = bootManagedTestSystem(bios, 'main', cartridgeSlots(linkedCart.cartRomBytes));
 	const systemEnd = system.executionAddressSpace.resolveSystemDomain().staticEnd;
 	const cartEnd = system.executionAddressSpace.resolveDomain(0)!.staticEnd;
 	assert.ok(cartEnd > systemEnd + HEAP_PAGE_SIZE, 'the cartridge statics extend past the system floor');
@@ -65,7 +55,10 @@ test('explicit launcher admission maps cartridge sections and RAM restore restor
 });
 
 test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetches', () => {
-	const { cpu, memory } = bootPair(CpuExecutionBackend.JavaScript);
+	// This instruction-cache test deliberately replaces the prepared reset frame
+	// with a RAM Function. No cartridge launcher or managed startup may be pending.
+	const image = linkTestSystemBlua32(compileHeapServiceSystem('return 0', 0));
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const pc = cpu.heapAllocator.floorAddress();
 	const prototypeAddress = pc - 2 * BLUA32_FUNCTION_RECORD_SIZE;
 	const prototype = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);

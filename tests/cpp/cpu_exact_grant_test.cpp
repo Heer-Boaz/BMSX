@@ -14,6 +14,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -34,10 +35,10 @@ struct Machine {
 	ExecutionAddressSpace addresses;
 	CPU cpu;
 	Machine(const test::Blua32TestImage& image, bool scalar, u32 bssByteCount = test::RAM_CODE_FIXTURE_BYTES)
-		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, bssByteCount)),
+		: rom(test::encodeManagedFixtureRom(image, bssByteCount)),
 		  memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		  irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses, rom, image);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr,
 			SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	}
@@ -483,6 +484,10 @@ void exactGrant(bool store) {
 		}
 		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
 		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& generated = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
+		const auto beforeClosure = generated.entries;
+#endif
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
@@ -499,6 +504,12 @@ void exactGrant(bool store) {
 		require(nativeResult == scalarResult, "both CPUs return the same status for the requested grant");
 		require(native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining, "same grant has the same remaining cycles");
 		require(nativePc == scalarPc && native.cpu.readEpcWord() == scalar.cpu.readEpcWord(), "IRQ is accepted at the same guest instruction boundary");
+		require(native.cpu.readEpcWord() == nativePc && native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+			&& test::sameLanguageRam(native.cpu, scalar.cpu), "IRQ captures the measured continuation and identical language RAM");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		if (!store && grant == 8)
+			require(generated.entries == beforeClosure + 1, "the measured grant actually reaches native CLOSURE");
+#endif
 		require(nativeAllocations == 0 && scalarAllocations == 0, "no allocation on cache hit before the IRQ");
 		require(native.memory.readU32(address) == scalar.memory.readU32(address), "no premature native RAM store before the IRQ");
 	}
@@ -654,7 +665,16 @@ void exactGrantSweep(bool scalarControl) {
 		}
 		const u32 nativeStartCount = test::allocatedObjectRecords(native.cpu);
 		const u32 scalarStartCount = test::allocatedObjectRecords(scalar.cpu);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& generated = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::CreateClosure)];
+		const auto beforeClosure = generated.entries;
+#endif
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		if (grant == 64)
+			require(scalarControl ? generated.entries == beforeClosure : generated.entries > beforeClosure,
+				"the longest measured grant reaches native CLOSURE only without the scalar control hook");
+#endif
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto nativePc = native.cpu.readFramePc(0), scalarPc = scalar.cpu.readFramePc(0);
 		const u32 nativeAllocations = test::allocatedObjectRecords(native.cpu) - nativeStartCount;
@@ -670,15 +690,16 @@ void exactGrantSweep(bool scalarControl) {
 		const bool statusEqual = nativeResult == scalarResult;
 		const bool cyclesEqual = native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining;
 		const bool pcEqual = nativePc == scalarPc;
-		const bool epcEqual = native.cpu.readEpcWord() == scalar.cpu.readEpcWord();
+		const bool epcEqual = native.cpu.readEpcWord() == nativePc && scalar.cpu.readEpcWord() == scalarPc;
 		const bool allocationsEqual = nativeAllocations == 0 && scalarAllocations == 0;
 		const bool ramEqual = native.memory.readU32(address) == scalar.memory.readU32(address);
-		const bool equal = statusEqual && cyclesEqual && pcEqual && epcEqual && registersEqual && allocationsEqual && ramEqual;
+		const bool checkpointEqual = native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState() && test::sameLanguageRam(native.cpu, scalar.cpu);
+		const bool equal = statusEqual && cyclesEqual && pcEqual && epcEqual && registersEqual && allocationsEqual && ramEqual && checkpointEqual;
 		if (!equal) {
 			++mismatchCount;
-			std::printf("grant=%d status=%d cycles=%d/%d pc=%08x/%08x epc=%08x/%08x registers=%d allocations=%u/%u RAM=%08x/%08x\n",
+			std::printf("grant=%d status=%d cycles=%d/%d pc=%08x/%08x epc=%08x/%08x registers=%d checkpoint=%d allocations=%u/%u RAM=%08x/%08x\n",
 				grant, statusEqual, native.cpu.instructionBudgetRemaining, scalar.cpu.instructionBudgetRemaining,
-				nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), registersEqual,
+				nativePc, scalarPc, native.cpu.readEpcWord(), scalar.cpu.readEpcWord(), registersEqual, checkpointEqual,
 				nativeAllocations, scalarAllocations, native.memory.readU32(address), scalar.memory.readU32(address));
 		}
 	}
@@ -796,7 +817,15 @@ void rewriteAndObserveAfterShortGrant() {
 #endif
 			machine->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID,
 				machine->rom.functionAddresses[0], DYNAMIC_RAM_BASE);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			const auto& boundary = machine->cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)];
+			const auto beforeBoundary = boundary.entries;
+#endif
 			require(machine->cpu.runUntilDepth(0, 1) == RunResult::Yielded, "first short grant yields");
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			require(boundary.entries == beforeBoundary + (machine == &native ? 1u : 0u),
+				"the short checkpoint comes from the generated budget boundary only on the native lane");
+#endif
 			require(machine->cpu.readFramePc(0) == DYNAMIC_RAM_BASE + INSTRUCTION_BYTES,
 				"only the first instruction precedes the checkpoint");
 			if (restore) machine->cpu.restoreRuntimeState(machine->cpu.captureRuntimeState());
@@ -846,6 +875,9 @@ void exactCallVarargSweep() {
 		{.firstWord = 16, .wordCount = 2, .maxStack = 4, .isVararg = true}};
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	unsigned mismatchCount = 0;
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	bool nativeCallEntered = false, nativeReturnEntered = false;
+#endif
 	for (int grant = 1; grant <= 64; ++grant) {
 		Machine native(image, false), scalar(image, true);
 		for (auto* machine : {&native, &scalar}) {
@@ -870,19 +902,32 @@ void exactCallVarargSweep() {
 			frame->registers.set(0, valueNil()); frame->registers.set(1, valueNil()); frame->writeControl(bmsx::FrameField::Top, 11);
 			machine->memory.writeMappedU32LE(IO_IRQ_MASK, IRQ_GPU);
 		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& gates = native.cpu.nativeGateProfile().exits;
+		const auto& calls = gates[static_cast<size_t>(NativeBlockExit::Call)];
+		const auto& returns = gates[static_cast<size_t>(NativeBlockExit::Return)];
+		const auto beforeCall = calls.entries, beforeReturn = returns.entries;
+#endif
 		const auto nativeResult = native.cpu.runUntilDepth(0, grant);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		nativeCallEntered |= calls.entries > beforeCall;
+		nativeReturnEntered |= returns.entries > beforeReturn;
+#endif
 		const auto scalarResult = scalar.cpu.runUntilDepth(0, grant);
 		const auto* nativeThread = native.cpu.activeThread();
 		const auto* scalarThread = scalar.cpu.activeThread();
 		bool equal = nativeResult == scalarResult && native.cpu.instructionBudgetRemaining == scalar.cpu.instructionBudgetRemaining
-			&& native.cpu.lastPc == scalar.cpu.lastPc && nativeThread->frameDepth() == scalarThread->frameDepth();
+			&& native.cpu.lastPc == scalar.cpu.lastPc && nativeThread->frameDepth() == scalarThread->frameDepth()
+			&& native.cpu.captureRuntimeState() == scalar.cpu.captureRuntimeState()
+			// A fully native activation need not publish a frame after it has retired.
+			&& test::sameActiveLanguageRam(native.cpu, scalar.cpu);
 		if (nativeThread->frameDepth() == scalarThread->frameDepth()) {
 			for (u32 depth = 0; depth < nativeThread->frameDepth(); ++depth) {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
 				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::VarargCount));
 				for (int reg = 0; reg < 3; ++reg) {
 					const Value av = a->registers.get(reg), bv = b->registers.get(reg);
-					equal &= av == bv || (valueIsClosure(av) && valueIsClosure(bv));
+					equal &= av == bv;
 				}
 			}
 		}
@@ -893,6 +938,9 @@ void exactCallVarargSweep() {
 				native.cpu.lastPc, scalar.cpu.lastPc, nativeThread->frameDepth(), scalarThread->frameDepth());
 		}
 	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(nativeCallEntered && nativeReturnEntered, "the measured budgets exercise both generated CALL and RET");
+#endif
 	std::printf("call-vararg sweep: %u/64 divergent budgets\n", mismatchCount);
 	require(mismatchCount == 0, "CALL, RET and open VARARG differ for an identical positive grant");
 }

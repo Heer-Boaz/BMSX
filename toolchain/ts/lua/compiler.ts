@@ -147,7 +147,7 @@ import {
 	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
-import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_RAM_END, COP0_STATUS, cop0ReadAsZero } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_BAD_ADDRESS, COP0_RAM_END, COP0_CAUSE, COP0_CONTEXT, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_PREVIOUS_ACTIVE, COP0_STATUS, COP0_SYSTEM_VECTOR } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	buildProgramDebugPoints,
 	buildProgramStatementPoints,
@@ -192,6 +192,7 @@ type CompiledProgramBase = {
 export type CompiledSystemProgram = CompiledProgramBase & {
 	domain: 'system';
 	resetProtoIndex: number;
+	managedExceptionProtoIndex: number | undefined;
 	constRelocs: ProgramImageConstReloc[];
 };
 
@@ -286,6 +287,8 @@ export type SystemCompileOptions = CompileOptionsBase & {
 	resetModule?: string;
 	/** Authored maskable interrupt vector. Top-level return exits the exception. */
 	irqModule?: string;
+	/** Authored direct System exception vector; top-level return performs RFE. */
+	exceptionModule?: string;
 	biosFunctions?: never;
 };
 
@@ -4041,7 +4044,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (expr.kind === LuaSyntaxKind.MemberExpression) {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
-					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && !cop0ReadAsZero(cop0Register)) {
+					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC && cop0Register !== COP0_CONTEXT && cop0Register !== COP0_RAM_END && cop0Register !== COP0_SYSTEM_VECTOR) {
 						throw new Error(`cop0.${(expr as LuaMemberExpression).member.name} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
@@ -4266,8 +4269,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 				return;
 			}
 			case 'cop0':
-				if (cop0ReadAsZero(target.register)) {
-					throw new Error(`cop0.${target.register === COP0_EXEC ? 'exec' : 'ram_end'} does not support compound assignment.`);
+				if (target.register === COP0_EXEC || target.register === COP0_CONTEXT || target.register === COP0_RAM_END) {
+					throw new Error(`cop0.${target.register === COP0_EXEC ? 'exec' : target.register === COP0_CONTEXT ? 'context' : 'ram_end'} does not support compound assignment.`);
 				}
 				this.emitABC(OpCode.MFC0, temp, target.register, 0);
 				this.emitABC(op, temp, temp, valueReg, RK_B | RK_C);
@@ -4803,7 +4806,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private compileMemberExpression(expression: LuaMemberExpression, target: number): void {
 		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
 		if (cop0Register) {
-			if (cop0ReadAsZero(cop0Register)) {
+			if (cop0Register === COP0_EXEC || cop0Register === COP0_RAM_END) {
 				throw new Error(`cop0.${cop0Register === COP0_EXEC ? 'exec' : 'ram_end'} is write-only.`);
 			}
 			this.emitABC(OpCode.MFC0, target, cop0Register, 0);
@@ -4848,7 +4851,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;
 			case 'exec': return COP0_EXEC;
+			case 'context': return COP0_CONTEXT;
 			case 'ram_end': return COP0_RAM_END;
+			case 'system_vector': return COP0_SYSTEM_VECTOR;
+			case 'previous_active': return COP0_PREVIOUS_ACTIVE;
 			default: throw new Error(`Unknown cop0 register '${expression.member.name}'.`);
 		}
 	}
@@ -6360,8 +6366,10 @@ export function compileLuaChunkToProgram(
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
 	const resetPath = options.programDomain === 'system' ? options.resetModule : undefined;
 	const irqPath = options.programDomain === 'system' ? options.irqModule : undefined;
-	if (irqPath !== undefined && irqPath === resetPath) {
-		throw new Error('System reset and interrupt vectors must name separate source bodies.');
+	const exceptionPath = options.programDomain === 'system' ? options.exceptionModule : undefined;
+	if ((irqPath !== undefined && irqPath === resetPath)
+		|| (exceptionPath !== undefined && (exceptionPath === resetPath || exceptionPath === irqPath))) {
+		throw new Error('System reset, interrupt and exception vectors must name separate source bodies.');
 	}
 	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
 	compiledModulePaths[0] = toLuaModulePath(chunk.locations.path);
@@ -6543,9 +6551,10 @@ export function compileLuaChunkToProgram(
 			continue;
 		}
 		const reset = module.path === resetPath;
-		const irq = module.path === irqPath;
-		const moduleProtoId = reset ? buildResetProtoId(module.path) : irq ? buildInterruptProtoId(module.path) : buildModuleProtoId(module.path);
-		const name = reset ? 'reset' : irq ? 'irq' : 'module';
+		const irq = module.path === irqPath, exception = module.path === exceptionPath;
+		const moduleProtoId = reset ? buildResetProtoId(module.path) : irq ? buildInterruptProtoId(module.path)
+			: exception ? buildExceptionProtoId(module.path) : buildModuleProtoId(module.path);
+		const name = reset ? 'reset' : irq ? 'irq' : exception ? 'exception' : 'module';
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
 			protoId: moduleProtoId,
@@ -6553,8 +6562,9 @@ export function compileLuaChunkToProgram(
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
-			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path),
-			exceptionEntry: irq,
+			// A hardware entry is a body, not an initializer publishing a module value.
+			moduleCompileInfo: reset || irq || exception ? undefined : moduleInfo,
+			exceptionEntry: irq || exception,
 		});
 		try {
 			builder.compileChunk(module.chunk);
@@ -6570,10 +6580,11 @@ export function compileLuaChunkToProgram(
 				isVararg: false,
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
-				staticClosure: reset || irq,
+				staticClosure: reset || irq || exception,
 			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, name, instructionSet, frontend.getFile(module.path));
 			if (reset) resetProtoIndex = protoIndex;
 			else if (irq) irqProtoIndex = protoIndex;
+			else if (exception) exceptionProtoIndex = protoIndex;
 			else programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
@@ -6591,11 +6602,21 @@ export function compileLuaChunkToProgram(
 		if (programBuilder.staticModulePaths.includes(irqPath))
 			throw new Error(`System interrupt module '${irqPath}' cannot be initialized as an ordinary module.`);
 	}
-	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	if (exceptionPath === undefined) {
+		exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	} else {
+		if (exceptionProtoIndex < 0) throw new Error(`System exception module '${exceptionPath}' must be an authored executable source.`);
+		if (programBuilder.staticModulePaths.includes(exceptionPath))
+			throw new Error(`System exception module '${exceptionPath}' cannot be initialized as an ordinary module.`);
+	}
+	// An authored early vector is the only target reachable before System
+	// startup has published the ordinary exception handler global.
+	const managedExceptionProtoIndex = exceptionPath === undefined ? undefined
+		: compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
 	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
 			const path = canonicalModules[index].path;
-			if (path !== resetPath && path !== irqPath) entryBuilder.markStaticModulePath(path);
+			if (path !== resetPath && path !== irqPath && path !== exceptionPath) entryBuilder.markStaticModulePath(path);
 		}
 	}
 	if (resetPath !== undefined) {
@@ -6645,6 +6666,7 @@ export function compileLuaChunkToProgram(
 			entryProtoIndex,
 			startupProtoIndex,
 			resetProtoIndex: resetProtoIndex ?? startupProtoIndex,
+			managedExceptionProtoIndex,
 			sectionInitProtoIndex,
 			irqProtoIndex,
 			exceptionProtoIndex,

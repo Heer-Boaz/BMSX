@@ -40,6 +40,18 @@ constexpr uint32_t RUNTIME_MANAGEMENT_SIZE = 0x00004000u; // 16 KB
 constexpr uint32_t MIN_RAM_SIZE = IO_REGION_SIZE;
 constexpr uint32_t DYNAMIC_RAM_BASE = RAM_BASE + MIN_RAM_SIZE;
 
+// Fixed CPU stack backing is not driven by the ordinary data or fetch bus.
+constexpr uint32_t CPU_FIXED_FRAME_OFFSET = 0x880u;
+constexpr uint32_t CPU_FIXED_VALUE_OFFSET = 0x1000u;
+constexpr uint32_t CPU_FIXED_FRAME_COUNT = 24u;
+constexpr uint32_t CPU_FIXED_VALUE_COUNT = 384u;
+constexpr uint32_t CPU_FIXED_STACK_BASE = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE;
+constexpr uint32_t CPU_FIXED_FRAME_ADDRESS = CPU_FIXED_STACK_BASE + CPU_FIXED_FRAME_OFFSET;
+constexpr uint32_t CPU_FIXED_VALUE_ADDRESS = CPU_FIXED_STACK_BASE + CPU_FIXED_VALUE_OFFSET;
+constexpr uint32_t CPU_FIXED_VALUE_END = CPU_FIXED_VALUE_ADDRESS + CPU_FIXED_VALUE_COUNT * 5u;
+constexpr uint32_t CPU_RESET_BANK_ADDRESS = 0x083fd880u;
+constexpr uint32_t CPU_RESET_BANK_END = CPU_RESET_BANK_ADDRESS + 0x50u;
+
 constexpr uint32_t IO_BASE = RAM_BASE;
 
 } // namespace bmsx

@@ -7,6 +7,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <iostream>
@@ -33,7 +34,7 @@ struct Machine {
 	ExecutionAddressSpace addresses{memory};
 	CPU cpu{memory, irq, addresses};
 	Machine() {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		auto& frame = *cpu.rootThread()->currentFrame;
 		std::array<u32, 1> cells{};
 		frame.registers.set(1, valueClosure(test::seedTestCapturedClosure(cpu, rom.functionAddresses[1], cells)));

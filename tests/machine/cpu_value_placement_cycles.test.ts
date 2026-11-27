@@ -10,7 +10,8 @@ import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 // A raw placement test supplies a real open Cell in its measured frame. Its
@@ -37,11 +38,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			writeInstruction(text, 2, OpCode.JMP, 0, 63, 63, 255);
 			writeInstruction(text, 3, op, 2, operand, 0, (operand >>> 6) << 3);
 			writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
-			const image = linkRawTestSystemBlua32({ text, functions: [
+			const image = linkManagedTestOpcodes({ text, functions: [
 				{ firstWord: 0, wordCount: 3, maxStack: 8 },
 				{ firstWord: 3, wordCount: 2, maxStack: 160, isVararg: true },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
-			const { cpu } = createTestSystemCpu(image, backend);
+			const { cpu } = createManagedTestOpcodeCpu(image, backend);
 			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 1);
 			const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, cpu.gc);
@@ -64,11 +65,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			writeInstruction(text, 3, OpCode.CALL, 4, args + 1, 1);
 			writeInstruction(text, 4, OpCode.JMP, 0, 63, 61, 255);
 			writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
-			const image = linkRawTestSystemBlua32({ text, functions: [
+			const image = linkManagedTestOpcodes({ text, functions: [
 				{ firstWord: 0, wordCount: 5, maxStack: 16 },
 				{ firstWord: 5, wordCount: 1, numParams: params, maxStack: 8, isVararg: vararg },
 			], closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
-			const { cpu } = createTestSystemCpu(image, backend);
+			const { cpu } = createManagedTestOpcodeCpu(image, backend);
 			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			cpu.runUntilDepth(0, 5000); cpu.runUntilDepth(1, 100);
 			const root = cpu.rootThread.currentFrame!;
@@ -92,12 +93,12 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 1, OpCode.RET, 2, 3, 0);
 		writeInstruction(text, 2, OpCode.GETUP, 0, 0, 0);
 		writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17)], functions: [
+		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17)], functions: [
 			{ firstWord: 0, wordCount: 2, maxStack: 8 },
 			{ firstWord: 2, wordCount: 2, maxStack: 2, staticClosure: false,
 				upvalueDescs: [{ inStack: true, index: 0 }, { inStack: true, index: 1 }] },
 		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const prototype = image.symbols.functionAddresses[1];
 		const { closure: first, cells } = seedOpenCaptures(cpu, prototype, 2, [0, 1]);
 		const second = seedTestCapturedClosure(cpu, prototype, new Uint32Array(0), cells);
@@ -116,8 +117,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 2, OpCode.GETSYS, 2, 0, 1);
 		writeInstruction(text, 3, OpCode.CALL, 0, 3, wanted);
 		writeInstruction(text, 4, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['pcall', 'isyieldable'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const image = linkManagedTestOpcodes({ text, systemGlobalNames: ['pcall', 'isyieldable'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('isyieldable'), valueBuiltinFunction(BuiltinFunctionId.CoroutineIsYieldable));
 		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETSYS]);
@@ -139,10 +140,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 6, OpCode.LOADK, 2, 0, 1);
 		writeInstruction(text, 7, OpCode.CALL, 0, 3, 3);
 		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['resume', 'yield'], functions: [
+		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['resume', 'yield'], functions: [
 			{ firstWord: 0, wordCount: 4, maxStack: 12 }, { firstWord: 4, wordCount: 5, maxStack: 8 },
 		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 		for (const [name, id] of [['resume', BuiltinFunctionId.CoroutineResume], ['yield', BuiltinFunctionId.CoroutineYield]] as const)
@@ -170,12 +171,16 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 2, OpCode.CALL, 4, 5, 1);
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 63, 255);
 		writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['resume'], functions: [
+		const image = linkManagedTestOpcodes({ text, systemGlobalNames: ['resume'], functions: [
 			{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, numParams: 2, maxStack: 8, isVararg: vararg },
 		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
+		const target = cpu.createThread(entry), receiver = valueThread(target);
+		cpu.rootThread.currentFrame!.registers.set(0, receiver);
+		// Keep allocation outside this placement timing probe. The separate
+		// first-resume integration tests exercise growth and the BIOS grants.
+		cpu.luaHeap.reserveThreadFrameStorage(target, 16, 0, receiver);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('resume'), valueBuiltinFunction(BuiltinFunctionId.CoroutineResume));
 		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
 		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
@@ -201,11 +206,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
 		writeInstruction(text, 9, OpCode.GETUP, 0, 0, 0);
 		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(17)], systemGlobalNames: ['pcall', 'error'], functions: [
+		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17)], systemGlobalNames: ['pcall', 'error'], functions: [
 			{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 4, maxStack: 8 },
 			{ firstWord: 9, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
@@ -223,11 +228,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RFE, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.RET, 0, 1, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [
+		const image = linkManagedTestOpcodes({ text, functions: [
 			{ firstWord: 0, wordCount: 1, maxStack: 160 },
 			{ firstWord: 1, wordCount: 1, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createManagedTestOpcodeCpu(image, backend);
 		const { cells: [capture] } = seedOpenCaptures(cpu, image.symbols.functionAddresses[1], 2, [0]);
 		cpu.rootThread.currentFrame!.enterException(false);
 		runGuestToHalt(cpu, 1);

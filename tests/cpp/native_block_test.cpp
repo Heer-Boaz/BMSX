@@ -10,6 +10,7 @@
 #include "spec/blua32/numeric.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "support/value_bank.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <iostream>
@@ -1432,6 +1433,7 @@ void reusedFieldAddressHonorsEachSite() {
 
 int main() {
 	try {
+		test::seedManagedHeapFixture(cpu);
 		require(cpu.heapAllocator().setFloor(DYNAMIC_RAM_BASE + 0x85000u), "native datapath buffers occupy public static RAM");
 		multipleRegisterDefinitionsSurviveCallAndExit();
 		sharedExitMapsPublishRawValuesFromEitherRegisterBank();

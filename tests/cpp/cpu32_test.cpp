@@ -713,6 +713,7 @@ void tableHeap() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	test::seedManagedHeapFixture(cpu);
 	auto table = cpu.createTable(), child = cpu.createTable();
 	const Value root = valueTable(table.address()), key = valueTable(child.address());
 	table.set(key, valueFloatBits(0xffa12345));

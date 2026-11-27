@@ -31,7 +31,7 @@ import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const systemSource = `function exception(error) end
@@ -83,7 +83,7 @@ try {
 		const media = { systemRomBytes: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes, other.cartRomBytes), machineModel: PSX_MACHINE_SPEC };
 		const runtime = new Runtime(media, input);
 		runtime.boot();
-		const { cpu, memory, scheduler, irqController } = runtime.machine, { gc, heapAllocator: arena } = cpu;
+		const { cpu, memory, scheduler, irqController, executionAddressSpace } = runtime.machine, { gc, heapAllocator: arena } = cpu;
 		const frames = runtime.frameScheduler, management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const forward = management + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
 		const lane = () => memory.readRamRecordWord(forward + HeapServiceIrqForwardField.CartLane);
@@ -93,6 +93,7 @@ try {
 		const flags = () => memory.readIoU32(IO_IRQ_FLAGS);
 		const status = () => cpu.captureRuntimeState().statusWord;
 
+		admitTestHeapServiceCpu(cpu, executionAddressSpace);
 		for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) scheduler.runCpuSlice(0, 1024, undefined, CpuRunKind.Scheduled);
 		assert.equal(cpu.activeCartridgeSlot(), 0);
 		assert.equal(cpu.isHaltedUntilIrq(), true, 'real EXEC reaches the cartridge HALT');

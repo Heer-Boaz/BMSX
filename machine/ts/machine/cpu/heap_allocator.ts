@@ -19,7 +19,6 @@ export class HeapAllocator {
 	public constructor(private readonly memory: Memory) {
 		this.management = (memory.ramByteCount() & ~PAGE_MASK) - RUNTIME_MANAGEMENT_SIZE;
 		this.arena = memory.bindDlmalloc(this.allocatorStateOffset());
-		this.reset(DYNAMIC_RAM_BASE);
 	}
 
 	public managementOffset(): number { return this.management; }

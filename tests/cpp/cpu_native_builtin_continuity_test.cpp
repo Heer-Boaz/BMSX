@@ -11,6 +11,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
@@ -65,7 +66,7 @@ struct Machine {
 	Machine(const test::Blua32TestRom& r, bool scalar) : rom(r),
 		memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		else cpu.prepareSystemNativeCode();

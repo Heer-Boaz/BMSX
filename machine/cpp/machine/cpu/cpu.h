@@ -169,6 +169,8 @@ struct CpuRuntimeState {
 	ConcatAssembly concat;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
+	u32 systemVectorWord = 0u;
+	u32 previousRootContextWord = 0u, previousActiveContextWord = 0u;
 	u32 causeWord = 0;
 	u32 epcWord = 0;
 	u32 badAddressWord = 0;
@@ -213,7 +215,6 @@ public:
 	void replaceExecutionImage(Blua32ExecutionBoot executionBoot);
 	FunctionPrototype readClosureBinding(u32 closure);
 	bool isExecutionDomainResident(ExecutionDomainId executionDomainId) const;
-	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionDomainId >= 0; }
 	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionDomainId; }
 	MappedBusSignals readExecutionBusSignals() const { return m_executionBusSignals; }
@@ -254,7 +255,7 @@ public:
 	bool beginHeapService(u32 functionAddress, std::span<const u32> args);
 	bool heapServiceActive() const;
 	bool systemResetInhibited() const {
-		return heapServiceActive() || (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u;
+		return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u || heapServiceActive();
 	}
 	u32 heapServiceResult() const;
 	// Move an evicted snapshot here to reuse its storage without copying it.
@@ -427,7 +428,7 @@ private:
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
-	enum class ExecutionImageUpdate { Install, Replace, Restore, UseInstalled };
+	enum class ExecutionImageUpdate { Install, Replace, Restore, Select, UseInstalled };
 	std::unique_ptr<Blua32ExecutionImage> activateExecutionImage(Blua32ExecutionBoot boot,
 		ExecutionImageUpdate update = ExecutionImageUpdate::Install);
 	void admitImageReplacement(const Blua32ExecutionImage& image);
@@ -469,7 +470,7 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false, i32 protectedIndex = -1);
+		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false, u32 codeFunction = 0u, i32 protectedIndex = -1);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
 	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);
@@ -598,10 +599,16 @@ private:
 	void enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeWord, u32 pc);
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
+	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
+	void selectRamEnd(CallFrame& frame, u32 address);
+	void activateRootContext(u32 address);
+	void installSystemVector(CallFrame& frame, u32 address);
+	void initializeResetBank();
 	CallFrame* enterDirectFrame(u32 flags, std::optional<u32> epcWord = {});
 	CallFrame* placeExceptionVector(Blua32ExecutionImage& vectorImage, u32 functionAddress, bool nmi, u32 epcWord);
 	Value luaFaultValue(u32 reason) const;
 	void enterLuaFaultException(u32 reason, Value errorValue);
+	void retireNumericLuaFault(u32 reason);
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
@@ -642,14 +649,13 @@ private:
 	const DeviceScheduler* m_deviceClock = nullptr;
 	u32 m_currentInstructionPc = 0;
 	ExecutionDomainId m_lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
-	std::array<u32, COP0_EXEC + 1u> m_cop0Words{};
+	std::array<u32, COP0_PREVIOUS_ACTIVE + 1u> m_cop0Words{};
 	u32 m_exceptionDomainWord = 0;
 	u32 m_nmiReturnCauseWord = 0;
 	u32 m_nmiReturnEpcWord = 0;
 	u32 m_nmiReturnBadAddressWord = 0;
 	u32 m_nmiReturnLuaFaultReasonWord = 0;
 	u32 m_nmiReturnExceptionDomainWord = 0;
-	u32 m_systemExceptionFunctionAddress = 0;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
 	u32 createThread(u32 entry);

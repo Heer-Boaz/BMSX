@@ -20,9 +20,10 @@ import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
 import { runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu, compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 
 test('compiled globals use the live banks across growth, keep namespaces distinct and preserve raw value kinds', () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -36,7 +37,7 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	writeInstruction(text, 7, OpCode.JMP, 0, 63, 56, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 16 }],
 		globalNames: ['shared', 'copied', 'numeric'], systemGlobalNames: ['shared', 'copied', 'numeric'] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const loopCycles = BASE_CYCLES[OpCode.GETGL] + 2 * BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.GETSYS] + 2 * BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
 	runCpuParity(js, ref, 50 * loopCycles);
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
@@ -82,7 +83,7 @@ test('generated SETGL and SETSYS forward white referents and keep executing', ()
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }],
 		globalNames: ['cart-slot'], systemGlobalNames: ['system-slot'] });
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), gc = cpu.gc;
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), gc = cpu.gc;
 	const loopCycles = BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.LOADNIL] + 2
 		+ BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
 	cpu.runUntilDepth(0, 50 * loopCycles);
@@ -127,7 +128,7 @@ for (const alias of [false, true]) test(`compiled LOADNIL and LOADKR preserve ki
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	const constants = [null, false, true, 'literal', numberConstantFromHost(-0), numberConstantFromHost(NaN), numberConstantFromHost(Infinity), integerConstant(7)];
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 16 }], constants });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 7); cpu.runUntilDepth(0, 700); }
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -159,8 +160,8 @@ test('a hot WIDE LOADKR fault publishes its prefix before trapping without writi
 		writeInstruction(text, 1, OpCode.WIDE, 1, 1, 0);
 		writeInstruction(text, 2, OpCode.LOADKR, 0, 1, 0); // R256 = K[U32(R513)], not RK[513].
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [integerConstant(11)] });
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 514 }], constants: [integerConstant(11)] });
+		const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setInteger(513, 0); cpu.runUntilDepth(0, 300); }
 		const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 		const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -208,7 +209,7 @@ test('fixed selectors must name an entry of the expected kind in their own image
 			const pc = image.image.functions[0].codeAddress;
 			for (const dispatch of ['interpreter', 'js', 'instrumented', 'observed'] as const) {
 				const backend = dispatch === 'js' ? CpuExecutionBackend.JavaScript : CpuExecutionBackend.Interpreter;
-				const { cpu } = createTestSystemCpu(image, backend);
+				const { cpu } = createTestHeapServiceCpu(image, backend);
 				const frame = cpu.rootThread.frameAtDepth(0);
 				const g = cpu.stringPool.find('g')!, s = cpu.stringPool.find('s')!;
 				cpu.setGlobalByKey(g, valueInteger(81));
@@ -247,8 +248,8 @@ test('a hot comparison skips a WIDE invalid selector without executing it', () =
 	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(11)],
 		functions: [{ firstWord: 0, wordCount: 4, maxStack: 3 }, { firstWord: 4, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setInteger(0, 9);
@@ -281,7 +282,7 @@ test('numeric fusion does not execute a following invalid image operand early', 
 	writeInstruction(text, 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(11)],
 		functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }, { firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const frame = cpu.rootThread.frameAtDepth(0);
 	const pc = image.image.functions[0].codeAddress;
 	frame.registers.setInteger(0, 9);
@@ -312,7 +313,7 @@ test('fixed operands fit the bound frame independently of its active top', () =>
 		const image = linkRawTestSystemBlua32({ text, constants: ['key'],
 			functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }, { firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-			const { cpu } = createTestSystemCpu(image, backend);
+			const { cpu } = createTestHeapServiceCpu(image, backend);
 			const frame = cpu.rootThread.frameAtDepth(0);
 			if (op === OpCode.CALL) frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
 			else frame.registers.setInteger(0, 73);
@@ -340,8 +341,8 @@ test('a generated capture access admits the currently bound closure', () => {
 		functions: [{ firstWord: 0, wordCount: 3, maxStack: 2, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 			{ firstWord: 3, wordCount: 1 }], exceptionFunctionIndex: 1 });
 	const pc = image.image.functions[0].codeAddress;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const frames = [js, ref].map(cpu => cpu.rootThread.frameAtDepth(0));
 	const original = frames.map(frame => frame.closureAddress);
 	for (const [index, cpu] of [js, ref].entries()) {
@@ -380,7 +381,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 16,
 		staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }, { inStack: true, index: 1 }] }] });
 	const loopCycles = BASE_CYCLES[OpCode.K1] + 3 * BASE_CYCLES[OpCode.GETUP] + BASE_CYCLES[OpCode.KSMI] + 2 * BASE_CYCLES[OpCode.SETUP] + BASE_CYCLES[OpCode.ADD] + BASE_CYCLES[OpCode.JMP];
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const cells = new Uint32Array(2);
@@ -426,7 +427,7 @@ function set_captured(value)
 end
 `, 0));
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const { cpu, memory } = createTestSystemCpu(image, backend), { gc } = cpu;
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend), { gc } = cpu;
 		runGuestToHalt(cpu, 65_536);
 		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
@@ -491,7 +492,7 @@ test('an empty compiled open VARARG changes top without touching or growing the 
 	writeInstruction(text, 0, OpCode.VARARG, 31, 0, 0);
 	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 73); cpu.runUntilDepth(0, 600);
 	}
@@ -510,8 +511,8 @@ test('a fresh frame grows through scalar VARARG before using a warm generated re
 	writeInstruction(text, 1, OpCode.MOV, 0, 15, 0);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8, isVararg: true }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	runCpuParity(js, scalar, 1200);
 	const root = js.rootThread.frameAtDepth(0), start = image.image.functions[0].codeAddress;
 	const at = (start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -556,7 +557,7 @@ for (const fixed of [0, 5]) test(`hot VARARG handles exact top resets, nil paddi
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 160 },
 		{ firstWord: 16, wordCount: 9, maxStack: 16, isVararg: true }],
 		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 2);

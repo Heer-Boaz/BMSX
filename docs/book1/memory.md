@@ -108,14 +108,31 @@ up to `RAM_END` is available as ordinary RAM on the system bus. The I/O
 reservation below that range is separate. The firmware can change the end
 in 4 KiB units up to `083FC000H` using
 [[CP0 RAM_END](cpu.md#sec-cpu-ram-end)]{.content-visible when-format="html"}[Book II, CPU control reference]{.content-visible when-format="pdf"}.
-The last 16 KiB of installed RAM are always outside the ordinary range. The
-BIOS uses private RAM for language values and other work.
+The last 16 KiB of installed RAM are always outside the ordinary range.
+At power-on the ordinary range starts empty: `RAM_END` is `08040000H`.
+A system reset retains the boundary until System ROM changes it.
 
-For instruction fetch, loads, stores and DMA, addresses from `RAM_END` up
-to the installed RAM end are unmapped. An access there takes the ordinary
-bus-fault path (UNMAPPED). Moving the boundary changes which bytes can be
-accessed, without changing their contents. Place program sections and device
-buffers within the mapped range.
+Instruction fetch, ordinary loads and stores, and DMA cannot use addresses
+from `RAM_END` up to the installed RAM end. An ordinary access there
+reports UNMAPPED. Moving `RAM_END` changes access to the bytes, not their
+contents. Keep program sections and device buffers inside the ordinary range.
+
+### Reset bank {#sec-memory-reset-bank}
+
+The CPU selects a fixed execution bank at reset. Its backing is within
+the last 16 KiB of main RAM. The ranges below have exclusive ends.
+
+| Use while the reset bank is selected | Start | End | Capacity |
+|---|---:|---:|---|
+| Frame backing | `083FC880H` | `083FCDC0H` | 24 frames of 56 bytes |
+| Value backing | `083FD000H` | `083FD780H` | 384 value slots |
+| Reset context record | `083FD880H` | `083FD8D0H` | 80 bytes |
+
+While supervisor code executes in this bank, CPU data loads and stores
+can also address private RAM above the ordinary boundary. This permission
+does not map the private range for instruction fetch or DMA and does not
+follow the program out of the reset bank. See
+[[CP0 CONTEXT](cpu.md#sec-cpu-context)]{.content-visible when-format="html"}[Book II, CPU control reference]{.content-visible when-format="pdf"}.
 
 ## Firmware reservation in VRAM {#sec-memory-firmware-reservation-in-vram}
 

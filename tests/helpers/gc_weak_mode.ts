@@ -1,4 +1,4 @@
-import { compileTestSystemWithHeap } from './heap_service_system';
+import { admitTestHeapServiceCpu, compileTestSystemWithHeap, createTestHeapServiceCpu } from './heap_service_system';
 import assert from 'node:assert/strict';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
@@ -8,7 +8,7 @@ import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machin
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestBlua32Pair, linkTestSystemBlua32 } from './blua32';
+import { linkTestBlua32Pair, linkTestSystemBlua32 } from './blua32';
 import { cartridgeSlots } from './cartridge';
 import { parseLuaChunk } from './cpu_test_harness';
 
@@ -32,15 +32,17 @@ export function createGcWeakModeFixture(optLevel: 0 | 3, carts: boolean) {
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
 	const addresses = entries.map(i => linked.image.functions[i].address);
 
-	if (!carts) return { ...createTestSystemCpu(linked), addresses, rom: linked.romBytes, carts: null };
+	if (!carts) return { ...createTestHeapServiceCpu(linked), addresses, rom: linked.romBytes, carts: null };
 	const cart = (entrySource: string) => linkTestBlua32Pair(compiled,
 		compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel }));
 	const slot0 = cart("return 'v', 'vv', 'k0v'"), slot1 = cart("return 'kv', 'vk', 'K'");
 	const memory = new Memory({
 		systemRom: linked.romBytes, cartridgeSlots: cartridgeSlots(slot0.cartRomBytes, slot1.cartRomBytes),
 	}, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const addressSpace = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, new IrqController(memory), addressSpace);
 	cpu.reset();
+	admitTestHeapServiceCpu(cpu, addressSpace);
 	for (const [slot, linkedCart] of [[0, slot0], [1, slot1]] as const) {
 		const { stringBucketAddress, stringBucketCount } = linkedCart.cartImage.header;
 		cpu.stringPool.activateRomTable(slot, stringBucketAddress, stringBucketCount);

@@ -17,7 +17,8 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function callImage(maxStack: number, returns: number, base = 0) {
 	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
@@ -36,7 +37,7 @@ function callImage(maxStack: number, returns: number, base = 0) {
 }
 
 test('thread growth resizes only the required storage lane', () => {
-	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frame = thread.currentFrame!;
 	const location = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	const oldFrameCapacity = location(ThreadField.FrameCapacity), oldFrames = location(ThreadField.FrameBlock);
@@ -70,7 +71,7 @@ test('thread growth resizes only the required storage lane', () => {
 });
 
 test('Thread growth at its logical assist threshold admits only the new capacity', () => {
-	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frame = thread.currentFrame!, heap = cpu.luaHeap;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	const oldValues = read(ThreadField.StackBlock), oldFrames = read(ThreadField.FrameBlock);
@@ -110,7 +111,7 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 });
 
 test('full collection trims all three Thread reservations with no replacement space', () => {
-	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, arena = cpu.heapAllocator, frame = thread.currentFrame!;
 	cpu.luaHeap.reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
 	thread.bindStack();
@@ -152,7 +153,7 @@ test('full collection trims all three Thread reservations with no replacement sp
 });
 
 test('a stack grows when only its increment fits and rewinds to the old tag plane', () => {
-	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, arena = cpu.heapAllocator;
 	thread.resizeStack(1536);
 	const base = memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
@@ -179,7 +180,7 @@ test('a stack grows when only its increment fits and rewinds to the old tag plan
 });
 
 test('second-lane physical failure does not publish either replacement or charge', () => {
-	const { cpu, memory } = createTestSystemCpu(callImage(8, 1));
+	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = cpu.heapAllocator;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	frame.registers.setInteger(0, 73); frame.top = 1;
@@ -207,7 +208,7 @@ test('second-lane physical failure does not publish either replacement or charge
 });
 
 test('reusing a frame view does not publish it before activation', () => {
-	const { cpu } = createTestSystemCpu(callImage(8, 1));
+	const { cpu } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, frames: CallFrame[] = [];
 	thread.leaveFrame();
 	for (let index = 0; index < 8; ++index) {
@@ -239,7 +240,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 2, OpCode.KSMI, 0, 0, 9);
 		writeInstruction(text, 3, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 1 }] });
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const state = cpu.captureRuntimeState(), initialRam = memory.captureSaveState();
 		const frame = cpu.rootThread.currentFrame!;
 		memory.writeRamRecordWord(frame.controlOffset + FrameField.Pc, frame.pc + 2 * INSTRUCTION_BYTES);
@@ -256,7 +257,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 	test(`RET restores a saved bank even when the selected socket is empty (${backend})`, () => {
 		const image = callImage(8, 1);
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = cpu.rootThread.currentFrame!;
@@ -282,7 +283,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 0, OpCode.GETUP, 0, 0, 0);
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 1 }] });
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!;
 		const start = frame.pc, domain = frame.executionImage.executionDomainId;
 		const address = frame.controlOffset + FrameField.Closure;
@@ -321,7 +322,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8, isVararg: true }] });
 		for (const mirrored of [false, true]) {
-			const { cpu, memory } = createTestSystemCpu(image, backend);
+			const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 			const thread = cpu.rootThread, frame = thread.currentFrame!;
 			const entryPc = frame.pc;
 			cpu.runUntilDepth(0, 1200);
@@ -345,7 +346,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		const text = new Uint8Array(INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RET, 0, 0, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!;
 		frame.registers.setInteger(0, 7);
 		frame.registers.setInteger(1, 14);
@@ -378,7 +379,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			{ wordIndex: 2, functionIndex: 1 },
 			{ wordIndex: 6, functionIndex: 2 },
 		] });
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createTestHeapServiceCpu(image, backend);
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
@@ -427,7 +428,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {
 		const image = callImage(1024, 1, 4);
-		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
@@ -449,7 +450,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 	test(`return growth keeps the callee rooted until results have moved (${backend})`, () => {
 		const image = callImage(8, 62);
-		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		for (let grant = 0; grant < 8 && thread.frameDepth !== 2; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(thread.frameDepth, 2);
@@ -467,7 +468,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 
 	for (const completion of [false, true]) test(`failed call admission leaves no unallocated extent (${backend}, completion=${completion})`, () => {
 		const image = callImage(PSX_MACHINE_SPEC.ramBytes, 1);
-		const { cpu } = createTestSystemCpu(image, backend), thread = cpu.rootThread;
+		const { cpu } = createTestHeapServiceCpu(image, backend), thread = cpu.rootThread;
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!;

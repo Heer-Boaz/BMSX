@@ -16,6 +16,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <memory>
 #include <utility>
@@ -47,6 +48,7 @@ struct Fixture {
 	explicit Fixture(test::Blua32TestRom image)
 		: rom(std::move(image)), runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input) {
 		runtime.boot();
+		test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 		runtime.machine.memory.mapIoRead(IO_IRQ_FLAGS, &reads,
 			[](void* context, u32, MappedBusSignals) {
 				++*static_cast<int*>(context);

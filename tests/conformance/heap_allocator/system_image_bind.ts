@@ -4,174 +4,134 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { loadImageStringBinding } from '../../../machine/ts/machine/cpu/execution_image';
-import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
-import { THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
+import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
+import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
+import { asStringId, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
-import {
-	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, Blua32ConstantTag, BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
-	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
-	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
-} from '../../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { EXECUTION_IMAGE_BINDING_SIZE, GLOBAL_BANK_OFFSET, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_GLOBAL_BANK_OFFSET, executionImageBindingOffset } from '../../../machine/ts/spec/blua32/execution_domain';
+import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_GLOBAL_NAME_ADDRESS_OFFSET, BLUA32_GLOBAL_NAME_RECORD_SIZE, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { readNamespaceBank } from '../../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const binder = 'kernel/system_image_bind';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const modules = [binder, 'kernel/global_bank', 'kernel/string_slice'].map(path => ({
-	path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8'),
-}));
-const entrySource = "return '__index', 'resident-only-literal', 'Out of memory.', 917";
-const allocatorStateBytes = 24 + 33 * 8 + 32 * 4 + 16; // shared controls and bin lanes
-const directory = mkdtempSync(join('tmp', 'cold-image-bind-'));
+const directory = mkdtempSync(join('tmp', 'system-image-publication-'));
+const names = Array.from({ length: 34 }, (_, n) => `binding_${n}`);
+const source = `${names.map(name => name + ' = 0').join('\n')}
+function irq() end
+return '__index', 'resident-only-literal', 'Out of memory.', 917`;
 
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const compiled = compileHeapServiceSystem(entrySource, opt, modules);
-		// Exercise both independent name banks with overlapping String names
-		// across them. Extra names drive all early 8/16/32/64 relocations.
-		const names = ['__index', '__mode', 'shared_bank_name', ...Array.from({ length: 31 }, (_, i) => `binding_${i}`)];
-		compiled.metadata.globalNames.push(...names);
-		compiled.metadata.systemGlobalNames.push(...names.slice(0, 12));
-		const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
-		const exported = object.sections.rodata.moduleExports.find(exp => exp.path === binder && exp.exportPathKey === 'bind_initial_image')!;
-		const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-		assert.ok(entry >= 0);
-		const fixed = deriveBlua32FixedStack(linked.image, [entry]);
-		assert.ok(fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT && fixed.frames <= HEAP_SERVICE_FRAME_COUNT);
-		const fn = linked.image.functions[entry].address;
-		const rom = join(directory, 'system.rom'), script = join(directory, 'commands'), initial = join(directory, 'initial'), middle = join(directory, 'middle');
-		writeFileSync(rom, linked.romBytes);
-
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-		const { cpu, memory, scheduler } = runtime.machine, ram = memory.ramData(), arena = cpu.heapAllocator, management = arena.managementOffset();
-		const before = ram.slice(), floor = arena.floorAddress() - RAM_BASE;
+		const linked = linkManagedTestSystem(source, opt), bytes = writeTestBlua32Rom(linked);
+		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const reference = ram.slice();
-		const nativeState = cpu.captureRuntimeState();
-		const globals = readNamespaceBank(memory, management + GLOBAL_BANK_OFFSET);
-		const systemGlobals = readNamespaceBank(memory, management + SYSTEM_GLOBAL_BANK_OFFSET);
-		assert.equal(globals.count, names.length);
-		assert.ok(systemGlobals.count >= 12);
-		const expectedPhysical = arena.occupiedBytes(), expectedLogical = cpu.luaHeap.usedBytes();
-		const operands = [globals, systemGlobals].flatMap(({ base, capacity, count }) => [base, capacity, count]);
+		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator, management = arena.managementOffset();
+		const ordinary = management + GLOBAL_BANK_OFFSET, system = management + SYSTEM_GLOBAL_BANK_OFFSET;
 		const installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
-		const expectedBase = memory.readRamRecordWord(installed);
-		assert.notEqual(expectedBase, 0);
-		const { address: header } = linked.image;
-		const readHeader = (field: number) => readLE32(linked.romBytes, header + field);
-		const nameCount = readHeader(BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET) + readHeader(BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET);
-		const strings = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-		assert.equal(strings, expectedBase + 4 * nameCount);
-		const constant = readHeader(BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET), count = readHeader(BLUA32_IMAGE_CONSTANT_COUNT_OFFSET);
-		const spanBytes = memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
-		const stringCount = (spanBytes >>> 2) - nameCount;
-		let slot = 0, aliasCount = 0;
-		for (let record = constant; record < constant + count * BLUA32_CONSTANT_RECORD_SIZE; record += BLUA32_CONSTANT_RECORD_SIZE) {
-			if (readLE32(linked.romBytes, record) !== Blua32ConstantTag.String) continue;
-			const canonical = loadImageStringBinding(memory, strings, stringCount, slot++, aliasCount);
-			const original = readLE32(linked.romBytes, record + BLUA32_CONSTANT_PAYLOAD_OFFSET);
-			if (canonical !== original) {
-				assert.ok(canonical >= RAM_BASE);
-				++aliasCount;
-			}
-		}
-		assert.equal(memory.readRamRecordWord(installed + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), aliasCount);
-		operands.push(expectedBase, spanBytes, strings, aliasCount);
-		assert.equal(slot, stringCount, 'every original String ordinal has exactly one binding word');
-		assert.ok(aliasCount >= 2, 'literal relocation must retain the original RAM diagnostic aliases');
-
-		// Keep existing machine Frame/Value execution controls as harness only.
-		// Reset the software-owned arena to its exact pre-binding bytes. No
-		// native image allocations or bank contents become the candidate input.
-		const root = nativeState.rootThreadAddress;
-		const frames = memory.readRamRecordWord(root + ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
-		const values = memory.readRamRecordWord(root + ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		const frameCapacity = memory.readRamRecordWord(root + ThreadField.FrameCapacity);
-		const valueCapacity = memory.readRamRecordWord(root + ThreadField.StackCapacity);
-		const metadata = management + HEAP_STRING_METADATA_OFFSET, state = arena.allocatorStateOffset();
-		ram.set(before.subarray(floor, management), floor);
-		ram.set(before.subarray(metadata, state + allocatorStateBytes), metadata);
-		for (const [base, size] of [[root & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES], [frames, FRAME_CONTROL_BYTES * frameCapacity], [values, THREAD_STACK_SLOT_BYTES * valueCapacity]])
-			ram.set(reference.subarray(base, base + size), base);
-		cpu.stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID,
-			readHeader(BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET), readHeader(BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET));
-
-		const output = management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET, outputBytes = 4 * operands.length;
-		ram.fill(0x5a, output, output + outputBytes);
-		writeFileSync(initial, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		const commands: string[] = [], observations: string[] = [];
-		const observed = (command: string, value?: string | number) => {
+		const header = linked.layout.header;
+		const rom = join(directory, `system-O${opt}.rom`), trace = join(directory, 'trace');
+		const tsPartial = join(directory, 'ts-partial'), nativePartial = join(directory, 'native-partial');
+		writeFileSync(rom, bytes);
+		const commands: string[] = [], expected: string[] = [];
+		function note(command: string, observation?: string | number) {
 			commands.push(command);
-			if (value !== undefined) observations.push(String(value));
-		};
-		const span = (basis: Uint8Array, base: number, length: number) => observed(`H ${base} ${base + length}`, hashBytes(basis, base, length));
-		const compareSpans = [
-			[installed, EXECUTION_IMAGE_BINDING_SIZE],
-			[metadata, state + allocatorStateBytes - metadata],
-			[globals.base & RAM_RECORD_WORD_MASK, 17 * globals.capacity],
-			[systemGlobals.base & RAM_RECORD_WORD_MASK, 17 * systemGlobals.capacity],
-			[expectedBase & RAM_RECORD_WORD_MASK, 4 * (nameCount + stringCount)],
-		];
-		// C++ starts from the original native activation, before importing the
-		// test checkpoint. Those bytes must equal the independent TS oracle.
-		for (const [base, length] of compareSpans) span(reference, base, length);
-		observed('X');
-		const args = [management, header, RAM_BASE + output, linked.romBytes.length, 0];
-		assert.ok(cpu.beginHeapService(fn, args));
-		observed(`B ${fn} ${args.length} ${args.join(' ')}`, 1);
-		const grant = (cycles: number) => {
-			const reason = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			const paid = cycles - cpu.instructionBudgetRemaining;
-			assert.equal(reason, RunResult.Yielded);
-			assert.ok(paid > 0);
-			observed(`J ${cycles} 1`, `${reason} ${paid} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
-		};
-		for (let slices = 0; slices < 16384 && memory.readRamRecordWord(output + 8) !== 9; ++slices) grant(1);
-		assert.ok(cpu.heapServiceActive());
-		assert.equal(memory.readRamRecordWord(output + 8), 9);
-		assert.deepEqual(operands.slice(6).map((_, i) => memory.readRamRecordWord(output + 24 + i * 4)), Array(4).fill(0x5a5a5a5a),
-			'neither the image backing nor the literal span is published mid-growth');
-		span(ram, output, outputBytes);
-		const mid = captureRuntimeSaveState(runtime);
-		observed(`x ${middle}`);
-		observed('S');
-		const finish = () => {
-			for (let slices = 0; slices < 4096 && cpu.heapServiceActive(); ++slices) grant(123);
+			if (observation !== undefined) expected.push(String(observation));
+		}
+		function range(start: number, size: number) {
+			note(`H ${start} ${start + size}`, hashBytes(memory.ramData(), start, size));
+		}
+		function grant(cycles: number) {
+			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			note(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			return result;
+		}
+		assert.equal(arena.occupiedBytes(), 0);
+		range(installed, EXECUTION_IMAGE_BINDING_SIZE);
+		for (let i = 0; i < 262144 && readNamespaceBank(memory, ordinary).count < 9; ++i) {
+			grant(1);
 			assert.equal(cpu.heapServiceActive(), false);
-			assert.equal(cpu.heapServiceResult(), 0);
-			assert.deepEqual(operands.map((_, slot) => memory.readRamRecordWord(output + slot * 4)), operands);
-			assert.equal(cpu.luaHeap.usedBytes(), expectedLogical);
-			assert.equal(arena.occupiedBytes(), expectedPhysical);
-			for (const [base, size] of compareSpans) {
-				assert.deepEqual(ram.subarray(base, base + size), reference.subarray(base, base + size));
-				span(ram, base, size);
+		}
+		assert.equal(readNamespaceBank(memory, ordinary).count, 9, 'the firmware issued the first namespace relocation');
+		assert.equal(readNamespaceBank(memory, ordinary).capacity, 16);
+		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+		assert.equal(memory.readRamRecordWord(installed), 0, 'no installed image is visible during the binding loop');
+		range(ordinary, 12);
+		range(installed, EXECUTION_IMAGE_BINDING_SIZE);
+		writeFileSync(tsPartial, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+		note(`x ${nativePartial}`);
+		const cut = commands.length, observed = expected.length;
+
+		function finish() {
+			for (let i = 0; i < 2048 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i) grant(127);
+			assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+			const block = memory.readRamRecordWord(installed);
+			assert.notEqual(block, 0);
+			const counts = header.globalNameCount + header.systemGlobalNameCount;
+			let strings = 0;
+			for (let i = 0; i < header.constantCount; ++i)
+				if (readLE32(bytes, header.constantTableAddress + i * BLUA32_CONSTANT_RECORD_SIZE) === Blua32ConstantTag.String) ++strings;
+			assert.equal(memory.readRamRecordWord(installed + 4), 4 * (counts + strings));
+			const firstLiteral = block + 4 * counts;
+			const diagnostics = ['__index', 'Out of memory.'].map(text => cpu.stringPool.find(text)!);
+			assert.ok(diagnostics.every(isRamStringId));
+			const literalWords = Array.from({ length: strings }, (_, n) =>
+				memory.readRamRecordWord(firstLiteral + 4 * n) & ~IMAGE_STRING_RAM_ORDINAL);
+			const firstRom = literalWords.findIndex(id => !isRamStringId(id));
+			assert.ok(firstRom >= diagnostics.length, 'RAM and ROM String IDs share the backing');
+			assert.ok(diagnostics.every(id => literalWords.slice(0, firstRom).includes(id)));
+			assert.ok(literalWords.slice(firstRom).every(id => !isRamStringId(id)), 'no RAM alias follows the ROM partition');
+
+			for (const [descriptor, start, count, offset] of [
+				[ordinary, header.globalNameTableAddress, header.globalNameCount, 0],
+				[system, header.systemGlobalNameTableAddress, header.systemGlobalNameCount, header.globalNameCount],
+			]) {
+				const bank = readNamespaceBank(memory, descriptor);
+				assert.equal(bank.count, count);
+				for (let index = 0; index < count; ++index) {
+					const romId = readLE32(bytes, start + BLUA32_GLOBAL_NAME_RECORD_SIZE * index + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET);
+					const actualOrdinal = memory.readRamRecordWord(block + 4 * (offset + index));
+					const actualId = memory.readRamRecordWord(bank.base + 4 * actualOrdinal);
+					assert.equal(cpu.stringPool.toString(actualId), cpu.stringPool.toString(romId));
+					assert.equal(actualOrdinal, index, 'ROM operands retain registration order');
+				}
+				range(descriptor, 12);
+				range(bank.base - RAM_BASE, 17 * bank.capacity);
 			}
-			span(ram, output, outputBytes);
-		};
+			range(installed, EXECUTION_IMAGE_BINDING_SIZE);
+			range(block - RAM_BASE, 4 * (counts + strings));
+			let result = RunResult.Yielded;
+			for (let i = 0; i < 256 && result !== RunResult.Halted; ++i) result = grant(4096);
+			assert.equal(result, RunResult.Halted);
+			const [index, romString, oom, number] = runtime.readCompletionValues();
+			assert.deepEqual([asStringId(index), asStringId(oom)], diagnostics);
+			assert.ok(asStringId(romString) < RAM_BASE);
+			assert.equal(cpu.stringPool.toString(asStringId(romString)), 'resident-only-literal');
+			assert.equal(number, valueInteger(917));
+		}
+		function replay(seed: string) {
+			writeFileSync(trace, commands.join('\n'));
+			assert.deepEqual(execFileSync(native, [rom, trace, seed], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
+		}
 		finish();
-		observed('U');
-		applyRuntimeSaveState(runtime, mid);
+		const tail = commands.slice(cut), observations = expected.slice(observed);
+		replay(tsPartial); // Native starts from power on; no X in this trace.
+		commands.splice(0, commands.length, 'X', ...tail);
+		expected.splice(0, expected.length, ...observations);
+		replay(tsPartial);
+		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(nativePartial), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		commands.length = expected.length = 0;
 		finish();
-		writeFileSync(script, commands.join('\n'));
-		assert.deepEqual(execFileSync(native, [rom, script, initial], { encoding: 'utf8' }).trimEnd().split('\n'), observations);
-		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(readFileSync(middle), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-		finish();
-		console.log(`SYSTEM-IMAGE-BIND:PASS O${opt} mapped both name banks and ${stringCount} constants with ${aliasCount} canonical RAM aliases, allocator bytes match and portable continuation`);
+		assert.deepEqual(expected, observations);
+		console.log(`SYSTEM-IMAGE-BIND:PASS O${opt} actual reset publishes both namespaces and installs packed String aliases; native and cross-core continuation during growth`);
 	}
 	rmSync(directory, { recursive: true });
 } catch (error) {

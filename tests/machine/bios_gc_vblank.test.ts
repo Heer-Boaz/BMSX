@@ -11,10 +11,10 @@ import { valueNil } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/gc_vblank', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
@@ -33,7 +33,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(root >= 0);
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
 		assert.ok(target.heapAllocator.allocate(1024 * 1024, true));

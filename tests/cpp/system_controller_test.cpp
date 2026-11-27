@@ -20,6 +20,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <limits>
@@ -84,18 +85,35 @@ auto makeRuntimeImage(bmsx::OpCode startupOpcode) -> bmsx::test::Blua32TestImage
 	return image;
 }
 
+constexpr bmsx::u32 REBOOT_CONTEXT_MAILBOX = bmsx::DYNAMIC_RAM_BASE;
+
 auto makeSystemTransferImage(bmsx::u32 cartridgeStartupAddress) -> bmsx::test::Blua32TestImage {
 	bmsx::test::Blua32TestImage image = makeRuntimeImage(bmsx::OpCode::RFE);
-	image.text.resize(bmsx::INSTRUCTION_BYTES * 3u);
+	image.text.resize(bmsx::INSTRUCTION_BYTES * 10u);
 	std::span<bmsx::u8> code(image.text);
 	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
 	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_EXEC, 0);
 	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
-	image.constants.emplace_back(static_cast<bmsx::i32>(cartridgeStartupAddress));
+	// Raw reset selects one of two independently prepared contexts. The
+	// handoff and cartridge EXEC both go through the actual CPU controls.
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 1);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::MFC0), 1, bmsx::COP0_CONTEXT, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::K0), 2, 0, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::EQ), 0, 1, 2);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 2);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::LOAD_MEM), 0, 0, static_cast<bmsx::u8>(bmsx::MemoryAccessKind::U32LE));
+	bmsx::writeInstruction(code, 9, static_cast<bmsx::u8>(bmsx::OpCode::MTC0), 0, bmsx::COP0_CONTEXT, 0);
+	image.constants = {
+		static_cast<bmsx::i32>(cartridgeStartupAddress),
+		static_cast<bmsx::i32>(REBOOT_CONTEXT_MAILBOX),
+		static_cast<bmsx::i32>(REBOOT_CONTEXT_MAILBOX + bmsx::IO_WORD_SIZE),
+	};
 	image.functions = {
 		{.firstWord = 0u, .wordCount = 2u},
 		{.firstWord = 2u, .wordCount = 1u},
+		{.firstWord = 3u, .wordCount = 7u, .maxStack = 3u},
 	};
+	image.startupFunctionIndex = 2u;
 	return image;
 }
 
@@ -292,6 +310,10 @@ struct SystemRuntimeFixture {
 		) {
 		runtime.boot();
 	}
+
+	void seedLanguageState() {
+		bmsx::test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
+	}
 };
 
 struct ExternalClosureFixture {
@@ -307,6 +329,7 @@ struct ExternalClosureFixture {
 		)
 		, runtime(system.runtime)
 		, cpu(runtime.machine.cpu) {
+		system.seedLanguageState();
 		for (size_t index : {1u, 2u}) bmsx::test::seedTestRomClosure(cpu, system.systemRom.functionAddresses[index]);
 		const int publicationCycles = 2 * (bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::CLOSURE)]
 			+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::SETGL)]);
@@ -670,24 +693,59 @@ void testRuntimeSystemRebootBoundary() {
 	);
 	SystemRuntimeFixture fixture(
 		makeSystemTransferImage(cartridgeStartupAddress),
-		makeRuntimeImage(bmsx::OpCode::RET)
+		makeRuntimeImage(bmsx::OpCode::RET),
+		std::nullopt, 2u * bmsx::IO_WORD_SIZE
 	);
 	bmsx::Runtime& runtime = fixture.runtime;
 
-	require(!runtime.machine.cpu.isCartridgeExecutionActive(), "physical boot begins in system firmware");
+	auto& machine = runtime.machine;
+	auto& cpu = machine.cpu;
+	auto& memory = machine.memory;
+	require(cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS
+		&& cpu.heapAllocator().occupiedBytes() == 0u, "physical boot begins in the reset bank without a language heap");
+	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
+	const bmsx::u32 cold = bmsx::test::provisionManagedFixture(cpu, boot.staticEnd);
+	const bmsx::u32 warm = cpu.luaHeap().allocateThreadRecord(0u);
+	// Initial physical test data; neither context is selected by the host.
+	const bmsx::u32 pc = fixture.systemRom.textAddress;
+	const bmsx::FrameEntryControl entry{
+		fixture.systemRom.functionAddresses[0], pc, pc, bmsx::frameBankWord(bmsx::SYSTEM_EXECUTION_DOMAIN_ID),
+		0, 0, {}, 0, 0u, 0, 1,
+	};
+	for (const bmsx::u32 context : {cold, warm}) {
+		using bmsx::ThreadField;
+		const bmsx::u32 frame = bmsx::ThreadRecord::storageLayout(memory, context).frameAddress(0u);
+		entry.writeWords([&](bmsx::FrameField field, bmsx::u32 word) {
+			memory.writeRamRecordWord(frame + static_cast<bmsx::u32>(field), word);
+		});
+		memory.writeRamRecordWord(context + static_cast<bmsx::u32>(ThreadField::Status), static_cast<bmsx::u32>(bmsx::ThreadStatus::Running));
+		memory.writeRamRecordWord(context + static_cast<bmsx::u32>(ThreadField::StackTop), 1u);
+		memory.writeRamRecordWord(context + static_cast<bmsx::u32>(ThreadField::FrameDepth), 1u);
+	}
+	memory.writeRamRecordPair(REBOOT_CONTEXT_MAILBOX, cold, warm);
+	memory.setRamBusEnd(bmsx::DYNAMIC_RAM_BASE);
+
 	bmsx::FrameSchedulerState& frameScheduler = runtime.frameScheduler;
 	const bmsx::f64 frameDurationMs = runtime.timing.frameDurationMs;
-	frameScheduler.run(runtime, frameDurationMs);
-	require(runtime.machine.cpu.isCartridgeExecutionActive(), "system firmware transfers through CP0.EXEC to the selected cartridge");
+	const auto runToCartridge = [&] {
+		for (int frame = 0; frame < 2 && !cpu.isCartridgeExecutionActive(); ++frame)
+			frameScheduler.run(runtime, frameDurationMs);
+		require(cpu.isCartridgeExecutionActive(), "system firmware transfers through CP0.EXEC to the selected cartridge");
+	};
+	runToCartridge();
+	require(cpu.rootThread()->address == cold, "cold raw firmware selected the first context");
 
 	runtime.machine.memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_RESET);
 	frameScheduler.run(runtime, frameDurationMs);
-	require(!runtime.machine.cpu.isCartridgeExecutionActive(), "system reset restarts physical system firmware before cartridge execution");
+	require(!cpu.isCartridgeExecutionActive() && cpu.rootThread()->address == bmsx::CPU_RESET_BANK_ADDRESS,
+		"system reset restarts physical system firmware before cartridge execution");
+	require(cpu.captureRuntimeState().previousRootContextWord == cold, "reset retains the original context address");
 	require(!runtime.machine.systemController.captureState().resetRequested, "runtime boundary consumes the system reset latch");
 	require(frameScheduler.lastTickSequence == 0, "system reset clears scheduler sequence state");
 
-	frameScheduler.run(runtime, frameDurationMs);
-	require(runtime.machine.cpu.isCartridgeExecutionActive(), "rebooted system firmware can execute the original cartridge entry address");
+	runToCartridge();
+	require(cpu.rootThread()->address == warm && cpu.captureRuntimeState().previousRootContextWord == 0u,
+		"warm raw firmware selects its own prepared context before restarting the cartridge");
 }
 
 void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
@@ -704,6 +762,8 @@ void testUnexecutedSecondCartridgeDoesNotAlterGuestIdentity() {
 		std::move(unusedCart)
 	);
 
+	single.seedLanguageState();
+	dual.seedLanguageState();
 	bmsx::CPU& singleCpu = single.runtime.machine.cpu;
 	bmsx::CPU& dualCpu = dual.runtime.machine.cpu;
 	require(
@@ -726,8 +786,10 @@ void testGuestExecutionSelectionAndClosureIdentitySurviveTheSaveStateWireFormat(
 		makeClosureCartImage(111, true),
 		makeClosureCartImage(222, true)
 	);
+	fixture.seedLanguageState();
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
+	// The image-switch test begins with both operand banks already prepared.
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(1));
 	bmsx::test::seedTestRomClosure(cpu, fixture.cartRom.functionAddresses[1], 0);
@@ -828,6 +890,7 @@ void testDistinctNonStaticClosuresRemainDistinctTableKeysThroughTheSaveStateWire
 		makeExecutionSelectorSystemImage(),
 		makeClosureCartImage(111, false)
 	);
+	fixture.seedLanguageState();
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
@@ -883,6 +946,7 @@ void testMixedStaticAndNonStaticCartridgeClosuresKeepIdentityAcrossEitherSaveSta
 		makeClosureCartImage(111, false),
 		makeClosureCartImage(222, true)
 	);
+	fixture.seedLanguageState();
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(0));
@@ -959,6 +1023,7 @@ void testCompletionCallReturnLatchSurvivesSaveStateAndGc() {
 		makeCompletionLatchSystemImage(),
 		makeRuntimeImage(bmsx::OpCode::RET)
 	);
+	fixture.seedLanguageState();
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
 	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
@@ -996,6 +1061,7 @@ void testCpuAbortsPhysicalCompletionCallAtMarkedRoot() {
 		makeCompletionLatchSystemImage(),
 		makeRuntimeImage(bmsx::OpCode::RET)
 	);
+	fixture.seedLanguageState();
 	bmsx::CPU& cpu = fixture.runtime.machine.cpu;
 	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
 	require(cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "completion-latch startup returns its callable closure");
@@ -1018,6 +1084,7 @@ void testSuspendedCompletionReturnsAtPhysicalCpuHold() {
 		makeCompletionLatchSystemImage(),
 		makeRuntimeImage(bmsx::OpCode::RET)
 	);
+	fixture.seedLanguageState();
 	bmsx::Runtime& runtime = fixture.runtime;
 	bmsx::CPU& cpu = runtime.machine.cpu;
 	bmsx::test::seedTestRomClosure(cpu, fixture.systemRom.functionAddresses[1]);
@@ -1214,6 +1281,8 @@ void testGeoDmaSameCycleRuntimeRestore() {
 	auto& runtime = fixture.runtime;
 	auto& machine = runtime.machine;
 	auto& memory = machine.memory;
+	const auto boot = machine.executionAddressSpace.resolveSystemDomain();
+	memory.setRamBusEnd(bmsx::RAM_BASE + machine.cpu.heapAllocator().floorOffset(boot.staticEnd));
 	for (bmsx::u32 i = 0; i < 10u; ++i) {
 		const bmsx::u32 record = records + i * bmsx::GEO_XFORM2_RECORD_BYTES;
 		for (bmsx::u32 offset = 0; offset < bmsx::GEO_XFORM2_RECORD_BYTES; offset += 4u) memory.writeU32(record + offset, 0);

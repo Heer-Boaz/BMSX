@@ -5,6 +5,7 @@
 #include "spec/bmsx/model.h"
 #include "machine/cpu/closure.h"
 #include "common/number_format.h"
+#include "support/managed_fixture.h"
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -52,6 +53,7 @@ void storageAndFrames() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	test::seedManagedHeapFixture(cpu);
 	auto& thread = *cpu.rootThread();
 	thread.reserveFrame(thread.stackCapacity);
 	auto* first = thread.acquireFrame(); first->writeControl(bmsx::FrameField::StackBase, 0); first->writeControl(bmsx::FrameField::StackCapacity, 8);

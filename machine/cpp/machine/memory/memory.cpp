@@ -306,12 +306,12 @@ void Memory::restoreBusState(const MemoryBusState& state) {
 	writeBusFaultSlots();
 }
 
-u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess) const {
+u8 Memory::readMainMemoryU8(uint32_t addr, uint32_t faultAccess, bool cpuProtected) const {
 	if (addr < RAM_BASE) {
 		if (addr < m_systemRom.size()) return m_systemRom[addr];
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (addr < m_ramBusEnd) {
+		if (isRamRange(addr, 1u, cpuProtected)) {
 			return m_ram[offset];
 		}
 	} else if (addr < CART_BUS_END) {
@@ -344,8 +344,8 @@ void Memory::writeIoSlot(int slot, uint32_t addr, u32 value, u32 faultAccess, Ma
 	}
 }
 
-bool Memory::writeRamU8(uint32_t addr, u8 value) {
-	if (!isRamRange(addr, 1u)) return false;
+bool Memory::writeRamU8(uint32_t addr, u8 value, bool cpuProtected) {
+	if (!isRamRange(addr, 1u, cpuProtected)) return false;
 	const size_t offset = addr - RAM_BASE;
 	m_ram[offset] = value;
 	m_ramPageWriteWatches.invalidateWrite(
@@ -357,8 +357,8 @@ bool Memory::writeRamU8(uint32_t addr, u8 value) {
 	return true;
 }
 
-bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value) {
-	if (!isRamRange(addr, byteLength)) return false;
+bool Memory::writeRamWordLE(uint32_t addr, size_t byteLength, uint32_t value, bool cpuProtected) {
+	if (!isRamRange(addr, byteLength, cpuProtected)) return false;
 	const size_t offset = addr - RAM_BASE;
 	if (byteLength == 2) {
 		writeLE16(m_ram.data() + offset, value);
@@ -388,23 +388,23 @@ void Memory::clearBusFault() {
 	writeBusFaultSlots();
 }
 
-u32 Memory::readMappedWord(uint32_t addr) const {
-	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD);
+u32 Memory::readMappedWord(uint32_t addr, bool cpuProtected) const {
+	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_READ_WORD, cpuProtected);
 }
 
 void Memory::writeIoU32(uint32_t addr, u32 value) {
 	m_ioSlots[static_cast<size_t>((addr - IO_BASE) / IO_WORD_SIZE)] = value;
 }
 
-void Memory::writeMappedWord(uint32_t addr, u32 value) {
-	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD);
+void Memory::writeMappedWord(uint32_t addr, u32 value, bool cpuProtected) {
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, BUS_ACCESS_WRITE_WORD, cpuProtected);
 }
 
 u8 Memory::readU8(uint32_t addr) const {
 	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
 }
 
-u8 Memory::readMappedU8(uint32_t addr) const {
+u8 Memory::readMappedU8(uint32_t addr, bool cpuProtected) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		return static_cast<u8>(readIoSlot(slot, addr, MAPPED_BUS_MASTER_CPU) & 0xffu);
@@ -413,7 +413,7 @@ u8 Memory::readMappedU8(uint32_t addr) const {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U8);
 		return 0;
 	}
-	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8);
+	return readMainMemoryU8(addr, BUS_ACCESS_READ_U8, cpuProtected);
 }
 
 void Memory::writeU8(uint32_t addr, u8 value) {
@@ -427,13 +427,13 @@ void Memory::writeU8(uint32_t addr, u8 value) {
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U8);
 }
 
-void Memory::writeMappedU8(uint32_t addr, u8 value) {
+void Memory::writeMappedU8(uint32_t addr, u8 value, bool cpuProtected) {
 	if (isIoRegionRange(addr, 1)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U8);
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamU8(addr, value)) {
+		if (writeRamU8(addr, value, cpuProtected)) {
 			return;
 		}
 	} else if (addr < CART_BUS_END) {
@@ -478,7 +478,7 @@ uint32_t Memory::readCountedU32(uint32_t addr, MemoryWordCounters& counters) con
 	return readRawU32<true>(addr, &counters);
 }
 
-uint32_t Memory::readMappedU16LE(uint32_t addr) const {
+uint32_t Memory::readMappedU16LE(uint32_t addr, bool cpuProtected) const {
 	if (isIoRegionRange(addr, 2)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_READ_U16);
 		return 0;
@@ -489,7 +489,7 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (isRamRange(addr, 2u)) {
+		if (isRamRange(addr, 2u, cpuProtected)) {
 			return readLE16(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
@@ -499,14 +499,15 @@ uint32_t Memory::readMappedU16LE(uint32_t addr) const {
 	return 0;
 }
 
-uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess) const {
-	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess);
+uint32_t Memory::readMappedU32LE(uint32_t addr, uint32_t faultAccess, bool cpuProtected) const {
+	return readMappedBusU32LE(addr, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
 }
 
 uint32_t Memory::readMappedBusU32LE(
 	uint32_t addr,
 	MappedBusSignals busSignals,
-	uint32_t faultAccess
+	uint32_t faultAccess,
+	bool cpuProtected
 ) const {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
@@ -527,7 +528,7 @@ uint32_t Memory::readMappedBusU32LE(
 		}
 	} else if (addr < CART_ROM_BASE) {
 		const size_t offset = static_cast<size_t>(addr - RAM_BASE);
-		if (isRamRange(addr, 4u)) {
+		if (isRamRange(addr, 4u, cpuProtected)) {
 			return readLE32(m_ram.data() + offset);
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
@@ -548,13 +549,13 @@ float Memory::readMappedF32LE(uint32_t addr) const {
 	return value;
 }
 
-double Memory::readMappedF64LE(uint32_t addr) const {
+double Memory::readMappedF64LE(uint32_t addr, bool cpuProtected) const {
 	const uint32_t faultSequence = m_busFaultSequence;
-	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr, BUS_ACCESS_READ_F64));
+	const uint64_t lo = static_cast<uint64_t>(readMappedU32LE(addr, BUS_ACCESS_READ_F64, cpuProtected));
 	if (m_busFaultSequence != faultSequence) {
 		return 0.0;
 	}
-	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64));
+	const uint64_t hi = static_cast<uint64_t>(readMappedU32LE(addr + 4, BUS_ACCESS_READ_F64, cpuProtected));
 	if (m_busFaultSequence != faultSequence) {
 		return 0.0;
 	}
@@ -586,13 +587,13 @@ void Memory::countRawWriteU32(uint32_t addr, MemoryWordCounters& counters) const
 	++counters.otherWords;
 }
 
-void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
+void Memory::writeMappedU16LE(uint32_t addr, uint32_t value, bool cpuProtected) {
 	if (isIoRegionRange(addr, 2)) {
 		raiseBusFault(BUS_FAULT_UNALIGNED_IO, addr, BUS_ACCESS_WRITE_U16);
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamWordLE(addr, 2, value)) {
+		if (writeRamWordLE(addr, 2, value, cpuProtected)) {
 			return;
 		}
 	} else if (addr <= CART_BUS_END - 2u) {
@@ -601,8 +602,8 @@ void Memory::writeMappedU16LE(uint32_t addr, uint32_t value) {
 	raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_ACCESS_WRITE_U16);
 }
 
-void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess) {
-	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess);
+void Memory::writeMappedU32LE(uint32_t addr, uint32_t value, uint32_t faultAccess, bool cpuProtected) {
+	writeMappedBusU32LE(addr, value, MAPPED_BUS_MASTER_CPU, faultAccess, cpuProtected);
 }
 
 // Only declared end-silent FIFO ports may batch the prefix. Arbitrary MMIO
@@ -703,7 +704,7 @@ void Memory::transferDmaBlock(u32 readAddress, u32 writeAddress, u32 wordCount,
 	}
 }
 
-void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess) {
+void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals busSignals, uint32_t faultAccess, bool cpuProtected) {
 	const int slot = ioAlignedSlot(addr);
 	if (slot >= 0) {
 		if ((busSignals & MAPPED_BUS_DMA_MEMORY) != 0u) {
@@ -719,7 +720,7 @@ void Memory::writeMappedBusU32LE(uint32_t addr, uint32_t value, MappedBusSignals
 		return;
 	}
 	if (addr < CART_ROM_BASE) {
-		if (writeRamWordLE(addr, 4, value)) {
+		if (writeRamWordLE(addr, 4, value, cpuProtected)) {
 			return;
 		}
 	} else if (addr <= CART_BUS_END - 4u) {
@@ -734,15 +735,15 @@ void Memory::writeMappedF32LE(uint32_t addr, float value) {
 	writeMappedU32LE(addr, bits, BUS_ACCESS_WRITE_F32);
 }
 
-void Memory::writeMappedF64LE(uint32_t addr, double value) {
+void Memory::writeMappedF64LE(uint32_t addr, double value, bool cpuProtected) {
 	uint64_t bits = 0;
 	std::memcpy(&bits, &value, sizeof(bits));
 	const uint32_t faultSequence = m_busFaultSequence;
-	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull), BUS_ACCESS_WRITE_F64);
+	writeMappedU32LE(addr, static_cast<uint32_t>(bits & 0xffffffffull), BUS_ACCESS_WRITE_F64, cpuProtected);
 	if (m_busFaultSequence != faultSequence) {
 		return;
 	}
-	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32), BUS_ACCESS_WRITE_F64);
+	writeMappedU32LE(addr + 4, static_cast<uint32_t>(bits >> 32), BUS_ACCESS_WRITE_F64, cpuProtected);
 }
 
 void Memory::writeBytes(uint32_t addr, const u8* data, size_t length) {
@@ -796,8 +797,11 @@ bool Memory::bindMappedReadView(uint32_t addr, size_t length, MappedBusSignals b
 	return addr < CART_BUS_END && m_cartridgeController.bindMappedReadView(addr, length, busSignals, out);
 }
 
-bool Memory::isRamRange(uint32_t addr, size_t length) const {
-	return addr >= RAM_BASE && addr <= m_ramBusEnd && length <= m_ramBusEnd - addr;
+bool Memory::isRamRange(uint32_t addr, size_t length, bool cpuProtected) const {
+	const size_t end = cpuProtected ? RAM_BASE + m_ram.size() : m_ramBusEnd;
+	return addr >= RAM_BASE && addr <= end && length <= end - addr
+		&& (addr + length <= CPU_RESET_BANK_ADDRESS || addr >= CPU_RESET_BANK_END)
+		&& (addr + length <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_FIXED_VALUE_END);
 }
 
 MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {

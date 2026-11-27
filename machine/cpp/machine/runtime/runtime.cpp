@@ -104,8 +104,6 @@ void Runtime::resetForSystemBoot() {
 	m_pendingCall = PendingCall::None;
 	machine.memory.clearIoSlots();
 	resetHardwareState();
-	// History observers reconcile the reviewed heap before its registers are cleared.
-	machine.cpu.clearExecutionEnvironment();
 }
 
 void Runtime::resetHardwareState() {

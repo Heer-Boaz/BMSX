@@ -18,9 +18,10 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu, compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 
 function assertParity(js: CPU, ref: CPU): void {
@@ -35,7 +36,7 @@ test('a warm JavaScript CALL to the resident constructor yields to the bound BIO
 	assert.ok(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const functionAddress = image.vectors.entryFunctionAddress;
 	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
 	const enter = () => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
 	const grant = () => cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled);
@@ -97,7 +98,7 @@ for (const destination of [0, 1, 2]) test(`compiled CONCAT converts every value 
 	writeInstruction(text, 1, OpCode.CONCAT, destination, 0, 1);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const pc = image.image.functions[0].codeAddress, entry = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	for (const cpu of [js, ref]) for (let warm = 0; warm < 12; ++warm) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
@@ -137,7 +138,7 @@ test('compiled CONCAT preserves signed RK constants and Unicode without numeric-
 	writeInstruction(text, 1, OpCode.CONCAT, 0, 63, 62, 63); // K[0], K[1].
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }], constants: [numberConstantFromHost(-0), textToByteString('🍻')] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	js.runUntilDepth(0, 320); ref.runUntilDepth(0, 320); assertParity(js, ref);
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const terminal = frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal;
@@ -151,8 +152,8 @@ for (const count of [0, 3, 513]) test(`compiled WIDE CONCATN reads exactly its r
 	writeInstruction(text, 1, OpCode.WIDE, 2, 1, count >> 9);
 	writeInstruction(text, 2, OpCode.CONCATN, 1, 0, count & 63);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 1025 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 1025 }] });
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const pc = image.image.functions[0].codeAddress;
 	let expected = '';
 	for (let i = 0; i < count; ++i) expected += i === 0 ? 'L' : i === 1 ? 'false' : String(i % 10);
@@ -188,7 +189,7 @@ test('compiled CONCAT publishes moved reference roots before collection', () => 
 	writeInstruction(text, 2, OpCode.CONCAT, 0, 1, 2);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 16 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const pc = image.image.functions[0].codeAddress;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(9, 1); r.setInteger(1, 2); r.setInteger(2, 3);
@@ -226,7 +227,7 @@ local function factory(input)
 end
 return factory
 `, 0));
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	runGuestToHalt(cpu, 100_000);
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
@@ -271,7 +272,7 @@ test('hot immediate CLOSURE retains the full Bx operand and canonical STATIC ide
 	const target = DYNAMIC_RAM_BASE;
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 8 }, { firstWord: 16, wordCount: 1 }],
 		closureRelocations: [{ wordIndex: 2, functionAddress: target }, { wordIndex: 5, functionAddress: target }] }, BLUA32_FUNCTION_RECORD_SIZE);
-	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const left = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), right = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const record = image.symbols.functionAddresses[1] - SYSTEM_ROM_BASE;
 	for (const { cpu, memory } of [left, right]) {
 		memory.writeBytes(target, image.romBytes.subarray(record, record + BLUA32_FUNCTION_RECORD_SIZE));
@@ -294,7 +295,7 @@ test('hot register CLOSURE preserves its prefix and destination on a prototype b
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255); writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 257 },
 		{ firstWord: 16, wordCount: 1, staticClosure: true }], globalNames: ['target'] });
-	const left = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), right = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const left = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), right = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const target = image.symbols.functionAddresses[1], bad = 0xdead0000;
 	for (const { cpu } of [left, right]) {
 		seedTestRomClosure(cpu, target);
@@ -323,10 +324,10 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	writeInstruction(text, 3, OpCode.CLOSURE, source & 63, (source >> 6) & 63, source & 63);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: source + 1 },
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: source + 1 },
 		{ firstWord: 16, wordCount: 1 }, { firstWord: 16, wordCount: 1 }], globalNames: ['target'] }, BLUA32_FUNCTION_RECORD_SIZE);
 	const template = image.symbols.functionAddresses[2] - SYSTEM_ROM_BASE;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
@@ -354,7 +355,7 @@ test(`compiled concatenation retains the exact fault prefix (range=${range}, ope
 	writeInstruction(text, 1, range ? OpCode.CONCATN : OpCode.CONCAT, 0, 1, 2);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255); writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }, { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1, constants: ['12'] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2);
 		cpu.runUntilDepth(0, range ? 396 : 320);
@@ -390,7 +391,7 @@ for (const over of [false, true]) test(`CONCATN admits the exact mixed byte leng
 	writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 33 },
 		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const { cpu } = createTestSystemCpu(image);
+	const { cpu } = createTestHeapServiceCpu(image);
 	const frame = cpu.rootThread.currentFrame!, id = cpu.stringPool.intern('x'.repeat(135300));
 	for (let i = 1; i <= 31; ++i) frame.registers.setString(i, id);
 	// Four bytes remain: nil fits, false does not.

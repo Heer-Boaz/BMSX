@@ -64,10 +64,8 @@ int16_t hostInputState(unsigned port, unsigned device, unsigned index, unsigned 
 
 void testLibretroStateEnvelopeRoundTrip() {
 	bmsx::LibretroInput input(readSupervisorRequestLine);
-	constexpr bmsx::u32 systemScratch = bmsx::DYNAMIC_RAM_BASE + 0x10000u;
-	const std::vector<bmsx::u8> system =
-		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System, {},
-			systemScratch + bmsx::IO_WORD_SIZE - bmsx::DYNAMIC_RAM_BASE);
+	constexpr bmsx::u32 systemScratch = bmsx::DYNAMIC_RAM_BASE - bmsx::IO_WORD_SIZE;
+	const std::vector<bmsx::u8> system = bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System);
 	bmsx::CartManifest cartridgeManifest;
 	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRomDeviceConfig{});
 	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRamDeviceConfig{16u});

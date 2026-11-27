@@ -7,6 +7,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -35,7 +36,7 @@ struct SnapshotMachine {
 	explicit SnapshotMachine(const bmsx::test::Blua32TestImage& image, bmsx::u32 bssBytes = 0u)
 		: rom(bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image, bssBytes))
 		, runtime(bmsx::RuntimeOptions{rom.bytes, {}, bmsx::PSX_MACHINE_SPEC}, input) {
-		runtime.machine.cpu.reset();
+		bmsx::test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	}
 };
 
@@ -563,9 +564,9 @@ void diagnosticGcPhasesDoNotBecomeMachineState() {
 		"GC diagnostic history cannot change a single serialized machine byte");
 	const auto preReset = cpu.diagnosticGcProfile();
 	cpu.reset();
-	require(cpu.diagnosticGcProfile().collections == preReset.collections + 1u
-		&& cpu.diagnosticGcProfile().totalNanoseconds >= preReset.totalNanoseconds,
-		"CPU reset retains profile history and counts its actual collection");
+	require(cpu.diagnosticGcProfile().collections == preReset.collections
+		&& cpu.diagnosticGcProfile().totalNanoseconds == preReset.totalNanoseconds,
+		"CPU reset retains profile history without performing a collection");
 }
 #endif
 

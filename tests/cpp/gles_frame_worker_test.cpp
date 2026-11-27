@@ -14,6 +14,7 @@
 #include "render/shared/bmsx_font.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_local_memory.h"
+#include "spec/blua32/cop0.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "support/blua32_test_rom.h"
@@ -125,7 +126,13 @@ constexpr u32 ReadbackTail = DmaResult + 8u;
 constexpr u32 UploadPacket = DYNAMIC_RAM_BASE + 0x10000u;
 
 test::Blua32TestRom makeStream(bool supervisor = false, bool reset = false, bool largeUpload = false) {
+	const u32 staticEnd = largeUpload ? UploadPacket + GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT * IO_WORD_SIZE
+		: ReadbackTail + IO_WORD_SIZE;
 	Script script;
+	// Firmware must make its transfer buffers public before DMA and the
+	// frontend can use them. A reset-bank data access alone is not enough.
+	script.constant(0, (staticEnd + HEAP_PAGE_SIZE - 1u) & ~(HEAP_PAGE_SIZE - 1u));
+	script.code.push_back(packInstructionWord(static_cast<u8>(OpCode::MTC0), 0, COP0_RAM_END, 0));
 	size_t resetJump = 0;
 	if (reset) {
 		script.constant(1, ResetMarker);
@@ -204,8 +211,6 @@ test::Blua32TestRom makeStream(bool supervisor = false, bool reset = false, bool
 	// the selected Present packet, not an earlier 128-command drain, draws it.
 	script.gp0({0x600000ffu, 0x00400004u, 0x00010008u});
 	script.write(Finished, 1u);
-	const u32 staticEnd = largeUpload ? UploadPacket + GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT * IO_WORD_SIZE
-		: ReadbackTail + IO_WORD_SIZE;
 	return script.finish(staticEnd - DYNAMIC_RAM_BASE);
 }
 
@@ -239,11 +244,13 @@ Result runStream(const test::Blua32TestRom& rom, bool threaded, GxGpuDrawTargetM
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
 	if (largeUpload) {
-		runtime.machine.memory.writeU32(UploadPacket, 0xa0000000u);
-		runtime.machine.memory.writeU32(UploadPacket + 4u, 0u);
-		runtime.machine.memory.writeU32(UploadPacket + 8u, 0u);
+		// Seed physical RAM before the test ROM makes the DMA buffer public.
+		auto& memory = runtime.machine.memory;
+		memory.writeRamRecordWord(UploadPacket, 0xa0000000u);
+		memory.writeRamRecordWord(UploadPacket + 4u, 0u);
+		memory.writeRamRecordWord(UploadPacket + 8u, 0u);
 		for (u32 word = 3u; word < GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT; ++word)
-			runtime.machine.memory.writeU32(UploadPacket + word * 4u, word * 39293u);
+			memory.writeRamRecordWord(UploadPacket + word * 4u, word * 39293u);
 	}
 	TestVideoOutput output(256, 256);
 	std::unique_ptr<GPUBackend> backend;

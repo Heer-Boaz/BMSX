@@ -1,5 +1,6 @@
-import { compileHeapServiceSystem, compileTestSystemWithHeap } from '../helpers/heap_service_system';
-import { numberToHost, type Value, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { numberToHost, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -8,27 +9,28 @@ import { test } from 'node:test';
 
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import type { Memory } from '../../machine/ts/machine/memory/memory';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT, IO_SYS_ROM_BYTE_COUNT } from '../../machine/ts/spec/bmsx/io';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
 } from '../../machine/ts/spec/blua32/image_format';
-import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { readLE32 } from '../../machine/ts/common/endian';
 import {
 	disassembleTestBlua32Functions,
 	linkTestBlua32Pair,
+	linkTestCartBlua32,
 	linkTestSystemBlua32,
+	writeTestBlua32Rom,
 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
@@ -62,18 +64,41 @@ function disassembleEntryFunction(compiled: CompiledSystemProgram): string {
 	return disassembleTestBlua32Functions(image, [image.vectors.entryFunctionAddress]);
 }
 
-function runColdCompiled(compiled: CompiledSystemProgram, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[]; image: ReturnType<typeof linkTestSystemBlua32>['image']; symbols: ReturnType<typeof linkTestSystemBlua32>['symbols'] } {
-	const finalized = linkTestSystemBlua32(compiled);
-	memory.installSystemRom(finalized.romBytes);
-	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-	cpu.reset();
-	runGuestToHalt(cpu, 100000);
-	return { memory, values: materializeCpuCompletionValues(cpu), image: finalized.image, symbols: finalized.symbols };
+const entryBudget = 1_000_000;
+const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
+type SectionSystem = ReturnType<typeof linkManagedTestSystem>;
+
+function bootSectionProgram(systemRomBytes: Uint8Array, cartRom?: Uint8Array, cpuExecutionBackend = CpuExecutionBackend.Interpreter) {
+	const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(cartRom),
+		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, input);
+	runtime.boot();
+	assert.equal(runtime.machine.cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+	return runtime;
 }
 
-function runCold(source: string, memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes)): { memory: Memory; values: Value[] } {
-	return runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_bss.lua'), memory);
+function sectionAddress(symbols: Blua32SymbolsImage, name: string): number {
+	const address = symbols.metadata.staticScopes.declarations.find(declaration => declaration.name === name)?.address;
+	assert.ok(address !== undefined, `linked address of ${name}`);
+	return address;
+}
+
+function runCold(source: string, {
+	optLevel = 0, modules = [], poison,
+}: {
+	optLevel?: 0 | 3;
+	modules?: readonly { path: string; source: string }[];
+	poison?: (memory: Memory, linked: SectionSystem) => void;
+} = {}) {
+	const linked = linkManagedTestSystem(source, optLevel, modules);
+	const runtime = bootSectionProgram(writeTestBlua32Rom(linked));
+	const { cpu, memory } = runtime.machine;
+	// Section storage is installed RAM but not yet visible through the public
+	// CPU aperture. Set the test sentinels before firmware executes.
+	poison?.(memory, linked);
+	runGuestToHalt(cpu, entryBudget);
+	assert.equal(cpu.getFrameDepth(), 0, 'the System entry retired after the BIOS handoff');
+	assert.equal(cpu.captureRuntimeState().hardHalted, false);
+	return { memory, values: runtime.readCompletionValues(), image: linked.layout, symbols: linked.symbols };
 }
 
 test('BLua .bss declarations emit RAM section symbols and cold startup zeroes them as code', () => {
@@ -92,69 +117,87 @@ return *counter, &counter
 	}]);
 	assert.equal(image.link.constValueRelocs.every(reloc => reloc.kind === 'bss_addr'), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
-	const result = runCold(source, memory);
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 0);
-	assert.deepEqual(result.values, [0, DYNAMIC_RAM_BASE].map(valueInteger));
+	const result = runCold(source, { poison: (memory, linked) =>
+		memory.writeRamRecordWord(sectionAddress(linked.symbols, 'counter'), 0x11223344) });
+	const counter = sectionAddress(result.symbols, 'counter');
+	assert.equal(result.memory.readMappedU32LE(counter), 0);
+	assert.deepEqual(result.values, [0, counter].map(valueInteger));
 });
 
 for (const optLevel of [3] as const) for (const words of [1, 7, 8, 9, 17, 33, 4133]) test(`section initialization clears ${words} BSS words without touching neighbors (O${optLevel})`, () => {
 	const source = `data prefix: word = 305419896\nbss scratch: word[${words}]\nreturn *prefix`;
-	const compiled = compileTestSystemWithHeap(parseSource(source, 'bulk_bss.lua'), [], {
-		entrySource: source, programDomain: 'system', optLevel,
-	});
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	for (let i = 0; i <= words + 1; i++) memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4 * i, 0xfeedface);
-	const result = runColdCompiled(compiled, memory);
-	assert.deepEqual(result.values, [305419896].map(valueInteger));
-	for (let i = 0; i < words; i++) assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 + 4 * i), 0, `word ${i}`);
-	assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 + 4 * words), 0xfeedface);
+	const { memory, values, image } = runCold(source, { optLevel, poison: (memory, linked) => {
+		const { bssAddress, bssByteCount, dataAddress } = linked.layout.header;
+		memory.writeRamRecordWord(dataAddress, 0xfeedface);
+		for (let offset = 0; offset <= bssByteCount; offset += 4) memory.writeRamRecordWord(bssAddress + offset, 0xfeedface);
+	} });
+	assert.deepEqual(values, [valueInteger(305419896)]);
+	const { bssAddress, bssByteCount } = image.header;
+	for (let offset = 0; offset < bssByteCount; offset += 4)
+		assert.equal(memory.readMappedU32LE(bssAddress + offset), 0, `BSS byte offset ${offset}`);
+	assert.equal(memory.readMappedU32LE(bssAddress + bssByteCount), 0xfeedface);
 });
 
 for (const optLevel of [3] as const) for (const byteCount of [1, 3, 31, 32, 33]) test(`section initialization clears aligned byte BSS of ${byteCount} bytes (O${optLevel})`, () => {
 	const source = `bss bytes: u8[${byteCount}]\nreturn &bytes`;
-	const compiled = compileTestSystemWithHeap(parseSource(source, 'byte_bss.lua'), [], {
-		entrySource: source, programDomain: 'system', optLevel,
-	});
-	const words = (byteCount + 3) >>> 2;
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	for (let i = 0; i <= words; i++) memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 4 * i, 0xfeedface);
-	const result = runColdCompiled(compiled, memory);
-	assert.deepEqual(result.values, [DYNAMIC_RAM_BASE].map(valueInteger));
-	for (let i = 0; i < words; i++) assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 * i), 0, `word ${i}`);
-	assert.equal(memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4 * words), 0xfeedface);
+	const { memory, values, image, symbols } = runCold(source, { optLevel, poison: (memory, linked) => {
+		const { bssAddress, bssByteCount } = linked.layout.header;
+		for (let offset = 0; offset <= bssByteCount; offset += 4) memory.writeRamRecordWord(bssAddress + offset, 0xfeedface);
+	} });
+	assert.deepEqual(values, [valueInteger(sectionAddress(symbols, 'bytes'))]);
+	const { bssAddress, bssByteCount } = image.header;
+	for (let offset = 0; offset < bssByteCount; offset += 4)
+		assert.equal(memory.readMappedU32LE(bssAddress + offset), 0, `BSS byte offset ${offset}`);
+	assert.equal(memory.readMappedU32LE(bssAddress + bssByteCount), 0xfeedface);
 });
 
-for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS (O${optLevel}, backend=${backend})`, () => {
-	const launcher = `local floor<const> = require('kernel/heap_floor')
-local bind<const> = require('kernel/system_image_bind')
-bss system_scratch: word[9]\nlocal image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
-local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
-local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
-cop0.ram_end = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
-if bind.bind_cartridge(0, image, mem[${IO_SYS_ROM_BYTE_COUNT}],
-	mem[${IO_CART0_ROM_BYTE_COUNT}], mem[${IO_CART1_ROM_BYTE_COUNT}]) ~= 0 then return false end
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
+for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) test(`system and cartridge each initialize only their own BSS, including after restore (O${optLevel}, backend=${backend})`, () => {
+	const launcher = `
+bss system_scratch: word[9]
+halt_until_irq
+system_scratch[0] = 0x12345678
+${MANAGED_CART_LAUNCH}`;
 	const cartridge = `data prefix: word = 305419896\nbss scratch: word[17]\nreturn *prefix`;
-	const system = compileTestSystemWithHeap(parseSource(launcher, 'system_bss.lua'), [], { entrySource: launcher, programDomain: 'system', optLevel });
+	const system = linkManagedTestSystem(launcher, optLevel);
 	const cart = compileLuaChunkToProgram(parseSource(cartridge, 'cart_bss.lua'), [], { entrySource: cartridge, programDomain: 'cart', optLevel });
-	const images = linkTestBlua32Pair(system, cart);
-	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes),
-		machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend: backend }, {
-		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-	});
+	const { cartRomBytes, cartImage } = linkTestCartBlua32(system.biosImports, cart);
+	const systemRom = writeTestBlua32Rom(system);
+	const runtime = bootSectionProgram(systemRom, cartRomBytes, backend);
 	const { cpu, memory } = runtime.machine;
-	const cartBss = images.cartImage.header.bssAddress;
-	for (let address = DYNAMIC_RAM_BASE; address <= cartBss + 17 * 4; address += 4) memory.writeRamRecordWord(address - RAM_BASE, 0xfeedface);
-	runtime.boot();
-	runGuestToHalt(cpu, 100_000);
-	assert.equal(cpu.captureRuntimeState().hardHalted, false);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(305419896)]);
-	for (let i = 0; i < 9; i++) assert.equal(memory.readMappedU32LE(images.systemImage.header.bssAddress + 4 * i), 0);
-	assert.equal(memory.readMappedU32LE(images.cartImage.header.dataAddress), 305419896);
-	for (let i = 0; i < 17; i++) assert.equal(memory.readMappedU32LE(cartBss + 4 * i), 0);
-	assert.equal(memory.readMappedU32LE(cartBss + 17 * 4), 0xfeedface);
+	const systemBss = sectionAddress(system.symbols, 'system_scratch');
+	const { dataAddress: cartData, bssAddress: cartBss, bssByteCount: cartBssBytes } = cartImage.header;
+	const end = cartBss + cartBssBytes;
+	for (let address = system.layout.header.bssAddress; address <= end; address += 4)
+		memory.writeRamRecordWord(address, 0xfeedface);
+
+	runGuestToHalt(cpu, entryBudget);
+	assert.equal(cpu.isHaltedUntilIrq(), true, 'System initialized its BSS and stopped before entering the cartridge');
+	assert.equal(cpu.isCartridgeExecutionActive(), false);
+	for (let i = 0; i < 9; i++) assert.equal(memory.readMappedU32LE(systemBss + 4 * i), 0);
+	for (let address = cartData; address <= end; address += 4)
+		assert.equal(memory.readRamRecordWord(address), 0xfeedface, 'System did not initialize the cartridge regions');
+
+	const restored = bootSectionProgram(systemRom, cartRomBytes, backend);
+	const saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
+	applyRuntimeSaveState(restored, decodeRuntimeSaveState(saved, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+	for (const state of [runtime, restored]) {
+		const { cpu, memory } = state.machine;
+		assert.equal(cpu.isHaltedUntilIrq(), true);
+		cpu.clearHaltUntilIrq();
+		runGuestToHalt(cpu, entryBudget);
+		assert.equal(cpu.getFrameDepth(), 0);
+		assert.equal(cpu.captureRuntimeState().hardHalted, false);
+		assert.deepEqual(state.readCompletionValues(), [valueInteger(305419896)]);
+		assert.equal(memory.readMappedU32LE(systemBss), 0x12345678, 'cartridge startup did not clear System BSS');
+		for (let i = 1; i < 9; i++) assert.equal(memory.readMappedU32LE(systemBss + 4 * i), 0);
+		assert.equal(memory.readMappedU32LE(cartData), 305419896);
+		for (let i = 0; i < 17; i++) assert.equal(memory.readMappedU32LE(cartBss + 4 * i), 0);
+		assert.equal(memory.readMappedU32LE(end), 0xfeedface);
+	}
+	// State load deliberately requests a fresh VRAM presentation. Compare
+	// architectural CPU state and all installed RAM for this section handoff.
+	assert.deepEqual(cpu.captureRuntimeState(), restored.machine.cpu.captureRuntimeState());
+	assert.equal(Buffer.compare(memory.ramData(), restored.machine.memory.ramData()), 0);
 });
 
 test('BLua .bss storage is consumed through typed pointers and struct fields', () => {
@@ -169,7 +212,7 @@ actors[1].xy[0] = 12
 return actors[1].hp, actors[1].xy[0], &actors[1], sizeof(actor)
 `);
 
-	assert.deepEqual(result.values, [99, 12, DYNAMIC_RAM_BASE + 12, 12].map(valueInteger));
+	assert.deepEqual(result.values, [99, 12, sectionAddress(result.symbols, 'actors') + 12, 12].map(valueInteger));
 });
 
 test('const modules export .bss storage symbols without runtime module state', () => {
@@ -198,11 +241,11 @@ return *counter, state.counter
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
-	const result = runColdCompiled(compiled, memory);
-	assert.deepEqual(result.values, [77, DYNAMIC_RAM_BASE].map(valueInteger));
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 77);
+	const result = runCold(entrySource, { modules: [constModule('state', moduleSource)], poison: (memory, linked) =>
+		memory.writeRamRecordWord(sectionAddress(linked.symbols, 'counter'), 0x11223344) });
+	const counter = sectionAddress(result.symbols, 'counter');
+	assert.deepEqual(result.values, [77, counter].map(valueInteger));
+	assert.equal(result.memory.readMappedU32LE(counter), 77);
 });
 
 test('const modules export function call targets without runtime module state', () => {
@@ -233,9 +276,9 @@ return state.read()
 			&& reloc.exportPathKey === 'read',
 	), true);
 
-	const result = runColdCompiled(compiled);
-	assert.deepEqual(result.values, [41].map(valueInteger));
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 41);
+	const result = runCold(entrySource, { modules: [constModule('state', moduleSource)] });
+	assert.deepEqual(result.values, [valueInteger(41)]);
+	assert.equal(result.memory.readMappedU32LE(sectionAddress(result.symbols, 'counter')), 41);
 });
 
 test('const module function export aliases stay call targets', () => {
@@ -245,7 +288,8 @@ local function read()
 end
 return { read = read }
 `;
-	const compiled = compileWithConstModule('local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()', 'state', moduleSource);
+	const entrySource = 'local state<const> = require("state")\nlocal read<const> = state.read\nreturn read()';
+	const compiled = compileWithConstModule(entrySource, 'state', moduleSource);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.equal(compiled.moduleProtoMap.has('state'), false);
 	assert.equal(compiled.constRelocs.some(
@@ -254,7 +298,7 @@ return { read = read }
 			&& reloc.exportPathKey === 'read',
 	), true);
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*state__read/);
-	assert.deepEqual(runColdCompiled(compiled).values, [1].map(valueInteger));
+	assert.deepEqual(runCold(entrySource, { modules: [constModule('state', moduleSource)] }).values, [valueInteger(1)]);
 });
 
 test('const module value exports are not lowered as call-target symbols', () => {
@@ -290,7 +334,8 @@ local function tiles_per_row()
 end
 return { tiles_per_row = tiles_per_row }
 `;
-	const result = runColdCompiled(compileWithConstModule('local state<const> = require("state")\nreturn state.tiles_per_row()', 'state', moduleSource));
+	const result = runCold('local state<const> = require("state")\nreturn state.tiles_per_row()',
+		{ modules: [constModule('state', moduleSource)] });
 	assert.deepEqual(result.values, [32].map(valueInteger));
 });
 
@@ -318,7 +363,7 @@ return state.read_next()
 			&& reloc.path === 'state'
 			&& reloc.exportPathKey === 'increment',
 	), true);
-	assert.deepEqual(runColdCompiled(compiled).values, [41].map(valueInteger));
+	assert.deepEqual(runCold(entrySource, { modules: [constModule('state', moduleSource)] }).values, [valueInteger(41)]);
 });
 
 test('const module function call targets reject sibling function exports used as values', () => {
@@ -495,21 +540,23 @@ local bp<const>: *word = b.counter
 *bp = 22
 return *ap, *bp, a.counter, b.counter
 `;
-	const compiled = compileTestSystemWithHeap(
-		parseSource(entrySource, 'entry.lua'),
-		[
-			constModule('state_a', 'bss counter: word\nreturn { counter = counter }'),
-			constModule('state_b', 'bss counter: word\nreturn { counter = counter }'),
-		],
-		{ entrySource, programDomain: 'system' },
-	);
+	const modules = [
+		constModule('state_a', 'bss counter: word\nreturn { counter = counter }'),
+		constModule('state_b', 'bss counter: word\nreturn { counter = counter }'),
+	];
+	const compiled = compileTestSystemWithHeap(parseSource(entrySource, 'entry.lua'), modules,
+		{ entrySource, programDomain: 'system' });
 	const image = encodeCompiledProgramObject(compiled);
 	assert.deepEqual(image.sections.bss.symbols, [
 		{ name: 'module:state_a/bss:counter', offset: 0, byteCount: 4, alignment: 4 },
 		{ name: 'module:state_b/bss:counter', offset: 4, byteCount: 4, alignment: 4 },
 	]);
-	const result = runColdCompiled(compiled);
-	assert.deepEqual(result.values, [11, 22, DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE + 4].map(valueInteger));
+	const result = runCold(entrySource, { modules });
+	const counters = result.symbols.metadata.staticScopes.declarations.filter(declaration => declaration.name === 'counter');
+	assert.equal(counters.length, 2);
+	const address = counters[0].address!;
+	assert.equal(counters[1].address, address + 4);
+	assert.deepEqual(result.values, [11, 22, address, address + 4].map(valueInteger));
 });
 
 test('linked system and cart const-module .bss symbols resolve against their own VMA bases', () => {
@@ -561,15 +608,15 @@ return *counter, &counter
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbolIndex === 0), true);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_lma_addr' && reloc.symbolIndex === 0), true);
 
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
-	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_data.lua'), memory);
-	assert.deepEqual(result.values, [17, DYNAMIC_RAM_BASE].map(valueInteger));
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 17);
+	const result = runCold(source, { poison: (memory, linked) =>
+		memory.writeRamRecordWord(sectionAddress(linked.symbols, 'counter'), 0x11223344) });
+	const counter = sectionAddress(result.symbols, 'counter');
+	assert.deepEqual(result.values, [17, counter].map(valueInteger));
+	assert.equal(result.memory.readMappedU32LE(counter), 17);
 });
 
 test('BLua static declaration words remain identifiers outside declaration shape', () => {
-	const result = runColdCompiled(compileHeapServiceSystem(`
+	const result = runCold(`
 local struct = { [0] = 1 }
 local bss = { [0] = 2 }
 local data = { [0] = 1 }
@@ -579,7 +626,7 @@ bss[0] = bss[0] + 1
 data[0] = data[0] + 1
 rodata[0] = rodata[0] + 1
 return struct[0], bss[0], data[0], rodata[0]
-`, 0));
+`);
 	assert.deepEqual(result.values, [2, 3, 2, 5].map(valueInteger));
 });
 
@@ -591,9 +638,13 @@ bss scratch: word
 *value = 21
 return *value, *scratch, value, scratch
 `);
-	assert.deepEqual(result.values, [21, 14, DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE + 4].map(valueInteger));
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE), 21);
-	assert.equal(result.memory.readMappedU32LE(DYNAMIC_RAM_BASE + 4), 14);
+	const value = sectionAddress(result.symbols, 'value');
+	const scratch = sectionAddress(result.symbols, 'scratch');
+	assert.equal(result.image.header.bssAddress, value + 4);
+	assert.ok(scratch >= result.image.header.bssAddress && scratch < result.image.header.bssAddress + result.image.header.bssByteCount);
+	assert.deepEqual(result.values, [21, 14, value, scratch].map(valueInteger));
+	assert.equal(result.memory.readMappedU32LE(value), 21);
+	assert.equal(result.memory.readMappedU32LE(scratch), 14);
 });
 
 test('const modules export .data storage symbols without runtime module state', () => {
@@ -622,7 +673,8 @@ return before, *counter, state.counter
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
-	assert.deepEqual(runColdCompiled(compiled).values, [12, 88, DYNAMIC_RAM_BASE].map(valueInteger));
+	const result = runCold(entrySource, { modules: [constModule('state', moduleSource)] });
+	assert.deepEqual(result.values, [12, 88, sectionAddress(result.symbols, 'counter')].map(valueInteger));
 });
 
 test('linked system and cart const-module .data symbols resolve VMA and LMA ranges', () => {
@@ -681,7 +733,7 @@ return values[0], values[1], values[2], values
 	}]);
 	assert.deepEqual(Array.from(image.sections.rodata.bytes), [11, 0, 0, 0, 22, 0, 0, 0, 33, 0, 0, 0]);
 	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
-	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_rodata.lua'));
+	const result = runCold(source);
 	assert.deepEqual(result.values, [11, 22, 33, result.symbols.metadata.staticScopes.declarations.find(decl => decl.name === 'values')!.address].map(valueInteger));
 });
 
@@ -698,7 +750,7 @@ return bytes[0], bytes[1], bytes[2], halves[0], halves[1], bytes, halves
 		{ name: 'module:section_rodata_widths.lua/rodata:bytes', offset: 0, byteCount: 3, alignment: 1 },
 		{ name: 'module:section_rodata_widths.lua/rodata:halves', offset: 4, byteCount: 4, alignment: 2 },
 	]);
-	const result = runColdCompiled(compileHeapServiceSystem(source, 0, [], 'section_rodata_widths.lua'));
+	const result = runCold(source);
 	const bytesAddress = result.symbols.metadata.staticScopes.declarations.find(decl => decl.name === 'bytes')!.address;
 	assert.deepEqual(result.values, [1, 2, 3, 258, 772, bytesAddress, bytesAddress + 4].map(valueInteger));
 });
@@ -728,7 +780,7 @@ return *scalar, singles[0], singles[1], singles[2],
 				0x60000000, 0x3fd55555, 0, 0x80000000, 0, 0x3ff00000,
 				7, 0xbfc00000, 0, 0x40020000,
 			]);
-			assert.deepEqual(runColdCompiled(compiled).values.map(numberToHost),
+			assert.deepEqual(runCold(source, { optLevel }).values.map(numberToHost),
 				[-0, Math.fround(1 / 3), -0, 1, Math.fround(1 / 3), -0, 1, 7, -1.5, 2.25]);
 		});
 	}
@@ -750,17 +802,18 @@ return #values, values[0], values[1], values[2]
 });
 
 test('BLua static storage derives dimensions from const-module fields', () => {
-	const compiled = compileWithConstModule(`
+	const source = `
 local layout<const> = require('layout')
 local cell_count<const> = layout.columns * layout.rows
 bss cells: word[cell_count]
 return #cells
-`, 'layout', `
+`;
+	const moduleSource = `
 local columns<const> = 4
 local rows<const> = 3
 return { columns = columns, rows = rows }
-`);
-	assert.deepEqual(runColdCompiled(compiled).values, [12].map(valueInteger));
+`;
+	assert.deepEqual(runCold(source, { modules: [constModule('layout', moduleSource)] }).values, [valueInteger(12)]);
 });
 
 test('BLua static storage exposes exported array dimensions to const-module consumers', () => {
@@ -769,10 +822,8 @@ test('BLua static storage exposes exported array dimensions to const-module cons
 local storage<const> = require('storage')
 return #storage.scratch + #storage.values + #storage.labels
 `;
-	const compiled = compileTestSystemWithHeap(
-		parseSource(entrySource, 'entry.lua'),
-		[
-			constModule('storage', `
+	const modules = [
+		constModule('storage', `
 bss scratch: word[2]
 data values: word[3] = { 1, 2, 3 }
 rodata labels: string[] = { 'ONE', 'TWO', 'THREE', 'FOUR' }
@@ -782,11 +833,9 @@ return {
 	labels = labels,
 }
 `),
-			{ path: 'consumer', chunk: parseSource(consumerSource, 'consumer.lua'), source: consumerSource },
-		],
-		{ entrySource, programDomain: 'system' },
-	);
-	assert.deepEqual(runColdCompiled(compiled).values, [9].map(valueInteger));
+		{ path: 'consumer', source: consumerSource },
+	];
+	assert.deepEqual(runCold(entrySource, { modules }).values, [valueInteger(9)]);
 });
 
 test('BLua .rodata records infer array length and load immutable string fields without tables', () => {
@@ -813,7 +862,7 @@ return #commands, commands[0].name == 'CLS', #commands[1].usage, commands[1].kin
 	const disassembly = disassembleEntryFunction(compiled);
 	assert.match(disassembly, /LOADKR/);
 	assert.doesNotMatch(disassembly, TABLE_CONSTRUCTOR_BINDING);
-	assert.deepEqual(runColdCompiled(compileHeapServiceSystem(source, 0, [], 'rodata_records.lua')).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
+	assert.deepEqual(runCold(source).values, [valueInteger(2), valueBool(true), valueInteger(25), valueInteger(2), valueInteger(12)]);
 });
 
 test('cart linking remaps const references stored in physical cart .rodata', () => {
@@ -869,8 +918,8 @@ return values[0], values[1], data.values
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, TABLE_CONSTRUCTOR_BINDING);
-	const result = runColdCompiled(compiled);
-	assert.deepEqual(result.values, [5, 6, result.image.header.rodataAddress].map(valueInteger));
+	const result = runCold(entrySource, { modules: [constModule('data', moduleSource)] });
+	assert.deepEqual(result.values, [5, 6, sectionAddress(result.symbols, 'values')].map(valueInteger));
 });
 
 test('linked system and cart const-module .rodata symbols resolve against their ROM ranges', () => {

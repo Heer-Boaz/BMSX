@@ -1,5 +1,5 @@
 import { INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
-import { COP0_EXEC, COP0_STATUS, cop0FieldImplemented } from '../../spec/blua32/cop0';
+import { COP0_RAM_END, COP0_CONTEXT, COP0_EXEC, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C } from '../../spec/blua32/opcode';
 import { compiledBlockEndsBlock, type CompiledBlockSource } from './compiled_block';
@@ -15,7 +15,7 @@ export type JavaScriptRegisterPlan = {
 function generatedRegisterReads(op: OpCode, b: number): number {
 	switch (op) {
 		case OpCode.CALL: case OpCode.CONCAT: case OpCode.ITERN: return 0;
-		case OpCode.MTC0: return b === COP0_EXEC ? 0 : REGISTER_OPERAND_A;
+		case OpCode.MTC0: return (b === COP0_EXEC || b === COP0_CONTEXT || b === COP0_RAM_END || b === COP0_SYSTEM_VECTOR) ? 0 : REGISTER_OPERAND_A;
 		default: return OPCODE_SCALAR_REGISTER_READS[op];
 	}
 }
@@ -86,7 +86,7 @@ export function planRegionRegisters(plans: readonly CompiledBlockSource[]):
 			case OpCode.HALT: case OpCode.CALL: case OpCode.RET:
 			case OpCode.CLOSURE: case OpCode.CONCAT: case OpCode.CONCATN: case OpCode.RFE: case OpCode.ITERN: break;
 			case OpCode.MTC0:
-				if (page.b[finalWord] !== COP0_EXEC && page.b[finalWord] !== COP0_STATUS) addSuccessor(nextPc);
+				if (page.b[finalWord] !== COP0_EXEC && page.b[finalWord] !== COP0_CONTEXT && page.b[finalWord] !== COP0_RAM_END && page.b[finalWord] !== COP0_SYSTEM_VECTOR && page.b[finalWord] !== COP0_STATUS) addSuccessor(nextPc);
 				break;
 			case OpCode.JMP: addSuccessor(page.bx[finalWord]); break;
 			case OpCode.JMPIF: case OpCode.JMPIFNOT:

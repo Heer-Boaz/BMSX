@@ -15,7 +15,7 @@ import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const ENTRY = 'kernel/table_resize', NAME = 'execute_staged_table_growth';
 const modules = ['kernel/table_prepare_rebuild'].map(path => {
@@ -41,6 +41,7 @@ function fixture(optLevel: 0 | 3) {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 		});
 		runtime.boot();
+		admitTestHeapServiceCpu(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 		runGuestToHalt(runtime.machine.cpu, 10_000);
 		return runtime;
 	}

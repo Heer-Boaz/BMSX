@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
@@ -11,21 +11,13 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HeapServiceClosureField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
-import { HEAP_SERVICE_MODULES } from '../../../toolchain/ts/rompack/blua32_heap_service';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { loadHeapServiceTestModules } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const resetPath = 'kernel/reset';
-const modules = [
-	{ path: resetPath, source: readFileSync('machine/bios/' + resetPath + '.lua', 'utf8') },
-	{ path: 'main', source: 'module<entry>\nreturn 37' },
-].map(({ path, source }) => ({ path, displayPath: path + '.lua', source, chunk: parseLuaChunk(source, path) }));
-const library = loadHeapServiceTestModules().map(module => ({ ...module, displayPath: module.path + '.lua' }));
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 mkdirSync('tmp', { recursive: true });
@@ -33,11 +25,7 @@ const dir = mkdtempSync(join('tmp', 'boot-collection-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
-		const { linked } = buildBlua32Image({
-			domain: 'system', luaModules: [...modules, ...library], generatedLuaModules: [], loadAddress: 0x100,
-			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
-			resetModule: resetPath, preloadModules: HEAP_SERVICE_MODULES, biosExports: [],
-		});
+		const linked = linkManagedTestSystem('return 37', optLevel);
 		const rom = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
@@ -61,11 +49,27 @@ try {
 		};
 		assert.equal(scheduler.nowCycles, 0);
 		assert.equal(work(), 0, 'the emulator has not collected before the first ROM instruction');
+		assert.equal(heap.occupiedBytes(), 0);
+		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		observeControl();
+
+		// The raw reset program retires at CONTEXT; its original depth is
+		// complete before the receiving System stage can run its first CALL.
+		for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i) {
+			const result = grant(4093);
+			assert.equal(result, cpu.rootThread.address === CPU_RESET_BANK_ADDRESS
+				? CpuSuspendedRunResult.Yielded : CpuSuspendedRunResult.Completed);
+			assert.equal(cpu.heapServiceActive(), false);
+			assert.equal(work(), 0);
+		}
+		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+		assert.equal(cpu.gc.phase(), GcPhase.Pause);
+		assert.ok(heap.occupiedBytes() > 0);
 		for (let i = 0; i < 1024 && cpu.gc.phase() !== GcPhase.Mark; ++i) {
 			assert.equal(grant(3), CpuSuspendedRunResult.Yielded);
 		}
-		assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the authored reset code reached the collector in paid guest instructions');
+		assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the authored managed reset stage reached the collector in paid guest instructions');
 		assert.ok(cpu.heapServiceActive() && scheduler.nowCycles > 0 && work() === 0);
 		observeControl();
 
@@ -94,7 +98,7 @@ try {
 		finish();
 		writeFileSync(trace, commands.join('\n'));
 		assert.deepEqual(execFileSync(native, [romFile, trace, portable], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
-		console.log(`BOOT-COLLECTION:PASS O${optLevel} first collection executes in the authored reset body; native and portable restart in Mark (${expected.length} observations)`);
+		console.log(`BOOT-COLLECTION:PASS O${optLevel} ordinary reset admits the managed stage before collection; native and portable restart in Mark (${expected.length} observations)`);
 	}
 	rmSync(dir, { recursive: true });
 } catch (error) {

@@ -22,8 +22,10 @@ import {
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
@@ -48,17 +50,16 @@ try {
 		configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON', '-DBMSX_NATIVE_GATE_PROFILE=ON'],
 	});
 	for (const optLevel of [0, 3] as const) {
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
-		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };
+		const system = linkManagedTestSystem(source, optLevel);
+		const romBytes = writeTestBlua32Rom(system);
+		const configuration = { systemRomBytes: romBytes, cartridgeSlots: [null, null] as [null, null], machineModel: PSX_MACHINE_SPEC };
 		const rom = join(directory, `O${optLevel}.rom`);
-		writeFileSync(rom, system.romBytes);
+		writeFileSync(rom, romBytes);
 		for (const name of ['fixed', 'recovery', 'protected-oom', 'protected-invalid'] as const) {
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
-			let boot = cpu.runUntilDepth(0, 65536);
-			for (let i = 0; i < 32 && boot === RunResult.Yielded; ++i) boot = cpu.runUntilDepth(0, 65536);
-			assert.equal(boot, RunResult.Halted);
+			runGuestToHalt(cpu, 4_194_304);
 			const entries = runtime.readCompletionValues().slice();
 			const fixed = name === 'fixed', recover = name === 'recovery', oom = name === 'protected-oom';
 			const invalid = name === 'protected-invalid', failure = oom || invalid;
@@ -121,7 +122,7 @@ try {
 			for (let i = 0; i < 64 && !cpu.heapServiceActive(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(cpu.heapServiceActive(), true);
 			assert.equal(oldKind(), HeapServiceBiosCallKind.Idle);
-			assert.equal(memory.readRamRecordWord(pinned + FrameField.Function), residentFunctionAddress(system, 'kernel/thread_create', 'create_coroutine'));
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Function), residentFunctionAddress({ image: system.layout, symbols: system.symbols }, 'kernel/thread_create', 'create_coroutine'));
 			assert.notEqual(memory.readRamRecordWord(pinned + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION, 0);
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.ReturnCount), fixed ? 2 : 0);
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.Protected), failure ? 0 : 0xffffffff);

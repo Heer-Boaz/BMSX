@@ -11,10 +11,10 @@ import {
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const EPOCH = 'kernel/gc_epoch', entrySource = 'halt_until_irq';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
@@ -36,8 +36,8 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	});
 	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, indices);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
-	const { cpu, memory } = createTestSystemCpu(image);
-	const oracle = createTestSystemCpu(image).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(image);
+	const oracle = createTestHeapServiceCpu(image).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, state = cpu.heapAllocator.allocatorStateOffset();

@@ -7,58 +7,49 @@ import {
 	CLOSURE_CANONICAL, CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype,
 	closureRecordBytes, initializeRecord,
 } from '../../machine/ts/machine/cpu/closure';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { Blua32FunctionRecord } from '../../toolchain/ts/rompack/blua32_image';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { linkTestBlua32Pair } from '../helpers/blua32';
+import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
+import { linkTestCartBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 
 const MODULE = 'kernel/closure_create', port = `machine/bios/${MODULE}.lua`;
 const basis = 'fdbb99cb46fbf8381dff4e5a065ae765dee1b525';
 const source = readFileSync(port, 'utf8').replaceAll('\r\n', '\n');
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
-const modules = ['kernel/dlmalloc', 'kernel/gc_control', MODULE].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
 
 function fixture(optLevel: 0 | 3) {
-	const systemSource = 'halt_until_irq', cartSource = 'return 42';
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(systemSource), modules, { entrySource: systemSource, optLevel, programDomain: 'system' });
-	const linked = linkTestBlua32Pair(compiled, compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel }));
-	const object = encodeCompiledProgramObject(compiled);
-	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'create_closure')!;
-	const fn = linked.systemSymbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-	assert.ok(fn >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.systemImage, [fn]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
-	const entry = linked.systemImage.functions[fn];
-	const cart = linked.cartImage.functions.find(record => record.address === linked.cartVectors.entryFunctionAddress)!;
+	const cartSource = 'return 42';
+	const system = linkManagedTestSystem('halt_until_irq', optLevel, [], [
+		{ path: MODULE, exportPathKey: 'create_closure' },
+	]);
+	const [entry] = system.biosImports.functions;
+	const fn = system.symbols.functionAddresses.indexOf(entry.functionAddress);
+	const fixed = deriveBlua32FixedStack(system.layout, [fn]);
+	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	const linkedCart = linkTestCartBlua32(system.biosImports,
+		compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel }));
+	const cart = linkedCart.cartImage.functions.find(record => record.address === linkedCart.cartVectors.entryFunctionAddress)!;
+	const firmware = system.layout.functions[fn];
 	const prototype = (record: Blua32FunctionRecord, executionDomainId: FunctionPrototype['executionDomainId']): FunctionPrototype => ({
 		functionAddress: record.address, executionDomainId, codeAddress: record.codeAddress, flags: record.flags, numParams: record.numParams,
 		maxStack: record.maxStack, upvalueTableAddress: record.upvalueTableAddress, recordUpvalueCount: record.upvalues.length,
 	});
 	// The same mapped cartridge program is installed separately on both sockets.
 	function create() {
-		const memory = new Memory({ systemRom: linked.systemRomBytes, cartridgeSlots: cartridgeSlots(linked.cartRomBytes, linked.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-		cpu.reset();
+		const { cpu } = bootManagedTestSystem(system, 'main', cartridgeSlots(linkedCart.cartRomBytes, linkedCart.cartRomBytes));
 		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}
@@ -73,7 +64,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function begin(proto: FunctionPrototype, canonical: boolean) {
 		assert.equal(proto.recordUpvalueCount, 0);
-		assert.ok(cpu.beginHeapService(entry.address,
+		assert.ok(cpu.beginHeapService(entry.functionAddress,
 			[cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset, proto.functionAddress, proto.executionDomainId >>> 0, +canonical]));
 	}
 	function grant(cycles: number) {
@@ -94,7 +85,7 @@ function fixture(optLevel: 0 | 3) {
 		oracle.gc.publishObject(address);
 		return address;
 	}
-	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, prototypes: [prototype(entry, -1), prototype(cart, 0), prototype(cart, 1)] };
+	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, prototypes: [prototype(firmware, -1), prototype(cart, 0), prototype(cart, 1)] };
 }
 
 for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {

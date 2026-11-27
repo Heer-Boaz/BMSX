@@ -1180,6 +1180,9 @@ function writeCpuRuntimeState(writer: BinarySink, state: CpuRuntimeState): void 
 		writer.u8(pending.extraHashSlots);
 	}
 	writer.u32(state.statusWord);
+	writer.u32(state.systemVectorWord);
+	writer.u32(state.previousRootContextWord);
+	writer.u32(state.previousActiveContextWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
 	writer.u32(state.badAddressWord);
@@ -1256,6 +1259,9 @@ function readCpuRuntimeState(reader: BinaryReader): CpuRuntimeState {
 		concat: reader.u8() !== 0 ? readConcatAssembly(reader) : null,
 		pendingAllocation: readPendingAllocation(reader),
 		statusWord: reader.u32(),
+		systemVectorWord: reader.u32(),
+		previousRootContextWord: reader.u32(),
+		previousActiveContextWord: reader.u32(),
 		causeWord: reader.u32(),
 		epcWord: reader.u32(),
 		badAddressWord: reader.u32(),

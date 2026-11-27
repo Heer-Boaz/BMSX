@@ -9,6 +9,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -36,7 +37,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
@@ -206,8 +207,17 @@ void concatRange(int count) {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 2, 1, count >> 9);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CONCATN), 1, 0, count & 63);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 1025}};
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 1025}, {.firstWord = 4, .wordCount = 1}};
+	image.startupFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true); std::string expected;
+	for (auto* m : {&native, &scalar}) {
+		require(m->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]) == RunResult::Halted
+			&& m->cpu.getFrameDepth() == 0, "retire the minimal managed fixture entry");
+		m->cpu.beginCompletionCall(test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[0]));
+		require(m->cpu.activeThread()->frameAtDepth(0)->registers.size() == 1025,
+			"the managed range subject owns its complete register window");
+	}
 	for (int i = 0; i < count; ++i) expected += i == 0 ? "L" : i == 1 ? "false" : std::to_string(i % 10);
 	for (int warm = 0; warm < NATIVE_BLOCK_COMPILATION_THRESHOLD + 8; ++warm) {
 		for (auto* m : {&native, &scalar}) {
@@ -348,10 +358,16 @@ void closureAddressAlias(int source) {
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), source >> 6, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), source & 63, (source >> 6) & 63, source & 63);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255); writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	writeInstruction(image.text, 17, static_cast<u8>(OpCode::RET), 0, 1, 0);
 	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = static_cast<u32>(source + 1)},
-		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1}}; image.globalNames = {"target"};
+		{.firstWord = 16, .wordCount = 1}, {.firstWord = 16, .wordCount = 1}, {.firstWord = 17, .wordCount = 1}};
+	image.startupFunctionIndex = 3;
+	image.globalNames = {"target"};
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
+		require(m->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]) == RunResult::Halted
+			&& m->cpu.getFrameDepth() == 0, "retire the separately admitted managed entry");
+		m->cpu.beginCompletionCall(test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[0]));
 		m->memory.writeBytes(DYNAMIC_RAM_BASE, m->rom.bytes.data() + m->rom.functionAddresses[2] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 		test::seedTestMappedClosure(m->cpu, DYNAMIC_RAM_BASE);
 		test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[1]);

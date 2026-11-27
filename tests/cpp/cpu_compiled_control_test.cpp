@@ -9,6 +9,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -37,7 +38,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
@@ -170,7 +171,14 @@ void rawNativeControlWrites() {
 			cp[COP0_CAUSE] = 0xdeadbeef;
 			registers.set(0, value);
 			NativeBlockRunState run{}; run.cop0Words = cp.data(); run.remainingCycles = 9;
-			require(block->run(registers.view(), run) == &block->terminal, "an admitted word write reaches the native terminal without semantic redispatch");
+			const auto* exit = block->run(registers.view(), run);
+			if (field == COP0_STATUS) {
+				require(exit->exit == NativeBlockExit::WriteControl && exit->operands.control.field == COP0_STATUS && cp[field] == 0u
+					&& registers.get(0) == value && run.remainingCycles == 9 - BASE_CYCLES[op],
+					"Status hands a charged write to the owner of reset inhibit and interrupt arbitration");
+				continue;
+			}
+			require(exit == &block->terminal, "an admitted word write reaches the native terminal without semantic redispatch");
 			require(cp[field] == (field == COP0_CAUSE ? 0xdeadbeefu : word) && registers.get(0) == value
 				&& run.registerTop == 0 && run.remainingCycles == 9 - BASE_CYCLES[op],
 				"CP0 writes convert both numeric tags and leave the raw source and its extent unchanged");
@@ -261,7 +269,7 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 	for (auto* m : {&native, &scalar}) {
 		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(0, valueInteger(CPU_STATUS_USER_MODE_CURRENT));
 		frame.registers.set(12, valueTable(m->cpu.createTable().address()));
-		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a408u));
+		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0xa5a5a408u | CPU_STATUS_INHIBIT_RESET));
 	}
 	test::runCpuParity(native.cpu, scalar.cpu, NATIVE_WARM_SCALE * 900);
 	requireParity(native, scalar);
@@ -295,7 +303,21 @@ void privilegeFaultsAndExceptionReturns(OpCode op, bool wide, bool returnIntoRoo
 		}
 		if (op == OpCode::MTC0) m->cpu.activeThread()->firstFrame->registers.set(12, valueInteger(-1));
 		m->cpu.setGlobalByKey(*m->cpu.stringPool().find("returnStatus"), valueInteger(0));
+		// Clearing reset inhibit hands control back before the vector's RFE.
+		// That hardware boundary is distinct from the later rejected opcode.
+		require(m->cpu.runUntilDepth(0, 20) == RunResult::Yielded && m->cpu.getFrameDepth() == 2
+			&& m->cpu.isExceptionFrame(1) && m->cpu.readFramePc(1) == m->rom.textAddress + 18u * INSTRUCTION_BYTES
+			&& m->cpu.captureRuntimeState().statusWord == 0u,
+			"clearing reset inhibit yields before the accepted vector's WIDE RFE");
+	}
+	requireParity(native, scalar);
+	for (auto* m : {&native, &scalar}) {
 		require(m->cpu.runUntilDepth(0, 20) == RunResult::Halted, "unknown supervisor fields and RFE from an ordinary frame hard-halt");
+		if (returnIntoRoot) {
+			require(m->cpu.getFrameDepth() == 1 && !m->cpu.isExceptionFrame(0)
+				&& m->cpu.readCurrentInstructionPc() == m->rom.textAddress + 18u * INSTRUCTION_BYTES,
+				"the MAPPED fixture reached the same WIDE RFE through its ordinary frame");
+		}
 	}
 	requireParity(native, scalar);
 	require(native.cpu.captureRuntimeState().hardHalted && native.cpu.readCauseWord() == CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE

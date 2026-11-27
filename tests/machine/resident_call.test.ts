@@ -16,6 +16,7 @@ import { writeTestBlua32Rom } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -28,11 +29,14 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const probePath = 'private/resident_probe';
-const port = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE + 0x100;
+// The sample owns one word at the tail of firmware scratch, not the
+// table planner's live work area used during a real cartridge launch.
+const probeOffset = RUNTIME_MANAGEMENT_SIZE - 4;
+const port = RAM_BASE + MAIN_RAM_SIZE - RUNTIME_MANAGEMENT_SIZE + probeOffset;
 const probeSource = `module<const>
 local echo<const> = function(input)
  local management<const>: *u32 = ${HEAP_SERVICE_MANAGEMENT_ADDRESS}
- local result<const>: *u32 = ${RAM_BASE} + *management + 0x100
+ local result<const>: *u32 = ${RAM_BASE} + *management + ${probeOffset}
  local step = 89
  repeat
   step = step + 1
@@ -49,10 +53,8 @@ end`;
 
 for (const opt of [0, 3] as const) {
 	test(`ordinary CALL enters fixed, private firmware under physical exhaustion (O${opt})`, () => {
-	const compiled = compileHeapServiceSystem(MANAGED_CART_LAUNCH, opt, [{ path: probePath, source: probeSource }]);
-	const object = encodeCompiledProgramObject(compiled);
-	const linked = linkSystemBlua32Image(object, compiled.metadata, SYSTEM_ROM_BASE + 0x100,
-		PSX_MACHINE_SPEC.ramBytes, [{ path: probePath, exportPathKey: '', fixedStack: true }]);
+	const linked = linkManagedTestSystem(MANAGED_CART_LAUNCH, opt,
+		[{ path: probePath, source: probeSource }], [{ path: probePath, exportPathKey: '', fixedStack: true }]);
 	const systemRom = writeTestBlua32Rom(linked);
 	const record = linked.biosImports.functions[0].functionAddress - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET;
 	assert.notEqual(readLE32(systemRom, record) & BLUA32_FUNCTION_RESIDENT, 0);
@@ -73,7 +75,7 @@ for (const opt of [0, 3] as const) {
 	});
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine;
-	runGuestToHalt(cpu, 65536);
+	runGuestToHalt(cpu, 1_000_000); // Cold System and cartridge preparation, before the measured CALL grants.
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	assert.equal(valueTag(values[0]), ValueTag.Closure, 'the RESIDENT bit in cartridge ROM gives no resident entry');
@@ -144,5 +146,5 @@ test('resident export publication verifies the relocated instruction stream', ()
 	assert.throws(() => linkSystemBlua32Image(
 		object, system.metadata, SYSTEM_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes,
 		[{ path: probePath, exportPathKey: '', fixedStack: true }],
-	), /Fixed-stack.*not in the fixed-stack scalar instruction set/);
+	), /Fixed-stack HALT at .*: HALT requires an ordinary interruptible frame/);
 });

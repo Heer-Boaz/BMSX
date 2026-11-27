@@ -16,7 +16,8 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('helper continuations are predeclared entries and read their own current Value bank', () => {
@@ -28,7 +29,7 @@ test('helper continuations are predeclared entries and read their own current Va
 	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] }, RAM_CODE_FIXTURE_BYTES);
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	frame.registers.setInteger(1, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
@@ -71,7 +72,7 @@ test('helper-success fallthrough does not execute a later store without a grant'
 	writeInstruction(text, 4, OpCode.MOV, 5, 0, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 9 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu } of machines) {
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(1, DYNAMIC_RAM_BASE);
 		cpu.runUntilDepth(0, 2048);
@@ -107,7 +108,7 @@ for (const kind of ['Integer', 'String'] as const) test(`resident Values cross i
 	writeInstruction(text, 8, OpCode.MOV, 5, 4, 0);
 	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [integerConstant(1)] }, RAM_CODE_FIXTURE_BYTES);
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	const lower = kind === 'Integer' ? valueInteger(0) : valueString(cpu.stringPool.intern('alpha'));
 	const higher = kind === 'Integer' ? valueInteger(1) : valueString(cpu.stringPool.intern('omega'));
 	frame.registers.set(0, lower); frame.registers.set(1, higher); frame.registers.setInteger(4, 0);
@@ -148,8 +149,8 @@ for (const [label, op, a, b, c, slots] of [
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 16 }],
 		constants: ['method'] }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		const table = cpu.createTable(0, 1);
@@ -187,7 +188,7 @@ test('linked physical-page segments retain complete charges and disconnect rewri
 	writeInstruction(text, 7, OpCode.ADD, 4, 0, 8);
 	writeInstruction(text, 8, OpCode.JMP, 0, 63, 55, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 12 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -280,7 +281,7 @@ test('cross-page chains retain successor page ownership and disconnect rewritten
 	writeInstruction(text, second + 3, OpCode.ADD, 4, 0, 8);
 	writeInstruction(text, second + 4, OpCode.JMP, 0, 59, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: second + 5, maxStack: 9 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -326,7 +327,7 @@ for (const inRam of [false, true]) test(`short grants do not promote sequential 
 	writeInstruction(text, 32, OpCode.JMP, 0, 63, 35, 255); // enter word 4
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 33, maxStack: 12 }] }, RAM_CODE_FIXTURE_BYTES);
 	const start = inRam ? DYNAMIC_RAM_BASE : image.image.functions[0].codeAddress;
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		if (inRam) memory.writeBytes(start, text);
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 1);
@@ -362,7 +363,7 @@ test('linked counted stores need only one cycle, then stop or block before the f
 	writeInstruction(text, 4, OpCode.WIDE, 0, 0, 0); writeInstruction(text, 5, OpCode.STORE_MEM_WORDS, 8, 0, 5);
 	writeInstruction(text, 6, OpCode.K1, 7, 0, 0); writeInstruction(text, 7, OpCode.JMP, 0, 63, 56, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 8, maxStack: 13 }] }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress, address = DYNAMIC_RAM_BASE + 0x4000;
 	for (const { cpu } of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, address);
@@ -421,7 +422,7 @@ test('linked memory side exits retain predecessor state before MMIO and synchron
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 7, maxStack: 12 }, { firstWord: 7, wordCount: 1 },
 	], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text); memory.writeMappedU32LE(DYNAMIC_RAM_BASE + 0x800, 5);
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -450,7 +451,7 @@ test('an external entry into a WIDE body shares its sequential join without dupl
 	writeInstruction(text, 2, OpCode.ADD, 2, 0, 1); writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 16, OpCode.JMP, 0, 63, 48, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 17, maxStack: 12 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -494,7 +495,7 @@ test('more than six live-through raw Values remain local across every internal e
 		else writeInstruction(text, word++, OpCode.JMP, 0, 63, 34, 255); // -30 words
 	}
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: word, maxStack: 25 }] }, RAM_CODE_FIXTURE_BYTES);
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');
@@ -527,7 +528,7 @@ test('generated-source capacity admits whole replacements without flushing unrel
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const page = createDecodedInstructionPage({ key: DYNAMIC_RAM_BASE, cacheable: true, readBytes: null,
 		readByteOffset: 0, writeWatches: null, writeWatchIndex: 0 });
 	const resident = page.compiledBlocks = new CompiledBlockPage();

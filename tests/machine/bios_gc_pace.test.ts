@@ -8,10 +8,10 @@ import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machin
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const PACE = 'kernel/gc_pace', PROBE = 'test/word_arithmetic';
 const entrySource = 'halt_until_irq';
@@ -59,7 +59,7 @@ function fixture(optLevel: 0 | 3) {
 	const begin = prototype(PACE, 'begin_pace_credit'), update = prototype(PACE, 'update_pace_credit'), words = prototype(PROBE, 'run');
 	const stack = deriveBlua32FixedStack(linked.image, [begin, update, words]);
 	assert.ok(stack.valueSlots <= HEAP_SERVICE_VALUE_COUNT && stack.frames <= HEAP_SERVICE_FRAME_COUNT);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;

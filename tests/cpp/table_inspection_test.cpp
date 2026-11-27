@@ -3,6 +3,7 @@
 #include "machine/execution_address_space.h"
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -156,6 +157,7 @@ int main() {
 		bmsx::IrqController irq(memory);
 		bmsx::ExecutionAddressSpace addresses(memory);
 		bmsx::CPU cpu(memory, irq, addresses);
+		bmsx::test::seedManagedHeapFixture(cpu);
 		inspectStoredSlots(cpu);
 		refillArrayHashPrefix(cpu);
 		boundarySearchAndHashMix(cpu);

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES } from '../../../machine/ts/machine/cpu/call_state';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -14,6 +14,8 @@ import { CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, CPU_CAUSE_NMI, LUA_FAULT_REASON_INV
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { CPU_RESET_BANK_ADDRESS, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_END, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../../helpers/blua32';
@@ -48,12 +50,23 @@ const firmware = linkRawTestSystemBlua32({ text: code, functions, verifiedContro
 const pcs = firmware.image.functions.map(fn => fn.codeAddress);
 const runtime = createRuntime(firmware.romBytes), { cpu, memory, scheduler, irqController } = runtime.machine;
 const trace: string[] = [], expected: string[] = [];
+const arena = cpu.heapAllocator, management = arena.managementOffset();
+const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+const zeroHeap = new Uint8Array(heapEnd - heapFirst);
+const heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 const observe = (cmd: string, output?: string | number) => {
 	trace.push(cmd);
 	if (output !== undefined) expected.push(String(output));
 };
+function observeHeap() {
+	assert.equal(arena.occupiedBytes(), 0);
+	assert.equal(cpu.luaHeap.usedBytes(), 0);
+	assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
+	observe(`H ${heapFirst} ${heapEnd}`, heapHash);
+}
 function frame(index: number, pc: number, exception: boolean, nmi = false) {
 	const current = cpu.rootThread.frameAtDepth(index);
+	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(cpu.getFrameDepth(), index + 1);
 	assert.equal(current.pc, pc);
 	assert.equal(current.closureAddress, 0);
@@ -70,7 +83,8 @@ function grant(cycles: number, paid: number) {
 	const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
 	assert.equal(cpu.heapServiceActive(), false);
-	observe(`J ${cycles} 1`, `${result} ${paid} 0 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+	observe(`J ${cycles} 1`, `${result} ${paid} 0 0 0 0`);
+	observeHeap();
 	return result;
 }
 function status(cause: number, epc: number, word: number) {
@@ -85,10 +99,7 @@ assert.equal(first.top, 2);
 assert.equal(first.registers.get(0), valueNil());
 assert.equal(first.registers.get(1), valueNil());
 assert.equal(scheduler.nowCycles, 0);
-const heapControl = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-const heapControlEnd = cpu.heapAllocator.allocatorStateOffset();
-const heapControlHash = hashBytes(memory.ramData(), heapControl, heapControlEnd - heapControl);
-observe(`H ${heapControl} ${heapControlEnd}`, heapControlHash);
+observeHeap();
 memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 irqController.raise(IRQ_VBLANK);
 observe(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`);
@@ -99,16 +110,15 @@ const interrupted = frame(1, pcs[1], true);
 assert.equal(interrupted.callSitePc, pcs[0]);
 assert.equal(interrupted.registers.get(0), valueNil());
 status(CPU_CAUSE_IRQ, pcs[0], 4);
-// The first vector fits the reserved window. It leaves the object inventory,
-// collector and usage untouched; the nested vector may still grow storage.
-assert.equal(hashBytes(memory.ramData(), heapControl, heapControlEnd - heapControl), heapControlHash);
-observe(`H ${heapControl} ${heapControlEnd}`, heapControlHash);
+// Both vectors use the fixed board bank, not a heap-supplied stack.
+observeHeap();
 cpu.requestNonMaskableInterrupt();
 observe('N');
 assert.equal(cpu.enterPendingInterrupt(), true);
 observe('I', 1);
 assert.equal(frame(2, pcs[2], true, true).callSitePc, pcs[1]);
 status(CPU_CAUSE_NMI, pcs[1], 16);
+observeHeap();
 const checkpoint = captureRuntimeSaveState(runtime);
 
 function finish() {
@@ -168,12 +178,19 @@ try {
 	assert.equal(faultCpu.readCauseWord(), CPU_CAUSE_CODE_TRAP);
 	assert.equal(faultCpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 	assert.equal(faultCpu.readEpcWord(), badPc);
+	assert.equal(faultCpu.getFrameDepth(), 2);
+	assert.equal(faultCpu.readFrameRegister(1, 0), valueNil(), 'a raw trap reports its numeric reason, not an unbound language String');
+	const faultRam = fault.machine.memory.ramData(), values = CPU_FIXED_VALUE_ADDRESS - RAM_BASE, valuesEnd = CPU_FIXED_VALUE_END - RAM_BASE;
+	assert.deepEqual(faultRam.subarray(heapFirst, heapEnd), zeroHeap);
 	const profile = process.env.BMSX_TEST_PINNED_NATIVE_PROFILE === '1';
-	const cmds = ['W 0 16777216', profile ? '_ 128' : 'J 128 1', 'Z'];
+	const cmds = ['W 0 16777216', profile ? '_ 128' : 'J 128 1', 'Z', `H ${heapFirst} ${heapEnd}`, `H ${values} ${valuesEnd}`];
 	writeFileSync(rom, missing.romBytes);
 	writeFileSync(commands, cmds.join('\n'));
 	const lines = execFileSync(native, [rom, commands, portable], { encoding: 'utf8' }).trimEnd().split('\n');
-	assert.equal(lines[1], `${CPU_CAUSE_CODE_TRAP} ${LUA_FAULT_REASON_INVALID_ARGUMENT} ${badPc}`);
+	assert.deepEqual(lines.slice(1), [
+		`${CPU_CAUSE_CODE_TRAP} ${LUA_FAULT_REASON_INVALID_ARGUMENT} ${badPc}`,
+		String(heapHash), String(hashBytes(faultRam, values, valuesEnd - values)),
+	]);
 	if (profile) assert.equal(lines[0], '1', 'an actual generated capture admission replays before reading a Closure');
 	console.log(`VECTOR-CAPTURE:PASS absent environment, raw RAM zero ignored${profile ? ', generated native admission' : ''}`);
 	rmSync(dir, { recursive: true });

@@ -28,7 +28,6 @@ export class LuaHeap {
 		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
 		this.occupiedOffset = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 		this.gcControlAddress = management + HEAP_GC_CONTROL_OFFSET;
-		this.setCollectionTarget(MIN_COLLECTION_BYTES);
 	}
 
 	public collectionTarget(): number {

@@ -10,17 +10,21 @@ constexpr uint8_t COP0_STATUS = 12u;
 constexpr uint8_t COP0_CAUSE = 13u;
 constexpr uint8_t COP0_EPC = 14u;
 constexpr uint8_t COP0_EXEC = 15u;
+constexpr uint8_t COP0_CONTEXT = 16u;
 constexpr uint8_t COP0_RAM_END = 17u;
+constexpr uint8_t COP0_SYSTEM_VECTOR = 18u;
+constexpr uint8_t COP0_PREVIOUS_ACTIVE = 19u;
 
 constexpr bool cop0ReadAsZero(int field) { return field == COP0_EXEC || field == COP0_RAM_END; }
 constexpr bool cop0WriteRetiresControl(int field) {
-	return field == COP0_STATUS || field == COP0_EXEC || field == COP0_RAM_END;
+	return field == COP0_STATUS || field == COP0_EXEC || field == COP0_CONTEXT
+		|| field == COP0_RAM_END || field == COP0_SYSTEM_VECTOR;
 }
 
 constexpr bool cop0FieldImplemented(int field) {
 	constexpr uint32_t fields = (1u << COP0_BAD_ADDRESS) | (1u << COP0_LUA_FAULT_REASON)
-		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_RAM_END);
-	return static_cast<uint32_t>(field) <= COP0_RAM_END && ((fields >> field) & 1u) != 0u;
+		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE);
+	return static_cast<uint32_t>(field) <= COP0_PREVIOUS_ACTIVE && ((fields >> field) & 1u) != 0u;
 }
 
 constexpr uint32_t CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;

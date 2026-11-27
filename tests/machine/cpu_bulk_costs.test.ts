@@ -1,6 +1,6 @@
 import { GC_LAST_EPOCH_WORK, GC_WORK_WORD_CYCLES, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -15,7 +15,8 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { compileTableIterationTest } from '../helpers/table_iteration';
 
@@ -26,7 +27,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   writeInstruction(text, 1, OpCode.K1, 7, 0, 0);
   writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 8 }] });
-  const { cpu } = createTestSystemCpu(image, backend);
+  const { cpu } = createTestHeapServiceCpu(image, backend);
   const next = valueBuiltinFunction(BuiltinFunctionId.Next);
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
@@ -99,7 +100,7 @@ assert(count == 2 and key == 1 and value == 33)
 count, key, value = capture(next({}))
 assert(count == 1 and key == nil and value == nil)
 return true`, 3);
-  const { cpu } = createTestSystemCpu(image, backend);
+  const { cpu } = createTestHeapServiceCpu(image, backend);
   runGuestToHalt(cpu, 200_000);
   const values: Value[] = [];
   cpu.readCompletionValues(values);
@@ -111,7 +112,7 @@ return true`, 3);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
   writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend);
+  const { cpu } = createTestHeapServiceCpu(image, backend);
   const frame = cpu.rootThread.currentFrame!;
   const entry = image.image.functions[0].codeAddress;
   const keys = Array.from({ length: 16 }, (_, index) => cpu.stringPool.intern(`growth-${index}`));
@@ -153,7 +154,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
   const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['shrinking'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables, old = 2047;
+  const { cpu } = createTestHeapServiceCpu(image, backend), tables = cpu.gc.tables, old = 2047;
   const t = cpu.createTable(old, 128), base = tables.arrayAddress(t);
   cpu.setSystemGlobalByKey(cpu.stringPool.intern('shrinking'), valueTable(t));
   const value = (i: number) => i % 3 ? valueInteger(-i) : valueBool(false);
@@ -169,7 +170,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   grant(1); assert.equal(j.homes, 144); assert.equal(cpu.instructionBudgetRemaining, -7);
   assert.equal(tables.arrayCapacity(t), old); assert.equal(tables.getInteger(t, old+1), valueNil());
   const state = cpu.captureRuntimeState(), ram = cpu.memory.captureSaveState();
-  cpu.reset(); assert.equal(tables.arrayAddress(t), base); assert.equal(tables.arrayCapacity(t), old);
+  cpu.reset(); assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+  assert.equal(tables.arrayAddress(t), base); assert.equal(tables.arrayCapacity(t), old);
   assert.equal(tables.getInteger(t, 2032), value(2032)); assert.equal(tables.getInteger(t, old+1), valueNil());
   cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
   for (let n = 0; j.record; ++n) { assert.ok(n < 1000); grant(63); }
@@ -183,7 +185,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
   if (prefix) {
    for (let n = 0; !j.arrayCleared; ++n) { assert.ok(n < 15000); grant(1); }
-   assert.equal(j.arrayCleared, 16); cpu.reset(); check();
+   assert.equal(j.arrayCleared, 16); cpu.reset();
+   assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS); check();
    cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state);
   }
   for (let n = 0; j.record; ++n) { assert.ok(n < 1000); grant(79); }
@@ -194,7 +197,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, systemGlobalNames: ['growing'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables;
+  const { cpu } = createTestHeapServiceCpu(image, backend), tables = cpu.gc.tables;
   const root = cpu.stringPool.intern('growing'), old = 2047;
   cpu.heapAllocator.free(cpu.heapAllocator.allocate(old * 12, true));
   const t = cpu.createTable(old, 0), original = tables.arrayAddress(t);
@@ -221,14 +224,15 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   const end = cpu.memory.captureSaveState();
   cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); grant(128); check();
   assert.deepEqual(cpu.memory.captureSaveState().ram, end.ram);
-  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); cpu.reset(); check();
+  cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(state); cpu.reset();
+  assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS); check();
  });
 
  for (const keepHash of [false, true]) test(`displaced array growth keeps both planes until publication (${backend}, keepHash=${keepHash})`, () => {
   const text = new Uint8Array(2 * INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend), tables = cpu.gc.tables;
+  const { cpu } = createTestHeapServiceCpu(image, backend), tables = cpu.gc.tables;
   const t = cpu.createTable(1024, 2), r = cpu.rootThread.currentFrame!.registers;
   const original = tables.arrayAddress(t), originalHash = tables.hashAddress(t);
   for (let i = 1; i <= 1024; ++i) if (i !== 77) tables.setInteger(t, i, valueInteger(-i));
@@ -263,7 +267,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend);
+  const { cpu } = createTestHeapServiceCpu(image, backend);
   const t = cpu.createTable(0, 1024), tables = cpu.gc.tables, r = cpu.rootThread.currentFrame!.registers;
   for (let i = 1; i <= 1024; ++i) tables.setInteger(t, i <= dense ? i : -i, valueInteger(i));
   r.setTable(0, t); r.setInteger(1, dense+1); r.setInteger(2, 73);
@@ -292,7 +296,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   writeInstruction(text, 0, OpCode.SETFIELD, 0, 0, 1);
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, constants: ['new'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 2 }] });
-  const { cpu } = createTestSystemCpu(image, backend);
+  const { cpu } = createTestHeapServiceCpu(image, backend);
   const t = cpu.createTable(0, 512), tables = cpu.gc.tables, field = cpu.stringPool.intern('new');
   for (let i = 1; i <= 512; ++i) tables.setInteger(t, i <= 256 ? i : -i, valueInteger(i));
   const r = cpu.rootThread.currentFrame!.registers;
@@ -334,7 +338,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
   writeInstruction(text, 0, OpCode.CALL, 0, protect ? 5 : 4, 17);
   writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
-  const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
+  const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
   const t = cpu.createTable(census ? 2048 : 0, census ? 0 : 256), tables = cpu.gc.tables;
   const key = census ? valueInteger(2049) : valueString(cpu.stringPool.intern('new'));
   for (let i=1; i<=(census ? 2048 : 256); ++i) tables.setInteger(t, census ? i : -i, valueInteger(i));
@@ -364,7 +368,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
    writeInstruction(text, 0, op, 0, op === OpCode.SETFIELD ? 0 : op === OpCode.CALL ? 4 : 1, op === OpCode.CALL ? 1 : 2);
    writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
    const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 }] });
-   const { cpu } = createTestSystemCpu(image, backend);
+   const { cpu } = createTestHeapServiceCpu(image, backend);
    const frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
    const integer = op === OpCode.SETI;
@@ -425,7 +429,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
    const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 5 },
     { firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
-   const { cpu } = createTestSystemCpu(image, backend);
+   const { cpu } = createTestHeapServiceCpu(image, backend);
    const frame = cpu.rootThread.currentFrame!, r = frame.registers;
    const entry = image.image.functions[0].codeAddress;
    r.setTable(0, cpu.createTable(0, 1)); r.set(1, valueString(cpu.stringPool.intern('warm'))); r.setInteger(2, 73);
@@ -511,7 +515,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   const text = new Uint8Array(INSTRUCTION_BYTES);
   writeInstruction(text, 0, OpCode.SETT, 0, 1, 2);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
-  const { cpu } = createTestSystemCpu(image, backend), scheduler = new DeviceScheduler(cpu);
+  const { cpu } = createTestHeapServiceCpu(image, backend), scheduler = new DeviceScheduler(cpu);
   scheduler.setNowCycles(73);
   const r = cpu.rootThread.currentFrame!.registers, table = cpu.createTable();
   const key = valueString(cpu.stringPool.intern('field'));

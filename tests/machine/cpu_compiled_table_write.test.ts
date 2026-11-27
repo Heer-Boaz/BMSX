@@ -14,7 +14,8 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuParity } from '../helpers/cpu_execution';
 
 test('next charges only the primitive and the receiving range even when traversal crosses vacant slots', () => {
@@ -23,7 +24,7 @@ test('next charges only the primitive and the receiving range even when traversa
 	writeInstruction(text, 1, OpCode.K1, 3, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
 	for (const capacity of [1, 1024]) {
-		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 		const frame = cpu.rootThread.frameAtDepth(0), pc = frame.pc, table = cpu.createTable(capacity, capacity);
 		cpu.gc.tables.setInteger(table, 1, valueBool(false));
 		for (const after of [valueNil(), valueInteger(1)]) {
@@ -47,7 +48,7 @@ test('a WIDE SETFIELD hint affects only growth at its original table and follows
 	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
-	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestSystemCpu(image, mode));
+	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestHeapServiceCpu(image, mode));
 	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
 	for (const { cpu, memory } of machines) {
 		const key = cpu.stringPool.find('field')!, table = cpu.createTable(0, 1);
@@ -106,7 +107,7 @@ for (const pressure of ['budget', 'fragmented', 'exhausted']) test(`hinted SETFI
 	writeInstruction(code, 1, OpCode.SETFIELD, 0, 0, 1);
 	writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }] }, 0x10000);
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const tables = cpu.gc.tables, arena = cpu.heapAllocator, budget = cpu.luaHeap;
 	const table = cpu.createTable(512, 1), beforeKey = cpu.stringPool.intern('before'), field = cpu.stringPool.find('field')!;
 	tables.setStringKey(table, beforeKey, valueInteger(9));
@@ -166,8 +167,8 @@ test('ordinary bus writes cannot rebind an array or alter its private elements',
 	writeInstruction(text, 1, OpCode.GETI, 2, 0, 1);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 3 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
+	const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	const pc = image.image.functions[0].codeAddress;
 	for (const { cpu } of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
@@ -206,7 +207,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 		const image = linkRawTestSystemBlua32({ text, constants: ['field', false],
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 10 }] });
-		const cpu = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const cpu = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers, key = cpu.stringPool.intern('field');
 		r.setTable(0, cpu.createTable(0, 8)); r.setString(1, key); r.setInteger(4, 13);
 		cpu.runUntilDepth(0, 600);
@@ -257,8 +258,8 @@ for (const generic of [false, true]) test(`growing string stores publish moved r
 	writeInstruction(text, 2, generic ? OpCode.SETT : OpCode.SETFIELD, 0, generic ? 1 : 0, 7);
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [{ firstWord: 0, wordCount: 4, maxStack: 16 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-	const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(0, 1)); r.setString(1, cpu.stringPool.intern('field')); r.setInteger(9, 1);

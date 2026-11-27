@@ -10,10 +10,10 @@ import {
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const STRINGS = 'kernel/gc_strings';
 const PROBE = 'test/string_pool';
@@ -55,8 +55,8 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
-	const { cpu, memory } = createTestSystemCpu(linked);
-	const oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked);
+	const oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET;
 	const occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;

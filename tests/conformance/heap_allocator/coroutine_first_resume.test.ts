@@ -20,9 +20,9 @@ import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_PREPARED_FRAME_OFFSET, HEAP_SER
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 // Reference at 1e4283127: TS cpu.ts:4621-4677 and C++ cpu.cpp:1357-1411
@@ -53,13 +53,14 @@ const deadText = 'unreachable cross-Thread frame reservation blocker '.repeat(18
 for (const opt of [0, 3] as const) test(`first coroutine resume keeps the physical resumer window live at O${opt}`, async t => {
 	const dir = mkdtempSync(join('tmp', 'coroutine-first-resume-'));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
-	const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, opt)), rom = join(dir, 'system.rom');
-	writeFileSync(rom, linked.romBytes);
+	const linked = linkManagedTestSystem(source, opt), rom = join(dir, 'system.rom');
+	const romBytes = writeTestBlua32Rom(linked);
+	writeFileSync(rom, romBytes);
 	for (const refuse of [false, true]) await t.test(refuse ? 'terminal physical refusal' : 'reclaim and resume', () => {
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
+		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 		const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
 		runtime.boot();
-		runGuestToHalt(cpu, 65_536);
+		runGuestToHalt(cpu, 4_194_304);
 		const [start, outer, body] = runtime.readCompletionValues().slice().map(valuePayload);
 		heap.setCollectionTarget(heap.capacity());
 		// Test setup only: start two issued Thread records, with no admitted
@@ -102,7 +103,7 @@ for (const opt of [0, 3] as const) test(`first coroutine resume keeps the physic
 			const from = address - RAM_BASE;
 			observe(`H ${from} ${from + length}`, hashBytes(memory.ramData(), from, length));
 		}
-		const instruction = () => decodeBlua32InstructionAtPc(linked.image.textBytes, linked.image.header.textAddress, cpu.activeThread.currentFrame!.pc);
+		const instruction = () => decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, cpu.activeThread.currentFrame!.pc);
 		for (let step = 0; step < 8192; ++step) {
 			if (cpu.activeThread.address === parent && !cpu.heapServiceActive() && instruction().op === OpCode.CALL) break;
 			grant(13);

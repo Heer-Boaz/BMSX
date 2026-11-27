@@ -2,12 +2,39 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger } from '../../machine/ts/machine/cpu/value';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+
+function boot(source: string, opt: 0 | 3) {
+	const linked = linkManagedTestSystem(source, opt);
+	const runtime = new Runtime({
+		systemRomBytes: writeTestBlua32Rom(linked),
+		cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
+	}, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu } = runtime.machine;
+	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+	assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
+	const startup = linked.symbols.metadata.functionIds.indexOf('module:main/startup');
+	assert.notEqual(startup, -1);
+	const entry = linked.symbols.functionAddresses[startup];
+	let budget = 1_000_000;
+	for (let slice = 0; slice < 32 && cpu.readFrameFunctionAddress(0) !== entry && budget > 0; ++slice) {
+		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
+		budget = cpu.instructionBudgetRemaining;
+	}
+	assert.equal(cpu.readFrameFunctionAddress(0), entry);
+	return runtime.machine;
+}
 
 for (const opt of [0, 3] as const) {
 	test(`firmware installs the String index by ordinary RAM stores and resumes between them (O${opt})`, () => {
@@ -16,8 +43,7 @@ local index<const> = require('kernel/string_index')
 index.install({ field = 27 })
 local receiver<const> = 'receiver'
 return receiver.field`;
-		const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, opt));
-		const { cpu, memory } = createTestSystemCpu(linked);
+		const { cpu, memory } = boot(source, opt);
 		const head = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 		const tag = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.StringIndexTag);
 		const word = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.StringIndexWord);
@@ -49,8 +75,7 @@ end
 local index<const> = require('kernel/string_index')
 index.install({ field = 27 })
 index.install(0)`;
-	const linked = linkTestSystemBlua32(compileHeapServiceSystem(source, 3));
-	const { cpu, memory } = createTestSystemCpu(linked);
+	const { cpu, memory } = boot(source, 3);
 	const head = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 	const word = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.StringIndexWord);
 	for (let grant = 0; grant < 30_000 && word() === 0; ++grant) {

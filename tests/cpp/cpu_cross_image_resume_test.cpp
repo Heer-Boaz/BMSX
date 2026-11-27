@@ -11,6 +11,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/jit/sljit/gate.h"
 #include "machine/cpu/jit/sljit/abi.h"
@@ -84,7 +85,7 @@ void romStringsUseAbsoluteBackingAndDirectorySocket() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	cpu.reset();
+	test::seedManagedFixture(cpu, addresses);
 	cpu.setGlobalByKey(shared, valueInteger(19));
 	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
 	const auto bank0 = cpu.activeThread()->currentFrame->executionImage->constPool;
@@ -201,7 +202,7 @@ struct Machine {
 		memory(MemoryInit{images.system.bytes, test::cartridgeSlots(images.cards[0].bytes, images.cards[1].bytes)}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		// This probe starts with firmware-prepared operands and measures EXEC and CALL.
 		cpu.replaceExecutionImage(*addresses.resolveDomain(slot));
 		test::seedTestRomClosure(cpu, images.system.functionAddresses[1]);

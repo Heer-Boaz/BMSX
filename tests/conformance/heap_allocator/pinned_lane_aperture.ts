@@ -125,7 +125,7 @@ try {
 		// would leave native execution on every store instead of this hot tail.
 		assert.ok(nativeCycles - midNativeCycles > tailCycles * 0.8);
 		assert.ok(writeExits > midWriteExits && writeExits - midWriteExits < iterations / 32,
-			`the hot RAM writes are generated, while projection/history writes take bounded exits (O${optLevel}: ${midWriteExits} → ${writeExits})`);
+			'the hot RAM writes are generated, while projection/history writes take bounded exits');
 		assert.equal(active, 0);
 		assert.equal(result, iterations);
 		assert.equal(final, String(finalHash));

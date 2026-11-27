@@ -5,20 +5,55 @@ import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, valueResidentFunction, type Value } from '../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
+import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
+import { writeTestBlua32Rom } from '../helpers/blua32';
+import { residentFunctionAddress } from '../helpers/heap_service_system';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
+let firmware: { rom: Uint8Array; collectionEntry: number } | undefined;
+const watchBudget = 1_000_000;
+
+function bootWatchGuest() {
+	if (firmware === undefined) {
+		const linked = linkManagedTestSystem(`
+local collector<const> = require('kernel/gc_full')
+while true do
+	halt_until_irq
+	collector.collect_full()
+end`, 3);
+		firmware = {
+			rom: writeTestBlua32Rom(linked),
+			collectionEntry: residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/gc_full', 'collect_full'),
+		};
+	}
+	const runtime = createTestRuntime(firmware.rom);
+	runtime.boot();
+	const { cpu } = runtime.machine;
+	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+	runGuestToHalt(cpu, watchBudget);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+	return runtime;
+}
+
+function collectOnGuest(runtime: ReturnType<typeof bootWatchGuest>): void {
+	const { cpu } = runtime.machine;
+	cpu.clearHaltUntilIrq();
+	runGuestToHalt(cpu, watchBudget);
+	assert.equal(cpu.isHaltedUntilIrq(), true, 'the guest retired its full collection and returned to the watch pause');
+}
+
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
-	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
 	const pool = cpu.stringPool, guest = new SuspendedGuestSession(runtime);
-	cpu.collectTrackedHeapBytes();
 	const old = pool.intern('retained-identity-before-gc'), identity = guest.identity(valueString(old));
 	const property = { section: 'entries', field: '', key: identity }, index = new RuntimePropertyIndex<string>();
 	index.set(property, 'selected');
 	const presentation = new SuspendedValuePresentation(guest, 'watch');
 	assert.equal(presentation.update(valueString(old)), 'retained-identity-before-gc');
-	cpu.collectTrackedHeapBytes();
+	collectOnGuest(runtime);
 	assert.equal(pool.find('retained-identity-before-gc'), undefined, 'tool identities do not pin guest strings');
 	const replacement = pool.intern('retained-identity-after-gc!');
 	assert.equal(replacement, old, 'regression requires actual slot reuse');
@@ -49,13 +84,12 @@ test('numeric watches retain subtype and raw NaN identity instead of host Number
 });
 
 test('retained object identities do not alias a recycled compact heap reference', () => {
-	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
 	const guest = new SuspendedGuestSession(runtime), presentation = new SuspendedValuePresentation(guest, 'summary');
-	cpu.collectTrackedHeapBytes();
 	const table = cpu.createTable(), first = valueTable(table);
 	const identity = guest.identity(first);
 	presentation.update(first);
-	cpu.collectTrackedHeapBytes();
+	collectOnGuest(runtime);
 	const replacement = cpu.createTable(), second = valueTable(replacement);
 	assert.equal(valuePayload(first), valuePayload(second), 'exercise physical record reuse');
 	assert.equal(guest.matchesIdentity(second, identity), false);
@@ -64,7 +98,7 @@ test('retained object identities do not alias a recycled compact heap reference'
 });
 
 test('table previews use the returned key, not traversal work, to detect exhaustion', () => {
-	const runtime = createTestRuntime(createTestRuntimeRomPayload()), cpu = runtime.machine.cpu;
+	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
 	const guest = new SuspendedGuestSession(runtime);
 	const table = cpu.createTable(8, 16);
 	const value = valueTable(table);
@@ -80,7 +114,7 @@ test('table previews use the returned key, not traversal work, to detect exhaust
 });
 
 test('suspended member reads and enumeration follow the runtime index field', () => {
-	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const runtime = bootWatchGuest();
 	const guest = new SuspendedGuestSession(runtime), { cpu } = runtime.machine;
 	const { tables } = cpu.gc, pool = cpu.stringPool;
 	const child = cpu.createTable(0, 1), parent = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
@@ -100,12 +134,10 @@ test('suspended member reads and enumeration follow the runtime index field', ()
 });
 
 test('a replaced heap retires tool lifetime tokens without a collector notification', () => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('halt_until_irq', 3));
-	const runtime = createTestRuntime(system.romBytes), { cpu } = runtime.machine;
-	runtime.boot();
+	const runtime = bootWatchGuest(), { cpu } = runtime.machine;
 	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
 	const table = valueTable(cpu.createTable());
-	const romFunction = valueResidentFunction(residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
+	const romFunction = valueResidentFunction(firmware!.collectionEntry);
 	const checkpoint = captureRuntimeSaveState(runtime);
 	const previous = observer.identity(table);
 	const previousFunction = observer.identity(romFunction);

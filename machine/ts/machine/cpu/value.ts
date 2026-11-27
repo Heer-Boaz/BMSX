@@ -9,7 +9,9 @@ import type { GcHeap } from './gc_heap';
 export const enum ValueTag {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
 	DeadKey, // Table retirement metadata, never a language value.
-	ResidentFunction, // Immutable System ROM entry; not a managed record.
+	ResidentFunction, // Resident System ROM entry; not a managed record.
+	CodeFunction, // Immutable System Function with no environment.
+	UnboundStringLiteral = 0xff, // Only in a decoded operand bank, never a guest Value.
 }
 declare const valueBrand: unique symbol;
 // Complete transient transport: all supported tag/word pairs fit exactly in a
@@ -92,7 +94,7 @@ export function tableKeysEqual(left: Value, right: Value): boolean { return cano
 export function hashCanonicalTableKey(value: Value): number {
 	switch (valueTag(value)) {
 		case ValueTag.Integer: case ValueTag.Float:
-		case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: case ValueTag.ResidentFunction: {
+		case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: {
 			let bits = valuePayload(value);
 			bits = Math.imul(bits ^ ((bits << 14) | (bits >>> 18)), 0x85ebca6b) >>> 0;
 			return (bits ^ (bits >>> 13)) >>> 0;
@@ -114,7 +116,7 @@ export function valueTypeNameForLuaTag(tag: ValueTag): string {
 		case ValueTag.String: return 'string';
 		case ValueTag.Table: return 'table';
 		case ValueTag.Thread: return 'thread';
-		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: return 'function';
+		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: return 'function';
 		default: throw new Error('Internal table metadata is not a language value.');
 	}
 }
@@ -135,7 +137,7 @@ export function valueToByteString(value: Value, strings: StringPool): string {
 		case ValueTag.String: return strings.bytes(asStringId(value));
 		case ValueTag.Table: return 'table';
 		case ValueTag.Thread: return 'thread';
-		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: return 'function';
+		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: return 'function';
 		default: throw new Error('Internal table metadata is not a language value.');
 	}
 }

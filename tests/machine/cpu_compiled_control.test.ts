@@ -7,12 +7,13 @@ import { valueInteger, valueFloat } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS,
-	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_IRQ, CPU_STATUS_USER_MODE_CURRENT } from '../../machine/ts/spec/blua32/cop0';
+	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, CPU_CAUSE_IRQ, CPU_STATUS_INHIBIT_RESET, CPU_STATUS_USER_MODE_CURRENT } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function assertParity(js: CPU, ref: CPU): void {
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()), 'full CPU state, value graphs, frames and CP0/NMI words');
@@ -31,7 +32,7 @@ test('compiled CP0 loads retain raw words as Integers and consume the live regis
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 9, maxStack: 10 }, { firstWord: 32, wordCount: 1 },
 		{ firstWord: 48, wordCount: 2 }], exceptionFunctionIndex: 2 });
 	for (const word of [0, 0x80000000, 0xffffffff, 0xa5a55a5a]) {
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		for (const cpu of [js, ref]) {
 			const state = cpu.captureRuntimeState(); state.statusWord = (word & ~CPU_STATUS_USER_MODE_CURRENT) >>> 0;
 			state.causeWord = word; state.epcWord = (word ^ 0x13579bdf) >>> 0; state.badAddressWord = ~word >>> 0; state.luaFaultReasonWord = word;
@@ -66,7 +67,7 @@ test('compiled CP0 writes convert words without changing their sources or ignore
 	writeInstruction(text, 4, OpCode.MTC0, 12, COP0_CAUSE, 0);
 	writeInstruction(text, 5, OpCode.JMP, 0, 63, 58, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 6, maxStack: 13 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) { const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, 0); r.setInteger(1, 0); r.setInteger(12, -1); cpu.runUntilDepth(0, 600); }
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
 	assert.equal(js.rootThread.frameAtDepth(0).decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 6);
@@ -96,7 +97,7 @@ test('a compiled Status write returns for pending IRQ arbitration before its suc
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 16, OpCode.HALT, 0, 0, 0); writeInstruction(text, 17, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 7 }, { firstWord: 16, wordCount: 2 }], irqFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu, memory, irqController } of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, 0); frame.registers.setInteger(1, 0);
 		cpu.runUntilDepth(0, 400); frame.top = 0; frame.registers.setInteger(0, 1); frame.registers.setInteger(6, 73);
@@ -128,7 +129,7 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 	const source = faultLoopSource(OpCode.MFC0, false);
 	writeInstruction(source.text, 2, OpCode.MFC0, 6, COP0_EPC, 0); writeInstruction(source.text, 3, OpCode.MFC0, 12, 44, 0);
 	writeInstruction(source.text, 4, OpCode.JMP, 0, 63, 61, 255); source.functions[0].wordCount = 5;
-	const image = linkRawTestSystemBlua32(source), js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const image = linkRawTestSystemBlua32(source), js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(8)); cpu.runUntilDepth(0, 900);
@@ -142,11 +143,11 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false, true]) {
 	test(`compiled opcode ${op} privilege priority and WIDE=${wide} faults preserve destination/top and use native RFE`, () => {
 		const image = linkRawTestSystemBlua32(faultLoopSource(op, wide));
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const registers = js.rootThread.frameAtDepth(0).registers;
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408));
+			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET));
 		}
 		const original = registers.get(12);
 		runCpuParity(js, ref, 900);
@@ -159,8 +160,14 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		for (const cpu of [js, ref]) {
 			if (op === OpCode.MTC0) cpu.rootThread.frameAtDepth(0).registers.setInteger(12, -1);
 			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0));
-			assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
+			assert.equal(cpu.runUntilDepth(0, 20), RunResult.Yielded, 'clearing reset inhibit retires before WIDE RFE');
+			assert.equal(cpu.rootThread.frameDepth, 2);
+			assert.equal(cpu.isExceptionFrame(1), true);
+			assert.equal(cpu.readFramePc(1), image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
+			assert.equal(cpu.captureRuntimeState().statusWord, 0);
 		}
+		assertParity(js, ref);
+		for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 		assertParity(js, ref);
 		assert.equal(js.captureRuntimeState().hardHalted, true); assert.equal(js.readCauseWord(), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		assert.equal(js.readFrameRegister(0, 12), op === OpCode.MTC0 ? valueInteger(-1) : original); assert.equal(js.rootThread.frameAtDepth(0).top, 4);
@@ -169,17 +176,25 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 
 test('a warmed WIDE RFE rejects an ordinary frame after returning to the active EPC', () => {
 	const image = linkRawTestSystemBlua32(faultLoopSource(OpCode.MFC0, false));
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408)); cpu.runUntilDepth(0, 900);
+		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET)); cpu.runUntilDepth(0, 900);
 		for (let step = 0; step < 8 && cpu.rootThread.frameDepth > 1; ++step) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.rootThread.frameDepth, 1); cpu.runUntilDepth(0, 1);
 		cpu.writeEpcWord(image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
 		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0));
-		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
+		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Yielded, 'clearing reset inhibit retires before WIDE RFE');
+		assert.equal(cpu.rootThread.frameDepth, 2);
+		assert.equal(cpu.isExceptionFrame(1), true);
+		assert.equal(cpu.readFramePc(1), image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
+		assert.equal(cpu.captureRuntimeState().statusWord, 0);
 	}
+	assertParity(js, ref);
+	for (const cpu of [js, ref]) assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	assertParity(js, ref); assert.equal(js.captureRuntimeState().hardHalted, true);
+	assert.equal(js.rootThread.frameDepth, 1);
+	assert.equal(js.isExceptionFrame(0), false);
 	assert.equal(js.readCurrentInstructionPc(), image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
 	assert.equal(js.rootThread.frameAtDepth(0).top, 4);
 });
@@ -190,7 +205,7 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2 }, { firstWord: 16, wordCount: 2 },
 		{ firstWord: 32, wordCount: 1, staticClosure: false }], globalNames: ['next', 'start'] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.setGlobalByKey(cpu.stringPool.find('next')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.setGlobalByKey(cpu.stringPool.find('start')!, valueInteger(image.symbols.functionAddresses[0])); cpu.runUntilDepth(0, 800);
@@ -216,7 +231,7 @@ test('compiled NMI return samples active EPC then restores retained words withou
 	writeInstruction(text, 0, OpCode.K1, 0, 0, 0); writeInstruction(text, 1, OpCode.ADD, 1, 1, 0); writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	writeInstruction(text, 16, OpCode.MFC0, 0, COP0_CAUSE, 0); writeInstruction(text, 17, OpCode.WIDE, 255, 255, 255); writeInstruction(text, 18, OpCode.RFE, 63, 63, 63, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 16, wordCount: 3 }], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const state = cpu.captureRuntimeState(); state.statusWord = 0xa5a5a511; state.causeWord = 0xdeadbeef; state.epcWord = 0x12345679;
 		state.badAddressWord = 0x87654321; state.luaFaultReasonWord = 0x80000000; state.exceptionDomainWord = 7;

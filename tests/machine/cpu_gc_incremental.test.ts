@@ -21,12 +21,14 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, hashCanonicalTableKey, valueBuiltinFunction, valueClosure, valuePayload, valueBool, valueInteger, valueNil, valueTable, valueString, valueThread, type Value } from '../../machine/ts/machine/cpu/value';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, seedTestCapturedClosure, seedTestRomClosure } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
+// Exercise the independent native oracle from an already admitted RAM state.
 function machine() {
 	const text = new Uint8Array(4);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
-	return createTestSystemCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] })).cpu;
+	return createTestHeapServiceCpu(linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] })).cpu;
 }
 
 test('incremental marking preserves changed table edges, metatables and final register roots', () => {
@@ -166,7 +168,7 @@ test('completion Values form a resumable root range after the real returning fra
 		functions: [{ firstWord: 0, wordCount: 3 }, { firstWord: 3, wordCount: 2, isVararg: true }],
 		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 	});
-	const { cpu, memory } = createTestSystemCpu(image);
+	const { cpu, memory } = createTestHeapServiceCpu(image);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const results: Value[] = [];
@@ -202,7 +204,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	const text = new Uint8Array(4);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const globalNames = Array.from({ length: 2200 }, (_, slot) => `root-${slot}`);
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text, globalNames,
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32({ text, globalNames,
 		functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }] }));
 	const gc = cpu.gc;
 	const first = cpu.stringPool.intern(globalNames[0]), last = cpu.stringPool.intern(globalNames[globalNames.length - 1]);
@@ -282,7 +284,7 @@ test('major marking resumes large closure captures from a RAM snapshot', () => {
 			{ firstWord: 2, wordCount: 1, upvalueDescs },
 		],
 	});
-	const { cpu, memory } = createTestSystemCpu(image);
+	const { cpu, memory } = createTestHeapServiceCpu(image);
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc;
 	const lastTarget = cpu.createTable();
 	frame.registers.setTable(0, cpu.createTable());
@@ -347,7 +349,7 @@ test('a suspended Thread scan follows closing JMP and RET of a large live captur
 		],
 		closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
 	});
-	const { cpu, memory } = createTestSystemCpu(image);
+	const { cpu, memory } = createTestHeapServiceCpu(image);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	const frame = cpu.rootThread.currentFrame!, gc = cpu.gc, target = cpu.createTable();
 	frame.registers.setTable(1, target); frame.top = 2;
@@ -413,7 +415,7 @@ test('sweeping a suspended coroutine withdraws its borrowed view and rebinds onl
 		emit(start + 3, OpCode.RET, 0, 1);
 	}
 	const rom = linkRawTestSystemBlua32({ text, functions, systemGlobalNames, closureRelocations });
-	const { cpu } = createTestSystemCpu(rom);
+	const { cpu } = createTestHeapServiceCpu(rom);
 	const primitives = [BuiltinFunctionId.CoroutineResume, BuiltinFunctionId.CoroutineYield];
 	for (let i = 0; i < primitives.length; ++i)
 		cpu.setSystemGlobalByKey(cpu.stringPool.intern(systemGlobalNames[i]), valueBuiltinFunction(primitives[i]));
@@ -1142,7 +1144,7 @@ test('a collected coroutine releases its object and stack allocations', () => {
 	const image = linkRawTestSystemBlua32({
 		text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 8 }, { firstWord: 1, wordCount: 1, maxStack: 2 }],
 	});
-	const { cpu } = createTestSystemCpu(image);
+	const { cpu } = createTestHeapServiceCpu(image);
 	const entry = seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	cpu.rootThread.currentFrame!.registers.set(0, valueThread(cpu.createThread(entry)));
 	const { gc } = cpu, frame = cpu.rootThread.currentFrame!;

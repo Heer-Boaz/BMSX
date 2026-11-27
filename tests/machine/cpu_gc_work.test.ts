@@ -33,13 +33,15 @@ import {
 	BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE,
 } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { CART_ROM_BASE, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createTestSystemCpu, linkRawTestBlua32Pair, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
+// Native measurements deliberately assemble an image without resident GC services.
 function source(operation: OpCode = OpCode.HALT, wide = false) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	let word = 0;
@@ -62,7 +64,7 @@ const bootBytes = bootThreadBytes + 4 + 697 + 8 + 2 * 9;
 const bootCollectionWork = 2 * (20 + 14) + (20 + 14 + 10) + 2 + 1 + 6 + 2 * 17 + 32;
 
 test('String mark work follows its reached records through a CPU checkpoint', () => {
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const strings = cpu.stringPool;
 	const first = strings.intern('mark-work-before-checkpoint');
 	const second = strings.intern('mark-work-after-checkpoint');
@@ -92,7 +94,7 @@ test('String mark work follows its reached records through a CPU checkpoint', ()
 });
 
 test('physical GC work counts canonical scans, reclamation and one global bank pass without a cycle debit', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'charge allocated Strings and names, not their indexes');
 	cpu.instructionBudgetRemaining = 7;
 	assert.equal(cpu.gc.collect(), bootCollectionWork, 'object records and the RAM intern index are swept separately');
@@ -113,13 +115,14 @@ test('physical GC work counts canonical scans, reclamation and one global bank p
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
 	cpu.reset();
+	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'reset maintenance does not implicitly collect or bill the retained transient grant');
 });
 
 test('inactive frame reserve does not consume automatic GC quanta', () => {
 	const image = linkRawTestSystemBlua32(source());
 	const collect = (reservedFrames: number) => {
-		const { cpu, memory } = createTestSystemCpu(image), { gc, rootThread: thread } = cpu;
+		const { cpu, memory } = createTestHeapServiceCpu(image), { gc, rootThread: thread } = cpu;
 		const retained = cpu.createTable(), doomed = cpu.createThread(0);
 		if (reservedFrames !== THREAD_INITIAL_FRAMES) {
 			cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, reservedFrames, valueNil());
@@ -147,7 +150,7 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 });
 
 test('allocation admission and GC use logical bytes, not physical chunk extents', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 	const logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
 	cpu.luaHeap.setCollectionTarget(logical + logicalCharge);
@@ -165,7 +168,7 @@ test('allocation admission and GC use logical bytes, not physical chunk extents'
 
 test('table replacement admits just its logical increase, even when both layouts need backing', () => {
 	for (const packArrayIntoHash of [false, true]) {
-		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+		const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 		const table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
 		const frame = cpu.rootThread.currentFrame!, tables = cpu.gc.tables;
 		frame.registers.setTable(0, table); frame.top = 1;
@@ -189,7 +192,7 @@ test('table replacement admits just its logical increase, even when both layouts
 
 test('table growth retries its actual physical reserve before starting a fresh GC epoch', () => {
 	for (const pressure of ['reclaimable', 'floating', 'unavailable', 'explicit'] as const) {
-		const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+		const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 		const { gc, heapAllocator: arena } = cpu, { tables } = gc;
 		const table = cpu.createTable(512, 0);
 		const frame = cpu.rootThread.currentFrame!;
@@ -230,7 +233,7 @@ test('table growth retries its actual physical reserve before starting a fresh G
 });
 
 test('physical reservations pace marking while the logical budget is below its threshold', () => {
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena, luaHeap: heap } = cpu;
 	const frame = cpu.rootThread.currentFrame!;
 	const live = cpu.createTable(131072, 0);
@@ -265,7 +268,7 @@ test('physical reservations pace marking while the logical budget is below its t
 });
 
 test('physical occupancy advances a large live epoch before a table replacement needs recovery', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena } = cpu, { tables } = gc;
 	const owner = cpu.createTable(512, 0);
 	const frame = cpu.rootThread.currentFrame!;
@@ -326,7 +329,7 @@ test('physical occupancy advances a large live epoch before a table replacement 
 });
 
 test('allocation assist target is only restored by the RAM checkpoint', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const target = cpu.heapAllocator.managementOffset() + HEAP_COLLECTION_TARGET_OFFSET;
 	const ram = cpu.memory.captureSaveState(), checkpoint = cpu.captureRuntimeState();
 	cpu.memory.writeRamRecordWord(target, 2048);
@@ -339,7 +342,7 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 });
 
 test('a WIDE table store retries physical refusal in current then fresh epochs at its issue PC', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT, true)));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source(OpCode.SETT, true)));
 	const frame = cpu.rootThread.currentFrame!, issuePc = frame.pc;
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const table = cpu.createTable(1024, 0);
@@ -360,7 +363,7 @@ test('a WIDE table store retries physical refusal in current then fresh epochs a
 });
 
 test('scheduled SETT yields on a logical refusal before collecting the dead backing', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.SETT)));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source(OpCode.SETT)));
 	const { luaHeap: budget, gc, rootThread } = cpu, frame = rootThread.currentFrame!;
 	budget.setCollectionTarget(budget.capacity());
 	const slots = 8192, owner = cpu.createTable(slots, 0);
@@ -389,7 +392,7 @@ test('scheduled SETT yields on a logical refusal before collecting the dead back
 });
 
 test('CONCAT pays for synchronous recovery of a refused String record before its successor', () => {
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source(OpCode.CONCAT)));
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source(OpCode.CONCAT)));
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setInteger(1, 12); frame.top = 2;
 	const garbage = cpu.createTable(2048, 0);
@@ -408,7 +411,7 @@ test('CONCAT pays for synchronous recovery of a refused String record before its
 });
 
 test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const doomed = cpu.createTable(16384, 0), used = cpu.luaHeap.usedBytes();
 	cpu.instructionBudgetRemaining = 1;
 	for (const active of [false, true]) {
@@ -431,7 +434,10 @@ test('ROM constants need no collector visits even with multiple resident images'
 	const first = linkRawTestBlua32Pair(system, { ...source(), constants: [null, integerConstant(1), integerConstant(2), 'card0'], globalNames: ['global', 'card0', 'card0'] });
 	const second = linkRawTestBlua32Pair(system, { ...source(), constants: ['card1'], globalNames: ['global', 'card1'] });
 	const memory = new Memory({ systemRom: first.systemRomBytes, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-	const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory)); cpu.reset();
+	const addresses = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, new IrqController(memory), addresses);
+	cpu.reset();
+	admitTestHeapServiceCpu(cpu, addresses);
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
@@ -486,8 +492,10 @@ test('absolute ROM String references resolve even when backing and directory own
 	writeLE32(second.cartRomBytes, cartHeader + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET, 1);
 
 	const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const addresses = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, new IrqController(memory), addresses);
 	cpu.reset();
+	admitTestHeapServiceCpu(cpu, addresses);
 	cpu.setGlobalByKey(shared, valueInteger(19));
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	const bank0 = cpu.rootThread.currentFrame!.executionImage!;
@@ -541,8 +549,8 @@ test('ROM literals use no guest backing and survive checkpoints in both executio
 	const image = linkRawTestSystemBlua32({ ...program, constants: [integerConstant(31), integerConstant(12), integerConstant(1024)] });
 	const bare = linkRawTestSystemBlua32({ ...program, constants: [] });
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const { cpu, memory } = createTestSystemCpu(image, backend);
-		const empty = createTestSystemCpu(bare, backend).cpu;
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
+		const empty = createTestHeapServiceCpu(bare, backend).cpu;
 		const occupied = empty.heapAllocator.occupiedBytes();
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), empty.luaHeap.usedBytes());
@@ -574,8 +582,10 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 	});
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory), backend);
+		const addresses = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, new IrqController(memory), addresses, backend);
 		cpu.reset();
+		admitTestHeapServiceCpu(cpu, addresses);
 		const beforeCartridge = captureCpuCheckpoint(cpu);
 		const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
 		const strings = () => memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
@@ -618,37 +628,6 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 	}
 });
 
-test('an image backing OOM does not detach the only installed RAM literal root', () => {
-	const literal = 'old literal retained through refused replacement';
-	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(text, 0, OpCode.LOADK, 0, 0, 0);
-	writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
-	const pair = linkRawTestBlua32Pair(source(), {
-		text, functions: [{ firstWord: 0, wordCount: 2 }], constants: [literal],
-	});
-	const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-	const space = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, new IrqController(memory), space);
-	cpu.reset();
-	const id = cpu.stringPool.intern(literal);
-	assert.ok(id >= RAM_BASE);
-	cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
-	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
-	const record = () => memory.ramData().slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
-	const before = record();
-	const strings = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET), 1);
-	assert.equal(memory.readRamRecordWord(strings) & ~IMAGE_STRING_RAM_ORDINAL, id);
-
-	// Caller-owned extents leave even the minimum allocator chunk unavailable.
-	for (const bytes of [4088, 32, 8]) while (cpu.heapAllocator.allocate(bytes, false)) {}
-	assert.throws(() => cpu.replaceExecutionImages([space.resolveDomain(0)!]), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
-	assert.deepEqual(record(), before);
-	assert.equal(cpu.stringPool.find(literal), id, 'native recovery sees the old compact root span during replacement admission');
-	cpu.runUntilDepth(0, 32);
-	assert.equal(cpu.readFrameRegister(0, 0), valueString(id));
-});
-
 test('remount invalidates a literal table in another image even when the backing array is reused', () => {
 	const system = { ...source(), constants: [integerConstant(21)], globalNames: [], systemGlobalNames: [] };
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -661,8 +640,10 @@ test('remount invalidates a literal table in another image even when the backing
 	writeLE32(pair.cartRomBytes, pair.cartImage.address - CART_ROM_BASE + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET, table);
 	const boot = () => {
 		const memory = new Memory({ systemRom: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(pair.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+		const addresses = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, new IrqController(memory), addresses);
 		cpu.reset();
+		admitTestHeapServiceCpu(cpu, addresses);
 		cpu.writeFrameExecution(0, 0, pair.cartSymbols.functionAddresses[0], pair.cartImage.functions[0].codeAddress);
 		return cpu;
 	};
@@ -687,12 +668,11 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	const next = linkRawTestSystemBlua32({ ...program, constants: ['replacement A', 'replacement B', 'replacement C'] });
 	const previousMedia = next.romBytes.slice();
 	writeLE32(previousMedia, next.image.address + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1);
-	const { cpu, memory, executionAddressSpace } = createTestSystemCpu({ romBytes: previousMedia });
+	const { cpu, memory, executionAddressSpace } = createTestHeapServiceCpu({ romBytes: previousMedia });
 	const binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const before = memory.readRamRecordWord(binding);
 	assert.notEqual(before, 0);
 	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), before + 4);
 	const key = cpu.stringPool.intern('__index');
 	cpu.setGlobalByKey(key, valueInteger(73));
 	const used = cpu.luaHeap.usedBytes();
@@ -703,7 +683,6 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	assert.notEqual(memory.readRamRecordWord(binding), before, 'new storage was allocated before freeing the old block');
 	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 16);
-	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET), memory.readRamRecordWord(binding) + 4);
 	assert.equal(cpu.luaHeap.usedBytes(), used + 16 - 8);
 	const replacement = captureCpuCheckpoint(cpu);
 	for (let repeat = 0; repeat < 2; ++repeat) {
@@ -715,7 +694,7 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 });
 
 test('growing a fully traced strong table publishes just the inserted edges during the second pass', () => {
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc } = cpu, { tables } = gc;
 	const slots = 8192, table = cpu.createTable(slots), pending = cpu.createTable(slots);
 	const key = cpu.createTable(), value = cpu.createTable();
@@ -752,7 +731,7 @@ test('growing a fully traced strong table publishes just the inserted edges duri
 });
 
 test('temporary roots survive unbilled admission; unreachable allocations only add physical reclamation work', () => {
-	const { cpu } = createTestSystemCpu(linkRawTestSystemBlua32(source()));
+	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
 	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 22);
 	cpu.luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;

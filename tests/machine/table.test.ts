@@ -1,14 +1,8 @@
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-	CPU,
-} from '../../machine/ts/machine/cpu/cpu';
 import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
 	hashCanonicalTableKey, valueBuiltinFunction, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valueTable, valueClosure, valueThread,
@@ -18,16 +12,17 @@ import {
 	valueTag,
 	type Value,
 } from '../../machine/ts/machine/cpu/value';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from '../helpers/cpu_test_harness';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
+// The empty managed entry still follows the real System heap bootstrap.
+const tableRom = linkManagedTestSystem('', 0);
+
 test('runtime values expose distinct Integer and Float tags with equal payload words', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const stringValue = valueString(cpu.stringPool.intern('tagged'));
 	const table = cpu.createTable(0, 0);
 	const values: ReadonlyArray<readonly [Value, ValueTag]> = [
@@ -50,8 +45,7 @@ test('runtime values expose distinct Integer and Float tags with equal payload w
 });
 
 test('Table stores sparse high-bit Integer words in the hash part', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(0, 0);
 	const highKey = valueInteger(0xffffffff);
 	const tokenKey = valueInteger(0x84222325);
@@ -67,8 +61,7 @@ test('Table stores sparse high-bit Integer words in the hash part', () => {
 
 for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] as const) {
 	test(`Table ${route} writes preserve sequence boundaries across the numeric hash tail`, () => {
-		const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+		const { cpu } = bootManagedTestSystem(tableRom);
 		const table = cpu.createTable(4, 8);
 		for (let key = 1; key <= 7; key += 1) {
 			cpu.gc.tables.set(table, valueInteger(key), valueInteger(key * 10));
@@ -129,8 +122,7 @@ for (const route of ['generic', 'float', 'encoded', 'integer', 'integer-array'] 
 }
 
 test('Table length remembers a boundary without scanning after distant writes', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(4096, 8);
 	// Descending construction leaves a hint of one, not an eagerly scanned length.
 	for (let key = 4096; key >= 1; key--) cpu.gc.tables.setInteger(table, key, valueBool(false));
@@ -148,8 +140,7 @@ test('Table length remembers a boundary without scanning after distant writes', 
 });
 
 test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX without consuming larger Float keys', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(0, 128);
 	for (let bit = 30; bit >= 0; bit--) cpu.gc.tables.setInteger(table, 2 ** bit, valueBool(false));
 	assert.equal(cpu.gc.tables.length(table), 2 ** 30);
@@ -168,8 +159,7 @@ test('Table sparse hash boundaries include Integer boundaries up to INT32_MAX wi
 });
 
 test('table values come directly from the allocator-owned RAM block', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const arena = cpu.heapAllocator, occupiedBefore = arena.occupiedBytes();
 	const table = cpu.createTable(2, 1);
 	cpu.gc.tables.setInteger(table, 1, valueInteger(71));
@@ -195,8 +185,7 @@ test('table values come directly from the allocator-owned RAM block', () => {
 });
 
 test('mixed table migration preserves a sparse raw array prefix and hash overflow', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables, table = cpu.createTable(4, 0);
 	const prefix = valueFloatBits(0x7fc12345), tail = valueFloatBits(0xffc23456);
 	tables.setInteger(table, 1, valueBool(false));
@@ -228,8 +217,7 @@ test('mixed table migration preserves a sparse raw array prefix and hash overflo
 });
 
 test('a full collision chain compacts and grows across both link widths', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables;
 	for (const capacity of [128, 256]) {
 		const table = cpu.createTable(4, capacity);
@@ -252,8 +240,7 @@ test('a full collision chain compacts and grows across both link widths', () => 
 });
 
 test('hash-only growth counts restored keys but not weakly retired mappings', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables, table = cpu.createTable(0, 128), weak = valueTable(cpu.createTable());
 	const keys: number[] = [];
 	for (let k = -1; keys.length < 129; --k) if ((hashCanonicalTableKey(valueInteger(k)) & 127) === 0) keys.push(k);
@@ -272,8 +259,7 @@ test('hash-only growth counts restored keys but not weakly retired mappings', ()
 });
 
 test('weak integer removal and resurrection straddle the density cutoff', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables, weak = valueTable(cpu.createTable());
 	for (const resurrect of [false, true]) {
 		const table = cpu.createTable(0, 1024);
@@ -292,8 +278,7 @@ test('weak integer removal and resurrection straddle the density cutoff', () => 
 });
 
 test('hash rebuild routes a stored Integer by its current RAM word', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(4, 128), tables = cpu.gc.tables;
 	for (let k = -1; k >= -128; --k) tables.setInteger(table, k, valueInteger(-k));
 	const words = tables.hashAddress(table);
@@ -304,8 +289,7 @@ test('hash rebuild routes a stored Integer by its current RAM word', () => {
 });
 
 test('numeric hash mixing distributes negative integral keys and preserves canonical matching', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(0, 1024);
 	for (let key = -1; key >= -1024; key--) cpu.gc.tables.setInteger(table, key, valueInteger(key));
 	const links = cpu.gc.tables.hashAddress(table) + 1024 * 10;
@@ -333,8 +317,7 @@ test('numeric hash mixing distributes negative integral keys and preserves canon
 });
 
 test('Table hashes runtime object keys from value-owned identity', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(0, 4);
 	const tableKey = valueTable(cpu.createTable(0, 0));
 
@@ -349,8 +332,7 @@ test('CPU modulus follows Lua floor-modulo semantics', () => {
 });
 
 test('physical table inspection preserves Lua iteration order and tagged values without mutation', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(8, 16), child = valueTable(cpu.createTable(0, 0));
 	const removed = valueString(cpu.stringPool.intern('removed'));
 	cpu.gc.tables.setInteger(table, 1, valueFloatBits(0x80000000)); cpu.gc.tables.setInteger(table, 8, valueBool(false)); cpu.gc.tables.set(table, child, child);
@@ -377,8 +359,7 @@ test('physical table inspection preserves Lua iteration order and tagged values 
 });
 
 test('dense array growth reuses a fitting backing and preserves the tagged prefix', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu } = bootManagedTestSystem(tableRom);
 	const table = cpu.createTable(1, 0), tables = cpu.gc.tables;
 	const first = tables.arrayAddress(table);
 	tables.set(table, valueInteger(1), valueBool(false));
@@ -392,8 +373,7 @@ test('dense array growth reuses a fitting backing and preserves the tagged prefi
 });
 
 test('record admission charges both storage blocks together and frees unissued allocations on OOM', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const { cpu, memory } = bootManagedTestSystem(tableRom);
 	const budget = cpu.gc.budget, arena = cpu.heapAllocator;
 	const used = budget.usedBytes(), occupied = arena.occupiedBytes();
 	const nil = valueNil();
@@ -416,8 +396,8 @@ test('record admission charges both storage blocks together and frees unissued a
 });
 
 test('a live tag at the end of a partial array band breaks the half-full tie', () => {
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)), tables = cpu.gc.tables;
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables;
 	for (const extra of [false, true]) {
 		const table = cpu.createTable(16383, 0);
 		for (let key = 1; key <= 4097; ++key) tables.setInteger(table, key, valueInteger(0));

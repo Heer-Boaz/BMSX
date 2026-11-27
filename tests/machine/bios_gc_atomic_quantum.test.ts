@@ -14,10 +14,10 @@ import {
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/gc_step', entrySource = 'return 11, 17, 23';
 const modules = [
@@ -41,7 +41,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(fn >= 0);
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET, pendingTop = management + HEAP_SERVICE_PENDING_TOP_OFFSET;
 	const roots = management + HEAP_SERVICE_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;

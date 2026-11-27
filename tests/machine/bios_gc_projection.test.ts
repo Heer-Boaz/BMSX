@@ -12,10 +12,10 @@ import {
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const path = 'test/gc_projection';
 const entrySource = `local projection<const> = require('${path}')\nhalt_until_irq`;
@@ -49,7 +49,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
 		return linked.image.functions[index].address;
 	});
-	const { cpu, memory } = createTestSystemCpu(linked);
+	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	runGuestToHalt(cpu, 10_000);
 	const management = cpu.heapAllocator.managementOffset();
 	return { cpu, memory, management, entries };

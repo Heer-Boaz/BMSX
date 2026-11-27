@@ -9,6 +9,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <chrono>
 #include <iostream>
@@ -51,7 +52,7 @@ struct Machine {
 		memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 		memory.writeBytes(rootPc, rom.bytes.data() + rom.textAddress, MAPPED_PAGE_BYTE_SIZE);
 	}
@@ -195,7 +196,7 @@ void cartridgeReturnSelectsLiveBank() {
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
 		DeviceScheduler scheduler(cpu); DmaController dma(memory, cpu, irq, scheduler);
 		memory.cartridgeController().connect(memory, irq, dma);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		test::seedTestRomClosure(cpu, system.functionAddresses[1]);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 		cpu.runUntilDepth(0, 3);
@@ -298,9 +299,10 @@ void observationAndLifecycle(int action) {
 		require(machine.cpu.getFrameDepth() == 1, "image replacement and frame rebinding retain return semantics");
 	} else {
 		machine.cpu.reset();
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		require(!machine.cpu.rootThread()->firstFrame->nativeContinuationCells[0], "reset retires all native continuation bindings");
-		machine.cpu.runUntilDepth(0, 100);
+		require(machine.cpu.rootThread()->address == CPU_RESET_BANK_ADDRESS && machine.cpu.getFrameDepth() == 1
+			&& machine.cpu.readFramePc(0) == machine.rom.textAddress
+			&& !machine.cpu.rootThread()->firstFrame->nativeContinuationCells[0],
+			"reset retires the old native continuation before publishing its fresh fixed-bank frame");
 	}
 }
 

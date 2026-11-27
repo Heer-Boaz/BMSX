@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import { closureRecordBytes } from '../../../machine/ts/machine/cpu/closure';
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
+import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
 import { hashBytes } from '../../../machine/ts/common/hash';
@@ -19,7 +20,7 @@ import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheck
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { COP0_EXEC, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
 import {
 	HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
@@ -36,10 +37,10 @@ import {
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkRawTestSystemBlua32, linkTestBlua32Pair, linkTestSystemBlua32 } from '../../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestBlua32Pair } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const biosSource = `
@@ -51,7 +52,6 @@ local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[i
 local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
 local end_address<const> = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
 if end_address == 0 then
-	cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
 	mem[${IO_SYS_CONTROL}] = 8
 	while true do halt_until_irq end
 end
@@ -88,7 +88,8 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, scheduler, memory } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, scheduler, memory, executionAddressSpace } = runtime.machine, arena = cpu.heapAllocator;
+	admitTestHeapServiceCpu(cpu, executionAddressSpace);
 	const minimum = closureRecordBytes(0, false);
 	for (let bytes = arena.unoccupiedBytes(); bytes >= minimum; bytes >>>= 1) {
 		while (arena.allocate(bytes, true) !== 0) { /* Reserved backing, not reclaimable objects. */ }
@@ -130,25 +131,34 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 
 // Observe a real reset request with no firmware service active between the
 // aperture register write and the ordinary control instruction that releases it.
-function verifyMaskedReset(native: string, directory: string, optLevel: 0 | 3) {
-	const end = DYNAMIC_RAM_BASE + 0x8000;
-	const source = `
-bss report: u32
-cop0.status = cop0.status | ${CPU_STATUS_INHIBIT_RESET}
-cop0.ram_end = ${end}
-*report = 7
-cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
-*report = 13
-halt_until_irq
-`;
-	const system = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
+function verifyMaskedReset(native: string, directory: string) {
+	const report = DYNAMIC_RAM_BASE;
+	const end = report + 0x8000;
+	const text = new Uint8Array(14 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.MFC0, 0, COP0_STATUS, 0);
+	writeInstruction(text, 1, OpCode.LOADK, 1, 0, 0);
+	writeInstruction(text, 2, OpCode.BOR, 0, 0, 1);
+	writeInstruction(text, 3, OpCode.MTC0, 0, COP0_STATUS, 0);
+	writeInstruction(text, 4, OpCode.LOADK, 2, 0, 1);
+	writeInstruction(text, 5, OpCode.MTC0, 2, COP0_RAM_END, 0);
+	writeInstruction(text, 6, OpCode.LOADK, 2, 0, 2);
+	writeInstruction(text, 7, OpCode.KSMI, 3, 0, 7);
+	writeInstruction(text, 8, OpCode.STORE_MEM_D, 3, 2, MemoryAccessKind.U32LE);
+	writeInstruction(text, 9, OpCode.BNOT, 1, 1, 0);
+	writeInstruction(text, 10, OpCode.BAND, 0, 0, 1);
+	writeInstruction(text, 11, OpCode.MTC0, 0, COP0_STATUS, 0);
+	writeInstruction(text, 12, OpCode.KSMI, 3, 0, 13);
+	writeInstruction(text, 13, OpCode.STORE_MEM_D, 3, 2, MemoryAccessKind.U32LE);
+	const system = linkRawTestSystemBlua32({
+		text, constants: [integerConstant(CPU_STATUS_INHIBIT_RESET), integerConstant(end), integerConstant(report)],
+		functions: [{ firstWord: 0, wordCount: 14, maxStack: 4 }],
+	});
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
 	const { cpu, scheduler, memory, systemController } = runtime.machine;
 	const commands: string[] = [], expected: string[] = [];
-	const report = system.image.header.bssAddress, ordinaryEnd = memory.ramBusEnd();
 	for (let i = 0; i < 4096 && memory.ramBusEnd() !== end; ++i) {
 		const run = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		commands.push('E 1');
@@ -177,15 +187,15 @@ halt_until_irq
 	assert.equal(proceededWithResetPending, true, 'guest execution proceeds while the request remains latched');
 	assert.equal(systemController.hasResetRequest(), false);
 	assert.equal(cpu.systemResetInhibited(), false);
-	assert.equal(memory.ramBusEnd(), ordinaryEnd, 'native System RESET reinitializes its independent aperture');
+	assert.equal(memory.ramBusEnd(), end, 'the hardware reset does not infer a new aperture from the program image');
 	const depth = cpu.getFrameDepth();
 	commands.push('P');
 	expected.push(`${depth} ${cpu.readFramePc(depth - 1)}`);
-	const trace = join(directory, `masked-reset-O${optLevel}.trace`), rom = join(directory, `masked-reset-O${optLevel}.rom`);
+	const trace = join(directory, 'masked-reset.trace'), rom = join(directory, 'masked-reset.rom');
 	writeFileSync(trace, commands.join('\n'));
 	writeFileSync(rom, system.romBytes);
 	assert.deepEqual(execFileSync(native, [rom, trace, trace], { encoding: 'utf8' }).trimEnd().split('\n'), expected);
-	console.log(`BIOS-EXEC-RESET-INTERLOCK:PASS O${optLevel} (masked pending request, accepted before successor)`);
+	console.log('BIOS-EXEC-RESET-INTERLOCK:PASS (raw ROM, masked pending request, accepted before successor)');
 }
 
 mkdirSync('tmp', { recursive: true });
@@ -193,8 +203,8 @@ const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-exec-heap-floor-'
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	verifyFullArenaTransfer(native, directory);
+	verifyMaskedReset(native, directory);
 	for (const optLevel of [0, 3] as const) {
-		verifyMaskedReset(native, directory, optLevel);
 		const bios = compileHeapServiceSystem(biosSource, optLevel);
 		const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel });
 		const pair = linkTestBlua32Pair(bios, cart);
@@ -214,7 +224,8 @@ try {
 				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 			});
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator } = cpu;
+			const { cpu, memory, scheduler, executionAddressSpace } = runtime.machine, { gc, heapAllocator } = cpu;
+			admitTestHeapServiceCpu(cpu, executionAddressSpace);
 			memory.writeMappedWord(IO_CART_SELECT, 1);
 			const management = heapAllocator.managementOffset(), oldFloor = memory.ramBusEnd();
 			const allocatorState = heapAllocator.allocatorStateOffset(), arena = memory.bindDlmalloc(allocatorState);
@@ -340,16 +351,18 @@ try {
 					assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
 				} else {
 					assert.equal(memory.ramBusEnd(), oldFloor, 'ordinary CALL does not change the machine aperture');
-					assert.equal(cpu.systemResetInhibited(), true, 'Status still inhibits RESET after the resident CALL has retired');
-					for (let i = 0; i < 8192; ++i) {
-						const instruction = decodeBlua32InstructionAtPc(pair.systemImage.textBytes, pair.systemImage.header.textAddress,
-							cpu.readFramePc(cpu.getFrameDepth() - 1));
-						if (instruction.op === OpCode.MTC0 && instruction.b === COP0_EXEC) break;
-						assert.equal(step(1), RunResult.Yielded);
+					let atExec = false;
+					for (let i = 0; i < 32768 && !atExec; ++i) {
+						if (!cpu.heapServiceActive()) {
+							const instruction = decodeBlua32InstructionAtPc(pair.systemImage.textBytes, pair.systemImage.header.textAddress,
+								cpu.readFramePc(cpu.getFrameDepth() - 1));
+							atExec = instruction.op === OpCode.MTC0 && instruction.b === COP0_EXEC;
+						}
+						if (!atExec) assert.equal(step(1), RunResult.Yielded);
 					}
+					assert.ok(atExec, 'the authenticated launcher finished binding operands before issuing EXEC');
 					assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
 					assert.equal(memory.ramBusEnd(), floor, 'the preceding explicit CP0 RAM_END publishes the aperture');
-					assert.equal(cpu.systemResetInhibited(), false, 'firmware releases RESET before the independent EXEC');
 					assert.equal(arena.floor(), floor - RAM_BASE);
 					assert.equal(step(1), RunResult.Yielded);
 					assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MTC0]);

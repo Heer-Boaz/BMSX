@@ -7,6 +7,7 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
+#include "support/managed_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
 #include "support/value_bank.h"
@@ -36,7 +37,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
@@ -341,11 +342,21 @@ void hotConstantTrap() {
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 1, 1, 0);
 	writeInstruction(image.text, 2, static_cast<u8>(OpCode::LOADKR), 0, 1, 0);
 	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 514}}; image.constants = {11};
+	// The reset bank is not a 514-slot language activation. Enter the
+	// original WIDE subject only from the separately seeded managed Thread.
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 1, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 514}, {.firstWord = 4, .wordCount = 1}};
+	image.startupFunctionIndex = 1;
+	image.constants = {11};
 	for (const Value bad : {valueInteger(8), valueInteger(-1), valueNil(), valueFloatBits(0xff800000), valueFloatBits(0x7fa12345)}) {
 		CpuMachine native(image), scalar(image, true);
 		for (auto* m : {&native, &scalar}) {
-			auto& frame = *m->cpu.activeThread()->frameAtDepth(0); frame.registers.set(513, valueInteger(0));
+			require(m->cpu.runUntilDepth(0, BASE_CYCLES[static_cast<u8>(OpCode::RET)]) == RunResult::Halted
+				&& m->cpu.getFrameDepth() == 0, "retire the minimal managed fixture entry");
+			m->cpu.beginCompletionCall(test::seedTestRomClosure(m->cpu, m->rom.functionAddresses[0]));
+			auto& frame = *m->cpu.activeThread()->frameAtDepth(0);
+			require(frame.registers.size() == 514, "the managed WIDE subject owns the original full window");
+			frame.registers.set(513, valueInteger(0));
 			m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 300);
 			frame.registers.set(513, bad); frame.registers.set(256, valueInteger(73)); frame.writeControl(bmsx::FrameField::Top, 0);
 		}

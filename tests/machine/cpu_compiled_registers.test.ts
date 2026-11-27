@@ -10,7 +10,8 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { observeRegisterStores } from '../helpers/cpu_execution';
 
 test('both open and closed upvalue paths define output-only region bindings', () => {
@@ -21,7 +22,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	writeInstruction(text, 3, OpCode.MOV, 21, 20, 0);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] });
-	const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const bound = frame.closure;
 	const cells = new Uint32Array(1);
@@ -67,7 +68,7 @@ test('output locals become observable only after their definition, including hel
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 22 }] }, 4);
 	const address = image.image.header.bssAddress;
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
 	frame.registers.setInteger(1, address);
 	cpu.runUntilDepth(0, 1024);

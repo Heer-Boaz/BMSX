@@ -1,3 +1,5 @@
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_FRAME_OFFSET, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_OFFSET } from './memory_map';
+
 // System BLua32 image extension. The descriptor lives in immutable RODATA
 // and is not part of the cartridge-callable BIOS slot list.
 export const HEAP_SERVICE_IMAGE_FLAG = 1 << 1;
@@ -25,10 +27,10 @@ export const HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
 // Cart lane (socket + 1) is the presence word. The vector word itself can
 // fault and is not a sentinel.
 export const enum HeapServiceIrqForwardField { CartLane = 0, Vector = 4 }
-export const HEAP_SERVICE_FRAME_OFFSET = 0x880;
-export const HEAP_SERVICE_VALUE_OFFSET = 0x1000;
-export const HEAP_SERVICE_FRAME_COUNT = 20;
-export const HEAP_SERVICE_VALUE_COUNT = 384;
+export const HEAP_SERVICE_FRAME_OFFSET = CPU_FIXED_FRAME_OFFSET;
+export const HEAP_SERVICE_VALUE_OFFSET = CPU_FIXED_VALUE_OFFSET;
+export const HEAP_SERVICE_FRAME_COUNT = CPU_FIXED_FRAME_COUNT;
+export const HEAP_SERVICE_VALUE_COUNT = CPU_FIXED_VALUE_COUNT;
 
 
 // Pinned CLOSURE return frontier. The marked destination is the presence

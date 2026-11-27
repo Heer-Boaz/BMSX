@@ -397,7 +397,8 @@ the current instruction and before starting another. There is no fixed
 request-to-reset time.
 
 Servicing the request clears the I/O and bus-fault state, resets the CPU and
-devices, and restarts System ROM. It does not clear all RAM or every device
-buffer.
+devices, and starts System ROM in the fixed reset bank. It does not clear
+all RAM, change the current `RAM_END`, or clear every device buffer. See
+[[CPU reset](cpu.md#sec-cpu-cpu-reset-and-program-replacement)]{.content-visible when-format="html"}[Book II, CPU control reference]{.content-visible when-format="pdf"}.
 
 At SYSTEM reset, CONTROL, STATUS and all six fault words are zero; no supervisor transition, exit request or resumable context remains. These are the reset values of this unit, not a substitute for the reset and acknowledgement rules of other devices. Automatic zero readback after a CONTROL write is command-port behavior, not an acknowledgement of a bus fault or completion of a machine reboot.

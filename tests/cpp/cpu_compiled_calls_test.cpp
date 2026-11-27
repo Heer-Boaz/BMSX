@@ -12,7 +12,10 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -34,7 +37,7 @@ struct CpuMachine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image, test::RAM_CODE_FIXTURE_BYTES))
 		, memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };
@@ -68,6 +71,7 @@ void ownedValueStack() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	test::seedManagedHeapFixture(cpu);
 	auto& thread = *cpu.rootThread();
 	require(thread.stackCapacity == 8, "a thread owns the initial eight Value slots");
 	for (size_t index = 0; index < thread.stackCapacity; ++index)
@@ -98,6 +102,7 @@ void reusableFrameChain() {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
+	test::seedManagedHeapFixture(cpu);
 	auto& thread = *cpu.rootThread();
 	auto* root = thread.acquireFrame();
 	require(thread.currentFrame == nullptr && thread.frameDepth() == 0, "preparing a node does not expose an active frame");
@@ -1355,13 +1360,18 @@ void failedCallAdmission() {
 		auto* thread = machine.cpu.activeThread();
 		auto* caller = thread->currentFrame;
 		if (completion) {
+			// Reset may have recycled a fixed-bank view for this reserved slot.
+			const auto* spare = caller->next;
+			const auto* record = machine.memory.ramData() + ThreadRecord::storageLayout(machine.memory, thread->address).frameAddress(1);
+			std::array<u8, FRAME_CONTROL_BYTES> reserved{};
+			std::copy_n(record, reserved.size(), reserved.begin());
 			bool rejected = false;
 			try { machine.cpu.beginCompletionCall(asClosure(caller->registers.get(0), machine.cpu.gcHeap())); }
 			catch (const LuaOutOfMemorySignal&) { rejected = true; }
 			require(rejected && thread->frameDepth() == 1 && thread->stackTop() == 8,
 				"failed completion admission never publishes an unallocated stack extent");
-			require(caller->next == nullptr,
-				"rejecting the frame extent does not construct or bind a callee node");
+			require(caller->next == spare && std::equal(reserved.begin(), reserved.end(), record),
+				"rejecting the frame extent leaves the reserved callee slot and its view untouched");
 		} else {
 			machine.cpu.runUntilDepth(0, 2);
 			require(machine.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY

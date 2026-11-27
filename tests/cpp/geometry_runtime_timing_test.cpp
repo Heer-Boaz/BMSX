@@ -63,11 +63,13 @@ void testOverrun(bool scalar, bool restore) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 0, 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions.push_back({.firstWord = 0, .wordCount = 2});
-	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image,
-		summary + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
+	const u32 publicEnd = (summary + GEO_OVERLAP2D_SUMMARY_BYTES + HEAP_PAGE_SIZE - 1u) & ~(HEAP_PAGE_SIZE - 1u);
+	const auto system = test::encodeBlua32TestRom(RomImageDomain::System, image, publicEnd - DYNAMIC_RAM_BASE);
 	IdleInput input;
 	Runtime runtime({system.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	// Begin the timing probe with its mapped data region already programmed.
+	runtime.machine.memory.setRamBusEnd(publicEnd);
 	if (scalar) runtime.machine.cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, SYSTEM_EXECUTION_DOMAIN_MASK, 0u});
 	runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 512);
 	auto& frame = *runtime.machine.cpu.activeThread()->frameAtDepth(0);

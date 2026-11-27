@@ -1210,6 +1210,9 @@ template<class Writer> void writeCpuRuntimeState(Writer& writer, const CpuRuntim
 		writer.u8(pending.extraHashSlots);
 	}
 	writer.u32(state.statusWord);
+	writer.u32(state.systemVectorWord);
+	writer.u32(state.previousRootContextWord);
+	writer.u32(state.previousActiveContextWord);
 	writer.u32(state.causeWord);
 	writer.u32(state.epcWord);
 	writer.u32(state.badAddressWord);
@@ -1284,6 +1287,9 @@ CpuRuntimeState readCpuRuntimeState(BinaryReader& reader) {
 		pending.extraHashSlots = reader.u8();
 	}
 	state.statusWord = reader.u32();
+	state.systemVectorWord = reader.u32();
+	state.previousRootContextWord = reader.u32();
+	state.previousActiveContextWord = reader.u32();
 	state.causeWord = reader.u32();
 	state.epcWord = reader.u32();
 	state.badAddressWord = reader.u32();

@@ -10,10 +10,10 @@ import {
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const MODULE = 'kernel/table_grow', entrySource = 'halt_until_irq';
 const ADAPTER = 'table_grow_result';
@@ -45,14 +45,14 @@ function fixture(optLevel: 0 | 3) {
 	const root = exportIndex(ADAPTER, 'invoke'), actual = exportIndex(MODULE, 'grow_table');
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [actual]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned growth stack: ${frames} frames, ${valueSlots} values`);
-	const { cpu, memory } = createTestSystemCpu(linked);
+	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	runGuestToHalt(cpu, 10_000);
 	const heap = cpu.luaHeap, arena = cpu.heapAllocator, { gc } = cpu, { tables } = gc;
 	const management = arena.managementOffset(), head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 	const parked = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment);
 	let scoped = false;
 	function cloneNativeReference() {
-		const reference = createTestSystemCpu(linked).cpu;
+		const reference = createTestHeapServiceCpu(linked).cpu;
 		restoreCpuCheckpoint(reference, captureCpuCheckpoint(cpu));
 		return reference;
 	}

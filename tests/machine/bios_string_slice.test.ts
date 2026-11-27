@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { hashText } from '../../machine/ts/common/hash';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -8,12 +7,9 @@ import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../..
 import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 
 const SLICE = 'kernel/string_slice', PROBE = 'test/slice_publication';
 const entrySource = 'halt_until_irq';
@@ -44,30 +40,21 @@ local retain<const> = function(metadata, source, first, length, hash)
 end
 return { publish = publish, retain = retain, hash_slice = hash_slice, lookup_ram_slice = lookup_ram_slice }
 `;
-const modules = [
-	{ path: SLICE, source: readFileSync(`machine/bios/${SLICE}.lua`, 'utf8') },
-	{ path: PROBE, source: probeSource },
-].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 const buckets = 0, capacity = 4, used = 8, rehashBase = 56, rehashReady = 60;
 const growFlag = 0x80000000, shrinkFlag = 0x40000000;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, {
-		entrySource, optLevel, programDomain: 'system', preloadModules: [PROBE],
-	});
-	const object = encodeCompiledProgramObject(compiled);
-	const linked = linkTestSystemBlua32(compiled);
-	const entries = new Map<string, number>();
-	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
-		if (path !== PROBE && (path !== SLICE || exportPathKey !== 'prepare_existing_directory')) continue;
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-		assert.ok(index >= 0, exportPathKey);
-		entries.set(exportPathKey, index);
-	}
-	const fixed = deriveBlua32FixedStack(linked.image, [...entries.values()]);
-	assert.ok(fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT && fixed.frames <= HEAP_SERVICE_FRAME_COUNT);
-	const { cpu, memory } = createTestSystemCpu(linked);
-	const oracle = createTestSystemCpu(linked).cpu;
+	const linked = linkManagedTestSystem(entrySource, optLevel, [{ path: PROBE, source: probeSource }], [
+		...['publish', 'retain', 'hash_slice', 'lookup_ram_slice'].map(exportPathKey =>
+			({ path: PROBE, exportPathKey })),
+		{ path: SLICE, exportPathKey: 'prepare_existing_directory' },
+	]);
+	const rootsToCheck = linked.biosImports.functions.map(entry => linked.symbols.functionAddresses.indexOf(entry.functionAddress));
+	const fixed = deriveBlua32FixedStack(linked.layout, rootsToCheck);
+	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	const entries = new Map(linked.biosImports.functions.map(entry => [entry.exportPathKey, entry.functionAddress]));
+	const { cpu, memory } = bootManagedTestSystem(linked);
+	const oracle = bootManagedTestSystem(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = management + 0x400, floor = memory.ramBusEnd() - RAM_BASE;
@@ -82,7 +69,7 @@ function fixture(optLevel: 0 | 3) {
 		for (const target of [memory, oracle.memory]) target.writeRamRecordWord(metadata + field, value);
 	}
 	function begin(name: string, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entries.get(name)!].address, args));
+		assert.ok(cpu.beginHeapService(entries.get(name)!, args));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);

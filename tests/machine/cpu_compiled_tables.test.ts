@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../machine/ts/spec/bmsx/bios';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
-import { compileHeapServiceSystem, linkHeapServiceEntry } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu, compileHeapServiceSystem, linkHeapServiceEntry } from '../helpers/heap_service_system';
 import { GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { runCpuParity } from '../helpers/cpu_execution';
@@ -20,7 +20,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 test('compiled generic-for preserves next deletion, captured loop locals and ordinary iterator fallback', () => {
@@ -55,7 +55,7 @@ end
 		assert.ok(iterations > 0, 'the compiler emits the guarded native iterator for ordinary next');
 		const image = linkTestSystemBlua32(compiled);
 		for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-			const { cpu } = createTestSystemCpu(image, backend);
+			const { cpu } = createTestHeapServiceCpu(image, backend);
 			runGuestToHalt(cpu, 100_000);
 			const [closure] = materializeCpuCompletionValues(cpu);
 			cpu.beginCompletionCall(asClosure(closure, cpu.gc), [valueBuiltinFunction(BuiltinFunctionId.Next)]);
@@ -74,7 +74,7 @@ test('compiled ITERN resumes its physical table cursor and preserves its scalar 
 	const image = linkRawTestSystemBlua32({ text, verifiedControlFlow: true,
 		functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), registers = frame.registers;
 		const pc = frame.pc;
 		const table = cpu.createTable(3, 2);
@@ -124,8 +124,8 @@ test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', (
 	] as const) {
 		const image = linkRawTestSystemBlua32({ text, constants: [literal], functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
 		const pc = image.image.functions[0].codeAddress;
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
 		const tables = [js, scalar].map((cpu, i) => {
 			const table = cpu.createTable(1);
@@ -156,7 +156,7 @@ test('negative integer keys use hash storage without disturbing the array', () =
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
 	const pc = image.image.functions[0].codeAddress, key = -0x7ffffffe;
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-		const { cpu } = createTestSystemCpu(image, backend);
+		const { cpu } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const table = cpu.createTable(1, 1), child = cpu.createTable(), meta = cpu.createTable(0, 1);
 		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
@@ -190,7 +190,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	writeInstruction(text, 5, OpCode.MOV, 5, 9, 0);
 	writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: 12 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(4, 1)); r.setInteger(1, 1); r.setInteger(2, 3); cpu.runUntilDepth(0, 896);
@@ -237,7 +237,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	writeInstruction(text, 1, OpCode.MOV, 4, 3, 0);
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 5 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
 		cpu.gc.tables.setInteger(parent, 1, valueInteger(73)); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent)); cpu.gc.tables.setMetatableAddress(own, meta);
@@ -264,7 +264,7 @@ test('compiled array stores retain hints and length searches preserve live regis
 	writeInstruction(text, 3, OpCode.ADD, 4, 8, 3);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 9 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(2, 4);
 		for (let i = 1; i <= 5; ++i) cpu.gc.tables.setInteger(table, i, valueInteger(i));
@@ -291,7 +291,7 @@ test('compiled byte length retains live definitions and destination/source alias
 	writeInstruction(text, 3, OpCode.ADD, 3, 2, 4);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		cpu.rootThread.frameAtDepth(0).registers.setString(1, cpu.stringPool.intern(textToByteString('Aé雪\0😀'))); cpu.runUntilDepth(0, 500);
 	}
@@ -309,7 +309,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 10 },
 		{ firstWord: 32, wordCount: 1 }], constants: ['method'], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueInteger(73));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
@@ -343,7 +343,7 @@ for (const [op, key] of [
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 10 },
 		{ firstWord: 32, wordCount: 1 }], constants: ['field'], exceptionFunctionIndex: 1 });
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const cpu = createTestSystemCpu(image, backend).cpu;
+		const cpu = createTestHeapServiceCpu(image, backend).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const table = cpu.createTable(2, 1);
 		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
@@ -377,7 +377,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 },
 		{ firstWord: 32, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		r.setTable(0, cpu.createTable(2)); r.setInteger(1, 1); r.setInteger(2, 73); cpu.runUntilDepth(0, 504);
@@ -402,7 +402,7 @@ test('compiled WIDE CALL preserves its callee and original instruction when the 
 	const { staticFunctionIdBySlot, functionIds } = image.symbols.metadata;
 	const index = functionIds.indexOf(staticFunctionIdBySlot[buildModuleExportSlotName(path, [exportPathKey])]);
 	const constructor = valueResidentFunction(image.symbols.functionAddresses[index]);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const functionAddress = image.vectors.entryFunctionAddress;
 	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
 	const start = (cpu: typeof js, hint: number) => {

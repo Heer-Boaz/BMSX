@@ -9,10 +9,10 @@ import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_alloca
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const CONTROL = 0x60004; // Native control offset is four bytes off the pair boundary.
 const MAILBOX = RAM_BASE + 0x61000;
@@ -40,8 +40,8 @@ const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(entry
 	[{ path, source, chunk: parseLuaChunk(source, path) }], { entrySource, optLevel: 3, programDomain: 'system' }));
 
 function fixture(backend: CpuExecutionBackend) {
-	const { cpu, memory } = createTestSystemCpu(image, backend);
-	const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(image, backend);
+	const reference = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	const ref = reference.memory, gc = reference.gc;
 	const referenceControl = reference.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	// Finish startup and admit the mailbox's frame before narrowing the bus

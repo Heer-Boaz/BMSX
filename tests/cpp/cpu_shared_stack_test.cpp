@@ -8,6 +8,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <iostream>
@@ -39,7 +40,7 @@ void slidingFixedCall(bool interpreted) {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	cpu.reset();
+	test::seedManagedFixture(cpu, addresses);
 	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
@@ -95,7 +96,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
 	CPU cpu(memory, irq, addresses);
-	cpu.reset();
+	test::seedManagedFixture(cpu, addresses);
 	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	cpu.runUntilDepth(0, 20000);
@@ -131,7 +132,7 @@ void formalReservationRoots(bool interpreted) {
 	image.closureRelocations = {{1, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); test::seedManagedFixture(cpu, addresses);
 	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	if (interpreted) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	auto* parent = cpu.activeThread()->currentFrame;
@@ -168,7 +169,7 @@ void capturedSlotSurvivesOpenTop(int top) {
 	image.globalNames = {"read"};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); test::seedManagedFixture(cpu, addresses);
 	auto& frame = *cpu.activeThread()->currentFrame;
 	frame.registers.set(2, valueTable(cpu.createTable().address()));
 	std::array<u32, 1> cells{};
@@ -197,7 +198,7 @@ void privatePhysicalStack() {
 	image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 8}};
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	Memory memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
-	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); cpu.reset();
+	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses); test::seedManagedFixture(cpu, addresses);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	cpu.setNativeCompilationProfiling(true); cpu.prepareSystemNativeCode();
 #endif

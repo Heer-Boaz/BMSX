@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
 		auto& memory = runtime.machine.memory;
 		auto& scheduler = runtime.machine.scheduler;
 		const auto occupied = cpu.heapAllocator().occupiedBytes();
+		std::vector<u8> replacementSystemRom;
 		RuntimeSaveState saved;
 		RuntimeCheckpointState historyCheckpoint;
 		RamHistory ramHistory;
@@ -86,13 +87,11 @@ int main(int argc, char** argv) {
 						for (const u32 bankAddress : {address, globals})
 							GlobalBank(memory, cpu.gcHeap(), bankAddress).clear();
 					} else if (operation == 'i') {
-						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += EXECUTION_IMAGE_BINDING_SIZE) {
+						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
 							const u32 base = memory.readRamRecordWord(address);
 							if (base == 0) continue;
-							memory.writeRamRecordWord(address, 0); // The installed record detaches before free.
-							memory.writeRamRecordWord(address + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, 0);
-							memory.writeRamRecordWord(address + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, 0);
-							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + EXECUTION_IMAGE_BINDING_SPAN_OFFSET));
+							memory.writeRamRecordWord(address, 0); // Native releaseImageData exchanges this before the free.
+							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + 4));
 						}
 						cpu.stringPool().clearRomTables();
 					} else throw std::runtime_error("Expected native namespace or image retirement");
@@ -650,7 +649,6 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'I': std::cout << cpu.enterPendingInterrupt() << '\n'; break;
-				case 'e': cpu.clearExecutionEnvironment(); break; // Warm frame-retirement reference.
 				case 'R': {
 					const auto before = scheduler.nowCycles();
 					try {
@@ -676,6 +674,14 @@ int main(int argc, char** argv) {
 					ramHistory.restore(memory, historyEnd, historyPartial);
 					applyRuntimeCheckpointState(runtime, historyCheckpoint, RuntimeRestoreOrigin::HistorySeek);
 					break;
+				case '^': {
+					std::string path;
+					trace >> path;
+					replacementSystemRom = loadFile(path.c_str());
+					memory.installSystemRom(replacementSystemRom);
+					runtime.rebootSystem();
+					break;
+				}
 				case 'X': applyRuntimeSaveState(runtime, decodeRuntimeSaveState(loadFile(argv[3]), PSX_MACHINE_SPEC.ramBytes,
 					PSX_MACHINE_SPEC.gxGpuVramBytes)); break;
 				case 'x': {

@@ -6,6 +6,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/gate.h"
@@ -56,7 +57,7 @@ struct Machine {
 	int observedSuccessors = 0;
 	Machine(const test::Blua32TestRom& r, bool scalar, bool observeSuccessor = false) : rom(r), memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (observeSuccessor) {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(r.textAddress + 2 * INSTRUCTION_BYTES);
@@ -112,8 +113,12 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	// A real observed successor is not an internal native entry. This retains
 	// the shared materialized gate contract, independently of inline leaf calls.
 	Machine machine(rom, false, true); machine.seed(id, mode);
-	auto* frame = machine.cpu.rootThread()->currentFrame;
-	require(frame->next == nullptr, "the first builtin has no spare activation node");
+	const auto* thread = machine.cpu.rootThread();
+	auto* frame = thread->currentFrame;
+	const auto* spare = frame->next;
+	const auto* record = machine.memory.ramData() + ThreadRecord::storageLayout(machine.memory, thread->address).frameAddress(1);
+	std::array<u8, FRAME_CONTROL_BYTES> reserved{};
+	std::copy_n(record, reserved.size(), reserved.begin());
 	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->readControl(bmsx::FrameField::Pc), 0);
 	require(page && page->nativeBlocks, "preparation publishes the real caller");
 	const u32 word = (frame->readControl(bmsx::FrameField::Pc) & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
@@ -155,7 +160,10 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 			&& machine.observedSuccessors == 1, "resuming the ordinary successor observes it once and never replays the already committed CALL");
 	}
 	require(frame->registers.get(7) == valueFloat(99.75f), "the cached numeric prefix survives the returning helper ABI");
-	require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving && machine.cpu.getFrameDepth() == 1 && frame->next == nullptr, "builtin completion owns exact top without a child frame");
+	require(static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top)) == receiving && machine.cpu.getFrameDepth() == 1,
+		"builtin completion owns exact top without a child frame");
+	require(frame->next == spare && std::equal(reserved.begin(), reserved.end(), record),
+		"builtin completion leaves the reserved callee slot and its view untouched");
 	if (receiving) require(frame->registers.get(0) == machine.expected, "the raw native result equals the primitive contract");
 }
 #endif

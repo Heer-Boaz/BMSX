@@ -11,22 +11,18 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET } from '../../../machine/ts/spec/blua32/execution_domain';
 import { readNamespaceBank } from '../../helpers/cpu_execution';
-import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const path = 'kernel/global_bank';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const modules = [{ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }];
 const descriptorBytes = 12, backingBytes = 17;
 const allocatorStateBytes = 24 + 33 * 8 + 32 * 4 + 16; // shared dlmalloc controls and bins
 const candidates = Array.from({ length: 18 }, (_, index) => `namespace_${index}`);
@@ -36,21 +32,28 @@ const dir = mkdtempSync(join('tmp', 'authored-global-bank-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const compiled = compileHeapServiceSystem('halt_until_irq', opt, modules);
-		const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
+		const linked = linkManagedTestSystem('halt_until_irq', opt);
+		const bytes = writeTestBlua32Rom(linked);
 		function entry(key: string) {
-			const symbol = object.sections.rodata.moduleExports.find(record => record.path === path && record.exportPathKey === key)!;
-			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-			deriveBlua32FixedStack(linked.image, [index]);
-			return linked.image.functions[index].address;
+			const index = linked.symbols.metadata.functionIds.findIndex(id =>
+				id.startsWith(`module:${path}/`) && id.endsWith(`|constant|${key}`));
+			assert.ok(index >= 0, key);
+			deriveBlua32FixedStack(linked.layout, [index]);
+			return linked.layout.functions[index].address;
 		}
 		const commit = entry('commit_name'), find = entry('find_name'), growth = entry('growth_capacity');
 		const rom = join(dir, `O${opt}.rom`), script = join(dir, 'trace'), initial = join(dir, 'initial'), portable = join(dir, 'partial');
-		writeFileSync(rom, linked.romBytes);
+		writeFileSync(rom, bytes);
 
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-		const oracle = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-		for (const subject of [runtime, oracle]) subject.boot();
+		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		const oracle = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		for (const subject of [runtime, oracle]) {
+			subject.boot();
+			const { cpu, scheduler } = subject.machine;
+			for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i)
+				scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
+			assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+		}
 		const { cpu, memory, scheduler } = runtime.machine, ram = memory.ramData(), arena = cpu.heapAllocator, management = arena.managementOffset();
 		const old = oracle.machine.cpu, oldArena = old.heapAllocator, oldMem = oracle.machine.memory, oldRam = oldMem.ramData();
 		const keys = candidates.map(name => {
@@ -211,29 +214,32 @@ try {
 	// relocation. Neither cross-core restore can consult a host copy of the
 	// former base or use a view from the other history branch.
 	{
-		const ops = [
-			[OpCode.KSMI, 2, 0, 1], [OpCode.GETGL, 0, 0, 0], [OpCode.ADD, 0, 0, 2],
-			[OpCode.SETGL, 0, 0, 0], [OpCode.GETSYS, 1, 0, 0], [OpCode.ADD, 1, 1, 2],
-			[OpCode.SETSYS, 1, 0, 0], [OpCode.JMP, 0, 63, 57, 255],
-		];
-		const text = new Uint8Array(4 * ops.length);
-		for (const [lane, [op, a, b, c, extension]] of ops.entries()) writeInstruction(text, lane, op, a, b, c, extension);
-		const image = linkRawTestSystemBlua32({
-			text, functions: [{ firstWord: 0, wordCount: ops.length, maxStack: 3 }],
-			systemGlobalNames: ['__index'], globalNames: ['__index'],
-		});
-		const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		const linked = linkManagedTestSystem(`
+ordinary_counter = 10
+function irq() end
+irq = 100
+while true do
+	ordinary_counter = ordinary_counter + 1
+	irq = irq + 1
+end`, 0);
+		const code = writeTestBlua32Rom(linked);
+		const runtime = new Runtime({ systemRomBytes: code, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator, management = arena.managementOffset();
-		const key = cpu.stringPool.intern('__index');
-		cpu.setGlobalByKey(key, valueInteger(10));
-		cpu.setSystemGlobalByKey(key, valueInteger(100));
+		for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i)
+			scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
+		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
+		const key = cpu.stringPool.find('ordinary_counter')!, systemKey = cpu.stringPool.find('irq')!;
+		for (let i = 0; i < 256 * 1024 && cpu.getSystemGlobalByKey(systemKey) !== valueInteger(100); ++i)
+			scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
+		assert.equal(cpu.getGlobalByKey(key), valueInteger(10));
+		assert.equal(cpu.getSystemGlobalByKey(systemKey), valueInteger(100));
 		const execution = management + GLOBAL_BANK_OFFSET, system = management + SYSTEM_GLOBAL_BANK_OFFSET;
 		const first = readNamespaceBank(memory, execution), stableSystem = readNamespaceBank(memory, system);
 		assert.notEqual(first.base, stableSystem.base);
 		const rom = join(dir, 'ordinary.rom'), script = join(dir, 'ordinary-trace');
 		const before = join(dir, 'ordinary-before'), cppAfter = join(dir, 'ordinary-native-grown'), tsAfter = join(dir, 'ordinary-ts-grown');
-		writeFileSync(rom, image.romBytes);
+		writeFileSync(rom, code);
 		writeFileSync(before, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 
 		const trace: string[] = [], observations: string[] = [];
@@ -280,7 +286,7 @@ try {
 		const nextTrace = trace.length, nextObservation = observations.length;
 		pulse();
 		assert.notEqual(cpu.getGlobalByKey(key), valueInteger(10), 'ordinary GET/SET ran through the relocated view');
-		assert.notEqual(cpu.getSystemGlobalByKey(key), valueInteger(100), 'System GET/SET ran through its own view');
+		assert.notEqual(cpu.getSystemGlobalByKey(systemKey), valueInteger(100), 'System GET/SET ran through its own view');
 		const grownTrace = trace.slice(nextTrace), grownResult = observations.slice(nextObservation);
 		const ramAfter = history.capture(memory, ramBefore);
 		history.restore(memory, ramAfter, ramBefore);
@@ -288,7 +294,7 @@ try {
 		note('u');
 		assert.deepEqual(readNamespaceBank(memory, execution), first);
 		assert.equal(cpu.getGlobalByKey(key), valueInteger(10));
-		assert.equal(cpu.getSystemGlobalByKey(key), valueInteger(100));
+		assert.equal(cpu.getSystemGlobalByKey(systemKey), valueInteger(100));
 		pulse();
 		assert.deepEqual(nativeTrace(trace, before), observations);
 		assert.deepEqual(nativeTrace(['X', ...grownTrace], tsAfter), grownResult);

@@ -25,7 +25,7 @@ import { linkTestBlua32Pair, linkTestSystemBlua32 } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { admitTestHeapServiceCpu, compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 const ROOTS = 'kernel/gc_root_banks', PORT = 'test/gc_root_port', entrySource = 'halt_until_irq';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', ROOTS].map(path => {
@@ -67,8 +67,10 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 
 	function makeCpu() {
 		const memory = new Memory({ systemRom: linked.romBytes, cartridgeSlots: cartridgeSlots(cart0, cart1) }, PSX_MACHINE_SPEC.ramBytes);
-		const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+		const addressSpace = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, new IrqController(memory), addressSpace);
 		cpu.reset();
+		admitTestHeapServiceCpu(cpu, addressSpace);
 		runGuestToHalt(cpu, 10_000);
 		return cpu;
 	}

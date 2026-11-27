@@ -5,6 +5,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <iostream>
@@ -51,7 +52,7 @@ struct Machine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, program.image)),
 		memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		else cpu.prepareSystemNativeCode();
@@ -181,9 +182,8 @@ void stringIndexUsesTheRestoredRamRoot() {
 		"the live RAM index is the sole root of the method Table");
 	const auto ram = memory.captureSaveState();
 	const auto control = cpu.captureRuntimeState();
-	cpu.reset();
-	require(memory.readRamRecordWord(tag) == 0u && memory.readRamRecordWord(word) == 0u,
-		"reset clears the actual String-index lanes");
+	memory.writeRamRecordWord(tag, 0u);
+	memory.writeRamRecordWord(word, 0u);
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(control);
 	cpu.runUntilDepth(0, 1);

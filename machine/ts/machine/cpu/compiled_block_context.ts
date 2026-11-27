@@ -24,7 +24,7 @@ export function emitContext(op: ContextOpCode, page: DecodedInstructionPage, wor
 			return b === 0 ? '' : `r.clear(${b},${a});${registers.reloadRange(a, a + b)}`;
 		case OpCode.LOADKR: {
 			const failure = registers.exit(exit);
-			return `{const i=${registers.tagOperand(b)}===${ValueTag.Integer}?${registers.wordOperand(b)}:(${registers.tagOperand(b)}===${ValueTag.Float}?fw(${registers.wordOperand(b)}):null);if(i===null||i>=kt.length) ${failure} ${registers.writeEncoded(a, 'kt[i]', 'k[i]')}}`;
+			return `{const i=${registers.tagOperand(b)}===${ValueTag.Integer}?${registers.wordOperand(b)}:(${registers.tagOperand(b)}===${ValueTag.Float}?fw(${registers.wordOperand(b)}):null);if(i===null||i>=kt.length||kt[i]===${ValueTag.UnboundStringLiteral}) ${failure} ${registers.writeEncoded(a, 'kt[i]', 'k[i]')}}`;
 		}
 		case OpCode.GETGL:
 		case OpCode.GETSYS:

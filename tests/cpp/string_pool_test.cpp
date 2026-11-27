@@ -13,6 +13,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -33,6 +34,7 @@ struct PoolMachine {
 	IrqController irq{memory};
 	ExecutionAddressSpace addresses{memory};
 	CPU cpu{memory, irq, addresses};
+	PoolMachine() { test::seedManagedHeapFixture(cpu); }
 };
 
 void indexBytesAcrossRestore() {
@@ -493,7 +495,7 @@ void activatedImageRetainsItsRamConstantAcrossRestore() {
 	IrqController irq(memory);
 	ExecutionAddressSpace space(memory);
 	CPU cpu(memory, irq, space);
-	cpu.reset();
+	test::seedManagedFixture(cpu, space);
 
 	auto& pool = cpu.stringPool();
 	const auto beforeCartCpu = cpu.captureRuntimeState();
@@ -546,7 +548,7 @@ void admitExternalArgumentsAcrossStackGrowth(bool finalPending) {
 		IrqController irq(memory);
 		ExecutionAddressSpace addresses(memory);
 		CPU cpu(memory, irq, addresses);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		memory.writeBytes(DYNAMIC_RAM_BASE, rom.bytes.data() + rom.functionAddresses[1] - SYSTEM_ROM_BASE, BLUA32_FUNCTION_RECORD_SIZE);
 		const auto binding = test::seedTestMappedClosure(cpu, DYNAMIC_RAM_BASE, false);
 		cpu.activeThread()->currentFrame->registers.set(0, valueClosure(binding));

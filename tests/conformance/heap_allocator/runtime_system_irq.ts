@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -11,8 +12,9 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
@@ -25,10 +27,13 @@ import { loadHeapServiceTestModules } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const irqPath = 'kernel/irq', eventsPath = 'kernel/interrupts', resetPath = 'fixture/reset';
+const exceptionPath = 'kernel/cold_exception';
 const authored = [
 	['main', 'module<entry>\nreturn -1'],
-	[resetPath, 'return 37'],
+	// This returns from the reset body, not through a managed module export.
+	[resetPath, 'do return 37 end'],
 	[irqPath, readFileSync('machine/bios/' + irqPath + '.lua', 'utf8')],
+	[exceptionPath, readFileSync('machine/bios/' + exceptionPath + '.lua', 'utf8')],
 	[eventsPath, readFileSync('machine/bios/' + eventsPath + '.lua', 'utf8')],
 ].map(([path, source]) => ({ path, source, displayPath: path + '.lua', chunk: parseLuaChunk(source, path) }));
 const library = loadHeapServiceTestModules().map(module => ({ ...module, displayPath: module.path + '.lua' }));
@@ -44,7 +49,7 @@ try {
 		const built = buildBlua32Image({
 			domain: 'system', luaModules: [...authored, ...library], generatedLuaModules: [], loadAddress: 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
-			resetModule: resetPath, irqModule: irqPath, preloadModules: HEAP_SERVICE_MODULES, biosExports: [],
+			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, preloadModules: HEAP_SERVICE_MODULES, biosExports: [],
 		});
 		const { layout, functionProtoIndices } = built.linked, { header } = layout;
 		const irq = layout.functions[functionProtoIndices.indexOf(built.object.vectors.irqProtoIndex)];
@@ -71,6 +76,10 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
 		const trace: string[] = [], expected: string[] = [];
+		const arena = cpu.heapAllocator, management = arena.managementOffset();
+		const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		const zeroHeap = new Uint8Array(heapEnd - heapFirst), heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
+		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		function observe(cmd: string, output?: string | number) {
 			trace.push(cmd);
 			if (output !== undefined) expected.push(String(output));
@@ -82,18 +91,24 @@ try {
 			}
 			const pending = memory.readIoU32(IO_IRQ_FLAGS);
 			observe(`M ${IO_IRQ_FLAGS}`, `${pending} 0`);
+			assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
+			observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const elapsed = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(cpu.heapServiceActive(), false);
-			assert.equal(cpu.luaHeap.usedBytes(), logical);
-			assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
-			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 ${physical} ${logical}`);
+			assert.equal(cpu.luaHeap.usedBytes(), 0);
+			assert.equal(arena.occupiedBytes(), 0);
+			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0 0`);
 			return result;
 		}
 		const resetPc = cpu.readFramePc(0);
 		assert.equal(scheduler.nowCycles, 0);
+		assert.equal(arena.occupiedBytes(), 0);
+		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
+		observe(`H ${heapFirst} ${heapEnd}`, heapHash);
 		memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 		irqController.raise(flags);
 		observe(`O ${IO_IRQ_MASK} ${IRQ_VBLANK}`);
@@ -103,14 +118,15 @@ try {
 		assert.equal(cpu.readFramePc(1), irq.codeAddress);
 		assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
 		observe('P', `2 ${irq.codeAddress}`);
-		// Measure the actual vector instructions, not the still-managed
-		// thread's existing capacity admission at exception entry.
-		const physical = cpu.heapAllocator.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
-		for (let step = 0; step < 64 && memory.readMappedWord(dma) === 0; ++step) {
+		assert.equal(arena.occupiedBytes(), 0, 'vector admission uses the fixed board bank');
+		assert.equal(cpu.luaHeap.usedBytes(), 0);
+		// Before RAM_END is published, these authored BSS words are visible
+		// to the board vector's CPU data path, not to the ordinary bus.
+		for (let step = 0; step < 64 && memory.readRamRecordWord(dma) === 0; ++step) {
 			assert.equal(grant(1), RunResult.Yielded);
 		}
-		assert.equal(memory.readMappedWord(dma), 1);
-		assert.equal(memory.readMappedWord(vblank), 0);
+		assert.equal(memory.readRamRecordWord(dma), 1);
+		assert.equal(memory.readRamRecordWord(vblank), 0);
 		assert.equal(memory.readIoU32(IO_IRQ_FLAGS), flags);
 		observeCounters();
 		const checkpoint = captureRuntimeSaveState(runtime);
@@ -127,8 +143,8 @@ try {
 			}
 			assert.equal(cpu.getFrameDepth(), 1);
 			assert.equal(cpu.readFramePc(0), resetPc, 'RFE resumes the never-executed first instruction');
-			assert.equal(memory.readMappedWord(dma), 1);
-			assert.equal(memory.readMappedWord(vblank), 1);
+			assert.equal(memory.readRamRecordWord(dma), 1);
+			assert.equal(memory.readRamRecordWord(vblank), 1);
 			assert.equal(memory.readIoU32(IO_IRQ_FLAGS), IRQ_DMA1_DONE, 'only handled bits are acknowledged');
 			observeCounters();
 			assert.equal(grant(64), RunResult.Halted);

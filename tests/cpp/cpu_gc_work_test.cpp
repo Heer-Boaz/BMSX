@@ -9,6 +9,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <iostream>
@@ -46,7 +47,7 @@ struct Machine {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, source)),
 		memory(MemoryInit{rom.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		else cpu.prepareSystemNativeCode();
@@ -356,7 +357,7 @@ void physicalReservationsPaySweepWork(GcPhase phase) {
 
 void canonicalPoolAndRootRanges() {
 	Machine machine(image()); auto& cpu = machine.cpu;
-	require(cpu.luaHeap().usedBytes() == bootBytes, "boot pool is the literal canonical allocation sum, not host object sizes");
+	require(cpu.luaHeap().usedBytes() == bootBytes, "the admitted pool is the literal canonical allocation sum, not host object sizes");
 	cpu.instructionBudgetRemaining = 7;
 	require(cpu.collectHeap() == bootCollectionWork && cpu.instructionBudgetRemaining == 7,
 		"physical collection counts object passes, three root passes and String work without a cycle debit");
@@ -384,9 +385,15 @@ void canonicalPoolAndRootRanges() {
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes + 82 + 22
 		&& machine.memory.readRamRecordWord(workAddress) == beforeReset,
 		"reset installs the vector without collecting the previous frame's objects");
+	// Re-enter the managed reference state explicitly; raw reset has no collector.
+	cpu.restoreRuntimeState(state);
+	auto& released = *cpu.rootThread()->currentFrame;
+	released.registers.set(0, valueNil());
+	released.registers.set(1, valueNil());
+	released.setTop(0);
 	cpu.collectHeap();
 	require(cpu.instructionBudgetRemaining == 123 && cpu.luaHeap().usedBytes() == bootBytes,
-		"the oracle reclaims the objects after reset, when their roots are gone");
+		"the reference collector reclaims the objects after their roots are gone");
 }
 
 void collectorWorkIgnoresInactiveThreadFrames() {
@@ -590,7 +597,7 @@ void replacementRetiresInstalledBindingSpan() {
 	writeLE32(previousMedia.data() + test::BLUA32_TEST_IMAGE_OFFSET + BLUA32_IMAGE_CONSTANT_COUNT_OFFSET, 1u);
 	Memory memory(MemoryInit{previousMedia, {}}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
-	cpu.reset();
+	test::seedManagedFixture(cpu, addresses);
 	const u32 descriptor = executionImageBindingOffset(cpu.heapAllocator().managementOffset(), SYSTEM_EXECUTION_DOMAIN_ID);
 	const u32 before = memory.readRamRecordWord(descriptor);
 	require(before != 0u && memory.readRamRecordWord(descriptor + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) == 8u,
@@ -627,7 +634,7 @@ void allActivatedImagesAndUniqueGlobals() {
 	const auto card1 = test::encodeBlua32TestRom(RomImageDomain::Cartridge, cartSource);
 	Memory memory(MemoryInit{system.bytes, test::cartridgeSlots(card0.bytes, card1.bytes)}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
-	cpu.reset();
+	test::seedManagedFixture(cpu, addresses);
 	cpu.writeFrameExecution(0, 0, card0.functionAddresses[0], card0.textAddress);
 	cpu.writeFrameExecution(0, 1, card1.functionAddresses[0], card1.textAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, system.functionAddresses[0], system.textAddress);

@@ -407,7 +407,7 @@ export function linkTestSystemBlua32(
 }
 
 export function disassembleTestBlua32Functions(
-	image: TestBlua32Image,
+	image: Pick<TestBlua32Image, 'image' | 'symbols'>,
 	functionAddresses: ReadonlyArray<number>,
 ): string {
 	const layout = image.image;
@@ -442,6 +442,23 @@ export function disassembleTestBlua32Functions(
 	return lines.join('\n');
 }
 
+export function linkTestCartBlua32(systemImports: Blua32BiosImports, compiled: CompiledCartProgram) {
+	const cart = linkCartBlua32Image(
+		systemImports,
+		encodeCompiledProgramObject(compiled),
+		compiled.metadata,
+		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
+		LINK_TARGET_RAM_BYTES,
+	);
+	return {
+		cartImage: cart.layout,
+		cartSymbols: cart.symbols,
+		cartVectors: testVectors(compiled, cart),
+		cartStaticModulePaths: compiled.staticModulePaths,
+		cartRomBytes: writeTestBlua32Rom(cart),
+	};
+}
+
 export function linkTestBlua32Pair(
 	systemCompiled: CompiledSystemProgram,
 	cartCompiled: CompiledCartProgram,
@@ -453,25 +470,14 @@ export function linkTestBlua32Pair(
 		LINK_TARGET_RAM_BYTES,
 		cartCompiled.biosFunctionConstRelocs.length !== 0 ? BIOS_FUNCTION_EXPORTS : [],
 	);
-	const cart = linkCartBlua32Image(
-		system.biosImports,
-		encodeCompiledProgramObject(cartCompiled),
-		cartCompiled.metadata,
-		CART_ROM_BASE + TEST_EXECUTABLE_OFFSET,
-		LINK_TARGET_RAM_BYTES,
-	);
 	return {
 		systemImage: system.layout,
 		systemSymbols: system.symbols,
 		systemBiosImports: system.biosImports,
 		systemVectors: testVectors(systemCompiled, system),
 		systemStaticModulePaths: systemCompiled.staticModulePaths,
-		cartImage: cart.layout,
-		cartSymbols: cart.symbols,
-		cartVectors: testVectors(cartCompiled, cart),
-		cartStaticModulePaths: cartCompiled.staticModulePaths,
 		systemRomBytes: writeTestBlua32Rom(system),
-		cartRomBytes: writeTestBlua32Rom(cart),
+		...linkTestCartBlua32(system.biosImports, cartCompiled),
 	};
 }
 

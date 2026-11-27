@@ -14,6 +14,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 
@@ -86,6 +87,11 @@ void explicitRamEndPrecedesExecAndSurvivesRestore() {
 	const u32 systemFloor = pageRound(SYSTEM_BSS + 0x100u);
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);
 	machine.cpu.reset();
+	require(machine.memory.ramBusEnd() == DYNAMIC_RAM_BASE,
+		"cold reset does not expose any program RAM on the public bus before firmware selects an end");
+	require(machine.cpu.heapAllocator().occupiedBytes() == 0u,
+		"raw reset does not allocate language storage");
+	test::seedManagedFixture(machine.cpu, machine.addresses);
 	require(machine.cpu.heapAllocator().floorAddress() == systemFloor, "the admitted BIOS context maps its static extent");
 	require(machine.cpu.luaHeap().capacity() == limit - systemFloor, "the BIOS has the system heap extent");
 	const auto savedMemory = machine.memory.captureSaveState();
@@ -103,7 +109,7 @@ void explicitRamEndPrecedesExecAndSurvivesRestore() {
 
 void instructionFetchFollowsTheLiveFloor() {
 	Machine machine = bootPair();
-	machine.cpu.reset();
+	test::seedManagedFixture(machine.cpu, machine.addresses);
 	auto& cpu = machine.cpu;
 	auto& memory = machine.memory;
 	const u32 pc = cpu.heapAllocator().floorAddress();
@@ -157,7 +163,7 @@ void instructionFetchFollowsTheLiveFloor() {
 
 void execLeavesLiveChunksAndTheApertureUntouched() {
 	Machine machine = bootPair();
-	machine.cpu.reset();
+	test::seedManagedFixture(machine.cpu, machine.addresses);
 	HeapAllocator& heap = machine.cpu.heapAllocator();
 	const u32 floor = heap.floorAddress();
 	const u32 cartFloor = pageRound(CART_BSS + CART_BSS_BYTES);

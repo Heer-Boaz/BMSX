@@ -129,6 +129,9 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'cop0.ram_end', params: [], signature: 'cop0.ram_end', description: 'Write the end of the ordinary RAM aperture from System ROM.' },
 	{ name: 'cop0.status', params: [], signature: 'cop0.status', description: 'Raw CPU STATUS control register. Supervisor code may read and write it.' },
 	{ name: 'cop0.cause', params: [], signature: 'cop0.cause', description: 'Raw read-only CPU CAUSE control register.' },
+	{ name: 'cop0.context', params: [], signature: 'cop0.context', description: 'In the reset bank, reads the previous admitted root context address. Writing admits a prepared context.' },
+	{ name: 'cop0.previous_active', params: [], signature: 'cop0.previous_active', description: 'Read-only raw physical address of the executing context preserved at reset, until another context is admitted.' },
+	{ name: 'cop0.system_vector', params: [], signature: 'cop0.system_vector', description: 'System exception Function address, writable only while executing immutable System ROM in supervisor mode.' },
 	{ name: 'cop0.epc', params: [], signature: 'cop0.epc', description: 'Raw CPU exception program counter. Supervisor code may read and write it.' },
 	{ name: 'cop0.bad_address', params: [], signature: 'cop0.bad_address', description: 'Raw read-only CPU bad-address latch.' },
 ];

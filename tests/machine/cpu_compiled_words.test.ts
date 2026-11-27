@@ -15,7 +15,8 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/executi
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { DYNAMIC_RAM_BASE, IO_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_NONE, BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES } from '../helpers/blua32';
+import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 
 function assertParity(a: CPU, b: CPU): void {
 	assert.ok(isDeepStrictEqual(a.captureRuntimeState(), b.captureRuntimeState()), 'full value graph, roots, frame/control state and heap accounting');
@@ -31,7 +32,7 @@ function wordLoop(count: number, displaced = false, bssBytes = RAM_CODE_FIXTURE_
 		displaced ? 255 : (count >> 6) & 7);
 	writeInstruction(text, 5, OpCode.ADD, 7, 6, 9); writeInstruction(text, 6, OpCode.JMP, 0, 63, 57, 255);
 	writeInstruction(text, 32, OpCode.HALT, 0, 0, 0); writeInstruction(text, 33, OpCode.HALT, 0, 0, 0);
-	return linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: Math.max(16, 8 + count) },
+	return linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 7, maxStack: Math.max(16, 8 + count) },
 		{ firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, bssBytes);
 }
 
@@ -44,8 +45,8 @@ test('generated execution admits every executable BLua32 opcode; WIDE remains a 
 for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) test(`a standalone ${layout} arithmetic entry compiles without fetching its successor`, () => {
 	const text = new Uint8Array(INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	const width = layout === 'last-word' ? 1 : 2;
 	const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - (layout === 'wide-exact-end' ? 2 : 1) * INSTRUCTION_BYTES;
 	const bodyPc = pc + (width - 1) * INSTRUCTION_BYTES;
@@ -90,9 +91,9 @@ for (const layout of ['last-word', 'wide-exact-end', 'wide-straddle'] as const) 
 for (const wide of [false, true]) test(`a compiled nonterminal at the executable RAM end faults only when its successor is fetched (WIDE=${wide})`, () => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0); writeInstruction(text, 1, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 },
 		{ firstWord: 1, wordCount: 1 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	const end = js.memory.ramBusEnd(), width = wide ? 2 : 1, pc = end - width * INSTRUCTION_BYTES;
 	const code = new Uint8Array(width * INSTRUCTION_BYTES);
 	if (wide) writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
@@ -114,7 +115,7 @@ for (const wide of [false, true]) test(`a compiled nonterminal at the executable
 
 for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`generated word span preserves conversions, cached sources and complete segment charges (count=${count}, displaced=${displaced})`, () => {
 	const image = wordLoop(count, displaced), pc = image.image.functions[0].codeAddress, target = DYNAMIC_RAM_BASE + 0x2ffc;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	const surcharge = count;
 	for (const { cpu } of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, target - (displaced ? 1020 : 0)); r.setInteger(12, 73);
@@ -141,7 +142,7 @@ for (const displaced of [false, true]) for (const count of [0, 5, 1025]) test(`g
 test('an invalid word after a valid prefix faults at WIDE, without undoing the prefix or writing the suffix', () => {
 	const image = wordLoop(3), pc = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
 	for (const invalid of [valueFloatBits(0xffc01234), valueFloat(Infinity), valueNil(), valueBool(true)]) {
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 		for (const { cpu, memory } of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers;
 			r.setInteger(0, DYNAMIC_RAM_BASE); r.set(8, valueFloat(-1.75)); r.setInteger(9, 92); r.setInteger(10, 93);
@@ -169,8 +170,8 @@ test('a WIDE counted store retains a signed RK address and the full source regis
 	writeInstruction(text, 0, OpCode.WIDE, 2, 63, 1);
 	writeInstruction(text, 1, OpCode.STORE_MEM_WORDS, 0, 63, 1, 56); // R512..1024, K[0], C=513.
 	writeInstruction(text, 2, OpCode.JMP, 0, 63, 61, 255);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 1025 }], constants: [integerConstant(target)] }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 1025 }], constants: [integerConstant(target)] }, RAM_CODE_FIXTURE_BYTES);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu } of [js, ref]) { for (let i = 0; i < 513; ++i) cpu.rootThread.frameAtDepth(0).registers.setInteger(512 + i, i - 1); cpu.runUntilDepth(0, 20 * (3 + 513 + 2)); }
 	assertParity(js.cpu, ref.cpu); assert.deepEqual(js.memory.ramData(), ref.memory.ramData());
 	const frame = js.cpu.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
@@ -182,7 +183,7 @@ test('a WIDE counted store retains a signed RK address and the full source regis
 
 for (const unaligned of [false, true]) test(`a zero-count store checks only alignment, without an IO or mapping preflight (unaligned=${unaligned})`, () => {
 	const image = wordLoop(0), pc = image.image.functions[0].codeAddress;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu } of [js, ref]) { cpu.rootThread.frameAtDepth(0).registers.setInteger(0, DYNAMIC_RAM_BASE); cpu.runUntilDepth(0, 140); }
 	for (const address of unaligned ? [IO_BASE + 0x5001] : [0, 0xfffffffc, IO_BASE + 0x5000]) {
 		const probes: number[] = [];
@@ -202,7 +203,7 @@ for (const unaligned of [false, true]) test(`a zero-count store checks only alig
 
 test('counted preflight blocks on a later IO word before an earlier bus fault or sequence charge', () => {
 	const image = wordLoop(3), pc = image.image.functions[0].codeAddress;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	for (const { cpu } of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, DYNAMIC_RAM_BASE);
 		for (let i = 8; i <= 12; ++i) r.setInteger(i, 0);
@@ -231,8 +232,8 @@ test('counted preflight blocks on a later IO word before an earlier bus fault or
 
 test('counted stores commit their public RAM prefix before faulting at the live aperture', () => {
 	const image = wordLoop(5);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const scalar = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript);
+	const scalar = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	const end = js.memory.ramBusEnd(), target = end - 3 * 4;
 	for (const { cpu, memory } of [js, scalar]) {
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -254,7 +255,7 @@ test('counted stores commit their public RAM prefix before faulting at the live 
 
 test('counted IO writes preflight once, preserve the completed fault prefix, and charge the whole sequence', () => {
 	const image = wordLoop(5), pc = image.image.functions[0].codeAddress, target = IO_BASE + 0x5000;
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), devices = [];
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter), devices = [];
 	for (const { cpu } of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, DYNAMIC_RAM_BASE);
 		for (let i = 8; i <= 12; ++i) r.setInteger(i, 0);
@@ -281,7 +282,7 @@ test('counted IO writes preflight once, preserve the completed fault prefix, and
 test('a counted span checks middle watch pages and can retire its own native source during ordered writes', () => {
 	const count = MAPPED_PAGE_BYTE_SIZE / 2 + 1, image = wordLoop(count), romPc = image.image.functions[0].codeAddress;
 	const pc = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE, cycles = 13 + (count);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	const halt = new Uint8Array(4); writeInstruction(halt, 0, OpCode.HALT, 0, 0, 0);
 	for (const { cpu, memory } of [js, ref]) {
 		memory.writeBytes(pc, image.romBytes.subarray(romPc, romPc + MAPPED_PAGE_BYTE_SIZE));
@@ -304,8 +305,8 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 	writeInstruction(text, 0, OpCode.K1, 6, 0, 0); writeInstruction(text, 1, OpCode.STORE_MEM_WORDS, 8, 0, 5);
 	writeInstruction(text, 2, OpCode.STORE_MEM_WORDS, 20, 1, 3); writeInstruction(text, 3, OpCode.MOV, 7, 6, 0);
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255); writeInstruction(text, 32, OpCode.HALT, 0, 0, 0); writeInstruction(text, 33, OpCode.HALT, 0, 0, 0);
-	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 32 }, { firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), pc = image.image.functions[0].codeAddress;
+	const image = linkManagedTestOpcodes({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 32 }, { firstWord: 32, wordCount: 2 }], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter), pc = image.image.functions[0].codeAddress;
 	for (const { cpu } of [js, ref]) { const r = cpu.rootThread.frameAtDepth(0).registers;
 		for (let i = 8; i < 23; ++i) r.setInteger(i, 0);
 		r.setInteger(0, DYNAMIC_RAM_BASE); r.setInteger(1, DYNAMIC_RAM_BASE + 64); cpu.runUntilDepth(0, 200); }
@@ -326,7 +327,7 @@ for (const blocked of [false, true]) test(`later counted blocks retain earlier c
 });
 
 test('bulk source publication neither discards clean SSA values nor repeats their writeback', () => {
-	const { cpu } = createTestSystemCpu(wordLoop(0), CpuExecutionBackend.JavaScript);
+	const { cpu } = createManagedTestOpcodeCpu(wordLoop(0), CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const cache = new JavaScriptRegisterCache(new Map(), new Set(), new CompiledExitWriteBacks(), frame.executionImage), writes = new Uint32Array(8);
 	const source = [cache.writeInteger(0, '1'), cache.writeInteger(7, '1'), cache.publishRange(0, 1),
@@ -344,7 +345,7 @@ test('bulk source publication neither discards clean SSA values nor repeats thei
 for (const displaced of [false, true]) for (const count of [0, 1, 4, 5, 1025, displaced ? 4095 : 32767]) test(`a terminal word span starts with one cycle and never starts its successor (count=${count}, displaced=${displaced})`, () => {
 	const image = wordLoop(count, displaced, Math.max(RAM_CODE_FIXTURE_BYTES, 0x4000 + count * 4)), start = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
 	const target = DYNAMIC_RAM_BASE + 0x4000, charge = 3 + (count);
-	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript), ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const js = createManagedTestOpcodeCpu(image, CpuExecutionBackend.JavaScript), ref = createManagedTestOpcodeCpu(image, CpuExecutionBackend.Interpreter);
 	for (let attempt = 0; attempt < 12; ++attempt) for (const { cpu } of [js, ref]) {
 		const frame = cpu.rootThread.frameAtDepth(0); frame.registers.setInteger(0, target - (displaced ? 1020 : 0)); frame.registers.setInteger(7, 99);
 		for (let i = 0; i < count; ++i) frame.registers.setInteger(8 + i, 0x20000000 | i);

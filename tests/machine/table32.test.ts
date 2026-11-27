@@ -1,30 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { TableLookupStatus, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { Memory } from '../../machine/ts/machine/memory/memory';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL } from '../../machine/ts/spec/blua32/cop0';
-import { cartridgeSlots } from '../helpers/cartridge';
-import { compileLuaSource, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { installAllocationStress } from '../helpers/gc_stress';
 import * as v from '../../machine/ts/machine/cpu/value';
 
-function machine(): CPU {
-	// The real runtime owners, before loading a program image. No mock budget,
-	// reference directory or substitute Table is involved in these tests.
-	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
-	return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-}
+const tableRom = linkManagedTestSystem('', 0);
 
 test('Table budget charges allocated Value and hash slots rather than physical hash links', () => {
-	const cpu = machine(), start = cpu.luaHeap.usedBytes();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const start = cpu.luaHeap.usedBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	const table = cpu.createTable(8, 16);
 	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
@@ -85,7 +75,8 @@ original, duplicate = source, table.copy(source)
 });
 
 test('array growth keeps a full hash when none of its keys move into the array', () => {
-	const cpu = machine(), tables = cpu.gc.tables, table = cpu.createTable(1, 1);
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables, table = cpu.createTable(1, 1);
 	tables.setInteger(table, 1, v.valueBool(false));
 	tables.setInteger(table, -1, v.valueInteger(41));
 	const hash = tables.hashAddress(table);
@@ -96,7 +87,8 @@ test('array growth keeps a full hash when none of its keys move into the array',
 });
 
 test('only index one selects an array on the first integer insertion', () => {
-	const cpu = machine(), tables = cpu.gc.tables;
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables;
 	for (const key of [1, 2, 0x7fffffff]) {
 		const table = cpu.createTable();
 		tables.setInteger(table, key, v.valueBool(false));
@@ -107,7 +99,8 @@ test('only index one selects an array on the first integer insertion', () => {
 });
 
 test('integer growth counts a partial array density band at the strict half boundary', () => {
-	const cpu = machine(), tables = cpu.gc.tables;
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables;
 	for (const added of [16, 17]) {
 		const table = cpu.createTable(13, 0);
 		for (const key of [1, 2, 3, 4, 5, 9, 10, 13]) tables.setInteger(table, key, v.valueBool(false));
@@ -121,7 +114,8 @@ test('integer growth counts a partial array density band at the strict half boun
 });
 
 test('growth for non-array keys preserves sparse reserved slots and their charge', () => {
-	const cpu = machine(), tables = cpu.gc.tables;
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables;
 	const mixed = cpu.createTable(8, 0), identity = cpu.createTable();
 	const keys = [v.valueString(cpu.stringPool.intern('hash only')), v.valueInteger(-1), v.valueFloat(0.5), v.valueTable(identity)];
 	const bytes = cpu.luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
@@ -146,7 +140,8 @@ test('growth for non-array keys preserves sparse reserved slots and their charge
 });
 
 test('tombstone-driven rebuild returns only retired capacity and preserves live mappings', () => {
-	const cpu = machine(), tables = cpu.gc.tables, keys = new Int32Array(16);
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables, keys = new Int32Array(16);
 	let assigned = 0, collision = 0;
 	for (let id = -1; assigned !== keys.length || collision === 0; --id) {
 		const home = v.hashCanonicalTableKey(v.valueInteger(id)) & (keys.length - 1);
@@ -187,7 +182,8 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 });
 
 test('hash deletion and replay retain backing while a hash slot can be reused', () => {
-	const cpu = machine(), tables = cpu.gc.tables, keys = new Int32Array(4);
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables, keys = new Int32Array(4);
 	let assigned = 0;
 	for (let id = -1; assigned !== keys.length; --id) {
 		const home = v.hashCanonicalTableKey(v.valueInteger(id)) & (keys.length - 1);
@@ -214,7 +210,8 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 });
 
 test('allocation stress reaches hash backing growth, not writes into existing slots', () => {
-	const cpu = machine(), tables = cpu.gc.tables, table = cpu.createTable(0, 3);
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const tables = cpu.gc.tables, table = cpu.createTable(0, 3);
 	const backing = tables.hashAddress(table), stress = installAllocationStress(cpu);
 	for (let i = 1; i <= 4; ++i) tables.setInteger(table, -i, v.valueInteger(i));
 	assert.equal(stress.allocations, 0, 'the four reserved slots need no admission');
@@ -230,7 +227,8 @@ test('allocation stress reaches hash backing growth, not writes into existing sl
 });
 
 test('Table keys normalize Integer/Float identity without changing stored value bits', () => {
-	const cpu = machine(), table = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable();
 	cpu.gc.tables.set(table, v.valueFloat(2), v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(2)), v.valueFloatBits(0xffa12345));
 	cpu.gc.tables.set(table, v.valueFloatBits(0x80000000), v.valueInteger(19));
@@ -249,7 +247,8 @@ test('Table keys normalize Integer/Float identity without changing stored value 
 });
 
 test('raw nil and NaN keys miss and cannot mutate a Table even with a nil value', () => {
-	const cpu = machine(), table = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable();
 	cpu.gc.tables.setInteger(table, 1, v.valueInteger(91));
 	for (const [key, reason] of [[v.valueNil(), LUA_FAULT_REASON_INDEX_NIL],
 		[v.valueFloatBits(0x7fa12345), LUA_FAULT_REASON_INDEX_NAN], [v.valueFloatBits(0xffc54321), LUA_FAULT_REASON_INDEX_NAN]] as const) {
@@ -263,7 +262,8 @@ test('raw nil and NaN keys miss and cannot mutate a Table even with a nil value'
 });
 
 test('compact hash growth, cached string access and inherited reads use real heap references', () => {
-	const cpu = machine(), table = cpu.createTable(), parent = cpu.createTable(), meta = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable(), parent = cpu.createTable(), meta = cpu.createTable();
 	const key = cpu.stringPool.intern('method'), index = cpu.stringPool.intern('__index');
 	const inherited = v.valueTable(parent);
 	cpu.gc.tables.setStringKey(meta, index, inherited); cpu.gc.tables.setMetatableAddress(table, meta);
@@ -286,7 +286,8 @@ test('compact hash growth, cached string access and inherited reads use real hea
 });
 
 test('tombstone continuation retains a stable object hash, not the recycled reference', () => {
-	const cpu = machine(), table = cpu.createTable(0, 64), keyObject = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable(0, 64), keyObject = cpu.createTable();
 	const key = v.valueTable(keyObject), target = new ValueSlots(2);
 	cpu.gc.tables.set(table, key, v.valueInteger(7));
 	for (let i = 1; i <= 20; ++i) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('other' + i), v.valueInteger(i));
@@ -300,7 +301,8 @@ test('tombstone continuation retains a stable object hash, not the recycled refe
 });
 
 test('compact Tables participate in incremental tracing, weak clearing and reference recycling', () => {
-	const cpu = machine(), table = cpu.createTable(), child = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable(), child = cpu.createTable();
 	const root = v.valueTable(table), childValue = v.valueTable(child);
 	cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('child'), childValue);
 	cpu.gc.collect(root);
@@ -319,7 +321,8 @@ test('compact Tables participate in incremental tracing, weak clearing and refer
 });
 
 test('length candidates are bounded to signed-32 keys', () => {
-	const cpu = machine(), table = cpu.createTable();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable();
 	assert.equal(cpu.gc.tables.length(table), 0);
 	for (let i = 4096; i >= 1; --i) cpu.gc.tables.setInteger(table, i, v.valueBool(true));
 	assert.equal(cpu.gc.tables.length(table), 4096);
@@ -331,7 +334,8 @@ test('length candidates are bounded to signed-32 keys', () => {
 });
 
 test('Table mutation streams preserve raw words through collisions, growth and deletions', () => {
-	const cpu = machine(), table = cpu.createTable(), oracle = new Map<v.Value, v.Value>();
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const table = cpu.createTable(), oracle = new Map<v.Value, v.Value>();
 	const keys: v.Value[] = [v.valueBool(false), v.valueBool(true), v.valueFloat(Infinity), v.valueFloat(-Infinity), v.valueFloatBits(0x80000000), v.valueInteger(0), v.valueInteger(-2147483648), v.valueInteger(2147483647)];
 	for (let i = 1; i <= 48; ++i) keys.push(v.valueInteger(i), v.valueFloat(i), v.valueFloat(i + 0.5), v.valueString(cpu.stringPool.intern('field' + i)), v.valueTable(cpu.createTable()));
 	let seed = 0x5130bbad;
@@ -351,8 +355,7 @@ test('Table mutation streams preserve raw words through collisions, growth and d
 });
 
 test('machine snapshots restore table records and their references to a different heap', () => {
-	const image = linkTestSystemBlua32(compileLuaSource('return 0', 'table-record-checkpoint.lua'));
-	const { cpu: source } = createTestSystemCpu(image);
+	const { cpu: source } = bootManagedTestSystem(tableRom);
 	const table = source.createTable(4, 16), child = source.createTable(), meta = source.createTable();
 	source.gc.tables.setMetatableAddress(table, meta);
 	source.gc.tables.setInteger(table, 1, v.valueFloatBits(0xffa54321));
@@ -361,7 +364,7 @@ test('machine snapshots restore table records and their references to a differen
 	source.gc.tables.set(table, v.valueFloat(1.5), v.valueFloatBits(0xffc00000));
 	const name = source.stringPool.intern('saved_table');
 	source.setGlobalByKey(name, v.valueTable(table));
-	const { cpu: target } = createTestSystemCpu(image);
+	const { cpu: target } = bootManagedTestSystem(tableRom);
 	for (let i = 0; i < 5; ++i) target.createTable();
 	target.memory.restoreSaveState(source.memory.captureSaveState());
 	target.restoreRuntimeState(source.captureRuntimeState());
@@ -376,7 +379,8 @@ test('machine snapshots restore table records and their references to a differen
 });
 
 test('failed array growth releases the provisional hash without changing the live mixed table', () => {
-	const cpu = machine(), { tables } = cpu.gc, arena = cpu.heapAllocator;
+	const { cpu } = bootManagedTestSystem(tableRom);
+	const { tables } = cpu.gc, arena = cpu.heapAllocator;
 	const table = cpu.createTable(4, 4);
 	for (const key of [1, 3, 4, -1, -3, 5, 6]) tables.setInteger(table, key, v.valueInteger(key));
 	const array = tables.arrayAddress(table), hash = tables.hashAddress(table);

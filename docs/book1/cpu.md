@@ -2078,20 +2078,24 @@ supplies the pending/mask/acknowledgment and accepted-interrupt conditions.
 
 ## CPU reset and program replacement {#sec-cpu-cpu-reset-and-program-replacement}
 
-At CPU reset, Status is `00000001H`; Cause, EPC, BadAddress, LuaFaultReason and
-the exception-domain word are zero. Retained pre-NMI report words are also
-zero. Interrupt-wait, blocked-store, hard-halt and pending interrupt states are
-cleared. The CPU discards the active call stack and enters the System ROM
-startup static function with no arguments. The System image's DATA and BSS
-range is mapped at entry.
+After reset, Status is `00000001H`. Cause, EPC, BadAddress, LuaFaultReason
+and the exception domain are zero. Interrupt-wait, blocked-write, hard-halt
+and pending interrupt state are cleared.
 
-The first PC comes from that startup function's record, not an assumed
-instruction address zero. Reset is not the same edge as `EXEC`: the latter
-replaces execution with a selected static function and sets the entry Status
-according to that function's execution domain. Neither statement implies that
-all RAM has been erased. The [program startup reference](program-images.md#sec-memory-reset-and-cartridge-startup)
-supplies the reset vector, BIOS cartridge selection and section-initialization route; SYSTEM defines the
-separate software reset request and device-context transitions.
+The processor selects the fixed reset bank, clears its frame and value
+backing, and enters System ROM at the function in the ROM header's
+startup field. It starts with one frame, no arguments and no closure
+environment. The first PC comes from the function record. This entry
+does not need a language heap or allocate its stack. It does not map,
+copy or clear the System's DATA and BSS. See
+[program startup](program-images.md#sec-memory-reset-and-cartridge-startup) and
+[[Memory — Reset bank](memory.md#sec-memory-reset-bank)]{.content-visible when-format="html"}[Book I, Memory reference]{.content-visible when-format="pdf"}.
+
+The reset bank fetches instructions only from System ROM. Ordinary calls
+have to fit in its fixed backing, with space left for an exception frame.
+Before other code can run outside this bank, System ROM must provide a
+receiving context and write [`CONTEXT`](#sec-cpu-context). A small System ROM
+that stays in the reset bank need not perform this transfer.
 
 ### Hard halt and instruction exceptions {#sec-cpu-hard-halt-and-instruction-exceptions}
 
@@ -2123,7 +2127,10 @@ For `MFC0` and `MTC0`, `A` names the value register and `B` is the raw CP0 field
 | 13 | `Cause` | Raw word as an Integer | Ignored |
 | 14 | `EPC` | Raw word as an Integer | Replace the complete word, without an alignment check |
 | 15 | `EXEC` | Zero | Replace execution with the addressed static function |
+| 16 | `CONTEXT` | Previous root context address | Install the prepared context; see below |
 | 17 | `RAM_END` | Zero | Set the end of ordinary RAM on the bus; see below |
+| 18 | `SYSTEM_VECTOR` | System exception function address | Set the System exception function; see below |
+| 19 | `PREVIOUS_ACTIVE` | Previous active context address | Ignored |
 
 
 
@@ -2149,6 +2156,73 @@ the map unchanged. A successful write changes the bus map immediately; it
 does not alter the contents of RAM. See
 [[Memory — Main RAM on the system bus](memory.md#sec-memory-language-heap)]{.content-visible when-format="html"}[Book I, §2.3.1]{.content-visible when-format="pdf"}.
 
+#### CONTEXT and PREVIOUS_ACTIVE {#sec-cpu-context}
+
+On reset, `CONTEXT` and `PREVIOUS_ACTIVE` report the physical addresses
+of the previous root and active contexts. Both are zero at first power-on.
+A new reset while still in the reset bank does not replace the saved
+addresses.
+
+A supervisor program can write `CONTEXT` while executing the only frame
+in the reset bank. It supplies the address of an already prepared
+execution context. The context, frame backing and value backing must be
+word-aligned, wholly in private RAM. Place them outside the fixed reset
+bank and without overlap. The context has one initial frame
+and room for at least two frames in all. Its initial frame selects an
+instruction start in a System ROM function. A rejected write stops the
+CPU until reset.
+
+A successful write retires the old frame and resumes at the prepared PC.
+It allocates no storage and does not return to the writer. Status
+is not changed; the two previous-context addresses are cleared.
+
+The context record is 80 bytes. For a new context without a caller,
+initialize it to zero, then set these little-endian words:
+
+| Offset | Value |
+|---:|---|
+| `08H` | 1 (running) |
+| `14H` | End of the initial register window, in value slots |
+| `18H`, `1CH` | Address and slot count of the value backing |
+| `20H` | Number of frames in the frame backing |
+| `38H` | 1 (one active frame) |
+| `40H` | Address of the frame backing |
+
+For `N` slots, the value backing contains `N` little-endian payload
+words followed by `N` one-byte tags. Zero tag and payload represent nil.
+The first 56-byte frame has the following layout. The listed initial
+contents are for a System ROM entry without supplied arguments.
+
+| Offset | Field | Initial value |
+|---:|---|---|
+| `00H` | Function | System ROM function-record address |
+| `04H` | Call site | Entry PC |
+| `08H` | Open captures | 0 |
+| `0CH` | Protected call | `FFFFFFFFH` (none) |
+| `10H` | Flags | 0 (System execution, ordinary frame) |
+| `14H` | PC | Entry PC |
+| `18H`, `1CH` | Vararg base and count | Number of formal parameters, 0 |
+| `20H`, `24H` | Return base and count | 0, 0 |
+| `28H` | Top | Number of formal parameters |
+| `2CH` | Closure | 0 (no closure environment) |
+| `30H`, `34H` | Register base and capacity | 0, window size in slots |
+
+The window is at least one slot and covers the larger of the function's
+parameter count and maximum stack. Initialize its formal parameters to
+nil. Size the backing for the complete windows and frames it must hold.
+
+#### SYSTEM_VECTOR {#sec-cpu-system-vector}
+
+`SYSTEM_VECTOR` supplies the System function for synchronous exceptions
+and NMI. Reset loads it from the System ROM header's exception field.
+Only a supervisor instruction executing in System ROM in the System
+execution domain can change it. The new address must name a function
+in the System ROM function table with a nonempty instruction body and
+no captures. A misaligned address raises AddressErrorLoad; another rejected
+address raises InstructionBusError. The old vector is not changed.
+
+This register does not select the maskable IRQ entry.
+
 ### Exception entry and cartridge dispatch {#sec-cpu-exception-entry-and-cartridge-dispatch}
 
 On an accepted maskable interrupt, Cause is `00000400H` and EPC is the
@@ -2157,9 +2231,10 @@ two within that six-bit field, retaining higher Status bits. Current interrupt
 enable and current user mode are consequently clear. In word notation, the
 new Status is `(Status & ~0x3f) | ((Status << 2) & 0x3f)`.
 
-The CPU enters the function selected by the ROM's IRQ or exception address as
-an exception frame with no supplied arguments. Lua-trap entry additionally
-places the error value in R0; other exception entries leave R0 nil.
+The CPU enters an exception frame with no supplied arguments. Maskable IRQ
+selects the IRQ function for the interrupted mode. Synchronous exceptions
+and NMI select the function in [`SYSTEM_VECTOR`](#sec-cpu-system-vector). A Lua trap after leaving
+the reset bank places the error value in R0.
 
 The [BLua control interface](blua-programs.md#sec-cpu-blua-control-syntax)
 defines source access and the standard `irq` and `exception` callbacks. An
@@ -2182,6 +2257,11 @@ This rejection costs the failed-fetch cycle and does not issue a bus read.
 Returning from an NMI-marked exception frame also restores the retained pre-NMI Cause, EPC, BadAddress, LuaFaultReason, and exception-domain words. The return PC still comes from the active EPC sampled before that restoration. The retained pre-NMI Status word is not restored wholesale.
 
 ### EXEC {#sec-cpu-exec}
+
+Writing `EXEC` from the reset bank hard-halts. First install a receiving
+context with [`CONTEXT`](#sec-cpu-context). Unlike `CONTEXT`, `EXEC` opens a
+new register window for the addressed function. Size the receiving
+context's backing for that window if it must not grow.
 
 Writing `EXEC` supplies a **function-record address**, not an instruction-entry
 address. The CPU reads the record on its ordinary bus; the cartridge ROM

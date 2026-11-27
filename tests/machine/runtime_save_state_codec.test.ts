@@ -558,6 +558,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			pendingAllocation: null,
 			pendingMemory: { kind: PendingMemoryKind.WordStores, instructionPc: 0xfffffffc, nextPc: 0, address: 0x12345678, accessKind: MemoryAccessKind.Word, registerIndex: 7, wordCount: 9 },
 			statusWord: CPU_STATUS_CART_ENTRY,
+			previousRootContextWord: 0x083fcd28,
+			previousActiveContextWord: 0x083fcb88,
+			systemVectorWord: 0x00028140,
 			causeWord: 0,
 			epcWord: 0,
 			badAddressWord: 0,
@@ -710,6 +713,9 @@ test('runtime save-state codec rejects other formats, incomplete fields and trai
 test('CPU latches retain raw addresses and all float payload bits', () => {
 	const state = createRuntimeSaveState();
 	state.cpuState.activeThreadAddress = 0xfffffffc;
+	state.cpuState.previousRootContextWord = 0x80000000;
+	state.cpuState.previousActiveContextWord = 0xffffffff;
+	state.cpuState.systemVectorWord = 0x89abcdef;
 	state.cpuState.completionValues = [valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0x7f801234), valueFloatBits(0xffc12345)];
 	const decoded = decodeRuntimeSaveState(encodeRuntimeSaveState(state), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	assert.deepEqual(decoded.cpuState, state.cpuState);

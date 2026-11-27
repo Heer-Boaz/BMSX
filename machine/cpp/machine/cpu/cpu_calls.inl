@@ -12,6 +12,13 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 		return;
 	}
 	if (m_functionRecordLatch.romBacked && m_functionRecordLatch.image->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		&& (m_functionRecordLatch.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) == (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)
+		&& m_functionRecordLatch.upvalueCount == 0u) {
+		frame.registers.set(destination, valueFromTag(ValueTag::CodeFunction, functionAddress));
+		frame.extendTop(destination + 1);
+		return;
+	}
+	if (m_functionRecordLatch.romBacked && m_functionRecordLatch.image->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
 		&& (m_functionRecordLatch.flags & BLUA32_FUNCTION_RESIDENT) != 0u) {
 		frame.registers.set(destination, valueResidentFunction(functionAddress));
 		frame.extendTop(destination + 1);
@@ -34,6 +41,10 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, result,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true);
 		return pushed != nullptr;
+	}
+	if (valueTag(callee) == ValueTag::CodeFunction) {
+		return pushFrame(frame, 0u, a + 1, argCount, result,
+			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, valuePayload(callee)) != nullptr;
 	}
 	if (valueTag(callee) == ValueTag::ResidentFunction) {
 		const CallValueSource arguments{&frame, nullptr, a + 1, argCount};

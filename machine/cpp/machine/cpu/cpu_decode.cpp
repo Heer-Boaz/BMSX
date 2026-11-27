@@ -124,21 +124,23 @@ void CPU::decodeInstructionWords(
 			: static_cast<int32_t>(rawC));
 		const size_t constantCount = image.constPool.size();
 		bool invalidImageOperand = ((rkOperands & RK_OPERAND_B) != 0u
-				&& decoded.b < 0 && static_cast<size_t>(-1 - decoded.b) >= constantCount)
+				&& decoded.b < 0 && (static_cast<size_t>(-1 - decoded.b) >= constantCount
+					|| image.constPool.tag(-1 - decoded.b) == ValueTag::UnboundStringLiteral))
 			|| ((rkOperands & RK_OPERAND_C) != 0u
-				&& decoded.c < 0 && static_cast<size_t>(-1 - decoded.c) >= constantCount);
+				&& decoded.c < 0 && (static_cast<size_t>(-1 - decoded.c) >= constantCount
+					|| image.constPool.tag(-1 - decoded.c) == ValueTag::UnboundStringLiteral));
 		switch (static_cast<OpCode>(op)) {
 			case OpCode::ITERN:
 				invalidImageOperand = rawC == 0u;
 				break;
 			case OpCode::GETSYS: case OpCode::SETSYS:
-				invalidImageOperand = decodedBx >= image.systemNameCount;
+				invalidImageOperand = resetBankSelected() || decodedBx >= image.systemNameCount;
 				break;
 			case OpCode::GETGL: case OpCode::SETGL:
-				invalidImageOperand = decodedBx >= image.globalNameCount;
+				invalidImageOperand = resetBankSelected() || decodedBx >= image.globalNameCount;
 				break;
 			case OpCode::LOADK:
-				invalidImageOperand = decodedBx >= constantCount;
+				invalidImageOperand = decodedBx >= constantCount || image.constPool.tag(decodedBx) == ValueTag::UnboundStringLiteral;
 				decoded.setBx(decodedBx);
 				break;
 			case OpCode::ADD:

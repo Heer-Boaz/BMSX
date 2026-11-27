@@ -1,4 +1,5 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
+import type { Blua32PreparedEntry } from './blua32_image_builder';
 import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
@@ -11,6 +12,11 @@ export const SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT = 0x00004000;
 
 export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> =
 	BIOS_FUNCTION_SLOTS;
+
+// The firmware creates this initial frame before its regular startup.
+export const BIOS_PREPARED_ENTRY: Blua32PreparedEntry = {
+	path: 'kernel/managed_reset', exportPathKey: 'enter', valueSlots: 8,
+};
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_BLUA32_IMAGE_LIMIT) {

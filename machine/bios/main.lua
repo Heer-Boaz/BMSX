@@ -25,6 +25,7 @@ local vblank<const> = require('kernel/vblank')
 local vblank_irq<const> = require('kernel/vblank_irq')
 local heap_floor<const> = require('kernel/heap_floor')
 local image_bind<const> = require('kernel/system_image_bind')
+local vectors<const> = require('bmsx/startup')
 
 local irq_mask<const>: *word = 0x08000008
 local input_control<const>: *word = 0x08000064
@@ -173,6 +174,7 @@ local init<const> = function()
 end
 
 init()
+cop0.system_vector = vectors.managed_exception
 *irq_mask = irq_dma_done | irq_vblank
 *input_control = input_arm
 while true do

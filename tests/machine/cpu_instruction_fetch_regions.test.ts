@@ -19,6 +19,7 @@ import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_CAR
 import { CART_MMIO_BASE, CART_RAM_SIZE, CART_ROM_BASE, IO_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const system = (() => {
 	const text = new Uint8Array(2 * INSTRUCTION_BYTES);
@@ -33,10 +34,12 @@ function machine(backend: CpuExecutionBackend, cartRam = 0) {
 		{ rom: null, ramByteCount: null, mailboxPresent: true },
 	] }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
-	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory), backend);
+	const addresses = new ExecutionAddressSpace(memory);
+	const cpu = new CPU(memory, irq, addresses, backend);
 	const dma = new DmaController(memory, cpu, irq, new DeviceScheduler(cpu));
 	memory.cartridgeController.connect(memory, irq, dma);
 	cpu.reset();
+	admitTestHeapServiceCpu(cpu, addresses);
 	return { cpu, memory };
 }
 

@@ -27,6 +27,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { IO_CART_SELECT, IO_IRQ_FLAGS } from '../../machine/ts/spec/bmsx/io';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { admitTestHeapServiceCpu, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -36,7 +37,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			writeInstruction(text, 0, op, 0, 1, 2);
 			for (let i = 1; i < 4; ++i) writeInstruction(text, i, OpCode.JMP, 0, 63, 63, 255);
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 8 }] });
-			const { cpu } = createTestSystemCpu(image, backend);
+			const { cpu } = createTestHeapServiceCpu(image, backend);
 			for (let repeat = 0; repeat < 24; ++repeat) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 				const frame = cpu.rootThread.currentFrame!;
@@ -103,7 +104,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 0, OpCode.CALL, 0, 2, 1);
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+		const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!;
 		frame.registers.setBuiltinFunction(0, BuiltinFunctionId.Select);
 		frame.registers.setString(1, cpu.stringPool.intern(selector));
 		cpu.runUntilDepth(0, 1);
@@ -136,10 +137,12 @@ test('mapped byte String copies RAM, charges by span, and never reads an inadmis
 			{ rom: Uint8Array.of(0x22, 0x5a), ramByteCount: null, mailboxPresent: false },
 		] }, PSX_MACHINE_SPEC.ramBytes);
 		const irq = new IrqController(memory);
-		const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory), CpuExecutionBackend.Interpreter);
+		const executionAddressSpace = new ExecutionAddressSpace(memory);
+		const cpu = new CPU(memory, irq, executionAddressSpace, CpuExecutionBackend.Interpreter);
 		const dma = new DmaController(memory, cpu, irq, new DeviceScheduler(cpu));
 		memory.cartridgeController.connect(memory, irq, dma);
 		cpu.reset();
+		admitTestHeapServiceCpu(cpu, executionAddressSpace);
 		return cpu;
 	};
 	const cpu = makeOwner(), memory = cpu.memory;
@@ -224,7 +227,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(code, 0, op, 0, 1, 2);
 		for (let i = 1; i < 4; ++i) writeInstruction(code, i, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const pc = image.image.functions[0].codeAddress;
 		const a = cpu.stringPool.intern('x'.repeat(513)), b = cpu.stringPool.intern('x'.repeat(512) + 'y');
 		const frame = cpu.rootThread.currentFrame!;
@@ -257,7 +260,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.CONCATN, 1, 1, 3); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 }] });
-	const { cpu, memory } = createTestSystemCpu(image, backend); const frame = cpu.rootThread.currentFrame!, pool = cpu.stringPool;
+	const { cpu, memory } = createTestHeapServiceCpu(image, backend); const frame = cpu.rootThread.currentFrame!, pool = cpu.stringPool;
 	const source = 'g'.repeat(127) + '\xff\x00' + 'g'.repeat(384);
 	const a = pool.intern(source), tail = pool.intern('tail');
 	const existing = pool.intern(source.slice(0, 200) + '!' + source.slice(201) + '-12345tail');
@@ -287,7 +290,7 @@ test('a wide CONCATN samples each register on its own cycle across GC and restor
 	writeInstruction(code, 1, OpCode.HALT, 0, 0, 0); writeInstruction(code, 2, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code, functions: [
 		{ firstWord: 0, wordCount: 2, maxStack: count + 1 }, { firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.Interpreter), pool = cpu.stringPool;
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter), pool = cpu.stringPool;
 	const frame = cpu.rootThread.currentFrame!, empty = pool.intern(''), first = pool.intern('first'), last = pool.intern('unread');
 	for (let i = 1; i <= count; ++i) frame.registers.setString(i, empty);
 	frame.registers.setString(2, first); frame.registers.setString(count, last); frame.top = 1;
@@ -321,7 +324,7 @@ test('a wide CONCATN samples each register on its own cycle across GC and restor
 test('incremental collection budgets CONCATN roots while the input frontier advances', () => {
 	const count = 48, code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.CONCATN, 0, 1, count); writeInstruction(code, 1, OpCode.HALT, 0, 0, 0);
-	const { cpu, memory } = createTestSystemCpu(linkRawTestSystemBlua32({ text: code,
+	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32({ text: code,
 		functions: [{ firstWord: 0, wordCount: 2, maxStack: count + 1 }] }), CpuExecutionBackend.Interpreter);
 	const frame = cpu.rootThread.currentFrame!, ids: number[] = [];
 	let expected = '';
@@ -364,7 +367,7 @@ writeInstruction(portCode, 0, OpCode.HALT, 0, 0, 0);
 const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
 
 test('RAM String reads and intern probes wrap at the physical seam', () => {
-	const { cpu } = createTestSystemCpu(portImage, CpuExecutionBackend.Interpreter);
+	const { cpu } = createTestHeapServiceCpu(portImage, CpuExecutionBackend.Interpreter);
 	const memory = cpu.memory, pool = cpu.stringPool;
 	const bytes = 'wrapRAM!\x00\xf7xyz';
 	const straight = pool.intern(bytes), after = pool.intern('wrapRAM!\x00\xf8xyz');

@@ -1,21 +1,18 @@
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { TEST_CART_TRANSFER_SOURCE, bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { loadTestBiosUtilityModules } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 
 import { asStringId, asClosure, valueBool, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
-import {
-	createTestBlua32PairCpu,
-	linkTestBlua32Pair,
-} from '../helpers/blua32';
+import { linkTestCartBlua32 } from '../helpers/blua32';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
+import { cartridgeSlots } from '../helpers/cartridge';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
 import { ACTIONEFFECT_PHASE_ENTRY } from '../helpers/actioneffect_phase_fixture';
@@ -23,7 +20,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 
 const SYSTEM_ENTRY_SOURCE = `
 require('base')
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
+${TEST_CART_TRANSFER_SOURCE}
 `;
 
 const CONSOLE_STUB_SOURCE = `
@@ -225,16 +222,16 @@ function sourceModule(path: string, source: string) {
 	};
 }
 
-function compileActionEffectProgram(
+function createActionEffectCpu(
 	traceStatements: TraceStatementSelection,
 	entrySource = TRACE_ENTRY_SOURCE,
 ) {
-	const systemModules = [...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: CONSOLE_STUB_SOURCE }];
+	const systemModules = [...loadTestBiosUtilityModules(), ...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: CONSOLE_STUB_SOURCE }];
 	const cartModules = CART_MODULE_FILES.map(([path, file]) =>
 		sourceModule(path, readFileSync(file, 'utf8')),
 	);
 	cartModules.push(sourceModule('cartlib/event_emitter', EVENT_EMITTER_STUB_SOURCE));
-	const system = compileHeapServiceSystem(SYSTEM_ENTRY_SOURCE, 3, systemModules, 'boot.lua');
+	const system = linkManagedTestSystem(SYSTEM_ENTRY_SOURCE, 3, systemModules, BIOS_FUNCTION_EXPORTS);
 	const cart = compileLuaChunkToProgram(
 		parseLuaChunk(entrySource, 'entry.lua'),
 		cartModules,
@@ -245,19 +242,9 @@ function compileActionEffectProgram(
 			traceStatements,
 		},
 	);
-	return { system, cart };
-}
-
-function createActionEffectCpu(traceStatements: TraceStatementSelection): {
-	readonly cpu: CPU;
-	readonly cart: ReturnType<typeof compileLuaChunkToProgram>;
-} {
-	const compiled = compileActionEffectProgram(traceStatements);
-	const cpu = createTestBlua32PairCpu(linkTestBlua32Pair(
-		compiled.system,
-		compiled.cart,
-	)).cpu;
-	return { cpu, cart: compiled.cart };
+	const { cartRomBytes } = linkTestCartBlua32(system.biosImports, cart);
+	const { cpu } = bootManagedTestSystem(system, 'main', cartridgeSlots(cartRomBytes));
+	return { cpu, cart };
 }
 
 test('ActionEffect fact stream preserves trigger and activity commits in producer order', () => {
@@ -380,11 +367,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 });
 
 test('ActionEffect activity facts observe the committed count and periodic lane', () => {
-	const committed = compileActionEffectProgram('emit', ACTIVITY_COMMIT_ENTRY_SOURCE);
-	const commitCpu = createTestBlua32PairCpu(linkTestBlua32Pair(
-		committed.system,
-		committed.cart,
-	)).cpu;
+	const { cpu: commitCpu } = createActionEffectCpu('emit', ACTIVITY_COMMIT_ENTRY_SOURCE);
 	runGuestToHalt(commitCpu, 10_000_000);
 	const [observationList] = materializeCpuCompletionValues(commitCpu);
 	const observations = valuePayload(observationList);

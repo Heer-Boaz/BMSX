@@ -18,7 +18,6 @@ HeapAllocator::HeapAllocator(Memory& memory)
 	: m_memory(memory)
 	, m_management((static_cast<u32>(memory.ramByteCount()) & ~PAGE_MASK) - RUNTIME_MANAGEMENT_SIZE)
 	, m_arena{memory.ramData(), m_management + BMSX_DLMALLOC_STATE_OFFSET, memory.ramWriteWatches().groupData()} {
-	reset(DYNAMIC_RAM_BASE);
 }
 
 u32 HeapAllocator::floorOffset(u32 address) const {

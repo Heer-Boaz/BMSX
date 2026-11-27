@@ -124,14 +124,20 @@ writable static contents with their initial values.
 
 ### From reset to the system program {#sec-memory-from-reset-to-the-system-program}
 
-At reset the CPU selects System ROM, maps the System image's DATA and BSS
-range and enters the startup function specified in its ROM header. The call stack and transient execution state are cleared,
-there are no supplied arguments, and Status starts at `00000001H`: supervisor
-mode with current interrupt enable set.
+Reset does not enter the ordinary BLua program startup directly. It starts
+the System ROM function named by the [ROM startup field](#sec-memory-rom-header-fields)
+using the [fixed reset bank](cpu.md#sec-cpu-cpu-reset-and-program-replacement),
+with no arguments and Status = `00000001H` (supervisor mode, interrupts
+enabled). RAM is not cleared by reset apart from this bank's backing.
 
-The firmware startup routine initializes system DATA and BSS, runs module
-initializers, then enters the BIOS boot program. That program selects an
-executable cartridge and performs the handoff described below.
+The installed BIOS uses this entry to make its DATA and BSS address range
+available and prepare the System program's names and String operands. It
+builds the receiving execution context in private RAM and writes
+[`CONTEXT`](cpu.md#sec-cpu-context). The prepared System code continues
+booting on that context, then starts the ordinary System startup
+routine. That routine initializes DATA and BSS, runs the module
+initializers and enters the boot program. None of the section copy or
+clear is an effect of entering the reset vector.
 
 ### BIOS cartridge selection {#sec-memory-bios-cartridge-selection}
 
@@ -460,7 +466,7 @@ A function address identifies a **32-byte function record**, not its first instr
 | `04H` | Code byte count | Extent of this function in TEXT for a published function directory. |
 | `08H` | Parameter count | Number of fixed parameter slots. |
 | `0CH` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
-| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC; bit 2 RESIDENT (System ROM only). |
+| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC; bit 2 RESIDENT; bit 3 CODE (both System ROM only). |
 | `14H` | Upvalue-table address | Absolute machine byte address. |
 | `18H` | Upvalue count | Number of four-byte descriptors. |
 | `1CH` | Reserved | Not read. |
@@ -486,6 +492,11 @@ execution context. Each closure binds its own captures. A record must remain
 stable while a closure uses it; give a coexisting definition a separate
 record. Instructions remain in addressed memory and are fetched there when
 the closure executes.
+
+A static System ROM record with CODE and no captures denotes a code
+function. `CLOSURE` on that record returns a function value with no allocated
+closure environment. `CALL` uses the ordinary call stack, including the fixed
+stack while executing in the reset bank.
 
 Upvalue descriptor `i` is a four-byte unsigned little-endian word at
 `upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31

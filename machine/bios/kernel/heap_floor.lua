@@ -9,14 +9,7 @@ local gc<const> = require('kernel/gc_control') -- G:1038-1039 H:1137-1138
 local collector<const> = require('kernel/gc_step') -- G:903-917 H:978-985
 local atomic<const> = 3 -- K:20
 
-local reserve_floor<const> = function(management, floor) -- T:1865-1868 C:913-920; same complete CPU transfer input
-	local arena<const> = management + layout.arena_offset -- T:1866 C:919
-	local accepted<const> = allocator.bmsx_dlmalloc_set_floor(arena, floor) -- T:1868,1879 C:920,941
-	if accepted ~= 0 then return accepted end -- T:1879-1885 C:941-945
-
-	local control<const> = management + layout.control_offset -- G:906,908-911 H:981-984; fixed guest state
-	local epochs = gc.internal.active(control) and 2 or 1 -- G:1038-1039 H:1137-1138
-	root_inputs.publish(management) -- G:958-970 H:1023-1039
+local collect_for_floor<const> = function(management, control, epochs) -- G:903-917,1038-1039 H:978-985,1137-1138
 	repeat -- G:1038-1039 H:1137-1138
 		if gc.internal.phase(control) == atomic then -- G:906 H:981
 			collector.finish_atomic(management, 0, false) -- G:906 H:693-706,981; stopped work is accounted once
@@ -25,6 +18,17 @@ local reserve_floor<const> = function(management, floor) -- T:1865-1868 C:913-92
 		end
 		if not gc.internal.active(control) then epochs = epochs - 1 end -- G:1038-1039 H:1137-1138
 	until epochs == 0 -- G:1038-1039 H:1137-1138
+end
+
+local reserve_floor<const> = function(management, floor) -- T:1865-1868 C:913-920; same complete CPU transfer input
+	local arena<const> = management + layout.arena_offset -- T:1866 C:919
+	local accepted<const> = allocator.bmsx_dlmalloc_set_floor(arena, floor) -- T:1868,1879 C:920,941
+	if accepted ~= 0 then return accepted end -- T:1879-1885 C:941-945
+
+	local control<const> = management + layout.control_offset -- G:906,908-911 H:981-984; fixed guest state
+	local epochs<const> = gc.internal.active(control) and 2 or 1 -- G:1038-1039 H:1137-1138
+	root_inputs.publish(management) -- G:958-970 H:1023-1039
+	collect_for_floor(management, control, epochs)
 	root_inputs.release_string_work(management) -- G:971-978 H:1042-1049; return outstanding mark credit
 	return (allocator.bmsx_dlmalloc_set_floor(arena, floor)) -- T:1886-1891 C:946-950; exactly one retry
 end
@@ -42,4 +46,4 @@ local admit_static_end<const> = function(static_end)
 	return layout.ram_base + floor
 end
 
-return { internal = { reserve_floor = reserve_floor }, admit_static_end = admit_static_end }
+return { internal = { collect_for_floor = collect_for_floor, reserve_floor = reserve_floor }, admit_static_end = admit_static_end }

@@ -7,7 +7,6 @@ import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField, P
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { THREAD_CONTROL_COUNT_MASK, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { ValueTag, valueInteger, valuePayload, valueTable } from '../../machine/ts/machine/cpu/value';
-import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_MASK, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../machine/ts/spec/blua32/image_format';
@@ -18,32 +17,33 @@ import {
 	HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceOperation, HeapServiceResidentField,
 } from '../../machine/ts/spec/bmsx/heap_service';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
-import { createTestBlua32PairCpu, linkTestBlua32Pair, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestCartBlua32 } from '../helpers/blua32';
+import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
+import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 
 const program = `
+local startup<const> = require('bmsx/startup')
+function exception(error) halt_until_irq end
+cop0.system_vector = startup.managed_exception
 local function hold(value) return value end
 local function callee(a,b,...) local c,d=...; return a,b,c,d end
 local function caller(f,x,y) local a,b,c,d=f(x,y,123,456); return a,b,c,d end
 return hold,caller,callee
 `;
-const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
 for (const level of [0, 3] as const) {
 	function fixture() {
-		const linked = linkTestSystemBlua32(compileHeapServiceSystem(program, level));
-		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
-		runtime.boot();
-		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+		const { cpu, memory, scheduler } = bootManagedTestSystem(linkManagedTestSystem(program, level));
+		const arena = cpu.heapAllocator;
 		runGuestToHalt(cpu, 65536);
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		const [hold, caller, callee] = runtime.readCompletionValues();
+		const [hold, caller, callee] = materializeCpuCompletionValues(cpu);
 		const arg = valueTable(cpu.createTable(0, 0));
 		cpu.beginCompletionCall(valuePayload(hold), [valueInteger(901)]);
 		cpu.beginCompletionCall(valuePayload(hold), [valueInteger(902)]);
@@ -90,7 +90,7 @@ for (const level of [0, 3] as const) {
 			assert.equal(armed(HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Idle);
 			return trace;
 		}
-		return { runtime, cpu, memory, arena, thread, parent, management, issue, depth, stack, frames, charged,
+		return { cpu, memory, arena, thread, parent, management, issue, depth, stack, frames, charged,
 			readThread, resident, prepared, launch, grant, finishReservation, arg };
 	}
 	test(`each cold ordinary CALL preserves a prepared frame until capacity and resumes once at O${level}`, () => {
@@ -117,7 +117,7 @@ for (const level of [0, 3] as const) {
 			assert.notEqual(f.readThread(ThreadField.FrameBlock), f.frames);
 			for (let i = 0; i < 8 && f.grant(32768).result !== RunResult.Halted; ++i) { /* until exact caller-parent depth */ }
 			assert.equal(thread.frameDepth, 2);
-			assert.deepEqual(f.runtime.readCompletionValues(), [f.arg, valueInteger(19), valueInteger(123), valueInteger(456)]);
+			assert.deepEqual(materializeCpuCompletionValues(cpu), [f.arg, valueInteger(19), valueInteger(123), valueInteger(456)]);
 			return trace;
 		}
 		const trace = end(), terminal = history.capture(memory, partial);
@@ -146,10 +146,10 @@ for (const optLevel of [0, 3] as const) for (const [name, operation, argc] of [
 	['frame backing', HeapServiceOperation.ReserveFrameSpace, 4],
 	['closed-cell store', HeapServiceOperation.StoreClosedUpvalue, 2],
 ] as const) test(`an ordinary cartridge CLOSURE and CALL cannot enter the private ${name} root at O${optLevel}`, () => {
-	const boot = compileHeapServiceSystem(MANAGED_CART_LAUNCH, optLevel);
+	const system = linkManagedTestSystem(MANAGED_CART_LAUNCH, optLevel);
 	const cartSource = 'local a,b,c,d=121,122,123,124; return a,b,c,d';
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua').chunk, [], { entrySource: cartSource, optLevel });
-	const linked = linkTestBlua32Pair(boot, cart);
+	const linked = linkTestCartBlua32(system.biosImports, cart);
 	const entry = linked.cartImage.functions.find(fn => fn.address === linked.cartVectors.entryFunctionAddress)!;
 	const text = linked.cartRomBytes.subarray(entry.codeAddress - CART_ROM_BASE, entry.codeAddress - CART_ROM_BASE + entry.codeByteCount);
 	assert.ok(entry.maxStack >= 5);
@@ -159,10 +159,10 @@ for (const optLevel of [0, 3] as const) for (const [name, operation, argc] of [
 	writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
 	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(argc), encodeFixedValueCount(0));
 	writeInstruction(text, 4, OpCode.RET, 0, encodeFixedValueCount(0), 0);
-	const { cpu, memory } = createTestBlua32PairCpu(linked);
+	const { cpu, memory } = bootManagedTestSystem(system, 'main', cartridgeSlots(linked.cartRomBytes));
 	runGuestToHalt(cpu, 65_536);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	const descriptor = memory.readMappedU32LE(linked.systemImage.address + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
+	const descriptor = memory.readMappedU32LE(system.layout.address + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
 	const target = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * operation);
 	assert.notEqual(target, 0);
 	assert.equal(memory.readMappedU32LE(target + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0);
@@ -215,9 +215,9 @@ for (const optLevel of [0, 3] as const) for (const [name, operation, argc] of [
 	assert.equal(memory.readBusFaultSequence(), 1);
 	assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	const faultPc = cpu.readEpcWord();
-	const targetCode = linked.systemImage.functions.find(fn => fn.address === target)!;
+	const targetCode = system.layout.functions.find(fn => fn.address === target)!;
 	assert.ok(faultPc >= targetCode.codeAddress && faultPc < targetCode.codeAddress + targetCode.codeByteCount);
-	const faulting = decodeBlua32InstructionAtPc(linked.systemImage.textBytes, linked.systemImage.header.textAddress, faultPc);
+	const faulting = decodeBlua32InstructionAtPc(system.layout.textBytes, system.layout.header.textAddress, faultPc);
 	assert.ok(faulting.op === OpCode.LOAD_MEM || faulting.op === OpCode.LOAD_MEM_D);
 	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), valueCapacity);

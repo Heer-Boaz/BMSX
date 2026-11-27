@@ -7,6 +7,7 @@
 #include "machine/memory/memory.h"
 #include "spec/bmsx/model.h"
 #include "support/native_region_fixture.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -709,6 +710,7 @@ void remarkTableStoresForwardTheCommittedValue() {
 	for (const bool field : {false, true}) {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		test::seedManagedHeapFixture(cpu);
 		auto owner = field ? cpu.createTable(0, 1) : cpu.createTable(2, 0);
 		const Value child = field ? valueThread(cpu.luaHeap().allocateThreadRecord(0u)) : valueTable(cpu.createTable().address());
 		const auto name = cpu.stringPool().intern("remark field");
@@ -1039,6 +1041,7 @@ int main() {
 	try {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
+		test::seedManagedHeapFixture(cpu);
 		inheritedReadFollowsLiveOwners(cpu, memory);
 		stringReadsFollowLiveTables(cpu, memory);
 		oneHopStringReadsProveTheCurrentPath(cpu, memory);

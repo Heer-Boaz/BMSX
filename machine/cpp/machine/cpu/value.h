@@ -21,7 +21,9 @@ using Value = uint64_t;
 enum class ValueTag : uint8_t {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
 	DeadKey, // Table retirement metadata; never a language-level value.
-	ResidentFunction, // Immutable System ROM entry; not a managed record.
+	ResidentFunction, // Resident System ROM entry; not a managed record.
+	CodeFunction, // Immutable System Function with no environment.
+	UnboundStringLiteral = 0xff, // Only in a decoded operand bank, never a guest Value.
 };
 inline constexpr unsigned VALUE_HEADER_SHIFT = 32;
 inline constexpr std::ptrdiff_t VALUE_HEADER_BYTE_OFFSET = std::endian::native == std::endian::little ? 4 : 0;
@@ -114,7 +116,7 @@ inline uint32_t hashCanonicalTableKey(Value value) {
 	switch (valueTag(value)) {
 		case ValueTag::Integer:
 		case ValueTag::Float:
-		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: case ValueTag::ResidentFunction: {
+		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: case ValueTag::ResidentFunction: case ValueTag::CodeFunction: {
 			uint32_t bits = valuePayload(value);
 			bits ^= std::rotl(bits, TABLE_HASH_ROTATE); bits *= TABLE_HASH_MULTIPLIER; bits ^= bits >> TABLE_HASH_SHIFT;
 			return bits;

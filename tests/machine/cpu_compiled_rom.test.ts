@@ -33,6 +33,7 @@ import { CART_RAM_BASE, CART_ROM_BASE, DYNAMIC_RAM_BASE } from '../../machine/ts
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { RAM_CODE_FIXTURE_BYTES, linkRawTestBlua32Pair, linkRawTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
+import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 
@@ -47,7 +48,7 @@ function loadSource(kind: MemoryAccessKind, displaced = false) {
 	return { text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 1 }], exceptionFunctionIndex: 1 };
 }
 
-function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend: CpuExecutionBackend) {
+function resetMachine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend: CpuExecutionBackend) {
 	const memory = new Memory({ systemRom, cartridgeSlots: slots }, PSX_MACHINE_SPEC.ramBytes);
 	const irq = new IrqController(memory);
 	const addresses = new ExecutionAddressSpace(memory);
@@ -57,6 +58,12 @@ function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend
 	memory.cartridgeController.connect(memory, irq, dma);
 	cpu.reset();
 	return { cpu, memory, addresses };
+}
+
+function machine(systemRom: Uint8Array, slots: CartridgeSocketMediaPair, backend: CpuExecutionBackend) {
+	const fixture = resetMachine(systemRom, slots, backend);
+	admitTestHeapServiceCpu(fixture.cpu, fixture.addresses);
+	return fixture;
 }
 
 test('a retained closure samples the replaced ROM entry on its next CALL', () => {
@@ -82,14 +89,14 @@ test('mapped ROM function hints still require backed extents', () => {
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const unbacked = image.romBytes.slice();
 		writeLE32(unbacked, image.image.address + BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET, unbacked.length);
-		assert.throws(() => machine(unbacked, [null, null], backend), /function directory is not backed/);
+		assert.throws(() => resetMachine(unbacked, [null, null], backend), /function directory is not backed/);
 
 		const pastText = image.romBytes.slice();
 		writeLE32(pastText, record + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET, image.image.header.textByteCount + INSTRUCTION_BYTES);
-		assert.throws(() => machine(pastText, [null, null], backend), /invalid TEXT extent/);
+		assert.throws(() => resetMachine(pastText, [null, null], backend), /invalid TEXT extent/);
 
 		writeLE32(unbacked, image.image.address + BLUA32_IMAGE_FUNCTION_COUNT_OFFSET, 0);
-		assert.equal(machine(unbacked, [null, null], backend).cpu.readFramePc(0), image.image.header.textAddress);
+		assert.equal(resetMachine(unbacked, [null, null], backend).cpu.readFramePc(0), image.image.header.textAddress);
 	}
 });
 

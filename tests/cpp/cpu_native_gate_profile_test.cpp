@@ -6,6 +6,7 @@
 #include "support/cartridge_fixture.h"
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <iostream>
@@ -62,7 +63,7 @@ struct Machine {
 	Machine(const test::Blua32TestRom& r, bool scalar, bool observeNext = false) : rom(r),
 		memory(MemoryInit{r.bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes),
 		irq(memory), addresses(memory), cpu(memory, irq, addresses) {
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (observeNext) {
 			InstructionObserverBinding observer;
 			observer.points[0].insert(r.textAddress + INSTRUCTION_BYTES);

@@ -11,6 +11,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <fstream>
 #include <iostream>
@@ -41,6 +42,7 @@ struct Fixture {
 		: rom(test::encodeBlua32TestRom(RomImageDomain::System, image)),
 		  runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input) {
 		runtime.boot();
+		test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 		if (scalar) runtime.machine.cpu.setExecutionHook({
 			[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)

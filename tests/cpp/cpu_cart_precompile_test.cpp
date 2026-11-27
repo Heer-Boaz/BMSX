@@ -14,6 +14,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <iostream>
 #include <stdexcept>
@@ -88,6 +89,7 @@ struct Fixture {
 		runtime({system.bytes, slot == 0 ? test::cartridgeSlots(cart.bytes, other.bytes)
 			: test::cartridgeSlots(other.bytes, cart.bytes), PSX_MACHINE_SPEC}, input) {
 		runtime.boot();
+		test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 		// Bind operands before measuring the exact EXEC grant; do not execute or decode the cart.
 		if (operands == OperandFixture::Prepared)
 			runtime.machine.cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(slot));

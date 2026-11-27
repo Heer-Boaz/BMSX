@@ -2,16 +2,14 @@ module<const>
 
 -- Source basis: b8fd922892acf5a776f4a69164d779d6f9b6bec9.
 -- T/C: image activation; F: image records; S/R: StringPool; L/N: LuaHeap;
--- G/H: GlobalBank. The cold System proof and cartridge loader share operand binding.
+-- G/H: GlobalBank. System reset and cartridge boot share operand installation.
 -- No processor sees the resulting views until the boot program binds them.
 local layout<const> = require('kernel/gc_runtime_layout') -- L:27-30 N:22-25
-local allocator<const> = require('kernel/dlmalloc') -- L:164 N:177
-local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
-local admission<const> = require('kernel/heap_admission') -- L:75-98,132-138 N:85-109,147-164
-local managed_admission<const> = require('kernel/image_operand_admission') -- L:75-98,132-168 N:85-109,147-179
+local admission<const> = require('kernel/boot_image_admission') -- L:75-98,132-168 N:85-109,147-179
 local slices<const> = require('kernel/string_slice') -- S:161-230 R:176-235
 local strings<const> = require('kernel/gc_strings') -- S:244-254,438-442 R:247-253,427-430
 local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; compact physical root prefix
+local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
 local names<const> = require('kernel/global_bank') -- G:71-109 H:59-101
 
 local string_constant_tag<const> = 4 -- F:67-75
@@ -51,16 +49,6 @@ struct rom_string
 	next: addr -- F:62
 end
 
-struct operand_bindings
-	global_base: addr -- G:9 H:67,75
-	global_capacity: u32 -- G:9 H:67,75
-	global_count: u32 -- G:9 H:67,75
-	system_base: addr -- G:9 H:67,75
-	system_capacity: u32 -- G:9 H:67,75
-	system_count: u32 -- G:9 H:67,75
-	image: installed_image_binding -- T:1139-1144 C:420-426; the same installed operand record as the live owner
-end
-
 -- Bind the same media span that the execution bus can read. The socket is
 -- encoded only in a cartridge address; System addresses remain unmodified.
 local rom_source<const> = function(address, socket, system_bytes, cart_bytes)
@@ -93,7 +81,7 @@ local resolve_initial_string<const> = function(management, address, socket, syst
 	return id, 0 -- S:254 R:252
 end
 
-local bind_name_table<const> = function(management, managed, source, count, bank, destination, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1026-1035 C:304-312
+local bind_name_table<const> = function(management, root, source, count, bank, destination, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1026-1035 C:304-312
 	if count == 0 then return 0, source_cycles end -- T:1027 C:305
 	local source_names<const>: *u32 = source -- T:1027-1033 C:305-310 F:52-53
 	local mapped<const>: *u32 = destination -- T:1034 C:311
@@ -103,22 +91,11 @@ local bind_name_table<const> = function(management, managed, source, count, bank
 		local ordinal = names.find_name(bank, key) -- T:1034 G:90-91 C:311 H:82
 		if ordinal < 0 then -- G:91 H:82
 			local capacity<const> = names.growth_capacity(bank) -- G:93-94 H:84-85
-			local backing = 0 -- G:92 H:83
-			if managed then
-				local accepted, offset
-				accepted, offset, source_cycles = managed_admission.reserve(management,
-					key, names.name_charge, names.backing_slot_bytes * capacity, false, source_cycles)
-				if not accepted then return no_storage, source_cycles end -- L:86,152-155 N:98,151-154
-				if capacity ~= 0 then backing = layout.ram_base + offset end -- G:95-97 H:86-88
-			else
-				local arena<const> = management + layout.arena_offset
-				if admission.logical_fits(arena, names.name_charge) == 0 then return no_storage, source_cycles end
-				if capacity ~= 0 then
-					local offset<const> = allocator.bmsx_dlmalloc_allocate(arena, names.backing_slot_bytes * capacity, 0)
-					if offset == 0 then return no_storage, source_cycles end
-					backing = layout.ram_base + offset
-				end
-			end
+			local accepted, offset
+			accepted, offset, source_cycles = admission.reserve(management, root,
+				key, names.name_charge, names.backing_slot_bytes * capacity, false, source_cycles) -- G:93-99 H:84-91 L:160-168 N:173-179
+			if not accepted then return no_storage, source_cycles end -- L:86,152-155 N:98,151-154
+			local backing<const> = offset == 0 and 0 or layout.ram_base + offset -- G:95-97 H:86-88
 			ordinal = names.commit_name(management, bank, key, backing, capacity) -- G:97,101-108 H:88,92-100
 		end
 		mapped[index] = ordinal -- T:1034 C:311
@@ -128,11 +105,10 @@ end
 
 -- The newly allocated block stays allocator-owned until the complete
 -- name/literal binding has succeeded, just as in native image activation.
-local bind_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, slot, source_cycles)
+local bind_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, root, slot, source_cycles)
 	local image<const>: *immutable_image_operands = header -- T:1054-1061 C:330-355 F:10-15
 	if image.magic ~= image_magic then return invalid_header end -- T:1047 C:335
-	local managed<const> = slot >= 0
-	local socket<const> = managed and slot or 0
+	local socket<const> = slot < 0 and 0 or slot
 	local cart_bytes<const> = socket == 0 and cart0_bytes or cart1_bytes
 	local count<const>, global_count<const>, system_count<const> = image.constants_count, image.global_count, image.system_count
 	local constant_address<const>, global_address<const>, system_address<const> = image.constants, image.global_names, image.system_names
@@ -152,7 +128,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	end
 	local extent<const> = 4 * (global_count + system_count + strings_count) -- T:1076-1077 C:370,419
 	if extent > ram_bytes then return no_storage end -- T:1077 C:371
-	if managed then
+	if slot >= 0 then
 		local buckets<const>, bucket_count<const> = image.string_buckets, image.string_bucket_count
 		local source<const>, available<const> = rom_source(buckets, socket, system_bytes, cart_bytes)
 		if buckets < 0 or (buckets & 3) ~= 0 or bucket_count <= 0 or (bucket_count & (bucket_count - 1)) ~= 0
@@ -166,24 +142,17 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	local base, strings_base, ram_count = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
 	local view<const>: *installed_image_binding = installed -- T:1139-1144 C:420-426
 	if extent ~= 0 then -- T:1139 C:420
-		local offset
-		if managed then
-			local accepted
-			accepted, offset, source_cycles = managed_admission.reserve(management, 0, extent, extent, true, source_cycles)
-			if not accepted then return no_storage end -- L:86,153-155 N:98,153-154
-		else
-			local arena<const> = management + layout.arena_offset -- L:119-120 N:122-123
-			if admission.logical_fits(arena, extent) == 0 then return no_storage end -- L:86,132-138 N:98,147-155
-			offset = records.bmsx_dlmalloc_reserve_record(arena, extent, 0, 0, 0, extent, 0, 0, management + layout.occupied_offset)
-			if offset == 0 then return no_storage end -- L:153-155 N:152-154; only fixed roots existed
-		end
+		local accepted, offset
+		accepted, offset, source_cycles = admission.reserve(management, root,
+			0, extent, extent, true, source_cycles) -- T:1140 C:421 L:132-155 N:142-155
+		if not accepted then return no_storage end -- L:86,153-155 N:98,153-154
 		base = layout.ram_base + offset -- T:1140 C:421
 
 		local fault
-		fault, source_cycles = bind_name_table(management, managed, ordinary_names, global_count, ordinary_bank, base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1142 C:424
+		fault, source_cycles = bind_name_table(management, root, ordinary_names, global_count, ordinary_bank, base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1142 C:424
 		local system_base<const> = base + 4 * global_count -- T:1143-1144 C:425-426
 		if fault == 0 then
-			fault, source_cycles = bind_name_table(management, managed, system_names, system_count, system_bank, system_base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1143 C:425
+			fault, source_cycles = bind_name_table(management, root, system_names, system_count, system_bank, system_base, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1143 C:425
 		end
 		if fault == 0 then
 			strings_base = system_base + 4 * system_count -- T:1147 C:440
@@ -212,11 +181,8 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 	return 0 -- T:1167-1181 C:441
 end
 
-local bind_initial_image<const> = function(management, header, output, system_bytes, cart0_bytes)
-	local view<const>: *operand_bindings = output
-	view.global_base, view.global_capacity, view.global_count = 0, 0, 0 -- G:15-17 H:13
-	view.system_base, view.system_capacity, view.system_count = 0, 0, 0 -- G:15-17 H:13
-	return (bind_image(management, header, output, &view.system_base, &view.image, system_bytes, cart0_bytes, 0, -1, 0))
+local bind_initial_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, root)
+	return (bind_image(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, 0, root, -1, 0))
 end
 
 local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes)
@@ -227,7 +193,7 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	local system_bank<const> = state + layout.system_global_bank_offset
 	local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
 	local installed<const> = state + layout.installed_image_bindings_offset + (slot + 1) * sizeof(installed_image_binding)
-	return (bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, slot, *source_cycles))
+	return (bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, 0, slot, *source_cycles))
 end
 
 return {

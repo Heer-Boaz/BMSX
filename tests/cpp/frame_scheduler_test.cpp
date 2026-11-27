@@ -19,6 +19,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/closure_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -130,6 +131,7 @@ void testMappedStringCompletesBeforeVblank() {
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
 	const u32 entry = cpu.readFramePc(0);
@@ -178,6 +180,7 @@ void testAcceptedStringCyclesAcrossVblanks(bool withReadback) {
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	auto& cpu = runtime.machine.cpu;
 	auto& scheduler = runtime.machine.scheduler;
 	auto& frameScheduler = runtime.frameScheduler;
@@ -272,6 +275,7 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
 	auto& scheduler = runtime.frameScheduler;
@@ -463,6 +467,7 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	auto& cpu = runtime.machine.cpu;
 	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	auto& scheduler = runtime.frameScheduler;
@@ -554,6 +559,7 @@ void testParkedWriteRootsEnterAfterTheAtomicQueueTransfer() {
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
+	test::seedManagedFixture(runtime.machine.cpu, runtime.machine.executionAddressSpace);
 	auto& cpu = runtime.machine.cpu;
 	auto& heap = cpu.gcHeap();
 	auto& arena = cpu.heapAllocator();
@@ -626,6 +632,7 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
 	auto& cpu = runtime.machine.cpu;
+	test::seedManagedFixture(cpu, runtime.machine.executionAddressSpace);
 	auto& scheduler = runtime.frameScheduler;
 	auto& heap = cpu.gcHeap();
 	auto& arena = cpu.heapAllocator();

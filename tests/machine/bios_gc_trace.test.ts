@@ -6,18 +6,18 @@ import { initializeRecord as initializeClosure, setCaptureAddress } from '../../
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GC_THREAD_VISITS, GC_VISIT_COUNT, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
-import { HeapServiceTraceField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceTraceField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const TRACE = 'kernel/gc_trace', entrySource = 'halt_until_irq';
 const modules = [
@@ -38,7 +38,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(index >= 0);
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
 		target.stringPool.beginReachabilityEpoch();
@@ -96,8 +96,8 @@ function fixture(optLevel: 0 | 3) {
 		for (const target of [cpu, oracle]) target.gc['enqueue'](address, link, GC_TRACE_HEAD);
 	}
 	function beginning(limit: number, work: number, pending: number, policy = 0) {
-		const modeKey = cpu.gc['modeKey'];
-		assert.equal(modeKey, oracle.gc['modeKey']);
+		const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
+		assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
 		memory.writeRamRecordWord(context + HeapServiceTraceField.Work, work);
 		memory.writeRamRecordWord(context + HeapServiceTraceField.Limit, limit);
 		memory.writeRamRecordWord(context + HeapServiceTraceField.Atomic, 0);
@@ -116,11 +116,12 @@ function fixture(optLevel: 0 | 3) {
 		return [cpu.heapServiceResult(), memory.readRamRecordWord(context + HeapServiceTraceField.PendingStringWork)];
 	}
 	function check(limit: number, work: number, want: number[]) {
-		const carry = cpu.stringPool.takeMarkWork() + memory.readRamRecordWord(context + HeapServiceTraceField.PendingStringWork);
-		beginning(limit, work, carry);
+		beginning(limit, work, cpu.stringPool.takeMarkWork());
 		const ref = oracle.gc['traceQuantum'](false, limit, work);
-		assert.deepEqual([ref, oracle.stringPool['markWork']], want);
-		assert.deepEqual(finish(), want);
+		assert.deepEqual([ref, oracle.memory.readRamRecordWord(management + HEAP_STRING_MARK_WORK_OFFSET)], want);
+		const result = finish();
+		assert.deepEqual(result, want);
+		cpu.stringPool.resumeMarkWork(result[1]);
 		compare();
 	}
 	const head = () => memory.readRamRecordWord(control + GC_TRACE_HEAD);

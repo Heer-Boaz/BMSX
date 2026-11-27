@@ -15,7 +15,8 @@ import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
@@ -40,7 +41,7 @@ test('counted memory writes commit the available prefix before an absent source 
 	const image = linkRawTestSystemBlua32({ text, constants: [integerConstant(address)], exceptionFunctionIndex: 1,
 		functions: [{ firstWord: 0, wordCount: 1, maxStack: 1 }, { firstWord: 1, wordCount: 1 }] }, RAM_CODE_FIXTURE_BYTES);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const pc = cpu.rootThread.currentFrame!.pc;
 		cpu.rootThread.currentFrame!.registers.setInteger(0, 123);
 		memory.writeMappedU32LE(address + 4, 456);
@@ -58,7 +59,7 @@ test('compiled memory exits retain the computed raw guest address', () => {
 		OpCode.STORE_MEM_WORDS, OpCode.STORE_MEM_WORDS_D]) {
 		const displaced = op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D || op === OpCode.STORE_MEM_WORDS_D;
 		const image = memoryLoop(op, MemoryAccessKind.F64LE, displaced ? 255 : 0);
-		const { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+		const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 		const frame = cpu.rootThread.frameAtDepth(0);
 		for (let i = 0; i < 5; ++i) frame.registers.setInteger(i, i);
 		frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x1000 - (displaced ? 1020 : 0));
@@ -83,8 +84,8 @@ for (const op of [OpCode.LOAD_MEM_D, OpCode.STORE_MEM_D, OpCode.STORE_MEM_WORDS_
 	test(`warm memory transfers respect the public RAM fence (${op})`, () => {
 		const counted = op === OpCode.STORE_MEM_WORDS_D, load = op === OpCode.LOAD_MEM_D;
 		const image = memoryLoop(op, counted ? 2 : MemoryAccessKind.F64LE, 1);
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript).cpu;
-		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter).cpu;
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
+		const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const start = image.image.functions[0].codeAddress;
 		const loopCycles = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[op] + 2 + BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.JMP];
 		for (const cpu of [js, ref]) {
@@ -136,7 +137,7 @@ test('cached values reach field, memory and fault owners without stale tags or n
 	const image = linkRawTestSystemBlua32({ text, functions: [
 		{ firstWord: 0, wordCount: 13, maxStack: 14 }, { firstWord: 13, wordCount: 1 },
 	], constants: ['stable', 'result'], exceptionFunctionIndex: 1 }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	const address = DYNAMIC_RAM_BASE + 0x1000;
 	const loopCycles = [OpCode.MOV, OpCode.GETFIELD, OpCode.K0, OpCode.DIV, OpCode.SETFIELD, OpCode.STORE_MEM,
 		OpCode.K1, OpCode.ADD, OpCode.MOV, OpCode.MOV, OpCode.GETFIELD, OpCode.MOV, OpCode.JMP]
@@ -177,8 +178,8 @@ test('cached values reach field, memory and fault owners without stale tags or n
 for (let format = 0; format <= 5; ++format) for (const displaced of [false, true]) {
 	test(`generated RAM format ${format}, displaced ${displaced}: data, aliases and short grants`, () => {
 		const image = memoryLoop(displaced ? OpCode.STORE_MEM_D : OpCode.STORE_MEM, format, displaced ? 255 : 0);
-		const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-		const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
+		const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 		const entry = image.image.functions[0].codeAddress;
 		const address = DYNAMIC_RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4;
 		for (const machine of [js, ref]) {
@@ -213,7 +214,7 @@ for (let format = 0; format <= 5; ++format) for (const displaced of [false, true
 		writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 		const loads = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] }, RAM_CODE_FIXTURE_BYTES);
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
-			const machine = createTestSystemCpu(loads, backend);
+			const machine = createTestHeapServiceCpu(loads, backend);
 			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(1, machine.memory.ramBusEnd() - widths[format]);
 			machine.cpu.rootThread.frameAtDepth(0).registers.setInteger(3, machine.memory.ramBusEnd() - widths[format]);
 			machine.cpu.runUntilDepth(0, 1200);
@@ -230,8 +231,8 @@ test('an invalid scalar store faults at WIDE without writing either half or exec
 		const invalid = [valueNil(), valueBool(true)];
 		if (format === MemoryAccessKind.Word) invalid.push(valueFloatBits(0xffa12345), valueFloat(Infinity));
 		for (const source of invalid) {
-			const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-			const ref = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+			const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
+			const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 			for (const { cpu, memory } of [js, ref]) {
 				const frame = cpu.rootThread.frameAtDepth(0);
 				frame.registers.setInteger(0, 1); frame.registers.setInteger(1, DYNAMIC_RAM_BASE);
@@ -259,7 +260,7 @@ test('an invalid scalar store faults at WIDE without writing either half or exec
 
 test('a generated MMIO store checks readiness before width faults or source consumption', () => {
 	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U16LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setInteger(0, 12); frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x1000);
@@ -286,7 +287,7 @@ test('a generated MMIO store checks readiness before width faults or source cons
 
 test('a generated F64 load retains its destination when the second bus transfer faults', () => {
 	const image = memoryLoop(OpCode.LOAD_MEM_D, MemoryAccessKind.F64LE, 255);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x404 - 1020);
@@ -305,7 +306,7 @@ test('a generated F64 load retains its destination when the second bus transfer 
 
 test('a watched RAM store retires its own generated source only after returning', () => {
 	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U32LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const [index, { cpu, memory }] of machines.entries()) {
 		const frame = cpu.rootThread.frameAtDepth(0);
 		const entry = image.image.functions[0].codeAddress;
@@ -333,7 +334,7 @@ test('a watched RAM store retires its own generated source only after returning'
 
 test('a late physical byte watch routes an already generated store to the normal writer', () => {
 	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U32LE);
-	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const { cpu, memory } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0), entry = image.image.functions[0].codeAddress;
 	const target = DYNAMIC_RAM_BASE + 0x1000;
 	frame.registers.setInteger(0, 7);
@@ -367,7 +368,7 @@ test('a late physical byte watch routes an already generated store to the normal
 test('a DMA memory span retires generated RAM code before its next execution', () => {
 	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), entry = image.image.functions[0].codeAddress;
 		memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(entry, entry + MAPPED_PAGE_BYTE_SIZE));
 		frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x1000);
@@ -398,7 +399,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 	writeInstruction(text, 4, OpCode.JMP, 0, 63, 59, 255);
 	writeInstruction(text, 8, OpCode.K0, 6, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] }, RAM_CODE_FIXTURE_BYTES);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(DYNAMIC_RAM_BASE, text);
 		const frame = cpu.rootThread.frameAtDepth(0);
@@ -424,7 +425,7 @@ test('a continuously rewritten instruction stays outside stable compiled prefixe
 
 for (const grant of [5, 9]) test(`an MMIO read can retire its source and resume a hot continuation (grant=${grant})`, () => {
 	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
-	const machines = [createTestSystemCpu(image, CpuExecutionBackend.JavaScript), createTestSystemCpu(image, CpuExecutionBackend.Interpreter)];
+	const machines = [createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter)];
 	for (const [index, { cpu, memory }] of machines.entries()) {
 		const entry = image.image.functions[0].codeAddress;
 		memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(entry, entry + MAPPED_PAGE_BYTE_SIZE));
@@ -465,7 +466,7 @@ for (const grant of [5, 9]) test(`an MMIO read can retire its source and resume 
 test('fatal helper errors unwind after the completed generated prefix, without retrying IO', () => {
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 		const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const entry = image.image.functions[0].codeAddress, frame = cpu.rootThread.frameAtDepth(0);
 		memory.writeMappedWord(DYNAMIC_RAM_BASE + 0x1000, 7);
 		frame.registers.setInteger(1, DYNAMIC_RAM_BASE + 0x1000);
@@ -515,8 +516,8 @@ test('word producers, overwrites and externally entered continuations preserve f
 	for (const constant of [integerConstant(-1), { kind: 'float', word: 0x40400000 } as const]) {
 		const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: code.length, maxStack: 16 }],
 			constants: [integerConstant(-2147483648), integerConstant(-1), integerConstant(0), integerConstant(7), constant] }, RAM_CODE_FIXTURE_BYTES);
-		const generated = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-		const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+		const generated = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
+		const reference = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
 		const machines = [generated, reference];
 		const inputAddress = DYNAMIC_RAM_BASE + 0x1000, outputAddress = inputAddress + 4;
 		for (const { cpu, memory } of machines) {
@@ -550,7 +551,7 @@ test('word producers, overwrites and externally entered continuations preserve f
 test('a ready edge completes the latched store without refetching rewritten code or paying its base twice', () => {
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.Word);
-		const { cpu, memory } = createTestSystemCpu(image, backend);
+		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const code = DYNAMIC_RAM_BASE + 0x1000;
 		const source = image.image.functions[0].codeAddress;
 		memory.ramData().set(image.romBytes.subarray(source, source + MAPPED_PAGE_BYTE_SIZE), code - RAM_BASE);
@@ -604,7 +605,7 @@ test('external call entry and active-PC redirection flush an unaccepted physical
 	] }, RAM_CODE_FIXTURE_BYTES);
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		for (const takeover of ['call-blocked', 'call-ready', 'redirect', 'abort-call']) {
-			const { cpu, memory } = createTestSystemCpu(image, backend);
+			const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 			const device = { ready: false, writes: [] as number[] };
 			memory.mapIoWrite(port, device, (state, _address, word) => { state.writes.push(word); });
 			memory.mapIoWriteReady(port, (state: typeof device) => state.ready);

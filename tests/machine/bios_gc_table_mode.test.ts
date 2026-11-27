@@ -5,14 +5,14 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_MODE_META, GC_MODE_NODE } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, hashCanonicalTableKey, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 const path = 'kernel/gc_table_mode', probe = 'test/gc_table_mode', entrySource = 'halt_until_irq';
 const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
@@ -40,13 +40,13 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(index >= 0);
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index]);
 	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
-	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const output = management + HEAP_SERVICE_THREAD_OFFSET - 12, floor = memory.ramBusEnd() - RAM_BASE;
-	const modeKey = cpu.gc['modeKey'];
-	assert.equal(modeKey, oracle.gc['modeKey']);
+	const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
+	assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
 		if (Buffer.compare(actual, expected) === 0) return;

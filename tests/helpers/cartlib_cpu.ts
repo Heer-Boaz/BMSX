@@ -1,19 +1,21 @@
-import { MANAGED_CART_LAUNCH } from './managed_cart_launch';
-import { loadHeapServiceTestModules, loadTestBiosUtilityModules } from './heap_service_system';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compiler/module_graph';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
-import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
+import { createTestBlua32PairCpu, linkTestCartBlua32, writeTestBlua32Rom } from './blua32';
+import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from './managed_system';
+import { loadTestBiosUtilityModules } from './heap_service_system';
+import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
+import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
+import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { BASE_FIRMWARE_MODULES, COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from './cpu_test_harness';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from './cpu_execution';
 import { WORLD_CPU_MODULES } from './world_cpu';
-import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult, type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, valueInteger } from '../../machine/ts/machine/cpu/value';
 
 /** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
@@ -135,21 +137,22 @@ const CART_STUB_MODULES = [
 
 let defaultCartSources: ReadonlyMap<string, string> | undefined;
 
-// The firmware half depends only on fixed sources and the optimization level,
-// so one test process compiles it once per level and links that program into
-// every cart image.
-const systemPrograms = new Map<0 | 3, CompiledSystemProgram>();
-function compileCartlibSystem(optLevel: 0 | 3) {
-	let compiled = systemPrograms.get(optLevel);
-	if (compiled !== undefined) return compiled;
+// Author and link the real cold reset once per optimization level; each
+// independent cart links against that mounted System ROM.
+const systemImages = new Map<0 | 3, {
+	linked: ReturnType<typeof linkManagedTestSystem>; romBytes: Uint8Array; managedStartup: number;
+}>();
+function linkCartlibSystem(optLevel: 0 | 3) {
+	const cached = systemImages.get(optLevel);
+	if (cached !== undefined) return cached;
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of BASE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
 	for (const module of COROUTINE_FIRMWARE_MODULES) systemSources.set(module.path, module.source);
 	for (const path of ['math', 'math/trig', 'math/trig/reduce']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
-	const systemModules = Array.from(systemSources, ([path, source]) => ({
-		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
-	}));
+	for (const module of loadTestBiosUtilityModules()) {
+		if (!systemSources.has(module.path)) systemSources.set(module.path, module.source);
+	}
 	const systemEntry = `
 require('base')
 coroutine = require('coroutine')
@@ -161,20 +164,15 @@ lua_compiler = require('compiler/api')
 load = lua_compiler.load
 math = require('math')
 assert(setmetatable ~= nil)
-${MANAGED_CART_LAUNCH}
+${TEST_CART_TRANSFER_SOURCE}
 `;
-	compiled = compileLuaChunkToProgram(parseLuaChunk(systemEntry, 'boot.lua'), [
-		...loadHeapServiceTestModules(),
-		...loadTestBiosUtilityModules().filter(module => !systemModules.some(input => input.path === module.path)),
-		...systemModules,
-	], {
-		entrySource: systemEntry,
-		optLevel,
-		preloadModules: HEAP_SERVICE_MODULES,
-		programDomain: 'system',
-	});
-	systemPrograms.set(optLevel, compiled);
-	return compiled;
+	const linked = linkManagedTestSystem(systemEntry, optLevel,
+		Array.from(systemSources, ([path, source]) => ({ path, source })), BIOS_FUNCTION_EXPORTS);
+	const startup = linked.symbols.metadata.functionIds.indexOf('module:main/startup');
+	assert.notEqual(startup, -1, 'the authored BIOS links the ordinary System startup');
+	const system = { linked, romBytes: writeTestBlua32Rom(linked), managedStartup: linked.layout.functions[startup].address };
+	systemImages.set(optLevel, system);
+	return system;
 }
 
 export function compileCartlibProgram(
@@ -206,7 +204,7 @@ export function compileCartlibProgram(
 		const chunk = parsed.get(path);
 		if (chunk !== undefined) cartModules.push({ path, source, chunk });
 	}
-	const systemCompiled = compileCartlibSystem(optLevel);
+	const system = linkCartlibSystem(optLevel);
 	const cartCompiled = compileLuaChunkToProgram(entry, cartModules, {
 		entrySource: cartEntrySource,
 		optLevel,
@@ -214,13 +212,30 @@ export function compileCartlibProgram(
 		traceStatements,
 		preloadModules,
 	});
-	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
-	return { images, cart: cartCompiled, cartSources };
+	const images = {
+		systemImage: system.linked.layout,
+		systemSymbols: system.linked.symbols,
+		systemBiosImports: system.linked.biosImports,
+		systemRomBytes: system.romBytes,
+		...linkTestCartBlua32(system.linked.biosImports, cartCompiled),
+	};
+	return { images, cart: cartCompiled, cartSources, managedStartup: system.managedStartup };
 }
 
 export function createCartlibProgramHarness(cartEntrySource: string, options: CartlibProgramOptions = {}) {
-	const { images, cart } = compileCartlibProgram(cartEntrySource, options);
-	const { cpu } = createTestBlua32PairCpu(images);
+	const { images, cart, managedStartup } = compileCartlibProgram(cartEntrySource, options);
+	const { cpu, memory, irqController } = createTestBlua32PairCpu(images);
+	const scheduler = new DeviceScheduler(cpu);
+	memory.cartridgeController.connect(memory, irqController, new DmaController(memory, cpu, irqController, scheduler));
+	// Stop on the BIOS's final EXEC from cold preparation. The caller can now
+	// supply managed test data and observe the original System/cart startup;
+	// initial collection has already finished and cannot discard those inputs.
+	let remaining = 1_000_000;
+	for (let grant = 0; grant < 32 && cpu.readFrameFunctionAddress(0) !== managedStartup && remaining > 0; ++grant) {
+		assert.equal(cpu.runUntilDepth(0, remaining), RunResult.Yielded, 'the BIOS reset must reach ordinary startup');
+		remaining = cpu.instructionBudgetRemaining;
+	}
+	assert.equal(cpu.readFrameFunctionAddress(0), managedStartup, 'the BIOS admitted the ordinary System startup');
 	return { cpu, images, cart };
 }
 

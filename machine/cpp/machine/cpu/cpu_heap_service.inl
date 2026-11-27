@@ -52,7 +52,7 @@ u32 CPU::heapServiceResult() const {
 
 u32 CPU::queuedFixedWork() const {
 	// Do not publish a partially committed table as a new input root.
-	return tableRebuild.record ? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
+	return resetBankSelected() || tableRebuild.record ? 0u : m_memory.readRamRecordWord(m_heapAllocator.managementOffset() + HEAP_SERVICE_FIXED_WORK_OFFSET);
 }
 
 bool CPU::admitFixedWork(CpuRunKind kind) {

@@ -7,9 +7,9 @@ import { MAPPED_PAGE_BYTE_SHIFT } from '../../machine/ts/machine/memory/mapped_p
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 // An independent allocator in mapped fixture RAM. The real private heap
 // continues to own BLua's startup, frames and temporary values.
@@ -50,7 +50,7 @@ function fixture(backend: CpuExecutionBackend) {
 	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }], {
 		entrySource, optLevel: 3, programDomain: 'system',
 	});
-	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(compiled), backend);
+	const { cpu, memory } = createTestHeapServiceCpu(linkTestSystemBlua32(compiled), backend);
 	memory.setRamBusEnd(RAM_BASE + END);
 	const reference = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
 	const arena = reference.bindDlmalloc(STATE);

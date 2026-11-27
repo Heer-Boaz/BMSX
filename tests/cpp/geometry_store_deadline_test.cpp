@@ -15,6 +15,7 @@
 #include "support/blua32_test_rom.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <array>
 #include <cstdio>
@@ -40,13 +41,15 @@ Result runCase(bool native, bool crossing, bool doorbell = false) {
 	writeInstruction(image.text, 0, static_cast<u8>(OpCode::STORE_MEM_D), 1, 0, static_cast<u8>(MemoryAccessKind::U32LE), 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::JMP), 0, 63, 62, 255);
 	image.functions = {{.firstWord = 0u, .wordCount = 2u, .maxStack = 2u}};
-	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, output + GEO_OVERLAP2D_SUMMARY_BYTES - DYNAMIC_RAM_BASE);
+	const u32 publicEnd = (output + GEO_OVERLAP2D_SUMMARY_BYTES + HEAP_PAGE_SIZE - 1u) & ~(HEAP_PAGE_SIZE - 1u);
+	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image, publicEnd - DYNAMIC_RAM_BASE);
 	const u32 entryPc = DYNAMIC_RAM_BASE + 0x8000u + MAPPED_PAGE_BYTE_SIZE - INSTRUCTION_BYTES;
 	IdleInput input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
 	runtime.boot();
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
+	test::seedManagedFixture(cpu, machine.executionAddressSpace);
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (native) cpu.setNativeCompilationProfiling(true);
 #endif

@@ -16,6 +16,7 @@
 #include "support/closure_fixture.h"
 #include "support/cartridge_fixture.h"
 #include "support/cpu_execution_parity.h"
+#include "support/managed_fixture.h"
 
 #include <algorithm>
 #include <array>
@@ -52,7 +53,7 @@ struct CpuMachine {
 		: memory(MemoryInit{rom.bytes, slots}, PSX_MACHINE_SPEC.ramBytes), irq(memory), addresses(memory)
 		, cpu(memory, irq, addresses), scheduler(cpu), dma(memory, cpu, irq, scheduler) {
 		memory.cartridgeController().connect(memory, irq, dma);
-		cpu.reset();
+		test::seedManagedFixture(cpu, addresses);
 		if (scalar) cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
 	}
 };

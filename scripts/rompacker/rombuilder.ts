@@ -58,6 +58,7 @@ import { encodeAudioAssetToAdpcm } from './adpcm';
 import {
 	buildBlua32Image,
 	parseBlua32SourceModules,
+	type Blua32PreparedEntry,
 	type GeneratedLuaModule,
 } from '../../toolchain/ts/rompack/blua32_image_builder';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
@@ -898,6 +899,8 @@ type BuildRomBlua32TailOptions = {
 		domain: 'system';
 		resetModule?: string;
 		irqModule?: string;
+		exceptionModule?: string;
+		preparedEntry?: Blua32PreparedEntry;
 		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
@@ -963,6 +966,8 @@ export function buildRomBlua32Tail(
 			domain: 'system',
 			resetModule: options.resetModule,
 			irqModule: options.irqModule,
+			exceptionModule: options.exceptionModule,
+			preparedEntry: options.preparedEntry,
 			biosExports: options.biosExports,
 		});
 		const linked = built.linked;
