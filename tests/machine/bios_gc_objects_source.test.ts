@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
 import { numberConstantValue } from '../../toolchain/ts/lua/number';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -28,7 +27,7 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 	const path = 'machine/bios/kernel/gc_control.lua';
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture([path, port]));
 	const file = workspace.updateFile(path, readFileSync(path, 'utf8'));
-	const objectFile = workspace.updateFile(port, readFileSync(port, 'utf8'));
+	workspace.updateFile(port, readFileSync(port, 'utf8'));
 	const types = new StructTypes(workspace.getSnapshot(), { value: () => undefined, storage: () => undefined });
 	const statement = file.chunk.body.get(file.chunk.body.length - 1);
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
@@ -44,32 +43,14 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 		assert.ok(value?.kind === 'number');
 		assert.equal(numberConstantValue(value.value), type.struct!.fields.get(name)!.offset, name);
 	}
-	const returnSpan = objectFile.chunk.body.get(objectFile.chunk.body.length - 1).span;
-	const context = types.resolve(port, { name: 'object_sweep_context', arrayLengths: [], span: returnSpan });
-	assert.equal(context.size, Sweep.Next + 4);
-	for (const [name, offset] of [['link', Sweep.Link], ['work', Sweep.Work], ['removed', Sweep.Removed],
-		['deferred', Sweep.Deferred], ['allowance', Sweep.Allowance], ['mirror_policy', Sweep.MirrorPolicy],
-		['action', Sweep.Action], ['header', Sweep.Header], ['next', Sweep.Next]] as const) {
-		const field = context.struct!.fields.get(name);
-		assert.ok(field, name);
-		assert.equal(field.offset, offset, name);
-		assert.equal(field.size, 4, name);
-	}
-	for (const [name, action] of [['none', Action.None], ['retire_canonical_closure', Action.RetireCanonicalClosure],
-		['observe_retired_record', Action.ObserveRetiredRecord]] as const) {
-		const decl = objectFile.decls.find(decl => decl.name === `action_${name}`);
-		assert.ok(decl, name);
-		const value = types.constants.constant(decl);
-		assert.ok(value?.kind === 'number');
-		assert.equal(numberConstantValue(value.value), action, name);
-	}
+
 });
 
-test('the object sweep maps reachable work and separately identifies the deferred native scopes', () => {
-	const sources = new Map<string, { lines: string[]; mapped: Set<number>; deferred: Set<number> }>();
+test('the object sweep maps executable collector work and separates derived host observations', () => {
+	const sources = new Map<string, { lines: string[]; mapped: Set<number> }>();
 	for (const [key, path] of pins) {
 		const lines = execFileSync('git', ['show', basis + ':' + path], { encoding: 'utf8' }).split('\n');
-		sources.set(key, { lines, mapped: new Set(), deferred: new Set() });
+		sources.set(key, { lines, mapped: new Set() });
 	}
 	const lines = readFileSync(port, 'utf8').split('\n');
 	const exports = lines.indexOf('return {');
@@ -82,29 +63,35 @@ test('the object sweep maps reachable work and separately identifies the deferre
 			const [key, intervals] = entry.split(':');
 			const ref = sources.get(key);
 			assert.ok(ref, `${port}:${index + 1}: unknown source ${key}`);
-			const coverage = /\bpending = action_(?!none)|\bcontext.action = action_observe_retired_record/.test(line) ? ref.deferred : ref.mapped;
+
 			for (const interval of intervals.split(',')) {
 				const [first, last = first] = interval.split('-').map(Number);
 				assert.ok(first > 0 && last >= first && last <= ref.lines.length, `${port}:${index + 1}: invalid origin ${entry}`);
-				for (let n = first; n <= last; ++n) coverage.add(n);
+				for (let n = first; n <= last; ++n) ref.mapped.add(n);
 			}
 		}
 	}
 	const mapped = [
-		['T', [[738, 776], [779, 779], [781, 782], [784, 787], [789, 792], [794, 797], [799, 802], [804, 805]]],
-		['C', [[801, 837], [839, 839], [841, 847], [849, 853], [857, 857], [859, 864]]],
+		['T', [[738, 776], [779, 779], [781, 782], [784, 786], [789, 792], [794, 797], [799, 802], [804, 805]]],
+		['C', [[801, 837], [839, 839], [841, 845], [849, 853], [857, 857], [859, 864]]],
 		['A', [[165, 173]]], ['B', [[73, 75], [508, 517]]],
 		['L', [[42, 44], [50, 54]]], ['K', [[64, 66]]], ['E', [[68, 72]]],
 		['I', [[118, 120], [122, 124], [128, 128], [130, 130]]], ['J', [[59, 64]]],
 		['Q', [[66, 68]]], ['R', [[69, 71]]],
 	] as const;
-	// These pinned native operations were host view-projection effects only.
-	// The mirrored VM owners now acquire projections from the retired RAM
-	// state; the firmware must not defer either Thread operation.
-	const deferred = [
-		['T', [[783, 783], [788, 788], [793, 793], [803, 803]]],
-		['C', [[848, 848]]],
+	// Old inspector and index dispatch belongs to the physical writer and
+	// host consumers, not to the collector control flow.
+	const hostOnly = [
+		['T', 783, /onRecordRetirement/], ['T', 787, /CLOSURE_CANONICAL/], ['T', 788, /retireStaticClosure/],
+		['T', 793, /onRecordRetirement/], ['T', 803, /onRecordRetirement/],
+		['C', 846, /ValueTag::Closure/], ['C', 847, /CLOSURE_CANONICAL/], ['C', 848, /retireStaticClosure/],
 	] as const;
+	for (const [key, line, origin] of hostOnly) {
+		const ref = sources.get(key)!;
+		assert.match(ref.lines[line - 1], origin);
+		assert.equal(ref.mapped.has(line), false);
+	}
+	assert.match(readFileSync('machine/bios/kernel/dlmalloc_record.lua', 'utf8'), /\*kind = 0/);
 	// The common TS Thread view also samples scratch-only metadata. Dead
 	// release consumes none of these values, and C++ never reads them here.
 	const thread = sources.get('I')!;
@@ -113,14 +100,14 @@ test('the object sweep maps reachable work and separately identifies the deferre
 		assert.ok(thread.lines[line - 1].trimStart().startsWith(`target.${field} = `));
 		assert.equal(thread.mapped.has(line), false);
 	}
-	for (const [ranges, type] of [[mapped, 'mapped'], [deferred, 'deferred']] as const) {
-		for (const [key, slices] of ranges) {
+	{
+		for (const [key, slices] of mapped) {
 			const ref = sources.get(key)!;
 			for (const [first, last] of slices) {
 				for (let n = first; n <= last; ++n) {
 					const source = ref.lines[n - 1];
 					if (/^\s*(?:$|\/\/|}$)/.test(source)) continue;
-					assert.ok(ref[type].has(n), `${key}:${n}: no ${type} BLua site for ${source.trim()}`);
+					assert.ok(ref.mapped.has(n), `${key}:${n}: no BLua site for ${source.trim()}`);
 				}
 			}
 		}

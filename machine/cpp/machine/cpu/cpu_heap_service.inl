@@ -16,8 +16,7 @@ static_assert(HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32) <= RAM_BASE);
 static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STRIDE);
 static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
-static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
-static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::Next) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
+static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32)
 	<= HEAP_SERVICE_RESIDENT_OFFSET);
@@ -323,22 +322,14 @@ void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind
 }
 
 void CPU::writeHeapServiceProjection(u32 word) {
-	using Projection = HeapServiceProjection;
-	if (word == static_cast<u32>(Projection::PublishRoots)) {
-		publishHeapRemarkHead();
-		publishHeapRootBanks();
-		const u32 management = m_heapAllocator.managementOffset();
-		const u32 args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
-		const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
-		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.diagnosticWord(HeapServiceRemarkHeadField::Mode),
+	if (word != static_cast<u32>(HeapServiceProjection::PublishRoots))
+		throw BMSX_RUNTIME_ERROR("Unknown heap projection store command.");
+	publishHeapRemarkHead();
+	publishHeapRootBanks();
+	const u32 management = m_heapAllocator.managementOffset();
+	const u32 args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET;
+	const u32 pendingTop = m_concat.registersLeft ? static_cast<u32>(m_concat.nextRegister + m_concat.registersLeft) : 0u;
+	m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ModeKey), m_heap.diagnosticWord(HeapServiceRemarkHeadField::Mode),
 		m_heap.diagnosticWord(HeapServiceRemarkHeadField::NewIndex));
-		m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ActiveThread), m_activeThread->address, pendingTop);
-		return;
-	}
-	const u32 record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
-	switch (static_cast<Projection>(word & HEAP_SERVICE_GC_PROJECTION_MASK)) {
-		case Projection::RetireCanonicalClosure: retireStaticClosure(record); return;
-		case Projection::ObserveRetiredRecord: return; // No native record inspector.
-		default: throw BMSX_RUNTIME_ERROR("Unknown heap projection store command.");
-	}
+	m_memory.writeRamRecordPair(args + static_cast<u32>(HeapServiceGcArgumentField::ActiveThread), m_activeThread->address, pendingTop);
 }

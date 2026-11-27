@@ -4,6 +4,7 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
 import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, type Value } from '../../machine/ts/machine/cpu/value';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
@@ -100,9 +101,13 @@ test('a replaced heap retires tool lifetime tokens without a collector notificat
 	const runtime = createTestRuntime(createTestRuntimeRomPayload()), { cpu } = runtime.machine;
 	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
 	const table = valueTable(cpu.createTable());
+	const checkpoint = captureRuntimeSaveState(runtime);
 	const previous = observer.identity(table);
 	guest.invalidate('execution');
 	assert.equal(observer.matchesIdentity(table, previous), true, 'suspending the same live heap retains the observation');
+	applyRuntimeSaveState(runtime, checkpoint);
+	assert.equal(observer.matchesIdentity(table, previous), false, 'an actual RAM restore drops derived observations');
+	const restored = observer.identity(table);
 	guest.invalidate('heap-replaced');
-	assert.equal(observer.matchesIdentity(table, previous), false, 'a replacement can reuse exactly the same encoded address');
+	assert.equal(observer.matchesIdentity(table, restored), false, 'a replacement can reuse exactly the same encoded address');
 });

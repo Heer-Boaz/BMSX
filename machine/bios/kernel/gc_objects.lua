@@ -16,14 +16,12 @@ local color_offset<const> = 1 -- O:3 P:6
 local color_mask<const> = 3 -- O:4 P:7
 local object_link_before<const> = 4 -- O:10 P:14
 local table_kind<const> = 6 -- V:9-11 W:21-23
-local closure_kind<const> = 7 -- V:9-11 W:21-23
 local thread_kind<const> = 4 -- I:33 J:18
 local upvalue_kind<const> = 11 -- U:11 Z:13
 local upvalue_bytes<const> = 16 -- U:9 Z:11
 local table_header_charge<const> = 32 -- A:53 D:43
 local array_slot_charge<const> = 5 -- A:167 B:511
 local hash_slot_charge<const> = 10 -- A:19,168 B:19,73-75,510
-local closure_canonical<const> = 4 << 16 -- L:33,35 K:52,54 T:787 C:846-847
 local closure_latched<const> = 8 << 16 -- L:33,36 K:52,55 T:791 C:851
 local capture_high_byte<const> = 3 -- L:37 K:56
 local capture_gray_word<const> = 4 -- O:8 P:15
@@ -36,10 +34,6 @@ local value_slot_bytes<const> = 5 -- I:29 J:14
 local frame_bytes<const> = 56 -- F:21 G:34
 local protected_bytes<const> = 20 -- F:152 G:28
 local thread_control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
-local action_none<const> = 0 -- T:766 C:828; private protocol, no host action
-local action_retire_canonical_closure<const> = 2 -- T:788 C:848; private host action
-local action_observe_retired_record<const> = 4 -- T:783,793,803; private host action
-
 struct table_record
 	kind_header: u32 -- A:33-35 D:26-28
 	gray: u32 -- A:34 D:27
@@ -61,19 +55,6 @@ struct thread_record
 	before_control_blocks: u32[6] -- I:23-24 J:22-23
 	frame_block: addr -- I:24,128 J:23,63
 	protected_block: addr -- I:24,130 J:23,64
-end
-
--- Saved loop locals across the observer or canonical-index notifications.
-struct object_sweep_context
-	link: addr -- T:741,757 C:803,819
-	work: u32 -- T:745,758 C:807,820
-	removed: u32 -- T:746,756 C:808,818
-	deferred: addr -- T:783,788,793,803 C:848; private continuation reason
-	allowance: u32 -- T:738,747 C:801,809
-	mirror_policy: u32 -- A:166-168 B:509-511; CPU-owned release order
-	action: u32 -- T:783,788,793,803 C:848; private continuation stage
-	header: u32 -- T:752,787-791 C:814,846-851
-	next: addr -- T:751,759 C:813,821
 end
 
 local free_table<const> = function(arena, occupied, address, hash_first) -- T:782 C:842 A:165,170 B:508,514
@@ -120,36 +101,18 @@ local free_thread<const> = function(arena, occupied, address) -- T:796-797,799-8
 	allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, thread_bytes, occupied) -- T:802 C:862
 end
 
--- The native action is acknowledged by re-entry. Unlinking, recoloring
--- and retirement effects are not repeated, and only a completed quantum
--- publishes the collector's count and cursor.
-local sweep_objects<const> = function(control, arena, occupied, object_context, growing_thread, compact_threads, hash_first, observe_retirement) -- T:738 C:801
-	local context<const>: *object_sweep_context = ram_base + object_context -- T:741,745-747 C:803,807-809; private handoff of loop locals
-	local link = context.link -- T:741 C:803
-	if link == 0 then -- T:742 C:804
-		context.deferred = 0 -- T:742 C:804; no pending record owner
-		context.action = action_none -- T:742 C:804; no pending record owner
-		return 0 -- T:742 C:804
-	end
+-- RAM instruction state carries the loop across yields. The kind-byte clear
+-- in release_object invalidates host observations; no host action participates
+-- in reclaiming a record or publishing the quantum's count and cursor.
+local sweep_objects<const> = function(control, arena, occupied, growing_thread, compact_threads, hash_first, allowance) -- T:738 C:801
+	local cursor<const>: *u32 = ram_base + control + control_layout.internal.sweep_link_offset -- T:739-740 C:802
+	local link = *cursor -- T:741 C:803
+	if link == 0 then return 0 end -- T:742 C:804
 	local link_word: *u32 = ram_base + (link & ram_word_mask) -- T:743 C:805
-	local prior<const> = context.action -- T:783,788,793,803 C:848
-	local address -- T:743,759 C:805,821
-	if prior == action_none then address = *link_word -- T:743 C:805
-	else address = context.next end -- T:751,759 C:813,821
+	local address = *link_word -- T:743 C:805
 	local white_byte<const>: *u8 = ram_base + control + control_layout.internal.white_offset -- T:89,744 C:806 H:92
 	local white<const> = *white_byte & 1 -- T:89,744 C:806 H:92
-	local work, removed = context.work, context.removed -- T:745-746 C:807-808
-	local allowance<const> = context.allowance -- T:738,747 C:801,809
-	if prior ~= action_none then -- T:783,788,793,803 C:848; resume after the synchronous host action
-		if prior == action_retire_canonical_closure then -- T:787-788 C:846-848
-			free_closure(arena, occupied, context.deferred, context.header) -- T:789-792 C:849-852
-			if observe_retirement ~= 0 then -- T:793,803
-				context.action = action_observe_retired_record -- T:793,803
-				return work -- T:794,804; native observation precedes charging this record
-			end
-		end
-		work = work + 1 -- T:758,779,794,804 C:820,839,853,863; the per-record word retires after its host action
-	end
+	local work, removed = 0, 0 -- T:745-746 C:807-808
 	while address ~= 0 and work < allowance do -- T:747 C:809
 		local next_link<const> = address - object_link_before -- T:750 C:812
 		local next_word<const>: *u32 = ram_base + (next_link & ram_word_mask) -- T:751 C:813
@@ -158,24 +121,17 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 		local header<const> = *header_word -- T:752 C:814
 		local garbage<const> = ((header >> 8) & color_mask) == (white ~ 1) -- T:753 C:815
 		local kind<const> = header & 0xff -- T:769-770 C:831-832
-		local pending = action_none -- T:783,788,793,803 C:848
 		if garbage then -- T:754,771 C:816,833
 			*link_word = next_record -- T:755 C:817
 			removed = removed + 1 -- T:756 C:818
 			if kind == table_kind then -- T:781 C:841
 				free_table(arena, occupied, address, hash_first) -- T:782 C:842
-				if observe_retirement ~= 0 then pending = action_observe_retired_record end -- T:783
 			elseif kind == thread_kind then -- T:786,796 C:845,857
 				free_thread(arena, occupied, address) -- T:796-797,799-802 C:857,859-862
-				if observe_retirement ~= 0 then pending = action_observe_retired_record end -- T:803
 			elseif kind == upvalue_kind then -- T:789 C:849
 				allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, upvalue_bytes, occupied) -- T:789,792 C:849,852
-			elseif kind == closure_kind and (header & closure_canonical) ~= 0 then -- T:787 C:846-847
-				context.header = header -- T:752,790-791 C:814,850-851; only canonical Closure retirement uses this latched header
-				pending = action_retire_canonical_closure -- T:788 C:848
 			else -- T:786,789 C:845,849
 				free_closure(arena, occupied, address, header) -- T:790-792 C:850-852
-				if kind == closure_kind and observe_retirement ~= 0 then pending = action_observe_retired_record end -- T:793
 			end
 		else -- T:757 C:819
 			link = next_link -- T:757 C:819
@@ -189,15 +145,6 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 				end
 			end
 		end
-		if pending ~= action_none then -- T:758-761 C:820-823; retain the uncommitted quantum
-			context.link = link -- T:741,757 C:803,819
-			context.work = work -- T:745,758 C:807,820
-			context.removed = removed -- T:746,756 C:808,818
-			context.deferred = address -- T:783,788,793,803 C:848
-			context.next = next_record -- T:751,759 C:813,821
-			context.action = pending -- T:783,788,793,803 C:848
-			return work -- T:758,766 C:820,828; cumulative, not an independently committed quantum
-		end
 		work = work + 1 -- T:758,773,779,784,794,804 C:820,835,839,843,853,863
 		address = next_record -- T:759 C:821
 	end
@@ -205,10 +152,7 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 		local count<const>: *u32 = ram_base + control + control_layout.internal.object_count_offset -- T:762 C:824
 		*count = *count - removed -- T:763 C:825
 	end
-	local cursor<const>: *u32 = ram_base + control + control_layout.internal.sweep_link_offset -- T:739-740,765 C:802,827
 	if address ~= 0 then *cursor = link else *cursor = 0 end -- T:765 C:827
-	context.deferred = 0 -- T:765-766 C:827-828; retire the private continuation
-	context.action = action_none -- T:765-766 C:827-828; retire the private continuation
 	return work -- T:766 C:828
 end
 

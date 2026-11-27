@@ -64,6 +64,15 @@ public:
 	size_t ramByteCount() const { return m_ram.size(); }
 	MappedPageWriteWatches& ramWriteWatches() { return m_ramPageWriteWatches; }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
+
+	// Physical writes notify only exact registered bytes, after committing
+	// the bytes. Offsets are relative to the backing, not bus addresses.
+	void attachRamWriteObserver(void* context, MappedPageWriteWatches::ByteWriteObserver observer) {
+		m_ramPageWriteWatches.attachByteWriteObserver(context, observer);
+	}
+	void detachRamWriteObserver() { m_ramPageWriteWatches.detachByteWriteObserver(); }
+	void watchRamByte(u32 physicalOffset) { m_ramPageWriteWatches.watchByte(physicalOffset); }
+	void unwatchRamByte(u32 physicalOffset) { m_ramPageWriteWatches.unwatchByte(physicalOffset); }
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	u32 readRamRecordWord(u32 address) const {
 		return readLE32(m_ram.data() + (address & RAM_RECORD_WORD_MASK));
@@ -88,13 +97,10 @@ public:
 		if (m_ramPageWriteWatches.groupData()[offset >> MAPPED_PAGE_BYTE_SHIFT] != 0u)
 			invalidateWatchedRamRecordWrite(offset, 1u);
 	}
-	// The record port can mirror into public RAM. Those physical writes still
-	// retire decoded code. Private writes are visible only to rewind.
+	// The record port can mirror into public RAM. Only public writes can
+	// retire decoded code; physical observers also see private writes.
 	void invalidateRamWrite(size_t offset, size_t byteLength) {
-		if (RAM_BASE + offset < m_ramBusEnd)
-			m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator);
-		else if (m_ramPageWriteWatches.historyEpoch() & 1u)
-			m_ramPageWriteWatches.consumeHistoryWrites(offset, byteLength);
+		m_ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, m_mappedPageInvalidator, RAM_BASE + offset < m_ramBusEnd);
 	}
 	// A linear value slot writes one aligned payload word and one tag byte.
 	// Only marked pages need the exact port/aperture and word-watch handling.

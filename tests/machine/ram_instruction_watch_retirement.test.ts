@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
+import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SHIFT, MAPPED_PAGE_BYTE_SIZE, MappedPageWriteWatches } from '../../machine/ts/machine/memory/mapped_page';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
@@ -47,6 +48,53 @@ test('retirement clears exactly its code-word range across watch groups and page
 	for (let word = 0; word < 3 * MAPPED_PAGE_BYTE_SIZE / 4; ++word)
 		assert.equal(watches.anyWatched(word * 4, 4), word * 4 < first || word * 4 >= end);
 	assert.equal(watches.historyPageDirty(0, 3), false);
+});
+
+test('physical byte observers coexist with code watches and rewind', () => {
+	const memory = new Memory({ systemRom: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	let codeWrites = 0;
+	memory.attachMappedPageInvalidator({
+		invalidateMappedWords: () => { ++codeWrites; },
+		invalidateMappedRange: () => {},
+	});
+	const start = DYNAMIC_RAM_BASE - RAM_BASE + MAPPED_PAGE_BYTE_SIZE - 4;
+	const first = start + 3, second = start + 4;
+	const writes: number[][] = [], watches = memory.ramWriteWatches();
+	let firstRemaining = 2;
+	memory.onRamWrite(offset => {
+		writes.push([offset, memory.readRamRecordByte(offset)]);
+		if (offset === first && firstRemaining !== 0) {
+			--firstRemaining;
+			memory.unwatchRamByte(first);
+		}
+	});
+	memory.watchRamByte(first);
+	memory.watchRamByte(first);
+	memory.watchRamByte(second);
+	watches.armHistoryWrites();
+	watches.armCodeRange(start, 8);
+	memory.clearMappedPageWriteWatches();
+	assert.equal(watches.anyWatched(start, 8), false);
+	watches.armCodeRange(start, 8);
+	memory.writeMappedU8(RAM_BASE + first - 1, 11);
+	assert.deepEqual(writes, [], 'another byte of a watched word does not notify');
+	assert.equal(codeWrites, 1);
+	memory.transferDmaBlock(0, RAM_BASE + start, 2, 4, 4, MAPPED_BUS_MASTER_DMA, MAPPED_BUS_MASTER_DMA);
+	assert.deepEqual(writes, [[first, 4], [second, 5]]);
+	assert.equal(codeWrites, 2);
+	const nextPage = second >>> MAPPED_PAGE_BYTE_SHIFT;
+	assert.equal(watches.historyPageDirty(nextPage, nextPage + 1), true);
+
+	watches.disarmHistoryWrites();
+	memory.setRamBusEnd(RAM_BASE + start);
+	memory.writeRamRecordWord(start, 0x2a000000);
+	memory.writeRamRecordByte(RAM_BASE + first, 7);
+	memory.writeRamRecordByte(RAM_BASE + second, 8);
+	assert.deepEqual(writes, [[first, 4], [second, 5], [first, 42], [second, 8]],
+		'private record calls use physical offsets, and an observer can disarm inside its callback');
+	assert.equal(codeWrites, 2);
+	memory.unwatchRamByte(second);
+	assert.equal(watches.groupData()[nextPage], 0);
 });
 
 test('ordinary writes cannot mutate private image maps or embedded constants', () => {

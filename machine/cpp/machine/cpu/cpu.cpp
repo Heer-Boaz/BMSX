@@ -93,6 +93,7 @@ CPU::CPU(
 	, m_rootView(m_heap)
 	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
+	, m_staticClosuresByAddress(memory)
 	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
 	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
@@ -619,11 +620,6 @@ u32 CPU::allocateStaticClosure(const FunctionPrototype& record) {
 	const u32 closure = allocateClosure(record, 0, true);
 	m_staticClosuresByAddress.insert(record.functionAddress, closure);
 	return closure;
-}
-
-void CPU::retireStaticClosure(u32 address) {
-	const u32 prototype = m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-	m_staticClosuresByAddress.retire(prototype, address);
 }
 
 void CPU::clearExecutionEnvironment() {

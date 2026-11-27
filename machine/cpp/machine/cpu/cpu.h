@@ -611,7 +611,6 @@ private:
 	void markRootThreads(GcHeap& heap);
 	size_t rootBankSlots(GcRootBank bank) const;
 	void markRootBank(GcHeap& heap, GcRootBank bank, size_t first, size_t end);
-	void retireStaticClosure(u32 address);
 
 	std::array<
 		std::unique_ptr<Blua32ExecutionImage>,

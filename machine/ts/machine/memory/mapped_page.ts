@@ -12,9 +12,11 @@ export function mappedPageAddressKey(address: number, cartridgeSlot: number): nu
 	return address >= CART_ROM_BASE && address < CART_BUS_END ? mappedPageDomainKey(1 + cartridgeSlot) + address : address;
 }
 const MAPPED_PAGE_WATCH_GROUP_COUNT = MAPPED_PAGE_BYTE_SIZE / (4 * 32);
-// Match the native page word: code groups followed by history clean.
+// Match the native page word: code groups, history clean, and byte observers.
 const CODE_GROUPS = (1 << MAPPED_PAGE_WATCH_GROUP_COUNT) - 1;
 const HISTORY_CLEAN = 1 << MAPPED_PAGE_WATCH_GROUP_COUNT;
+const BYTE_OBSERVERS = HISTORY_CLEAN << 1;
+const BYTE_WATCH_COUNT = MAPPED_PAGE_BYTE_SIZE >>> 5;
 
 function mappedWatchWordMask(group: number, firstWord: number, lastWord: number): number {
 	return (group === (firstWord >>> 5) ? 0xffffffff << (firstWord & 31) : 0xffffffff)
@@ -38,6 +40,8 @@ export type MappedPageBinding = {
 export class MappedPageWriteWatches {
 	private readonly values: Uint32Array;
 	private readonly words: Uint32Array;
+	private bytePages: Map<number, Uint32Array> | null = null;
+	private sharedBytes: Map<number, number> | null = null;
 	private epoch = 0;
 
 	public groupData(): Uint32Array { return this.values; }
@@ -61,10 +65,60 @@ export class MappedPageWriteWatches {
 		return false;
 	}
 
-	public constructor(byteLength: number, groupBuffer?: ArrayBuffer, groupOffset = 0) {
+	public constructor(byteLength: number, groupBuffer?: ArrayBuffer, groupOffset = 0,
+		private readonly observeByte?: (offset: number) => void) {
 		const pages = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1) >>> MAPPED_PAGE_BYTE_SHIFT;
 		this.values = groupBuffer === undefined ? new Uint32Array(pages) : new Uint32Array(groupBuffer, groupOffset, pages);
 		this.words = new Uint32Array(this.values.length * MAPPED_PAGE_WATCH_GROUP_COUNT);
+	}
+
+	public watchByte(offset: number): void {
+		const page = offset >>> MAPPED_PAGE_BYTE_SHIFT;
+		const pages = this.bytePages ??= new Map();
+		let bytes = pages.get(page);
+		if (bytes === undefined) {
+			bytes = new Uint32Array(BYTE_WATCH_COUNT + 1);
+			pages.set(page, bytes);
+			this.values[page] |= BYTE_OBSERVERS;
+		}
+		const lane = (offset & MAPPED_PAGE_BYTE_MASK) >>> 5, bit = 1 << (offset & 31);
+		if (bytes[lane] & bit) {
+			const shared = this.sharedBytes ??= new Map();
+			shared.set(offset, (shared.get(offset) ?? 1) + 1);
+		} else {
+			bytes[lane] |= bit;
+			++bytes[BYTE_WATCH_COUNT];
+		}
+	}
+
+	public unwatchByte(offset: number): void {
+		const shared = this.sharedBytes;
+		const count = shared?.get(offset);
+		if (count !== undefined) {
+			if (count === 2) shared!.delete(offset);
+			else shared!.set(offset, count - 1);
+			return;
+		}
+		const page = offset >>> MAPPED_PAGE_BYTE_SHIFT;
+		const pages = this.bytePages!, bytes = pages.get(page)!;
+		bytes[(offset & MAPPED_PAGE_BYTE_MASK) >>> 5] &= ~(1 << (offset & 31));
+		if (--bytes[BYTE_WATCH_COUNT] === 0) {
+			pages.delete(page);
+			this.values[page] &= ~BYTE_OBSERVERS;
+		}
+	}
+
+	private notifyByteWrites(page: number, first: number, last: number): void {
+		const bytes = this.bytePages!.get(page)!;
+		for (let group = first >>> 5; group <= last >>> 5; ++group) {
+			let pending = bytes[group] & mappedWatchWordMask(group, first, last);
+			while (pending !== 0) {
+				const bit = pending & -pending;
+				this.observeByte!(page * MAPPED_PAGE_BYTE_SIZE + group * 32 + 31 - Math.clz32(bit));
+				// The observer may disarm a byte before continuing this write.
+				pending = (pending ^ bit) & bytes[group];
+			}
+		}
 	}
 
 	public bind(offset: number, out: MappedPageBinding): void {
@@ -96,7 +150,7 @@ export class MappedPageWriteWatches {
 	}
 
 	public clear(): void {
-		for (let page = 0; page < this.values.length; ++page) this.values[page] &= HISTORY_CLEAN;
+		for (let page = 0; page < this.values.length; ++page) this.values[page] &= HISTORY_CLEAN | BYTE_OBSERVERS;
 		this.words.fill(0);
 	}
 
@@ -112,14 +166,22 @@ export class MappedPageWriteWatches {
 	}
 
 	public disarmHistoryWrites(): void {
-		for (let page = 0; page < this.values.length; ++page) this.values[page] &= CODE_GROUPS;
+		for (let page = 0; page < this.values.length; ++page) this.values[page] &= ~HISTORY_CLEAN;
 		this.epoch = (this.epoch & ~1) >>> 0;
 	}
 	public historyEpoch(): number { return this.epoch; }
-	public consumeHistoryWrites(offset: number, byteLength: number): void {
+	public tracksPrivateWrites(): boolean { return (this.epoch & 1) !== 0 || (this.bytePages !== null && this.bytePages.size !== 0); }
+	public invalidatePrivateWrite(offset: number, byteLength: number): void {
 		if (byteLength === 0) return;
-		const lastPage = (offset + byteLength - 1) >>> MAPPED_PAGE_BYTE_SHIFT;
-		for (let page = offset >>> MAPPED_PAGE_BYTE_SHIFT; page <= lastPage; ++page) this.values[page] &= CODE_GROUPS;
+		const firstPage = offset >>> MAPPED_PAGE_BYTE_SHIFT;
+		const lastByte = offset + byteLength - 1, lastPage = lastByte >>> MAPPED_PAGE_BYTE_SHIFT;
+		for (let page = firstPage; page <= lastPage; ++page) {
+			const flags = this.values[page];
+			if (flags & HISTORY_CLEAN) this.values[page] = flags & ~HISTORY_CLEAN;
+			if (flags & BYTE_OBSERVERS) this.notifyByteWrites(page,
+				page === firstPage ? offset & MAPPED_PAGE_BYTE_MASK : 0,
+				page === lastPage ? lastByte & MAPPED_PAGE_BYTE_MASK : MAPPED_PAGE_BYTE_MASK);
+		}
 	}
 
 	public armWord(pageIndex: number, word: number): void {
@@ -152,7 +214,7 @@ export class MappedPageWriteWatches {
 		if (firstPage === lastPage) {
 			const flags = this.values[firstPage];
 			if (flags === 0) return;
-			if ((flags & HISTORY_CLEAN) === 0) {
+			if ((flags & (HISTORY_CLEAN | BYTE_OBSERVERS)) === 0) {
 				const firstWord = (offset & MAPPED_PAGE_BYTE_MASK) >>> 2, lastWord = (lastByte & MAPPED_PAGE_BYTE_MASK) >>> 2;
 				const firstGroup = firstWord >>> 5, lastGroup = lastWord >>> 5;
 				if (firstGroup === lastGroup) {
@@ -164,13 +226,14 @@ export class MappedPageWriteWatches {
 			}
 		}
 		for (let page = firstPage; page <= lastPage; ++page) {
-			if (this.values[page] & HISTORY_CLEAN) this.values[page] &= CODE_GROUPS;
-			if ((this.values[page] & CODE_GROUPS) === 0) continue;
-			const firstWord = ((page === firstPage ? offset & MAPPED_PAGE_BYTE_MASK : 0) >>> 2);
-			const endWord = page === lastPage ? ((lastByte & MAPPED_PAGE_BYTE_MASK) >>> 2) + 1 : MAPPED_PAGE_BYTE_SIZE >>> 2;
-			const affected = this.consume(page, firstWord, endWord);
-			const key = keyBase + page * MAPPED_PAGE_BYTE_SIZE;
-			if (affected) invalidator.invalidateMappedWords(key, firstWord, endWord);
+			const flags = this.values[page];
+			if (flags === 0) continue;
+			if (flags & HISTORY_CLEAN) this.values[page] = flags & ~HISTORY_CLEAN;
+			const first = page === firstPage ? offset & MAPPED_PAGE_BYTE_MASK : 0;
+			const last = page === lastPage ? lastByte & MAPPED_PAGE_BYTE_MASK : MAPPED_PAGE_BYTE_MASK;
+			if ((flags & CODE_GROUPS) !== 0 && this.consume(page, first >>> 2, (last >>> 2) + 1))
+				invalidator.invalidateMappedWords(keyBase + page * MAPPED_PAGE_BYTE_SIZE, first >>> 2, (last >>> 2) + 1);
+			if (flags & BYTE_OBSERVERS) this.notifyByteWrites(page, first, last);
 		}
 	}
 }

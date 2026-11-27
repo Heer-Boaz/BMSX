@@ -109,27 +109,13 @@ export const enum HeapServiceRemarkHeadField {
 	HasPendingAssignment = 48, Receiver = 52, KeyTag = 56, KeyWord = 60, ValueTag = 64, ValueWord = 68,
 }
 
-// Locals of the original object sweep quantum, retained across derived-view
-// notifications. Object count and cursor are not committed at such a handoff.
-// The originating mirror's release and shrink policies last through the
-// remainder of this quantum, including an Object-to-String handoff.
-export const HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
-export const enum HeapServiceObjectSweepField {
-	Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20,
-	Action = 24, Header = 28, Next = 32,
-}
-export const enum HeapServiceObjectSweepAction { None = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4 }
-
 export const HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 }
 
-// A private STORE selector, not a RAM latch or a mapped bus register.
-// The low three bits select a projection; record notifications include the
-// aligned record address, while root publication and release take no address.
+// A private CPU-root publication strobe, not a RAM latch or mapped register.
 export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
-export const HEAP_SERVICE_GC_PROJECTION_MASK = 7;
 export const enum HeapServiceProjection {
-	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4,
+	PublishRoots = 0,
 }
 export const HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 export const enum HeapServiceGcArgumentField { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 }

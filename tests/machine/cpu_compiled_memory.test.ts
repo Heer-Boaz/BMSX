@@ -331,6 +331,39 @@ test('a watched RAM store retires its own generated source only after returning'
 	assert.deepEqual(machines[0].memory.ramData(), machines[1].memory.ramData());
 });
 
+test('a late physical byte watch routes an already generated store to the normal writer', () => {
+	const image = memoryLoop(OpCode.STORE_MEM, MemoryAccessKind.U32LE);
+	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const frame = cpu.rootThread.frameAtDepth(0), entry = image.image.functions[0].codeAddress;
+	const target = DYNAMIC_RAM_BASE + 0x1000;
+	frame.registers.setInteger(0, 7);
+	frame.registers.setInteger(1, target);
+	cpu.runUntilDepth(0, 2400);
+	const page = frame.decodedPage!;
+	const site = (entry & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
+	const block = page.compiledBlocks!.entries[site]!;
+	assert.ok(block);
+	const writes: number[] = [], offset = target - RAM_BASE + 1;
+	const unsubscribe = memory.onRamWrite(written => {
+		assert.equal(written, offset);
+		writes.push(memory.readRamRecordByte(written));
+	});
+	memory.watchRamByte(offset);
+	frame.registers.setInteger(0, 0x2300);
+	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry);
+	const run = { remainingCycles: 100, registerTop: frame.top, memoryAddress: 0 };
+	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, run)];
+	assert.equal(exit.exit, CompiledBlockExit.WriteMemory);
+	assert.equal(memory.readMappedU32LE(target), 7);
+	assert.deepEqual(writes, []);
+	assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.STORE_MEM]), RunResult.Yielded);
+	assert.equal(cpu.instructionBudgetRemaining, 0);
+	assert.deepEqual(writes, [0x23]);
+	assert.equal(page.compiledBlocks!.entries[site], block, 'data observation does not invalidate machine code');
+	memory.unwatchRamByte(offset);
+	unsubscribe();
+});
+
 test('a DMA memory span retires generated RAM code before its next execution', () => {
 	const image = memoryLoop(OpCode.LOAD_MEM, MemoryAccessKind.U32LE);
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {

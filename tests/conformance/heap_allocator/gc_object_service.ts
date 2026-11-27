@@ -11,12 +11,11 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { captureCount, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL } from '../../../machine/ts/machine/cpu/closure';
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceObjectSweepField } from '../../../machine/ts/spec/bmsx/heap_service';
 const source = `
 local function grow(depth, value)
 	if depth == 0 then return value end
@@ -71,7 +70,6 @@ try {
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
 		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-		const context = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 		const head = () => memory.readRamRecordWord(control + OBJECT_HEAD);
 		const count = () => memory.readRamRecordWord(control + OBJECT_COUNT);
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
@@ -132,7 +130,10 @@ try {
 			'published relocated Thread backing and controls');
 		driver.reach(() => memory.readRamRecordByte(deadThread) === 0, 'retire the dead Thread record');
 		assert.ok(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), 'Kind clears before physical record release');
-		driver.checkpoint('thread-release', [[context, context + HeapServiceObjectSweepField.Next + 4], [deadThread - RAM_BASE, deadThread - RAM_BASE + 48]]);
+		const issued = deadThread - RAM_BASE - GC_OBJECT_PREFIX - 8;
+		const charge = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
+		driver.checkpoint('thread-kind-clear', [[control + OBJECT_HEAD, control + SWEEP_LINK + 4],
+			[charge, charge + 4], [issued, deadThread - RAM_BASE + 48]]);
 
 		driver.finish(58, () => {
 			assert.equal(gc.tableRecordAddress(first), 0);

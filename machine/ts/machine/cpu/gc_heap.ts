@@ -76,9 +76,6 @@ export function gcPacedPhase(phase: GcPhase): boolean {
 }
 export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
-	// An inspector may end the lifetimes it observed; allocation never
-	// creates host identities. A replacement invalidates the whole view.
-	public onRecordRetirement: ((address: number | null) => void) | null = null;
 	private readonly controlOffset: number;
 	private readonly diagnosticOffset: number;
 	public diagnosticWord(field: HeapServiceRemarkHeadField): number {
@@ -795,17 +792,13 @@ export class GcHeap {
 		}
 		if (kind === ValueTag.Table) {
 			this.tables.freeRecord(address);
-			this.onRecordRetirement?.(address);
 			return 1;
 		}
 		if (kind !== THREAD_RECORD_KIND) {
-			if (kind === ValueTag.Closure && (header & (Closure.CLOSURE_CANONICAL << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0)
-				this.cpu.retireStaticClosure(address);
 			const bytes = kind === UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 				: Closure.closureRecordBytes(Closure.captureCount(this.memory, address),
 					(header & (Closure.CLOSURE_LATCHED_PROTOTYPE << (8 * Closure.CLOSURE_BINDING_FLAGS))) !== 0);
 			this.budget.releaseObject(address, bytes);
-			if (kind === ValueTag.Closure) this.onRecordRetirement?.(address);
 			return 1;
 		}
 		const layout = this.threadLayout;
@@ -815,7 +808,6 @@ export class GcHeap {
 		this.budget.releaseRecord(layout.frameBlock, layout.frames * FRAME_CONTROL_BYTES);
 		if (layout.protectedBlock !== 0) this.budget.releaseRecord(layout.protectedBlock, layout.continuations * PROTECTED_CALL_BYTES);
 		this.budget.releaseObject(address, THREAD_HEAP_BYTES);
-		this.onRecordRetirement?.(address);
 		return 1;
 	}
 

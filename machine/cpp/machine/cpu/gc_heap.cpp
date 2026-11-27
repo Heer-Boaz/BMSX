@@ -860,9 +860,6 @@ size_t GcHeap::sweepRecord(u32 address, u32 header, bool garbage, u8 currentWhit
 		return 1;
 	}
 	if (kind != THREAD_RECORD_KIND) {
-		if (kind == static_cast<u8>(ValueTag::Closure)
-			&& (header & (CLOSURE_CANONICAL << (8u * CLOSURE_BINDING_FLAGS))) != 0u)
-			m_cpu.retireStaticClosure(address);
 		const u32 bytes = kind == UPVALUE_RECORD_KIND ? UPVALUE_HEAP_BYTES
 			: closureRecordBytes(ClosureRecord::captureCount(memory, address),
 				(header & (CLOSURE_LATCHED_PROTOTYPE << (8u * CLOSURE_BINDING_FLAGS))) != 0u);

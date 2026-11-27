@@ -221,6 +221,7 @@ export class Memory {
 	public readonly ramWords: Uint32Array;
 	public readonly ramFloats: Float32Array;
 	private readonly ramPageWriteWatches: MappedPageWriteWatches;
+	private readonly ramByteWriteObservers = new Set<(offset: number) => void>();
 	private mappedPageInvalidator: MappedPageInvalidator | null = null;
 	private readonly ioSlots: Uint32Array;
 	private readonly ioReadContexts: unknown[];
@@ -258,7 +259,9 @@ export class Memory {
 		this.ramView = new DataView(buffer, 0, ramByteCount);
 		this.ramWords = new Uint32Array(buffer, 0, ramByteCount >>> 2);
 		this.ramFloats = new Float32Array(buffer, 0, ramByteCount >>> 2);
-		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, buffer, MAIN_RAM_SIZE);
+		this.ramPageWriteWatches = new MappedPageWriteWatches(ramByteCount, buffer, MAIN_RAM_SIZE, offset => {
+			for (const observer of this.ramByteWriteObservers) observer(offset);
+		});
 		this.ioSlots = new Uint32Array(IO_SLOT_COUNT);
 		this.ioReadContexts = new Array<unknown>(IO_SLOT_COUNT);
 		this.ioWriteContexts = new Array<unknown>(IO_SLOT_COUNT);
@@ -291,6 +294,16 @@ export class Memory {
 	}
 
 	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
+
+	/** Physical offsets, independent of the CPU bus aperture and fetch watches. */
+	public watchRamByte(offset: number): void { this.ramPageWriteWatches.watchByte(offset); }
+	public unwatchRamByte(offset: number): void { this.ramPageWriteWatches.unwatchByte(offset); }
+
+	/** Observe each armed byte synchronously after a store. RAM replacement is not a store. */
+	public onRamWrite(observer: (offset: number) => void): () => void {
+		this.ramByteWriteObservers.add(observer);
+		return () => { this.ramByteWriteObservers.delete(observer); };
+	}
 
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	public readRamRecordWord(address: number): number {
@@ -326,18 +339,15 @@ export class Memory {
 		}
 	}
 
-	// Private heap writes need only rewind tracking. Physical aliases below the
-	// public boundary still consume their actual decoded-instruction watches.
+	// Private writes still notify the physical watches but cannot retire code.
 	public invalidateRamWrite(offset: number, byteLength: number): void {
-		if (offset >= this.busEnd - RAM_BASE) {
-			if (this.ramPageWriteWatches.historyEpoch() & 1) this.ramPageWriteWatches.consumeHistoryWrites(offset, byteLength);
-			return;
-		}
-		this.ramPageWriteWatches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!);
+		const watches = this.ramPageWriteWatches;
+		if (offset < this.busEnd - RAM_BASE) watches.invalidateWrite(offset, byteLength, RAM_BASE, this.mappedPageInvalidator!);
+		else if (watches.tracksPrivateWrites()) watches.invalidatePrivateWrite(offset, byteLength);
 	}
 
 	// The register planes have separate physical extents but share one
-	// private-history admission. Public aliases must still retire exact words.
+	// private write-watch admission. Public aliases must still retire exact words.
 	public invalidateRamWritePair(first: number, firstBytes: number, second: number, secondBytes: number): void {
 		const privateStart = this.busEnd - RAM_BASE;
 		if (first < privateStart || second < privateStart) {
@@ -345,9 +355,9 @@ export class Memory {
 			this.invalidateRamWrite(second, secondBytes);
 		} else {
 			const watches = this.ramPageWriteWatches;
-			if (watches.historyEpoch() & 1) {
-				watches.consumeHistoryWrites(first, firstBytes);
-				watches.consumeHistoryWrites(second, secondBytes);
+			if (watches.tracksPrivateWrites()) {
+				watches.invalidatePrivateWrite(first, firstBytes);
+				watches.invalidatePrivateWrite(second, secondBytes);
 			}
 		}
 	}

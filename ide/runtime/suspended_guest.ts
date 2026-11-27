@@ -97,7 +97,7 @@ export class SuspendedGuestSession {
 	}
 
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
-		if (reason === 'heap-replaced') retireObservedRecordLifetimes(this.cpu.gc);
+		if (reason === 'heap-replaced') retireObservedRecordLifetimes(this.cpu);
 		for (const listener of this.invalidationListeners) listener(reason);
 	}
 
@@ -139,7 +139,7 @@ export class SuspendedGuestSession {
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
 		switch (tag) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.ResidentFunction: case ValueTag.Thread: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return observedRecordLifetime(this.cpu, valuePayload(value));
 			default: return this.identityScalar(value, tag);
 		}
 	}

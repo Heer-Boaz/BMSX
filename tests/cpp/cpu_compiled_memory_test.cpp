@@ -84,6 +84,46 @@ void countedStoresPreserveTheirPrefixOnWindowFault() {
 	}
 }
 
+void publishedStoresObserveNewPhysicalByteWatches() {
+	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
+	IrqController irq(memory);
+	ExecutionAddressSpace addresses(memory);
+	CPU cpu(memory, irq, addresses);
+	memory.setRamBusEnd(DYNAMIC_RAM_BASE + test::RAM_CODE_FIXTURE_BYTES);
+
+	DecodedInstruction store{};
+	store.op = static_cast<u8>(OpCode::STORE_MEM);
+	store.a = 0; store.b = 1; store.c = static_cast<u8>(MemoryAccessKind::U8);
+	store.width = 1; store.baseCycles = BASE_CYCLES[store.op];
+	const std::array source{NativeBlockInstruction{&store, 0x1000u}};
+	const std::array runs{NativeBlockSource{source}};
+	for (const bool privateFirmware : {false, true}) {
+		NativeCodeBindings bindings(memory, cpu.stringPool(), nullptr, {}, false);
+		bindings.privateFirmware = privateFirmware;
+		bindings.privateStoreEnd = RAM_BASE + memory.ramByteCount();
+		const u32 address = privateFirmware ? memory.ramBusEnd() + 8u : DYNAMIC_RAM_BASE + 8u;
+		const u32 offset = address - RAM_BASE;
+		auto emitted = NativeCompiler{}.compile(runs, bindings);
+		const auto& block = *emitted.front();
+		ValueSlots operands(2);
+		operands.set(1, valueInteger(address));
+		NativeBlockRunState state;
+		const auto run = [&](i32 byte) {
+			operands.set(0, valueInteger(byte));
+			state.remainingCycles = 10;
+			return block.run(operands.view(), state);
+		};
+		require(run(41) == &block.terminal && memory.readRamRecordByte(offset) == 41,
+			"the unobserved store retires directly");
+		memory.watchRamByte(offset);
+		require(run(0)->exit == NativeBlockExit::WriteMemory && memory.readRamRecordByte(offset) == 41,
+			"already published public and firmware code exit before committing the watched byte");
+		memory.unwatchRamByte(offset);
+		require(run(42) == &block.terminal && memory.readRamRecordByte(offset) == 42,
+			"removing the watch readmits the same emitted store without recompilation");
+	}
+}
+
 void ramScalarDatapathsAndGuards() {
 	NativeBlockRunState nativeRunState;
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes), reference(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
@@ -819,6 +859,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 int main() {
 	try {
 		countedStoresPreserveTheirPrefixOnWindowFault();
+		publishedStoresObserveNewPhysicalByteWatches();
 		ramScalarDatapathsAndGuards();
 		coldExitsPreserveAddressOperands();
 		generatedMemoryBoundaries();

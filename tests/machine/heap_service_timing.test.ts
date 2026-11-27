@@ -289,7 +289,7 @@ test('a suspended SETT retains only its published roots across a timed recovery 
 	assert.deepEqual(finish(), completed);
 });
 
-test('production object sweep frees records before debugger callbacks without publishing the frontier', () => {
+test('production object sweep clears the kind byte before release without publishing the frontier', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
 		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
@@ -307,38 +307,35 @@ test('production object sweep frees records before debugger callbacks without pu
 		return [result, cycles - cpu.instructionBudgetRemaining];
 	};
 	const callbacks: number[][] = [];
-	gc.onRecordRetirement = address => {
-		if (address !== null) callbacks.push([address, count(), cursor(),
-			+cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX)]);
-	};
+	for (const address of [newer, older]) memory.watchRamByte(address - RAM_BASE);
+	memory.onRamWrite(offset => {
+		const address = RAM_BASE + offset;
+		if ((address === older || address === newer) && memory.readRamRecordByte(offset) === 0
+			&& !callbacks.some(([seen]) => seen === address))
+			callbacks.push([address, count(), cursor(), +cpu.heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX)]);
+	});
 	for (let i = 0; i < 16384 && gc.phase() !== GcPhase.Sweep; ++i) slice(gc.phase() < GcPhase.Atomic ? 512 : 1);
 	assert.equal(gc.phase(), GcPhase.Sweep);
 	assert.equal(cpu.heapServiceActive(), true);
 	const newerBlock = newer - RAM_BASE - GC_OBJECT_PREFIX;
 	assert.ok(cpu.heapAllocator.issuedObjectStart(newerBlock));
-	let frontier: number[] | undefined;
-	for (let i = 0; i < 16384 && !callbacks.some(([address]) => address === newer); ++i) {
-		assert.equal(slice(1)[0], RunResult.Yielded);
-		if (!cpu.heapAllocator.issuedObjectStart(newerBlock) && !callbacks.some(([address]) => address === newer)) {
-			frontier ??= [count(), cursor()];
-		}
-	}
-	assert.ok(frontier, 'an ordinary BIOS instruction releases the object before the debugger sees it');
+	for (let i = 0; i < 16384 && callbacks.length === 0; ++i) assert.equal(slice(1)[0], RunResult.Yielded);
+	const frontier = [count(), cursor()];
 	assert.notEqual(frontier[1], 0);
-	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier, 0]]);
-	assert.equal(callbacks.some(([address]) => address === older), false);
+	assert.deepEqual(callbacks, [[newer, ...frontier, 1]]);
+	assert.equal(memory.readRamRecordByte(newer), 0);
+	assert.equal(cpu.heapAllocator.issuedObjectStart(newerBlock), true, 'the kind store precedes the allocator mutation');
 	assert.equal(cpu.heapServiceActive(), true, 'the retired Table stays within the same firmware activation');
-	assert.deepEqual([count(), cursor()], frontier);
 	const checkpoint = captureRuntimeSaveState(runtime);
 
 	function finish() {
-		callbacks.length = 0;
+		callbacks.length = 1;
 		const grants: number[][] = [];
 		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) grants.push(slice(1024));
 		assert.equal(gc.fullEpochs(), 0);
 		assert.equal(cpu.heapServiceActive(), false);
-		const marked = callbacks.filter(([address]) => address === older || address === newer);
-		assert.deepEqual(marked.map(([address, , , allocated]) => [address, allocated]), [[older, 0]]);
+		const marked = callbacks.slice(1);
+		assert.deepEqual(marked.map(([address, , , allocated]) => [address, allocated]), [[older, 1]]);
 		assert.ok(count() < marked[0][1], 'the older record is counted out after its retirement callback');
 		assert.equal(cursor(), 0);
 		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);

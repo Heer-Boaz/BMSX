@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -40,7 +40,6 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestSystemCpu(linked), oracle = createTestSystemCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const state = cpu.heapAllocator.managementOffset(), control = state + HEAP_GC_CONTROL_OFFSET;
-	const context = state + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE, last = state + HEAP_SERVICE_THREAD_OFFSET;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
@@ -59,17 +58,20 @@ function fixture(optLevel: 0 | 3) {
 	});
 	const count = () => memory.readRamRecordWord(control + objectCount);
 	const nativeCount = () => oracle.memory.readRamRecordWord(control + objectCount);
-	const contextWord = (offset: Sweep) => memory.readRamRecordWord(context + offset);
 	const notices: number[] = [], nativeNotices: number[] = [];
-	cpu.gc.onRecordRetirement = address => { if (address !== null) notices.push(address); };
-	oracle.gc.onRecordRetirement = address => { if (address !== null) nativeNotices.push(address); };
+	for (const [target, trace] of [[cpu, notices], [oracle, nativeNotices]] as const) {
+		for (const address of [deadArray, deadHash]) target.memory.watchRamByte(address - RAM_BASE);
+		target.memory.onRamWrite(offset => {
+			const address = RAM_BASE + offset;
+			if ((address === deadArray || address === deadHash) && target.memory.readRamRecordByte(offset) === 0
+				&& !trace.includes(address)) trace.push(address);
+		});
+	}
 	function compare() {
-		for (const [from, to] of [[floor, context], [context + Sweep.Next + 4, last]]) {
-			const actual = memory.ramData().subarray(from, to), expected = oracle.memory.ramData().subarray(from, to);
-			if (Buffer.compare(actual, expected) === 0) continue;
-			const mismatch = actual.findIndex((value, index) => value !== expected[index]);
-			assert.equal(actual[mismatch], expected[mismatch], `private RAM differs at 0x${(from + mismatch).toString(16)}`);
-		}
+		const actual = memory.ramData().subarray(floor, last), expected = oracle.memory.ramData().subarray(floor, last);
+		if (Buffer.compare(actual, expected) === 0) return;
+		const mismatch = actual.findIndex((value, index) => value !== expected[index]);
+		assert.equal(actual[mismatch], expected[mismatch], `private RAM differs at 0x${(floor + mismatch).toString(16)}`);
 	}
 	function begin(limit: number) {
 		const expected = oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
@@ -91,7 +93,7 @@ function fixture(optLevel: 0 | 3) {
 		compare();
 		return spent;
 	}
-	return { cpu, memory, control, keep, live, dead, deadArray, deadHash, count, nativeCount, contextWord, notices, begin, grant, finish };
+	return { cpu, memory, control, keep, live, dead, deadArray, deadHash, count, nativeCount, notices, begin, grant, finish };
 }
 
 for (const opt of [0, 3] as const) {
@@ -103,27 +105,21 @@ for (const opt of [0, 3] as const) {
 		const count = f.count(), charged = cpu.luaHeap.usedBytes(), paceBefore = cpu.gc.epochWork();
 		const work = f.begin(12);
 		assert.equal(work, 12);
-		for (let n = 0; n < 8192 && f.contextWord(Sweep.Action) === Action.None; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive(), 'a record notice cannot retire the fused root');
-		assert.equal(f.contextWord(Sweep.Action), Action.ObserveRetiredRecord);
-		assert.equal(f.contextWord(Sweep.Deferred), f.deadHash);
+		for (let n = 0; n < 8192 && memory.readRamRecordByte(f.deadHash) !== 0; ++n) f.grant(1);
+		assert.ok(cpu.heapServiceActive(), 'the kind write does not retire the fused root');
+		assert.equal(memory.readRamRecordByte(f.deadHash), 0);
+		assert.equal(cpu.heapAllocator.issuedObjectStart(f.deadHash - RAM_BASE - GC_OBJECT_PREFIX), true);
 		assert.equal(f.count(), count, 'the count still belongs to the live object quantum');
 		assert.equal(cpu.gc.epochWork(), paceBefore);
-		assert.equal(memory.readRamRecordByte(f.deadHash), 0);
-		assert.ok(cpu.luaHeap.usedBytes() < charged);
-		assert.deepEqual(f.notices, [], 'arming the action is not the effect store');
-		const notice = captureCpuCheckpoint(cpu);
-		for (let n = 0; n < 128 && f.notices.length === 0; ++n) f.grant(1);
+		assert.ok(cpu.luaHeap.usedBytes() < charged, 'the Table already returned both backing allocations');
 		assert.deepEqual(f.notices, [f.deadHash]);
-		assert.ok(cpu.heapServiceActive(), 'the notice leaves the root running');
-		assert.equal(f.count(), count, 'notice dispatch precedes publishing the object frontier');
+		const notice = captureCpuCheckpoint(cpu);
 		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
 		for (let n = 0; n < 8192 && cpu.gc.phase() === GcPhase.Sweep; ++n) f.grant(1);
 		assert.ok(cpu.heapServiceActive(), 'the same root owns both phases');
 		assert.equal(cpu.gc.phase(), GcPhase.Strings);
 		assert.equal(f.count(), f.nativeCount());
 		assert.ok(f.count() <= count - 2);
-		assert.equal(f.contextWord(Sweep.Action), Action.None);
 		assert.equal(cpu.gc.epochWork(), paceBefore, 'object continuation does not account a second time');
 		const handoff = captureCpuCheckpoint(cpu);
 		const tail = f.finish(work);
@@ -131,7 +127,7 @@ for (const opt of [0, 3] as const) {
 		restoreCpuCheckpoint(cpu, handoff);
 		assert.equal(f.finish(work), tail);
 		restoreCpuCheckpoint(cpu, notice);
-		f.notices.length = 0;
+		f.notices.length = 1;
 		assert.ok(f.finish(work) > tail);
 		const rest = f.begin(4096);
 		f.finish(rest);
@@ -158,10 +154,8 @@ for (const opt of [0, 3] as const) {
 const pins = [
 	['T', 'machine/ts/machine/cpu/gc_heap.ts', '6e4a6f52041f90fe008b9bc48352f82c5b6aa2fa9f017486d20246a6b002015e'],
 	['C', 'machine/cpp/machine/cpu/gc_heap.cpp', '642cfe734d09e6ff9137cf072d003b978aed8773db642c435616d145ed9c953d'],
-	['S', 'machine/ts/spec/bmsx/heap_service.ts', 'bc482465da3c8ce3fd1f82417a618446394c5a7327a19ec6af858d50c2f35eba'],
-	['O', 'machine/ts/machine/cpu/gc_object.ts', 'eb2b0d0d5cd41541c3a1c33b062416b925e73469135db22262b5270f47471db3'],
 ] as const;
-test('fused reclamation maps object handoff, residual String work, and the original pace retirement', () => {
+test('fused reclamation maps the object quantum, residual String work, and the original pace retirement', () => {
 	const source = modules.find(module => module.path === MODULE)!.source;
 	assert.ok(source.includes(`-- Source basis: ${basis}.`));
 	const refs = new Map(pins.map(([key, file, sum]) => {
@@ -184,8 +178,8 @@ test('fused reclamation maps object handoff, residual String work, and the origi
 		}
 	}
 	for (const [key, ranges] of [
-		['T', [[992, 1016], [1081, 1082], [1087, 1088], [1320, 1327], [1339, 1342], [1344, 1355], [1364, 1367], [1384, 1387]]],
-		['C', [[1027, 1035], [1072, 1082], [1166, 1167], [1175, 1176], [1413, 1434], [1438, 1443], [1462, 1465]]],
+		['T', [[992, 1016], [1081, 1082], [1087, 1088], [1320, 1325], [1327, 1327], [1331, 1332], [1364, 1367], [1384, 1387]]],
+		['C', [[1027, 1033], [1072, 1082], [1166, 1167], [1175, 1176], [1438, 1443], [1462, 1465]]],
 	] as const) {
 		const ref = refs.get(key)!;
 		for (const [first, last] of ranges) for (let n = first; n <= last; ++n) {

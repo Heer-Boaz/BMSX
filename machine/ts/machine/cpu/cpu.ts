@@ -184,7 +184,7 @@ import {
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_PENDING_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK,
+	HEAP_SERVICE_GC_ARGUMENTS_OFFSET,
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceResidentField,
@@ -413,7 +413,8 @@ export class CPU implements MappedPageInvalidator {
 	};
 	private readonly latchedCallEntry: Closure.FunctionEntry = { codeAddress: 0, numParams: 0, maxStack: 0, flags: 0 };
 	private readonly canonicalBinding: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID };
-	private readonly staticClosures = new StaticClosureIndex();
+	private readonly staticClosures: StaticClosureIndex;
+	private stateReplacementListeners: Set<() => void> | null = null;
 	private stringIndexTable: Value = valueNil();
 	private readonly systemGlobalBank: GlobalBank;
 	private readonly globalBank: GlobalBank;
@@ -429,6 +430,7 @@ export class CPU implements MappedPageInvalidator {
 		private readonly executionBackend = CpuExecutionBackend.Interpreter,
 	) {
 		this.memory = memory;
+		this.staticClosures = new StaticClosureIndex(memory);
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.fixedWorkArgs = [this.heapAllocator.managementOffset(), CpuRunKind.Idle];
@@ -4144,22 +4146,14 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private writeHeapServiceProjection(word: number): void {
-		if (word === HeapServiceProjection.PublishRoots) {
-			this.publishHeapRemarkHead();
-			this.publishHeapRootBanks();
-			const memory = this.memory, management = this.heapAllocator.managementOffset();
-			const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, thread = this.activeThread.address;
-			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode),
-				this.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
-			memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ActiveThread, thread, this.pendingOperandTop(thread));
-			return;
-		}
-		const record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
-		switch (word & HEAP_SERVICE_GC_PROJECTION_MASK) {
-			case HeapServiceProjection.RetireCanonicalClosure: this.retireStaticClosure(record); return;
-			case HeapServiceProjection.ObserveRetiredRecord: this.gc.onRecordRetirement?.(record); return;
-		}
-		throw new Error('Unknown heap projection store command.');
+		if (word !== HeapServiceProjection.PublishRoots) throw new Error('Unknown heap projection store command.');
+		this.publishHeapRemarkHead();
+		this.publishHeapRootBanks();
+		const memory = this.memory, management = this.heapAllocator.managementOffset();
+		const args = management + HEAP_SERVICE_GC_ARGUMENTS_OFFSET, thread = this.activeThread.address;
+		memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ModeKey, this.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode),
+			this.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
+		memory.writeRamRecordPair(args + HeapServiceGcArgumentField.ActiveThread, thread, this.pendingOperandTop(thread));
 	}
 
 	private pushFrame(
@@ -5128,10 +5122,16 @@ export class CPU implements MappedPageInvalidator {
 		};
 	}
 
+	/** Bulk restore replaces the state behind host observations, rather than replaying RAM stores. */
+	public onStateReplaced(listener: () => void): void {
+		(this.stateReplacementListeners ??= new Set()).add(listener);
+	}
+
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		this.compiledCodeCache.retireAll();
 		this.clearCompletionValues();
-		this.gc.onRecordRetirement?.(null);
+		if (this.stateReplacementListeners !== null)
+			for (const listener of this.stateReplacementListeners) listener();
 		for (const bank of this.threadBanks) {
 			bank.bindAddress(0);
 			bank.dropParkedFrameViews();
@@ -5457,11 +5457,6 @@ export class CPU implements MappedPageInvalidator {
 	public markRootThreads(heap: GcHeap): void {
 		heap.markThread(this.rootThread.address); heap.markThread(this.activeThread.address); heap.markThread(this.completionThread);
 		heap.markThread(this.haltedUntilIrqThread);
-	}
-
-	public retireStaticClosure(address: number): void {
-		const prototype = this.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-		this.staticClosures.retire(prototype, address);
 	}
 
 }
