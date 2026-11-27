@@ -1,5 +1,5 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
-import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, valuePayload, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import type { BuiltFixtureProgram } from './fixture_media';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
@@ -101,7 +101,7 @@ export class PlayFixture {
 			if (unsupported !== undefined) this.quarantine(`Unsupported fixture operation '${unsupported}'`);
 			return;
 		}
-		if (outcome === 'failed') this.recordFailure(asThread(values[1], cpu.gc), valueToString(values[2], cpu.stringPool), 'failed-thread');
+		if (outcome === 'failed') this.recordFailure(valuePayload(values[1]), valueToString(values[2], cpu.stringPool), 'failed-thread');
 		if (this.phase === 'setup' && outcome === 'returned') this.ready();
 		else if (this.phase !== 'teardown') this.beginCleanup();
 		else this.finish();

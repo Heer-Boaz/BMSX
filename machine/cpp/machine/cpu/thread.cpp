@@ -31,10 +31,7 @@ void Thread::write(ThreadField field, u32 word) { heap.memory.writeRamRecordWord
 
 ThreadStatus Thread::status() const { return static_cast<ThreadStatus>(read(ThreadField::Status)); }
 void Thread::setStatus(ThreadStatus status) { write(ThreadField::Status, static_cast<u32>(status)); }
-u32 Thread::resumer() const {
-	const u32 owner = read(ThreadField::Resumer);
-	return owner == 0u ? 0u : heap.threadRecordAddress(owner);
-}
+u32 Thread::resumer() const { return read(ThreadField::Resumer); }
 void Thread::setResumer(u32 thread) { write(ThreadField::Resumer, thread); }
 
 Value Thread::error() const { return ThreadRecord::error(heap.memory, address); }

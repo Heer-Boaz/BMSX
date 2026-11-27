@@ -66,7 +66,7 @@ inline Value error(const Memory& memory, u32 address) {
 	return valueFromTag(static_cast<ValueTag>(memory.readRamRecordByte(address + static_cast<u32>(ThreadField::ErrorKind))),
 		read(memory, address, ThreadField::ErrorWord));
 }
-void invokeDiagnostic(GcHeap&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
+void invokeDiagnostic(Memory&, BuiltinFunctionId, BuiltinArgsView, BuiltinResults&);
 bool resizeStackBacking(GcHeap&, u32 address, u32 capacity);
 u32 growFrames(GcHeap&, u32 address, u32 capacity, u32 staged = 0u);
 u32 shrinkStack(GcHeap&, u32 address, const ThreadStorageLayout& layout);

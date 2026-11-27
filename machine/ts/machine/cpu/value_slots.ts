@@ -163,7 +163,6 @@ export class ValueSlots implements ValueWriteTarget {
 	public getStringId(index: number): StringId { return this.getPayload(index); }
 	public getBuiltinFunctionId(index: number): BuiltinFunctionId { return this.getPayload(index); }
 	public getClosure(index: number, heap: GcHeap): number { return heap.closureRecordAddress(this.getPayload(index))!; }
-	public getThread(index: number, heap: GcHeap): number { return heap.threadRecordAddress(this.getPayload(index)); }
 	public isTruthy(index: number): boolean { const tag = this.getTag(index); return tag !== ValueTag.Nil && tag !== ValueTag.False; }
 	public get(index: number): Value { return valueFromTag(this.getTag(index), this.getPayload(index)); }
 	public set(index: number, value: Value): void { this.setEncoded(index, valueTag(value), valuePayload(value)); }

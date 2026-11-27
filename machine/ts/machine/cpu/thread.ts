@@ -43,10 +43,7 @@ export class Thread {
 
 	public get status(): ThreadStatus { return this.read(ThreadField.Status); }
 	public set status(status: ThreadStatus) { this.write(ThreadField.Status, status); }
-	public get resumer(): number {
-		const address = this.read(ThreadField.Resumer);
-		return address === 0 ? 0 : this.heap.threadRecordAddress(address);
-	}
+	public get resumer(): number { return this.read(ThreadField.Resumer); }
 	public set resumer(address: number) { this.write(ThreadField.Resumer, address); }
 	public get entry(): number { return this.read(ThreadField.Entry); }
 	public set entry(closure: number) { this.write(ThreadField.Entry, closure); }

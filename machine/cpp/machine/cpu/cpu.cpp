@@ -1122,16 +1122,16 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::GetFrameRegister:
 		case BuiltinFunctionId::SetFrameRegister:
 		case BuiltinFunctionId::GetFrameUpvalue:
-			ThreadRecord::invokeDiagnostic(m_heap, fn.id, args, out);
+			ThreadRecord::invokeDiagnostic(m_memory, fn.id, args, out);
 			break;
 		case BuiltinFunctionId::CoroutineRunning:
 			out.push_back(valueThread(m_activeThread->address));
 			out.push_back(valueBool(m_activeThread == &m_rootView));
 			break;
 		case BuiltinFunctionId::CoroutineStatus: {
-			const u32 address = !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : 0u;
-			if (address == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, address, ThreadField::Status))));
+			const Value thread = args[0];
+			if (!valueIsThread(thread)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, valuePayload(thread), ThreadField::Status))));
 			break;
 		}
 		case BuiltinFunctionId::Error:

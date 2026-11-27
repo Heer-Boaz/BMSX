@@ -3,7 +3,7 @@ import { FsmTransitionObservation } from './observations/fsm_transition';
 import { ActionEffectObservation } from './observations/actioneffect';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 
-import { asStringId, asThread, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
+import { asStringId, valuePayload, valueString, valueToString, type Value } from '../../machine/ts/machine/cpu/value';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
 import { readSupervisorFaultReport } from '../runtime/fault_state';
 import type { BuiltFixtureProgram } from './fixture_media';
@@ -140,7 +140,7 @@ export class TestExecution implements FixtureOutput {
 			}
 			else {
 				if (outcome === 'failed') {
-					this.results.recordFailure(this.result, this.failure(asThread(values[1], cpu.gc), valueToString(values[2], cpu.stringPool)));
+					this.results.recordFailure(this.result, this.failure(valuePayload(values[1]), valueToString(values[2], cpu.stringPool)));
 				}
 				if (this.phase === 'setup' && outcome === 'returned') this.nextPhase('body');
 				else if (this.phase !== 'teardown' && this.program.suite.teardown) this.nextPhase('teardown');

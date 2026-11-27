@@ -11,10 +11,10 @@
 
 namespace bmsx::ThreadRecord {
 
-void invokeDiagnostic(GcHeap& heap, BuiltinFunctionId id, BuiltinArgsView args, BuiltinResults& out) {
-	auto& memory = heap.memory;
-	if (!valueIsThread(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	const u32 thread = asThread(args[0], heap);
+void invokeDiagnostic(Memory& memory, BuiltinFunctionId id, BuiltinArgsView args, BuiltinResults& out) {
+	const Value receiver = args[0];
+	if (!valueIsThread(receiver)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	const u32 thread = valuePayload(receiver);
 	const u32 depth = count(memory, thread, ThreadField::FrameDepth);
 	if (id == BuiltinFunctionId::FrameCount) {
 		out.push_back(valueInteger(depth));

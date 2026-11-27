@@ -117,7 +117,7 @@ import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
-	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread, asThread,
+	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread,
 	isNil, valueTag, valueTagHasGcEdge, valueToInteger,
 	type Value,
 } from './value';
@@ -161,7 +161,7 @@ import {
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
-import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
+import { invokeThreadDiagnostic, ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -1009,10 +1009,7 @@ export class CPU implements MappedPageInvalidator {
 		for (const bank of this.threadBanks) if (bank.address === address) bank.bindAddress(0);
 	}
 	public readThreadStatus(address: number): ThreadStatus { return this.memory.readRamRecordWord(address + ThreadField.Status); }
-	public readThreadResumer(address: number): number {
-		const resumer = this.memory.readRamRecordWord(address + ThreadField.Resumer);
-		return resumer === 0 ? 0 : this.gc.threadRecordAddress(resumer);
-	}
+	public readThreadResumer(address: number): number { return this.memory.readRamRecordWord(address + ThreadField.Resumer); }
 	public readThreadError(address: number): Value {
 		return valueFromTag(this.memory.readRamRecordByte(address + ThreadField.ErrorKind), this.memory.readRamRecordWord(address + ThreadField.ErrorWord));
 	}
@@ -3848,7 +3845,7 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.GetFrameRegister:
 			case BuiltinFunctionId.SetFrameRegister:
 			case BuiltinFunctionId.GetFrameUpvalue:
-				this.gc.threads.invokeDiagnostic(this.gc, id, args, out);
+				invokeThreadDiagnostic(this.memory, this.inspectionThreadValues, id, args, out);
 				break;
 			case BuiltinFunctionId.StringByte:
 				this.runBuiltinStringByte(args, out);
@@ -3858,10 +3855,9 @@ export class CPU implements MappedPageInvalidator {
 				out.push(valueBool(this.activeThread === this.rootThread));
 				break;
 			case BuiltinFunctionId.CoroutineStatus: {
-				const address = args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread
-					? args.registers.getThread(args.base, this.gc) : 0;
-				if (address === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				out.push(valueInteger(this.readThreadStatus(address)));
+				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Thread)
+					throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				out.push(valueInteger(this.readThreadStatus(args.registers.getPayload(args.base))));
 				break;
 			}
 			case BuiltinFunctionId.Error:
@@ -4105,7 +4101,7 @@ export class CPU implements MappedPageInvalidator {
 			} else if (tag === ValueTag.Closure) {
 				const closure = this.gc.closureRecordAddress(valuePayload(value));
 				if (closure !== 0) objects.push(closure);
-			} else if (tag === ValueTag.Thread) objects.push(asThread(value, this.gc));
+			} else if (tag === ValueTag.Thread) objects.push(valuePayload(value));
 		};
 		const addSlots = (slots: ValueSlots, count: number): void => {
 			for (let index = 0; index < count; index += 1) add(slots.get(index));
@@ -4128,7 +4124,7 @@ export class CPU implements MappedPageInvalidator {
 				if (seen.has(cell)) continue;
 				seen.add(cell);
 				if (Upvalue.isOpen(this.memory, cell)) {
-					const thread = this.gc.threadRecordAddress(this.memory.readRamRecordWord(cell + UPVALUE_OWNER));
+					const thread = this.memory.readRamRecordWord(cell + UPVALUE_OWNER);
 					if (thread !== 0) objects.push(thread);
 				}
 				add(Upvalue.load(this.memory, cell));

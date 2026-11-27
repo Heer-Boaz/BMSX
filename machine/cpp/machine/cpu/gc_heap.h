@@ -210,5 +210,4 @@ private:
 };
 
 inline u32 asClosure(Value value, const GcHeap& heap) { return heap.closureRecordAddress(valuePayload(value)); }
-inline u32 asThread(Value value, const GcHeap& heap) { return heap.threadRecordAddress(valuePayload(value)); }
 } // namespace bmsx

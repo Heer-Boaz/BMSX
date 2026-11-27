@@ -201,9 +201,9 @@ int main(int argc, char** argv) {
 			}
 			if (suite) {
 				const auto value = cpu.getGlobalByKey(*cpu.stringPool().find("failed_thread"));
-				const u32 thread = asThread(value, cpu.gcHeap());
+				const u32 thread = valuePayload(value);
 				const auto& memory = cpu.memory();
-				if (valuePayload(value) != thread || cpu.gcHeap().threadRecordAddress(thread) != thread
+				if (!valueIsThread(value) || cpu.gcHeap().threadRecordAddress(thread) != thread
 					|| memory.readRamRecordByte(thread) != THREAD_RECORD_KIND
 					|| ThreadRecord::read(memory, thread, ThreadField::Status) != static_cast<u32>(ThreadStatus::Failed)
 					|| ThreadRecord::read(memory, thread, ThreadField::ErrorWord) != valuePayload(ThreadRecord::error(memory, thread)))
