@@ -255,5 +255,6 @@ the current instruction and before starting another. There is no fixed
 request-to-reset time.
 
 Servicing the request clears the I/O and bus-fault state, resets the CPU and
-devices, and restarts System ROM. It does not clear all RAM or every device
-buffer.
+devices, and starts System ROM in the fixed reset bank. RAM, `RAM_END` and the
+device buffers keep their contents. See
+[[CPU reset](cpu.md#sec-cpu-cpu-reset-and-program-replacement)]{.content-visible when-format="html"}[Book II, §12.12]{.content-visible when-format="pdf"}.

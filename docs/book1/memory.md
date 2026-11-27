@@ -95,7 +95,7 @@ The fixed reset bank uses the following ranges in the system work area.
 While supervisor code executes in the reset bank, CPU data loads and stores
 can also access private RAM from `RAM_END` to `08400000H`. Instruction fetch
 and DMA do not gain this access. Leaving the reset bank through
-[[CP0 CONTEXT](cpu.md#sec-cpu-context)]{.content-visible when-format="html"}[Book II, Chapter 12]{.content-visible when-format="pdf"}
+[[CP0 CONTEXT](cpu.md#sec-cpu-context)]{.content-visible when-format="html"}[Book II, §12.13.1]{.content-visible when-format="pdf"}
 ends this access.
 
 ## VRAM used by the BIOS {#sec-memory-firmware-reservation-in-vram}
