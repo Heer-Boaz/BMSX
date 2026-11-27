@@ -89,20 +89,6 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 		admitSource(copied);
 		instructionBudgetRemaining -= closeUpvalues(frame);
 	};
-	const u32 continuation = frame.readControl(FrameField::Protected);
-	if (static_cast<i32>(continuation) >= 0) {
-		const u32 flags = m_activeThread->protectedWord(continuation, ProtectedField::Flags);
-		const auto result = m_activeThread->protectedResult(continuation);
-		const int copied = (flags & PROTECTED_CALL_KIND_MASK) == static_cast<u32>(ProtectedCallKind::XPCallHandler)
-			? std::min(count, 1)
-			: (flags & PROTECTED_CALL_PARENT) != 0u && result.extendsTop() ? 0
-			: std::clamp(result.selected(count + 1) - 1, 0, count);
-		admitAndClose(copied);
-		finishProtectedCall(continuation, {&frame, nullptr, first, count});
-		m_activeThread->leaveFrame();
-		resumeFrameBank();
-		return false;
-	}
 	if (frame.hasControlFlag(FRAME_COMPLETION)) {
 		admitAndClose(count);
 		m_completionValues.reserveCapacity(count);

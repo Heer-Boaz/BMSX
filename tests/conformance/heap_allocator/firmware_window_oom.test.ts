@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, ProtectedField } from '../../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { valueBool, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
@@ -33,7 +33,8 @@ test('the firmware catches terminal CALL window OOM with the original pcall diag
 	const linked = linkManagedTestSystem(`
 bss blocked: u8[${staticBytes}]
 blocked[0] = 1
-local protect<const> = __bmsx_pcall
+local entries<const> = require('bmsx/startup')
+local protect<const> = blua32.closure(entries.protected_call)
 local function descend()
 	${locals}
 	return descend()
@@ -46,6 +47,8 @@ return protect(descend)
 	const { cpu, memory, scheduler } = runtime.machine;
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 	const entries = new Map(linked.layout.functions.map(fn => [fn.address, fn]));
+	const pcall = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_call/module')];
+	const failure = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_failure/module')];
 	const commands: string[] = [], expected: string[] = [];
 	function observe(command: string, row: string | number) {
 		commands.push(command);
@@ -57,19 +60,17 @@ return protect(descend)
 
 	const budget = 3072;
 	let run = RunResult.Yielded;
-	let issue = 0, required = 0, resume = 0, issues = 0;
+	let issue = 0, required = 0, issues = 0;
 	for (let grant = 0; grant < 8192 && run !== RunResult.Halted; ++grant) {
 		run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
 		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW) continue;
 		const interrupted = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
-		const protectedDepth = memory.readRamRecordWord(interrupted + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK;
-		if (protectedDepth === 0) continue; // Ordinary growth before pcall.
-		assert.equal(protectedDepth, 1);
+		const depth = memory.readRamRecordWord(interrupted + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
+		if (!Array.from({ length: depth }, (_, index) => cpu.readThreadFrameWord(interrupted, index, FrameField.Function)).includes(pcall.address)) continue;
 		assert.equal(interrupted, cpu.rootThread.address);
 		assert.equal(cpu.heapServiceActive(), false);
 		const controls = memory.readRamRecordWord(interrupted + ThreadField.FrameBlock);
-		const depth = memory.readRamRecordWord(interrupted + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
 		const issuer = controls + (depth - 1) * FRAME_CONTROL_BYTES, pc = cpu.readEpcWord();
 		if (memory.readRamRecordWord(issuer + FrameField.Pc) !== pc) continue; // Firmware already unwound.
 		const { op, a: callee } = decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, pc);
@@ -83,9 +84,6 @@ return protect(descend)
 		issue = pc;
 		required = extent;
 		++issues;
-		const protection = memory.readRamRecordWord(interrupted + ThreadField.ProtectedBlock);
-		const caller = memory.readRamRecordWord(protection + ProtectedField.Caller);
-		resume = memory.readRamRecordWord(controls + caller * FRAME_CONTROL_BYTES + FrameField.Pc);
 		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${issue}`);
 		checkRam(issuer - RAM_BASE, FRAME_CONTROL_BYTES);
 		checkRam(interrupted - RAM_BASE, THREAD_HEAP_BYTES);
@@ -96,8 +94,7 @@ return protect(descend)
 		'the failing recursive CALL was never given its requested window');
 	assert.ok(memory.ramBusEnd() >= linked.layout.header.bssAddress + staticBytes);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
-	assert.notEqual(resume, issue);
-	assert.equal(cpu.readEpcWord(), resume, 'firmware returns to the saved pcall continuation, not the rejected CALL');
+	assert.equal(cpu.readEpcWord(), failure.codeAddress, 'RFE entered the ordinary false-result landing frame');
 	assert.equal(cpu.readLuaFaultReasonWord(), 0, 'firmware, not the native Lua fault handler, delivered this result');
 	assert.equal(cpu.fixedInterruptActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
@@ -110,7 +107,7 @@ return protect(descend)
 	assert.equal(cpu.stringPool.toString(diagnostic), 'Out of memory.');
 	const result = [valueBool(false), valueString(diagnostic)];
 	assert.deepEqual(runtime.readCompletionValues(), result);
-	observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${resume}`);
+	observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${failure.codeAddress}`);
 	observe('c', [result.length, ...result.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 	checkRam(cpu.rootThread.address - RAM_BASE, THREAD_HEAP_BYTES);
 

@@ -2,14 +2,15 @@ import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
-import { ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK } from '../../machine/ts/machine/cpu/call_state';
+import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
+import { compileCoroutineTest } from '../helpers/coroutine';
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestRuntime } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
@@ -92,30 +93,34 @@ halt_until_irq
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 });
 
-test('Hot Resume retains a closure held only by the xpcall continuation', () => {
-	const image = compileFrameEvaluationTest(`
+test('Hot Resume retains a closure held only by the xpcall argument window', () => {
+	const image = compileCoroutineTest(`
 local function run(captured)
  return xpcall(function() halt_until_irq; error('failure') end, function() return captured end)
 end
-return run(17)
+return pcall(run, 17)
 `, 0);
 	const { cpu } = createTestSystemCpu(image);
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 1_000_000);
+	assert.ok(cpu.isHaltedUntilIrq());
 	const thread = cpu.activeThread;
-	let handler = 0;
-	for (let i = 0; i < thread.protectedDepth; ++i)
-		if ((thread.protectedWord(i, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallBody)
-			handler = thread.protectedWord(i, ProtectedField.Handler);
+	const body = thread.currentFrame!.previous!, wrapper = body.previous!;
+	const bodyIndex = image.symbols.metadata.functionIds.indexOf('module:kernel/protected_body/module');
+	assert.notEqual(bodyIndex, -1);
+	assert.equal(body.functionAddress, image.symbols.functionAddresses[bodyIndex]);
+	assert.equal(thread.protectedDepth, 0);
+	assert.equal(wrapper.varargCount, 1);
+	const argument = wrapper.varargBase;
+	const handler = asClosure(thread.stackRegisters.get(argument), cpu.gc);
 	assert.notEqual(handler, 0);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, handler), 1);
-	for (let frame = thread.firstFrame; frame !== null; frame = frame.next)
-		for (let slot = 0; slot < frame.top; ++slot)
-			if (frame.registers.get(slot) === valueClosure(handler)) frame.registers.set(slot, valueNil());
+	for (let slot = 0; slot < thread.stackTop; ++slot)
+		if (slot !== argument && thread.stackRegisters.get(slot) === valueClosure(handler)) thread.stackRegisters.set(slot, valueNil());
 	const seen = new Set<number>();
 	cpu.visitReachableExecutionRecords(closure => seen.add(closure));
 	assert.ok(seen.has(handler));
 	cpu.clearHaltUntilIrq();
-	assert.equal(cpu.runUntilDepth(0, 1_000_000), RunResult.Halted);
+	runGuestToHalt(cpu, 1_000_000);
 	const result: Value[] = [];
 	cpu.readCompletionValues(result);
 	assert.deepEqual(result, [valueBool(true), valueBool(false), valueInteger(17)]);

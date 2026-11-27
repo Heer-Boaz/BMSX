@@ -20,7 +20,6 @@ void* CPU::tryReturnNativeFrame(NativeCpuRunState* run, const NativeBlockExitSit
 		flags = leaving.readAdmittedControl(FrameField::Flags);
 		if (!caller || caller->executionImage != leaving.executionImage
 			|| (caller->readAdmittedControl(FrameField::Flags) & FRAME_BANK_MASK) != run->frameBank
-			|| static_cast<i32>(leaving.readAdmittedControl(FrameField::Protected)) >= 0
 			|| (flags & FRAME_COMPLETION) != 0
 			|| leaving.readAdmittedControl(FrameField::OpenHead) != 0)
 			return nullptr;

@@ -218,61 +218,6 @@ void inactiveFrameMetadata() {
 	}
 }
 
-void protectedNestedFrames() {
-	test::Blua32TestImage image;
-	image.text.resize(11 * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 3);
-	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 3, 0);
-	writeInstruction(image.text, 5, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 6, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
-	writeInstruction(image.text, 7, static_cast<u8>(OpCode::CALL), 0, 1, 2);
-	writeInstruction(image.text, 8, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	writeInstruction(image.text, 9, static_cast<u8>(OpCode::LOADK), 0, 0, 0);
-	writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 2, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8},
-		{.firstWord = 5, .wordCount = 4, .maxStack = 8}, {.firstWord = 9, .wordCount = 2, .maxStack = 8}};
-	image.constants = {7};
-	image.systemGlobalNames = {"pcall"};
-	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
-		{6, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
-	for (const bool scalar : {false, true}) {
-		CpuMachine machine(image, scalar);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-		for (int grant = 0; grant < 20 && machine.cpu.getFrameDepth() != 3; ++grant) machine.cpu.runUntilDepth(0, 1);
-		require(machine.cpu.getFrameDepth() == 3, "protected body invokes an ordinary child activation");
-		auto* thread = machine.cpu.activeThread();
-		require(thread->protectedDepth() == 1 && thread->currentFrame->readControl(FrameField::Protected) == static_cast<u32>(-1)
-			&& thread->currentFrame->previous->readControl(FrameField::Protected) == 0, "only the protected target owns its return obligation");
-		const auto state = machine.cpu.captureRuntimeState();
-		const auto ram = machine.cpu.memory().captureSaveState();
-		thread->resizeStack(1024);
-		require(machine.cpu.heapAllocator().allocate(8192, true) != 0, "occupy the stack successor");
-		const auto originalStack = thread->stackOffset();
-		thread->resizeStack(2048);
-		require(thread->stackOffset() != originalStack && thread->protectedWord(0, ProtectedField::Wanted) == 3
-			&& thread->protectedWord(0, ProtectedField::Caller) == 0,
-			"a live protected call relocates with its stack");
-		machine.cpu.memory().restoreSaveState(ram);
-		require(thread->frameAtDepth(1)->readControl(FrameField::Protected) == 0, "the target frame stores a continuation index");
-		machine.cpu.restoreRuntimeState(state);
-		thread = machine.cpu.activeThread();
-		require(thread->currentFrame->readControl(FrameField::Protected) == static_cast<u32>(-1)
-			&& thread->currentFrame->previous->readControl(FrameField::Protected) == 0, "restore installs protection on the target rather than its subtree");
-		require(machine.cpu.runUntilDepth(2, 100) == RunResult::Halted && thread->protectedDepth() == 1,
-			"ordinary child return must not finish protection");
-		require(machine.cpu.runUntilDepth(0, 100) == RunResult::Halted && thread->protectedDepth() == 0,
-			"only the protected target completes its continuation");
-		const auto values = machine.cpu.readCompletionValues();
-		require(values.size() == 2 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(7), "protected result prefix remains exact");
-		require(thread->protectedDepth() == 0, "the retired target leaves no pending obligation");
-	}
-}
-
 void valueRangePlacementCycles() {
 	for (const bool scalar : {true, false}) for (const auto op : {OpCode::LOADNIL, OpCode::VARARG})
 	for (const int operand : {0, 1, 3, 129}) {
@@ -330,27 +275,6 @@ void closingSharedCaptureCycles() {
 			"RET charges two distinct open cells, not four descriptors, and two received values");
 		require(!Upvalue::isOpen(machine.cpu.memory(), cells[0]) && !Upvalue::isOpen(machine.cpu.memory(), cells[1]),
 			"both charged captures are closed");
-	}
-}
-
-void protectedBuiltinPlacementCycles() {
-	for (const bool scalar : {true, false}) for (const int wanted : {0, 1, 5}) {
-		test::Blua32TestImage image;
-		image.text.resize(5 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETSYS), 1, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::GETSYS), 2, 0, 1);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 3, wanted);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}};
-		image.systemGlobalNames = {"pcall", "isyieldable"};
-		CpuMachine machine(image, scalar);
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("isyieldable"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineIsYieldable));
-		machine.cpu.runUntilDepth(0, 3 * BASE_CYCLES[static_cast<u8>(OpCode::GETSYS)]);
-		require(machine.cpu.runUntilDepth(0, 1) == RunResult::Yielded
-			&& machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 4 - 4 - 4 - 2 - (wanted == 0 ? 3 : wanted - 1),
-			"nested builtin protection pays each completed receiving range exactly once");
 	}
 }
 
@@ -1091,15 +1015,15 @@ void nativeReturnPublishesCallerTopAtMappedObserver() {
 }
 
 void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bool exceptionFrame, int grant = -1, bool extendTop = false) {
-	// The protected target repeatedly calls an ordinary child. A separate live
-	// translation writes a marker without changing top or any frame register.
+	// The caller invokes an ordinary child. A separate live translation writes
+	// a marker without changing top or any frame register.
 	constexpr int callerCapacity = 16;
 	test::Blua32TestImage image;
 	image.text.resize(3 * MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KNIL), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 3);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 3);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
 	writeInstruction(image.text, 16, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 17, static_cast<u8>(OpCode::CLOSURE), 4, 0, 0);
@@ -1115,16 +1039,17 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 		{.firstWord = DECODED_PAGE_WORDS, .wordCount = 1, .maxStack = 8},
 		{.firstWord = 20, .wordCount = 2, .maxStack = callerCapacity},
 		{.firstWord = 2 * DECODED_PAGE_WORDS, .wordCount = 2, .maxStack = callerCapacity}};
-	image.systemGlobalNames = {"pcall"}; image.globalNames = {"nativeReturnMarker"};
+	image.globalNames = {"nativeReturnMarker"};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)},
 		{17, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
 	CpuMachine machine(image, false);
 	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
 	test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
+	machine.cpu.luaHeap().reserveThreadFrameStorage(machine.cpu.rootThread()->address, 64, 6, valueNil());
+	machine.cpu.rootThread()->bindStack();
 	// Publish all three real translations without running unrelated guest
 	// loops to make the compiler worker discover the test entry points.
 	machine.cpu.prepareSystemNativeCode();
-	machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
 	const u32 markerPc = machine.rom.textAddress + 2 * MAPPED_PAGE_BYTE_SIZE;
 	for (u32 step = 0; step < image.functions[0].wordCount + image.functions[1].wordCount && machine.cpu.getFrameDepth() != 3; ++step)
 		machine.cpu.runUntilDepth(0, 1);
@@ -1132,10 +1057,10 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	machine.cpu.prepareSystemNativeCode(); // The observed CALLs can withdraw their caller region.
 	auto* thread = machine.cpu.activeThread();
 	auto* callee = thread->currentFrame;
+	require(callee->readControl(FrameField::Function) == machine.rom.functionAddresses[2],
+		"the selected current frame is the requested return fixture");
 	auto* caller = callee->previous;
 	auto closure = callee->closureAddress();
-	require(thread->protectedDepth() == 1 && caller->readControl(FrameField::Protected) == 0
-		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1), "native return admission concerns the target activation, not its protected subtree");
 	const std::array<Value, 6> payloads{valueNil(), valueBool(false), valueFloatBits(0x80000000),
 		valueString(machine.cpu.stringPool().intern("native-return-payload")), caller->registers.get(4), valueFloatBits(0xffa12345)};
 	for (int index = 0; index < produced; ++index) callee->registers.set(1 + index, payloads[index]);
@@ -1189,7 +1114,7 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 #endif
 	const auto routeResult = machine.cpu.runUntilDepth(0, grant);
 	require(routeResult == RunResult::Yielded && thread->currentFrame == caller
-		&& thread->frameDepth() == 2 && thread->protectedDepth() == 1, "ordinary native return retains its protected parent and exact grant boundary");
+		&& thread->frameDepth() == 2, "ordinary native return retains its caller and exact grant boundary");
 	require(static_cast<bmsx::i32>(caller->readControl(bmsx::FrameField::Top)) == (extendTop ? std::max(oldTop, base + count) : base + count), "fixed, open and empty returns assign exact caller top even after a late cold exit");
 	for (int index = 0; index < copied; ++index) require(caller->registers.get(base + index) == payloads[index],
 		"native and late-cold result movement preserve every raw tagged and numeric bit");
@@ -1221,12 +1146,12 @@ void nativeReturnRouting(int produced, int wanted, int base, bool coldTarget, bo
 	require(thread->currentFrame == callee && callee->closureAddress() == closure && callee->executionImage == caller->executionImage
 		&& callee->registers.words() == thread->stack.words() + callee->stackBase()
 			&& callee->registers.tags() == thread->stack.tags() + callee->stackBase() && callee->hasControlFlag(FRAME_COMPLETION)
-		&& callee->readControl(FrameField::Protected) == static_cast<u32>(-1) && !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
-		"a real activation rebinds the retired native node without inheriting protection or exception state");
+		&& !callee->hasControlFlag(FRAME_EXCEPTION) && !callee->hasControlFlag(FRAME_NMI),
+		"a real activation rebinds the retired native node without inheriting exception state");
 	callee->registers.set(1, valueInteger(17)); callee->writeControl(bmsx::FrameField::Top, 2);
 	require(machine.cpu.runUntilDepth(2, returnBase + 1) == RunResult::Halted && thread->currentFrame == caller
-		&& thread->protectedDepth() == 1 && machine.cpu.instructionBudgetRemaining == 0,
-		"the reused node returns once without completing its protected parent or resuming the redirected continuation");
+		&& machine.cpu.instructionBudgetRemaining == 0,
+		"the reused node returns once without resuming the redirected continuation");
 	const auto results = machine.cpu.readCompletionValues();
 	require(results.size() == 1 && results.get(0) == valueInteger(17), "reused native nodes return the new activation's own value");
 }
@@ -1421,46 +1346,6 @@ void returnPlacementCycles() {
 	}
 }
 
-void protectedReturnPlacementCycles() {
-	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6, static_cast<int>(PSX_MACHINE_SPEC.ramBytes), static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1)}) {
-		test::Blua32TestImage image;
-		image.text.resize(7 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::GETSYS), 1, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::CALL), 0, 3, 0);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		writeInstruction(image.text, 6, static_cast<u8>(OpCode::RET), 0, 3, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 6, .maxStack = 8}, {.firstWord = 6, .wordCount = 1, .maxStack = 2}};
-		image.systemGlobalNames = {"pcall"};
-		image.closureRelocations = {{3, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-		CpuMachine machine(image, scalar);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("pcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-		while (machine.cpu.getFrameDepth() != 2) machine.cpu.runUntilDepth(0, 1);
-		auto* thread = machine.cpu.activeThread();
-		require(thread->protectedDepth() == 2, "nested builtin pcall owns two result ranges");
-		thread->currentFrame->registers.set(0, valueInteger(17)); thread->currentFrame->registers.set(1, valueInteger(29));
-		const bool failFirst = wanted == static_cast<int>(PSX_MACHINE_SPEC.ramBytes + 1);
-		const u32 controls = ThreadRecord::storageLayout(machine.cpu.memory(), thread->address).protectedAddress(0u);
-		machine.cpu.memory().writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0)
-			+ static_cast<u32>(ProtectedField::Wanted), failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
-		const bool fault = wanted >= static_cast<int>(PSX_MACHINE_SPEC.ramBytes);
-		bool rejected = false;
-		try { require(machine.cpu.runUntilDepth(1, 2) == RunResult::Halted, "protected return completes at caller"); }
-		catch (const LuaOutOfMemorySignal&) { rejected = true; }
-		require(rejected == fault, "only unadmitted outer range raises allocation failure");
-		const int outer = wanted == 0 ? 4 : wanted - 1;
-		require(machine.cpu.instructionBudgetRemaining == 2 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - (failFirst ? 0 : 3) - (fault ? 0 : outer),
-			"only completed result placement is charged, even when a later allocation fails");
-		if (!fault) {
-			const Value values[]{valueBool(true), valueBool(true), valueInteger(17), valueInteger(29), valueNil()};
-			for (int i = 0; i < outer; ++i) require(thread->currentFrame->registers.get(i) == values[i], "protected return retains result order and padding");
-		}
-	}
-}
-
 void coroutineReturnPlacementCycles() {
 	for (const bool scalar : {false, true}) for (const int wanted : {0, 1, 2, 6}) {
 		test::Blua32TestImage image;
@@ -1524,40 +1409,6 @@ void rootReturnPlacementCycles() {
 			require(machine.cpu.readCompletionValues().size() == 2 && machine.cpu.readCompletionValues().get(0) == args[0]
 				&& machine.cpu.readCompletionValues().get(1) == args[1], "completion latch preserves its value range");
 		}
-	}
-}
-
-void errorHandlerReturnPlacementCycles() {
-	for (const bool scalar : {false, true}) {
-		test::Blua32TestImage image;
-		image.text.resize(12 * INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
-		writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-		writeInstruction(image.text, 3, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-		writeInstruction(image.text, 4, static_cast<u8>(OpCode::CLOSURE), 2, 0, 0);
-		writeInstruction(image.text, 5, static_cast<u8>(OpCode::CALL), 0, 3, 6);
-		writeInstruction(image.text, 6, static_cast<u8>(OpCode::JMP), 0, 63, 63, 255);
-		writeInstruction(image.text, 7, static_cast<u8>(OpCode::GETSYS), 0, 0, 1);
-		writeInstruction(image.text, 8, static_cast<u8>(OpCode::LOADK), 1, 0, 0);
-		writeInstruction(image.text, 9, static_cast<u8>(OpCode::CALL), 0, 2, 1);
-		writeInstruction(image.text, 10, static_cast<u8>(OpCode::RET), 0, 1, 0);
-		writeInstruction(image.text, 11, static_cast<u8>(OpCode::RET), 0, 2, 0);
-		image.functions = {{.firstWord = 0, .wordCount = 7, .maxStack = 8}, {.firstWord = 7, .wordCount = 4, .maxStack = 4},
-			{.firstWord = 11, .wordCount = 1, .numParams = 1, .maxStack = 1}};
-		image.constants = {17}; image.systemGlobalNames = {"xpcall", "error"};
-		image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}, {4, test::blua32TestFunctionAddress(RomImageDomain::System, 2)}};
-		CpuMachine machine(image, scalar);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[1]);
-		test::seedTestRomClosure(machine.cpu, machine.rom.functionAddresses[2]);
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("xpcall"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
-		machine.cpu.setSystemGlobalByKey(machine.cpu.stringPool().intern("error"), machine.cpu.createBuiltinFunction(BuiltinFunctionId::Error));
-		while (machine.cpu.activeThread()->currentFrame->readControl(FrameField::Function) != machine.rom.functionAddresses[2]) machine.cpu.runUntilDepth(0, 1);
-		require(machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::CALL)] - 2 - 1, "error CALL and primitive plus one placed handler argument");
-		require(machine.cpu.runUntilDepth(1, 1) == RunResult::Halted && machine.cpu.instructionBudgetRemaining == 1 - BASE_CYCLES[static_cast<u8>(OpCode::RET)] - 5,
-			"handler RET charges the selected error receiving range");
-		const Value values[]{valueBool(false), valueInteger(17), valueNil(), valueNil(), valueNil()};
-		for (int i = 0; i < 5; ++i) require(machine.cpu.activeThread()->currentFrame->registers.get(i) == values[i], "handler result prefix and padding are preserved");
 	}
 }
 
@@ -2028,16 +1879,12 @@ int main(int argc, char** argv) {
 		ownedValueStack();
 		reusableFrameChain();
 		inactiveFrameMetadata();
-		protectedNestedFrames();
 		valueRangePlacementCycles();
 		closingSharedCaptureCycles();
 		weakCanonicalClosuresAndStaticEntry();
-		protectedBuiltinPlacementCycles();
 		returnPlacementCycles();
-		protectedReturnPlacementCycles();
 		coroutineReturnPlacementCycles();
 		rootReturnPlacementCycles();
-		errorHandlerReturnPlacementCycles();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		haltedReceivingFrame();
 		for (const int grant : {1, 3, 5}) {

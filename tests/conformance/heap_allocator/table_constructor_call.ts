@@ -4,14 +4,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
-import { asInteger, valueBuiltinFunction, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { asInteger, valuePayload, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
@@ -20,13 +19,16 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { buildPublicBiosFixture } from '../../helpers/bios_linkage';
-import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
+import { BASE_FIRMWARE_MODULES } from '../../helpers/firmware_modules';
+import { loadTestBiosUtilityModules } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../../helpers/managed_system';
+import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { BiosFunction } from '../../../machine/ts/spec/bmsx/bios';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+import { BIOS_FUNCTION_EXPORTS } from '../../../toolchain/ts/rompack/system';
 
 const source = `local t = {120, x = 63, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8}
 return t[1] + t.x, t`;
@@ -37,10 +39,13 @@ const dir = mkdtempSync(join('tmp', 'bmsx-table-constructor-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const system = `module<entry>
+		const system = `
+require('base')
 function exception(error) halt_until_irq end
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
-		const { linked: linkedSystem, rom: systemRomBytes } = buildPublicBiosFixture(system, opt);
+${TEST_CART_TRANSFER_SOURCE}`;
+		const linkedSystem = linkManagedTestSystem(system, opt,
+			[...loadTestBiosUtilityModules(), ...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }], BIOS_FUNCTION_EXPORTS);
+		const systemRomBytes = writeTestBlua32Rom(linkedSystem);
 		const linkCart = (entrySource: string) => {
 			const program = compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel: opt });
 			return linkCartBlua32Image(linkedSystem.biosImports, encodeCompiledProgramObject(program), program.metadata,
@@ -60,6 +65,8 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			const closureLatch = management + HEAP_SERVICE_CLOSURE_OFFSET;
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			for (let i = 0; i < 256 && !cpu.isCartridgeExecutionActive(); ++i) run(4096);
+			assert.ok(cpu.isCartridgeExecutionActive());
 			const instructions = linkedCart.layout.functions.map(fn => {
 				const code: (ReturnType<typeof decodeBlua32InstructionAtPc> & { start: number })[] = [];
 				for (let pc = fn.codeAddress; pc < fn.codeAddress + fn.codeByteCount;) {
@@ -157,7 +164,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			console.log(`BIOS-CREATE-TABLE:PASS O${opt} ${scenario} (${wholeTrace.length} grant/RAM observations)`);
 		}
 		const protectedSource = `
-return function(pcall, type)
+return function()
 local image<const> = mem32le[${BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
 local table_address<const> = mem32le[image + ${BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET}]
 local create<const> = blua32.closure(table_address + ${BiosFunction.CreateTable * BLUA32_FUNCTION_RECORD_SIZE})
@@ -181,12 +188,12 @@ end
 		runtime.boot();
 		const { cpu, scheduler } = runtime.machine;
 		let bootResult = RunResult.Yielded;
-		for (let i = 0; i < 128 && bootResult !== RunResult.Halted; ++i)
+		for (let i = 0; i < 256 && bootResult !== RunResult.Halted; ++i)
 			bootResult = scheduler.runCpuSlice(0, 8192, undefined, CpuRunKind.Direct);
 		assert.equal(bootResult, RunResult.Halted);
 		const [entry] = runtime.readCompletionValues();
 		assert.equal(valueTag(entry), ValueTag.Closure);
-		cpu.beginCompletionCall(valuePayload(entry), [valueBuiltinFunction(BuiltinFunctionId.PCall), valueBuiltinFunction(BuiltinFunctionId.Type)]);
+		cpu.beginCompletionCall(valuePayload(entry));
 		writeFileSync(protectedSeed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		const commands = ['X'], rows: string[] = [];
 		let result = RunResult.Yielded;
@@ -196,7 +203,8 @@ end
 			rows.push(`${result} ${8192 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		}
 		assert.equal(result, RunResult.Halted);
-		assert.equal(cpu.readLuaFaultReasonWord(), 0, 'caught language faults do not enter the exception vector');
+		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT, 'the firmware catches the invalid hints through the Trap vector');
 		const values = runtime.readCompletionValues();
 		assert.equal(asInteger(values[0]), 183);
 		assert.equal(valueTag(values[1]), ValueTag.Table);

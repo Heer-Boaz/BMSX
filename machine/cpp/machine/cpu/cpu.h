@@ -366,7 +366,7 @@ private:
 		CallResultPlacement result, std::optional<u32> callSite);
 	void armBiosCall(HeapServiceBiosCallKind kind, u32 target, u32 resultWord);
 	void finishBiosCall(HeapServiceBiosCallKind kind);
-	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result, i32 protectedIndex = -1);
+	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result);
 	void finishResidentCall(u32 flags);
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
@@ -399,14 +399,7 @@ private:
 	bool stepTableIterator(ValueSpan& registers, int base, int destination, int count);
 	bool executeBuiltinLeaf(BuiltinFunctionId id, BuiltinArgsView args, Value& result) noexcept;
 	void runBuiltinError(BuiltinArgsView args);
-	void startProtectedCall(BuiltinFunctionId id, CallResultPlacement, const CallValueSource&, bool returnsToProtectedParent);
-	void invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource&);
-	void finishProtectedCall(u32 continuationIndex, const CallValueSource& source);
-	void finishProtectedCallWithError(u32 continuationIndex, Value errorValue);
-	bool finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded);
-	CallFrame& protectedCaller(u32 continuationIndex);
-	void finishProtectedContinuation(u32 continuationIndex, int resultCount);
-	void unwindToDepth(int targetDepth, bool chargeCaptures);
+	void unwindToDepth(int targetDepth);
 	void decodeConstantPool(Blua32ExecutionImage& image, Span<const u8> records);
 	u32 bindConstantStrings(Blua32ExecutionImage& image, Span<const u8> records, u32 stringBinding, bool restoring);
 	void registerGlobalNames(ExecutionDomainId domain, u32 tableAddress, u32 nameCount, GlobalBank& bank, u32 destination);
@@ -451,7 +444,7 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u, i32 protectedIndex = -1);
+		CallResultPlacement result, u32 callSitePc, u32 codeFunction = 0u);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
 	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);
@@ -460,7 +453,7 @@ private:
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
-		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, i32 protectedIndex = -1);
+		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
 	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
@@ -506,8 +499,8 @@ private:
 	bool executeLength(CallFrame& frame, int destination, Value operand);
 
 	void clearCallStack();
-	struct ClosureActivation { Blua32ExecutionImage* image; FunctionCallEntry function; };
-	ClosureActivation resolveClosureActivation(u32 closure);
+	struct FunctionActivation { Blua32ExecutionImage* image; FunctionCallEntry function; };
+	FunctionActivation resolveFunctionActivation(u32 closure, u32 codeFunction);
 	BuiltinResultsScratchScope acquireBuiltinResultScratch();
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
@@ -652,7 +645,6 @@ private:
 		if (m_rootView.address != 0u) visitor(m_rootView);
 		for (auto& view : m_transferViews) if (view.address != 0u) visitor(view);
 	}
-	bool coroutineYieldable(u32 address) const;
 	void returnToResumer(const CallValueSource& values);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallValueSource&);
 

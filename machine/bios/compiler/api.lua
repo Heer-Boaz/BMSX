@@ -1,5 +1,6 @@
+local entries<const> = require('bmsx/startup')
 local load_compiler<const> = require('compiler/load')
-local call_protected<const> = __bmsx_pcall
+local call_protected<const> = blua32.closure(entries.protected_call)
 
 local compiler_api<const> = {
 	compile_syntax = load_compiler.compile_chunk,

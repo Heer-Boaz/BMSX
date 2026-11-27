@@ -7,12 +7,11 @@ import { FRAME_CONTROL_BYTES, FRAME_RESIDENT_ACTIVATION, FrameField } from '../.
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { ThreadField, ThreadStatus, THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES } from '../../../machine/ts/machine/cpu/thread_record';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, valueThread, ValueTag } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, valueThread, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -31,6 +30,7 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const source = `
 local creation<const> = require('kernel/thread_create')
+local vectors<const> = require('bmsx/startup')
 local function fixed(create, entry, spare)
  local thread = create(entry)
  return thread, 183
@@ -40,7 +40,7 @@ local function guarded(create, entry, xpcall, handler) return xpcall(create, han
 local function handler(err) return err end
 local kept = 81
 local function entry() return kept end
-return fixed,open,guarded,handler,entry,creation.create_coroutine
+return fixed,open,guarded,handler,entry,creation.create_coroutine,blua32.closure(vectors.protected_xcall)
 `;
 const directory = mkdtempSync(join(process.cwd(), 'tmp', 'bmsx-coroutine-create-service-'));
 const deadText = 'reclaimable backing for a timed Thread create; '.repeat(112);
@@ -74,15 +74,15 @@ try {
 			if (failure) {
 				gc.collect(closure, valueTable(anchor));
 				heap.setCollectionTarget(heap.capacity());
-				// Allocate the normal pcall control slot without allocating a Thread.
-				cpu.beginCompletionCall(valuePayload(entries[2]), [valueBuiltinFunction(BuiltinFunctionId.GetMetatable),
-					valueTable(anchor), valueBuiltinFunction(BuiltinFunctionId.XPCall), entries[3]]);
-				assert.equal(cpu.runUntilDepth(0, 65536), RunResult.Halted);
-				assert.equal(runtime.readCompletionValues()[0], valueBool(true));
+				// Warm both the ordinary wrapper and its error handler before
+				// concentrating the OOM fixture on the Thread reservation.
+				cpu.beginCompletionCall(valuePayload(entries[2]), [create, create, entries[6], entries[3]]);
+				runGuestToHalt(cpu, 65_536);
+				assert.deepEqual(runtime.readCompletionValues(), [valueBool(false), valueString(cpu.stringPool.find('Invalid argument.')!)]);
 			}
 			const raw = recover ? cpu.stringPool.intern(deadText) : 0;
 			const fn = valuePayload(entries[fixed ? 0 : recover ? 1 : 2]);
-			cpu.beginCompletionCall(fn, failure ? [create, closure, valueBuiltinFunction(BuiltinFunctionId.XPCall), entries[3]]
+			cpu.beginCompletionCall(fn, failure ? [create, closure, entries[6], entries[3]]
 				: [create, closure, valueTable(anchor)]);
 			if (recover) {
 				for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Strings; ++i)
@@ -104,7 +104,7 @@ try {
 			const pinned = management + HEAP_SERVICE_FRAME_OFFSET, pinnedValues = management + HEAP_SERVICE_VALUE_OFFSET;
 			const read = (field: HeapServiceResidentField) => memory.readRamRecordWord(context + field);
 			const oldKind = () => memory.readRamRecordWord(mailbox + HeapServiceBiosCallField.Kind);
-			const caller = cpu.getFrameDepth() - 1, pc = () => cpu.readFramePc(caller);
+			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const file = join(directory, `O${optLevel}-${name}`), nativePartial = `${file}.native`;
 			writeFileSync(`${file}.seed`, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 			const trace: string[] = [], expected: string[] = [];
@@ -125,7 +125,7 @@ try {
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.Function), residentFunctionAddress({ image: system.layout, symbols: system.symbols }, 'kernel/thread_create', 'create_coroutine'));
 			assert.notEqual(memory.readRamRecordWord(pinned + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION, 0);
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.ReturnCount), fixed ? 2 : 0);
-			assert.equal(memory.readRamRecordWord(pinned + FrameField.Protected), failure ? 0 : 0xffffffff);
+			assert.equal(memory.readRamRecordWord(pinned + FrameField.Protected), 0xffffffff);
 			assert.equal(memory.readRamRecordWord(pinnedValues), valuePayload(closure));
 			assert.equal(memory.readRamRecordByte(pinnedValues + 4 * HEAP_SERVICE_VALUE_COUNT), valueTag(closure));
 			assert.equal(memory.readRamRecordWord(pinned + FrameField.Closure), 0);
@@ -134,7 +134,7 @@ try {
 			const next = read(HeapServiceResidentField.LastPc) + INSTRUCTION_BYTES;
 			assert.equal(instructionOpcode(memory.readMappedU32LE(next - INSTRUCTION_BYTES)), OpCode.CALL);
 			assert.equal(pc(), next);
-			assert.equal(cpu.rootThread.protectedDepth, failure ? 1 : 0);
+			assert.equal(cpu.rootThread.protectedDepth, 0);
 			if (fixed) {
 				// First physical reservation is written before the inventory,
 				// logical charge and caller result. Checkpoint between them.
@@ -164,7 +164,7 @@ try {
 					assert.equal(gc.white(), originalWhite);
 					assert.equal(gc.phase(), GcPhase.Pause);
 				}
-				assert.equal(cpu.readLuaFaultReasonWord(), 0, 'protected OOM is a language error, not a trap');
+				assert.equal(cpu.readLuaFaultReasonWord(), failure ? raised : 0);
 				const resultSlot = read(HeapServiceResidentField.SourceBase);
 				const word = failure ? 0 : memory.readRamRecordWord(pinnedValues + 4 * resultSlot);
 				if (!failure) {

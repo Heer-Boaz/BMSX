@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend } from '../../../machine/ts/machine/cpu/compiled_block';
@@ -15,20 +16,23 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../../machine/ts/spec/blua32/cop0';
 import { BuiltinFunctionId } from '../../../machine/ts/spec/blua32/builtin';
 import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { runCompletionClosure, runGuestToHalt } from '../../helpers/cpu_test_harness';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
 local metatables<const> = require('kernel/gc_barrier')
 setmetatable = metatables.set_metatable
-local pcall<const> = __bmsx_pcall
+local startup<const> = require('bmsx/startup')
+local pcall<const> = blua32.closure(startup.protected_call)
 receiver, replacement, prior = {}, {}, {}
 old = {}
 setmetatable(receiver, old)
@@ -50,22 +54,23 @@ function clear_call(operation, target)
 end
 `;
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const folder = mkdtempSync(join('tmp', 'bmsx-setmetatable-'));
+const folder = mkdtempSync(join(tmpdir(), 'bmsx-setmetatable-'));
 try {
 	const runner = nativeConformanceRunner('bmsx_heap_service_conformance_runner', {
-		buildDirectory: join('tmp', 'build-native-setmetatable'),
+		buildDirectory: join(tmpdir(), 'build-native-setmetatable'),
 		configure: ['-DCMAKE_BUILD_TYPE=Release', '-DBMSX_ENABLE_NATIVE_BLOCKS=ON', '-DBMSX_NATIVE_GATE_PROFILE=ON'],
 	});
 	for (const optLevel of [0, 3] as const) {
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
-		const entry = residentFunctionAddress(system, 'kernel/gc_barrier', 'set_metatable');
+		const linked = linkManagedTestSystem(source, optLevel);
+		const romBytes = writeTestBlua32Rom(linked);
+		const entry = residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/gc_barrier', 'set_metatable');
 		const runtime = new Runtime({
-			systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+			systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
 			cpuExecutionBackend: CpuExecutionBackend.JavaScript,
 		}, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		runGuestToHalt(cpu, 250_000);
+		runGuestToHalt(cpu, 1_000_000);
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const addr = (name: string) => valuePayload(global(name));
 		const normal = asClosure(global('normal_call'), cpu.gc), invalid = asClosure(global('invalid_call'), cpu.gc), clear = asClosure(global('clear_call'), cpu.gc);
@@ -75,7 +80,7 @@ try {
 		const newAddress = valuePayload(replacement), target = valuePayload(receiver), old = addr('old');
 		const args = [operation, receiver, replacement];
 		const warm = [valueBuiltinFunction(BuiltinFunctionId.RawGet), receiver, replacement];
-		// Admit the protected-call storage independently of the mutation under test.
+		// Warm the protected operation independently of the mutation under test.
 		runCompletionClosure(cpu, invalid, warm, 1024);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i) runCompletionClosure(cpu, normal, warm, 1024);
 
@@ -98,7 +103,7 @@ try {
 		const issue = management + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.IssuePc;
 		const rom = join(folder, 'system.rom'), seed = join(folder, 'initial.state'), tsSave = join(folder, 'mid.state'), cppSave = join(folder, 'mid.cpp.state');
 		const traceFile = join(folder, 'trace.txt');
-		writeFileSync(rom, system.romBytes);
+		writeFileSync(rom, romBytes);
 		cpu.beginCompletionCall(normal, args);
 		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		const history = new RamHistory();
@@ -199,7 +204,7 @@ try {
 			assert.equal(result, RunResult.Halted);
 			const values = completion();
 			assert.equal(values[0], valueBool(!invalidArgument));
-			assert.equal(cpu.readLuaFaultReasonWord(), 0, 'a protected language error is not a CP0 trap');
+			if (invalidArgument) assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_INVALID_ARGUMENT);
 			if (invalidArgument) {
 				assert.equal(cpu.stringPool.toString(asStringId(values[1])), 'Invalid argument.');
 				assert.equal(memory.readRamRecordWord(metatable), newAddress);

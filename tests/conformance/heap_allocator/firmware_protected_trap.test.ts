@@ -12,7 +12,7 @@ import { valueBool, valueFloatBits, valueInteger, valueNil, valuePayload, valueS
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_SYSCALL, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -25,7 +25,10 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 
 for (const optLevel of [0, 3] as const) test(`BIOS catches ordinary protected traps and returns exact Lua values at O${optLevel}`, t => {
 	const linked = linkManagedTestSystem(`
-local pcall<const>, xpcall<const>, error<const> = __bmsx_pcall, __bmsx_xpcall, __bmsx_error
+local entries<const> = require('bmsx/startup')
+local pcall<const> = blua32.closure(entries.protected_call)
+local xpcall<const> = blua32.closure(entries.protected_xcall)
+local error<const> = __bmsx_error
 local function handler(value) return value, 103 end
 local function broken(value) error(value) end
 halt_until_irq
@@ -33,12 +36,19 @@ local nil_ok, nil_value = pcall(error, nil)
 local invalid_ok, invalid_message = pcall(41)
 local handled_ok, exact, unused = xpcall(error, handler, blua32.float_from_bits(0xff812345))
 local broken_ok, broken_message = xpcall(error, broken, 97)
-return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused, broken_ok, broken_message
+local good, first, absent, last = pcall(function(...) return ... end, 11, nil, 17)
+local outer, inner, nested = pcall(xpcall, error, handler, 75)
+local exposed<const> = blua32.closure(entries.protected_body)
+local unwrapped, raw = pcall(exposed, error, handler, 51)
+return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused, broken_ok, broken_message,
+	good, first, absent, last, outer, inner, nested, unwrapped, raw
 `, optLevel);
 	const rom = writeTestBlua32Rom(linked);
 	const vector = linked.layout.functions[linked.symbols.metadata.functionIds.findIndex(id =>
 		id.startsWith('module:kernel/exception_bridge/') && id.endsWith('|constant|enter'))];
 	assert.ok(vector);
+	const landing = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_handler/module')];
+	assert.ok(landing);
 	const path = mkdtempSync(join(tmpdir(), 'bmsx-protected-trap-'));
 	t.after(() => rmSync(path, { recursive: true, force: true }));
 	const romPath = join(path, 'system.rom'), trace = join(path, 'trace');
@@ -76,15 +86,22 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueNil()],
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, 0, valueNil()],
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, bits],
-		[CPU_CAUSE_CODE_SYSCALL, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, bits],
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(97)],
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(97)],
+		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(75)],
+		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(51)],
 	] as const;
 	let next = 0, cut = 0, rowsAtCut = 0;
 	let outcome = RunResult.Yielded;
 	for (let i = 0; i < 8192 && outcome !== RunResult.Halted; ++i) {
 		outcome = grant(rt, 1);
 		const frame = cpu.activeThread.currentFrame;
+		if (cut === 0 && !cpu.fixedInterruptActive() && frame?.pc === landing.codeAddress) {
+			writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));
+			commands.push(`x ${nativeState}`);
+			cut = commands.length;
+			rowsAtCut = expected.length;
+		}
 		if (!cpu.fixedInterruptActive() || frame?.pc !== vector.codeAddress) continue;
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), root);
 		if (cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW) {
@@ -101,12 +118,7 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		const physical = frame.thread.stackOffset();
 		hash(rt, physical + 4 * frame.stackBase, 4);
 		hash(rt, physical + 4 * frame.thread.stackRegisters.capacity() + frame.stackBase, 1);
-		if (cause === CPU_CAUSE_CODE_SYSCALL) {
-			writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));
-			commands.push(`x ${nativeState}`);
-			cut = commands.length;
-			rowsAtCut = expected.length;
-		}
+
 	}
 	assert.ok(cut !== 0);
 	assert.equal(next, expectedEntries.length);
@@ -121,6 +133,9 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 			valueBool(false), valueString(cpu.stringPool.find('Attempted to call a non-function value.')!),
 			valueBool(false), bits, valueNil(),
 			valueBool(false), valueString(cpu.stringPool.find('error in error handling')!),
+			valueBool(true), valueInteger(11), valueNil(), valueInteger(17),
+			valueBool(true), valueBool(false), valueInteger(75),
+			valueBool(false), valueInteger(51),
 		];
 		assert.deepEqual(machine.readCompletionValues(), values);
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
@@ -138,10 +153,10 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 	replay(['X', ...tail], rows);
 	const restored = boot();
 	applyRuntimeSaveState(restored, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-	assert.equal(restored.machine.cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
-	assert.equal(restored.machine.cpu.activeThread.currentFrame!.registers.get(0), bits);
-	// The reverse restore starts at the hardware boundary inside the fixed
-	// vector. Drive the same grants; observations don't advance either core.
+	assert.equal(restored.machine.cpu.fixedInterruptActive(), false);
+	assert.equal(restored.machine.cpu.activeThread.currentFrame!.pc, landing.codeAddress);
+	assert.equal(restored.machine.cpu.activeThread.currentFrame!.registers.get(1), bits);
+	// Resume the ordinary handler frame using exactly the same grants.
 	const grantRows = rows.filter((_, index) => tail[index] === 'E 1');
 	commands.length = expected.length = 0;
 	outcome = RunResult.Yielded;

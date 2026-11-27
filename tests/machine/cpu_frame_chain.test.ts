@@ -3,21 +3,22 @@ import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ValueTag, valueFloatBits, valueBool, valueBuiltinFunction, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueFloatBits, valueBool, valueInteger, valueNil, valueString, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FrameField, ProtectedCallKind, ProtectedField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FrameField, type CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_CAPTURE_WORDS } from '../../machine/ts/machine/cpu/closure';
 import { UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { compileCoroutineTest } from '../helpers/coroutine';
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function callImage(maxStack: number, returns: number, base = 0) {
@@ -58,16 +59,6 @@ test('thread growth resizes only the required storage lane', () => {
 	assert.equal(location(ThreadField.ProtectedBlock), 0);
 	assert.equal(frame.pc, pc);
 
-	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
-	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
-	assert.equal(location(ThreadField.ProtectedCapacity), 1);
-	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
-	assert.equal(location(ThreadField.ProtectedCapacity), 2);
-	assert.equal(location(ThreadField.FrameBlock), frames);
-	assert.equal(location(ThreadField.StackBlock), stack);
-	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
-	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
-	assert.equal(frame.registers.get(0), valueInteger(73));
 });
 
 test('Thread growth at its logical assist threshold admits only the new capacity', () => {
@@ -90,19 +81,6 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	assert.equal(cpu.gc.active(), false);
 	assert.equal(frame.pc, pc); assert.equal(frame.registers.get(0), valueInteger(73));
 
-	const handler = valueBuiltinFunction(BuiltinFunctionId.PCall);
-	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
-	thread.pushProtectedCall(ProtectedCallKind.PCall, false, 0, 3, handler);
-	assert.equal(read(ThreadField.ProtectedCapacity), 1);
-	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
-	thread.pushProtectedCall(ProtectedCallKind.PCall, true, 1, 6, handler);
-	assert.equal(read(ThreadField.ProtectedCapacity), 2);
-	assert.equal(thread.protectedWord(0, ProtectedField.Wanted), 3);
-	assert.equal(thread.protectedWord(1, ProtectedField.Wanted), 6);
-	assert.equal(heap.usedBytes(), target);
-	assert.equal(heap.collectionTarget(), target);
-	assert.equal(cpu.gc.active(), false);
-
 	heap.setCollectionTarget(target += (128 - 64) * THREAD_STACK_SLOT_BYTES);
 	thread.resizeStack(128);
 	assert.equal(heap.usedBytes(), target);
@@ -110,42 +88,37 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 	assert.equal(cpu.gc.active(), false);
 });
 
-test('full collection trims all three Thread reservations with no replacement space', () => {
+test('full collection trims both Thread execution reservations with no replacement space', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
 	const thread = cpu.rootThread, arena = cpu.heapAllocator, frame = thread.currentFrame!;
 	cpu.luaHeap.reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
 	thread.bindStack();
-	for (let i = 0; i < 8; ++i) thread.pushProtectedCall(ProtectedCallKind.PCall, false, 2, 1, valueBuiltinFunction(BuiltinFunctionId.PCall));
-	thread.protectedDepth = 1;
 	frame.registers.setInteger(0, 73); frame.top = 1;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
-	const blocks = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.ProtectedBlock];
+	const blocks = [ThreadField.StackBlock, ThreadField.FrameBlock];
 	const before = blocks.map(read), pc = frame.pc;
 	while (arena.allocate(4088, true) !== 0) {}
-	while (arena.allocate(4 * PROTECTED_CALL_BYTES, true) !== 0) {}
+	while (arena.allocate(4 * FRAME_CONTROL_BYTES, true) !== 0) {}
 	const history = new RamHistory();
 	history.start(memory);
 	const initial = history.capture(memory, null), state = cpu.captureRuntimeState();
 	cpu.collectTrackedHeapBytes();
 	assert.deepEqual(blocks.map(read), before);
-	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [32, 4, 4]);
+	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [32, 4]);
 	assert.equal(frame.registers.get(0), valueInteger(73));
-	assert.equal(frame.pc, pc); assert.equal(thread.protectedWord(0, ProtectedField.Base), 2);
+	assert.equal(frame.pc, pc);
 	const regrow = () => {
 		cpu.luaHeap.reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
 		thread.bindStack();
-		for (let i = 1; i < 5; ++i) thread.pushProtectedCall(ProtectedCallKind.PCall, false, i, 1, valueBuiltinFunction(BuiltinFunctionId.PCall));
 		assert.deepEqual(blocks.map(read), before);
 		assert.equal(frame.pc, pc);
-		assert.equal(thread.protectedWord(0, ProtectedField.Base), 2);
-		assert.equal(thread.protectedWord(4, ProtectedField.Base), 4);
 	};
 	regrow();
 	const expected = memory.captureSaveState().ram;
 	const completed = history.capture(memory, initial);
 	history.restore(memory, completed, initial);
 	cpu.restoreRuntimeState(state);
-	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity, ThreadField.ProtectedCapacity].map(read), [64, 8, 8]);
+	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [64, 8]);
 	assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(73));
 	cpu.collectTrackedHeapBytes();
 	regrow();
@@ -225,8 +198,8 @@ test('reusing a frame view does not publish it before activation', () => {
 	assert.equal(thread.frameIndex(prepared), -1, 'retained but inactive frames are not diagnostic stack entries');
 	assert.equal(thread.currentFrame, frames[0]);
 	assert.equal(prepared.controlOffset, frames[0].controlOffset + FRAME_CONTROL_BYTES);
-	thread.enterFrame(prepared); prepared.protectedContinuationIndex = 3; thread.leaveFrame();
-	assert.equal(thread.currentFrame, frames[0], 'the retired protected slot is not active');
+	thread.enterFrame(prepared); thread.leaveFrame();
+	assert.equal(thread.currentFrame, frames[0], 'the retired activation is not active');
 	thread.leaveFrame();
 	assert.equal(thread.frameDepth, 0); assert.equal(thread.currentFrame, null);
 	assert.equal(thread.acquireFrame(), frames[0], 'an empty thread keeps its first prepared node');
@@ -359,72 +332,39 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.deepEqual(values, [valueInteger(7), valueInteger(14)]);
 	});
 
-	test(`only the protected target owns completion, including after snapshot restore (${backend})`, () => {
-		const text = new Uint8Array(11 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 3);
-		writeInstruction(text, 4, OpCode.RET, 0, 3, 0);
-		writeInstruction(text, 5, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 6, OpCode.CLOSURE, 0, 0, 0);
-		writeInstruction(text, 7, OpCode.CALL, 0, 1, 2);
-		writeInstruction(text, 8, OpCode.RET, 0, 2, 0);
-		writeInstruction(text, 9, OpCode.LOADK, 0, 0, 0);
-		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
-		const image = linkRawTestSystemBlua32({ text, functions: [
-			{ firstWord: 0, wordCount: 5, maxStack: 8 },
-			{ firstWord: 5, wordCount: 4, maxStack: 8 },
-			{ firstWord: 9, wordCount: 2, maxStack: 8 },
-		], constants: [integerConstant(7)], systemGlobalNames: ['pcall'], closureRelocations: [
-			{ wordIndex: 2, functionIndex: 1 },
-			{ wordIndex: 6, functionIndex: 2 },
-		] });
-		const { cpu } = createTestHeapServiceCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-		for (let grant = 0; grant < 20 && cpu.getFrameDepth() !== 3; ++grant) cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.getFrameDepth(), 3);
-		assert.equal(cpu.rootThread.protectedDepth, 1);
-		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
-		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
-		const snapshot = cpu.captureRuntimeState();
-		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
-		const ram = cpu.memory.captureSaveState();
-		cpu.rootThread.resizeStack(1024);
-		assert.notEqual(cpu.heapAllocator.allocate(8192, true), 0); // Block in-place expansion.
-		const oldStack = cpu.rootThread.stackOffset();
-		cpu.rootThread.resizeStack(2048);
-		assert.notEqual(cpu.rootThread.stackOffset(), oldStack);
-		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Flags), 0);
-		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Caller), 0);
-		assert.equal(cpu.rootThread.protectedWord(0, ProtectedField.Wanted), 3);
-		cpu.memory.restoreSaveState(ram);
-		cpu.restoreRuntimeState(snapshot);
-		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
-		assert.equal(cpu.rootThread.currentFrame!.protectedContinuationIndex, -1);
-		assert.equal(cpu.rootThread.currentFrame!.previous!.protectedContinuationIndex, 0);
-		assert.equal(cpu.runUntilDepth(2, 100), RunResult.Halted);
-		assert.equal(cpu.rootThread.protectedDepth, 1, 'ordinary child return must not finish protection');
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
-		const values: Value[] = []; cpu.readCompletionValues(values);
-		assert.deepEqual(values, [valueBool(true), valueInteger(7)]);
-		assert.equal(cpu.rootThread.protectedDepth, 0);
-		assert.equal(cpu.rootThread.protectedDepth, 0);
-
-		cpu.memory.restoreSaveState(ram);
-		cpu.restoreRuntimeState(snapshot);
-		const control = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.FrameBlock);
-		const protectedControl = cpu.memory.readRamRecordWord(cpu.rootThread.address + ThreadField.ProtectedBlock);
-		const target = cpu.rootThread.currentFrame!.previous!;
-		cpu.memory.writeRamRecordWord(control + FRAME_CONTROL_BYTES + FrameField.CallSite, 0x1234);
-		assert.equal(target.callSitePc, 0x1234, 'a raw write updates the suspended frame diagnostic');
-		cpu.memory.writeRamRecordWord(protectedControl + ProtectedField.Wanted, 4);
-		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
-		const caller = cpu.rootThread.currentFrame!;
-		assert.equal(caller.top, 3, 'return placement consumes the RAM record, not a cached host continuation');
-		assert.equal(cpu.rootThread.protectedDepth, 0);
+	test(`suspended protected CALL returns through an ordinary frame after RAM restore (${backend})`, () => {
+		const linked = compileCoroutineTest(`
+local function leaf()
+  halt_until_irq
+  return 7
+end
+local function target() return leaf() end
+return pcall(target)
+`, 0);
+		const { cpu, memory } = createTestSystemCpu(linked, backend);
+		runGuestToHalt(cpu, 500_000);
+		assert.ok(cpu.isHaltedUntilIrq());
+		const protection = linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_call/module');
+		assert.notEqual(protection, -1);
+		const prototype = linked.symbols.functionAddresses[protection];
+		const thread = cpu.rootThread;
+		const leaf = thread.currentFrame!, wrapper = leaf.previous!.previous!;
+		assert.equal(wrapper.functionAddress, prototype);
+		assert.equal(thread.protectedDepth, 0, 'only the ordinary RAM frame owns protection');
+		const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
+		const finish = () => {
+			cpu.clearHaltUntilIrq();
+			runGuestToHalt(cpu, 100_000);
+			const values: Value[] = [];
+			cpu.readCompletionValues(values);
+			assert.deepEqual(values, [valueBool(true), valueInteger(7)]);
+		};
+		finish();
+		memory.restoreSaveState(ram);
+		cpu.restoreRuntimeState(state);
+		assert.deepEqual(cpu.captureRuntimeState(), state);
+		assert.equal(thread.currentFrame!.previous!.previous!.functionAddress, prototype);
+		finish();
 	});
 
 	test(`collection while admitting a callee preserves prepared identity and only active roots (${backend})`, () => {

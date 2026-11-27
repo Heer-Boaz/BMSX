@@ -283,7 +283,7 @@ type CompileOptionsBase = {
 	captureLayout?: LuaCaptureLayout;
 };
 
-export type ManagedEntry = { readonly symbol: string; readonly path: string };
+export type ManagedEntry = { readonly symbol: string; readonly path: string; readonly callable?: true };
 
 export type SystemCompileOptions = CompileOptionsBase & {
 	programDomain: 'system';
@@ -6394,14 +6394,15 @@ export function compileLuaChunkToProgram(
 		throw new Error('System reset, interrupt and exception vectors must name separate source bodies.');
 	}
 	const managedEntries = options.programDomain === 'system' ? options.managedEntries : undefined;
-	const managedEntryByPath = new Map<string, string>();
+	const managedEntryByPath = new Map<string, ManagedEntry>();
 	const managedEntryProtos = new Map<string, number>();
 	if (managedEntries !== undefined) {
 		const symbols = new Set<string>();
-		for (const { path, symbol } of managedEntries) {
+		for (const entry of managedEntries) {
+			const { path, symbol } = entry;
 			if (path === resetPath || path === irqPath || path === exceptionPath || managedEntryByPath.has(path) || symbols.has(symbol))
 				throw new Error(`Managed System entry '${symbol}' must name a distinct source body and symbol.`);
-			managedEntryByPath.set(path, symbol);
+			managedEntryByPath.set(path, entry);
 			symbols.add(symbol);
 		}
 	}
@@ -6580,14 +6581,42 @@ export function compileLuaChunkToProgram(
 	}
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
-		const managedSymbol = managedEntryByPath.get(module.path);
-		if (managedSymbol !== undefined) {
+		const managedEntry = managedEntryByPath.get(module.path);
+		if (managedEntry !== undefined) {
+			const { symbol: managedSymbol } = managedEntry;
 			try {
 				const expression = findLuaModuleExport(module.chunk)?.expressions[0];
-				if (module.chunk.constModule || module.chunk.body.length !== 1 || expression?.kind !== LuaSyntaxKind.FunctionExpression)
-					throw new Error(`Managed System entry '${managedSymbol}' must contain only a returned function body.`);
-				const index = compileFunctionExpression(programBuilder, expression, null, false,
-					buildModuleProtoId(module.path), managedSymbol, module.path, frontend.getFile(module.path), frontend);
+				if (module.chunk.constModule || expression?.kind !== LuaSyntaxKind.FunctionExpression)
+					throw new Error(`Managed System entry '${managedSymbol}' must return a function body.`);
+				const semantics = frontend.getFile(module.path);
+				const id = buildModuleProtoId(module.path);
+				let staticScope: FunctionBuilder | null = null;
+				if (module.chunk.body.length > 1) {
+					for (const cursor = module.chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+						if (cursor.statement.kind === LuaSyntaxKind.ReturnStatement) continue;
+						if (cursor.statement.kind !== LuaSyntaxKind.LocalAssignmentStatement)
+							throw new Error(`Managed System entry '${managedSymbol}' admits only immutable module imports before its function body.`);
+						const statement = cursor.statement as LuaLocalAssignmentStatement;
+						const value = statement.values[0];
+						if (statement.names.length !== 1
+							|| statement.attributes[0] !== 'const' || statement.values.length !== 1
+							|| value?.kind !== LuaSyntaxKind.CallExpression || value.callee.kind !== LuaSyntaxKind.IdentifierExpression
+							|| value.callee.name !== 'require' || value.method !== null || value.arguments.length !== 1
+							|| value.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression
+							|| !moduleCompileContext.modulesByPath.get(toLuaModulePath(value.arguments[0].value))?.constModule)
+							throw new Error(`Managed System entry '${managedSymbol}' admits only immutable module imports before its function body.`);
+					}
+					staticScope = new FunctionBuilder(programBuilder, null, {
+						moduleId: module.path, protoId: id, functionDisplayName: managedSymbol,
+						semantics, frontend, moduleCompileContext,
+					});
+					staticScope.compileStaticModuleScope(module.chunk);
+				}
+				const index = compileFunctionExpression(programBuilder, expression, staticScope, false,
+					id, managedSymbol, module.path, semantics, frontend);
+				if (!programBuilder.protoHasNoUpvalues(index))
+					throw new Error(`Managed System entry '${managedSymbol}' cannot capture runtime values.`);
+				if (managedEntry.callable) programBuilder.markStaticClosureProto(index);
 				managedEntryProtos.set(managedSymbol, index);
 			} catch (error) {
 				compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));

@@ -24,8 +24,9 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
 local metatables<const> = require('kernel/gc_barrier')
-local pcall<const> = __bmsx_pcall
-local xpcall<const> = __bmsx_xpcall
+local protected_entries<const> = require('bmsx/startup')
+local pcall<const> = blua32.closure(protected_entries.protected_call)
+local xpcall<const> = blua32.closure(protected_entries.protected_xcall)
 
 sink = { old = 0, new = 0 }
 function old_index(receiver, key) return 111 end
@@ -59,7 +60,9 @@ for (const optLevel of [0, 3] as const) {
 	test(`diagnostic String roots select metatable and firmware fault behavior after restore at O${optLevel}`, t => {
 		const folder = mkdtempSync(join(tmpdir(), 'diagnostic-roots-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
-		const system = writeTestBlua32Rom(linkManagedTestSystem(source, optLevel));
+		const linked = linkManagedTestSystem(source, optLevel);
+		const protectedCall = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_call/module')];
+		const system = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({
 			systemRomBytes: system, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC,
 			cpuExecutionBackend: CpuExecutionBackend.JavaScript,
@@ -153,8 +156,9 @@ for (const optLevel of [0, 3] as const) {
 			hash(head, HeapServiceRemarkHeadField.FaultIds + 4);
 			hash(alternateFaults & RAM_RECORD_WORD_MASK, faultBytes);
 		}
-		for (let i = 0; cpu.activeThread.protectedDepth === 0 && i < 256; ++i) assert.equal(grant(1), RunResult.Yielded);
-		assert.notEqual(cpu.activeThread.protectedDepth, 0, 'checkpoint with an admitted protected call, before its fault');
+		const atProtectedEntry = () => cpu.activeThread.currentFrame?.pc === protectedCall.codeAddress;
+		for (let i = 0; !atProtectedEntry() && i < 512; ++i) assert.equal(grant(1), RunResult.Yielded);
+		assert.ok(atProtectedEntry(), 'checkpoint at the ordinary protected call, before its fault');
 		assert.ok(cpu.getFrameDepth() > 1);
 		observe('P', `${cpu.getFrameDepth()} ${cpu.readFramePc(cpu.getFrameDepth() - 1)}`);
 		hash(head, HeapServiceRemarkHeadField.FaultIds + 4);

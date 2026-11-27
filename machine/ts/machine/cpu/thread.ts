@@ -1,10 +1,10 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_HANDLER_RESIDENT, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, ProtectedField } from './call_state';
 import type { GcHeap } from './gc_heap';
-import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
+import { valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
-import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
+import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 
 /** Reusable CPU execution bank bound to one raw Thread record; never a guest identity. */
@@ -19,7 +19,6 @@ export class Thread {
 	private lastBoundFrame: CallFrame | null = null;
 	private parkedFrameViews: CallFrame | null = null;
 	private boundFrameOffset = 0;
-	private boundProtectedOffset = 0;
 	private boundFrameCapacity = 0;
 	private recordWordOffset = 0;
 	public address = 0;
@@ -32,7 +31,7 @@ export class Thread {
 		}
 		this.currentFrame = null;
 		this.stackRegisters.unbind();
-		this.boundFrameOffset = this.boundProtectedOffset = this.boundFrameCapacity = 0;
+		this.boundFrameOffset = this.boundFrameCapacity = 0;
 		this.address = address;
 		this.recordWordOffset = (address & RAM_RECORD_WORD_MASK) >>> 2;
 	}
@@ -65,50 +64,14 @@ export class Thread {
 	public get frameBackingOffset(): number { return this.boundFrameOffset; }
 	public get frameBackingBytes(): number { return this.boundFrameCapacity * FRAME_CONTROL_BYTES; }
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
-	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }
-	public set protectedDepth(depth: number) { this.write(ThreadField.ProtectedDepth, depth); }
 	private frameControlAddress(index: number): number {
 		return this.boundFrameOffset + index * FRAME_CONTROL_BYTES;
 	}
-	private protectedAddress(index: number): number {
-		return this.boundProtectedOffset + index * PROTECTED_CALL_BYTES;
-	}
 	public protectedWord(index: number, field: ProtectedField): number {
-		return this.heap.memory.readRamRecordWord(this.protectedAddress(index) + field);
+		const base = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
+		return this.heap.memory.readRamRecordWord(base + index * PROTECTED_CALL_BYTES + field);
 	}
-	public protectedCaller(index: number): CallFrame | null {
-		const depth = this.protectedWord(index, ProtectedField.Caller);
-		if (depth >= this.frameDepth) return null;
-		let frame = this.currentFrame!;
-		for (let at = this.frameDepth - 1; at > depth; --at) frame = frame.previous!;
-		return frame;
-	}
-	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: Value): number {
-		const index = this.protectedDepth;
-		const reserved = this.protectedCapacity;
-		if (index === reserved) {
-			const capacity = reserved === 0 ? 1 : reserved * 2;
-			const block = this.heap.budget.reserveThreadControls(this.address, ThreadField.ProtectedBlock, capacity, reserved, handler);
-			this.boundProtectedOffset = block & RAM_RECORD_WORD_MASK;
-		}
-		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
-		const memory = this.heap.memory, ram = memory.ramData();
-		const tag = valueTag(handler);
-		const handlerFlag = tag === ValueTag.BuiltinFunction ? PROTECTED_CALL_HANDLER_BUILTIN
-			: tag === ValueTag.ResidentFunction ? PROTECTED_CALL_HANDLER_RESIDENT : 0;
-		writeLE32(ram, (address + ProtectedField.Flags) & RAM_RECORD_WORD_MASK, kind | (parent ? PROTECTED_CALL_PARENT : 0) | handlerFlag);
-		writeLE32(ram, (address + ProtectedField.Caller) & RAM_RECORD_WORD_MASK, this.frameDepth - 1);
-		writeLE32(ram, (address + ProtectedField.Base) & RAM_RECORD_WORD_MASK, base);
-		writeLE32(ram, (address + ProtectedField.Wanted) & RAM_RECORD_WORD_MASK, wanted);
-		writeLE32(ram, (address + ProtectedField.Handler) & RAM_RECORD_WORD_MASK, valuePayload(handler));
-		const first = Math.min(PROTECTED_CALL_BYTES, MAIN_RAM_SIZE - address);
-		memory.invalidateRamWrite(address, first);
-		if (first !== PROTECTED_CALL_BYTES) memory.invalidateRamWrite(0, PROTECTED_CALL_BYTES - first);
-		this.protectedDepth = index + 1;
-		return index;
-	}
-
 	public stackRequiresScalar(): boolean {
 		// The language heap is outside the instruction bus; only the
 		// physical register window matters to the compiled path.
@@ -120,12 +83,10 @@ export class Thread {
 		const capacity = this.read(ThreadField.StackCapacity), frameCapacity = this.frameCapacity;
 		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
 		const frames = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
-		const protectedOffset = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
 		if (ifRelocated && capacity === this.stackRegisters.capacity() && block === this.stackRegisters.ramOffset()
-			&& frameCapacity === this.boundFrameCapacity && frames === this.boundFrameOffset && protectedOffset === this.boundProtectedOffset) return;
+			&& frameCapacity === this.boundFrameCapacity && frames === this.boundFrameOffset) return;
 		this.boundFrameCapacity = frameCapacity;
 		this.boundFrameOffset = frames;
-		this.boundProtectedOffset = protectedOffset;
 		this.bindFrameControls(frames);
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)

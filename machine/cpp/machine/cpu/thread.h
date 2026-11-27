@@ -70,13 +70,6 @@ struct Thread {
 		watches.consumeHistoryWrites(address & RAM_RECORD_WORD_MASK, THREAD_HEAP_BYTES);
 	}
 #endif
-	u32 protectedDepth() const;
-	void setProtectedDepth(u32 depth);
-	u32 protectedWord(u32 index, ProtectedField field) const;
-	CallFrame* protectedCaller(u32 index) const;
-	CallResultPlacement protectedResult(u32 index) const;
-	u32 pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler);
-
 	u32 address;
 	ThreadStatus status() const;
 	void setStatus(ThreadStatus status);
@@ -112,18 +105,15 @@ private:
 	friend class NativeLowering;
 #endif
 	u32 frameCapacity() const;
-	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;
 	CallFrame* frameNode(CallFrame* previous);
 	void bindFrameControl(CallFrame& frame, u32 address, u32 index);
 	void bindFrameControls();
 	void rebindRegisters();
 	void publishDepth(u32 depth);
-	u32 protectedAddress(u32 index) const;
 	u32 read(ThreadField field) const { return readLE32(nativeRecord + static_cast<u32>(field)); }
 	void write(ThreadField field, u32 word);
 	u32 boundFrameOffset = 0;
-	u32 boundProtectedOffset = 0;
 	u32 boundFrameCapacity = 0;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	u32 recordedWriteEpoch = 0;

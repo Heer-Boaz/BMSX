@@ -221,7 +221,6 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, executionImage)), semanticReturn);
 	admitCaller();
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, nativeControl));
-	sljit_set_label(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R3), static_cast<int>(FrameField::Protected), SLJIT_IMM, 0), semanticReturn);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(SLJIT_R3), static_cast<int>(FrameField::OpenHead), SLJIT_IMM, 0), semanticReturn);
 	sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), static_cast<int>(FrameField::Flags), SLJIT_IMM, FRAME_COMPLETION);
 	sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), semanticReturn);

@@ -16,6 +16,9 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
+import { linkCartBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
+import { bootManagedTestSystem, linkManagedTestSystem, TEST_CART_TRANSFER_SOURCE } from '../helpers/managed_system';
+import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { valueBuiltinFunction, EMPTY_CALL_ARGS, asClosure, asInteger, asStringId, valueIsString, valueTable, valueClosure, valueBool, valueInteger, valueFloat, valueNil, valuePayload, valueResidentFunction } from '../../machine/ts/machine/cpu/value';
 import {
 	INSTRUCTION_BYTES,
@@ -63,7 +66,7 @@ import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kin
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	applyHotResumeRelocation,
@@ -83,6 +86,7 @@ import {
 	linkRawTestBlua32Pair,
 	linkRawTestSystemBlua32,
 	linkTestBlua32Pair,
+	writeTestBlua32Rom,
 	type TestBlua32Image,
 	type TestBlua32ImagePair,
 	type TestBlua32Source,
@@ -701,7 +705,7 @@ function returnFromInterruptFrame(runtime: Runtime, state: FrameState, cpu: CPU,
 	assert.equal(cpu.getFrameDepth(), 0);
 }
 
-test('CPU protected-call microcode preempts, saves, resumes, and preserves Lua results', () => {
+test('cartridge protected calls preserve their authored System activation across restore', () => {
 	const source = `
 function marker() end
 local succeed<const> = function()
@@ -726,21 +730,24 @@ multiple_failure, multiple_handled, multiple_extra = xpcall(fail, handle_multipl
 handler_failure, handler_failure_error = xpcall(fail, handle_failure)
 nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 `;
-	const { cpu } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, source);
-	cpu.setGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
-	cpu.setGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-	cpu.setGlobalByKey(cpu.stringPool.intern('xpcall'), valueBuiltinFunction(BuiltinFunctionId.XPCall));
+	const bios = linkManagedTestSystem(`require('base')\n${TEST_CART_TRANSFER_SOURCE}`, 0,
+		[...BASE_FIRMWARE_MODULES, { path: 'tty/console', source: 'return {}' }]);
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'protected_cart.lua'), [],
+		{ entrySource: source, programDomain: 'cart' });
+	const cart = linkCartBlua32Image(bios.biosImports, encodeCompiledProgramObject(compiled), compiled.metadata,
+		CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+	const { cpu } = bootManagedTestSystem(bios, 'main', cartridgeSlots(writeTestBlua32Rom(cart)));
+	const index = bios.symbols.metadata.functionIds.indexOf('module:kernel/protected_call/module');
+	assert.notEqual(index, -1);
+	const protection = bios.symbols.functionAddresses[index];
 
 	let restoredProtectedCall = false;
 	for (let grants = 0; cpu.getFrameDepth() > 0; ++grants) {
-		assert.ok(grants < 4096, 'the protected-call test must return');
-		assert.equal(cpu.runUntilDepth(0, 1), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
-		if (!restoredProtectedCall && cpu.getFrameDepth() > 0) {
-			const state = cpu.captureRuntimeState();
-			if (cpu.rootThread.protectedDepth > 0) {
-				cpu.restoreRuntimeState(state);
-				restoredProtectedCall = true;
-			}
+		assert.ok(grants < 32768, 'the protected-call test must return');
+		assert.equal(cpu.runUntilDepth(0, 17), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
+		if (!restoredProtectedCall && cpu.isUserMode() && cpu.activeThread.currentFrame?.functionAddress === protection) {
+			cpu.restoreRuntimeState(cpu.captureRuntimeState());
+			restoredProtectedCall = true;
 		}
 	}
 

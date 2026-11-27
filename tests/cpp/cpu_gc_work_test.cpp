@@ -1793,18 +1793,6 @@ void threadReplacementAdmitsOnlyItsLogicalIncrease() {
 	require(frame.readControl(FrameField::Pc) == pc && frame.registers.get(0) == valueInteger(73),
 		"growth preserves the published caller and its Values");
 
-	const auto handler = valueBuiltinFunction(BuiltinFunctionId::PCall);
-	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
-	thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(0, 2), handler);
-	require(ThreadRecord::storageLayout(memory, thread.address).protectedCapacity == 1, "first continuation is allocated");
-	heap.setCollectionTarget(target += PROTECTED_CALL_BYTES);
-	thread.pushProtectedCall(ProtectedCallKind::PCall, true, CallResultPlacement::call(1, 5), handler);
-	require(ThreadRecord::storageLayout(memory, thread.address).protectedCapacity == 2 && thread.protectedDepth() == 2u
-		&& thread.protectedWord(0, ProtectedField::Wanted) == 3u && thread.protectedWord(1, ProtectedField::Wanted) == 6u,
-		"protected growth resizes only its lane and retains both continuations");
-	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
-		"protected growth admits only the one additional continuation");
-
 	heap.setCollectionTarget(target += (128u - 64u) * THREAD_STACK_SLOT_BYTES);
 	thread.resizeStack(128);
 	require(heap.usedBytes() == target && heap.collectionTarget() == target && !cpu.collecting(),
@@ -1817,30 +1805,23 @@ void fullCollectionTrimsWithoutFreeBacking() {
 	auto& memory = cpu.memory(); auto& frame = *thread.currentFrame;
 	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 64, 8, valueNil());
 	thread.bindStack();
-	for (int i = 0; i < 8; ++i)
-		thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(2, 1), valueBuiltinFunction(BuiltinFunctionId::PCall));
-	thread.setProtectedDepth(1);
 	frame.registers.set(0, valueInteger(73)); frame.setTop(1);
 	const auto before = ThreadRecord::storageLayout(memory, thread.address);
 	const auto pc = frame.readControl(FrameField::Pc);
 	while (arena.allocate(4088, true)) {}
-	while (arena.allocate(4 * PROTECTED_CALL_BYTES, true)) {}
+	while (arena.allocate(24u, true)) {}
 	cpu.collectHeap();
 	const auto after = ThreadRecord::storageLayout(memory, thread.address);
-	require(after.block == before.block && after.frameBlock == before.frameBlock && after.protectedBlock == before.protectedBlock
-		&& after.valueCapacity == 32 && after.frameCapacity == 4 && after.protectedCapacity == 4,
-		"full collection halves all three reservations without a replacement chunk");
-	require(frame.registers.get(0) == valueInteger(73) && frame.readControl(FrameField::Pc) == pc
-		&& thread.protectedResult(0).base == 2, "the live Value, frame and protected continuation survive trimming");
+	require(after.block == before.block && after.frameBlock == before.frameBlock
+		&& after.valueCapacity == 32 && after.frameCapacity == 4,
+		"full collection halves the Value and frame reservations without a replacement chunk");
+	require(frame.registers.get(0) == valueInteger(73) && frame.readControl(FrameField::Pc) == pc,
+		"the live Value and frame survive trimming");
 	cpu.luaHeap().reserveThreadFrameStorage(thread.address, 0, 8, valueNil());
 	thread.bindStack();
-	for (int i = 1; i < 5; ++i)
-		thread.pushProtectedCall(ProtectedCallKind::PCall, false, CallResultPlacement::call(i, 1), valueBuiltinFunction(BuiltinFunctionId::PCall));
 	const auto grown = ThreadRecord::storageLayout(memory, thread.address);
-	require(grown.frameBlock == before.frameBlock && grown.protectedBlock == before.protectedBlock
-		&& grown.frameCapacity == 8 && grown.protectedCapacity == 8 && frame.readControl(FrameField::Pc) == pc
-		&& thread.protectedResult(0).base == 2 && thread.protectedResult(4).base == 4,
-		"control stacks reuse their released suffixes and preserve the active prefix");
+	require(grown.frameBlock == before.frameBlock && grown.frameCapacity == 8 && frame.readControl(FrameField::Pc) == pc,
+		"frame controls reuse their released suffix and preserve the active prefix");
 }
 
 void valueStackGrowsWithOnlyTheIncrementFree() {

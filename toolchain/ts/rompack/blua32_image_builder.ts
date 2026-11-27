@@ -1,4 +1,4 @@
-import { linkBlua32ResetCode } from './blua32_reset_code';
+import { bindBlua32CodeFunctions, linkBlua32ResetCode } from './blua32_reset_code';
 import { SYSTEM_STARTUP_MODULE_PATH } from './generated_modules';
 import {
 	utf8FatalDecoder,
@@ -340,6 +340,8 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	if (startupSymbols.length !== 0)
 		applyBlua32LinkValues(linked, object.link.constValueRelocs, SYSTEM_STARTUP_MODULE_PATH, values);
+	bindBlua32CodeFunctions(linked.layout, managedEntries.filter(entry => entry.callable)
+		.map(entry => linked.functionProtoIndices.indexOf(compiled.managedEntryProtos.get(entry.symbol)!)));
 	if (authoredReset) {
 		linkBlua32ResetCode(linked.layout, linked.functionProtoIndices.indexOf(compiled.resetProtoIndex),
 			linked.functionProtoIndices.indexOf(compiled.irqProtoIndex), linked.functionProtoIndices.indexOf(compiled.exceptionProtoIndex),

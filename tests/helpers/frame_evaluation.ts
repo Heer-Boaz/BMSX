@@ -1,20 +1,15 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
-import { linkTestSystemBlua32 } from './blua32';
-import { loadHeapServiceTestModules } from './heap_service_system';
+import { linkManagedTestSystem } from './managed_system';
+import { writeTestBlua32Rom } from './blua32';
 import { systemCaseSource } from './system_case_rom';
 
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
 function compileFrameEvaluationProgram(execution: string, optLevel: 0 | 3, includeDiagnostics = true) {
 	const modules = [
-		...['base', 'number/parse', 'number/decimal', 'table', 'coroutine', 'string/base', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
+		...['base', 'number/parse', 'number/decimal', 'table', 'coroutine', 'string/base', 'string/char', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
 		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
 	].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
-	modules.push({ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
-		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
+	modules.push({ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		{ path: 'frame_test/primitives', source: `frame_count = __bmsx_frame_count
 running_thread = __bmsx_coroutine_running
 frame_header = __bmsx_frame_header
@@ -40,13 +35,12 @@ require('frame_test/primitives')
 escaped = false
 optimization_level = ${optLevel}
 ${execution}`;
-	const programModules = [
-		...loadHeapServiceTestModules(),
-		...modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
-	];
-	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!, programModules,
-		{ entrySource: source, optLevel, programDomain: 'system', preloadModules: HEAP_SERVICE_MODULES }),
-		includeDiagnostics ? new Map([{ path: 'frame_test', source }, ...programModules].map(module => [module.path, { displayPath: `${module.path}.lua`, source: module.source }])) : null);
+	const linked = linkManagedTestSystem(source, optLevel, modules, [], 'frame_test');
+	return {
+		image: linked.layout,
+		symbols: linked.symbols,
+		romBytes: writeTestBlua32Rom(linked, includeDiagnostics ? linked.diagnosticSources : null),
+	};
 }
 
 export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {

@@ -2,7 +2,7 @@
 #include "machine/cpu/lua_heap.h"
 
 namespace bmsx {
-enum class TableStoreReturn : u32 { None, Call, Protected };
+enum class TableStoreReturn : u32 { None, Call };
 enum class TableCensus : u32 { None, General, Scheduled, RetryCurrent, RetryFresh };
 struct ArrayDensity {
 	u32 cursor = 0, live = 0, slots = 0, kept = 0;

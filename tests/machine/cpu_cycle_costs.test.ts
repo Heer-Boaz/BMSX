@@ -4,16 +4,12 @@ import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { BUILTIN_FUNCTIONS } from '../../machine/ts/machine/cpu/builtin_values';
-import { PROTECTED_CALL_BYTES, ProtectedField } from '../../machine/ts/machine/cpu/call_state';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { seedTestRomClosure } from '../helpers/blua32';
 import { createManagedTestOpcodeCpu, linkManagedTestOpcodes } from '../helpers/managed_opcode';
 import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valueThread, ValueTag, type Value } from '../../machine/ts/machine/cpu/value';
@@ -124,7 +120,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 test('builtin cost resolution uses fixed VM primitive tiers', () => {
 	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Next].cost, { base: 1, perArg: 0, perRet: 0 });
 	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.Error].cost, { base: 2, perArg: 0, perRet: 0 });
-	assert.deepEqual(BUILTIN_FUNCTIONS[BuiltinFunctionId.PCall].cost, { base: 4, perArg: 0, perRet: 0 });
 });
 
 
@@ -179,39 +174,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			assert.deepEqual(values, [valueInteger(17), valueInteger(29)].slice(0, count));
 		});
 	}
-	for (const wanted of [0, 1, 2, 6, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.ramBytes + 1]) {
-		test(`nested protected RET accounts each completed receiving range (${backend}, C=${wanted})`, () => {
-			const text = new Uint8Array(7 * INSTRUCTION_BYTES);
-			writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-			writeInstruction(text, 1, OpCode.GETSYS, 1, 0, 0);
-			writeInstruction(text, 2, OpCode.WIDE, 0, 0, 0);
-			writeInstruction(text, 3, OpCode.CLOSURE, 2, 0, 0);
-			writeInstruction(text, 4, OpCode.CALL, 0, 3, 0);
-			writeInstruction(text, 5, OpCode.JMP, 0, 63, 63, 255);
-			writeInstruction(text, 6, OpCode.RET, 0, 3, 0);
-			const image = linkManagedTestOpcodes({ text, systemGlobalNames: ['pcall'], functions: [
-				{ firstWord: 0, wordCount: 6, maxStack: 8 }, { firstWord: 6, wordCount: 1, maxStack: 2 },
-			], closureRelocations: [{ wordIndex: 3, functionIndex: 1 }] });
-			const { cpu } = createManagedTestOpcodeCpu(image, backend);
-			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-			cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-			for (let grant = 0; grant < 32 && (cpu.getFrameDepth() !== 2); ++grant) cpu.runUntilDepth(0, 1);
-			assert.ok(!(cpu.getFrameDepth() !== 2), 'fixture reached its measured instruction');
-			const thread = cpu.rootThread;
-			assert.equal(thread.protectedDepth, 2);
-			thread.currentFrame!.registers.setInteger(0, 17); thread.currentFrame!.registers.setInteger(1, 29);
-			const failFirst = wanted === PSX_MACHINE_SPEC.ramBytes + 1;
-			const controls = cpu.memory.readRamRecordWord(thread.address + ThreadField.ProtectedBlock);
-			cpu.memory.writeRamRecordWord(controls + (failFirst ? PROTECTED_CALL_BYTES : 0) + ProtectedField.Wanted,
-				failFirst ? PSX_MACHINE_SPEC.ramBytes : wanted);
-			const fault = wanted >= PSX_MACHINE_SPEC.ramBytes;
-			if (fault) assert.throws(() => cpu.runUntilDepth(1, 2), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
-			else assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
-			const outer = wanted === 0 ? 4 : wanted - 1;
-			assert.equal(cpu.instructionBudgetRemaining, 2 - BASE_CYCLES[OpCode.RET] - (failFirst ? 0 : 3) - (fault ? 0 : outer), 'only completed result placement is charged, even when a later allocation fails');
-			if (!fault) assert.deepEqual(Array.from({ length: outer }, (_, i) => thread.currentFrame!.registers.get(i)), [valueBool(true), valueBool(true), valueInteger(17), valueInteger(29), valueNil()].slice(0, outer));
-		});
-	}
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -256,35 +218,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [valueInteger(17), valueNil(), valueNil(), valueNil()]);
 	});
 
-	test(`xpcall handler RET charges its error receiving range (${backend})`, () => {
-		const text = new Uint8Array(12 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 4, OpCode.CLOSURE, 2, 0, 0);
-		writeInstruction(text, 5, OpCode.CALL, 0, 3, 6);
-		writeInstruction(text, 6, OpCode.JMP, 0, 63, 63, 255);
-		writeInstruction(text, 7, OpCode.GETSYS, 0, 0, 1);
-		writeInstruction(text, 8, OpCode.LOADK, 1, 0, 0);
-		writeInstruction(text, 9, OpCode.CALL, 0, 2, 1);
-		writeInstruction(text, 10, OpCode.RET, 0, 1, 0);
-		writeInstruction(text, 11, OpCode.RET, 0, 2, 0);
-		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17)], systemGlobalNames: ['xpcall', 'error'], functions: [
-			{ firstWord: 0, wordCount: 7, maxStack: 8 }, { firstWord: 7, wordCount: 4, maxStack: 4 }, { firstWord: 11, wordCount: 1, numParams: 1, maxStack: 1 },
-		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }, { wordIndex: 4, functionIndex: 2 }] });
-		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[2]);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('xpcall'), valueBuiltinFunction(BuiltinFunctionId.XPCall));
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
-		for (let grant = 0; grant < 32 && (cpu.activeThread.currentFrame!.functionAddress !== image.symbols.functionAddresses[2]); ++grant) cpu.runUntilDepth(0, 1);
-		assert.ok(!(cpu.activeThread.currentFrame!.functionAddress !== image.symbols.functionAddresses[2]), 'fixture reached its measured instruction');
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1, 'error CALL, error primitive and one handler argument placement');
-		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 5);
-		assert.deepEqual(Array.from({ length: 5 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [valueBool(false), valueInteger(17), valueNil(), valueNil(), valueNil()]);
-	});
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch RET charges its result range (${backend})`, () => {

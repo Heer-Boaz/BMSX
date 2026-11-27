@@ -19,6 +19,10 @@ void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value 
 		pushFrame(closure, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true);
 		return;
 	}
+	if (valueTag(method) == ValueTag::CodeFunction) {
+		pushFrame(0u, BuiltinArgsView(args.data(), args.size()), placement, 0u, m_currentInstructionPc, true, valuePayload(method));
+		return;
+	}
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(method);
 	for (const Value arg : args) trackLocalRoot(arg);
@@ -197,10 +201,7 @@ void CPU::advanceTableStore(CallFrame& frame) {
 	auto scratch = acquireBuiltinResultScratch();
 	auto& out = scratch.get();
 	out.push_back(valueTable(receiver));
-	if (tableRebuild.result == TableStoreReturn::Protected)
-		finishProtectedCall(tableRebuild.destination, {nullptr, out.data(), 0, 1});
-	else
-		writeReturnValues(frame, {static_cast<int>(tableRebuild.destination), tableRebuild.wanted}, BuiltinArgsView(out.data(), 1));
+	writeReturnValues(frame, {static_cast<int>(tableRebuild.destination), tableRebuild.wanted}, BuiltinArgsView(out.data(), 1));
 }
 
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {

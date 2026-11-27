@@ -4,10 +4,11 @@ import { linkManagedTestSystem } from './managed_system';
 import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
 const testModules = ['context', 'execution'].map(name => ({ path: `testlib/${name}`, source: readFileSync(`testlib/${name}.lua`, 'utf8') }));
-const bootSource = `local raise<const> = __bmsx_error
+const bootSource = `local entries<const> = require('bmsx/startup')
+local raise<const> = __bmsx_error
 assert = function(value, message) if not value then raise(message) end end
-pcall = __bmsx_pcall
-xpcall = __bmsx_xpcall
+pcall = blua32.closure(entries.protected_call)
+xpcall = blua32.closure(entries.protected_xcall)
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end
 type = __bmsx_type
 setmetatable = require([[kernel/gc_barrier]]).set_metatable
@@ -143,6 +144,7 @@ local co = coroutine.create(function(a, ...)
   assert(coroutine.isyieldable())
   local self, root = coroutine.running()
   assert(not root and self ~= main and coroutine.status(main) == 'normal')
+  assert(not coroutine.isyieldable(main))
   local extra = (...)
   local x, y, z = coroutine.yield(a + extra, nil, 'yielded')
   assert(x == 17 and y == nil and z == 23)
@@ -268,6 +270,26 @@ assert(ok and value == 'protected')
 local ok, value = coroutine.resume(co)
 assert(not ok and value == failure and coroutine.status(co) == 'dead')
 failed_thread = co
+return true`,
+	protected_handler_yield: `
+local original = {}
+local co = coroutine.create(function()
+  return xpcall(function()
+    assert(coroutine.isyieldable())
+    coroutine.yield('protected body')
+    error(original)
+  end, function(raised)
+    assert(raised == original and not coroutine.isyieldable())
+    local self = coroutine.running()
+    assert(not coroutine.isyieldable(self))
+    coroutine.yield('handler must not yield')
+  end)
+end)
+local ok, first = coroutine.resume(co)
+assert(ok and first == 'protected body' and coroutine.status(co) == 'suspended')
+local resumed, succeeded, message = coroutine.resume(co)
+assert(resumed and not succeeded and message == 'error in error handling')
+assert(coroutine.status(co) == 'dead')
 return true`,
 	collection: `
 local weak = setmetatable({}, {__mode='v'})

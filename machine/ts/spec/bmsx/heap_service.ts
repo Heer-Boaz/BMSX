@@ -50,10 +50,10 @@ export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, R
 export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
 // Opcode dispatch commits the ordinary Thread's successor before entering
 // the pinned grant. Completion targets are slot indices or Protected indices.
-export const enum HeapServiceBiosCallKind { Idle, Discard, Call, Protected }
+export const enum HeapServiceBiosCallKind { Idle, Discard, Call }
 export const enum HeapServiceBiosCallField {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
-	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
+	ResultBase = 24, ResultWord = 28,
 }
 
 // One pending ordinary VM transfer owns this scratch while backing is acquired.

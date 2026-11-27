@@ -97,14 +97,13 @@ CallFrame& CPU::prepareHeapServiceFrame(u32 functionAddress, int base, int suppl
 	return frame;
 }
 
-void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result, i32 protectedIndex) {
+void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result) {
 	const auto* record = m_systemImage->romFunctions.find(address);
 	if (!record || (record->entry.flags & BLUA32_FUNCTION_RESIDENT) == 0u)
 		throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 	const int copied = std::min(static_cast<int>(supplied.size()), static_cast<int>(record->entry.numParams));
 	auto& callee = prepareHeapServiceFrame(address, 0, static_cast<int>(supplied.size()), result, m_currentInstructionPc);
 	supplied.placeInto(callee.registers, 0, copied, 0);
-	callee.writeControl(FrameField::Protected, static_cast<u32>(protectedIndex));
 	instructionBudgetRemaining -= callee.readWindow(FrameField::Top);
 	enterResidentFrame(callee);
 }
@@ -191,25 +190,22 @@ void CPU::finishResidentCall(u32 flags) {
 		enterPreparedFrame();
 		return;
 	}
-	const i32 protectedIndex = static_cast<i32>(frame.readControl(FrameField::Protected));
 	const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
 		frame.readWindow(FrameField::ReturnCount), flags);
 	auto& caller = *m_activeThread->currentFrame;
 	const auto placement = ValuePlacement::fit(count, result.selected(count));
-	if (protectedIndex < 0 && caller.registers.containsRange(result.base, placement.count())) {
+	if (caller.registers.containsRange(result.base, placement.count())) {
 		caller.registers.copyFrom(m_heapServiceView.stack, result.base, base, placement.copied, placement.padded);
 		caller.placeResultTop(result, placement.count());
 		instructionBudgetRemaining -= placement.count();
 		return;
 	}
 	// The fixed activation has retired. Keep results rooted if ordinary
-	// placement needs to grow the receiving thread or invoke a continuation.
+	// placement needs to grow the receiving thread.
 	auto scratch = acquireBuiltinResultScratch();
 	auto& values = scratch.get();
-	const int copied = protectedIndex < 0 ? placement.copied : count;
-	for (int slot = 0; slot < copied; ++slot) values.push_back(m_heapServiceView.stack.get(base + slot));
-	if (protectedIndex >= 0) finishProtectedCall(protectedIndex, {nullptr, values.data(), 0, count});
-	else writeReturnValues(caller, result, {values.data(), values.size()});
+	for (int slot = 0; slot < placement.copied; ++slot) values.push_back(m_heapServiceView.stack.get(base + slot));
+	writeReturnValues(caller, result, {values.data(), values.size()});
 }
 
 void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {

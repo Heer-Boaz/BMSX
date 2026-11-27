@@ -4,15 +4,14 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import * as v from '../../machine/ts/machine/cpu/value';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { FORMAT32_CASES, FORMAT32_MODULES, FORMAT32_ROM_SOURCE, formatFloat32 } from '../helpers/format32';
-import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 
-const sources = FORMAT32_MODULES.map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
+const sources = [...FORMAT32_MODULES, 'string/char'].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
 sources.push({ path: 'tty/console', source: 'return {write=function() end, end_line=function() end}' },
-	{ path: 'test/boot', source: "require('base'); return {pcall=__bmsx_pcall,error=__bmsx_error}" });
-const modules = sources.map(m => ({ ...m, chunk: parseLuaChunk(m.source, m.path) }));
+	{ path: 'test/boot', source: `require('base'); local startup<const> = require('bmsx/startup'); return {pcall=blua32.closure(startup.protected_call),error=__bmsx_error}` });
 
 test('rational formatter reference includes exact halves, signed zero and decimal carry', () => {
 	assert.equal(formatFloat32(0x3fa00000, 'f', 1), '1.3');
@@ -24,10 +23,8 @@ test('rational formatter reference includes exact halves, signed zero and decima
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`BIOS format O${optLevel} ${backend}: edge magnitudes, exact decimal references, raw words and fields`, () => {
-		const program = compileTestSystemWithHeap(parseLuaChunk(FORMAT32_ROM_SOURCE), modules,
-			{ entrySource: FORMAT32_ROM_SOURCE, optLevel, programDomain: 'system' });
-		const image = linkTestSystemBlua32(program);
-		const { cpu } = createTestSystemCpu(image, backend);
+		const romBytes = writeTestBlua32Rom(linkManagedTestSystem(FORMAT32_ROM_SOURCE, optLevel, sources));
+		const { cpu } = createTestSystemCpu({ romBytes }, backend);
 		const budget = 500_000_000;
 		runGuestToHalt(cpu, budget);
 		const results = materializeCpuCompletionValues(cpu);
@@ -38,11 +35,11 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		assert.equal(cpu.stringPool.toString(v.asStringId(results[4])), '0xffffffff/-2147483648');
 		assert.equal(cpu.stringPool.toString(v.asStringId(results[5])), formatFloat32(1, 'f', 149));
 		if (backend === CpuExecutionBackend.Interpreter && process.env.BMSX_CPU32_RUNNER) {
-			const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value =>
+			const expected = [`budget ${cpu.instructionBudgetRemaining} fault ${cpu.readLuaFaultReasonWord()}`, ...results.map(value =>
 				v.valueTag(value) === v.ValueTag.String ? `S ${cpu.stringPool.toString(v.asStringId(value))}` :
 				`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
 			assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,
-				['--execute-rom', String(budget)], { input: image.romBytes, encoding: 'utf8' }), expected);
+				['--execute-rom', String(budget)], { input: romBytes, encoding: 'utf8' }), expected);
 		}
 		console.log(JSON.stringify({ optLevel, backend, referenceChecks: FORMAT32_CASES.length, cycles: budget - cpu.instructionBudgetRemaining }));
 	});

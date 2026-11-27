@@ -16,7 +16,8 @@ local store<const> = require('kernel/frame_upvalue').set_frame_upvalue
 local resume<const> = __bmsx_coroutine_resume
 local yield<const> = __bmsx_coroutine_yield
 local read<const> = __bmsx_get_frame_upvalue
-local protected<const> = __bmsx_pcall
+local protected_entries<const> = require('bmsx/startup')
+local protected<const> = blua32.closure(protected_entries.protected_call)
 local raise<const> = __bmsx_error
 local assert<const> = function(condition)
  if not condition then raise('unexpected frame capture') end

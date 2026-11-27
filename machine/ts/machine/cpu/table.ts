@@ -35,7 +35,7 @@ export interface TableStringProbe extends TableLookupSlot { node: number; remain
 export const enum TableHeader {
 	Kind = 0, NewIndexAbsent = 2, Gray = 4, Metatable = 8, HashStorage = 12, Array = 16, Hash = 20, Length = 24, Free = 28, ArrayStorage = 32,
 }
-export const enum TableStoreReturn { None, Call, Protected }
+export const enum TableStoreReturn { None, Call }
 export const enum TableCensus { None, General, Scheduled, RetryCurrent, RetryFresh }
 class ArrayDensity { scanned = 0; live = 0; slots = 0; kept = 0; }
 export class TableRebuild extends ArrayDensity {
@@ -411,7 +411,7 @@ export class TableRecords {
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;
-				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction) {
+				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction || tag === ValueTag.CodeFunction) {
 					result.receiver = current; result.status = TableLookupStatus.Invoke;
 				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
 				return links;
@@ -480,7 +480,8 @@ export class TableRecords {
 			result.receiver = record;
 			result.value = next;
 			result.status = tag === ValueTag.Nil ? TableLookupStatus.Store
-				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction ? TableLookupStatus.Invoke
+				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction || tag === ValueTag.CodeFunction
+					? TableLookupStatus.Invoke
 				: TableLookupStatus.Forward;
 			result.slot = tag === ValueTag.Nil ? slot : -1;
 			return;

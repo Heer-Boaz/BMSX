@@ -58,7 +58,6 @@ import {
 	LUA_FAULT_REASON_METATABLE_LOOP,
 	LUA_FAULT_REASON_OUT_OF_MEMORY,
 	LUA_FAULT_REASON_UNKNOWN,
-	LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION,
 } from '../../spec/blua32/cop0';
 import {
 	BASE_OPERAND_A_BITS, BASE_OPERAND_BC_BITS, CLOSURE_ADDRESS_REGISTER_FLAG,
@@ -170,7 +169,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_FIXED_WORK, registerWindowBucket, PREPARED_FRAME_DETACHED_SOURCE, PREPARED_FRAME_SCOPE_TAG, PreparedFrameField } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -607,6 +606,9 @@ export class CPU implements MappedPageInvalidator {
 					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length, true);
 					break;
 				}
+				case ValueTag.CodeFunction:
+					this.pushFrame(0, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length, true, valuePayload(method));
+					break;
 				case ValueTag.ResidentFunction:
 					this.beginResidentCall(valuePayload(method), args.registers, args.base, args.length, destination, result);
 					break;
@@ -857,7 +859,6 @@ export class CPU implements MappedPageInvalidator {
 	private clearCallStack(): void {
 		this.abortStalledMemoryWrite();
 		for (;;) {
-			this.activeThread.protectedDepth = 0;
 			while (this.activeThread.frameDepth > 0) {
 				const frame = this.activeThread.currentFrame!;
 				this.closeUpvalues(frame);
@@ -2487,7 +2488,7 @@ export class CPU implements MappedPageInvalidator {
 		const memory = this.memory, state = this.heapService.biosCallAddress;
 		memory.writeRamRecordPair(state + HeapServiceBiosCallField.Kind, kind, this.currentInstructionPc);
 		memory.writeRamRecordWord(state + HeapServiceBiosCallField.LastPc, this.lastPc);
-		memory.writeRamRecordPair(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex, target, resultWord);
+		memory.writeRamRecordPair(state + HeapServiceBiosCallField.ResultBase, target, resultWord);
 	}
 
 	private finishBiosCall(kind: HeapServiceBiosCallKind): void {
@@ -2502,7 +2503,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		if (kind === HeapServiceBiosCallKind.Discard) return;
-		const target = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex);
+		const target = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBase);
 		const tag = memory.readRamRecordWord(state + HeapServiceBiosCallField.Tag) as ValueTag;
 		const word = memory.readRamRecordWord(state + HeapServiceBiosCallField.Word);
 		// The ordinary owner can grow the caller's stack. Builtin result
@@ -2510,11 +2511,8 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			results.setEncoded(0, tag, word);
-			if (kind === HeapServiceBiosCallKind.Protected) this.finishProtectedCall(target, results.slots, 0, 1);
-			else {
-				const resultWord = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultWord);
-				this.writeReturnValuesFromRegisters(this.activeThread.currentFrame!, target, resultWord, results.slots, 0, 1);
-			}
+			const resultWord = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultWord);
+			this.writeReturnValuesFromRegisters(this.activeThread.currentFrame!, target, resultWord, results.slots, 0, 1);
 		} finally {
 			this.releaseBuiltinResults(results);
 		}
@@ -2831,9 +2829,6 @@ export class CPU implements MappedPageInvalidator {
 			frame.thread.leaveFrame();
 		}
 		if (unwinding) this.resumeFrameBank();
-		let depth = this.activeThread.protectedDepth;
-		while (depth > 0 && this.activeThread.protectedWord(depth - 1, ProtectedField.Caller) >= this.activeThread.frameDepth) --depth;
-		this.activeThread.protectedDepth = depth;
 	}
 
 	private charge(cycles: number): void {
@@ -3188,15 +3183,9 @@ export class CPU implements MappedPageInvalidator {
 				if (copied !== 0 && a + copied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			}
 		}
-		const caller = frame.previous, continuation = frame.protectedContinuationIndex;
-		if (continuation >= 0 || frame.returnToCompletionLatch || caller === null) {
+		const caller = frame.previous;
+		if (frame.returnToCompletionLatch || caller === null) {
 			this.charge(this.closeUpvalues(frame));
-			if (continuation >= 0) {
-				this.finishProtectedCall(continuation, source, first, total);
-				frame.thread.leaveFrame();
-				this.resumeFrameBank();
-				return false;
-			}
 			const completes = frame.returnToCompletionLatch;
 			if (!completes && this.activeThread.resumer !== 0) {
 				const finished = this.activeThread;
@@ -3233,14 +3222,6 @@ export class CPU implements MappedPageInvalidator {
 	/** A receiver may discard part or all of the produced range without reading it. */
 	private returnSourceCount(frame: CallFrame, produced: number): number {
 		const thread = frame.thread;
-		const continuation = frame.protectedContinuationIndex;
-		if (continuation >= 0) {
-			const flags = thread.protectedWord(continuation, ProtectedField.Flags);
-			if ((flags & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) return 1;
-			const wanted = thread.protectedWord(continuation, ProtectedField.Wanted);
-			if ((flags & PROTECTED_CALL_PARENT) !== 0 && (wanted & CALL_RESULT_EXTEND_TOP) !== 0) return 0;
-			return Math.max(0, Math.min(produced, selectedCallResultCount(wanted, produced + 1) - 1));
-		}
 		if (frame.returnToCompletionLatch) return produced;
 		if (frame.previous !== null) return Math.min(produced, selectedCallResultCount(frame.returnCount, produced));
 		const resumer = thread.resumer;
@@ -4120,7 +4101,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private beginResidentCall(address: number, source: ValueSlots, first: number, supplied: number, base: number, result: number, protectedIndex = -1): void {
+	private beginResidentCall(address: number, source: ValueSlots, first: number, supplied: number, base: number, result: number): void {
 		const directory = this.systemImage.romFunctions, lane = romFunctionVersionLane(directory, address);
 		if (lane < 0 || (directory.versions[lane + RomFunctionLane.Flags] & BLUA32_FUNCTION_RESIDENT) === 0)
 			throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -4128,7 +4109,6 @@ export class CPU implements MappedPageInvalidator {
 		if (supplied !== 0 && first + supplied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const callee = this.prepareHeapServiceFrame(address, 0, supplied, base, result, this.currentInstructionPc);
 		callee.registers.copyRangeFrom(source, 0, first, copied, callee.top - copied);
-		callee.protectedContinuationIndex = protectedIndex;
 		this.charge(callee.top);
 		this.enterResidentFrame(callee);
 	}
@@ -4168,19 +4148,17 @@ export class CPU implements MappedPageInvalidator {
 			this.enterPreparedFrame();
 			return;
 		}
-		const index = frame.protectedContinuationIndex;
 		const caller = this.activeThread.currentFrame!;
 		const base = frame.returnBase, result = frame.returnCount, selected = selectedCallResultCount(result, count);
-		if (index < 0 && base + selected <= caller.stackCapacity) {
+		if (base + selected <= caller.stackCapacity) {
 			this.writeReturnValuesFromRegisters(caller, base, result, source, sourceBase, count, true);
 			return;
 		}
 		const values = this.acquireBuiltinResults();
 		try {
-			const copied = index < 0 ? Math.min(count, selected) : count;
+			const copied = Math.min(count, selected);
 			for (let slot = 0; slot < copied; ++slot) values.push(source.get(sourceBase + slot));
-			if (index >= 0) this.finishProtectedCall(index, values.slots, 0, count);
-			else this.writeReturnValuesFromRegisters(caller, base, result, values.slots, 0, values.length);
+			this.writeReturnValuesFromRegisters(caller, base, result, values.slots, 0, values.length);
 		} finally {
 			this.releaseBuiltinResults(values);
 		}
@@ -4307,12 +4285,12 @@ export class CPU implements MappedPageInvalidator {
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots,
 		returnBase: number, returnCount: number, returnToCompletionLatch: false,
-		exception: false, callSitePc: number, argBase: number, supplied: number, ordinaryCall: true, codeFunction?: number, protectedIndex?: number,
+		exception: false, callSitePc: number, argBase: number, supplied: number, ordinaryCall: true, codeFunction?: number,
 	): CallFrame | null;
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots | ReadonlyArray<Value>,
 		returnBase: number, returnCount: number, returnToCompletionLatch: boolean,
-		exception = false, callSitePc?: number, argBase = 0, supplied = 0, ordinaryCall = false, codeFunction = 0, protectedIndex = -1,
+		exception = false, callSitePc?: number, argBase = 0, supplied = 0, ordinaryCall = false, codeFunction = 0,
 	): CallFrame | null {
 		const flags = closure !== 0 ? this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS) : 0;
 		const domain = closure !== 0 ? Closure.executionDomain(flags) : SYSTEM_EXECUTION_DOMAIN_ID;
@@ -4336,17 +4314,12 @@ export class CPU implements MappedPageInvalidator {
 		const stackBase = vararg ? argumentBase + count : argumentBase;
 		const capacity = Math.max(1, numParams, maxStack);
 		const end = stackBase + capacity;
-		if (end > MAX_THREAD_VALUE_SLOTS) {
-			// Report an impossible protected placement just like a refusal
-			// after acquiring backing, including while starting a handler.
-			if (protectedIndex >= 0) throw new LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
-			throw LUA_OUT_OF_MEMORY_SIGNAL;
-		}
+		if (end > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
 		const varargBase = argumentBase + numParams;
 		const fits = thread.frameSpaceFits(end);
 		if (ordinaryCall && !fits) {
 			if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
-			if (shared && protectedIndex < 0) {
+			if (shared) {
 				this.enterRegisterWindowException(args, end, thread.frameDepth + 2, OpCode.CALL, argBase - 1);
 				return null;
 			}
@@ -4355,7 +4328,7 @@ export class CPU implements MappedPageInvalidator {
 			if (services !== null) {
 				const management = this.heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 				writeFrameEntryControl(this.memory, prepared, prototype, codeAddress, callSitePc!, false, domain,
-					varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
+					varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity);
 				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, detached ? PREPARED_FRAME_DETACHED_SOURCE : first, count);
 				this.memory.writeRamRecordWord(prepared + PreparedFrameField.RelocateFormals, +vararg);
 				let roots = closure;
@@ -4380,7 +4353,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
-			domain, varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
+			domain, varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity);
 		const copied = Math.min(numParams, count);
 		if (fromSlots) {
 			const slots = fromFrame ? args.thread.stackRegisters : args;
@@ -4646,13 +4619,11 @@ export class CPU implements MappedPageInvalidator {
 				out.push(valueThread(this.activeThread.address));
 				out.push(valueBool(this.activeThread === this.rootThread));
 				break;
-			case BuiltinFunctionId.CoroutineStatus:
-			case BuiltinFunctionId.CoroutineIsYieldable: {
-				const address = args.length === 0 && id === BuiltinFunctionId.CoroutineIsYieldable ? this.activeThread.address
-					: args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread ? args.registers.getThread(args.base, this.gc) : 0;
+			case BuiltinFunctionId.CoroutineStatus: {
+				const address = args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread
+					? args.registers.getThread(args.base, this.gc) : 0;
 				if (address === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(valueBool(this.coroutineYieldable(address)));
-				else out.push(valueInteger(this.readThreadStatus(address)));
+				out.push(valueInteger(this.readThreadStatus(address)));
 				break;
 			}
 			case BuiltinFunctionId.CoroutineResume:
@@ -4661,22 +4632,7 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.Error:
 				this.runBuiltinError(args);
 				break;
-			case BuiltinFunctionId.PCall:
-			case BuiltinFunctionId.XPCall:
-				throw new Error('Protected calls execute as Lua CPU microcode.');
 		}
-	}
-
-	private coroutineYieldable(address: number): boolean {
-		if (address === this.rootThread.address) return false;
-		for (let index = 0, depth = this.readThreadFrameDepth(address); index < depth; ++index)
-			if ((this.readThreadFrameWord(address, index, FrameField.Flags) & (FRAME_COMPLETION | FRAME_EXCEPTION)) !== 0) return false;
-		const depth = this.memory.readRamRecordWord(address + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK;
-		const protectedBase = this.memory.readRamRecordWord(address + ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
-		for (let index = 0; index < depth; ++index) {
-			if ((this.memory.readRamRecordWord(protectedBase + index * PROTECTED_CALL_BYTES + ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) return false;
-		}
-		return true;
 	}
 
 	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number): void {
@@ -4711,7 +4667,7 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.activeThread;
 		const source = detached ?? caller.registers;
 		if (id === BuiltinFunctionId.CoroutineYield) {
-			if (!this.coroutineYieldable(thread.address)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			if (thread.resumer === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			thread.setReturnWindow(callBase, returnCount);
 			thread.status = ThreadStatus.Suspended;
 			this.returnToResumer(source, argumentBase, argCount);
@@ -4758,10 +4714,6 @@ export class CPU implements MappedPageInvalidator {
 	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number,
 		detached?: ValueSlots, argumentBase = callBase + 1): void {
 		this.charge(BUILTIN_FUNCTIONS[id].cost.base);
-		if (id === BuiltinFunctionId.PCall || id === BuiltinFunctionId.XPCall) {
-			this.startProtectedCall(id, frame, callBase, returnCount, argumentBase, argCount, false, detached);
-			return;
-		}
 		if (id === BuiltinFunctionId.CoroutineResume || id === BuiltinFunctionId.CoroutineYield) {
 			this.runCoroutineTransfer(id, frame, callBase, returnCount, argumentBase, argCount, detached);
 			return;
@@ -4777,165 +4729,6 @@ export class CPU implements MappedPageInvalidator {
 		} finally {
 			this.releaseRegisterBuiltinArgs(builtinArgs);
 			this.releaseBuiltinResults(results);
-		}
-	}
-
-	private startProtectedCall(
-		id: BuiltinFunctionId.PCall | BuiltinFunctionId.XPCall,
-		caller: CallFrame,
-		callBase: number,
-		returnCount: number,
-		argumentBase: number,
-		argumentCount: number,
-		returnsToProtectedParent: boolean,
-		detached?: ValueSlots,
-	): void {
-		let handler = valueNil();
-		if (id === BuiltinFunctionId.XPCall) {
-			if (argumentCount > 1) handler = (detached ?? caller.registers).get(argumentBase + 1);
-			const handlerTag = valueTag(handler);
-			if (handlerTag !== ValueTag.Closure
-				&& handlerTag !== ValueTag.BuiltinFunction && handlerTag !== ValueTag.ResidentFunction) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
-			}
-		}
-		const kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
-		const continuationIndex = this.activeThread.pushProtectedCall(kind, returnsToProtectedParent, callBase,
-			returnCount, handler);
-
-		const targetArgumentOffset = id === BuiltinFunctionId.PCall ? 1 : 2;
-		this.invokeProtectedTarget(
-			continuationIndex,
-			argumentCount > 0 ? (detached ?? caller.registers).get(argumentBase) : valueNil(),
-			argumentBase + targetArgumentOffset,
-			Math.max(argumentCount - targetArgumentOffset, 0),
-			detached,
-		);
-	}
-
-	private invokeProtectedTarget(
-		continuationIndex: number,
-		target: Value,
-		argumentBase: number,
-		argumentCount: number,
-		detached?: ValueSlots,
-	): void {
-		const caller = this.protectedCaller(continuationIndex);
-		switch (valueTag(target)) {
-			case ValueTag.Closure: {
-				const closure = this.gc.closureRecordAddress(valuePayload(target));
-				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				this.pushFrame(closure, detached ?? caller, 0, 0, false, false,
-					detached === undefined ? caller.pc - INSTRUCTION_BYTES : this.currentInstructionPc,
-					argumentBase, argumentCount, true, 0, continuationIndex);
-				return;
-			}
-			case ValueTag.ResidentFunction: {
-				const source = detached ?? caller.thread.stackRegisters;
-				const first = detached === undefined ? caller.stackBase + argumentBase : argumentBase;
-				this.beginResidentCall(valuePayload(target), source, first, argumentCount, 0, 0, continuationIndex);
-				return;
-			}
-			case ValueTag.BuiltinFunction: {
-				const builtinId = valuePayload(target);
-				this.charge(BUILTIN_FUNCTIONS[builtinId].cost.base);
-				if (builtinId === BuiltinFunctionId.PCall || builtinId === BuiltinFunctionId.XPCall) {
-					const word = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted);
-					const implicit = (word & CALL_RESULT_EXTEND_TOP) !== 0;
-					const base = implicit ? 0 : this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-					this.startProtectedCall(builtinId, caller, base, implicit ? DISCARD_CALL_RESULT : 0,
-						argumentBase, argumentCount, true, detached);
-					return;
-				}
-				const builtinArgs = this.acquireRegisterBuiltinArgs();
-				const results = this.acquireBuiltinResults();
-				try {
-					builtinArgs.bind(detached ?? caller.registers, argumentBase, argumentCount);
-					this.callBuiltinFunction(builtinId, builtinArgs, results);
-					this.finishProtectedCall(continuationIndex, results.slots, 0, results.length);
-				} finally {
-					this.releaseRegisterBuiltinArgs(builtinArgs);
-					this.releaseBuiltinResults(results);
-				}
-				return;
-			}
-			default:
-				throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		}
-	}
-
-	private finishProtectedCall(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		if ((this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_KIND_MASK) === ProtectedCallKind.XPCallHandler) {
-			this.finishProtectedCallWithError(continuationIndex, sourceCount > 0 ? source.get(sourceBase) : valueNil());
-			return;
-		}
-		if (this.finishImplicitProtectedHandler(continuationIndex, true)) return;
-		const caller = this.protectedCaller(continuationIndex);
-		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = selectedCallResultCount(returnCount, sourceCount + 1);
-		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
-			const copiedCount = Math.min(sourceCount, resultCount - 1);
-			registers.copyRangeFrom(source, callBase + 1, sourceBase, copiedCount);
-			registers.setBoolean(callBase, true);
-			registers.clear(resultCount - copiedCount - 1, callBase + copiedCount + 1);
-		}
-		caller.setCallResultTop(callBase + resultCount, returnCount);
-		this.charge(resultCount);
-		this.finishProtectedContinuation(continuationIndex, resultCount);
-	}
-
-	private finishProtectedCallWithError(
-		continuationIndex: number,
-		error: Value,
-	): void {
-		if (this.finishImplicitProtectedHandler(continuationIndex, false)) return;
-		const caller = this.protectedCaller(continuationIndex);
-		const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-		const returnCount = this.activeThread.protectedWord(continuationIndex, ProtectedField.Wanted) | 0;
-		const resultCount = selectedCallResultCount(returnCount, 2);
-		if (resultCount > 0) {
-			const registers = this.ensureRegisterCapacity(caller, callBase + resultCount - 1);
-			registers.setBoolean(callBase, false);
-			if (resultCount > 1) {
-				registers.set(callBase + 1, error);
-				registers.clear(resultCount - 2, callBase + 2);
-			}
-		}
-		caller.setCallResultTop(callBase + resultCount, returnCount);
-		this.charge(resultCount);
-		this.finishProtectedContinuation(continuationIndex, resultCount);
-	}
-
-	private finishImplicitProtectedHandler(continuationIndex: number, succeeded: boolean): boolean {
-		const thread = this.activeThread;
-		if ((thread.protectedWord(continuationIndex, ProtectedField.Flags) & PROTECTED_CALL_PARENT) === 0
-			|| (thread.protectedWord(continuationIndex, ProtectedField.Wanted) & CALL_RESULT_EXTEND_TOP) === 0) return false;
-		// Deliver the protected handler's first return directly. No temporary
-		// guest slot is written, regardless of the enclosing operation's result count.
-		thread.protectedDepth = continuationIndex;
-		const results = this.acquireBuiltinResults();
-		try {
-			results.push(valueBool(succeeded));
-			this.finishProtectedCall(continuationIndex - 1, results.slots, 0, results.length);
-		} finally { this.releaseBuiltinResults(results); }
-		return true;
-	}
-
-	private protectedCaller(continuationIndex: number): CallFrame {
-		const caller = this.activeThread.protectedCaller(continuationIndex);
-		if (caller === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		return caller;
-	}
-
-	private finishProtectedContinuation(continuationIndex: number, resultCount: number): void {
-		const flags = this.activeThread.protectedWord(continuationIndex, ProtectedField.Flags);
-		this.activeThread.protectedDepth = continuationIndex;
-		if ((flags & PROTECTED_CALL_PARENT) !== 0) {
-			const callBase = this.activeThread.protectedWord(continuationIndex, ProtectedField.Base) | 0;
-			const caller = this.protectedCaller(continuationIndex);
-			this.finishProtectedCall(continuationIndex - 1, caller.registers, callBase, resultCount);
 		}
 	}
 
@@ -5001,8 +4794,7 @@ export class CPU implements MappedPageInvalidator {
 		const results = this.acquireBuiltinResults();
 		try {
 			results.push(valueTable(receiver));
-			if (j.result === TableStoreReturn.Protected) this.finishProtectedCall(j.destination, results.slots, 0, 1);
-			else this.writeReturnValuesFromRegisters(frame, j.destination, j.wanted, results.slots, 0, 1);
+			this.writeReturnValuesFromRegisters(frame, j.destination, j.wanted, results.slots, 0, 1);
 		} finally {
 			this.releaseBuiltinResults(results);
 		}

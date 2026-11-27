@@ -7,7 +7,6 @@ local operand_roots<const> = require('kernel/gc_operand_roots')
 local exception_report<const> = require('kernel/exception_report')
 local window<const> = require('kernel/register_window')
 local protected<const> = require('kernel/protected_return')
-local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
 local explicit_error<const> = 8
@@ -73,15 +72,6 @@ local enter<const> = function(values, depth, instruction, source_cycles)
 	local cause<const> = cop0.cause
 	local denied_window<const> = cause == register_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
-	if cause == syscall then
-		if *interrupted ~= 0 then
-			local resume_pc<const> = protected.finish_handler(*interrupted, values)
-			if resume_pc then
-				cop0.epc = resume_pc
-				blua32.rfe()
-			end
-		end
-	end
 	if denied_window then
 		if window.recover(values, depth, instruction, source_cycles) then blua32.rfe() end
 	end

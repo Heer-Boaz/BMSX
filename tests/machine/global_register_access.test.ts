@@ -42,7 +42,8 @@ return first, second, get('shared').hp, fourth, counter, get('alias') == shared,
 test('named access cannot alias the system bank and invalid names use guest errors', () => {
 	const source = `local get<const> = __bmsx_getglobal
 local set<const> = require('kernel/set_global').set_global
-local pcall<const> = __bmsx_pcall
+local startup<const> = require('bmsx/startup')
+local pcall<const> = blua32.closure(startup.protected_call)
 function irq(value) return value end
 local before = get('irq')
 set('irq', 99)

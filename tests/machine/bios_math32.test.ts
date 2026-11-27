@@ -2,29 +2,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import * as v from '../../machine/ts/machine/cpu/value';
 
-const bootSource = 'return {pcall=__bmsx_pcall,error=__bmsx_error}';
-const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, `${path}.lua`).chunk };
-});
-modules.push({ path: 'test/boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test/boot.lua').chunk });
-function compile(source: string, optLevel: 0 | 3) {
-	const program = compileTestSystemWithHeap(parseLuaChunk(source, 'math32.lua').chunk, modules,
-		{ entrySource: source, optLevel, programDomain: 'system' });
-	return linkTestSystemBlua32(program);
-}
-function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 100_000) {
-	const image = compile(source, opt), { cpu } = createTestSystemCpu(image, backend);
+const bootSource = `local startup<const> = require('bmsx/startup')
+return {pcall=blua32.closure(startup.protected_call),error=__bmsx_error}`;
+const modules = ['math', 'math/trig', 'math/trig/reduce'].map(path =>
+	({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
+modules.push({ path: 'test/boot', source: bootSource });
+function run(source: string, opt: 0 | 3, backend: CpuExecutionBackend, budget = 1_000_000) {
+	const romBytes = writeTestBlua32Rom(linkManagedTestSystem(source, opt, modules));
+	const { cpu } = createTestSystemCpu({ romBytes }, backend);
 	runGuestToHalt(cpu, budget);
 	const results: v.Value[] = []; cpu.readCompletionValues(results);
-	return { image, cpu, results };
+	return { romBytes, cpu, results };
 }
 const math = "local boot<const> = require('test/boot'); error=boot.error; local math<const> = require('math')\n";
 const numericSource = readFileSync('tests/fixtures/compiler32/math.lua', 'utf8');
@@ -88,8 +82,8 @@ return a,b,c,d,e,f,g,h,math.random(6)`, 3, backend);
 const native = process.env.BMSX_CPU32_RUNNER;
 for (const fixture of ['math', 'random']) for (const opt of [3] as const) test(`BIOS ${fixture} O${opt}: C++ runs the same guest BIOS and charges the same cycles`, { skip: !native }, () => {
 	const source = readFileSync(`tests/fixtures/compiler32/${fixture}.lua`, 'utf8');
-	const { image, cpu, results } = run(source, opt, CpuExecutionBackend.Interpreter);
+	const { romBytes, cpu, results } = run(source, opt, CpuExecutionBackend.Interpreter);
 	const expected = [`budget ${cpu.instructionBudgetRemaining} fault 0`, ...results.map(value => v.valueIsString(value)
 		? 'S ' + cpu.stringPool.toString(v.asStringId(value)) : `${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n') + '\n';
-	assert.equal(execFileSync(native!, ['--execute-rom'], { input: image.romBytes, encoding: 'utf8' }), expected);
+	assert.equal(execFileSync(native!, ['--execute-rom', '1000000'], { input: romBytes, encoding: 'utf8' }), expected);
 });

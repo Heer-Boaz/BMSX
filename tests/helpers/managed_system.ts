@@ -44,7 +44,7 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 	luaModules.push(systemModule(entryPath, 'module<entry>\n' + source));
 	const generatedLuaModules = extraModules.some(module => module.path === 'bmsx/blua32') ? []
 		: [{ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE }];
-	const { linked, object } = buildBlua32Image({
+	const { linked, object, diagnosticSources } = buildBlua32Image({
 		domain: 'system', luaModules, generatedLuaModules, loadAddress: 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
 		resetModule, irqModule, exceptionModule, preparedEntry: BIOS_PREPARED_ENTRY, userIrqEntry: options.userIrqEntry,
@@ -52,7 +52,7 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 		managedEntries: BIOS_MANAGED_ENTRIES,
 		preloadModules: HEAP_SERVICE_MODULES, biosExports,
 	});
-	return Object.assign(linked, { object });
+	return Object.assign(linked, { object, diagnosticSources });
 }
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };

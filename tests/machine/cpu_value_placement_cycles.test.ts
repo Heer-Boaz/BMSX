@@ -111,22 +111,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.RET] - 2 - 2, 'two distinct open captures, plus two received closure values');
 		assert.deepEqual(Array.from(cells, cell => isOpen(cpu.memory, cell)), [false, false]);
 	});
-	for (const wanted of [0, 1, 5]) test(`nested builtin protection charges every receiving range (${backend}, C=${wanted})`, () => {
-		const text = new Uint8Array(5 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.GETSYS, 1, 0, 0);
-		writeInstruction(text, 2, OpCode.GETSYS, 2, 0, 1);
-		writeInstruction(text, 3, OpCode.CALL, 0, 3, wanted);
-		writeInstruction(text, 4, OpCode.JMP, 0, 63, 63, 255);
-		const image = linkManagedTestOpcodes({ text, systemGlobalNames: ['pcall', 'isyieldable'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
-		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('isyieldable'), valueBuiltinFunction(BuiltinFunctionId.CoroutineIsYieldable));
-		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETSYS]);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		const placed = wanted === 0 ? 3 : wanted - 1;
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 4 - 4 - 4 - 2 - placed);
-	});
+
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
@@ -194,37 +179,6 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 }
 
 for (const backend of [CpuExecutionBackend.Interpreter]) {
-	test(`protected error unwind charges captured cells and error receiving slots (${backend})`, () => {
-		const text = new Uint8Array(11 * INSTRUCTION_BYTES);
-		writeInstruction(text, 0, OpCode.GETSYS, 0, 0, 0);
-		writeInstruction(text, 1, OpCode.WIDE, 0, 0, 0);
-		writeInstruction(text, 2, OpCode.CLOSURE, 1, 0, 0);
-		writeInstruction(text, 3, OpCode.CALL, 0, 2, 5);
-		writeInstruction(text, 4, OpCode.JMP, 0, 63, 63, 255);
-		writeInstruction(text, 5, OpCode.GETSYS, 4, 0, 1);
-		writeInstruction(text, 6, OpCode.LOADK, 5, 0, 0);
-		writeInstruction(text, 7, OpCode.CALL, 4, 2, 1);
-		writeInstruction(text, 8, OpCode.RET, 0, 1, 0);
-		writeInstruction(text, 9, OpCode.GETUP, 0, 0, 0);
-		writeInstruction(text, 10, OpCode.RET, 0, 2, 0);
-		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17)], systemGlobalNames: ['pcall', 'error'], functions: [
-			{ firstWord: 0, wordCount: 5, maxStack: 8 }, { firstWord: 5, wordCount: 4, maxStack: 8 },
-			{ firstWord: 9, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
-		], closureRelocations: [{ wordIndex: 2, functionIndex: 1 }] });
-		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-		cpu.setSystemGlobalByKey(cpu.stringPool.intern('error'), valueBuiltinFunction(BuiltinFunctionId.Error));
-		for (let grant = 0; grant < 32 && cpu.getFrameDepth() === 1; ++grant) cpu.runUntilDepth(0, 1);
-		assert.equal(cpu.activeThread.currentFrame!.pc, image.image.functions[1].codeAddress, 'fixture entered the protected frame');
-		const { cells: [capture] } = seedOpenCaptures(cpu, image.symbols.functionAddresses[2], 2, [0]);
-		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.GETSYS] + BASE_CYCLES[OpCode.LOADK]);
-		assert.equal(cpu.activeThread.currentFrame!.pc, image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-		assert.equal(cpu.instructionBudgetRemaining, 1 - BASE_CYCLES[OpCode.CALL] - 2 - 1 - 4);
-		assert.equal(isOpen(cpu.memory, capture), false);
-		assert.deepEqual(Array.from({ length: 4 }, (_, i) => cpu.rootThread.currentFrame!.registers.get(i)), [valueBool(false), valueInteger(17), valueNil(), valueNil()]);
-	});
 	test(`RFE closes actual captures without charging reservation capacity (${backend})`, () => {
 		const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 		writeInstruction(text, 0, OpCode.RFE, 0, 0, 0);

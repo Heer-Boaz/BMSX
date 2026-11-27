@@ -46,6 +46,7 @@ end)
 `;
 
 export const RECORDER32_BOOT_SOURCE = `setmetatable=require([[kernel/gc_barrier]]).set_metatable
-return {pcall=__bmsx_pcall,error=__bmsx_error,ipairs=function(t)
+local startup<const> = require('bmsx/startup')
+return {pcall=blua32.closure(startup.protected_call),error=__bmsx_error,ipairs=function(t)
  local i=0; return function() i=i+1; if i<=#t then return i,t[i] end end
 end}`;

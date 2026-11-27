@@ -952,7 +952,8 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			parent = current.getStringKey(*method);
 		} else parent = current.getStringKey(*method, linkCycles);
 		if (!valueIsTable(parent)) {
-			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent) || valueTag(parent) == ValueTag::ResidentFunction)
+			const auto kind = valueTag(parent);
+			if (kind == ValueTag::Closure || kind == ValueTag::BuiltinFunction || kind == ValueTag::ResidentFunction || kind == ValueTag::CodeFunction)
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
 			else if (!isNil(parent)) result = {parent, -1, depth, TableLookupStatus::Forward};
 			else if constexpr (Assignment) result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};

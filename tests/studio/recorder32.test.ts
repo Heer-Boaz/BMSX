@@ -9,22 +9,20 @@ import { ALL_EXECUTION_DOMAINS_MASK } from '../../machine/ts/spec/blua32/executi
 import { IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
 import { FsmTransitionObservation } from '../../ide/testing/observations/fsm_transition';
 import { ActionEffectObservation } from '../../ide/testing/observations/actioneffect';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { RECORDER32_BOOT_SOURCE, RECORDER32_INITIALIZE, RECORDER32_MODULES, RECORDER32_ROM_SOURCE } from '../helpers/recorder32';
-import { materializeCpuCompletionValues, parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 
 const sources = RECORDER32_MODULES.map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
 sources.push({ path: 'test/boot', source: RECORDER32_BOOT_SOURCE });
-const modules = sources.map(m => ({...m, chunk:parseLuaChunk(m.source,m.path)}));
 const initialize = "require('test/boot')\n" + RECORDER32_INITIALIZE;
 
 for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.Interpreter]) {
 	test(`recorder32 O${optLevel} ${backend}: actual Lua producers, sign/full wrap, raw timestamps and overflow policy`, t => {
-		const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(initialize), modules,
-			{entrySource:initialize,optLevel,programDomain:'system',traceStatements:'erase'}));
-		const {cpu} = createTestSystemCpu(image, backend);
-		assert.equal(cpu.runUntilDepth(0,1_000_000),RunResult.Halted);
+		const romBytes = writeTestBlua32Rom(linkManagedTestSystem(initialize, optLevel, sources));
+		const {cpu} = createTestSystemCpu({ romBytes }, backend);
+		runGuestToHalt(cpu, 1_000_000);
 		const roots = v.valuePayload(materializeCpuCompletionValues(cpu)[0]);
 		const fsm = v.valuePayload(cpu.gc.tables.getInteger(roots, 1)), effects = v.valuePayload(cpu.gc.tables.getInteger(roots, 2));
 		const fsmRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 6),cpu.gc), effectRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 7),cpu.gc);
@@ -103,14 +101,14 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 }
 
 for(const optLevel of [0,3] as const) test(`recorder32 O${optLevel}: physical ROM preserves producer words and cycle parity`,()=>{
-	const image=linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(RECORDER32_ROM_SOURCE),modules,
-		{entrySource:RECORDER32_ROM_SOURCE,optLevel,programDomain:'system',traceStatements:'erase'}));
-	const {cpu}=createTestSystemCpu(image);const budget=2_000_000;
-	assert.equal(cpu.runUntilDepth(0,budget),RunResult.Halted);
+	const romBytes = writeTestBlua32Rom(linkManagedTestSystem(RECORDER32_ROM_SOURCE, optLevel, sources));
+	const { cpu } = createTestSystemCpu({ romBytes });
+	const budget = 2_000_000;
+	runGuestToHalt(cpu, budget);
 	const results=materializeCpuCompletionValues(cpu);
 	assert.deepEqual(results,[v.valueBool(true),v.valueInteger(24),v.valueInteger(9),v.valueInteger(4),v.valueInteger(9),v.valueInteger(4)]);
 	if(process.env.BMSX_CPU32_RUNNER) {
 		const expected=[`budget ${cpu.instructionBudgetRemaining} fault 0`,...results.map(value=>`${v.valueTag(value).toString(16)} ${v.valuePayload(value).toString(16)}`)].join('\n')+'\n';
-		assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,['--execute-rom',String(budget)],{input:image.romBytes,encoding:'utf8'}),expected);
+		assert.equal(execFileSync(process.env.BMSX_CPU32_RUNNER,['--execute-rom',String(budget)],{input:romBytes,encoding:'utf8'}),expected);
 	}
 });

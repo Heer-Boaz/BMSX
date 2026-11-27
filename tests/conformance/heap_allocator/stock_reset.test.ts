@@ -174,6 +174,12 @@ while *report == 1 do end
 assert(pick('#') == 0 and pick('#', 11, nil, marker, nil) == 4)
 assert(pick(string.sub('x#', 2), nil, marker, nil) == 3)
 assert(pick(string.char(mem[${IO_IRQ_MASK}] + 35), nil, nil) == 2)
+local handled, kept, omitted = xpcall(function(value) error(value) end, function(value)
+	return value, 91
+end, marker)
+assert(not handled and kept == marker and omitted == nil)
+local implicit = setmetatable({}, { __index = pcall })
+assert(implicit.missing == false)
 *report = 3
 
 suffix(4, 11, nil, marker, pick(1, 11, nil, marker, nil))
@@ -1216,7 +1222,7 @@ test('stock System ROM resets and admits a warm physical RAM boundary', async t 
 				['rejected cartridge EXEC accepts a new hardware RESET', () => verifyResetAfterRejectedExec(rom, native, output, optLevel)],
 				['cold diagnostic refusal accepts a new hardware RESET', () => verifyColdRefusal(rom, native, output)],
 				['string.char handles fixed, open and protected argument windows', () => verifyStringChar(rom, native, output, optLevel)],
-				['select produces exact suffixes, counts and protected errors', () => verifySelect(rom, native, output, optLevel)],
+				['select and ordinary protected calls preserve exact result windows', () => verifySelect(rom, native, output, optLevel)],
 				['fixed exception bridge preserves the original tagged Lua error', () => verifyExceptionBridge(rom, native, output, optLevel)],
 				['warm reset retires a live capture; native rewind and reissued reset', () => verifyWarmReset(rom, native, output, optLevel)],
 				['RESET waits for the active Array tag-plane move and publication', () => verifyResetDuringTableGrowth(rom, native, output, optLevel)],

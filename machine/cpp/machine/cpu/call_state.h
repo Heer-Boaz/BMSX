@@ -111,13 +111,12 @@ struct FrameEntryControl {
 	i32 top;
 	u32 closure;
 	i32 stackBase, capacity;
-	i32 protectedIndex = -1;
 
 	template<typename Write> void writeWords(Write&& write) const {
 		write(FrameField::Function, function);
 		write(FrameField::CallSite, callSite);
 		write(FrameField::OpenHead, 0u);
-		write(FrameField::Protected, static_cast<u32>(protectedIndex));
+		write(FrameField::Protected, static_cast<u32>(-1));
 		write(FrameField::Flags, flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u));
 		write(FrameField::Pc, pc);
 		write(FrameField::VarargBase, static_cast<u32>(varargBase));

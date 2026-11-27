@@ -1361,13 +1361,10 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueThread(m_activeThread->address));
 			out.push_back(valueBool(m_activeThread == &m_rootView));
 			break;
-		case BuiltinFunctionId::CoroutineStatus:
-		case BuiltinFunctionId::CoroutineIsYieldable: {
-			const u32 address = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread->address
-				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : 0u;
+		case BuiltinFunctionId::CoroutineStatus: {
+			const u32 address = !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : 0u;
 			if (address == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(address)));
-			else out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, address, ThreadField::Status))));
+			out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, address, ThreadField::Status))));
 			break;
 		}
 		case BuiltinFunctionId::CoroutineResume:
@@ -1376,25 +1373,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Error:
 			runBuiltinError(args);
 			break;
-		case BuiltinFunctionId::PCall:
-		case BuiltinFunctionId::XPCall:
-			throw std::runtime_error("Protected calls execute as Lua CPU microcode.");
 	}
-}
-
-bool CPU::coroutineYieldable(u32 address) const {
-	if (address == m_rootView.address) return false;
-	const auto layout = ThreadRecord::storageLayout(m_memory, address);
-	for (u32 depth = ThreadRecord::count(m_memory, address, ThreadField::FrameDepth); depth != 0u; --depth) {
-		const u32 flags = m_memory.readRamRecordWord(layout.frameAddress(depth - 1u) + static_cast<u32>(FrameField::Flags));
-		if ((flags & (FRAME_EXCEPTION | FRAME_COMPLETION)) != 0u) return false;
-	}
-	const u32 depth = ThreadRecord::count(m_memory, address, ThreadField::ProtectedDepth);
-	for (u32 i = 0; i < depth; ++i) {
-		const u32 flags = m_memory.readRamRecordWord(layout.protectedAddress(i) + static_cast<u32>(ProtectedField::Flags));
-		if ((flags & PROTECTED_CALL_KIND_MASK) == static_cast<u32>(ProtectedCallKind::XPCallHandler)) return false;
-	}
-	return true;
 }
 
 void CPU::returnToResumer(const CallValueSource& source) {
@@ -1424,7 +1403,7 @@ void CPU::returnToResumer(const CallValueSource& source) {
 void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement result, const CallValueSource& arguments) {
 	Thread* thread = m_activeThread;
 	if (id == BuiltinFunctionId::CoroutineYield) {
-		if (!coroutineYieldable(thread->address)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		if (thread->resumer() == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		thread->setTransferResult(result);
 		thread->setStatus(ThreadStatus::Suspended);
 		returnToResumer(arguments);
@@ -1472,10 +1451,6 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResu
 
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallValueSource& arguments) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
-	if (fn.id == BuiltinFunctionId::PCall || fn.id == BuiltinFunctionId::XPCall) {
-		startProtectedCall(fn.id, result, arguments, false);
-		return;
-	}
 	if (fn.id == BuiltinFunctionId::CoroutineResume || fn.id == BuiltinFunctionId::CoroutineYield) {
 		runCoroutineTransfer(fn.id, frame, result, arguments);
 		return;
@@ -1485,124 +1460,6 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPl
 	callBuiltinFunction(fn, arguments.values(), out);
 	if (m_activeThread->frameDepth() != 0 && m_activeThread->currentFrame == &frame) {
 		writeReturnValues(frame, result, BuiltinArgsView(out.data(), out.size()));
-	}
-}
-
-void CPU::startProtectedCall(BuiltinFunctionId id, CallResultPlacement result,
-	const CallValueSource& arguments, bool returnsToProtectedParent) {
-	Value handler = valueNil();
-	if (id == BuiltinFunctionId::XPCall) {
-		handler = arguments.values()[1];
-		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler) && valueTag(handler) != ValueTag::ResidentFunction) {
-			throw LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
-		}
-	}
-	const auto kind = id == BuiltinFunctionId::PCall ? ProtectedCallKind::PCall : ProtectedCallKind::XPCallBody;
-	const u32 continuationIndex = m_activeThread->pushProtectedCall(kind, returnsToProtectedParent, result, handler);
-
-	const int targetArgumentOffset = id == BuiltinFunctionId::PCall ? 1 : 2;
-	invokeProtectedTarget(continuationIndex, arguments.values()[0], arguments.tail(targetArgumentOffset));
-}
-
-void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallValueSource& arguments) {
-	CallFrame& caller = protectedCaller(continuationIndex);
-	if (valueIsClosure(target)) {
-		u32 closure = asClosure(target, m_heap);
-		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		const auto protectedIndex = static_cast<i32>(continuationIndex);
-		if (arguments.frame) pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {},
-			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, 0u, protectedIndex);
-		else pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc, true, protectedIndex);
-		return;
-	}
-	if (valueTag(target) == ValueTag::ResidentFunction) {
-		beginResidentCall(valuePayload(target), arguments.values(), {}, static_cast<i32>(continuationIndex));
-		return;
-	}
-	if (valueIsBuiltinFunction(target)) {
-		BuiltinFunction& builtin = m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(target))];
-		instructionBudgetRemaining -= static_cast<int>(builtin.cycleBase);
-		if (builtin.id == BuiltinFunctionId::PCall || builtin.id == BuiltinFunctionId::XPCall) {
-			const auto parent = m_activeThread->protectedResult(continuationIndex);
-			startProtectedCall(builtin.id, parent.extendsTop() ? CallResultPlacement::discard()
-				: CallResultPlacement::call(parent.base, -1), arguments, true);
-			return;
-		}
-		auto resultsScratch = acquireBuiltinResultScratch();
-		BuiltinResults& results = resultsScratch.get();
-		callBuiltinFunction(builtin, arguments.values(), results);
-		finishProtectedCall(continuationIndex, {nullptr, results.data(), 0, static_cast<int>(results.size())});
-		return;
-	}
-	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-}
-
-void CPU::finishProtectedCall(u32 continuationIndex, const CallValueSource& source) {
-	if ((m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags) & PROTECTED_CALL_KIND_MASK)
-		== static_cast<u32>(ProtectedCallKind::XPCallHandler)) {
-		finishProtectedCallWithError(continuationIndex, source.values()[0]);
-		return;
-	}
-	if (finishImplicitProtectedHandler(continuationIndex, true)) return;
-	CallFrame& caller = protectedCaller(continuationIndex);
-	const auto result = m_activeThread->protectedResult(continuationIndex);
-	const int count = result.selected(source.count + 1);
-	if (count > 0) {
-		auto& registers = ensureRegisterCapacity(caller, result.base + count - 1);
-		const int copied = std::min(source.count, count - 1);
-		// A nested continuation may consume the caller's own result window.
-		// Move it before publishing the status over the first source slot.
-		source.values().placeInto(registers, result.base + 1, copied, 0);
-		registers.set(result.base, valueBool(true));
-		registers.clear(result.base + 1 + copied, count - 1 - copied);
-	}
-	caller.placeResultTop(result, count);
-	instructionBudgetRemaining -= count;
-	finishProtectedContinuation(continuationIndex, count);
-}
-
-void CPU::finishProtectedCallWithError(u32 continuationIndex, Value errorValue) {
-	if (finishImplicitProtectedHandler(continuationIndex, false)) return;
-	CallFrame& caller = protectedCaller(continuationIndex);
-	const auto result = m_activeThread->protectedResult(continuationIndex);
-	const i32 callBase = result.base;
-	const int resultCount = result.selected(2);
-	if (resultCount > 0) {
-		ValueSpan& registers = ensureRegisterCapacity(caller, callBase + resultCount - 1);
-		registers.set(static_cast<size_t>(callBase), valueBool(false));
-		if (resultCount > 1) {
-			registers.set(static_cast<size_t>(callBase + 1), errorValue);
-			registers.clear(callBase + 2, resultCount - 2);
-		}
-	}
-	caller.placeResultTop(result, resultCount);
-	instructionBudgetRemaining -= resultCount;
-	finishProtectedContinuation(continuationIndex, resultCount);
-}
-
-bool CPU::finishImplicitProtectedHandler(u32 continuationIndex, bool succeeded) {
-	const u32 flags = m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags);
-	if ((flags & PROTECTED_CALL_PARENT) == 0u || !m_activeThread->protectedResult(continuationIndex).extendsTop()) return false;
-	// The enclosing implicit xpcall receives only its handler's first value.
-	// A nested protected builtin delivers its status directly, without staging
-	// it in the caller's live operand window or charging a write not performed.
-	m_activeThread->setProtectedDepth(continuationIndex);
-	const Value status = valueBool(succeeded);
-	finishProtectedCall(continuationIndex - 1u, {nullptr, &status, 0, 1});
-	return true;
-}
-
-CallFrame& CPU::protectedCaller(u32 continuationIndex) {
-	if (auto* frame = m_activeThread->protectedCaller(continuationIndex)) return *frame;
-	throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-}
-
-void CPU::finishProtectedContinuation(u32 continuationIndex, int resultCount) {
-	const u32 flags = m_activeThread->protectedWord(continuationIndex, ProtectedField::Flags);
-	m_activeThread->setProtectedDepth(continuationIndex);
-	if ((flags & PROTECTED_CALL_PARENT) != 0) {
-		const i32 callBase = static_cast<i32>(m_activeThread->protectedWord(continuationIndex, ProtectedField::Base));
-		finishProtectedCall(continuationIndex - 1, {&protectedCaller(continuationIndex), nullptr, callBase, resultCount});
 	}
 }
 
@@ -2705,19 +2562,15 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 		: &CPU::runUntilDepthInstrumented;
 }
 
-void CPU::unwindToDepth(int targetDepth, bool chargeCaptures) {
+void CPU::unwindToDepth(int targetDepth) {
 	const bool unwinding = static_cast<int>(m_activeThread->frameDepth()) > targetDepth;
 	if (unwinding) abortStalledMemoryWrite();
 	while (static_cast<int>(m_activeThread->frameDepth()) > targetDepth) {
 		auto* finished = m_activeThread->currentFrame;
-		const int closed = closeUpvalues(*finished);
-		if (chargeCaptures) instructionBudgetRemaining -= closed;
+		closeUpvalues(*finished);
 		m_activeThread->leaveFrame();
 	}
 	if (unwinding) resumeFrameBank();
-	u32 depth = m_activeThread->protectedDepth();
-	while (depth > 0 && m_activeThread->protectedWord(depth - 1, ProtectedField::Caller) >= m_activeThread->frameDepth()) --depth;
-	m_activeThread->setProtectedDepth(depth);
 }
 
 size_t CPU::collectHeap(Value root0, Value root1, Value root2, u32 growingThread) {
@@ -2783,7 +2636,7 @@ bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
 
 void CPU::abortCompletionCall(int frameIndex) {
 	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
-	unwindToDepth(frameIndex, false);
+	unwindToDepth(frameIndex);
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 }
 
@@ -2961,7 +2814,9 @@ int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
 	return closed;
 }
 
-CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
+CPU::FunctionActivation CPU::resolveFunctionActivation(u32 closure, u32 codeFunction) {
+	if (closure == 0u)
+		return {m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	auto* image = executionImageForDomain(binding.domain());
 	const u32 prototype = m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
@@ -2972,31 +2827,25 @@ CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	CallResultPlacement result, u32 callSitePc, u32 codeFunction, i32 protectedIndex) {
-	const auto [image, functionRecord] = closure != 0u ? resolveClosureActivation(closure)
-		: ClosureActivation{m_systemImage, {codeFunction, m_systemImage->bindRomFunction(m_memory, codeFunction)->entry}};
+	CallResultPlacement result, u32 callSitePc, u32 codeFunction) {
+	const auto [image, functionRecord] = resolveFunctionActivation(closure, codeFunction);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, argCount, functionRecord.entry);
-	if (!admitted) {
-		// Protected handlers receive the same fault whether the window
-		// is impossible at placement or BIOS backing acquisition fails.
-		if (protectedIndex >= 0) throw LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
-		throw LuaOutOfMemorySignal{};
-	}
+	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
 		frameBankWord(image->executionDomainId),
 		placement.varargBase, argCount, result, placement.top(),
-		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
+		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	};
 	auto& thread = *m_activeThread;
 	const size_t end = placement.stackEnd();
 	if (!thread.frameSpaceFits(end)) {
 		if (resetBankSelected()) throw LuaOutOfMemorySignal{};
-		if (sharedStack && protectedIndex < 0) {
+		if (sharedStack) {
 			enterRegisterWindowException(caller, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, OpCode::CALL, argBase - 1);
 			return nullptr;
 		}
@@ -3101,24 +2950,19 @@ void CPU::enterPreparedFrame() {
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
-	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall, i32 protectedIndex) {
-	const auto [image, functionRecord] = resolveClosureActivation(closure);
+	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall, u32 codeFunction) {
+	const auto [image, functionRecord] = resolveFunctionActivation(closure, codeFunction);
 	const size_t argCount = args.size();
 	auto& thread = *m_activeThread;
 	const int argumentBase = thread.stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
-	if (!admitted) {
-		// Protected handlers receive the same fault whether the window
-		// is impossible at placement or BIOS backing acquisition fails.
-		if (protectedIndex >= 0) throw LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
-		throw LuaOutOfMemorySignal{};
-	}
+	if (!admitted) throw LuaOutOfMemorySignal{};
 	const auto& placement = *admitted;
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
 		frameBankWord(image->executionDomainId) | flags,
 		placement.varargBase, static_cast<int>(argCount), result, placement.top(),
-		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
+		closure, placement.stackBase, static_cast<int>(placement.capacity),
 	};
 	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
 		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
@@ -3185,7 +3029,6 @@ ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 void CPU::clearCallStack() {
 	abortStalledMemoryWrite();
 	for (;;) {
-		m_activeThread->setProtectedDepth(0);
 		while (m_activeThread->frameDepth() != 0) {
 			CallFrame* frame = m_activeThread->currentFrame;
 			closeUpvalues(*frame);

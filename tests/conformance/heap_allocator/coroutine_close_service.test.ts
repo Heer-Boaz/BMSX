@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import * as Closure from '../../../machine/ts/machine/cpu/closure';
@@ -17,9 +18,10 @@ import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { runGuestToHalt } from '../../helpers/cpu_test_harness';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { residentFunctionAddress } from '../../helpers/heap_service_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const source = `
@@ -29,7 +31,8 @@ local creation<const> = require('kernel/thread_create')
 local create<const> = creation.create_coroutine
 local resume<const> = __bmsx_coroutine_resume
 local suspend<const> = __bmsx_coroutine_yield
-local protect<const> = __bmsx_pcall
+local startup<const> = require('bmsx/startup')
+local protect<const> = blua32.closure(startup.protected_call)
 
 abandoned = create(function()
   local saved = 209
@@ -61,19 +64,19 @@ const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: (
 
 for (const optLevel of [0, 3] as const) {
 	test(`ordinary coroutine close preserves captures, receiving windows and mid-retirement replay at O${optLevel}`, t => {
-		mkdirSync('tmp', { recursive: true });
-		const folder = mkdtempSync(join('tmp', 'coroutine-close-'));
+		const folder = mkdtempSync(join(tmpdir(), 'coroutine-close-'));
 		t.after(() => rmSync(folder, { recursive: true, force: true }));
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, optLevel));
-		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
+		const linked = linkManagedTestSystem(source, optLevel);
+		const romBytes = writeTestBlua32Rom(linked);
+		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		runGuestToHalt(cpu, 250_000);
+		runGuestToHalt(cpu, 1_000_000);
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const target = global('abandoned'), record = valuePayload(target);
 		const capture = Closure.captureAddress(memory, asClosure(global('escaped'), cpu.gc), 0);
 		const pinned = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FRAME_OFFSET;
-		const functionAddress = residentFunctionAddress(system, 'kernel/coroutine_close', 'close_thread');
+		const functionAddress = residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/coroutine_close', 'close_thread');
 		const read = (field: ThreadField) => memory.readRamRecordWord(record + field);
 		const status = () => read(ThreadField.Status);
 		assert.equal(status(), ThreadStatus.Suspended);
@@ -94,7 +97,7 @@ for (const optLevel of [0, 3] as const) {
 		const usage = cpu.luaHeap.usedBytes(), occupied = cpu.heapAllocator.occupiedBytes();
 		const portable = join(folder, 'partial.state'), romPath = join(folder, 'system.rom'), tracePath = join(folder, 'trace');
 		writeFileSync(portable, encodeRuntimeSaveState(checkpoint));
-		writeFileSync(romPath, system.romBytes);
+		writeFileSync(romPath, romBytes);
 		const bank = read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK, slotBytes = read(ThreadField.StackCapacity) * 5;
 		const commands = ['X'], expected: string[] = [];
 

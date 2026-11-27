@@ -61,10 +61,10 @@ constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
 // Tagged firmware return frontier. The selected ordinary Thread and its
 // successor PC are already committed by opcode dispatch, and remain selected
 // through the pinned grant. Targets are slot indices or Protected indices.
-enum class HeapServiceBiosCallKind : uint32_t { Idle, Discard, Call, Protected };
+enum class HeapServiceBiosCallKind : uint32_t { Idle, Discard, Call };
 enum class HeapServiceBiosCallField : uint32_t {
 	Kind = 0, InstructionPc = 4, LastPc = 8, Status = 12, Tag = 16, Word = 20,
-	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
+	ResultBase = 24, ResultWord = 28,
 };
 
 // One pending ordinary VM transfer owns this scratch while backing is acquired.

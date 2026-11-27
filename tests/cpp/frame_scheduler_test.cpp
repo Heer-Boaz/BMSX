@@ -449,21 +449,23 @@ void testParkedTableWriteRetiresBeforeVblank(bool native) {
 		&& owner.getInteger(513) == valueTable(payload.address()), "seek retires the one pending operation exactly once");
 }
 
-void testParkedTableWriteExhaustsInProtectedCall() {
+void testParkedTableWriteFaultsAfterFinalRetry() {
 	using namespace bmsx;
 	test::Blua32TestImage image;
-	image.text.resize(8u * INSTRUCTION_BYTES);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::GETSYS), 0, 0, 0);
+	image.text.resize(9u * INSTRUCTION_BYTES);
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::KNIL), 0, 0, 0);
 	writeInstruction(image.text, 1, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 1, 0, 0);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 2, 3);
+	writeInstruction(image.text, 2, static_cast<u8>(OpCode::CLOSURE), 0, 0, 0);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::CALL), 0, 1, 3);
 	writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 0, 3, 0);
 	writeInstruction(image.text, 5, static_cast<u8>(OpCode::WIDE), 0, 0, 0);
 	writeInstruction(image.text, 6, static_cast<u8>(OpCode::SETT), 0, 1, 2);
 	writeInstruction(image.text, 7, static_cast<u8>(OpCode::RET), 0, 0, 0);
-	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}, {.firstWord = 5, .wordCount = 3, .maxStack = 8}};
+	writeInstruction(image.text, 8, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 8}, {.firstWord = 5, .wordCount = 3, .maxStack = 8},
+		{.firstWord = 8, .wordCount = 1, .maxStack = 2}};
 	image.closureRelocations = {{2, test::blua32TestFunctionAddress(RomImageDomain::System, 1)}};
-	image.systemGlobalNames = {"pcall"};
+	image.exceptionFunctionIndex = 2;
 	const auto rom = test::encodeBlua32TestRom(RomImageDomain::System, image);
 	TickInputSource input;
 	Runtime runtime({rom.bytes, test::cartridgeSlots(), PSX_MACHINE_SPEC}, input);
@@ -472,9 +474,10 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	auto& cpu = runtime.machine.cpu;
 	test::seedTestRomClosure(cpu, rom.functionAddresses[1]);
 	auto& scheduler = runtime.frameScheduler;
-	cpu.setSystemGlobalByKey(cpu.stringPool().intern("pcall"), cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
+	cpu.luaHeap().reserveThreadFrameStorage(cpu.rootThread()->address, 32, 4, valueNil());
+	cpu.rootThread()->bindStack();
 	for (int n = 0; n < 3; ++n) cpu.runUntilDepth(0, 1);
-	require(cpu.getFrameDepth() == 2 && cpu.rootThread()->protectedDepth() == 1, "real pcall owns the waiting write");
+	require(cpu.getFrameDepth() == 2, "the table write runs in the ordinary callee");
 	const auto callerPc = cpu.readFramePc(0);
 	const auto writePc = cpu.readFramePc(1);
 	auto& callee = *cpu.rootThread()->currentFrame;
@@ -500,17 +503,18 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	const int inlineCharge = 1 - cpu.instructionBudgetRemaining;
 	const int base = BASE_CYCLES[static_cast<u8>(OpCode::SETT)];
 	const int scan = (512 - 64) / 4;
-	require(cpu.getFrameDepth() == 1 && inlineCharge > base + 2 + 3 * scan,
-		"inline protected failure pays for the assist and transports its two result values");
+	require(cpu.fixedInterruptActive() && cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP
+		&& cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY && inlineCharge > base + 3 * scan,
+		"inline failure pays for assistance and enters the ordinary numeric Trap vector");
 	applyRuntimeSaveState(runtime, before);
 	runtime.frameLoop.beginFrameState(runtime, 1, 0);
 	const i64 clock = runtime.machine.scheduler.nowCycles();
 	require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked && cpu.allocationParked(),
-		"physical failure parks rather than exiting the protected frame");
-	const int charge = base + 3 * scan + 2
+		"physical failure parks rather than entering the Trap vector early");
+	const int charge = base + 3 * scan
 		+ 3 * static_cast<int>(runtime.machine.memory.readRamRecordWord(paidAt) - beforeAssist);
-	require(inlineCharge > charge && runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - 2 * scan,
-		"the first refusal retains one scan, not the two retries or result placement");
+	require(inlineCharge > charge && runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 * scan,
+		"the first refusal retains one scan, not the two retries");
 	const auto drain = [&] {
 		for (int n = 0; n < 80 && !cpu.allocationReady(); ++n)
 			require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Blocked,
@@ -525,20 +529,20 @@ void testParkedTableWriteExhaustsInProtectedCall() {
 	require(scheduler.advanceLogicalTick(runtime, 0) == LogicalTickResult::DeferredCpu
 		&& cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::Fresh,
 		"a failed retry admits one fresh epoch, not a completed instruction");
-	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - 2 - scan, "the second scan survives the fresh-epoch wait");
+	require(runtime.frameLoop.frameState.deferredAllocationCycles == charge - scan, "the second scan survives the fresh-epoch wait");
 	const auto checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const auto finish = [&] {
 		drain();
 		require(cpu.captureRuntimeState().pendingAllocation.recovery == AllocationRecovery::RetryFresh,
 			"the fresh epoch gets its own final reservation");
 		require(scheduler.stepInstruction(runtime, 0.0) == InstructionStepResult::Executed && !cpu.allocationParked(),
-			"one failed guest instruction is finally retired to pcall");
-		require(cpu.getFrameDepth() == 1 && cpu.rootThread()->protectedDepth() == 0 && cpu.readFramePc(0) == callerPc
-			&& cpu.lastPc == writePc + INSTRUCTION_BYTES && isNil(owner.getInteger(513)),
-			"pcall restores the original caller at the original fault frontier, without a store");
-		const auto regs = cpu.rootThread()->currentFrame->registers;
-		require(regs.get(0) == valueBool(false) && cpu.stringPool().toString(asStringId(regs.get(1))) == "Out of memory.",
-			"the real protected call observes a single ordinary Lua memory fault");
+			"one failed guest instruction is finally retired to the Trap vector");
+		require(cpu.fixedInterruptActive() && cpu.rootThread()->frameDepth() == 2
+			&& cpu.rootThread()->frameAtDepth(0)->readControl(FrameField::Pc) == callerPc
+			&& cpu.readEpcWord() == writePc && isNil(owner.getInteger(513)), "Trap retains the original caller and fault frontier, without a store");
+		require(cpu.readCauseWord() == CPU_CAUSE_CODE_TRAP && cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_OUT_OF_MEMORY
+			&& cpu.activeThread()->currentFrame->readControl(FrameField::ArgumentCount) == 0,
+			"the fixed vector receives the numeric out-of-memory reason and no argument");
 		require(runtime.machine.scheduler.nowCycles() == clock + charge
 			&& runtime.frameLoop.frameState.cycleBudgetRemaining == 1 - charge
 			&& runtime.frameLoop.frameState.activeCpuUsedCycles == charge,
@@ -2017,7 +2021,7 @@ int main() {
 	testAcceptedStringCyclesAcrossVblanks(false);
 	testAcceptedStringCyclesAcrossVblanks(true);
 	testOneDeadlinePerDevice();
-	testParkedTableWriteExhaustsInProtectedCall();
+	testParkedTableWriteFaultsAfterFinalRetry();
 	testParkedTableWriteRetiresBeforeVblank(false);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	testParkedTableWriteRetiresBeforeVblank(true);

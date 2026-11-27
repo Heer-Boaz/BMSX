@@ -600,29 +600,6 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 	}
 }
 
-void protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries() {
-	Program program(OpCode::GETT, true); Machine generated(program.image, false), scalar(program.image, true);
-	for (auto* m : {&generated, &scalar}) {
-		auto& cpu = m->cpu;
-		auto root = bmsx::test::allocateTableReference(cpu, 0, 1), meta = bmsx::test::allocateTableReference(cpu, 0, 1);
-		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::XPCall));
-		root.setMetatableAddress(meta.address());
-		auto* frame = cpu.activeThread()->currentFrame;
-		frame->registers.set(0, valueTable(root.address()));
-		frame->registers.set(1, cpu.createBuiltinFunction(BuiltinFunctionId::PCall));
-		frame->registers.set(7, valueInteger(44)); frame->registers.set(8, valueInteger(57));
-		frame->writeControl(FrameField::Top, 0x4900000bu);
-	}
-	test::runCpuParity(generated.cpu, scalar.cpu, 3);
-	const auto* frame = generated.cpu.activeThread()->currentFrame;
-	require(generated.cpu.readCauseWord() == 0 && generated.cpu.activeThread()->protectedDepth() == 0
-		&& frame->registers.get(6) == valueBool(false) && frame->registers.get(7) == valueInteger(44)
-		&& frame->registers.get(8) == valueInteger(57) && frame->readControl(FrameField::Top) == 0x4900000bu,
-		"the nested protected result is adjusted to one without clobbering adjacent slots or leaving a continuation");
-	sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());
-	require(test::sameLanguageRam(generated.cpu, scalar.cpu), "nested protection is entirely guest state");
-}
-
 void yieldingBuiltinIndexRestoresItsPlacement() {
 	test::Blua32TestImage image;
 	image.text.resize(MAPPED_PAGE_BYTE_SIZE);
@@ -731,7 +708,7 @@ int main() {
 	try {
 		grantsAndRestore(); integerStoreCensus(); exhaustedStringChainCharges(); growingStringHitCharges(); directIndexMemberWork(); periodicIndexChainKeepsThePartialTail(); faultsOnce(); warmedOneHopUsesLiveMappings();
 		callableIndexUsesARealDetachedActivation(); builtinIndexPreservesResultAndFaultBoundaries();
-		protectedBuiltinIndexDoesNotUseLiveSlotsForTemporaries(); yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
+		yieldingBuiltinIndexRestoresItsPlacement(); stringReceiver();
 	}
 	catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 	return 0;

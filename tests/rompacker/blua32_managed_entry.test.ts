@@ -10,13 +10,13 @@ import { integerConstant } from '../../toolchain/ts/lua/number';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 
-for (const optLevel of [0, 3] as const) test(`a managed entry links a plain ROM function record without module initialization (O${optLevel})`, () => {
+for (const optLevel of [0, 3] as const) for (const callable of [false, true]) test(`a managed entry links a plain ROM function record (O${optLevel}, callable=${callable})`, () => {
 	const { linked, object } = buildBlua32Image({
 		luaModules: [
 			['entry', "module<entry>\nlocal entries<const> = require('bmsx/startup')\nreturn entries.receive"],
 			['receive', 'return function(fn, ...) return true, fn(...) end'],
 		].map(([path, source]) => ({ path, displayPath: `${path}.lua`, source, chunk: parseLuaChunk(source, path).chunk })),
-		managedEntries: [{ symbol: 'receive', path: 'receive' }],
+		managedEntries: [callable ? { symbol: 'receive', path: 'receive', callable: true } : { symbol: 'receive', path: 'receive' }],
 		generatedLuaModules: [],
 		loadAddress: SYSTEM_ROM_BASE + 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
@@ -31,7 +31,8 @@ for (const optLevel of [0, 3] as const) test(`a managed entry links a plain ROM 
 	assert.equal(record.numParams, 1);
 	assert.equal(record.isVararg, true);
 	assert.equal(record.upvalues.length, 0);
-	assert.equal(record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_RESIDENT | BLUA32_FUNCTION_STATIC), 0);
+	assert.equal(record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_RESIDENT | BLUA32_FUNCTION_STATIC),
+		callable ? BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC : 0);
 	const relocation = object.link.constValueRelocs.find(reloc => reloc.kind === 'link_value' && reloc.modulePath === 'bmsx/startup');
 	assert.ok(relocation);
 	assert.deepEqual(layout.constants[relocation.constIndex], integerConstant(record.address));

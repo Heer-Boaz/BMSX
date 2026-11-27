@@ -57,7 +57,7 @@ import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machin
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
-import { linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
+import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -71,14 +71,13 @@ import {
 } from '../../machine/ts/machine/scheduler/device';
 import { FrameSchedulerState, LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 
-import { AllocationRecovery, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
-import { valueBool, valueBuiltinFunction, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -654,102 +653,6 @@ test('a table write parked while Atomic is pending keeps its weak receiver and d
 		applyRuntimeSaveState(runtime, parked);
 		assert.equal(Buffer.compare(finish(), expected), 0, 'restoring the parked operation repeats marking and the original store');
 	}
-});
-
-test('parked WIDE SETT resumes the fresh epoch and faults once through pcall', () => {
-	const code = new Uint8Array(8 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.GETSYS, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(code, 2, OpCode.CLOSURE, 1, 0, 0);
-	writeInstruction(code, 3, OpCode.CALL, 0, 2, 3);
-	writeInstruction(code, 4, OpCode.RET, 0, 3, 0);
-	writeInstruction(code, 5, OpCode.WIDE, 0, 0, 0);
-	writeInstruction(code, 6, OpCode.SETT, 0, 1, 2);
-	writeInstruction(code, 7, OpCode.RET, 0, 0, 0);
-	const system = linkRawTestSystemBlua32({
-		text: code, functions: [
-			{ firstWord: 0, wordCount: 5, maxStack: 8 },
-			{ firstWord: 5, wordCount: 3, maxStack: 8 },
-		],
-		systemGlobalNames: ['pcall', ...LUA_BOOT_PRIMITIVES.map(primitive => primitive.name).filter(name => name !== 'pcall')],
-		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
-		closureRelocations: [{ wordIndex: 2, functionIndex: 1 }],
-	});
-	const runtime = new Runtime({
-		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
-	}, new TimingInputSource());
-	runtime.boot();
-	const { cpu, scheduler } = runtime.machine;
-	const fs = runtime.frameScheduler;
-	seedTestRomClosure(cpu, system.symbols.functionAddresses[1]);
-	cpu.setSystemGlobalByKey(cpu.stringPool.intern('pcall'), valueBuiltinFunction(BuiltinFunctionId.PCall));
-	for (let n = 0; n < 3; ++n) cpu.runUntilDepth(0, 1);
-	assert.equal(cpu.getFrameDepth(), 2);
-	assert.equal(cpu.rootThread.protectedDepth, 1);
-	const callerPc = cpu.readFramePc(0), writePc = cpu.readFramePc(1);
-	const callee = cpu.rootThread.currentFrame!;
-	const tables = cpu.gc.tables, budget = cpu.luaHeap, arena = cpu.heapAllocator;
-	budget.setCollectionTarget(budget.capacity());
-	const owner = cpu.createTable(512, 0);
-	for (let i = 1; i <= 512; ++i) tables.setInteger(owner, i, valueInteger(i));
-	callee.registers.set(0, valueTable(owner));
-	callee.registers.set(1, valueInteger(513));
-	callee.registers.set(2, valueInteger(42));
-	callee.top = 3;
-	while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
-	cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
-	const paidAt = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET + GC_PACE_PAID;
-	const beforeAssist = cpu.memory.readRamRecordWord(paidAt);
-	const before = captureRuntimeSaveState(runtime);
-	cpu.runUntilDepth(0, 1);
-	const inlineCharge = 1 - cpu.instructionBudgetRemaining;
-	assert.equal(cpu.getFrameDepth(), 1, 'direct CPU retains synchronous recovery');
-	applyRuntimeSaveState(runtime, before);
-	runtime.frameLoop.beginFrameState(1, 0);
-	const clock = scheduler.nowCycles;
-	assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-	assert.ok(cpu.allocationParked());
-	const scan = (512 - 64) / 4;
-	const charge = BASE_CYCLES[OpCode.SETT] + 3 * scan + 2
-		+ 3 * (cpu.memory.readRamRecordWord(paidAt) - beforeAssist);
-	assert.ok(inlineCharge > charge);
-	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2 - 2 * scan);
-	const drain = () => {
-		for (let n = 0; n < 80 && !cpu.allocationReady(); ++n)
-			assert.equal(fs.stepInstruction(0), InstructionStepResult.Blocked);
-		assert.ok(cpu.allocationReady());
-		assert.equal(cpu.readFramePc(1), writePc);
-		assert.equal(scheduler.nowCycles, clock);
-		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 1);
-		assert.equal(tables.arrayCapacity(owner), 512);
-		assert.equal(tables.getInteger(owner, 513), valueNil());
-	};
-	drain();
-	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryCurrent);
-	assert.equal(fs.advanceLogicalTick(0), LogicalTickResult.DeferredCpu);
-	assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Fresh);
-	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, charge - 2 - scan);
-	const checkpoint = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
-	const finish = () => {
-		drain();
-		assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryFresh);
-		assert.equal(fs.stepInstruction(0), InstructionStepResult.Executed);
-		assert.ok(!cpu.allocationParked());
-		assert.equal(cpu.getFrameDepth(), 1);
-		assert.equal(cpu.rootThread.protectedDepth, 0);
-		assert.equal(cpu.readFramePc(0), callerPc);
-		assert.equal(cpu.lastPc, writePc + INSTRUCTION_BYTES);
-		assert.equal(tables.getInteger(owner, 513), valueNil());
-		const regs = cpu.rootThread.currentFrame!.registers;
-		assert.equal(regs.get(0), valueBool(false));
-		assert.equal(cpu.stringPool.toString(valuePayload(regs.get(1))), 'Out of memory.');
-		assert.equal(scheduler.nowCycles, clock + charge);
-		assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 1 - charge);
-		assert.equal(runtime.frameLoop.frameState.activeCpuUsedCycles, charge);
-	};
-	finish();
-	applyRuntimeSaveState(runtime, decodeRuntimeSaveState(checkpoint, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-	finish();
 });
 
 test('legacy GP1 display words cannot drive the PCRTC clock', () => {

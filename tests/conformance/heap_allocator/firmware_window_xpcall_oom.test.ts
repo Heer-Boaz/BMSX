@@ -6,8 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import {
-	FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_PARENT,
-	FrameField, ProtectedCallKind, ProtectedField,
+	FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField,
 } from '../../../machine/ts/machine/cpu/call_state';
 import { captureAddress, CLOSURE_PROTOTYPE_ADDRESS } from '../../../machine/ts/machine/cpu/closure';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
@@ -17,7 +16,7 @@ import { ValueTag, valueBool, valueClosure, valueNil, valuePayload, valueTag } f
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_USER_MODE_CURRENT } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_STATUS_USER_MODE_CURRENT } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -31,15 +30,16 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
-for (const parent of [false, true]) test(`firmware xpcall handles real CALL window OOM${parent ? ' through an implicit pcall parent' : ' in the interrupted User context'}`, t => {
+for (const parent of [false, true]) test(`firmware xpcall handles real CALL window OOM${parent ? ' through a nested ordinary pcall' : ' in the interrupted User context'}`, t => {
 	const staticBytes = 3_600_000;
 	const locals = Array.from({ length: 160 }, (_, index) => `local z${index} = 1`).join('\n');
 	const linked = linkManagedTestSystem(`
 bss blocked: u8[${staticBytes}]
 bss handler_calls: word
 blocked[0] = 1
-local protect<const> = __bmsx_xpcall
-${parent ? 'local outer<const> = __bmsx_pcall' : ''}
+local vectors<const> = require('bmsx/startup')
+local protect<const> = blua32.closure(vectors.protected_xcall)
+${parent ? 'local outer<const> = blua32.closure(vectors.protected_call)' : ''}
 
 local function make_handler()
 	local kept = {}
@@ -65,6 +65,7 @@ return ok, result, trailing
 	const bss = linked.object.sections.bss.symbols.find(symbol => symbol.name.endsWith('handler_calls'))!;
 	const counter = linked.layout.header.bssAddress + bss.offset;
 	const trampoline = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_handler/module')];
+	const body = linked.layout.functions[linked.symbols.metadata.functionIds.indexOf('module:kernel/protected_body/module')];
 	function boot() {
 		const rt = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		rt.boot();
@@ -93,11 +94,9 @@ return ok, result, trailing
 		return run;
 	}
 
-	let owner = 0, handler = 0, captured = 0, resume = 0, lastIssue = 0, required = 0, issues = 0;
+	let owner = 0, handler = 0, captured = 0, lastIssue = 0, required = 0, issues = 0;
 	const enteredHandler = () => !cpu.fixedInterruptActive() && cpu.activeThread.currentFrame?.functionAddress === trampoline.address;
 	const entries = new Map(linked.layout.functions.map(fn => [fn.address, fn]));
-	const protectionDepth = parent ? 2 : 1;
-	const parentFlag = parent ? PROTECTED_CALL_PARENT : 0;
 	for (let i = 0; i < 65536 && !enteredHandler(); ++i) {
 		// Narrow the grant only near the terminal unwind. The boot, recursive
 		// execution and collection do not need single-instruction tracing.
@@ -107,10 +106,9 @@ return ok, result, trailing
 		assert.equal(grant(runtime, budget), RunResult.Yielded, 'the xpcall has not returned past the handler entry');
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW) continue;
 		const interrupted = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
-		if ((memory.readRamRecordWord(interrupted + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK) !== protectionDepth) continue;
-		const protection = memory.readRamRecordWord(interrupted + ThreadField.ProtectedBlock) + (protectionDepth - 1) * PROTECTED_CALL_BYTES;
-		if (memory.readRamRecordWord(protection + ProtectedField.Flags) !== (ProtectedCallKind.XPCallBody | parentFlag)) continue;
 		const depth = cpu.readThreadFrameDepth(interrupted);
+		const boundary = Array.from({ length: depth }, (_, index) => cpu.readThreadFrameWord(interrupted, index, FrameField.Function)).indexOf(body.address);
+		if (boundary < 0) continue;
 		const issuer = memory.readRamRecordWord(interrupted + ThreadField.FrameBlock) + (depth - 1) * FRAME_CONTROL_BYTES;
 		const pc = cpu.readEpcWord();
 		if (memory.readRamRecordWord(issuer + FrameField.Pc) !== pc) continue;
@@ -128,9 +126,8 @@ return ok, result, trailing
 		required = extent;
 		owner = interrupted;
 		assert.equal(owner, cpu.rootThread.address);
-		const caller = memory.readRamRecordWord(protection + ProtectedField.Caller);
-		resume = cpu.readThreadFrameWord(owner, caller, FrameField.Pc);
-		handler = memory.readRamRecordWord(protection + ProtectedField.Handler);
+		const handlerSlot = cpu.readThreadFrameWord(owner, boundary - 1, FrameField.VarargBase) & FRAME_WINDOW_MASK;
+		handler = valuePayload(cpu.rootThread.stackRegisters.get(handlerSlot));
 		captured = captureAddress(memory, handler, 0);
 		assert.equal(isOpen(memory, captured), false, 'handler owns a closed Table capture');
 		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${lastIssue}`);
@@ -140,7 +137,6 @@ return ok, result, trailing
 	assert.ok(enteredHandler(), `the BIOS resumed the ordinary ROM handler trampoline (cause ${cpu.readCauseWord()}, pc ${cpu.activeThread.currentFrame?.pc}, interrupted depth ${cpu.readThreadFrameDepth(owner)}, extent ${required})`);
 	assert.ok(memory.ramBusEnd() >= linked.layout.header.bssAddress + staticBytes);
 	assert.ok(required > memory.readRamRecordWord(owner + ThreadField.StackCapacity));
-	assert.notEqual(resume, lastIssue);
 	const active = cpu.activeThread.currentFrame!;
 	const sentinel = load(memory, captured), diagnostic = active.registers.get(1);
 	assert.equal(valueTag(sentinel), ValueTag.Table);
@@ -156,30 +152,6 @@ return ok, result, trailing
 	hash(runtime, RAM_BASE + active.controlOffset, FRAME_CONTROL_BYTES);
 	hash(runtime, RAM_BASE + (captured & UPVALUE_ADDRESS_MASK), UPVALUE_HEAP_BYTES);
 
-	for (let i = 0; i < 1024 && !(cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL); ++i)
-		assert.equal(grant(runtime, 1), RunResult.Yielded);
-	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
-	const svcSuccessor = cpu.readEpcWord();
-	assert.equal(decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, svcSuccessor - INSTRUCTION_BYTES).op, OpCode.SVC);
-	assert.ok(svcSuccessor > trampoline.codeAddress && svcSuccessor < trampoline.codeAddress + trampoline.codeByteCount);
-	function inspectSVC(rt: Runtime) {
-		const { cpu, memory } = rt.machine;
-		assert.equal(cpu.activeThread.currentFrame!.argumentCount, 1);
-		assert.equal(cpu.activeThread.currentFrame!.registers.get(0), sentinel, 'only the handler first result reaches SVC');
-		assert.equal(cpu.isUserMode(), false);
-		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
-		assert.equal(memory.readRamRecordWord(owner + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK, protectionDepth);
-		assert.equal(cpu.readThreadFrameWord(owner, cpu.readThreadFrameDepth(owner) - 1, FrameField.Function), trampoline.address);
-		const protection = memory.readRamRecordWord(owner + ThreadField.ProtectedBlock) + (protectionDepth - 1) * PROTECTED_CALL_BYTES;
-		assert.equal(memory.readRamRecordWord(protection + ProtectedField.Flags), ProtectedCallKind.XPCallHandler | parentFlag);
-		assert.equal(memory.readRamRecordWord(counter), 1);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('observed_error')!), diagnostic);
-		observe('Z', `${CPU_CAUSE_CODE_SYSCALL} 0 ${svcSuccessor}`);
-		hash(rt, protection, PROTECTED_CALL_BYTES);
-		hash(rt, counter, INSTRUCTION_BYTES);
-	}
-	inspectSVC(runtime);
 	writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	commands.push(`x ${nativeState}`);
 	const commandCut = commands.length, rowCut = expected.length;
@@ -192,14 +164,15 @@ return ok, result, trailing
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.fixedInterruptActive(), false);
 		assert.equal(cpu.isUserMode(), true);
-		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
-		assert.equal(cpu.readEpcWord(), resume);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
+		assert.equal(cpu.readEpcWord(), trampoline.codeAddress);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 		assert.equal(memory.readRamRecordWord(owner + ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK, 0);
 		assert.equal(memory.readRamRecordWord(counter), 1);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('observed_error')!), diagnostic);
 		const results = parent ? [valueBool(true), valueBool(false), sentinel] : [valueBool(false), sentinel, valueNil()];
 		assert.deepEqual(rt.readCompletionValues(), results);
-		observe('Z', `${CPU_CAUSE_CODE_SYSCALL} 0 ${resume}`);
+		observe('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${trampoline.codeAddress}`);
 		observe('c', [results.length, ...results.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 		hash(rt, owner, THREAD_HEAP_BYTES);
 		hash(rt, counter, INSTRUCTION_BYTES);
@@ -218,7 +191,8 @@ return ok, result, trailing
 	replay(['X', ...tail], rows);
 	const restored = boot();
 	applyRuntimeSaveState(restored, decodeRuntimeSaveState(readFileSync(nativeState), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-	inspectSVC(restored);
+	assert.equal(restored.machine.cpu.activeThread.currentFrame!.pc, trampoline.codeAddress);
+	assert.equal(restored.machine.memory.readRamRecordWord(counter), 0);
 	commands.length = expected.length = 0;
 	finish(restored);
 	assert.deepEqual(commands, tail);

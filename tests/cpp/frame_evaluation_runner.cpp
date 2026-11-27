@@ -41,8 +41,10 @@ void restoreSuspended(Runtime& runtime, bool inspectFrame) {
 	}
 	if (cpu.getGlobalByKey(*cpu.stringPool().find("fixture_inject_completion")) != valueBool(true)) return;
 	const auto argument = valueInteger(depth - 1);
+	const int exceptionDepth = cpu.readExceptionReturnFrameDepth();
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe")), cpu.gcHeap()), {&argument, 1});
-	require(test::runCpuWithinBudget(cpu, 1000000, depth) == RunResult::Halted && cpu.readLuaFaultReasonWord() == 0,
+	require(test::runCpuWithinBudget(cpu, 1000000, depth) == RunResult::Halted
+		&& !cpu.captureRuntimeState().hardHalted && cpu.readExceptionReturnFrameDepth() == exceptionDepth,
 		"the named completion call must finish without a fault");
 	const auto values = runtime.readCompletionValues();
 	require(values.size() == 4 && values.get(0) == valueBool(true) && values.get(1) == valueInteger(43)
@@ -68,10 +70,9 @@ int main(int argc, char** argv) {
 		const int maxGrants = mode == "frame" ? 64 : 32;
 		for (int grant = 0; grant < maxGrants; ++grant) {
 			const auto result = bmsx::test::runCpuWithinBudget(cpu, 1000000);
-			require(cpu.readLuaFaultReasonWord() == 0 && cpu.readExceptionReturnFrameDepth() == -1,
-				"guest case faulted");
 			if (result == bmsx::RunResult::Yielded) continue;
 			require(result == bmsx::RunResult::Halted, "unexpected guest outcome");
+			require(!cpu.captureRuntimeState().hardHalted && cpu.readExceptionReturnFrameDepth() == -1, "guest case faulted");
 			if (!cpu.isHaltedUntilIrq()) {
 				const auto values = runtime.readCompletionValues();
 				require(values.size() == 2 && values.get(0) == bmsx::valueBool(true) && values.get(1) == bmsx::valueBool(true),

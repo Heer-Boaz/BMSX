@@ -1,8 +1,18 @@
-import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
+import { writeLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT, BLUA32_IMAGE_MAPPED_CODE_FLAG } from '../../../machine/ts/spec/blua32/image_format';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/memory_map';
 import { deriveBlua32FixedStack } from './blua32_fixed_stack';
 import type { Blua32ImageLayout } from './blua32_image';
+
+export function bindBlua32CodeFunctions(image: Blua32ImageLayout, targets: Iterable<number>): void {
+	for (const index of targets) {
+		const target = image.functions[index];
+		if (target.upvalues.length !== 0 || (target.flags & BLUA32_FUNCTION_RESIDENT) !== 0)
+			throw new Error('An immutable System call target cannot have captures or be a legacy resident activation.');
+		target.flags |= BLUA32_FUNCTION_CODE;
+		writeLE32(image.bytes, target.address - image.address + BLUA32_FUNCTION_FLAGS_OFFSET, target.flags);
+	}
+}
 
 // Called after immutable System code and operands are linked. The linker
 // derives code-valued CLOSURE targets from the real reachable vector bodies,
@@ -43,12 +53,6 @@ export function linkBlua32ResetCode(
 		valueSlots = Math.max(valueSlots, size.valueSlots);
 		frames = Math.max(frames, size.frames);
 	}
-	for (const index of codeTargets) {
-		const offset = image.functions[index].address - image.address + BLUA32_FUNCTION_FLAGS_OFFSET;
-		const flags = readLE32(image.bytes, offset);
-		if ((flags & BLUA32_FUNCTION_RESIDENT) !== 0)
-			throw new Error('A direct System vector cannot call a legacy resident activation.');
-		writeLE32(image.bytes, offset, flags | BLUA32_FUNCTION_CODE);
-	}
+	bindBlua32CodeFunctions(image, codeTargets);
 	return { frames, valueSlots };
 }

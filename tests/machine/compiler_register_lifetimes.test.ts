@@ -8,7 +8,8 @@ import { test } from 'node:test';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { valueBool, valueInteger, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { compileLuaSource, materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
-import { createTestSystemCpu, disassembleTestBlua32Functions, linkTestSystemBlua32 } from '../helpers/blua32';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestSystemCpu, disassembleTestBlua32Functions, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 
 test('scoped locals reuse the frame window, and O3 returns an existing argument directly', () => {
 	const source = `local function probe(t)\n${'do local x = 1 end\n'.repeat(256)}return t\nend\nreturn probe`;
@@ -23,7 +24,8 @@ test('scoped locals reuse the frame window, and O3 returns an existing argument 
 });
 
 test('O3 replaces private tables without dropping effects, escapes, or old register values', () => {
-	const boot = 'protect = __bmsx_pcall';
+	const boot = `local startup<const> = require('bmsx/startup')
+protect = blua32.closure(startup.protected_call)`;
 	const source = `
 require('boot')
 local function dense(churn)
@@ -74,7 +76,8 @@ local ok = protect(fault, false)
 return length, forwarded, other, escaped(), before, after, reads_from_capture(), calls, ok, point_sum(4, 20)
 `;
 	for (const opt of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [{ path: 'boot', source: boot }], 'scalar-tables.lua'));
+		const linked = linkManagedTestSystem(source, opt, [{ path: 'boot', source: boot }], [], 'scalar-tables');
+		const image = { image: linked.layout, symbols: linked.symbols, romBytes: writeTestBlua32Rom(linked) };
 		if (opt === 3) {
 			for (const name of ['dense', 'forward']) {
 				const index = image.symbols.metadata.functionIds.findIndex(id => id.endsWith(`:${name}`));
@@ -91,20 +94,25 @@ return length, forwarded, other, escaped(), before, after, reads_from_capture(),
 			assert.match(disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[index]]), TABLE_CONSTRUCTOR_BINDING);
 		}
 		const expected = [...[3, 7, 4, 3, 8, 9, 13, 2].map(valueInteger), valueBool(false), valueInteger(24)];
-		const budget = 100_000;
-		let remaining = 0;
+		const budget = 1_000_000;
+		let remaining = 0, fault = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
 			runGuestToHalt(cpu, budget);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
-			if (backend === CpuExecutionBackend.Interpreter) remaining = cpu.instructionBudgetRemaining;
-			else assert.equal(cpu.instructionBudgetRemaining, remaining);
+			if (backend === CpuExecutionBackend.Interpreter) {
+				remaining = cpu.instructionBudgetRemaining;
+				fault = cpu.readLuaFaultReasonWord();
+			} else {
+				assert.equal(cpu.instructionBudgetRemaining, remaining);
+				assert.equal(cpu.readLuaFaultReasonWord(), fault);
+			}
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
 			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget)],
 				{ input: image.romBytes, encoding: 'utf8' });
-			assert.equal(output, [`budget ${remaining} fault 0`,
+			assert.equal(output, [`budget ${remaining} fault ${fault}`,
 				...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
 		}
 	}
@@ -146,7 +154,11 @@ return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id 
 });
 
 test('a call result can release its last table reference before the next collection', () => {
-	const boot = "local heap<const> = require('kernel/gc_full'); collect = function() heap.collect_full() end; setmeta = require([[kernel/gc_barrier]]).set_metatable; protect = __bmsx_pcall";
+	const boot = `local startup<const> = require('bmsx/startup')
+local heap<const> = require('kernel/gc_full')
+collect = function() heap.collect_full() end
+setmeta = require('kernel/gc_barrier').set_metatable
+protect = blua32.closure(startup.protected_call)`;
 	const source = `
 require('boot')
 local function probe(make, churn)
@@ -175,15 +187,14 @@ local captured_ok, doubled = protect(captured, make, collect)
 return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 `;
 	for (const opt of [0, 3] as const) {
-		const compiled = compileHeapServiceSystem(source, opt, [{ path: 'boot', source: boot }], 'last-table-use.lua');
-		const image = linkTestSystemBlua32(compiled);
+		const linked = linkManagedTestSystem(source, opt, [{ path: 'boot', source: boot }], [], 'last-table-use');
+		const image = { image: linked.layout, symbols: linked.symbols, romBytes: writeTestBlua32Rom(linked) };
 		if (opt === 3) {
-			const index = compiled.metadata.protoIds.findIndex(id => id.endsWith(':probe'));
-			const physical = image.symbols.metadata.functionIds.indexOf(compiled.metadata.protoIds[index]);
+			const physical = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(':probe'));
 			const listing = disassembleTestBlua32Functions(image, [image.symbols.functionAddresses[physical]]);
 			assert.match(listing, /params=2 vararg=0 stack=4/);
 			assert.match(listing, /GETFIELD r2, r2, .*\n.*MOV r3, r1\n.*CALL r3/);
-			const slots = compiled.metadata.localSlotsByProto[index];
+			const slots = linked.symbols.metadata.localSlotsByFunction[physical];
 			const t = slots.find(slot => slot.name === 't')!;
 			const n = slots.find(slot => slot.name === 'n')!;
 			assert.equal(t.registerIndex, n.registerIndex);

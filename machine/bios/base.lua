@@ -1,6 +1,7 @@
 local metatables<const> = require('kernel/gc_barrier')
 local globals<const> = require('kernel/set_global')
 local tables<const> = require('kernel/table_grow')
+local entries<const> = require('bmsx/startup')
 local raise_error<const> = __bmsx_error
 local console<const> = require('tty/console')
 
@@ -29,8 +30,8 @@ getglobal = __bmsx_getglobal
 setglobal = globals.set_global
 select = select_arguments
 error = raise_error
-pcall = __bmsx_pcall
-xpcall = __bmsx_xpcall
+pcall = blua32.closure(entries.protected_call)
+xpcall = blua32.closure(entries.protected_xcall)
 
 
 assert = function(condition, ...)
