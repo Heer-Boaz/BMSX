@@ -28,7 +28,7 @@ const THREAD_FRAME_STORAGE_MODULE = 'kernel/thread_frame_storage';
 const CAPTURED_CLOSURE_MODULE = 'kernel/allocate_captured_closure';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	ALLOCATE_RECORD_MODULE, ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
+	ALLOCATE_RECORD_MODULE, 'kernel/heap_floor', ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -45,7 +45,7 @@ export const HEAP_SERVICE_MODULES = [
 const serviceModules: ReadonlySet<string> = new Set(HEAP_SERVICE_MODULES);
 
 const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>, readonly [string, number, string?]> = {
-	[HeapServiceOperation.SetFloor]: ['bmsx_dlmalloc_set_floor', 2],
+	[HeapServiceOperation.SetFloor]: ['reserve_floor', 2, 'kernel/heap_floor'],
 	[HeapServiceOperation.AllocateRecord]: ['allocate_record', 6, ALLOCATE_RECORD_MODULE],
 	[HeapServiceOperation.TableGrow]: ['grow_table', 4, TABLE_GROW_MODULE],
 	[HeapServiceOperation.InterruptPrelude]: ['before_cart_irq', 3, INTERRUPT_PRELUDE_MODULE],

@@ -915,8 +915,8 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, m_currentInstructionPc);
 			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET,
 				targetDomainId ? executionBusSignalsForDomain(*targetDomainId) : MAPPED_BUS_MASTER_CPU);
-			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, static_cast<u32>(HeapServiceExecStage::First));
-			const std::array arguments{m_heapAllocator.stateOffset(), floor};
+			m_memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PENDING_OFFSET, 1u);
+			const std::array arguments{management, floor};
 			beginHeapService(service, arguments);
 			requestYield();
 			return;
@@ -931,27 +931,19 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 
 void CPU::finishExecutionFloor() {
 	const u32 management = m_heapAllocator.managementOffset();
-	const u32 stageAddress = management + HEAP_SERVICE_EXEC_STAGE_OFFSET;
-	const auto stage = static_cast<HeapServiceExecStage>(m_memory.readRamRecordWord(stageAddress));
-	if (stage == HeapServiceExecStage::Idle) return;
+	const u32 pending = management + HEAP_SERVICE_EXEC_PENDING_OFFSET;
+	if (m_memory.readRamRecordWord(pending) == 0u) return;
+	m_memory.writeRamRecordWord(pending, 0u);
 	m_currentInstructionPc = m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
 	lastPc = m_activeThread->currentFrame->readControl(FrameField::Pc) - INSTRUCTION_BYTES;
 	m_lastExecutionDomainId = m_activeExecutionDomainId;
-	const u32 floor = m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET);
-	if (heapServiceResult() != 0u) {
-		m_heapAllocator.publishFloor(floor);
-		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Idle));
-		commitExecutionTransfer(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
-			static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET)));
-	} else if (stage == HeapServiceExecStage::First) {
-		m_luaHeap.collectRuntime();
-		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Retry));
-		const std::array arguments{m_heapAllocator.stateOffset(), floor};
-		beginHeapService(m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::SetFloor)], arguments);
-	} else {
-		m_memory.writeRamRecordWord(stageAddress, static_cast<u32>(HeapServiceExecStage::Idle));
+	if (heapServiceResult() == 0u) {
 		hardHalt();
+		return;
 	}
+	m_heapAllocator.publishFloor(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET));
+	commitExecutionTransfer(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
+		static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET)));
 }
 
 void CPU::commitExecutionTransfer(u32 functionAddress, MappedBusSignals busSignals) {

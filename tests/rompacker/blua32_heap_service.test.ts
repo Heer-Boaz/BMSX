@@ -35,7 +35,9 @@ const publicModules = BIOS_FUNCTION_EXPORTS.filter(({ path }) => !HEAP_SERVICE_M
 const loadAddress = 0x104;
 
 function compile(optLevel: 0 | 3 = 3, source = allocator, extraModules: readonly { path: string; source: string }[] = []) {
-	const modules = [...publicModules, ...serviceModules, ...[{ path: HEAP_SERVICE_MODULE_PATH, source }, ...extraModules].map(module => ({
+	const overridden = new Set(extraModules.map(({ path }) => path));
+	const modules = [...publicModules, ...serviceModules.filter(({ path }) => !overridden.has(path)),
+		...[{ path: HEAP_SERVICE_MODULE_PATH, source }, ...extraModules].map(module => ({
 		...module, chunk: parseLuaChunk(module.source, module.path),
 	}))];
 	const entrySource = 'return true';
@@ -64,7 +66,7 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	})));
 
 	const entryBindings = [
-		[HEAP_SERVICE_MODULE_PATH, 'bmsx_dlmalloc_set_floor'],
+		['kernel/heap_floor', 'reserve_floor'],
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
 		['kernel/vblank_irq', 'before_cart_irq'],
@@ -118,9 +120,10 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 });
 
 test('the ROM linker rejects a missing floor-control entry and a call out of its verified module', () => {
-	const missing = compile(3, allocator.replace('bmsx_dlmalloc_set_floor = bmsx_dlmalloc_set_floor', 'omitted = bmsx_dlmalloc_set_floor'));
+	const floor = serviceModules.find(({ path }) => path === 'kernel/heap_floor')!;
+	const missing = compile(3, allocator, [{ path: floor.path, source: floor.source.replace('reserve_floor = reserve_floor', 'omitted = reserve_floor') }]);
 	assert.throws(() => linkSystemBlua32Image(missing.object, missing.program.metadata, loadAddress, MAIN_RAM_SIZE,
-		BIOS_FUNCTION_EXPORTS), /bmsx_dlmalloc_set_floor.*not a linked static function/);
+		BIOS_FUNCTION_EXPORTS), /reserve_floor.*not a linked static function/);
 	const source = allocator.replace('module<const>', "module<const>\nlocal foreign<const> = require('test/foreign')")
 		.replace('return 1 -- C:548', 'return foreign.floor(floor)');
 	assert.notEqual(source, allocator);

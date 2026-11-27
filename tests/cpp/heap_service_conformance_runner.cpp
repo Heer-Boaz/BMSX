@@ -79,9 +79,9 @@ int main(int argc, char** argv) {
 					int cycles;
 					trace >> cycles;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
-					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_SERVICE_EXEC_STAGE_OFFSET);
+					const auto pending = memory.readRamRecordWord(cpu.heapAllocator().managementOffset() + HEAP_SERVICE_EXEC_PENDING_OFFSET);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << stage << ' ' << memory.ramBusEnd()
+						<< cpu.heapServiceActive() << ' ' << pending << ' ' << memory.ramBusEnd()
 						<< ' ' << static_cast<int>(cpu.activeCartridgeSlot()) << '\n';
 					break;
 				}

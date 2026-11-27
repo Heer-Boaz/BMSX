@@ -2177,8 +2177,10 @@ the service is running. Device time advances and interrupt requests remain
 pending; an interrupt handler does not enter during the transfer. The
 cartridge socket is selected when `EXEC` begins. The old bus limit holds
 until the new floor is admitted. If the first attempt refuses the new
-floor, the processor completes a full collection and calls the service
-once more before admitting or refusing the transfer.
+floor, the firmware completes a full collection and tries once more in the
+same operation before admitting or refusing the transfer. Collection uses
+ordinary processor cycles; the transfer does not carry a separate charge
+for collector work.
 
 A successful `EXEC` clears the active call stack, selects the function's image, and starts the static function with zero arguments. It clears HALT, retained-interrupt-event, blocked-write and hard-halt state. The new Status is 3 if the selected execution-domain ID is nonnegative, or 1 otherwise. `EXEC` replaces execution: it is neither an ordinary function call with a saved return point nor an exception return.
 

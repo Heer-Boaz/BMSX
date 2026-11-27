@@ -24,7 +24,7 @@ export const HEAP_SERVICE_THREAD_OFFSET = 0x800;
 export const HEAP_SERVICE_RESULT_OFFSET = 0x850;
 export const HEAP_SERVICE_EXEC_TARGET_OFFSET = 0x858;
 export const HEAP_SERVICE_EXEC_FLOOR_OFFSET = 0x85c;
-export const HEAP_SERVICE_EXEC_STAGE_OFFSET = 0x860;
+export const HEAP_SERVICE_EXEC_PENDING_OFFSET = 0x860;
 export const HEAP_SERVICE_EXEC_PC_OFFSET = 0x864;
 export const HEAP_SERVICE_EXEC_BUS_OFFSET = 0x868;
 export const HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
@@ -36,7 +36,6 @@ export const HEAP_SERVICE_VALUE_OFFSET = 0x1000;
 export const HEAP_SERVICE_FRAME_COUNT = 16;
 export const HEAP_SERVICE_VALUE_COUNT = 384;
 
-export const enum HeapServiceExecStage { Idle, First, Retry }
 
 // Pinned CLOSURE return frontier. The marked destination is the presence
 // word; all admission/retry locals live only in the guest activation.

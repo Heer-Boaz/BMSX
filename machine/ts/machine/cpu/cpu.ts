@@ -180,11 +180,11 @@ import {
 	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
 	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
-	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
+	HEAP_SERVICE_EXEC_PENDING_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceOperation,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedFrameField, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
@@ -1841,8 +1841,10 @@ export class CPU implements MappedPageInvalidator {
 				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET, this.currentInstructionPc);
 				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET, targetDomainId === null
 					? MAPPED_BUS_MASTER_CPU : CPU.executionBusSignalsForDomain(targetDomainId));
-				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.First);
-				this.startExecFloorService(floor);
+				this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_PENDING_OFFSET, 1);
+				this.execFloorArgs[0] = management;
+				this.execFloorArgs[1] = floor;
+				this.beginHeapService(this.systemImage.heapServiceFunctions[HeapServiceOperation.SetFloor], this.execFloorArgs);
 				this.requestYield();
 				return;
 			}
@@ -1854,37 +1856,23 @@ export class CPU implements MappedPageInvalidator {
 		this.commitExecutionTransfer(functionAddress);
 	}
 
-	private startExecFloorService(floor: number): void {
-		this.execFloorArgs[0] = this.heapAllocator.allocatorStateOffset();
-		this.execFloorArgs[1] = floor;
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.SetFloor], this.execFloorArgs);
-	}
-
 	private finishExecFloorService(): void {
 		const management = this.heapAllocator.managementOffset();
-		const stage = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET);
-		if (stage === HeapServiceExecStage.Idle) return;
+		const pending = management + HEAP_SERVICE_EXEC_PENDING_OFFSET;
+		if (this.memory.readRamRecordWord(pending) === 0) return;
+		this.memory.writeRamRecordWord(pending, 0);
 		this.currentInstructionPc = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_PC_OFFSET);
 		this.lastPc = this.activeThread.currentFrame!.pc - INSTRUCTION_BYTES;
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
-		const floor = this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET);
-		if (this.heapServiceResult() !== 0) {
-			this.heapAllocator.publishFloor(floor);
-			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Idle);
-			this.commitExecutionTransfer(
-				this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
-				this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET),
-			);
-		} else if (stage === HeapServiceExecStage.First) {
-			// A refused floor has not changed the arena. Keep the original
-			// collector retry at this safe boundary until it too is ported.
-			this.luaHeap.collectRuntime();
-			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Retry);
-			this.startExecFloorService(floor);
-		} else {
-			this.memory.writeRamRecordWord(management + HEAP_SERVICE_EXEC_STAGE_OFFSET, HeapServiceExecStage.Idle);
+		if (this.heapServiceResult() === 0) {
 			this.hardHalt();
+			return;
 		}
+		this.heapAllocator.publishFloor(this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_FLOOR_OFFSET));
+		this.commitExecutionTransfer(
+			this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_TARGET_OFFSET),
+			this.memory.readRamRecordWord(management + HEAP_SERVICE_EXEC_BUS_OFFSET),
+		);
 	}
 
 	private commitExecutionTransfer(functionAddress: number, busSignals = MAPPED_BUS_MASTER_CPU): void {
