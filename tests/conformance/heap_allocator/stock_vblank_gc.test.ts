@@ -7,7 +7,6 @@ import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { GC_LAST_EPOCH_WORK, GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD } from '../../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
-import { asClosure, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
@@ -28,7 +27,7 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const length = 0x120000;
-const source = `bss observation: u32[7]
+const source = `bss observation: u32[8]
 local irq_flags<const>: *word = ${IO_IRQ_FLAGS}
 local irq_ack<const>: *word = ${IO_IRQ_ACK}
 function irq()
@@ -36,11 +35,9 @@ function irq()
 	if pending ~= 0 then
 		observation[3] = pending
 		*irq_ack = pending
+		observation[7] = *irq_flags & pending
 		observation[2] = observation[2] + 1
 	end
-end
-function probe_host_result()
-	return { answer = 91 }
 end
 local run<const> = function()
 	local mask<const>: *word = ${IO_IRQ_MASK}
@@ -63,7 +60,7 @@ local run<const> = function()
 end
 assert(coroutine.resume(coroutine.create(run)))
 `;
-const enum Report { Command, Ready, Calls, Pending, Length, FinalByte, Collected }
+const enum Report { Command, Ready, Calls, Pending, Length, FinalByte, Collected, AfterAck }
 // Only the production-owned sample is observed; this test never sets GC policy RAM.
 const physicalSample = GC_LAST_EPOCH_WORK + 4;
 
@@ -94,7 +91,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const fingerprint = (first: number, length: number) => observe(`H ${first} ${first + length}`, hashBytes(memory.ramData(), first, length));
 	const observeState = () => {
 		observe(`M ${IO_IRQ_FLAGS}`, `${flags()} 0`);
-		fingerprint(reports - RAM_BASE, 24);
+		fingerprint(reports - RAM_BASE, 32);
 		fingerprint(control, physicalSample + 8);
 	};
 	function grant(cycles: number) {
@@ -116,12 +113,8 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const interruptedThread = cpu.activeThread.address;
 	assert.notEqual(interruptedThread, cpu.rootThread.address, 'the coroutine is not the system root context');
 	grant(0);
-	const callee = cpu.getGlobalByKey(cpu.stringPool.find('probe_host_result')!);
-	const result = runtime.callClosure(asClosure(callee, cpu.gc));
-	assert.equal(result.length, 1);
-	assert.equal(valueTag(result[0]), ValueTag.Table);
 	const completionCount = arena.managementOffset() + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE;
-	// Native starts at the same real host-call boundary without another injection API in the runner.
+	// Both cores start with the real coroutine stopped at a CPU grant boundary.
 	const initialState = join(output, 'before-collection.ts');
 	writeFileSync(initialState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	commands.length = expected.length = 0;
@@ -130,8 +123,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	observe(`O ${reports} 1`);
 	for (let i = 0; i < 128 && report(Report.Collected) === 0; ++i) grant(65536);
 	assert.equal(report(Report.Collected), 1);
-	assert.equal(memory.readRamRecordWord(completionCount), 1, 'the earlier collectgarbage published the actual host result');
-	fingerprint(completionCount, 12);
+	assert.equal(cpu.activeThread.address, interruptedThread);
 	const irq = memory.readRamRecordWord(CPU_IRQ_VECTOR_ADDRESS);
 	assert.notEqual(irq, 0, 'stock BIOS installs a System vector for cartridge interrupts');
 	const irqCode = readLE32(system, irq + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET);
@@ -173,7 +165,8 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	assert.ok(cpu.fixedInterruptActive(), 'ordinary BIOS instructions still own the IRQ');
 	assert.equal(memory.readRamRecordWord(arena.managementOffset() + GC_ROOT_BANKS_OFFSET + 4),
 		interruptedThread, 'firmware scans the suspended context, not its own IRQ frames');
-	assert.equal(memory.readRamRecordWord(completionCount), 0, 'the IRQ does not read the old host observation');
+	assert.equal(memory.readRamRecordWord(completionCount), 0, 'the IRQ requires no host completion roots');
+	fingerprint(completionCount, 12);
 	assert.equal(report(Report.Calls), 0, 'the cart has not seen the interrupt while the BIOS collects');
 	assert.equal(flags() & IRQ_VBLANK, IRQ_VBLANK, 'BIOS has not acknowledged the pending cart interrupt');
 	observeState();
@@ -195,15 +188,25 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 		// the same total as the preceding explicit collection.
 		assert.equal(report(Report.Calls), 1, `multiple masked edges coalesced to one cart callback (PC ${cpu.lastPc.toString(16)}, CAUSE ${cpu.readCauseWord().toString(16)})`);
 		assert.equal(report(Report.Pending), IRQ_VBLANK, 'the cart observed its own pending source before acknowledging');
+		assert.equal(report(Report.AfterAck), 0);
 		assert.equal(flags() & IRQ_VBLANK, 0);
 		assert.equal(report(Report.Length), length);
 		assert.equal(report(Report.FinalByte), 90, 'the GC preserved the live mutator String');
 		observeState();
 		const settledTick = frames.lastTickSequence;
-		for (let i = 0; i < 128 && report(Report.Calls) < 2; ++i) grant(32768);
+		for (let i = 0; i < 128 && frames.lastTickSequence === settledTick; ++i) {
+			grant(32768);
+			assert.equal(report(Report.Calls), 1, 'no second callback before a fresh VBlank');
+		}
 		assert.equal(frames.lastTickSequence, settledTick + 1);
-		assert.equal(report(Report.Calls), 2, 'only a fresh VBlank raises a second cartridge callback');
-		assert.equal(flags() & IRQ_VBLANK, 0);
+		assert.equal(flags() & IRQ_VBLANK, IRQ_VBLANK, 'the new physical edge latched before its handler ran');
+		observeState();
+		// Maintenance can extend past another edge. Read the acknowledgement
+		// back in the cartridge's handler rather than after a scheduler slice.
+		for (let i = 0; i < 16384 && report(Report.Calls) < 2; ++i) grant(137);
+		assert.equal(report(Report.Calls), 2);
+		assert.equal(report(Report.Pending), IRQ_VBLANK);
+		assert.equal(report(Report.AfterAck), 0, 'the second handler acknowledged the pending bit');
 		observeState();
 	}
 
