@@ -279,7 +279,7 @@ local raw_set<const> = function(target, key, value, supplied)
 	local tag<const>: *u8 = cell + layout.value_cell_tag_offset
 	local payload<const>: *u32 = cell
 	*argument = target
-	if *tag ~= table_tag or supplied == 0 then
+	if *tag ~= table_tag or supplied < 3 then
 		*fault = invalid_argument
 		return nil
 	end

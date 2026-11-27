@@ -1,4 +1,4 @@
-import { ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind, INSTRUCTION_BYTES } from '../../spec/blua32/instruction_format';
 import { BASE_CYCLES, OPCODE_COUNT, OpCode } from '../../spec/blua32/opcode';
 import { DECODED_PAGE_WORDS, DecodedDispatchOp, type Blua32ExecutionImage, type DecodedInstructionPage } from './execution_image';
 import { ValueTag } from './value';
@@ -138,6 +138,7 @@ emitters[OpCode.NOT] = (p, w, r) => r.writeEncoded(p.a[w], `${r.truthy(p.b[w])}?
 emitters[OpCode.K0] = (p, w, r) => r.writeInteger(p.a[w], '0');
 emitters[OpCode.K1] = (p, w, r) => r.writeInteger(p.a[w], '1');
 emitters[OpCode.KSMI] = (p, w, r) => r.writeInteger(p.a[w], `${p.sbx[w]}`);
+emitters[OpCode.ARGC] = (p, w, r) => r.writeInteger(p.a[w], 'F.argumentCount');
 emitters[OpCode.JMP] = () => '';
 emitters[OpCode.ITERN] = emitters[OpCode.JMP];
 emitters[OpCode.JMPIF] = emitters[OpCode.JMP];
@@ -152,7 +153,8 @@ emitters[OpCode.CLOSURE] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits || op === OpCode.JMP && a !== 0) return false;
+	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits || op === OpCode.JMP && a !== 0
+		|| op === OpCode.RET && c !== ReturnSource.Registers) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
 		|| compiledTableSupports(op)

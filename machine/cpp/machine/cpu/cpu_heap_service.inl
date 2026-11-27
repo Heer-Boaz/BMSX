@@ -90,7 +90,7 @@ CallFrame& CPU::prepareHeapServiceFrame(u32 functionAddress, int base, int suppl
 	frame.executionImage = &image;
 	frame.initializeControl({
 		functionAddress, function->entry.codeAddress, callSite.value_or(function->entry.codeAddress), frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID),
-		placement->varargBase, 0, result, placement->top(), 0u, base, static_cast<int>(placement->capacity),
+		placement->varargBase, supplied, result, placement->top(), 0u, base, static_cast<int>(placement->capacity),
 	});
 	frame.registers.clear(placement->formals.copied, placement->formals.padded);
 	thread.setStackTop(static_cast<int>(placement->stackEnd()));

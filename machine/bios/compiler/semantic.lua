@@ -1,7 +1,7 @@
 local syntax<const> = require('compiler/syntax')
 
 local semantic<const> = {}
-local numeric_word_moves<const> = { float_bits = true, float_from_bits = true }
+local intrinsic_arity<const> = { float_bits = 1, float_from_bits = 1, argument_count = 0, argument_suffix = 1 }
 
 local fail<const> = function(chunk_name, message, node)
 	error('[load:' .. chunk_name .. '] ' .. message .. ' at '
@@ -218,7 +218,7 @@ bind_path = function(state, expression)
 	fail(state.chunk_name, 'paths must start at a visible binding', expression)
 end
 
-bind_value = function(state, expression)
+bind_value = function(state, expression, terminal)
 	local kind<const> = expression.kind
 	if kind == syntax.identifier_expression
 		or kind == syntax.member_expression
@@ -236,13 +236,19 @@ bind_value = function(state, expression)
 		or kind == syntax.boolean_literal_expression then
 		return
 	end
+	if kind == syntax.vararg_expression then
+		if not state.function_expression.is_vararg then
+			fail(state.chunk_name, 'cannot use ... outside a variadic function', expression)
+		end
+		return
+	end
 	if kind == syntax.binary_expression then
 		bind_value(state, expression.left)
 		bind_value(state, expression.right)
 		return
 	end
 	if kind == syntax.call_expression then
-		expression.word_move = nil
+		expression.intrinsic = nil
 		bind_value(state, expression.callee)
 		local arguments<const> = expression.arguments
 		for index = 1, #arguments do bind_value(state, arguments[index]) end
@@ -250,10 +256,16 @@ bind_value = function(state, expression)
 		if expression.method_name == nil and callee.kind == syntax.member_expression then
 			local base<const> = callee.base
 			if base.kind == syntax.identifier_expression
-				and (base.global_key == 'blua32' or base.environment_key == 'blua32')
-				and numeric_word_moves[callee.identifier] then
-				if #arguments ~= 1 then fail(state.chunk_name, 'numeric word move expects one argument', expression) end
-				expression.word_move = callee.identifier
+				and (base.global_key == 'blua32' or base.environment_key == 'blua32') then
+				local operation<const> = callee.identifier
+				local arity<const> = intrinsic_arity[operation]
+				if arity ~= nil then
+					if operation == 'argument_suffix' and (not terminal or not expression.expands_results) then
+						fail(state.chunk_name, 'blua32.argument_suffix must be the sole expression of a return statement', expression)
+					end
+					if #arguments ~= arity then fail(state.chunk_name, 'blua32.' .. operation .. ' expects ' .. arity .. ' arguments', expression) end
+					expression.intrinsic = operation
+				end
 			end
 		end
 		return
@@ -316,8 +328,9 @@ end
 
 local bind_return_statement<const> = function(state, statement)
 	local expressions<const> = statement.expressions
+	local terminal<const> = #expressions == 1
 	for index = 1, #expressions do
-		bind_value(state, expressions[index])
+		bind_value(state, expressions[index], terminal)
 	end
 end
 

@@ -18,7 +18,8 @@ local intern_chars<const> = function()
 	local management<const> = *management_port
 	local owner<const>, address<const> = frames.internal.active_call_frame(management)
 	local frame<const>: *frame_record = address
-	local first<const>, count<const> = frame.vararg_base & frame_window_mask, frame.vararg_count & frame_window_mask
+	local first<const>, after<const> = frame.vararg_base & frame_window_mask, frame.stack_base & frame_window_mask
+	local count<const> = after > first and after - first or 0
 	local id<const>, fault<const> = strings.intern_value_window(management, owner, first, count, slices.chars_source, *cycles_port)
 	if fault ~= 0 then *fault_port = invalid_argument; return nil end
 	if id == 0 then *fault_port = out_of_memory; return nil end

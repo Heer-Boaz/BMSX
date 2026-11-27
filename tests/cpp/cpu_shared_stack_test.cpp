@@ -108,7 +108,7 @@ void slidingVarargCall(bool interpreted, bool open) {
 	auto* thread = cpu.activeThread();
 	require(thread->frameDepth() == 2, "vararg CALL enters before executing the body");
 	auto* child = thread->currentFrame;
-	require(child->stackBase() == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargCount)) == 2, "vararg working registers slide above original arguments");
+	require(child->stackBase() == 8 && static_cast<bmsx::i32>(child->readControl(bmsx::FrameField::VarargBase)) == 6 && child->varargCount() == 2 && child->readControl(bmsx::FrameField::ArgumentCount) == 3u, "vararg working registers slide above original arguments");
 	require(child->registers.get(0) == valueInteger(37) && thread->stack.get(5) == valueNil(), "fixed parameters move, original copies no longer retain roots");
 	cpu.collectHeap();
 	const auto snapshot = cpu.captureRuntimeState();

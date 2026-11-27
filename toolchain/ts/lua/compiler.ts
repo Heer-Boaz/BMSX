@@ -1,4 +1,4 @@
-import { ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BiosFunction, BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
@@ -853,7 +853,8 @@ class ProgramBuilder {
 		let returnsOneValue = true;
 		for (let instructionIndex = 0; instructionIndex < instructionSet.instructions.length; instructionIndex += 1) {
 			const instruction = instructionSet.instructions[instructionIndex];
-			if (instruction.op === OpCode.RET && instruction.b !== encodeFixedValueCount(1)) {
+			if (instruction.op === OpCode.RET
+				&& (instruction.c === ReturnSource.ExtraArguments || instruction.b !== encodeFixedValueCount(1))) {
 				returnsOneValue = false;
 				break;
 			}
@@ -4300,25 +4301,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private compileBlua32TraceStatement(expression: LuaCallExpression): boolean {
-		if (expression.method !== null
-			|| expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
+		const operation = this.resolveBlua32Operation(expression);
+		if (operation !== 'trace' && operation !== 'trace_sink') {
 			return false;
 		}
-		const callee = expression.callee as LuaMemberExpression;
-		if (callee.base.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
-		}
-		const reference = getResolvedIdentifierReference(
-			this.semantics,
-			callee.base as LuaIdentifierExpression,
-		);
-		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
-			return false;
-		}
-		if (callee.member.name !== 'trace' && callee.member.name !== 'trace_sink') {
-			return false;
-		}
-		const trace = callee.member.name === 'trace';
+		const trace = operation === 'trace';
 		const expectedMinimum = trace ? 2 : 3;
 		if (expression.arguments.length < expectedMinimum
 			|| (!trace && expression.arguments.length !== expectedMinimum)) {
@@ -4328,7 +4315,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		const channelExpression = expression.arguments[1];
 		if (channelExpression.kind !== LuaSyntaxKind.StringLiteralExpression) {
-			throw new Error(`${callee.member.name} channel must be a string literal.`);
+			throw new Error(`${operation} channel must be a string literal.`);
 		}
 		const channel = (channelExpression as LuaStringLiteralExpression).value;
 		const selection = this.program.traceStatements;
@@ -4374,6 +4361,16 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (expressions.length === 0) {
 			this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
+			return;
+		}
+		const expression = expressions[0];
+		if (expressions.length === 1 && expression.kind === LuaSyntaxKind.CallExpression && expression.expandsResults
+			&& expression !== this.moduleCompileInfo?.returnExpression
+			&& this.resolveBlua32Operation(expression) === 'argument_suffix') {
+			if (expression.arguments.length !== 1) throw new Error('blua32.argument_suffix expects 1 argument.');
+			const start = this.allocTemp();
+			this.compileExpressionInto(expression.arguments[0], start, 1);
+			this.emitABC(OpCode.RET, start, 0, ReturnSource.ExtraArguments);
 			return;
 		}
 		if (expressions.length === 1 && expressions[0].kind === LuaSyntaxKind.IdentifierExpression
@@ -5870,38 +5867,45 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 	}
 
-	private compileBlua32ValueCall(
-		expression: LuaCallExpression,
-		target: number,
-		resultCount: number,
-	): boolean {
+	private resolveBlua32Operation(expression: LuaCallExpression): string | undefined {
 		if (expression.method !== null
 			|| expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
-			return false;
+			return undefined;
 		}
-		const callee = expression.callee as LuaMemberExpression;
+		const callee = expression.callee;
 		if (callee.base.kind !== LuaSyntaxKind.IdentifierExpression) {
-			return false;
+			return undefined;
 		}
-		const reference = getResolvedIdentifierReference(
-			this.semantics,
-			callee.base as LuaIdentifierExpression,
-		);
-		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
-			return false;
+		const reference = getResolvedIdentifierReference(this.semantics, callee.base);
+		if (reference.kind === 'reserved_intrinsic' && reference.ref.name === 'blua32') {
+			return callee.member.name;
 		}
-		if (callee.member.name === 'trace' || callee.member.name === 'trace_sink') {
-			throw new Error(`blua32.${callee.member.name} is a statement-only compiler intrinsic.`);
+	}
+
+	private compileBlua32ValueCall(expression: LuaCallExpression, target: number, resultCount: number): boolean {
+		const operation = this.resolveBlua32Operation(expression);
+		if (operation === undefined) return false;
+		if (operation === 'trace' || operation === 'trace_sink') {
+			throw new Error(`blua32.${operation} is a statement-only compiler intrinsic.`);
 		}
-		if (callee.member.name === 'float_bits' || callee.member.name === 'float_from_bits') {
-			if (expression.arguments.length !== 1) throw new Error(`blua32.${callee.member.name} expects one argument.`);
-			this.compileExpressionInto(expression.arguments[0], target, 1);
-			this.emitABC(OpCode.MOV, target, target, callee.member.name === 'float_bits' ? ValueMoveKind.FloatBits : ValueMoveKind.FloatFromBits);
+		if (operation === 'argument_suffix') {
+			throw new Error('blua32.argument_suffix must be the sole expression of a return statement.');
+		}
+		if (operation === 'argument_count') {
+			if (expression.arguments.length !== 0) throw new Error('blua32.argument_count expects 0 arguments.');
+			this.emitABC(OpCode.ARGC, target, 0, 0);
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 			return true;
 		}
-		if (callee.member.name !== 'closure') {
-			throw new Error(`Unknown blua32 operation '${callee.member.name}'.`);
+		if (operation === 'float_bits' || operation === 'float_from_bits') {
+			if (expression.arguments.length !== 1) throw new Error(`blua32.${operation} expects one argument.`);
+			this.compileExpressionInto(expression.arguments[0], target, 1);
+			this.emitABC(OpCode.MOV, target, target, operation === 'float_bits' ? ValueMoveKind.FloatBits : ValueMoveKind.FloatFromBits);
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return true;
+		}
+		if (operation !== 'closure') {
+			throw new Error(`Unknown blua32 operation '${operation}'.`);
 		}
 		if (expression.arguments.length !== 1) {
 			throw new Error('blua32.closure expects one function-record address.');
@@ -5935,13 +5939,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		if (expression.kind === LuaSyntaxKind.VarargExpression) return true;
 		if (expression.kind !== LuaSyntaxKind.CallExpression) return false;
 		if (this.resolveRequireModuleBinding(expression)) return false;
-		if (expression.method === null && expression.callee.kind === LuaSyntaxKind.MemberExpression) {
-			const base = expression.callee.base;
-			if (base.kind === LuaSyntaxKind.IdentifierExpression) {
-				const reference = getResolvedIdentifierReference(this.semantics, base);
-				if (reference.kind === 'reserved_intrinsic' && reference.ref.name === 'blua32') return false;
-			}
-		}
+		if (this.resolveBlua32Operation(expression) !== undefined) return false;
 		if (this.program.optLevel >= 2) {
 			const protoIndex = this.resolveCallProtoIndex(expression);
 			if (protoIndex !== null && this.program.protoReturnsOne(protoIndex)) {

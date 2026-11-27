@@ -135,8 +135,11 @@ test('open VARARG work is charged before admitting a later compiled write', () =
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
 		const frame = cpu.rootThread.frameAtDepth(0);
 		memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargBase, 0);
-		memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargCount, 3);
-		frame.registers.setInteger(0, 11); frame.registers.setInteger(1, 22); frame.registers.setInteger(2, 33);
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.ArgumentCount, 3);
+		memory.writeRamRecordWord(frame.controlOffset + FrameField.StackBase, 3);
+		frame.growRegisterWindow(frame.stackCapacity);
+		const stack = frame.thread.stackRegisters;
+		stack.setInteger(0, 11); stack.setInteger(1, 22); stack.setInteger(2, 33);
 		cpu.runUntilDepth(0, 1000);
 	}
 	assert.ok(compiledEntries(machines[0].cpu) > 0);

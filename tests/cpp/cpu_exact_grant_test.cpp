@@ -924,7 +924,7 @@ void exactCallVarargSweep() {
 		if (nativeThread->frameDepth() == scalarThread->frameDepth()) {
 			for (u32 depth = 0; depth < nativeThread->frameDepth(); ++depth) {
 				const auto* a = nativeThread->frameAtDepth(depth); const auto* b = scalarThread->frameAtDepth(depth);
-				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::VarargCount));
+				equal &= a->readControl(bmsx::FrameField::Pc) == b->readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::Top)) && static_cast<bmsx::i32>(a->readControl(bmsx::FrameField::ArgumentCount)) == static_cast<bmsx::i32>(b->readControl(bmsx::FrameField::ArgumentCount));
 				for (int reg = 0; reg < 3; ++reg) {
 					const Value av = a->registers.get(reg), bv = b->registers.get(reg);
 					equal &= av == bv;

@@ -59,7 +59,7 @@ function linker.link(program)
 		function_record[isa.function_code_byte_count_word_index] = proto_code_byte_count
 		function_record[isa.function_num_params_word_index] = proto.parameter_count
 		function_record[isa.function_max_stack_word_index] = proto.max_stack
-		function_record[isa.function_flags_word_index] = 0
+		function_record[isa.function_flags_word_index] = proto.is_vararg and isa.function_vararg_flag or 0
 		function_record[isa.function_upvalue_table_address_word_index] = proto_upvalue_address
 		function_record[isa.function_upvalue_count_word_index] = #upvalue_records
 		function_record[isa.function_reserved_word_index] = 0

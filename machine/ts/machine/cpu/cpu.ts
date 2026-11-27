@@ -1,4 +1,4 @@
-import { ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
@@ -2467,7 +2467,7 @@ export class CPU implements MappedPageInvalidator {
 	/** Internal CPU entry. The host supplies a linked, fixed-stack firmware function. */
 	public beginHeapService(functionAddress: number, args: readonly number[]): boolean {
 		if (this.heapServiceActive()) return false;
-		const frame = this.prepareHeapServiceFrame(functionAddress, 0, 0, 0);
+		const frame = this.prepareHeapServiceFrame(functionAddress, 0, args.length, 0, 0);
 		const copied = Math.min(frame.top, args.length);
 		for (let index = 0; index < copied; ++index) frame.registers.setInteger(index, args[index]);
 		frame.registers.clear(frame.top - copied, copied);
@@ -3126,23 +3126,33 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private executeReturn(frame: CallFrame, a: number, b: number): boolean {
-		const registers = frame.registers;
-		const total = decodeValueCount(b, Math.max(frame.top - a, 0));
-		if (total !== 0 && a + total > registers.capacity()) {
-			const copied = this.returnSourceCount(frame, total);
-			if (copied !== 0 && a + copied > registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	private executeReturn(frame: CallFrame, a: number, b: number, mode = ReturnSource.Registers): boolean {
+		let source = frame.registers, first = a, total: number;
+		if (mode !== ReturnSource.Registers) {
+			if (a >= source.capacity() || source.getTag(a) !== ValueTag.Integer) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			const base = frame.varargBase, available = Math.max(frame.stackBase - base, 0);
+			const start = Math.min(source.getPayload(a), available);
+			const suffix = available - start;
+			first = base + start;
+			total = Math.min(decodeValueCount(b, suffix), suffix);
+			source = frame.thread.stackRegisters;
+		} else {
+			total = decodeValueCount(b, Math.max(frame.top - a, 0));
+			if (total !== 0 && a + total > source.capacity()) {
+				const copied = this.returnSourceCount(frame, total);
+				if (copied !== 0 && a + copied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			}
 		}
 		this.charge(this.closeUpvalues(frame));
 		const frameIndex = this.activeThread.frameDepth - 1;
 		if (frame.protectedContinuationIndex >= 0) {
-			this.finishProtectedCall(frame.protectedContinuationIndex, registers, a, total);
+			this.finishProtectedCall(frame.protectedContinuationIndex, source, first, total);
 			frame.thread.leaveFrame();
 			this.resumeFrameBank();
 			return false;
 		}
 		if (frame.returnToCompletionLatch) {
-			this.latchCompletionValues(registers, a, total);
+			this.latchCompletionValues(source, first, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
 			this.resumeFrameBank();
@@ -3151,13 +3161,13 @@ export class CPU implements MappedPageInvalidator {
 		if (frameIndex === 0 && this.activeThread.resumer !== 0) {
 			const finished = this.activeThread;
 			finished.status = ThreadStatus.Dead;
-			this.returnToResumer(registers, a, total);
+			this.returnToResumer(source, first, total);
 			finished.stackTop = 0;
 			frame.thread.leaveFrame();
 			return false;
 		}
 		if (frameIndex === 0) {
-			this.latchCompletionValues(registers, a, total);
+			this.latchCompletionValues(source, first, total);
 			this.charge(total);
 			frame.thread.leaveFrame();
 			this.resumeFrameBank();
@@ -3167,11 +3177,11 @@ export class CPU implements MappedPageInvalidator {
 		const destination = frame.returnBase, result = frame.returnCount;
 		const selected = selectedCallResultCount(result, total), end = destination + selected;
 		const copied = Math.min(total, selected), padded = selected - copied;
-		const source = frame.stackBase + a;
+		const sourceSlot = mode === ReturnSource.Registers ? frame.stackBase + a : first;
 		const top = (result & CALL_RESULT_EXTEND_TOP) === 0 || end > caller.top ? end : -1;
 		if (selected !== 0 && end > caller.stackCapacity
-			&& this.acquireRegisterWindow(caller, destination, source, copied, padded, top, end, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
-		this.placeRegisterWindow(caller, destination, source, copied, padded, top);
+			&& this.acquireRegisterWindow(caller, destination, sourceSlot, copied, padded, top, end, FRAME_RESIDENT_RETIRE_WINDOW_SOURCE)) return false;
+		this.placeRegisterWindow(caller, destination, sourceSlot, copied, padded, top);
 		frame.thread.leaveFrame();
 		this.resumeFrameBank();
 		return true;
@@ -3818,7 +3828,9 @@ export class CPU implements MappedPageInvalidator {
 					if (this.storeTableIndex(frame, registers.get(a), this.readRKValue(frame, page.b[pageOffset]), this.readRKValue(frame, page.c[pageOffset]))
 						&& this.pendingAllocation !== null) return ALLOCATION_PARKED;
 					return;
-				case OpCode.RESERVED_1D:
+				case OpCode.ARGC:
+					this.setRegisterIntegerFast(frame, registers, a, frame.argumentCount);
+					return;
 				case OpCode.RESERVED_1E:
 				case OpCode.RESERVED_10:
 					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -3995,7 +4007,7 @@ export class CPU implements MappedPageInvalidator {
 					if (service) {
 						const supplied = page.b[pageOffset] - 1;
 						const callee = this.prepareHeapServiceFrame(registers.getPayload(a), frame.stackBase + a + 1,
-							a, page.c[pageOffset], frame.pc - INSTRUCTION_BYTES);
+							supplied, a, page.c[pageOffset], frame.pc - INSTRUCTION_BYTES);
 						const padding = Math.max(0, callee.top - supplied);
 						callee.registers.clear(padding, callee.top - padding);
 						this.charge(padding);
@@ -4018,7 +4030,7 @@ export class CPU implements MappedPageInvalidator {
 							this.charge(count);
 						}
 						frame.thread.leaveFrame();
-					} else this.executeReturn(frame, a, page.b[pageOffset]);
+					} else this.executeReturn(frame, a, page.b[pageOffset], page.c[pageOffset]);
 					return;
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
@@ -4054,7 +4066,7 @@ export class CPU implements MappedPageInvalidator {
 			throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 		const copied = Math.min(supplied, directory.versions[lane + RomFunctionLane.NumParams]);
 		if (supplied !== 0 && first + supplied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const callee = this.prepareHeapServiceFrame(address, 0, base, result, this.currentInstructionPc);
+		const callee = this.prepareHeapServiceFrame(address, 0, supplied, base, result, this.currentInstructionPc);
 		callee.registers.copyRangeFrom(source, 0, first, copied, callee.top - copied);
 		callee.protectedContinuationIndex = protectedIndex;
 		this.charge(callee.top);
@@ -4062,7 +4074,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private beginFrameSpaceAcquisition(functionAddress: number, valueEnd: number, frameEnd: number, root: number, receiverFlags: number): void {
-		const firmware = this.prepareHeapServiceFrame(functionAddress, 0, 0, 0, this.currentInstructionPc);
+		const firmware = this.prepareHeapServiceFrame(functionAddress, 0, 4, 0, 0, this.currentInstructionPc);
 		firmware.registers.setInteger(0, this.activeThread.address);
 		firmware.registers.setInteger(1, valueEnd);
 		firmware.registers.setInteger(2, frameEnd);
@@ -4125,7 +4137,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private prepareHeapServiceFrame(functionAddress: number, stackBase: number, returnBase: number, returnCount: number, callSite?: number): CallFrame {
+	private prepareHeapServiceFrame(functionAddress: number, stackBase: number, supplied: number, returnBase: number, returnCount: number, callSite?: number): CallFrame {
 		const thread = this.heapService.thread;
 		const image = this.systemImage;
 		if ((functionAddress >>> 0) >= SYSTEM_ROM_SIZE || romFunctionVersionLane(image.romFunctions, functionAddress) < 0
@@ -4142,7 +4154,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(functionAddress, codeAddress, callSite ?? codeAddress, false, SYSTEM_EXECUTION_DOMAIN_ID,
-			stackBase + numParams, 0, returnBase, returnCount, numParams, 0, stackBase, capacity);
+			stackBase + numParams, supplied, returnBase, returnCount, numParams, 0, stackBase, capacity);
 		thread.stackTop = stackBase + capacity;
 		return frame;
 	}
@@ -4290,12 +4302,12 @@ export class CPU implements MappedPageInvalidator {
 			if (services !== null) {
 				const management = this.heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 				writeFrameEntryControl(this.memory, prepared, prototype, codeAddress, callSitePc!, false, domain,
-					varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
-				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, detached ? PREPARED_FRAME_DETACHED_SOURCE : first, supplied);
+					varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
+				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, detached ? PREPARED_FRAME_DETACHED_SOURCE : first, count);
 				this.memory.writeRamRecordWord(prepared + PreparedFrameField.RelocateFormals, +vararg);
 				let roots = closure;
 				if (detached) {
-					for (let slot = 0; slot < supplied; ++slot) {
+					for (let slot = 0; slot < count; ++slot) {
 						this.memory.writeRamRecordWord(prepared + PreparedFrameField.Payloads + 4 * slot, args.getPayload(first + slot));
 						this.memory.writeRamRecordByte(prepared + PreparedFrameField.Tags + slot, args.getTag(first + slot));
 					}
@@ -4315,7 +4327,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
-			domain, varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
+			domain, varargBase, count, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
 		const copied = Math.min(numParams, count);
 		if (fromSlots) {
 			const slots = fromFrame ? args.thread.stackRegisters : args;
@@ -4361,19 +4373,20 @@ export class CPU implements MappedPageInvalidator {
 		const image = this.executionImageForDomain(domain)!;
 		frame.executionImage = image;
 		frame.decodedPage = null;
-		const params = frame.top, copied = Math.min(params, memory.readRamRecordWord(prepared + PreparedFrameField.Supplied));
+		const params = frame.top, copied = Math.min(params, frame.argumentCount);
 		const sourceSlot = memory.readRamRecordWord(prepared + PreparedFrameField.SourceSlot);
 		if (sourceSlot === PREPARED_FRAME_DETACHED_SOURCE) {
 			const words = prepared + PreparedFrameField.Payloads, tags = prepared + PreparedFrameField.Tags;
 			for (let slot = 0; slot < copied; ++slot)
 				frame.registers.setEncoded(slot, memory.readRamRecordByte(tags + slot), memory.readRamRecordWord(words + 4 * slot));
 			frame.registers.clear(params - copied, copied);
-			for (let slot = 0; slot < frame.varargCount; ++slot) {
+			const base = frame.varargBase, extras = Math.max(frame.stackBase - base, 0);
+			for (let slot = 0; slot < extras; ++slot) {
 				const source = params + slot;
-				thread.stackRegisters.setEncoded(frame.varargBase + slot,
+				thread.stackRegisters.setEncoded(base + slot,
 					memory.readRamRecordByte(tags + source), memory.readRamRecordWord(words + 4 * source));
 			}
-			this.charge(params + frame.varargCount);
+			this.charge(params + extras);
 		} else if (firstResume) {
 			// The source stack is the still-live resumer, not the private
 			// activation nor a saved host view. Acquire its current backing.
@@ -4421,7 +4434,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const firmware = this.prepareHeapServiceFrame(services[HeapServiceOperation.StoreClosedUpvalue],
-			0, 0, DISCARD_CALL_RESULT, this.currentInstructionPc);
+			0, 2, 0, DISCARD_CALL_RESULT, this.currentInstructionPc);
 		firmware.registers.setInteger(0, cell);
 		firmware.registers.setEncoded(1, tag, word);
 		this.charge(firmware.top);

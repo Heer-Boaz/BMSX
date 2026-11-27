@@ -14,7 +14,7 @@ import {
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, OpCode,
 } from '../../spec/blua32/opcode';
 import { cop0FieldImplemented } from '../../spec/blua32/cop0';
-import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
@@ -35,7 +35,7 @@ export const COMPILED_VERSION_MAX_PAGES = 4;
 export const SCALAR_LOCAL_PC = new Uint8Array(OPCODE_COUNT);
 for (const opcode of [
 	OpCode.LOADK, OpCode.LOADKR, OpCode.LOADNIL, OpCode.KNIL, OpCode.KFALSE, OpCode.KTRUE,
-	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.NOT,
+	OpCode.K0, OpCode.K1, OpCode.KSMI, OpCode.ARGC, OpCode.NOT,
 	OpCode.ADD, OpCode.SUB, OpCode.MUL, OpCode.DIV, OpCode.FLOORDIV, OpCode.MOD, OpCode.POW, OpCode.UNM,
 	OpCode.BAND, OpCode.BOR, OpCode.BXOR, OpCode.BNOT, OpCode.SHL, OpCode.SHR,
 	OpCode.GETFIELD, OpCode.SELF,
@@ -288,6 +288,10 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		// uses a Bx selector wider than the ordinary register fields.
 		case OpCode.CALL: case OpCode.CLOSURE:
 			return 0;
+		case OpCode.RET:
+			// Register returns admit only the range consumed by the receiver.
+			// A suffix always reads its starting index from one register.
+			return c === ReturnSource.Registers ? 0 : a + 1;
 		case OpCode.ITERN:
 			return Math.max(a + 3, b + c);
 		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:

@@ -24,11 +24,12 @@ import { instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS }
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
-import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../../toolchain/ts/lua/compiler/optimizer';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
 import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -264,29 +265,58 @@ return 43, pick(2, 99, nil, 707, nil)
 	memory.writeMappedWord(report, 43);
 	trace.observe(`O ${report} 43`);
 
-	// The cartridge executes only the final select after this gate. The
-	// resident helper has changed the variadic wrapper's base, but not the
-	// count yet; capture while that frame and helper are both live.
-	let first = -1, word = -1;
-	for (let n = 0; n < 4096; ++n) {
-		if (grant(trace, 1) === RunResult.Halted) break;
-		if (!cpu.heapServiceActive()) continue;
+	// The final select must use its ordinary argument window through RET.
+	// Neither ARGC nor choosing a suffix rewrites the argument lanes.
+	const extras = [valueInteger(99), valueNil(), valueInteger(707), valueNil()];
+	function assertArguments() {
 		const frame = cpu.activeThread.currentFrame!;
-		if (frame.varargCount !== 4) continue;
-		if (first < 0) first = frame.varargBase;
-		else if (frame.varargBase === first + 1) {
-			word = frame.controlOffset + FrameField.VarargBase;
-			break;
-		}
+		assert.equal(frame.argumentCount, 5, 'one selector and four extra arguments, including both nils');
+		assert.equal(frame.varargCount, extras.length);
+		assert.deepEqual(extras.map((_, slot) => frame.thread.stackRegisters.get(frame.varargBase + slot)), extras);
+		return frame;
 	}
-	assert.ok(word >= 0, 'System helper paused after rewriting the base and before rewriting the count');
-	trace.observe(`H ${word} ${word + 8}`, hashBytes(memory.ramData(), word, 8));
+	let argcObserved = false, returnPc = -1, varargBase = -1;
+	for (let n = 0; n < 4096 && cpu.getFrameDepth() !== 0; ++n) {
+		const frame = cpu.activeThread.currentFrame!;
+		if (!cpu.heapServiceActive() && cpu.activeCartridgeSlot() === SYSTEM_EXECUTION_DOMAIN_ID && frame.argumentCount === 5) {
+			const next = decodeBlua32InstructionAtPc(system, SYSTEM_ROM_BASE, frame.pc);
+			if (next.op === OpCode.ARGC) {
+				varargBase = assertArguments().varargBase;
+				assert.equal(grant(trace, 1), RunResult.Yielded);
+				assert.equal(frame.registers.get(next.a), valueInteger(5));
+				argcObserved = true;
+				continue;
+			}
+			if (next.op === OpCode.RET && next.c !== 0) {
+				assert.ok(argcObserved);
+				assert.equal(assertArguments().varargBase, varargBase);
+				assert.equal(next.b, 0, 'select returns all remaining extra arguments');
+				assert.equal(frame.registers.get(next.a), valueInteger(1), 'the zero-based suffix starts at the second extra');
+				returnPc = frame.pc;
+				break;
+			}
+		}
+		if (grant(trace, 1) === RunResult.Halted) break;
+	}
+	assert.ok(returnPc >= 0, 'paused on the raw suffix RET before it consumed any arguments');
+	const cutFrame = assertArguments();
+	const raw = cutFrame.controlOffset + FrameField.VarargBase;
+	const words = cutFrame.thread.stackOffset() + 4 * varargBase;
+	const tags = cutFrame.thread.stackOffset() + 4 * cutFrame.thread.stackRegisters.capacity() + varargBase;
+	trace.observe('P', `${cpu.getFrameDepth()} ${returnPc}`);
+	for (const [first, end] of [[raw, raw + 8], [words, words + 4 * extras.length], [tags, tags + extras.length]]) {
+		trace.observe(`H ${first} ${end}`, hashBytes(memory.ramData(), first, end - first));
+	}
 	const tsState = join(dir, 'select-ts.state'), cppState = join(dir, 'select-native.state');
 	writeFileSync(tsState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	trace.observe(`x ${cppState}`);
 	const cut = trace.commands.length, count = trace.expected.length;
 
 	function finish(trace: Trace) {
+		assert.equal(cpu.heapServiceActive(), false);
+		const frame = assertArguments();
+		assert.equal(frame.pc, returnPc);
+		assert.equal(frame.varargBase, varargBase);
 		let result = RunResult.Yielded;
 		for (let n = 0; n < 4096 && result !== RunResult.Halted; ++n) result = grant(trace, 257);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);

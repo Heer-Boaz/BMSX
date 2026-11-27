@@ -1076,7 +1076,7 @@ void fixedWindowAndCaptureOperandsTrapBeforeEffects() {
 }
 
 void reservedEncodingsTrapBeforeEffects() {
-	for (const auto op : {OpCode::RESERVED_10, OpCode::RESERVED_1D, OpCode::RESERVED_1E}) {
+	for (const auto op : {OpCode::RESERVED_10, OpCode::RESERVED_1E}) {
 		auto image = returnImage();
 		image.text.resize(3 * INSTRUCTION_BYTES);
 		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 0, 0, 0);

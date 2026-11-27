@@ -87,6 +87,15 @@ function syntax_factory.nil_literal()
 	}
 end
 
+function syntax_factory.vararg_expression()
+	return {
+		kind = syntax.vararg_expression,
+		expands_results = true,
+		line = generated_line,
+		column = generated_column,
+	}
+end
+
 local literal_factory_by_type<const> = {
 	number = syntax_factory.number_literal,
 	string = syntax_factory.string_literal,
@@ -161,10 +170,11 @@ function syntax_factory.unary_expression(operator, operand)
 	}
 end
 
-function syntax_factory.function_expression(parameters, body)
+function syntax_factory.function_expression(parameters, body, is_vararg)
 	return {
 		kind = syntax.function_expression,
 		parameters = parameters,
+		is_vararg = is_vararg,
 		body = body,
 		line = generated_line,
 		column = generated_column,

@@ -33,7 +33,7 @@ const std::array<uint8_t, OPCODE_COUNT> BASE_CYCLES{
 	2u, // BXOR
 	2u, // SHL
 	2u, // SHR
-	2u, // reserved 1DH
+	2u, // ARGC
 	2u, // reserved 1EH
 	2u, // UNM
 	2u, // NOT
@@ -100,7 +100,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_BX{
 	0u, // BXOR
 	0u, // SHL
 	0u, // SHR
-	0u, // reserved 1DH
+	0u, // ARGC
 	0u, // reserved 1EH
 	0u, // UNM
 	0u, // NOT
@@ -167,7 +167,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_USES_DISP{
 	0u, // BXOR
 	0u, // SHL
 	0u, // SHR
-	0u, // reserved 1DH
+	0u, // ARGC
 	0u, // reserved 1EH
 	0u, // UNM
 	0u, // NOT
@@ -234,7 +234,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_RK_OPERANDS{
 	3u, // BXOR
 	3u, // SHL
 	3u, // SHR
-	0u, // reserved 1DH
+	0u, // ARGC
 	0u, // reserved 1EH
 	0u, // UNM
 	0u, // NOT
@@ -301,7 +301,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_SCALAR_REGISTER_READS{
 	6u, // BXOR
 	6u, // SHL
 	6u, // SHR
-	0u, // reserved 1DH
+	0u, // ARGC
 	0u, // reserved 1EH
 	2u, // UNM
 	2u, // NOT
@@ -368,7 +368,7 @@ const std::array<uint8_t, OPCODE_COUNT> OPCODE_WRITES_REGISTER_A{
 	1u, // BXOR
 	1u, // SHL
 	1u, // SHR
-	0u, // reserved 1DH
+	1u, // ARGC
 	0u, // reserved 1EH
 	1u, // UNM
 	1u, // NOT

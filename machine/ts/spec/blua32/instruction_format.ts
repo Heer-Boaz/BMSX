@@ -1,4 +1,5 @@
 export const enum ValueMoveKind { Copy = 0, FloatBits = 1, FloatFromBits = 2 }
+export const enum ReturnSource { Registers = 0, ExtraArguments = 1 }
 
 export const INSTRUCTION_BYTES = 4;
 

@@ -5,8 +5,8 @@ import { createCartlibCaseRom } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 
-// A ceiling for the small test-ROM boot or guest call, not an execution target.
-const firmwareCycleLimit = 500_000;
+// The shared ROM boot admits every case closure before its first guest call.
+const firmwareCycleLimit = 1_500_000;
 
 const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return', values: [] },
@@ -30,6 +30,10 @@ const cases: { source: string; values: Value[] }[] = [
 	{ source: 'return 1, select(2, 7)', values: [valueInteger(1)] },
 	{ source: 'return spread(1, select(2, 7))', values: [valueInteger(1)] },
 	{ source: 'return (select(2, 7))', values: [valueNil()] },
+	{ source: 'local arity = function(first) return blua32.argument_count() end; local suffix = function(start, ...) return blua32.argument_suffix(start) end; return arity(nil, 7), suffix(1, 12, nil, 99)',
+		values: [valueInteger(2), valueNil(), valueInteger(99)] },
+	{ source: 'return (function(...) return (...), spread(8, ...) end)(nil, 7, false)',
+		values: [valueNil(), valueInteger(8), valueNil(), valueInteger(7), valueBool(false)] },
 	{ source: 'return pcall(tuple)', values: [valueBool(true), valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()] },
 	{ source: 'local t = table.pack(mark(1), spread(mark(2), mark(3))); return trace, t.n, t[1], t[2], t[3], t[4]', values: [valueInteger(123), valueInteger(4), valueInteger(1), valueInteger(2), valueInteger(3), valueInteger(-3)] },
 	{ source: 'return 999, wide()', values: [valueInteger(999), ...Array.from({ length: 260 }, (_, index) => valueInteger(index))] },
@@ -74,7 +78,7 @@ test('firmware O3: retained tuple forwarding allocates no guest wrappers', () =>
 	// The warmed probe collects the guest heap between calls.
 	const closure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('advance')!), cpu.gc);
 	const globals = cpu.globalSlotCount;
-	const profile = profileWarmGuestKernel(cpu, closure, 8, firmwareCycleLimit);
+	const profile = profileWarmGuestKernel(cpu, closure, 8, 500_000);
 	assert.equal(profile.reservations, 0, 'forwarding an open tuple must not reserve guest heap storage');
 	assert.equal(cpu.globalSlotCount, globals);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(7), valueNil(), valueBool(false), valueInteger(9), valueNil()]);

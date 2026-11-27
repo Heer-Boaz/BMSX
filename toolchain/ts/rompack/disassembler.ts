@@ -1,6 +1,6 @@
 import { decodeBlua32InstructionAtPc, type DecodedInstruction } from './blua32_instruction_decode';
 import { extractSourceRangeText } from './source_text';
-import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
+import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, ReturnSource, readInstructionWord, signExtend } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../machine/ts/spec/blua32/opcode';
 import { OPCODE_NAMES } from '../lua/opcode_metadata';
 import { formatInteger } from '../../../machine/ts/common/number_format';
@@ -312,11 +312,16 @@ const buildInstructionOperands = (
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'upvalue', `u${b}`)];
 		case OpCode.SETUP:
 			return [registerOperand('a', 'src', a), plainOperand('b', 'upvalue', `u${b}`)];
+		case OpCode.ARGC:
+			return [registerOperand('a', 'dst', a)];
 		case OpCode.VARARG:
 			return [registerOperand('a', 'dst', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.CALL:
 			return [registerOperand('a', 'callee', a), plainOperand('b', 'args', formatValueCount(b)), plainOperand('c', 'returns', formatValueCount(c))];
 		case OpCode.RET:
+			if (c === ReturnSource.ExtraArguments) {
+				return [registerOperand('a', 'argument index', a), plainOperand('b', 'count', formatValueCount(b)), plainOperand('c', 'source', 'extra arguments')];
+			}
 			return [registerOperand('a', 'base', a), plainOperand('b', 'count', formatValueCount(b))];
 		case OpCode.LOAD_MEM_D:
 			return [registerOperand('a', 'dst', a), registerOperand('b', 'base', b), plainOperand('c', 'kind', c.toString()), plainOperand('disp', 'disp', `${decoded.disp << 2}`)];
@@ -511,12 +516,14 @@ const formatInstruction = (
 			return `GETUP r${a}, u${b}`;
 		case OpCode.SETUP:
 			return `SETUP r${a}, u${b}`;
+		case OpCode.ARGC:
+			return `ARGC r${a}`;
 		case OpCode.VARARG:
 			return `VARARG r${a}, ${formatValueCount(b)}`;
 		case OpCode.CALL:
 			return `CALL r${a}, ${formatValueCount(b)}, ${formatValueCount(c)}`;
 		case OpCode.RET:
-			return `RET r${a}, ${formatValueCount(b)}`;
+			return `RET r${a}, ${formatValueCount(b)}${c === ReturnSource.ExtraArguments ? ', extra arguments' : ''}`;
 		case OpCode.MFC0:
 			return `MFC0 r${a}, c${b}`;
 		case OpCode.MTC0:

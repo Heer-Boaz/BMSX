@@ -1,4 +1,4 @@
-import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import { cloneSourceRange } from '../source_range';
@@ -83,6 +83,7 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 			case OpCode.GETGL:
 			case OpCode.CLOSURE:
 			case OpCode.GETUP:
+			case OpCode.ARGC:
 			case OpCode.MFC0:
 				updateMax(instruction.a);
 				if (instruction.op === OpCode.CLOSURE && instruction.closureAddressRegister) {
@@ -179,14 +180,12 @@ export const computeMaxRegister = (instructions: Instruction[]): number => {
 				updateMax(lastRegisterInRange(instruction.a, decodeValueCount(instruction.b, 0)));
 				break;
 			case OpCode.CALL:
-			case OpCode.RET:
 				updateMax(instruction.a);
-				if (instruction.b > 0) {
-					updateMax(instruction.a + decodeValueCount(instruction.b, 0) - (instruction.op === OpCode.CALL ? 0 : 1));
-				}
-				if (instruction.op === OpCode.CALL && instruction.c > 0) {
-					updateMax(instruction.a + decodeValueCount(instruction.c, 0) - 1);
-				}
+				updateMax(instruction.a + Math.max(decodeValueCount(instruction.b, 0), decodeValueCount(instruction.c, 0) - 1));
+				break;
+			case OpCode.RET:
+				updateMax(instruction.c === ReturnSource.ExtraArguments
+					? instruction.a : lastRegisterInRange(instruction.a, decodeValueCount(instruction.b, 0)));
 				break;
 			case OpCode.STORE_MEM:
 				updateMax(instruction.a);
@@ -221,6 +220,7 @@ export const isPureInstruction = (instruction: Instruction): boolean => {
 		case OpCode.NOT:
 		case OpCode.CLOSURE:
 		case OpCode.GETUP:
+		case OpCode.ARGC:
 		case OpCode.VARARG:
 			return true;
 		case OpCode.CALL:

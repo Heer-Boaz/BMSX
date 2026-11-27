@@ -262,7 +262,11 @@ DISPATCH_LABEL(SETT) {
 	DISPATCH_NEXT();
 }
 
-DISPATCH_LABEL(RESERVED_1D)
+DISPATCH_LABEL(ARGC) {
+	SET_REGISTER_FAST(decoded->a, valueInteger(static_cast<i32>(FRAME.readControl(FrameField::ArgumentCount))));
+	DISPATCH_NEXT();
+}
+
 DISPATCH_LABEL(RESERVED_1E)
 DISPATCH_LABEL(RESERVED_10) {
 	PUBLISH_SCALAR_FRONTIER();
@@ -535,11 +539,13 @@ DISPATCH_LABEL(CALL) {
 
 DISPATCH_LABEL(RET) {
 	PUBLISH_SCALAR_FRONTIER();
+	const bool fromArguments = decoded->c != static_cast<u8>(ReturnSource::Registers);
 	if constexpr (HeapService) {
-		executeHeapServiceReturn(FRAME, decoded->a, decodeValueCount(decoded->b, -1));
+		// The fixed bank admits only non-variadic activations.
+		executeHeapServiceReturn(FRAME, fromArguments ? 0 : decoded->a, fromArguments ? 0 : decodeValueCount(decoded->b, -1));
 		DISPATCH_REBIND_FRAME();
 	}
-	if (executeReturn(FRAME, decoded->a, decodeValueCount(decoded->b, -1))) {
+	if (executeReturn(FRAME, decoded->a, decodeValueCount(decoded->b, -1), fromArguments)) {
 		DISPATCH_REBIND_FRAME();
 	}
 	DISPATCH_CONTINUE();

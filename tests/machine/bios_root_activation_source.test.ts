@@ -52,7 +52,7 @@ test('authored System root uses the physical Function, Frame and Thread fields',
 		}],
 		['initial_frame', FRAME_CONTROL_BYTES, {
 			fn: FrameField.Function, call_site: FrameField.CallSite, open_head: FrameField.OpenHead, protected: FrameField.Protected, flags: FrameField.Flags, pc: FrameField.Pc,
-			vararg_base: FrameField.VarargBase, vararg_count: FrameField.VarargCount, return_base: FrameField.ReturnBase, return_count: FrameField.ReturnCount, top: FrameField.Top,
+			vararg_base: FrameField.VarargBase, argument_count: FrameField.ArgumentCount, return_base: FrameField.ReturnBase, return_count: FrameField.ReturnCount, top: FrameField.Top,
 			closure: FrameField.Closure, stack_base: FrameField.StackBase, stack_capacity: FrameField.StackCapacity,
 		}],
 		['activation_thread', ThreadField.ProtectedBlock, {

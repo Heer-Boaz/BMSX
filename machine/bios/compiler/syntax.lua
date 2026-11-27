@@ -20,6 +20,7 @@ local syntax<const> = {
 	break_statement = 19,
 	call_statement = 20,
 	numeric_for_statement = 21,
+	vararg_expression = 22,
 
 	unary_negate = 1,
 	unary_string_id = 2,

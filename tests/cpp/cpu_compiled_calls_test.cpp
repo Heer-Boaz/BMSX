@@ -57,7 +57,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	for (size_t index = 0; index < first.frameDepth(); ++index, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& a = *firstFrame; const auto& b = *secondFrame;
 		require(a.readControl(bmsx::FrameField::Pc) == b.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::Top)) && a.readControl(FrameField::Function) == b.readControl(FrameField::Function) && a.stackCapacity() == b.stackCapacity()
-			&& a.stackBase() == b.stackBase() && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargCount))
+			&& a.stackBase() == b.stackBase() && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ArgumentCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ArgumentCount))
 			&& static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnBase)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnBase)) && static_cast<bmsx::i32>(a.readControl(bmsx::FrameField::ReturnCount)) == static_cast<bmsx::i32>(b.readControl(bmsx::FrameField::ReturnCount)) && a.readControl(FrameField::CallSite) == b.readControl(FrameField::CallSite),
 			"both executions retain the same caller, callee and result ranges after stack growth");
 		for (int reg = 0; reg < a.stackCapacity(); ++reg) {
@@ -517,7 +517,7 @@ void nativeCallRouting(int params, int args, bool vararg, bool open, bool coldTa
 		&& spare->readControl(FrameField::CallSite) == machine.rom.textAddress + 3 * INSTRUCTION_BYTES
 		&& static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::ReturnBase)) == base && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::ReturnCount)) == 2 && !spare->hasControlFlag(FRAME_COMPLETION),
 		"native CALL publishes exact caller continuation and callee result obligations");
-	require(static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargBase)) == base + 1 + params && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargCount)) == count
+	require(static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::VarargBase)) == base + 1 + params && spare->varargCount() == count && spare->readControl(FrameField::ArgumentCount) == static_cast<u32>(args)
 		&& spare->stackBase() == calleeBase && static_cast<bmsx::i32>(spare->readControl(bmsx::FrameField::Top)) == params
 		&& spare->stackCapacity() == capacity,
 		"bound record fields govern shared argument and working windows, including formal parameters beyond maxStack");
@@ -1275,7 +1275,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 		const int count = vararg ? std::max(args - params, 0) : 0;
 		const int capacity = std::max({maxStack, params, 1});
 		require(thread->frameDepth() == 2 && callee->readControl(bmsx::FrameField::Pc) == machine->rom.textAddress + 5 * INSTRUCTION_BYTES
-			&& callee->stackCapacity() == capacity && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargCount)) == count,
+			&& callee->stackCapacity() == capacity && static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::Top)) == params && callee->varargCount() == count && callee->readControl(FrameField::ArgumentCount) == static_cast<u32>(args),
 			"CALL exposes exact fixed-parameter and reserved-capacity counts at its exhausted grant");
 		const std::array<Value, 5> payloads{valueFloatBits(0x80000000), valueFloatBits(0xffa12345), valueBool(true),
 			valueString(machine->cpu.stringPool().intern("frame-argument")), valueInteger(99)};
@@ -1303,7 +1303,7 @@ void callFrameInitialization(int params, int maxStack, int args, bool vararg, bo
 			"raw argument calls retain the same frame sizing and completion owner");
 		for (int index = 0; index < params; ++index) require(callee->registers.get(index) == (index < args ? payloads[index] : valueNil()),
 			"raw argument admission preserves supplied bits and initializes only the missing formal tail");
-		for (int index = 0; index < static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargCount)); ++index) require(thread->stack.get(static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargBase)) + index) == payloads[params + index],
+		for (int index = 0; index < callee->varargCount(); ++index) require(thread->stack.get(static_cast<bmsx::i32>(callee->readControl(bmsx::FrameField::VarargBase)) + index) == payloads[params + index],
 			"raw argument varargs retain their separate ordered window");
 	}
 	requireParity(native, scalar);

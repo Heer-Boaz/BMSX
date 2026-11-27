@@ -34,12 +34,13 @@ inline void enterNativeActivation(NativeCpuRunState& run, const NativeBlockExitS
 void NativeCpuRunState::writePendingFrame(CallFrame& frame, u32 pc, i32 top) const noexcept {
 	const auto& site = *frame.pendingNativeCall;
 	const auto& call = site.operands.call;
+	const int supplied = call.supplied < 0 ? std::max(frame.pendingNativeCallerTop - call.callee - 1, 0) : call.supplied;
 	const auto base = frame.pendingNativeStackBase;
 	const auto varargBase = frame.pendingNativeVarargBase;
 	const auto closure = frame.pendingNativeClosure;
 	const auto prototype = cpu->memory().readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 	const FrameEntryControl entry{prototype, pc, site.lastPc, frameBank,
-		varargBase, std::max(base - varargBase, 0), CallResultPlacement::call(call.callee, call.requested),
+		varargBase, supplied, CallResultPlacement::call(call.callee, call.requested),
 		top, closure, base, static_cast<i32>(frame.registers.size())};
 	entry.writeWords([&frame](FrameField field, u32 word) { frame.writeAdmittedControl(field, word); });
 }
@@ -267,8 +268,8 @@ void* CPU::tryCallNativeFixedFrame(NativeCpuRunState* run, const NativeBlockExit
 int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested) noexcept {
 	auto& frame = *state->frame;
 	const bool pending = frame.pendingNativeCall != nullptr;
-	const int available = pending ? std::max(state->stackBase - frame.pendingNativeVarargBase, 0)
-		: frame.readAdmittedWindow(FrameField::VarargCount);
+	const int varargBase = pending ? frame.pendingNativeVarargBase : frame.readAdmittedWindow(FrameField::VarargBase);
+	const int available = std::max(state->stackBase - varargBase, 0);
 	const bool open = requested < 0;
 	const auto placement = ValuePlacement::fit(available, open ? available : requested);
 	const int count = placement.count();
@@ -277,8 +278,7 @@ int CPU::placeNativeVarargs(NativeBlockRunState* state, int first, int requested
 		: frame.readAdmittedWindow(FrameField::StackCapacity);
 	if (count != 0 && top > capacity) return -1;
 
-	const int source = placement.copied == 0 ? 0
-		: pending ? frame.pendingNativeVarargBase : frame.readAdmittedWindow(FrameField::VarargBase);
+	const int source = placement.copied == 0 ? 0 : varargBase;
 	// The caller has not published cached registers below the destination.
 	// Only a source wholly below this frame is safe to read in place.
 	if (placement.copied != 0 && source + placement.copied > state->stackBase)

@@ -1,5 +1,5 @@
 local load_compiler<const> = require('compiler/load')
-local vm_pcall<const> = __bmsx_pcall
+local call_protected<const> = __bmsx_pcall
 
 local compiler_api<const> = {
 	compile_syntax = load_compiler.compile_chunk,
@@ -7,7 +7,7 @@ local compiler_api<const> = {
 }
 
 function compiler_api.load(source, chunk_name, mode, environment, external_scope)
-	local ok<const>, result<const> = vm_pcall(
+	local ok<const>, result<const> = call_protected(
 		load_compiler.compile,
 		source,
 		chunk_name,

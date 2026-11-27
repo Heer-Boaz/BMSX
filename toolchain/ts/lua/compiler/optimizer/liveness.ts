@@ -1,3 +1,4 @@
+import { ReturnSource } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import { buildBasicBlocks, buildBlockGraph, type Block } from '../control_flow';
 import type { UpvalueDesc } from '../program';
@@ -159,7 +160,8 @@ export function visitInstructionUses<T>(
 			break;
 		}
 		case OpCode.RET: {
-			const count = decodeValueCount(instruction.b, maxRegister - instruction.a + 1);
+			const count = instruction.c === ReturnSource.ExtraArguments
+				? 1 : decodeValueCount(instruction.b, maxRegister - instruction.a + 1);
 			visitRegisterRange(state, visitor, instruction.a, count);
 			break;
 		}
@@ -209,6 +211,7 @@ export function visitInstructionDefs<T>(
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
 		case OpCode.LOAD_MEM_D:
+		case OpCode.ARGC:
 		case OpCode.MFC0:
 			visitRegister(state, visitor, instruction.a);
 			break;

@@ -44,6 +44,7 @@ local token<const> = {
 	keyword_for = 43,
 	hash = 44,
 	colon = 45,
+	ellipsis = 46,
 }
 
 token.keyword_by_text = {
@@ -110,6 +111,7 @@ token.name = {
 	[token.greater_equal] = '>=',
 	[token.comma] = ',',
 	[token.dot] = '.',
+	[token.ellipsis] = '...',
 	[token.colon] = ':',
 	[token.semicolon] = ';',
 	[token.string] = 'string',

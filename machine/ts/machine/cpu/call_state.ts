@@ -16,7 +16,7 @@ export const enum ProtectedCallKind {
 	XPCallHandler,
 }
 
-export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
+export const enum FrameField { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 }
 export type FrameExecutionTarget = { domain: ExecutionDomainId; functionAddress: number; pc: number };
 export const FRAME_CONTROL_BYTES = 56;
 // Entry: canonical frame control followed by its physical stack source.
@@ -60,7 +60,7 @@ function frameBankWord(domain: ExecutionDomainId): number {
 }
 
 export function writeFrameEntryControl(memory: Memory, offset: number, fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
-	varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
+	varargBase: number, argumentCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
 	const ram = memory.ramData();
 	writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 	writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
@@ -71,7 +71,7 @@ export function writeFrameEntryControl(memory: Memory, offset: number, fn: numbe
 	writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
 	writeLE32(ram, (offset + FrameField.Pc) & RAM_RECORD_WORD_MASK, pc);
 	writeLE32(ram, (offset + FrameField.VarargBase) & RAM_RECORD_WORD_MASK, varargBase);
-	writeLE32(ram, (offset + FrameField.VarargCount) & RAM_RECORD_WORD_MASK, varargCount);
+	writeLE32(ram, (offset + FrameField.ArgumentCount) & RAM_RECORD_WORD_MASK, argumentCount);
 	writeLE32(ram, (offset + FrameField.ReturnBase) & RAM_RECORD_WORD_MASK, returnBase);
 	writeLE32(ram, (offset + FrameField.ReturnCount) & RAM_RECORD_WORD_MASK, returnCount & ~CALL_RESULT_EXTEND_TOP);
 	writeLE32(ram, (offset + FrameField.Top) & RAM_RECORD_WORD_MASK, top);
@@ -116,8 +116,8 @@ export class CallFrame {
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
-		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
-		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, varargCount,
+		varargBase: number, argumentCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
+		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, argumentCount,
 			returnBase, returnCount, top, closureAddress, base, capacity, protectedIndex);
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
 	}
@@ -143,7 +143,8 @@ export class CallFrame {
 		return this.controlMemory.readRamRecordWord(this.closureAddress + CLOSURE_CAPTURE_WORDS + index * 4);
 	}
 	public get varargBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargBase) & FRAME_WINDOW_MASK; }
-	public get varargCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.VarargCount) & FRAME_WINDOW_MASK; }
+	public get argumentCount(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ArgumentCount); }
+	public get varargCount(): number { return Math.max(this.stackBase - this.varargBase, 0); }
 	public get returnBase(): number { return this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnBase) & FRAME_WINDOW_MASK; }
 	public get returnCount(): number {
 		const count = this.controlMemory.readRamRecordWord(this.controlOffset + FrameField.ReturnCount) & FRAME_WINDOW_MASK;

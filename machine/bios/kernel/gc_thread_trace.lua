@@ -66,7 +66,7 @@ struct frame_record
 	open_head: addr -- F:19 G:33
 	before_vararg: u32[3]
 	vararg_base: u32
-	vararg_count: u32 -- F:19 G:33
+	argument_count: u32 -- F:19 G:33
 	return_base: u32 -- F:19 G:33
 	return_count: u32 -- F:19 G:33
 	top: u32 -- F:19 G:33

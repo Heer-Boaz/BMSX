@@ -1,4 +1,4 @@
-import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { evaluateNumberBinary, numberConstantValue } from '../../number';
 import { LuaBinaryOperator } from '../../syntax/ast';
 // start repeated-sequence-acceptable -- SSA optimizer keeps instruction rewrites inline for compile-time throughput and readable opcode cases.
@@ -742,6 +742,9 @@ const collectUsesForSsa = (instruction: Instruction): UseOperand[] => {
 		case OpCode.SETUP:
 		case OpCode.MTC0:
 			add('a', instruction.a, null, false);
+			break;
+		case OpCode.RET:
+			if (instruction.c === ReturnSource.ExtraArguments) add('a', instruction.a, null, false);
 			break;
 		case OpCode.LOAD_MEM:
 			add('b', instruction.b, null, false);

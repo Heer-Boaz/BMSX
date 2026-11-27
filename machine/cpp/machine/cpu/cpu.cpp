@@ -3005,7 +3005,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
 		frameBankWord(image->executionDomainId),
-		placement.varargBase, placement.varargCount, result, placement.top(),
+		placement.varargBase, argCount, result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
 	};
 	auto& thread = *m_activeThread;
@@ -3094,14 +3094,14 @@ void CPU::enterPreparedFrame() {
 		};
 		for (int slot = 0; slot < copied; ++slot) frame.registers.set(slot, source(slot));
 		frame.registers.clear(copied, params - copied);
-		const int extras = frame.readWindow(FrameField::VarargCount), base = frame.readWindow(FrameField::VarargBase);
+		const int extras = frame.varargCount(), base = frame.readWindow(FrameField::VarargBase);
 		for (int slot = 0; slot < extras; ++slot) thread.stack.set(base + slot, source(params + slot));
 		instructionBudgetRemaining -= params + extras;
 	} else if (firstResume) {
 		// The source is the physical resumer's stack, not a saved host view.
 		const auto& source = bindThread(thread.resumer()).stack;
 		placeForeignFormals(frame, source, static_cast<int>(sourceSlot), copied, params - copied,
-			frame.readWindow(FrameField::VarargBase), frame.readWindow(FrameField::VarargCount));
+			frame.readWindow(FrameField::VarargBase), frame.varargCount());
 	} else {
 		placeSharedFormals(frame, static_cast<int>(sourceSlot), copied, params - copied,
 			m_memory.readRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals)) != 0);
@@ -3129,7 +3129,7 @@ CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
 		frameBankWord(image->executionDomainId) | flags,
-		placement.varargBase, placement.varargCount, result, placement.top(),
+		placement.varargBase, static_cast<int>(argCount), result, placement.top(),
 		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
 	};
 	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {

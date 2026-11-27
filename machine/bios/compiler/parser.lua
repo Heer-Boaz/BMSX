@@ -171,13 +171,23 @@ local parse_primary_expression<const> = function(state)
 		lexer.next(state)
 		return expression
 	end
+	if kind == token.ellipsis then
+		local expression<const> = {
+			kind = syntax.vararg_expression,
+			expands_results = true,
+			line = state.token_line,
+			column = state.token_column,
+		}
+		lexer.next(state)
+		return expression
+	end
 	if kind == token.keyword_function then
 		return parse_function_expression(state)
 	end
 	if match(state, token.left_parenthesis) then
 		local expression<const> = parse_expression(state)
 		expect(state, token.right_parenthesis)
-		if expression.kind == syntax.call_expression then
+		if expression.kind == syntax.call_expression or expression.kind == syntax.vararg_expression then
 			expression.expands_results = false
 		end
 		return expression
@@ -555,8 +565,13 @@ parse_function_expression = function(state)
 	expect(state, token.keyword_function)
 	expect(state, token.left_parenthesis)
 	local parameters<const> = {}
+	local is_vararg = false
 	if state.token_kind ~= token.right_parenthesis then
 		while true do
+			if match(state, token.ellipsis) then
+				is_vararg = true
+				break
+			end
 			local name<const>, parameter_line<const>, parameter_column<const>
 				= consume_identifier(state)
 			parameters[#parameters + 1] = identifier_expression(
@@ -575,6 +590,7 @@ parse_function_expression = function(state)
 	return {
 		kind = syntax.function_expression,
 		parameters = parameters,
+		is_vararg = is_vararg,
 		body = body,
 		line = line,
 		column = column,

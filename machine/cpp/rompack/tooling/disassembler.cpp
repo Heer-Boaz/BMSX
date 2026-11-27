@@ -340,10 +340,13 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 			return "SETUP r" + std::to_string(decoded.a) + ", u" + std::to_string(decoded.b);
 		case OpCode::VARARG:
 			return "VARARG r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
+		case OpCode::ARGC:
+			return "ARGC r" + std::to_string(decoded.a);
 		case OpCode::CALL:
 			return "CALL r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b) + ", " + formatValueCountLiteral(decoded.c);
 		case OpCode::RET:
-			return "RET r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b);
+			return "RET r" + std::to_string(decoded.a) + ", " + formatValueCountLiteral(decoded.b)
+				+ (decoded.c == 0 ? "" : ", extras");
 		case OpCode::MFC0:
 			return "MFC0 r" + std::to_string(decoded.a) + ", c" + std::to_string(decoded.b);
 		case OpCode::MTC0:
@@ -365,7 +368,6 @@ std::string formatInstructionText(const DecodedDebugInstruction& decoded, const 
 		case OpCode::HALT:
 			return "HALT";
 		case OpCode::RESERVED_10:
-		case OpCode::RESERVED_1D:
 		case OpCode::RESERVED_1E:
 			return std::string(OPCODE_NAMES[static_cast<size_t>(decoded.op)]);
 		case OpCode::WIDE:
@@ -475,9 +477,13 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 			return {registerOperand("src", decoded.a), plainOperand("upvalue", "u" + std::to_string(decoded.b))};
 		case OpCode::VARARG:
 			return {registerOperand("dst", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
+		case OpCode::ARGC:
+			return {registerOperand("dst", decoded.a)};
 		case OpCode::CALL:
 			return {registerOperand("callee", decoded.a), plainOperand("args", formatValueCountLiteral(decoded.b)), plainOperand("returns", formatValueCountLiteral(decoded.c))};
 		case OpCode::RET:
+			if (decoded.c != 0)
+				return {registerOperand("skip", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b)), plainOperand("source", "extras")};
 			return {registerOperand("base", decoded.a), plainOperand("count", formatValueCountLiteral(decoded.b))};
 		case OpCode::LOAD_MEM_D:
 			return {registerOperand("dst", decoded.a), registerOperand("base", decoded.b), plainOperand("kind", std::to_string(decoded.c)), plainOperand("disp", std::to_string(decoded.disp << 2))};
@@ -500,7 +506,6 @@ std::vector<InstructionOperandDebugInfo> buildInstructionOperands(const DecodedD
 		case OpCode::HALT:
 			return {};
 		case OpCode::RESERVED_10:
-		case OpCode::RESERVED_1D:
 		case OpCode::RESERVED_1E:
 			return {};
 		case OpCode::WIDE:

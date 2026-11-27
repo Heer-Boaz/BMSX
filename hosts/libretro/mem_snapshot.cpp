@@ -62,8 +62,8 @@ std::string memSnapshotLine(const char* label) {
 	long cached = -1;
 	long swap_free = -1;
 	long slab = -1;
-	long vm_rss = -1;
-	long vm_size = -1;
+	long resident_kib = -1;
+	long virtual_kib = -1;
 
 	ProcField meminfo_fields[] = {
 		{"MemFree", &mem_free},
@@ -76,15 +76,15 @@ std::string memSnapshotLine(const char* label) {
 	readProcFile("/proc/meminfo", meminfo_fields, sizeof(meminfo_fields) / sizeof(meminfo_fields[0]));
 
 	ProcField status_fields[] = {
-		{"VmRSS", &vm_rss},
-		{"VmSize", &vm_size},
+		{"VmRSS", &resident_kib},
+		{"VmSize", &virtual_kib},
 	};
 	readProcFile("/proc/self/status", status_fields, sizeof(status_fields) / sizeof(status_fields[0]));
 
 	std::ostringstream out;
 	out << "[MEM] " << (label ? label : "(snapshot)");
-	appendField(out, "VmRSS", vm_rss);
-	appendField(out, "VmSize", vm_size);
+	appendField(out, "VmRSS", resident_kib);
+	appendField(out, "VmSize", virtual_kib);
 	appendField(out, "MemFree", mem_free);
 	appendField(out, "MemAvail", mem_available);
 	appendField(out, "Buffers", buffers);

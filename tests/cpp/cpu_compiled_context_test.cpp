@@ -58,7 +58,7 @@ void requireParity(CpuMachine& native, CpuMachine& scalar) {
 	for (size_t i = 0; i < first.frameDepth(); ++i, firstFrame = firstFrame->next, secondFrame = secondFrame->next) {
 		const auto& x = *firstFrame; const auto& y = *secondFrame;
 		require(x.readControl(bmsx::FrameField::Pc) == y.readControl(bmsx::FrameField::Pc) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::Top)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::Top)) && x.stackBase() == y.stackBase() && x.stackCapacity() == y.stackCapacity()
-			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargCount)), "all live frame ranges agree after relocation");
+			&& static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::VarargBase)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::VarargBase)) && static_cast<bmsx::i32>(x.readControl(bmsx::FrameField::ArgumentCount)) == static_cast<bmsx::i32>(y.readControl(bmsx::FrameField::ArgumentCount)), "all live frame ranges agree after relocation");
 	}
 }
 
@@ -80,20 +80,20 @@ void physicalVarargWindow() {
 			const u32 source = mirrored ? ((MAIN_RAM_SIZE - thread->stackOffset() + 0x1000u) / 4u) : 0u;
 			// Forensic frame setup uses the private record port, not the system bus.
 			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::VarargBase), 0xb0000000u | source);
-			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::VarargCount), 0xa0000001u);
+			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::ArgumentCount), 1u);
+			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::StackBase), source + 1u);
+			frame.growRegisterWindow(frame.stackCapacity());
 			machine->memory.writeRamRecordWord(control + static_cast<u32>(FrameField::Top), 0xc0000000u);
-			if (mirrored) {
-				machine->memory.writeRamRecordWord(thread->stackOffset() + source * 4u, 73);
-				machine->memory.writeRamRecordByte(thread->stack.tagAddress() + source, static_cast<u8>(ValueTag::Integer));
-			}
+			machine->memory.writeRamRecordWord(thread->stackOffset() + source * 4u, 73);
+			machine->memory.writeRamRecordByte(thread->stack.tagAddress() + source, static_cast<u8>(ValueTag::Integer));
 		}
 		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::KSMI)] + BASE_CYCLES[static_cast<u8>(OpCode::VARARG)] + 2;
 		test::runCpuParity(native.cpu, scalar.cpu, grant);
 		requireParity(native, scalar);
 		const auto& frame = *native.cpu.activeThread()->currentFrame;
-		require(frame.registers.get(1) == valueInteger(mirrored ? 73 : 7)
+		require(frame.registers.get(0) == valueInteger(7) && frame.registers.get(1) == valueInteger(73)
 			&& frame.readControl(FrameField::Top) == 0xc0000002u,
-			"VARARG copies the current physical source, including a register alias or folded address, without replacing top high bits");
+			"VARARG copies the current physical source, including a folded address, without replacing top high bits");
 	}
 }
 
@@ -139,7 +139,7 @@ void hotVarargFrames(int fixed) {
 			root.registers.set(0, valueClosure(closure));
 			for (int i = 0; i < count; ++i) root.registers.set(i + 1, i == 0 ? valueBool(false) : i == count - 1 ? valueNil() : valueInteger(i));
 			root.writeControl(bmsx::FrameField::Top, count + 1);
-			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && static_cast<bmsx::i32>(thread->frameAtDepth(1)->readControl(bmsx::FrameField::VarargCount)) == count,
+			require(cpu.runUntilDepth(0, 2) == RunResult::Yielded && static_cast<bmsx::i32>(thread->frameAtDepth(1)->readControl(bmsx::FrameField::ArgumentCount)) == count,
 				"a new frame binds its current saved-argument range before entering hot code");
 		}
 		test::runCpuParity(native.cpu, scalar.cpu, 9);
@@ -225,7 +225,7 @@ void nativeGenericVarargCallRetiresPhysicalControl() {
 	requireParity(generated, scalar);
 	const auto& retired = *cpu.activeThread()->currentFrame->next;
 	const auto& scalarRetired = *scalar.cpu.activeThread()->currentFrame->next;
-	require(retired.readWindow(FrameField::VarargCount) == 0, "the earlier real call left a retired no-extras frame record");
+	require(retired.varargCount() == 0 && retired.readControl(FrameField::ArgumentCount) == 1, "the earlier real call left a retired no-extras frame record");
 
 	cpu.prepareSystemNativeCode();
 	const u32 callPc = generated.rom.textAddress + callWord * INSTRUCTION_BYTES;
@@ -253,7 +253,8 @@ void nativeGenericVarargCallRetiresPhysicalControl() {
 		"the returned caller publishes its exact open receiving top and halt continuation");
 	for (size_t i = 0; i < arguments.size(); ++i)
 		require(cpu.readFrameRegister(0, static_cast<int>(i)) == arguments[i], "open results retain every raw Value, including trailing nil");
-	require(retired.readWindow(FrameField::VarargCount) == static_cast<int>(arguments.size()) - 1
+	require(retired.varargCount() == static_cast<int>(arguments.size()) - 1
+		&& retired.readControl(FrameField::ArgumentCount) == arguments.size()
 		&& retired.readControl(FrameField::Pc) == calleePc + 2 * INSTRUCTION_BYTES,
 		"the retired record describes this call's extras and completed RET");
 	for (u32 offset = 0; offset < FRAME_CONTROL_BYTES; offset += sizeof(u32)) {
@@ -768,7 +769,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		valueFloat(-0.f), valueFloatBits(0xffa12345), valueInteger(0),
 		valueTable(bmsx::test::allocateTableReference(machine.cpu).address()), valueThread(machine.cpu.activeThread()->address)};
 	ContextBlock empty(machine, {{OpCode::VARARG, 31, 0}, {OpCode::JMP}});
-	frame.writeControl(bmsx::FrameField::VarargCount, 0); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
+	frame.writeControl(FrameField::VarargBase, frame.stackBase()); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 	for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
 	NativeBlockRunState zero{.frame = &frame, .remainingCycles = 100, .registerTop = 48};
 	const auto& emptyExit = *empty.blocks.front()->run(frame.registers, zero);
@@ -778,7 +779,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 	for (size_t i = 0; i < stack.size(); ++i) require(stack.get(i) == valueInteger(73), "empty window leaves both planes unchanged");
 	// The fixed form charges requested slots (also nil padding), never available slots.
 	// B=1 performs no copy and leaves top alone even when A is beyond capacity.
-	frame.writeControl(bmsx::FrameField::VarargBase, 14); frame.writeControl(bmsx::FrameField::VarargCount, 2);
+	frame.writeControl(bmsx::FrameField::VarargBase, 14);
 	stack.set(14, valueString(machine.cpu.stringPool().intern("vararg"))); stack.set(15, valueFloatBits(0xffa12345));
 	for (const int count : {0, 1, 5}) {
 		const u16 first = count ? 6 : 31;
@@ -800,7 +801,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 		second.blocks.front()->linkFrom(first.blocks.back()->terminal);
 		for (const int count : {0, 2, 8}) {
 			for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
-			frame.writeControl(bmsx::FrameField::VarargCount, count); frame.writeControl(bmsx::FrameField::StackCapacity, 16);
+			frame.writeControl(bmsx::FrameField::StackCapacity, 16);
 			frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - count);
 			for (int i = 0; i < count; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 			frame.registers.set(14, valueInteger(1));
@@ -814,7 +815,7 @@ void varargAliasesAndSideExits(CpuMachine& machine) {
 				"a word consumer sees the overwritten vararg kind, not a cached literal fact; fixed ranges retain untouched facts");
 		}
 		for (size_t i = 0; i < stack.size(); ++i) stack.set(i, valueInteger(73));
-		frame.writeControl(bmsx::FrameField::VarargCount, 8); frame.writeControl(bmsx::FrameField::StackCapacity, 8);
+		frame.writeControl(bmsx::FrameField::StackCapacity, 8);
 		frame.writeControl(bmsx::FrameField::VarargBase, frame.stackBase() - 8);
 		for (int i = 0; i < 8; ++i) stack.set(static_cast<bmsx::i32>(frame.readControl(bmsx::FrameField::VarargBase)) + i, values[i]);
 		// Only the open first copy exceeds this capacity.

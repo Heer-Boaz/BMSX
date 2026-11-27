@@ -149,14 +149,16 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 			case OpCode::NOT: case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR:
 			case OpCode::SHL: case OpCode::SHR: case OpCode::BNOT:
 			case OpCode::JMPIF: case OpCode::JMPIFNOT: case OpCode::EQ: case OpCode::LT: case OpCode::LE:
-			case OpCode::CLOSURE: case OpCode::CALL: case OpCode::RET:
+			case OpCode::CLOSURE: case OpCode::CALL:
 				return true;
+			case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 			default: return false;
 		}
 	}
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::JMP: return instruction.a == 0;
 		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
+		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 		default: return nativeBlockSupports(instruction.op);
 	}
 }

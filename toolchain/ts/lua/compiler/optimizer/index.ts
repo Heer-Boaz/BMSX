@@ -1,4 +1,4 @@
-import { ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
+import { ReturnSource, ValueMoveKind } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, decodeValueCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
@@ -499,6 +499,7 @@ const computeBlockConstantIn = (
 					case OpCode.GETUP:
 					case OpCode.LOAD_MEM:
 					case OpCode.LOAD_MEM_D:
+					case OpCode.ARGC:
 					case OpCode.MFC0:
 						constants.delete(instruction.a);
 						break;
@@ -675,6 +676,7 @@ const foldConstants = (set: InstructionSet, context: OptimizationContext): Instr
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
+				case OpCode.ARGC:
 				case OpCode.MFC0:
 				case OpCode.UNM:
 				case OpCode.NOT:
@@ -1036,6 +1038,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.GETUP:
 				case OpCode.LOAD_MEM:
 				case OpCode.LOAD_MEM_D:
+				case OpCode.ARGC:
 				case OpCode.MFC0:
 					killRegister(constants, copies, instruction.a);
 					break;
@@ -1416,6 +1419,7 @@ const applyClosureTransferForInlining = (
 		case OpCode.GETUP:
 		case OpCode.LOAD_MEM:
 		case OpCode.LOAD_MEM_D:
+		case OpCode.ARGC:
 		case OpCode.MFC0:
 			closures.delete(instruction.a);
 			return;
@@ -1972,16 +1976,17 @@ const inlineFunctionCalls = (
 		for (let i = 0; i < instructionSet.instructions.length; i += 1) {
 			const instruction = instructionSet.instructions[i];
 			if (instruction.op === OpCode.RET) {
-				if (instruction.b === 0) {
+				if (instruction.b === 0 || instruction.c === ReturnSource.ExtraArguments) {
 					calleeCache.set(protoIndex, null);
 					return null;
 				}
 				hasReturn = true;
 				continue;
 			}
-			// HALT latches the current physical frame depth; inlining it would change machine state.
+			// HALT and ARGC observe the physical frame being executed.
 			if (instruction.op === OpCode.CLOSURE
 				|| instruction.op === OpCode.VARARG
+				|| instruction.op === OpCode.ARGC
 				|| instruction.op === OpCode.HALT
 				|| instruction.op === OpCode.RFE) {
 				calleeCache.set(protoIndex, null);

@@ -471,7 +471,7 @@ private:
 	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra, HeapServiceTableGrowthMode mode, BiosCallContinuation completion);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
-	bool executeReturn(CallFrame& frame, int first, int produced);
+	bool executeReturn(CallFrame& frame, int first, int produced, bool fromArguments = false);
 	bool executeVararg(CallFrame& frame, int first, int requested);
 	bool acquireRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top, int end, u32 receiverFlags);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);

@@ -344,11 +344,21 @@ function lexer.next(state)
 		state.token_literal = scan_number(state, line, column)
 		return
 	end
-	if code == ascii_dot and state.index < state.length
-		and is_digit(byte(state.source, state.index + 1)) then
-		state.token_kind = token.number
-		state.token_literal = scan_number(state, line, column)
-		return
+	if code == ascii_dot and state.index < state.length then
+		local following<const> = byte(state.source, state.index + 1)
+		if is_digit(following) then
+			state.token_kind = token.number
+			state.token_literal = scan_number(state, line, column)
+			return
+		end
+		if following == ascii_dot and state.index + 2 <= state.length
+			and byte(state.source, state.index + 2) == ascii_dot then
+			advance(state)
+			advance(state)
+			advance(state)
+			state.token_kind = token.ellipsis
+			return
+		end
 	end
 	advance(state)
 	if code == ascii_double_quote or code == ascii_single_quote then

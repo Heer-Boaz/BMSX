@@ -2,6 +2,7 @@ import { valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
+import { ReturnSource } from '../../machine/ts/spec/blua32/instruction_format';
 import type { Instruction } from '../../toolchain/ts/lua/compiler/optimizer';
 import { computeMaxRegister } from '../../toolchain/ts/lua/compiler/optimizer/instructions';
 import { collectInstructionDefs, collectInstructionUses } from '../../toolchain/ts/lua/compiler/optimizer/liveness';
@@ -27,6 +28,46 @@ test('zero, fixed and open result operands have distinct compiler register effec
 	}
 	assert.equal(computeMaxRegister([{ op: OpCode.CALL, a: 3, b: 3, c: 5,
 		format: 'ABC', rkMask: 0, target: null }]), 6);
+});
+
+test('argument suffix RET reads a scalar index, not a local register window', () => {
+	for (const operand of [0, 1, 5]) {
+		const instruction: Instruction = { op: OpCode.RET, a: 3, b: operand, c: ReturnSource.ExtraArguments,
+			format: 'ABC', rkMask: 0, target: null };
+		assert.deepEqual(collectInstructionUses(instruction, 9, () => []), [3]);
+		assert.equal(computeMaxRegister([instruction]), 3);
+	}
+});
+
+for (const optLevel of [0, 3] as const) test(`argument intrinsics observe the physical call and return its original suffix (O${optLevel})`, () => {
+	const source = `
+local function fixed_count(a)
+	return blua32.argument_count()
+end
+local function count(a, ...)
+	return blua32.argument_count()
+end
+local function suffix(start, ...)
+	return blua32.argument_suffix(start)
+end
+return fixed_count(9, 7), count(), count(nil, nil, 5), suffix(1, 10, 20, nil, 30)
+`;
+	const compiled = compileLuaSource(source, 'argument-intrinsics.lua', optLevel);
+	const image = linkTestSystemBlua32(compiled);
+	const listing = disassembleTestBlua32Functions(image, image.symbols.functionAddresses);
+	assert.match(listing, /ARGC r\d+/);
+	assert.match(listing, /RET r\d+, \*, extra arguments/);
+	assert.doesNotMatch(listing, /VARARG r\d+/);
+	assert.deepEqual(runCompiledLua(source, 'argument-intrinsics.lua', optLevel),
+		[2, 0, 3, 20, null, 30].map(value => value === null ? valueNil() : valueInteger(value)));
+});
+
+test('argument tuple is terminal and cannot become a hidden temporary', () => {
+	assert.throws(() => compileLuaSource('return 1, blua32.argument_suffix(0)'), /sole expression of a return/);
+	assert.throws(() => compileLuaSource('return (blua32.argument_suffix(0))'), /sole expression of a return/);
+	assert.throws(() => compileLuaSource('return blua32.argument_suffix()'), /argument_suffix expects 1 argument/);
+	assert.throws(() => compileLuaSource('return blua32.argument_suffix(0, 1)'), /argument_suffix expects 1 argument/);
+	assert.throws(() => compileLuaSource('return blua32.argument_count(0)'), /argument_count expects 0 arguments/);
 });
 
 test('fixed call arguments are produced in adjacent slots, not copied through a second argument range', () => {

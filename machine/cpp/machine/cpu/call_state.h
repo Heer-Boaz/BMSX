@@ -38,7 +38,7 @@ constexpr u32 PROTECTED_CALL_HANDLER_BUILTIN = 1u << 9;
 constexpr u32 PROTECTED_CALL_HANDLER_RESIDENT = 1u << 10;
 constexpr u32 PROTECTED_CALL_HANDLER_IMMUTABLE = PROTECTED_CALL_HANDLER_BUILTIN | PROTECTED_CALL_HANDLER_RESIDENT;
 
-enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
+enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, ArgumentCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;
 // Entry: canonical frame control followed by its physical stack source.
 // A first resume borrows the resumer's stack, otherwise the active stack.
@@ -108,7 +108,7 @@ struct BiosCallContinuation {
 // through the RAM port or into a backing already admitted by a native grant.
 struct FrameEntryControl {
 	u32 function, pc, callSite, flags;
-	i32 varargBase, varargCount;
+	i32 varargBase, argumentCount;
 	CallResultPlacement result;
 	i32 top;
 	u32 closure;
@@ -123,7 +123,7 @@ struct FrameEntryControl {
 		write(FrameField::Flags, flags | (result.extendsTop() ? FRAME_EXTEND_RESULT_TOP : 0u));
 		write(FrameField::Pc, pc);
 		write(FrameField::VarargBase, static_cast<u32>(varargBase));
-		write(FrameField::VarargCount, static_cast<u32>(varargCount));
+		write(FrameField::ArgumentCount, static_cast<u32>(argumentCount));
 		write(FrameField::ReturnBase, static_cast<u32>(result.base));
 		write(FrameField::ReturnCount, result.countWord());
 		write(FrameField::Top, static_cast<u32>(top));
@@ -195,6 +195,11 @@ struct CallFrame {
 	}
 #endif
 	i32 stackBase() const { return readWindow(FrameField::StackBase); }
+	// A variadic CALL places its working slots after the actual arguments.
+	i32 varargCount() const {
+		const i32 count = stackBase() - readWindow(FrameField::VarargBase);
+		return count > 0 ? count : 0;
+	}
 	i32 stackCapacity() const { return readWindow(FrameField::StackCapacity); }
 	void growRegisterWindow(i32 capacity);
 	bool hasControlFlag(u32 mask) const;

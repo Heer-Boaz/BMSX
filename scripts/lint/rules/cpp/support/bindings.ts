@@ -32,7 +32,7 @@ export function isConstructorLike(info: FunctionInfo): boolean {
 
 export function cppLocalConstCandidateKind(info: FunctionInfo, regions: readonly AnalysisRegion[], tokens: readonly Token[], binding: LocalBinding): string {
 	if (lineInAnalysisRegion(regions, 'local-const-specialization', tokens[binding.nameToken].line) && /^[A-Z0-9_]+$/.test(binding.name)) {
-		return 'vm_specialization';
+		return 'cpu_specialization';
 	}
 	const prefix = isHotPathFunction(info, regions, tokens) ? 'hot_path_' : '';
 	const valueKind = cppLocalBindingValueKind(binding);

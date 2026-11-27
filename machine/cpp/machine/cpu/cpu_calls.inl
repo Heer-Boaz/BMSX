@@ -67,10 +67,23 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 	throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
 
-inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
-	const int count = produced < 0 ? std::max(frame.readWindow(FrameField::Top) - a, 0) : produced;
+inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromArguments) {
+	const int stackBase = frame.stackBase();
+	int first = a;
+	int available;
+	if (fromArguments) {
+		if (!frame.registers.containsRange(a, 1)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const int argumentBase = frame.readWindow(FrameField::VarargBase);
+		const int extras = std::max(stackBase - argumentBase, 0);
+		const Value start = frame.registers.get(a);
+		if (!valueIsInteger(start)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const int skip = static_cast<int>(std::min(static_cast<u32>(extras), valuePayload(start)));
+		first = argumentBase + skip - stackBase;
+		available = extras - skip;
+	} else available = std::max(frame.readWindow(FrameField::Top) - a, 0);
+	const int count = produced < 0 ? available : fromArguments ? std::min(produced, available) : produced;
 	const auto admitAndClose = [&](int copied) {
-		if (!frame.registers.containsRange(a, copied)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		if (!fromArguments && !frame.registers.containsRange(a, copied)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		instructionBudgetRemaining -= closeUpvalues(frame);
 	};
 	const u32 continuation = frame.readControl(FrameField::Protected);
@@ -82,7 +95,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 			: (flags & PROTECTED_CALL_PARENT) != 0u && result.extendsTop() ? 0
 			: std::clamp(result.selected(count + 1) - 1, 0, count);
 		admitAndClose(copied);
-		finishProtectedCall(continuation, {&frame, nullptr, a, count});
+		finishProtectedCall(continuation, {&frame, nullptr, first, count});
 		m_activeThread->leaveFrame();
 		resumeFrameBank();
 		return false;
@@ -90,7 +103,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 	if (frame.hasControlFlag(FRAME_COMPLETION)) {
 		admitAndClose(count);
 		m_completionValues.reserveCapacity(count);
-		m_completionValues.view().copyFrom(frame.registers, 0, a, count);
+		if (count != 0) m_completionValues.view().copyFrom(frame.thread->stack, 0, stackBase + first, count);
 		m_completionValueCount = count;
 		instructionBudgetRemaining -= count;
 		m_activeThread->leaveFrame();
@@ -105,7 +118,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 		const int copied = std::clamp(result.selected(count + 1) - 1, 0, count);
 		admitAndClose(copied);
 		thread->setStatus(ThreadStatus::Dead);
-		returnToResumer({&frame, nullptr, a, copied}, true);
+		returnToResumer({&frame, nullptr, first, copied}, true);
 		thread->setStackTop(0);
 		thread->leaveFrame();
 		return false;
@@ -113,7 +126,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 	if (root) {
 		admitAndClose(count);
 		m_completionValues.reserveCapacity(count);
-		m_completionValues.view().copyFrom(frame.registers, 0, a, count);
+		if (count != 0) m_completionValues.view().copyFrom(frame.thread->stack, 0, stackBase + first, count);
 		m_completionValueCount = count;
 		instructionBudgetRemaining -= count;
 	} else {
@@ -123,7 +136,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 		const auto placement = ValuePlacement::fit(count, result.selected(count));
 		admitAndClose(placement.copied);
 		const int selected = placement.count(), end = result.base + selected;
-		const int source = frame.stackBase() + a;
+		const int source = stackBase + first;
 		const int top = !result.extendsTop() || end > caller.readWindow(FrameField::Top) ? end : -1;
 		if (selected != 0 && end > caller.stackCapacity()
 			&& acquireRegisterWindow(caller, result.base, source, placement.copied, placement.padded, top, end,
@@ -136,7 +149,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 }
 
 inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {
-	const int available = frame.readWindow(FrameField::VarargCount);
+	const int available = frame.varargCount();
 	const auto placement = ValuePlacement::fit(available, requested < 0 ? available : requested);
 	const int count = placement.count(), end = a + count;
 	const int top = requested < 0 || (count != 0 && end > frame.readWindow(FrameField::Top)) ? end : -1;

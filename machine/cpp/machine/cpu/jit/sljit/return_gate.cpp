@@ -174,16 +174,23 @@ sljit_label* emitNativeReturn(sljit_compiler* c, sljit_label* bindWindow, sljit_
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, nativeControl));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::VarargBase),
 		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeVarargBase));
-	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(state), offsetof(NativeBlockRunState, stackBase),
-		SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeVarargBase));
+	constexpr auto callOperands = offsetof(NativeBlockExitSite, operands);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), pending);
+	sljit_emit_op1(c, SLJIT_MOV32_S16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), callOperands + offsetof(NativeExitOperands::Call, supplied));
+	auto* fixed = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
+	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), pending);
+	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R0), callOperands + offsetof(NativeExitOperands::Call, callee));
+	sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, 1);
+	sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), offsetof(CallFrame, pendingNativeCallerTop), SLJIT_R0, 0);
 	auto* nonnegative = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0, SLJIT_IMM, 0);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_IMM, 0);
-	sljit_set_label(nonnegative, sljit_emit_label(c));
-	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::VarargCount), SLJIT_R0, 0);
+	auto* writeCount = sljit_emit_label(c);
+	sljit_set_label(fixed, writeCount);
+	sljit_set_label(nonnegative, writeCount);
+	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::ArgumentCount), SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R1), pending);
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::CallSite),
 		SLJIT_MEM1(SLJIT_R1), offsetof(NativeBlockExitSite, lastPc));
-	constexpr auto callOperands = offsetof(NativeBlockExitSite, operands);
 	sljit_emit_op1(c, SLJIT_MOV_U16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), callOperands + offsetof(NativeExitOperands::Call, callee));
 	sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), static_cast<int>(FrameField::ReturnBase), SLJIT_R0, 0);
 	sljit_emit_op1(c, SLJIT_MOV32_S16, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R1), callOperands + offsetof(NativeExitOperands::Call, requested));

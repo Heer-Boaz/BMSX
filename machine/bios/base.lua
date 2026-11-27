@@ -1,14 +1,7 @@
-local vm_next<const> = __bmsx_next
-local vm_type<const> = __bmsx_type
 local metatables<const> = require('kernel/gc_barrier')
 local globals<const> = require('kernel/set_global')
-local vm_getmetatable<const> = __bmsx_getmetatable
-local vm_rawget<const> = __bmsx_rawget
 local tables<const> = require('kernel/table_grow')
-local arguments<const> = require('kernel/bios_select')
-local vm_error<const> = __bmsx_error
-local vm_pcall<const> = __bmsx_pcall
-local vm_xpcall<const> = __bmsx_xpcall
+local raise_error<const> = __bmsx_error
 local console<const> = require('tty/console')
 
 local numeric_parse<const> = require('number/parse')
@@ -16,35 +9,38 @@ local collector<const> = require('kernel/gc_collect_step')
 local heap<const> = require('kernel/gc_full')
 
 local select_arguments<const> = function(selector, ...)
-	local count<const> = arguments.select_arguments(selector)
-	if count ~= nil then return count end
-	return ...
+	local count<const> = blua32.argument_count() - 1
+	if selector == '#' then return count end
+	local start = selector & -1
+	if start < 0 then start = count + start + 1 end
+	if start < 1 then start = 1 end
+	return blua32.argument_suffix(start - 1)
 end
 
-next = vm_next
-type = vm_type
+next = __bmsx_next
+type = __bmsx_type
 setmetatable = metatables.set_metatable
-getmetatable = vm_getmetatable
-rawget = vm_rawget
+getmetatable = __bmsx_getmetatable
+rawget = __bmsx_rawget
 rawset = function(target, key, ...)
-	return tables.raw_set(target, key, (...), select_arguments('#', ...))
+	return tables.raw_set(target, key, (...), blua32.argument_count())
 end
 getglobal = __bmsx_getglobal
 setglobal = globals.set_global
 select = select_arguments
-error = vm_error
-pcall = vm_pcall
-xpcall = vm_xpcall
+error = raise_error
+pcall = __bmsx_pcall
+xpcall = __bmsx_xpcall
 
 
 assert = function(condition, ...)
 	if condition then
 		return condition, ...
 	end
-	if select_arguments('#', ...) > 0 then
-		vm_error((...))
+	if blua32.argument_count() > 1 then
+		raise_error((...))
 	end
-	vm_error('assertion failed!')
+	raise_error('assertion failed!')
 end
 
 
@@ -130,5 +126,5 @@ collectgarbage = function(option)
 	elseif option == 'step' then
 		return collector.collect_step()
 	end
-	vm_error('invalid collectgarbage option')
+	raise_error('invalid collectgarbage option')
 end

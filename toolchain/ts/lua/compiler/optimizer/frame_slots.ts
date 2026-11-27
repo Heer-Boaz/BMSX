@@ -1,3 +1,4 @@
+import { ReturnSource } from '../../../../../machine/ts/spec/blua32/instruction_format';
 import {
 	OpCode, OPCODE_SCALAR_REGISTER_READS, OPCODE_WRITES_REGISTER_A,
 	REGISTER_OPERAND_A, REGISTER_OPERAND_B, REGISTER_OPERAND_C, decodeValueCount,
@@ -69,6 +70,7 @@ export function allocateFrameSlots(
 				fixed.fill(1, a, a + Math.max(1, decodeValueCount(b, 0)));
 				break;
 			case OpCode.RET:
+				if (c === ReturnSource.ExtraArguments) break;
 				if (b === 0) openBase = Math.min(openBase, a);
 				if (b !== 2) fixed.fill(1, a, a + Math.max(1, decodeValueCount(b, 0)));
 				break;

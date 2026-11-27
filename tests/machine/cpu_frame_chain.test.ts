@@ -330,14 +330,15 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 			const source = mirrored ? (MAIN_RAM_SIZE - stack + 0x1000) >>> 2 : 0;
 			cpu.writeFrameExecution(0, frame.executionImage.executionDomainId, frame.functionAddress, entryPc);
 			memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargBase, 0xb0000000 | source);
-			memory.writeRamRecordWord(frame.controlOffset + FrameField.VarargCount, 0xa0000001);
+			memory.writeRamRecordWord(frame.controlOffset + FrameField.ArgumentCount, 1);
+			memory.writeRamRecordWord(frame.controlOffset + FrameField.StackBase, source + 1);
+			frame.growRegisterWindow(frame.stackCapacity);
 			memory.writeRamRecordWord(frame.controlOffset + FrameField.Top, 0xc0000000);
-			if (mirrored) {
-				memory.writeRamRecordWord(stack + source * 4, 73);
-				memory.writeRamRecordByte(stack + thread.stackRegisters.capacity() * 4 + source, ValueTag.Integer);
-			}
+			memory.writeRamRecordWord(stack + source * 4, 73);
+			memory.writeRamRecordByte(stack + thread.stackRegisters.capacity() * 4 + source, ValueTag.Integer);
 			cpu.runUntilDepth(0, 10);
-			assert.equal(frame.registers.get(1), valueInteger(mirrored ? 73 : 7));
+			assert.equal(frame.registers.get(0), valueInteger(7));
+			assert.equal(frame.registers.get(1), valueInteger(73));
 			assert.equal(memory.readRamRecordWord(frame.controlOffset + FrameField.Top), 0xc0000002);
 		}
 	});

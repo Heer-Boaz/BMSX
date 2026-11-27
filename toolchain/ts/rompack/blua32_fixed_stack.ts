@@ -143,6 +143,7 @@ export function deriveBlua32FixedStack(
 				case OpCode.RET:
 					if (boundary?.ordinaryCode?.exceptionVectors.has(index))
 						reject('exception vector ends with RFE or an exception transfer');
+					if (c !== 0) reject('return from a variadic window requires an ordinary activation');
 					if (b === 0) reject('open return window');
 					if (a + b - 1 > width) reject('return window exceeds the function record');
 					continue;

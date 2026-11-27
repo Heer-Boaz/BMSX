@@ -9,8 +9,8 @@ local compiler<const> = {}
 local op_getup<const> = isa.op_getup
 -- Boot-only registers are cleared after firmware initialization. Retain the
 -- primitives, not the mutable public getglobal/setglobal bindings.
-local vm_getglobal<const> = __bmsx_getglobal
-local vm_setglobal<const> = require('kernel/set_global').set_global
+local read_global<const> = __bmsx_getglobal
+local write_global<const> = require('kernel/set_global').set_global
 
 local opcode_by_binary_operator<const> = {
 	[syntax.binary_add] = isa.op_add,
@@ -94,7 +94,7 @@ prepare_path_operands = function(state, expression, writing)
 		elseif expression.global_key ~= nil then
 			expression.constant_index = add_constant(state, expression.global_key)
 			expression.accessor_constant_index = add_constant(
-				state, writing and vm_setglobal or vm_getglobal
+				state, writing and write_global or read_global
 			)
 		elseif expression.external_binding ~= nil then
 			expression.constant_index = add_constant(state, expression.external_binding)
@@ -131,8 +131,8 @@ prepare_value_operands = function(state, expression)
 		prepare_path_operands(state, expression)
 		return
 	end
-	if kind == syntax.nil_literal_expression
-		or kind == syntax.boolean_literal_expression then
+	if kind == syntax.nil_literal_expression or kind == syntax.boolean_literal_expression
+		or kind == syntax.vararg_expression then
 		return
 	end
 	if kind == syntax.function_expression then
@@ -144,7 +144,7 @@ prepare_value_operands = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		if expression.word_move == nil then prepare_value_operands(state, expression.callee) end
+		if expression.intrinsic == nil then prepare_value_operands(state, expression.callee) end
 		local method_name<const> = expression.method_name
 		if method_name ~= nil then
 			expression.method_constant_index = add_constant(state, method_name)
@@ -196,7 +196,7 @@ materialize_wide_immediates = function(state, expression)
 		return
 	end
 	if kind == syntax.call_expression then
-		if expression.word_move == nil then materialize_wide_immediates(state, expression.callee) end
+		if expression.intrinsic == nil then materialize_wide_immediates(state, expression.callee) end
 		local arguments<const> = expression.arguments
 		for index = 1, #arguments do
 			materialize_wide_immediates(state, arguments[index])
@@ -601,9 +601,16 @@ local emit_call_expression<const> = function(
 	result_operand
 )
 	local temporary_base<const> = state.free_register
-	if expression.word_move ~= nil then
+	local intrinsic<const> = expression.intrinsic
+	if intrinsic == 'argument_count' then
+		if result_operand ~= isa.fixed_value_count_bias then
+			bytecode.emit_abc(instruction_words, isa.op_argc, target, 0, 0)
+		end
+		return target
+	end
+	if intrinsic ~= nil then
 		local source<const> = emit_value(state, instruction_words, expression.arguments[1], target, target_is_temporary)
-		local mode<const> = expression.word_move == 'float_bits' and isa.move_float_bits or isa.move_float_from_bits
+		local mode<const> = intrinsic == 'float_bits' and isa.move_float_bits or isa.move_float_from_bits
 		bytecode.emit_abc(instruction_words, isa.op_mov, target, source, mode)
 		state.free_register = temporary_base
 		return target
@@ -666,9 +673,14 @@ local emit_call_expression<const> = function(
 	for index = 1, argument_count do
 		local argument_target<const> = reserve_register(state)
 		local argument<const> = arguments[index]
-		if index == argument_count and argument.kind == syntax.call_expression
-			and argument.expands_results and argument.word_move == nil then
-			emit_call_expression(state, instruction_words, argument, argument_target, true, 0)
+		local kind<const> = argument.kind
+		if index == argument_count and (kind == syntax.vararg_expression or kind == syntax.call_expression)
+			and argument.expands_results and argument.intrinsic == nil then
+			if kind == syntax.vararg_expression then
+				bytecode.emit_abc(instruction_words, isa.op_vararg, argument_target, 0, 0)
+			else
+				emit_call_expression(state, instruction_words, argument, argument_target, true, 0)
+			end
 			argument_operand = 0
 		else
 			local argument_register<const> = emit_value(
@@ -879,6 +891,10 @@ emit_value = function(
 			target_is_temporary,
 			1 + isa.fixed_value_count_bias
 		)
+	end
+	if kind == syntax.vararg_expression then
+		bytecode.emit_abc(instruction_words, isa.op_vararg, target, 1 + isa.fixed_value_count_bias, 0)
+		return target
 	end
 	if kind == syntax.unary_expression
 		and expression.constant_value == nil then
@@ -1153,17 +1169,27 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 		bytecode.emit_abc(instruction_words, isa.op_ret, return_target, isa.fixed_value_count_bias, 0)
 		return
 	end
+	if expression_count == 1 and expressions[1].intrinsic == 'argument_suffix' then
+		local start<const> = emit_value(state, instruction_words, expressions[1].arguments[1], return_target, true)
+		bytecode.emit_abc(instruction_words, isa.op_ret, start, 0, isa.return_extra_arguments)
+		return
+	end
 	for index = 2, expression_count do
 		reserve_register(state)
 	end
 	for index = 1, expression_count do
 		local target_register<const> = return_target + index - 1
 		local expression<const> = expressions[index]
-		if index == expression_count and expression.kind == syntax.call_expression
-			and expression.expands_results and expression.word_move == nil then
-			-- The final call owns the last temporary and sets the physical top.
+		local kind<const> = expression.kind
+		if index == expression_count and (kind == syntax.vararg_expression or kind == syntax.call_expression)
+			and expression.expands_results and expression.intrinsic == nil then
+			-- The final call or vararg owns the last temporary and sets the physical top.
 			-- RET forwards the prefix and tuple without moving or packing it.
-			emit_call_expression(state, instruction_words, expression, target_register, true, 0)
+			if kind == syntax.vararg_expression then
+				bytecode.emit_abc(instruction_words, isa.op_vararg, target_register, 0, 0)
+			else
+				emit_call_expression(state, instruction_words, expression, target_register, true, 0)
+			end
 			bytecode.emit_abc(instruction_words, isa.op_ret, return_target, 0, 0)
 			return
 		end
@@ -1754,6 +1780,7 @@ local compile_function<const> = function(state)
 	return {
 		instruction_words = instruction_words,
 		parameter_count = parameter_count,
+		is_vararg = state.function_expression.is_vararg,
 		max_stack = state.max_stack,
 		upvalue_records = state.upvalue_records,
 	}
