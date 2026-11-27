@@ -77,6 +77,23 @@ return value
 	);
 });
 
+test('O3 keeps an entry loop rooted after inlining makes a branch unreachable', () => {
+	const source = `
+local run = function(count)
+	repeat
+		local choose<const> = function() return true end
+		if choose() then count = count - 1 else count = count + 100 end
+	until count == 0
+	return count
+end
+return run(3)
+`;
+	const expected = [valueInteger(0)];
+
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), expected);
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), expected);
+});
+
 test('O3 fixes known single-result tail calls before recursive inlining', () => {
 	const source = `
 local leaf<const> = function(value)

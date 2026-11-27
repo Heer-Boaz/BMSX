@@ -1069,7 +1069,7 @@ const computeDominators = (
 	blocks: Block[],
 	predecessors: number[][],
 	successors: number[][],
-): { rpo: number[]; rpoIndex: number[]; idom: number[] } => {
+): { rpo: number[]; idom: number[] } => {
 	const rpo: number[] = [];
 	const visited = new Array<boolean>(blocks.length).fill(false);
 	const stack: Array<{ block: number; index: number }> = [{ block: 0, index: 0 }];
@@ -1090,11 +1090,7 @@ const computeDominators = (
 			stack.pop();
 		}
 	}
-	for (let i = 0; i < blocks.length; i += 1) {
-		if (!visited[i]) {
-			rpo.push(i);
-		}
-	}
+	// Forward dominators cover only the entry-reachable CFG, with entry first in RPO.
 	rpo.reverse();
 	const rpoIndex = new Array<number>(blocks.length);
 	for (let i = 0; i < rpo.length; i += 1) {
@@ -1135,7 +1131,7 @@ const computeDominators = (
 		}
 	}
 
-	return { rpo, rpoIndex, idom };
+	return { rpo, idom };
 };
 
 const applyLoopInvariantCodeMotion = (set: InstructionSet, context: OptimizationContext): InstructionSet => {
@@ -1213,6 +1209,9 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 
 	const loopsByHeader = new Map<number, Set<number>>();
 	for (let b = 0; b < blocks.length; b += 1) {
+		if (idom[b] === -1) {
+			continue;
+		}
 		const succs = successors[b];
 		for (let s = 0; s < succs.length; s += 1) {
 			const succ = succs[s];
@@ -1226,7 +1225,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 				const preds = predecessors[node];
 				for (let p = 0; p < preds.length; p += 1) {
 					const pred = preds[p];
-					if (!loop.has(pred)) {
+					if (idom[pred] !== -1 && !loop.has(pred)) {
 						loop.add(pred);
 						stack.push(pred);
 					}
@@ -1248,7 +1247,7 @@ const applyLoopInvariantCodeMotion = (set: InstructionSet, context: Optimization
 	let movedAny = false;
 
 	for (const [header, loopBlocks] of loopsByHeader.entries()) {
-		const preds = predecessors[header].filter(pred => !loopBlocks.has(pred));
+		const preds = predecessors[header].filter(pred => idom[pred] !== -1 && !loopBlocks.has(pred));
 		if (preds.length !== 1) {
 			continue;
 		}
@@ -1708,70 +1707,7 @@ export const applyGlobalOptimizations = (
 	}
 	const { blockForIndex, predecessors, successors } = buildBlockGraph(instructions, blocks);
 
-	const rpo: number[] = [];
-	const visited = new Array<boolean>(blocks.length).fill(false);
-	const stack: Array<{ block: number; index: number }> = [{ block: 0, index: 0 }];
-	while (stack.length > 0) {
-		const frame = stack[stack.length - 1];
-		if (!visited[frame.block]) {
-			visited[frame.block] = true;
-		}
-		const succs = successors[frame.block];
-		if (frame.index < succs.length) {
-			const next = succs[frame.index];
-			frame.index += 1;
-			if (!visited[next]) {
-				stack.push({ block: next, index: 0 });
-			}
-		} else {
-			rpo.push(frame.block);
-			stack.pop();
-		}
-	}
-	for (let i = 0; i < blocks.length; i += 1) {
-		if (!visited[i]) {
-			rpo.push(i);
-		}
-	}
-	rpo.reverse();
-	const rpoIndex = new Array<number>(blocks.length);
-	for (let i = 0; i < rpo.length; i += 1) {
-		rpoIndex[rpo[i]] = i;
-	}
-
-	const idom = new Array<number>(blocks.length).fill(-1);
-	idom[0] = 0;
-
-	let changed = true;
-	while (changed) {
-		changed = false;
-		for (let i = 1; i < rpo.length; i += 1) {
-			const blockIndex = rpo[i];
-			const preds = predecessors[blockIndex];
-			let newIdom = -1;
-			for (let p = 0; p < preds.length; p += 1) {
-				const pred = preds[p];
-				if (idom[pred] !== -1) {
-					newIdom = pred;
-					break;
-				}
-			}
-			if (newIdom === -1) {
-				continue;
-			}
-			for (let p = 0; p < preds.length; p += 1) {
-				const pred = preds[p];
-				if (pred === newIdom || idom[pred] === -1) {
-					continue;
-				}
-				newIdom = intersectImmediateDominator(idom, rpoIndex, pred, newIdom);
-			}
-			if (idom[blockIndex] !== newIdom) {
-				idom[blockIndex] = newIdom;
-				changed = true;
-			}
-		}
-	}
+	const { rpo, idom } = computeDominators(blocks, predecessors, successors);
 
 	const domChildren: number[][] = new Array(blocks.length);
 	for (let i = 0; i < blocks.length; i += 1) {
