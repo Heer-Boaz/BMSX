@@ -28,6 +28,7 @@ export const BIOS_EXCEPTION_BRIDGE: Blua32StaticExport = {
 };
 
 export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
+	{ symbol: 'bind_image', path: 'kernel/bind_image_entry', callable: true },
 	{ symbol: 'frame_unwind', path: 'kernel/frame_unwind', callable: true },
 	{ symbol: 'protected_call', path: 'kernel/protected_call', callable: true },
 	{ symbol: 'protected_xcall', path: 'kernel/protected_xcall', callable: true },
@@ -42,7 +43,7 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 
 export const SYSTEM_KERNEL_MODULES = [
 	'kernel/heap_control_ids', 'kernel/heap_control_call', 'kernel/gc_collect_step', 'kernel/gc_full',
-	'kernel/heap_floor', 'kernel/system_image_bind', 'kernel/thread_frame_storage',
+	'kernel/heap_floor', 'kernel/system_image_bind', 'kernel/live_image_bind', 'kernel/thread_frame_storage',
 	'kernel/bios_create_table', 'kernel/allocate_record',
 	'kernel/bios_table_ids', 'kernel/bios_table_call', 'kernel/bios_copy_table', 'kernel/gc_barrier',
 	'kernel/table_grow', 'kernel/set_global', 'kernel/set_global_entry', 'kernel/set_metatable', 'kernel/string_control_call', 'kernel/byte_string_input',

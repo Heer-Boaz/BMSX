@@ -14,5 +14,6 @@ return {
 	string_chars = 0x10009,
 	string_concat = 1,
 	string_index = 0x1000a,
+	bind_live_image = 0x1000b,
 	create_table = 0,
 }

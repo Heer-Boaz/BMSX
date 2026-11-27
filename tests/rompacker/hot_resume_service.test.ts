@@ -33,7 +33,7 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRun
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
-import { asClosure, valueInteger, valueNil, valueTag, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
+import { asClosure, valueInteger, valueNil, valueString, valueTag, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
@@ -144,6 +144,40 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	const regenerated = compiledEntry(f.cpu.captureClosureBinding(asClosure(calculate, f.cpu.gc)).codeAddress);
 	assert.ok(regenerated && regenerated !== original, 'the new image must admit a new generated body for the edited callable');
 	assert.equal(f.cpu.getFrameDepth(), depth); assert.equal(f.cpu.readFramePc(depth - 1), caller); assert.equal(f.cpu.isHaltedUntilIrq(), true);
+});
+
+test('Hot Resume binds a new global and literal in firmware before running the edited cartridge', async t => {
+	const f = await fixture(t, `retained = 'kept by the running cartridge'
+function probe() return retained end`);
+	const { cpu } = f, depth = cpu.getFrameDepth(), thread = cpu.activeThread.address;
+	const oldMedia = f.sources.currentBlua32Media;
+	const original = cpu.getGlobalByKey(cpu.stringPool.find('retained')!);
+	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!);
+	const old = 'return retained';
+	f.model.pushEditOperations([{ offset: f.source.indexOf(old), deleteLength: old.length,
+		text: "introduced = 'first seen in this edit'; return retained, introduced" }]);
+	const operation = f.service.resume('workbench');
+	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
+	assert.equal(f.sources.currentBlua32Media, oldMedia);
+	assert.equal(cpu.stringPool.find('introduced'), undefined);
+	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(operation.result, { status: 'completed', applied: true });
+	assert.notEqual(f.sources.currentBlua32Media, oldMedia);
+	assert.equal(cpu.activeThread.address, thread);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('probe')!), probe);
+	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('retained')!), original);
+	const introduced = cpu.stringPool.find('introduced')!, literal = valueString(cpu.stringPool.find('first seen in this edit')!);
+	assert.equal(cpu.getGlobalByKey(introduced), valueNil(), 'installing the name does not run the edited function');
+	cpu.beginCompletionCall(asClosure(probe, cpu.gc));
+	assert.equal(cpu.runUntilDepth(depth, 10000), RunResult.Halted);
+	assert.deepEqual(f.runtime.readCompletionValues(), [original, literal]);
+	assert.equal(cpu.getGlobalByKey(introduced), literal);
 });
 
 test('Hot Resume reorders and removes literals without replacing live String values', async t => {

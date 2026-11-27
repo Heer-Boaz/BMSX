@@ -589,6 +589,9 @@ class ProgramBuilder {
 	}
 
 	private allocateConstantSlot(value: ProgramConstant): number {
+		// Firmware binds Strings by ordinal, not by sparse constant-pool
+		// index. Never place a new String in a hole before a retained one.
+		if (typeof value === 'string') return this.constPool.push(value) - 1;
 		while (typeof this.constPool[this.nextConstantSlot] === 'string') ++this.nextConstantSlot;
 		const slot = this.nextConstantSlot++;
 		this.constPool[slot] = value;

@@ -161,7 +161,8 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		local handled, fault = false, nil
 		if blua32.tag(values) == value_tags.integer_tag then
 			if (values == firmware_ids.create_table and depth ~= nil)
-				or (values >= firmware_ids.collect_full and values <= firmware_ids.reserve_entry) then
+				or (values >= firmware_ids.collect_full and values <= firmware_ids.reserve_entry)
+				or values == firmware_ids.bind_live_image then
 				handled = true
 				fault = heap_control.receive(*interrupted, values, depth, instruction)
 			elseif (values == firmware_ids.string_concat and depth ~= nil) or values == firmware_ids.string_from_bytes

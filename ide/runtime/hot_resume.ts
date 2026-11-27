@@ -4,7 +4,7 @@ import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { isNil, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
+import { asInteger, isNil, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -56,7 +56,7 @@ import {
 } from './hot_resume_relocation';
 import { verifyHotResumeBinding } from './hot_resume_binding';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
+import { blua32ToolingImageForDomain, stageBlua32Executable } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 
 export type BuiltBlua32Revision = {
@@ -248,6 +248,7 @@ export function prepareBlua32RevisionInstallation(
 	runtime: Runtime,
 	built: BuiltBlua32Revision,
 	retainedFrameCount: number,
+	bindingChanges?: ExecutionDomainId[],
 ): HotResumeRelocation {
 	const cpu = runtime.machine.cpu;
 	for (let i = 0; i < built.revisions.length; ++i) {
@@ -256,8 +257,10 @@ export function prepareBlua32RevisionInstallation(
 		if (blua32ToolingImageForDomain(sources.currentBlua32Media, domain)?.layout !== revision.previousImage) {
 			throw new Error('The installed ROM changed while preparing Hot Resume.');
 		}
-		if (cpu.isExecutionDomainResident(domain))
-			verifyHotResumeBinding(cpu, domain, revision.previousImage, revision.nextImage);
+		if (cpu.isExecutionDomainResident(domain) && verifyHotResumeBinding(cpu, domain, revision.previousImage, revision.nextImage)) {
+			if (bindingChanges === undefined) throw new Error('Publishing additional operands requires a firmware bind.');
+			bindingChanges.push(domain);
+		}
 	}
 	return buildHotResumeRelocation(cpu, built.revisions, retainedFrameCount);
 }
@@ -417,13 +420,15 @@ export function admitHotResume(
 			? prepared.failedCompletionFrameIndex
 			: cpu.getFrameDepth();
 		const thread = cpu.activeThread;
+		const bindingChanges: ExecutionDomainId[] = [];
 		let relocation: HotResumeRelocation | null;
 		let unwindFunctionAddress = 0;
+		let bindFunctionAddress = 0;
 		let valueEnd = 0, frameEnd = 0;
 		try {
 			relocation = prepared.built === null
 				? null
-				: prepareBlua32RevisionInstallation(sources, runtime, prepared.built, retainedFrameCount);
+				: prepareBlua32RevisionInstallation(sources, runtime, prepared.built, retainedFrameCount, bindingChanges);
 			if (relocation !== null || prepared.initCalls.length !== 0) {
 				valueEnd = relocation === null ? 0 : relocation.valueEnd;
 				for (let index = 0; relocation === null && index < retainedFrameCount; ++index) {
@@ -445,6 +450,20 @@ export function admitHotResume(
 					throw new Error('The installed System ROM cannot unwind the failed initializer.');
 				const fn = system.layout.functions[unwind];
 				unwindFunctionAddress = fn.address;
+				let tail = thread.stackTop;
+				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
+				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));
+				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
+			}
+			if (bindingChanges.length !== 0) {
+				if (bindingChanges.length > 1) throw new Error('Publish operand growth in one resident image at a time.');
+				const system = sources.currentBlua32Media.system!;
+				const bind = system.symbols?.metadata.functionIds.indexOf('module:kernel/bind_image_entry/module');
+				if (bind === undefined || bind < 0)
+					throw new Error('The installed System ROM has no executable operand loader.');
+				const fn = system.layout.functions[bind];
+				bindFunctionAddress = fn.address;
 				let tail = thread.stackTop;
 				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
 					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
@@ -494,6 +513,48 @@ export function admitHotResume(
 			runtime.history.stop();
 			guest.invalidate();
 			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, unwindFunctionAddress, [valueInteger(retainedFrameCount), retireScopes]);
+			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
+			return 'deferred';
+		}
+		if (bindFunctionAddress !== 0) {
+			const built = prepared.built!, domain = bindingChanges[0], candidate = built.revisions[domain + 1]!.nextImage;
+			const system = sources.systemRom.bytes;
+			let staged: ReturnType<typeof stageBlua32Executable>;
+			try {
+				staged = stageBlua32Executable(system, candidate, SYSTEM_EXECUTION_DOMAIN_ID);
+			} catch (error) {
+				report({ kind: 'rejected', error });
+				return 'rejected';
+			}
+			const { memory, executionAddressSpace } = runtime.machine;
+			const plan = new RuntimeGuestCallPlan(runtime, retainedFrameCount, 'completion', false, completed => {
+				if (!completed) {
+					report({ kind: 'discarded' });
+					return;
+				}
+				const status = asInteger(runtime.readCompletionValues()[0]);
+				void runtimeTasks.schedule(() => {
+					if (status !== 0 || built.mediaInstallation.systemLayer === null) {
+						memory.installSystemRom(system);
+						cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+					}
+					if (status !== 0) {
+						report({ kind: 'rejected', error: new Error(`Firmware could not bind the replacement image (status ${status}).`) });
+						return;
+					}
+					// Admission may have collected unreachable closures. Rediscover
+					// the live records before installing the new executable views.
+					const live = buildHotResumeRelocation(cpu, built.revisions, retainedFrameCount);
+					applyPreparedHotResume(sources, guest, fault, debuggerState, runtime, prepared, live, report, context);
+					report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
+				}, error => report({ kind: 'failed', error }));
+			});
+			runtime.history.stop();
+			guest.invalidate();
+			memory.installSystemRom(staged.bytes);
+			cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+			cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, bindFunctionAddress,
+				[valueInteger(domain), valueInteger(staged.imageAddress), valueInteger(candidate.address)]);
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}

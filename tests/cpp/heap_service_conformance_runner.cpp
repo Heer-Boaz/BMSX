@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 		auto& cpu = runtime.machine.cpu;
 		auto& memory = runtime.machine.memory;
 		auto& scheduler = runtime.machine.scheduler;
-		std::vector<std::vector<u8>> replacementSystemRoms;
+		std::vector<std::vector<u8>> replacementRoms;
 		RuntimeSaveState saved;
 		RuntimeCheckpointState historyCheckpoint;
 		RamHistory ramHistory;
@@ -116,10 +116,12 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
-				case 'g': {
+				case 'g':
+				case 'n': {
 					int cycles, target;
 					trace >> cycles >> target;
-					const auto result = scheduler.runCpuSlice(target, cycles, 0u, CpuRunKind::Scheduled);
+					const auto result = scheduler.runCpuSlice(target, cycles,
+						op == 'n' ? cpu.rootThread()->address : 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
@@ -228,7 +230,18 @@ int main(int argc, char** argv) {
 						else if (source == 'n') cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, target);
 						else if (source == 'b') cpu.beginCompletionCall(target, BuiltinArgsView{cpu.readCompletionValues()});
 						else if (source == 'c') cpu.beginCompletionCall(target);
-						else throw std::runtime_error("Expected a Function or Closure completion call.");
+						else if (source == 'i') {
+							ExecutionDomainId domain;
+							size_t count;
+							trace >> domain >> count;
+							std::vector<Value> args(count);
+							for (auto& arg : args) {
+								i32 word;
+								trace >> word;
+								arg = valueInteger(word);
+							}
+							cpu.beginCompletionCallInExecutionDomain(domain, target, BuiltinArgsView{args});
+						} else throw std::runtime_error("Expected a Function or Closure completion call.");
 					} catch (const std::runtime_error& error) {
 						if (std::string_view(error.what()) != "External call exceeds the admitted register window.") throw;
 						admitted = false;
@@ -566,12 +579,20 @@ int main(int argc, char** argv) {
 					ramHistory.restore(memory, historyEnd, historyPartial);
 					applyRuntimeCheckpointState(runtime, historyCheckpoint, RuntimeRestoreOrigin::HistorySeek);
 					break;
+				case '[': {
+					ExecutionDomainId slot;
+					std::string path;
+					trace >> slot >> path;
+					runtime.machine.cartridgeController.installRom(slot, replacementRoms.emplace_back(loadFile(path.c_str())));
+					cpu.replaceExecutionImage(*runtime.machine.executionAddressSpace.resolveDomain(slot));
+					break;
+				}
 				case '^':
 				case '+': {
 					std::string path;
 					trace >> path;
 					if (op == '+') memory.ramWriteWatches().armHistoryWrites();
-					memory.installSystemRom(replacementSystemRoms.emplace_back(loadFile(path.c_str())));
+					memory.installSystemRom(replacementRoms.emplace_back(loadFile(path.c_str())));
 					if (op == '^') {
 						runtime.rebootSystem();
 						break;

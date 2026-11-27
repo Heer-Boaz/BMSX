@@ -1,0 +1,227 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { hashBytes } from '../../../machine/ts/common/hash';
+import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { isRamStringId } from '../../../machine/ts/machine/cpu/string_pool';
+import { type Value, valueInteger, valuePayload, valueString, valueTag } from '../../../machine/ts/machine/cpu/value';
+import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { parseSystemRomImage } from '../../../machine/ts/rompack/image';
+import {
+	EXECUTION_IMAGE_BINDING_SIZE, EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID,
+	GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET, GlobalBankField,
+} from '../../../machine/ts/spec/blua32/execution_domain';
+import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
+import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
+import { loadBlua32ToolingImage, stageBlua32Executable } from '../../../toolchain/ts/rompack/blua32_media';
+import { blua32RomStrings } from '../../../toolchain/ts/rompack/blua32_rom_strings';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { cartridgeSlots } from '../../helpers/cartridge';
+import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
+
+const oldLiteral = 'installed literal';
+const ramAlias = 'already live in RAM';
+const freshLiteral = 'literal only in replacement media';
+const characterOperands = (text: string) => Array.from(text, ch => ch.charCodeAt(0)).join(', ');
+const source = (probe: string) => `module<entry>
+bss report: word
+-- Keep the exhaustion case small by reserving ordinary cartridge BSS.
+bss game_workspace: u8[0x300000]
+retained_table = { 43 }
+retained_alias = string.char(${characterOperands(ramAlias)})
+setglobal(string.char(${characterOperands('future_dynamic_global')}), 79)
+saved_literal = '${oldLiteral}'
+function replacement_probe()
+	${probe}
+end
+-- Request a real Table reserve through the firmware entry used by constructors.
+local reserve_table<const> = function(count)
+	return blua32.svc_value(0, count, 0)
+end
+function exhaust_memory()
+	local roots<const> = reserve_table(512)
+	retained_pressure = roots
+	local count, size = 0, 0x4000
+	while size ~= 0 do
+		local admitted<const>, record<const> = pcall(reserve_table, size)
+		if admitted then
+			assert(type(record) == 'table')
+			count = count + 1
+			roots[count] = record
+		else
+			size = size >> 1
+		end
+	end
+	return count
+end
+*report = 73
+game_workspace[0] = 31
+mem[${IO_IRQ_MASK}] = 0
+halt_until_irq
+`;
+
+test('stock firmware binds a staged cartridge image without dropping live Values', t => {
+	const work = mkdtempSync(join(tmpdir(), 'bmsx-staged-binding-'));
+	const commands: string[] = [], rows: string[] = [];
+	let passed = false;
+	t.after(() => {
+		if (passed) rmSync(work, { recursive: true, force: true });
+		else {
+			writeFileSync(join(work, 'trace'), commands.join('\n'));
+			writeFileSync(join(work, 'expected'), rows.join('\n'));
+			console.error(`Staged image binding evidence retained in ${work}`);
+		}
+	});
+	const optLevel = 3;
+	execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
+		'--mode', 'bios', '-respath', 'machine/bios/res', '--debug', `-O${optLevel}`,
+		'--output-dir', work, '--store-dir', join(work, 'store')]);
+	const systemPath = join(work, 'system', 'bmsx-bios.debug.rom');
+	const system = new Uint8Array(readFileSync(systemPath));
+	const systemSymbols = loadBlua32ToolingImage(parseSystemRomImage(system), SYSTEM_ROM_BASE)!.symbols!;
+	const bindingIndex = systemSymbols.metadata.functionIds.indexOf('module:kernel/bind_image_entry/module');
+	assert.notEqual(bindingIndex, -1, 'the stock firmware must expose an ordinary bind entry');
+	const entry = systemSymbols.functionAddresses[bindingIndex];
+	const imports = readBlua32BiosImports(system);
+	const path = 'cart.lua';
+	function link(text: string, previous?: ReturnType<typeof linkCartBlua32Image>) {
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(text, path), [],
+			{ entrySource: text, optLevel, installedConstants: previous?.layout.constants });
+		return linkCartBlua32Image(imports, encodeCompiledProgramObject(compiled), compiled.metadata,
+			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes, previous && { image: previous.layout, symbols: previous.symbols });
+	}
+	const original = link(source('return retained_table[1], saved_literal, retained_alias'));
+	const candidate = link(source(`fresh_global = '${freshLiteral}'
+	if retained_table[1] == 0 then future_dynamic_global = 0 end
+	return retained_table[1], saved_literal, retained_alias, '${ramAlias}', future_dynamic_global, fresh_global`), original);
+	const oldStrings = original.layout.constants.filter(value => typeof value === 'string');
+	const newStrings = candidate.layout.constants.filter(value => typeof value === 'string');
+	assert.deepEqual(newStrings.slice(0, oldStrings.length), oldStrings, 'the worker inherits the original String ordinals');
+	assert.ok(candidate.layout.header.globalNameCount > original.layout.header.globalNameCount);
+	assert.equal(candidate.layout.header.stringBucketAddress, original.layout.header.stringBucketAddress);
+	assert.equal(candidate.layout.header.stringBucketCount, original.layout.header.stringBucketCount);
+	const oldCart = writeTestBlua32Rom(original), newCart = writeTestBlua32Rom(candidate);
+	const staged = stageBlua32Executable(system, candidate.layout, SYSTEM_EXECUTION_DOMAIN_ID);
+	const stagePath = join(work, 'staged.rom'), oldCartPath = join(work, 'old-cart.rom'), newCartPath = join(work, 'new-cart.rom');
+	writeFileSync(stagePath, staged.bytes);
+	writeFileSync(oldCartPath, oldCart);
+	writeFileSync(newCartPath, newCart);
+	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(oldCart), machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler, gxGpu, cartridgeController, executionAddressSpace } = runtime.machine;
+	const frames = runtime.frameScheduler;
+	function observe(command: string, row: string | number) {
+		commands.push(command);
+		rows.push(String(row));
+	}
+	for (let grant = 0; grant < 2048 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++grant) {
+		if (gxGpu.backendCommandDrainPending()) {
+			gxGpu.retireExecutedCommands();
+			commands.push('>');
+		}
+		const cycles = scheduler.nowCycles, tick = frames.lastTickSequence;
+		const complete = frames.runCyclesToNextLogicalTick(65536);
+		observe('p 65536', [+complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq()].join(' '));
+	}
+	assert.equal(cpu.activeCartridgeSlot(), 0);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	const ram = memory.ramData(), binding = executionImageBindingOffset(cpu.heapAllocator.managementOffset(), 0);
+	const oldSpan = memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET);
+	const oldBinding = ram.slice(binding, binding + EXECUTION_IMAGE_BINDING_SIZE);
+	const readGlobal = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+	const alias = valuePayload(readGlobal('retained_alias'));
+	const oldString = valuePayload(readGlobal('saved_literal'));
+	const probe = valuePayload(readGlobal('replacement_probe'));
+	const table = readGlobal('retained_table');
+	assert.ok(isRamStringId(alias));
+	assert.equal(cpu.stringPool.find(freshLiteral), undefined);
+	assert.equal(memory.readRamRecordWord(original.layout.header.bssAddress), 73);
+	const callerDepth = cpu.getFrameDepth();
+	const caller = cpu.readFramePc(callerDepth - 1);
+	cpu.clearHaltUntilIrq();
+	commands.push('h');
+	function publishSystem(file: string, bytes: Uint8Array) {
+		const before = hashBytes(ram, 0, ram.length);
+		memory.installSystemRom(bytes);
+		cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
+		assert.equal(hashBytes(ram, 0, ram.length), before, 'ROM publication must not fill the new RAM binding');
+		observe(`+ ${file}`, `1 0 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+	}
+	function complete(command: string, begin: () => void, budget = 97): Value[] {
+		begin();
+		observe(command, `1 0 0 ${cpu.gc.phase()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+		for (let i = 0; i < 4096 && (cpu.completionCallPending() || cpu.fixedInterruptActive()); ++i) {
+			const result = scheduler.runCpuSlice(callerDepth, budget, cpu.rootThread.address, CpuRunKind.Scheduled);
+			observe(`n ${budget} ${callerDepth}`, `${result} ${budget - cpu.instructionBudgetRemaining} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			assert.notEqual(result, RunResult.ExecutionStopped);
+		}
+		assert.equal(cpu.captureRuntimeState().hardHalted, false);
+		assert.equal(cpu.getFrameDepth(), callerDepth, 'the named operation must return to the retained guest');
+		assert.equal(cpu.readFramePc(callerDepth - 1), caller,
+			`retained caller changed, cause=${cpu.readCauseWord()}, fault=${cpu.readLuaFaultReasonWord()}, epc=${cpu.readEpcWord().toString(16)}`);
+		const values = Array.from(runtime.readCompletionValues());
+		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
+		return values;
+	}
+	const ints = [0, staged.imageAddress, candidate.layout.address];
+	const bind = (budget?: number) => complete([`T i ${entry} ${SYSTEM_EXECUTION_DOMAIN_ID} 3`, ...ints].join(' '),
+		() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, entry, ints.map(valueInteger)), budget);
+
+	const baseline = captureRuntimeSaveState(runtime);
+	commands.push('S');
+	const pressure = valuePayload(readGlobal('exhaust_memory'));
+	const [allocated] = complete(`T c ${pressure}`, () => cpu.beginCompletionCall(pressure), 65536);
+	assert.ok(valuePayload(allocated) > 0, 'guest Tables fill the heap and remain rooted');
+	const management = cpu.heapAllocator.managementOffset();
+	const names = management + SYSTEM_GLOBAL_BANK_OFFSET;
+	const namesEnd = management + GLOBAL_BANK_OFFSET + GlobalBankField.Count + 4;
+	const namespace = ram.slice(names, namesEnd);
+	publishSystem(stagePath, staged.bytes);
+	assert.deepEqual(bind(8192), [valueInteger(10)], 'the firmware reports that replacement storage is exhausted');
+	assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBinding);
+	assert.deepEqual(ram.subarray(names, namesEnd), namespace);
+	observe(`H ${names} ${namesEnd}`, hashBytes(ram, names, namesEnd - names));
+	publishSystem(systemPath, system);
+	assert.deepEqual(complete(`T c ${probe}`, () => cpu.beginCompletionCall(probe)),
+		[valueInteger(43), valueString(oldString), valueString(alias)]);
+	assert.equal(readGlobal('retained_table'), table);
+	assert.equal(cpu.stringPool.find(freshLiteral), undefined);
+	assert.equal(memory.readRamRecordWord(original.layout.header.bssAddress), 73);
+	applyRuntimeSaveState(runtime, baseline);
+	commands.push('U');
+
+	publishSystem(stagePath, staged.bytes);
+	assert.deepEqual(ram.subarray(binding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBinding);
+	assert.deepEqual(bind(), [valueInteger(0)]);
+	assert.ok(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) > oldSpan);
+	observe(`H ${binding} ${binding + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(ram, binding, EXECUTION_IMAGE_BINDING_SIZE));
+	publishSystem(systemPath, system);
+	cartridgeController.installRom(0, newCart);
+	cpu.replaceExecutionImages([executionAddressSpace.resolveDomain(0)!]);
+	commands.push(`[ 0 ${newCartPath}`);
+	const values = complete(`T c ${probe}`, () => cpu.beginCompletionCall(probe));
+	assert.deepEqual(values.slice(0, 5), [valueInteger(43), valueString(oldString), valueString(alias), valueString(alias), valueInteger(79)]);
+	const newRecord = Array.from(blua32RomStrings(candidate.layout)).find(({ value }) => value === freshLiteral)!;
+	assert.equal(cpu.stringPool.toString(valuePayload(values[5])), freshLiteral);
+	assert.equal(values[5], valueString(newRecord.address), 'a fresh literal uses its final ROM identity, never the stage address or RAM');
+	assert.equal(readGlobal('fresh_global'), values[5]);
+	assert.equal(readGlobal('retained_table'), table);
+	assert.equal(memory.readRamRecordWord(candidate.layout.header.bssAddress), 73);
+	const trace = join(work, 'trace');
+	writeFileSync(trace, commands.join('\n'));
+	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
+	assert.deepEqual(execFileSync(native, [systemPath, trace, join(work, 'unused'), oldCartPath],
+		{ encoding: 'utf8' }).trimEnd().split('\n'), rows);
+	passed = true;
+});

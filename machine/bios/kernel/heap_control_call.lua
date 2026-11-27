@@ -8,11 +8,13 @@ local gc<const> = require('kernel/gc_full')
 local step<const> = require('kernel/gc_collect_step')
 local floor<const> = require('kernel/heap_floor')
 local bindings<const> = require('kernel/system_image_bind')
+local live_binding<const> = require('kernel/live_image_bind')
 local tables<const> = require('kernel/bios_create_table')
 local retire<const> = require('kernel/thread_retire')
 local control_count_mask<const> = (1 << 18) - 1
 local window_mask<const> = (1 << 20) - 1
 local word_mask<const> = 0x003ffffc
+local completion_frame<const> = 1
 local cartridge_bank<const> = 1 << 3
 local previous_user_mode<const> = 1 << 3
 local invalid_argument<const> = 10
@@ -43,6 +45,14 @@ local receive<const> = function(owner, token, destination, count)
 		local address<const>, reason<const> = tables.create_table(hints[0], hints[1])
 		if reason ~= nil then return reason end
 		result_word, result_tag = address, tags.table_tag
+	elseif token == ids.bind_live_image then
+		-- Publishing an executable bank belongs to a stopped loader, not
+		-- to an ordinary cartridge CALL of the same System address.
+		if (frame.flags & (completion_frame | cartridge_bank)) ~= completion_frame or count ~= 3 then
+			return invalid_argument
+		end
+		local arguments<const>: *u32 = frames.internal.value_planes(owner, slot + 1)
+		result_word = live_binding.bind_live(arguments[0], arguments[1], arguments[2])
 	elseif token < ids.admit_floor then
 		if count ~= 0 then return invalid_argument end
 		if token == ids.collect_step then

@@ -14,6 +14,7 @@ import {
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
 	BLUA32_IMAGE_MAPPED_CODE_FLAG,
 	BLUA32_STRING_HASH_OFFSET,
+	BLUA32_STRING_NEXT_OFFSET,
 } from '../../machine/ts/spec/blua32/image_format';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
@@ -37,16 +38,15 @@ function nextStringConstant(image: Blua32ImageLayout, slot: number): number {
 	return slot;
 }
 
-/** Installation retains the operand backing and immutable String identities
- * published by firmware. Only the new ROM's code/data views can be replaced. */
-export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, previous: Blua32ImageLayout, next: Blua32ImageLayout): void {
+/** Verify the retained operand prefix and report whether it needs more backing. */
+export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, previous: Blua32ImageLayout, next: Blua32ImageLayout): boolean {
 	const old = previous.header, revised = next.header;
 	if (((old.flags ^ revised.flags) & BLUA32_IMAGE_MAPPED_CODE_FLAG) !== 0)
 		throw new Error('Hot Resume changes the installed instruction addressing mode. Rebuild and boot the ROM.');
 	if (old.dataAddress !== revised.dataAddress || old.dataByteCount !== revised.dataByteCount
 		|| old.bssAddress !== revised.bssAddress || old.bssByteCount !== revised.bssByteCount)
 		throw new Error('Hot Resume changes installed DATA or BSS storage. Rebuild and boot the ROM.');
-	if (old.globalNameCount !== revised.globalNameCount || old.systemGlobalNameCount !== revised.systemGlobalNameCount
+	if (old.globalNameCount > revised.globalNameCount || old.systemGlobalNameCount > revised.systemGlobalNameCount
 		|| !sameNameSlots(previous, old.globalNameTableAddress, next, revised.globalNameTableAddress, old.globalNameCount)
 		|| !sameNameSlots(previous, old.systemGlobalNameTableAddress, next, revised.systemGlobalNameTableAddress, old.systemGlobalNameCount))
 		throw new Error('Hot Resume changes the installed global-name slots. Rebuild and boot the ROM.');
@@ -62,7 +62,7 @@ export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, prev
 		before = nextStringConstant(previous, before + 1);
 		after = nextStringConstant(next, after + 1);
 	}
-	if (before !== old.constantCount || after !== revised.constantCount)
+	if (before !== old.constantCount)
 		throw new Error('Hot Resume changes installed String literal bindings. Rebuild and boot the ROM.');
 
 	// Firmware can continue reading the old physical directory. The packed
@@ -73,9 +73,12 @@ export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, prev
 	const installed = new Map<number, string>();
 	for (const { address, value } of blua32RomStrings(previous)) installed.set(address, value);
 	for (const { address, value } of blua32RomStrings(next)) {
+		if (!installed.has(address)) continue;
 		if (installed.get(address) !== value
 			|| readLE32(previous.bytes, address - previous.address + BLUA32_STRING_HASH_OFFSET)
-			!== readLE32(next.bytes, address - next.address + BLUA32_STRING_HASH_OFFSET))
+			!== readLE32(next.bytes, address - next.address + BLUA32_STRING_HASH_OFFSET)
+			|| readLE32(previous.bytes, address - previous.address + BLUA32_STRING_NEXT_OFFSET)
+			!== readLE32(next.bytes, address - next.address + BLUA32_STRING_NEXT_OFFSET))
 			throw new Error('Hot Resume changes immutable ROM String records. Rebuild and boot the ROM.');
 		installed.delete(address);
 	}
@@ -86,4 +89,6 @@ export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, prev
 	if (cpu.memory.readRamRecordWord(bound + EXECUTION_IMAGE_BINDING_SPAN_OFFSET)
 		!== 4 * (old.globalNameCount + old.systemGlobalNameCount + stringCount))
 		throw new Error('Hot Resume requires the firmware-installed operand binding.');
+	return old.globalNameCount !== revised.globalNameCount || old.systemGlobalNameCount !== revised.systemGlobalNameCount
+		|| after !== revised.constantCount;
 }
