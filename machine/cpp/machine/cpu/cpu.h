@@ -666,7 +666,6 @@ private:
 	void returnToResumer(const CallValueSource& values, bool succeeded);
 	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, CallResultPlacement, const CallValueSource&);
 	bool handleThreadError(Value error);
-	void closeThread(Thread& thread);
 
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
 	InstructionObserverBinding m_instructionObserver;

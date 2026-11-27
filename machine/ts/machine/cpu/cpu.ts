@@ -4537,21 +4537,12 @@ export class CPU implements MappedPageInvalidator {
 				out.push(valueBool(this.activeThread === this.rootThread));
 				break;
 			case BuiltinFunctionId.CoroutineStatus:
-			case BuiltinFunctionId.CoroutineClose:
 			case BuiltinFunctionId.CoroutineIsYieldable: {
 				const address = args.length === 0 && id === BuiltinFunctionId.CoroutineIsYieldable ? this.activeThread.address
 					: args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread ? args.registers.getThread(args.base, this.gc) : 0;
 				if (address === 0) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(valueBool(this.coroutineYieldable(address)));
-				else if (id === BuiltinFunctionId.CoroutineStatus) {
-					out.push(valueInteger(this.readThreadStatus(address)));
-				} else {
-					const failed = this.readThreadStatus(address) === ThreadStatus.Failed;
-					out.push(valueBool(!(failed)));
-					if (failed) out.push(this.readThreadError(address));
-					this.closeThread(address);
-					this.memory.writeRamRecordPair(address + ThreadField.ErrorWord, 0, ValueTag.Nil);
-				}
+				else out.push(valueInteger(this.readThreadStatus(address)));
 				break;
 			}
 			case BuiltinFunctionId.CoroutineResume:
@@ -4685,23 +4676,6 @@ export class CPU implements MappedPageInvalidator {
 		thread.error = error;
 		this.returnToResumer(null, 0, 1);
 		return true;
-	}
-
-	public closeThread(address: number): void {
-		const status = this.readThreadStatus(address);
-		if (status === ThreadStatus.Running || status === ThreadStatus.Normal) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const thread = this.bindThread(address);
-		while (thread.currentFrame !== null) {
-			this.charge(this.closeUpvalues(thread.currentFrame));
-			thread.leaveFrame();
-		}
-		thread.protectedDepth = 0;
-		thread.stackRegisters.clear(thread.stackRegisters.capacity());
-		thread.stackTop = 0;
-		thread.entry = 0;
-		thread.status = ThreadStatus.Dead;
 	}
 
 	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number,

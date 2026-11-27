@@ -1275,24 +1275,12 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueBool(m_activeThread == &m_rootView));
 			break;
 		case BuiltinFunctionId::CoroutineStatus:
-		case BuiltinFunctionId::CoroutineClose:
 		case BuiltinFunctionId::CoroutineIsYieldable: {
 			const u32 address = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread->address
 				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0], m_heap) : 0u;
 			if (address == 0u) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(address)));
-			else {
-				const auto status = static_cast<ThreadStatus>(ThreadRecord::read(m_memory, address, ThreadField::Status));
-				if (fn.id == BuiltinFunctionId::CoroutineStatus) out.push_back(valueInteger(static_cast<int>(status)));
-				else {
-					const bool failed = status == ThreadStatus::Failed;
-					out.push_back(valueBool(!failed));
-					if (failed) out.push_back(ThreadRecord::error(m_memory, address));
-					Thread& view = bindThread(address);
-					closeThread(view);
-					view.setError(valueNil());
-				}
-			}
+			else out.push_back(valueInteger(static_cast<i32>(ThreadRecord::read(m_memory, address, ThreadField::Status))));
 			break;
 		}
 		case BuiltinFunctionId::CoroutineResume:
@@ -1421,20 +1409,6 @@ bool CPU::handleThreadError(Value error) {
 	thread->setError(error);
 	returnToResumer({nullptr, &error, 0, 1}, false);
 	return true;
-}
-
-void CPU::closeThread(Thread& thread) {
-	const ThreadStatus status = thread.status();
-	if (status == ThreadStatus::Running || status == ThreadStatus::Normal) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-	while (thread.currentFrame) {
-		instructionBudgetRemaining -= closeUpvalues(*thread.currentFrame);
-		thread.leaveFrame();
-	}
-	thread.setProtectedDepth(0);
-	thread.stack.clear(0, thread.stackCapacity);
-	thread.setStackTop(0);
-	thread.setEntry(0u);
-	thread.setStatus(ThreadStatus::Dead);
 }
 
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement result, const CallValueSource& arguments) {

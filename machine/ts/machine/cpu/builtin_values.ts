@@ -35,7 +35,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.CoroutineYield, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.CoroutineStatus, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.CoroutineRunning, cost: BUILTIN_COST_TIER4 },
-	{ id: BuiltinFunctionId.CoroutineClose, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.CoroutineIsYieldable, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.GetGlobal, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.SetGlobal, cost: BUILTIN_COST_TIER1 },

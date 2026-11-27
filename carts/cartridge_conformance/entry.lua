@@ -90,6 +90,20 @@ assert(
 		and transfer_result[3] == transfer_source[3],
 	'cartridge-ROM DMA/APU round trip mismatch')
 
+do
+	local read_capture
+	local paused<const> = coroutine.create(function()
+		local captured = 71
+		read_capture = function() return captured end
+		captured = coroutine.yield(captured)
+		return captured
+	end)
+	local resumed<const>, yielded<const> = coroutine.resume(paused)
+	assert(resumed and yielded == 71)
+	assert(coroutine.close(paused) and coroutine.status(paused) == 'dead')
+	assert(read_capture() == 71, 'closing the coroutine lost its captured local')
+end
+
 local replay_irq_sequence<const> = mailbox_irq_count
 print('CART-CONFORMANCE:READY')
 while mailbox_irq_count == replay_irq_sequence do

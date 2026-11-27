@@ -19,6 +19,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
+	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
 	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },
 ] as const;
 

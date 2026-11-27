@@ -95,6 +95,7 @@
 		"test:bios-table-constructor": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_constructor_call.ts",
 		"test:bios-rawset-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/rawset_service.ts",
 		"test:bios-coroutine-create": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/coroutine_create_service.ts",
+		"test:bios-coroutine-close": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/coroutine_close_service.test.ts",
 		"test:bios-closed-upvalue-store": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/closed_upvalue_store.ts",
 		"test:bios-captured-closure": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/captured_closure_binding.ts",
 		"test:bios-mapped-captureless-closure": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/mapped_captureless_closure.ts",

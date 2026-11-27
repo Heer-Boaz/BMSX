@@ -26,21 +26,20 @@ enum class BuiltinFunctionId : uint8_t {
 	CoroutineYield = 15,
 	CoroutineStatus = 16,
 	CoroutineRunning = 17,
-	CoroutineClose = 18,
-	CoroutineIsYieldable = 19,
-	GetGlobal = 20,
-	SetGlobal = 21,
-	FrameCount = 22,
-	GetFrameRegister = 23,
-	SetFrameRegister = 24,
-	GetFrameUpvalue = 25,
-	SetFrameUpvalue = 26,
-	FrameHeader = 27,
-	NumberType = 28,
-	StringSlice = 29,
-	StringFromBytes = 30,
+	CoroutineIsYieldable = 18,
+	GetGlobal = 19,
+	SetGlobal = 20,
+	FrameCount = 21,
+	GetFrameRegister = 22,
+	SetFrameRegister = 23,
+	GetFrameUpvalue = 24,
+	SetFrameUpvalue = 25,
+	FrameHeader = 26,
+	NumberType = 27,
+	StringSlice = 28,
+	StringFromBytes = 29,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 31u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 30u;
 
 } // namespace bmsx

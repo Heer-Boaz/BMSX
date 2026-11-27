@@ -261,7 +261,6 @@ test('conversation lifecycle cancels its own execution and keeps persistent brea
 const THREAD_PRIMITIVES = [{ path: 'thread_primitives', source: `
 create_co = __bmsx_coroutine_create
 resume_co = __bmsx_coroutine_resume
-close_co = __bmsx_coroutine_close
 raise_error = __bmsx_error
 return true` }];
 
@@ -346,7 +345,6 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		const f = fixture(t, `require('thread_primitives'); child = create_co(function()
  child_value = 1
 end)
-close = function() close_co(child) end
 resume_co(child)`, optLevel, THREAD_PRIMITIVES);
 		f.state.breakpoints.set(RESOURCE, [2]);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);

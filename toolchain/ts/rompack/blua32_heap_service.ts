@@ -30,7 +30,7 @@ const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
 	ALLOCATE_RECORD_MODULE, 'kernel/heap_floor', ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
-	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
+	'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/thread_retire', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
 	'kernel/gc_table_mode', 'kernel/gc_weak_mode', 'kernel/string_record', HEAP_SERVICE_TRACE_MODULE_PATH,
 	'kernel/gc_weak_table', HEAP_SERVICE_WEAK_MODULE_PATH, HEAP_SERVICE_REMARK_MODULE_PATH, HEAP_SERVICE_ROOT_BANKS_MODULE_PATH,

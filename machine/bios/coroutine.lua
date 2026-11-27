@@ -3,7 +3,7 @@ local resume<const> = __bmsx_coroutine_resume
 local yield<const> = __bmsx_coroutine_yield
 local status<const> = __bmsx_coroutine_status
 local running<const> = __bmsx_coroutine_running
-local close<const> = __bmsx_coroutine_close
+local retirement<const> = require('kernel/coroutine_close')
 local isyieldable<const> = __bmsx_coroutine_isyieldable
 local raise<const> = __bmsx_error
 local frame_scopes<const> = require('debug/frame_scopes')
@@ -22,7 +22,7 @@ local closed<const> = function(thread, ...)
 	frame_scopes.retire(thread, 0)
 	return ...
 end
-local close_thread<const> = function(thread) return closed(thread, close(thread)) end
+local close_thread<const> = function(thread) return closed(thread, retirement.close_thread(thread)) end
 coroutine.close = close_thread
 function coroutine.isyieldable(...) return isyieldable(...) end
 
