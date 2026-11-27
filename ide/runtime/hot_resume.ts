@@ -1,4 +1,4 @@
-import { retireRuntimeFrameScopes } from './frame_scopes';
+import { hasOpenFrameScopes, resolveFrameScopeRetirement, retireRuntimeFrameScopes } from './frame_scopes';
 import { readRuntimeLuaModuleExport } from './lua_inspection';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
@@ -46,6 +46,7 @@ import {
 	type RuntimeDebuggerExecutionContext,
 } from './debugger_plans';
 import { RuntimeGuestCallPlan } from './guest_call';
+import type { RuntimeDebuggerSourceStop } from './source_debugger';
 import type { RuntimeFaultState } from './fault_state';
 import {
 	applyHotResumeRelocation,
@@ -180,6 +181,18 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 	}
 }
 
+class HotResumePreparationPlan extends RuntimeGuestCallPlan {
+	public constructor(runtime: Runtime, private readonly retainedDepth: number, finish: (completed: boolean) => void) {
+		super(runtime, retainedDepth, 'completion', false, finish);
+	}
+
+	public override shouldStop(): boolean {
+		// A device interrupt can select another bank at the call's return frontier.
+		// Relocation needs the retained execution context selected again.
+		return this.cpu.activeThread.address === this.thread && this.cpu.getFrameDepth() === this.retainedDepth;
+	}
+}
+
 export function buildBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
@@ -272,10 +285,19 @@ export function installBlua32Revision(
 	built: BuiltBlua32Revision,
 	relocation: HotResumeRelocation,
 ): void {
+	retireRuntimeFrameScopes(runtime, sources, guest);
+	publishBlua32Revision(sources, runtime, built, relocation);
+}
+
+function publishBlua32Revision(
+	sources: RuntimeSourceState,
+	runtime: Runtime,
+	built: BuiltBlua32Revision,
+	relocation: HotResumeRelocation,
+): void {
 	const rebuilt = built.mediaInstallation.rebuilt;
 	const cpu = runtime.machine.cpu;
 	const executionAddressSpace = runtime.machine.executionAddressSpace;
-	retireRuntimeFrameScopes(runtime, sources, guest);
 	installBlua32Media(sources, runtime, built.mediaInstallation);
 	const replacements: Blua32ExecutionBoot[] = [];
 	if (rebuilt.system !== null) replacements.push(executionAddressSpace.resolveSystemDomain());
@@ -424,6 +446,7 @@ export function admitHotResume(
 		let relocation: HotResumeRelocation | null;
 		let unwindFunctionAddress = 0;
 		let bindFunctionAddress = 0;
+		let scopeRetirement: ReturnType<typeof resolveFrameScopeRetirement>;
 		let valueEnd = 0, frameEnd = 0;
 		try {
 			relocation = prepared.built === null
@@ -443,18 +466,26 @@ export function admitHotResume(
 				}
 				frameEnd = retainedFrameCount + prepared.initCalls.length + 1;
 			}
-			if (prepared.failedCompletionFrameIndex >= 0 && !unwound) {
+			const needsUnwind = prepared.failedCompletionFrameIndex >= 0 && !unwound;
+			if (prepared.built !== null && sourceEditDomains !== 0) {
+				scopeRetirement = resolveFrameScopeRetirement(sources, guest);
+				if (scopeRetirement !== undefined && bindingChanges.length === 0 && !hasOpenFrameScopes(guest, scopeRetirement.registry))
+					scopeRetirement = undefined;
+			}
+			let tail = thread.stackTop;
+			if (needsUnwind || bindingChanges.length !== 0 || scopeRetirement !== undefined) {
+				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
+				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
+			}
+			if (needsUnwind) {
 				const system = sources.currentBlua32Media.system!;
 				const unwind = system.symbols?.metadata.functionIds.indexOf('module:kernel/frame_unwind/module');
 				if (unwind === undefined || unwind < 0 || retainedFrameCount === 0)
 					throw new Error('The installed System ROM cannot unwind the failed initializer.');
 				const fn = system.layout.functions[unwind];
 				unwindFunctionAddress = fn.address;
-				let tail = thread.stackTop;
-				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
-					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
 				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));
-				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
 			}
 			if (bindingChanges.length !== 0) {
 				const system = sources.currentBlua32Media.system!;
@@ -463,11 +494,11 @@ export function admitHotResume(
 					throw new Error('The installed System ROM has no executable operand loader.');
 				const fn = system.layout.functions[bind];
 				bindFunctionAddress = fn.address;
-				let tail = thread.stackTop;
-				for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
-					tail = Math.max(tail, frame.stackBase + frame.stackCapacity);
 				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));
-				frameEnd = Math.max(frameEnd, thread.frameDepth + 2);
+			}
+			if (scopeRetirement !== undefined) {
+				const fn = cpu.captureClosureBinding(scopeRetirement.closure);
+				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));
 			}
 		} catch (error) {
 			// Unsupported live edits reject before any media/CPU write. They
@@ -515,6 +546,32 @@ export function admitHotResume(
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}
+		const publish = (live: HotResumeRelocation | null) => {
+			applyPreparedHotResume(sources, fault, debuggerState, runtime, prepared, live, report, context);
+			report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
+		};
+		const finishInstallation = (afterBinding: boolean): HotResumeAdmission => {
+			if (scopeRetirement !== undefined && (!afterBinding || hasOpenFrameScopes(guest, scopeRetirement.registry))) {
+				let retainedStop: RuntimeDebuggerSourceStop | undefined;
+				const plan = new HotResumePreparationPlan(runtime, retainedFrameCount, completed => {
+					if (!completed) { report({ kind: 'discarded' }); return; }
+					if (retainedStop !== undefined && debuggerState.source.returnToStop(retainedStop))
+						debuggerState.stopPresentationPending = true;
+					void runtimeTasks.schedule(() => {
+						if (afterBinding || isCurrent()) publish(buildHotResumeRelocation(cpu, prepared.built!.revisions, retainedFrameCount));
+					}, error => report({ kind: 'failed', error }));
+				});
+				runtime.history.stop();
+				guest.invalidate();
+				cpu.beginCompletionCall(scopeRetirement.closure);
+				retainedStop = pushRuntimeDebuggerControlPlan(debuggerState, plan, context, 'retain');
+				return 'deferred';
+			}
+			// Binding can collect unreachable closures; the preflight relocation
+			// must not be published after an ordinary guest call.
+			publish(afterBinding ? buildHotResumeRelocation(cpu, prepared.built!.revisions, retainedFrameCount) : relocation);
+			return 'applied';
+		};
 		if (bindFunctionAddress !== 0) {
 			const built = prepared.built!;
 			const candidates = built.revisions.map((revision, i) => bindingChanges.includes((i - 1) as ExecutionDomainId) ? revision!.nextImage : null);
@@ -527,7 +584,7 @@ export function admitHotResume(
 				return 'rejected';
 			}
 			const { memory, executionAddressSpace } = runtime.machine;
-			const plan = new RuntimeGuestCallPlan(runtime, retainedFrameCount, 'completion', false, completed => {
+			const plan = new HotResumePreparationPlan(runtime, retainedFrameCount, completed => {
 				if (!completed) {
 					report({ kind: 'discarded' });
 					return;
@@ -542,11 +599,9 @@ export function admitHotResume(
 						report({ kind: 'rejected', error: new Error(`Firmware could not bind the replacement image (status ${status}).`) });
 						return;
 					}
-					// Admission may have collected unreachable closures. Rediscover
-					// the live records before installing the new executable views.
-					const live = buildHotResumeRelocation(cpu, built.revisions, retainedFrameCount);
-					applyPreparedHotResume(sources, guest, fault, debuggerState, runtime, prepared, live, report, context);
-					report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
+					// The guest has published new operand banks; the matching ROM
+					// must be installed even if authoring has replaced this request.
+					finishInstallation(true);
 				}, error => report({ kind: 'failed', error }));
 			});
 			runtime.history.stop();
@@ -558,19 +613,7 @@ export function admitHotResume(
 			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
 			return 'deferred';
 		}
-		applyPreparedHotResume(
-			sources,
-			guest,
-			fault,
-			debuggerState,
-			runtime,
-			prepared,
-			relocation,
-			report,
-			context,
-		);
-		report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
-		return 'applied';
+		return finishInstallation(false);
 	};
 	if (deferUntilUserExecution) {
 		const targetFrameIndex = userFrameDepth - 1;
@@ -600,7 +643,6 @@ export function admitHotResume(
 
 function applyPreparedHotResume(
 	sources: RuntimeSourceState,
-	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	debuggerState: RuntimeDebuggerState,
 	runtime: Runtime,
@@ -624,10 +666,9 @@ function applyPreparedHotResume(
 		);
 	}
 	if (prepared.built !== null) {
-		installBlua32Revision(
+		publishBlua32Revision(
 			sources,
 			runtime,
-			guest,
 			prepared.built,
 			relocation!,
 		);

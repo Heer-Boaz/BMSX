@@ -19,8 +19,9 @@ end
 
 function scopes.retire(thread, first_frame)
 	for scope in next, active do
-		if scope.thread == thread and scope.owner_frame >= first_frame then
-			scopes.close(scope)
+		if thread == nil or (scope.thread == thread and scope.owner_frame >= first_frame) then
+			scope.thread = nil
+			active[scope] = nil
 		end
 	end
 end
