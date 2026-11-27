@@ -181,6 +181,88 @@ function probe() return retained end`);
 	assert.equal(cpu.getGlobalByKey(introduced), literal);
 });
 
+test('Hot Resume appends cartridge BSS without clearing or relocating escaped live addresses', async t => {
+	const f = await fixture(t, `bss score: word
+escaped = &score
+function probe()
+	local pointer<const>: *word = escaped
+	return escaped, *pointer
+end
+*score = 73`);
+	const { cpu, runtime } = f, { memory } = runtime.machine;
+	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
+	const read = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
+	const probe = asClosure(read('probe'), cpu.gc);
+	const escaped = read('escaped'), address = valuePayload(escaped);
+	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
+	const tail = old.bssAddress + old.bssByteCount, ramEnd = memory.ramBusEnd();
+	assert.equal(address, old.bssAddress);
+	assert.ok(tail + 8 <= ramEnd);
+	memory.writeMappedWord(tail, 0x11223344);
+	memory.writeMappedWord(tail + 4, 0x55667788);
+
+	f.model.pushEditOperations([
+		{ offset: f.source.indexOf('escaped ='), deleteLength: 0, text: 'bss extra: word\n' },
+		{ offset: f.source.indexOf('return escaped, *pointer'), deleteLength: 'return escaped, *pointer'.length,
+			text: 'return escaped, *pointer, *extra' },
+	]);
+	const operation = f.service.resume('workbench');
+	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
+	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(operation.result, { status: 'completed', applied: true });
+	const current = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
+	assert.equal(current.bssAddress, old.bssAddress);
+	assert.equal(current.bssByteCount, old.bssByteCount + 4);
+	assert.equal(memory.ramBusEnd(), ramEnd);
+	assert.equal(memory.readMappedU32LE(tail + 4), 0x55667788);
+	assert.equal(cpu.activeThread.address, thread);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(asClosure(read('probe'), cpu.gc), probe);
+	cpu.beginCompletionCall(probe);
+	assert.equal(cpu.runUntilDepth(depth, 10_000), RunResult.Halted);
+	assert.deepEqual(runtime.readCompletionValues(), [escaped, valueInteger(73), valueInteger(0)]);
+
+	const installed = f.sources.currentBlua32Media;
+	const offset = f.model.buffer.getText().indexOf('bss score');
+	f.model.pushEditOperations([{ offset, deleteLength: 0, text: 'bss earlier: word\n' }]);
+	const refusal = await f.service.resume('workbench').completion;
+	assert.equal(refusal.status, 'rejected');
+	assert.match(String(refusal.error), /cannot change the static storage layout/);
+	assert.equal(f.sources.currentBlua32Media, installed);
+	assert.equal(memory.readMappedU32LE(address), 73);
+});
+
+test('Hot Resume publishes a larger RAM aperture only after firmware claims the BSS extension', async t => {
+	// No installed cartridge operands or allocations occupy the next heap page.
+	const f = await fixture(t, 'bss original: word\n*original = 97');
+	const { memory } = f.runtime.machine;
+	const old = f.sources.currentBlua32Media.cartridgeSlots[0]!.layout.header;
+	const oldEnd = memory.ramBusEnd(), append = old.bssAddress + old.bssByteCount;
+	const offset = f.source.indexOf('*original =');
+	f.model.pushEditOperations([{ offset, deleteLength: 0, text: 'bss extension: word[1025]\n' }]);
+	const operation = f.service.resume('workbench');
+	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
+	assert.equal(memory.ramBusEnd(), oldEnd);
+	for (let grant = 0; grant < 128 && operation.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(operation.result, { status: 'completed', applied: true });
+	const last = append + 4 * 1025;
+	assert.equal(memory.ramBusEnd(), (last + 4095) & ~4095);
+	assert.ok(last > oldEnd);
+	assert.equal(memory.readMappedU32LE(old.bssAddress), 97);
+	assert.equal(memory.readMappedU32LE(last - 4), 0);
+	assert.equal(f.cpu.isUserMode(), true, 'the privileged aperture write does not grant cartridge authority');
+});
+
 test('one Hot Resume publishes new System and cartridge operands without restarting the cartridge', async t => {
 	const f = await fixture(t, 'retained = 61\nfunction cart_probe() return retained end',
 		'module<entry>\nfunction system_probe() return 38 end');

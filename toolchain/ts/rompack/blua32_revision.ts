@@ -284,8 +284,9 @@ export function buildBlua32ExecutionRevision(
 	sources: ReadonlyMap<string, string>,
 	correspondence = new LuaSourceCorrespondence(previousSources, sources),
 ): Blua32ExecutionImageRevision {
-	if (previousSymbols.staticLayoutToken.lo !== linked.symbols.staticLayoutToken.lo
-		|| previousSymbols.staticLayoutToken.hi !== linked.symbols.staticLayoutToken.hi) {
+	const installed = previousSymbols.staticLayoutToken;
+	const replacement = linked.retainedBssToken ?? linked.symbols.staticLayoutToken;
+	if (installed.lo !== replacement.lo || installed.hi !== replacement.hi) {
 		throw new Error('Hot resume cannot change the static storage layout.');
 	}
 

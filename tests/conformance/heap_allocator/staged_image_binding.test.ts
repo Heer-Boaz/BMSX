@@ -24,7 +24,7 @@ import {
 	BLUA32_STRING_RECORD_ALIGNMENT, Blua32ConstantTag,
 } from '../../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
-import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -42,10 +42,12 @@ const oldLiteral = 'installed literal';
 const ramAlias = 'already live in RAM';
 const freshLiteral = 'same literal in two replacement images';
 const characterOperands = (text: string) => Array.from(text, ch => ch.charCodeAt(0)).join(', ');
-const source = (probe: string) => `module<entry>
+const source = (probe: string, bssTail = '') => `module<entry>
 bss report: word
 -- Keep the exhaustion case small by reserving ordinary cartridge BSS.
 bss game_workspace: u8[0x300000]
+${bssTail}
+escaped_report = &report
 retained_table = { 43 }
 retained_alias = string.char(${characterOperands(ramAlias)})
 setglobal(string.char(${characterOperands('future_dynamic_global')}), 79)
@@ -139,9 +141,12 @@ test('stock firmware binds staged System and cartridge operands together without
 			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes, previous && { image: previous.layout, symbols: previous.symbols });
 	}
 	const original = link(source('return retained_table[1], saved_literal, retained_alias'));
-	const candidate = link(source(`fresh_global = '${freshLiteral}'
+	const editedProbe = `fresh_global = '${freshLiteral}'
 	if retained_table[1] == 0 then future_dynamic_global = 0 end
-	return retained_table[1], saved_literal, retained_alias, '${ramAlias}', future_dynamic_global, fresh_global`), original);
+	local pointer<const>: *word = escaped_report
+	return retained_table[1], saved_literal, retained_alias, '${ramAlias}', future_dynamic_global, fresh_global, *pointer, tail[0]`;
+	const candidate = link(source(editedProbe, 'bss tail: word[1]'), original);
+	const crossing = link(source(editedProbe, 'bss tail: word[1025]'), original);
 	const oldStrings = original.layout.constants.filter(value => typeof value === 'string');
 	const newStrings = candidate.layout.constants.filter(value => typeof value === 'string');
 	assert.deepEqual(newStrings.slice(0, oldStrings.length), oldStrings, 'the worker inherits the original String ordinals');
@@ -155,9 +160,12 @@ test('stock firmware binds staged System and cartridge operands together without
 	writeLE32(replacementSystemRom, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, replacementSystem.bytes.length);
 	const oldCart = writeTestBlua32Rom(original), newCart = writeTestBlua32Rom(candidate);
 	const staged = stageBlua32Executables(system, [replacementSystem, candidate.layout, null], SYSTEM_EXECUTION_DOMAIN_ID);
+	const stagedCrossing = stageBlua32Executables(system, [replacementSystem, crossing.layout, null], SYSTEM_EXECUTION_DOMAIN_ID);
 	const stagePath = join(work, 'staged.rom'), oldCartPath = join(work, 'old-cart.rom'), newCartPath = join(work, 'new-cart.rom');
+	const stageCrossingPath = join(work, 'staged-crossing.rom');
 	const newSystemPath = join(work, 'new-system.rom');
 	writeFileSync(stagePath, staged.bytes);
+	writeFileSync(stageCrossingPath, stagedCrossing.bytes);
 	writeFileSync(newSystemPath, replacementSystemRom);
 	writeFileSync(oldCartPath, oldCart);
 	writeFileSync(newCartPath, newCart);
@@ -193,6 +201,11 @@ test('stock firmware binds staged System and cartridge operands together without
 	const oldString = valuePayload(readGlobal('saved_literal'));
 	const probe = valuePayload(readGlobal('replacement_probe'));
 	const table = readGlobal('retained_table');
+	const priorEnd = original.layout.header.bssAddress + original.layout.header.bssByteCount;
+	const originalRamEnd = memory.ramBusEnd();
+	assert.ok(priorEnd + 4 <= originalRamEnd, 'the successful append fits within the admitted page');
+	assert.ok(crossing.layout.header.bssAddress + crossing.layout.header.bssByteCount > originalRamEnd,
+		'the refusal crosses the allocator frontier');
 	assert.ok(isRamStringId(alias));
 	assert.equal(cpu.stringPool.find(freshLiteral), undefined);
 	assert.equal(memory.readRamRecordWord(original.layout.header.bssAddress), 73);
@@ -223,10 +236,15 @@ test('stock firmware binds staged System and cartridge operands together without
 		observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 		return values;
 	}
-	const ints = [staged.imageAddresses[0], replacementSystem.address, staged.imageAddresses[1], candidate.layout.address, 0, 0];
-	const bind = (budget?: number) => complete([`T i ${entry} ${SYSTEM_EXECUTION_DOMAIN_ID} 6`, ...ints].join(' '),
-		() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, entry, ints.map(valueInteger)), budget);
+	const bind = (addresses: number[], budget?: number) => {
+		const ints = [addresses[0], replacementSystem.address, addresses[1], candidate.layout.address, 0, 0];
+		return complete([`T i ${entry} ${SYSTEM_EXECUTION_DOMAIN_ID} 6`, ...ints].join(' '),
+			() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, entry, ints.map(valueInteger)), budget);
+	};
 
+	memory.writeMappedWord(priorEnd, 0x12345678);
+	commands.push(`O ${priorEnd} 305419896`);
+	const suffix = priorEnd - RAM_BASE;
 	const baseline = captureRuntimeSaveState(runtime);
 	commands.push('S');
 	const pressure = valuePayload(readGlobal('exhaust_memory'));
@@ -238,7 +256,12 @@ test('stock firmware binds staged System and cartridge operands together without
 	const ordinaryCount = management + GLOBAL_BANK_OFFSET + GlobalBankField.Count;
 	const beforeNameCount = memory.readRamRecordWord(ordinaryCount);
 	publishSystem(stagePath, staged.bytes);
-	assert.deepEqual(bind(8192), [valueInteger(10)], 'the firmware reports that replacement storage is exhausted');
+	assert.deepEqual(bind(staged.imageAddresses, 8192), [valueInteger(10)], 'the replacement operand storage is exhausted');
+	publishSystem(stageCrossingPath, stagedCrossing.bytes);
+	assert.deepEqual(bind(stagedCrossing.imageAddresses, 8192), [valueInteger(10)], 'the physical frontier is unavailable');
+	assert.equal(memory.ramBusEnd(), originalRamEnd);
+	assert.equal(memory.readMappedU32LE(priorEnd), 0x12345678);
+	observe(`H ${suffix} ${suffix + 4}`, hashBytes(ram, suffix, 4));
 	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
 	assert.deepEqual(ram.subarray(names, namesEnd), namespace);
 	observe(`H ${names} ${namesEnd}`, hashBytes(ram, names, namesEnd - names));
@@ -253,7 +276,10 @@ test('stock firmware binds staged System and cartridge operands together without
 
 	publishSystem(stagePath, staged.bytes);
 	assert.deepEqual(ram.subarray(systemBinding, binding + EXECUTION_IMAGE_BINDING_SIZE), oldBindings);
-	assert.deepEqual(bind(), [valueInteger(0)]);
+	assert.deepEqual(bind(staged.imageAddresses), [valueInteger(0)]);
+	assert.equal(memory.ramBusEnd(), originalRamEnd);
+	assert.equal(memory.readMappedU32LE(priorEnd), 0);
+	observe(`H ${suffix} ${suffix + 4}`, hashBytes(ram, suffix, 4));
 	assert.ok(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET) > oldSpan);
 	assert.equal(memory.readRamRecordWord(systemBinding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), oldSystemSpan + 8);
 	assert.equal(memory.readRamRecordWord(ordinaryCount), beforeNameCount + 1, 'the shared new global owns one namespace slot');
@@ -269,6 +295,8 @@ test('stock firmware binds staged System and cartridge operands together without
 	assert.deepEqual(values.slice(0, 5), [valueInteger(43), valueString(oldString), valueString(alias), valueString(alias), valueInteger(79)]);
 	assert.equal(cpu.stringPool.toString(valuePayload(values[5])), freshLiteral);
 	assert.equal(values[5], valueString(canonical), 'both images bind the new literal to the same canonical record');
+	assert.deepEqual(values.slice(6), [valueInteger(73), valueInteger(0)],
+		'the replacement reads the same escaped address and only the appended storage is zeroed');
 	assert.ok(canonical < CART_ROM_BASE, 'the fresh spelling uses System ROM, not the staging tail or cartridge alias');
 	assert.equal(readGlobal('fresh_global'), values[5]);
 	assert.equal(readGlobal('retained_table'), table);

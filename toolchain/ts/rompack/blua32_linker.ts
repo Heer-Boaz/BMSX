@@ -113,6 +113,8 @@ export type LinkedBlua32ImageBase = {
 	bytes: Uint8Array;
 	layout: Blua32ImageLayout;
 	symbols: Blua32SymbolsImage;
+	/** Existing cartridge static layout, recomputed over a candidate BSS prefix. */
+	retainedBssToken: Blua32StaticLayoutToken | null;
 	/** Current object proto per function slot; -1 is a retained tombstone. Tooling only. */
 	functionProtoIndices: readonly number[];
 	startupFunctionAddress: number;
@@ -966,6 +968,19 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		bss.symbols,
 		object.link.symbols.initParticipants,
 	);
+	let retainedBssToken: Blua32StaticLayoutToken | null = null;
+	if (input.domain === 'cart' && input.previous !== undefined) {
+		const prior = input.previous.image.header;
+		const prefix = prior.bssByteCount;
+		if (input.dataAddress === prior.dataAddress && data.bytes.byteLength === prior.dataByteCount
+			&& input.bssAddress === prior.bssAddress && bss.byteCount > prefix
+			&& !bss.symbols.some(symbol => symbol.offset < prefix && symbol.offset + symbol.byteCount > prefix)) {
+			retainedBssToken = buildStaticLayoutToken(rodataAddress, rodataByteCount, rodata.symbols,
+				input.dataAddress, data.bytes.byteLength, data.symbols,
+				input.bssAddress, prefix, bss.symbols.filter(symbol => symbol.offset < prefix),
+				object.link.symbols.initParticipants);
+		}
+	}
 	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
@@ -1064,6 +1079,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			bytes,
 			layout,
 			symbols,
+			retainedBssToken,
 			functionProtoIndices: functionLayout.protoIndexBySlot,
 			biosImports: {
 				cartridgeStaticRamBase: input.bssAddress + bss.byteCount,
@@ -1083,6 +1099,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		bytes,
 		layout,
 		symbols,
+		retainedBssToken,
 		functionProtoIndices: functionLayout.protoIndexBySlot,
 		startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 		irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],

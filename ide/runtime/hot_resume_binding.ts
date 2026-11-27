@@ -38,13 +38,15 @@ function nextStringConstant(image: Blua32ImageLayout, slot: number): number {
 	return slot;
 }
 
-/** Verify the retained operand prefix and report whether it needs more backing. */
+/** Verify the retained operand prefix and report whether firmware must prepare the image. */
 export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, previous: Blua32ImageLayout, next: Blua32ImageLayout): boolean {
 	const old = previous.header, revised = next.header;
 	if (((old.flags ^ revised.flags) & BLUA32_IMAGE_MAPPED_CODE_FLAG) !== 0)
 		throw new Error('Hot Resume changes the installed instruction addressing mode. Rebuild and boot the ROM.');
+	const bssAppend = revised.bssByteCount > old.bssByteCount;
 	if (old.dataAddress !== revised.dataAddress || old.dataByteCount !== revised.dataByteCount
-		|| old.bssAddress !== revised.bssAddress || old.bssByteCount !== revised.bssByteCount)
+		|| old.bssAddress !== revised.bssAddress || revised.bssByteCount < old.bssByteCount
+		|| (bssAppend && (domain < 0 || cpu.activeCartridgeSlot() !== domain)))
 		throw new Error('Hot Resume changes installed DATA or BSS storage. Rebuild and boot the ROM.');
 	if (old.globalNameCount > revised.globalNameCount || old.systemGlobalNameCount > revised.systemGlobalNameCount
 		|| !sameNameSlots(previous, old.globalNameTableAddress, next, revised.globalNameTableAddress, old.globalNameCount)
@@ -90,5 +92,5 @@ export function verifyHotResumeBinding(cpu: CPU, domain: ExecutionDomainId, prev
 		!== 4 * (old.globalNameCount + old.systemGlobalNameCount + stringCount))
 		throw new Error('Hot Resume requires the firmware-installed operand binding.');
 	return old.globalNameCount !== revised.globalNameCount || old.systemGlobalNameCount !== revised.systemGlobalNameCount
-		|| after !== revised.constantCount;
+		|| after !== revised.constantCount || bssAppend;
 }

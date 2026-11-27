@@ -3,6 +3,7 @@ module<const>
 local layout<const> = require('kernel/gc_runtime_layout')
 local admission<const> = require('kernel/boot_image_admission')
 local arena<const> = require('kernel/dlmalloc')
+local floor<const> = require('kernel/heap_floor')
 local records<const> = require('kernel/dlmalloc_record')
 local names<const> = require('kernel/global_bank')
 local hashes<const> = require('kernel/table_reinsert').internal
@@ -47,8 +48,8 @@ bss image_operands: image_operand_plan[3]
 local prepare_plan<const> = function(index, staged, mounted)
 	local plans<const>: *image_operand_plan = image_operands
 	local plan<const>: *image_operand_plan = &plans[index]
-	plan.staged, plan.offset = staged, 0
-	if staged == 0 then return true end
+	plan.staged, plan.offset, plan.extent = staged, 0, 0
+	if staged == 0 then return true, 0, 0 end
 	local replacement<const>: *immutable_image_operands = staged
 	local old_address<const> = index == 0 and mounted or string_record.rom_read_address(mounted | ((index - 1) << 31))
 	local prior<const>: *immutable_image_operands = old_address
@@ -56,6 +57,16 @@ local prepare_plan<const> = function(index, staged, mounted)
 		or replacement.global_count < prior.global_count or replacement.system_count < prior.system_count
 		or replacement.string_buckets ~= prior.string_buckets
 		or replacement.string_bucket_count ~= prior.string_bucket_count then return false end
+	if replacement.data_target ~= prior.data_target or replacement.data_size ~= prior.data_size
+		or replacement.bss_target ~= prior.bss_target or replacement.bss_size < prior.bss_size then return false end
+	local bss_start, bss_end = 0, 0
+	if replacement.bss_size ~= prior.bss_size then
+		if index == 0 or prior.bss_target < 0x08040000
+			or replacement.bss_size > state - prior.bss_target
+			or ((prior.bss_target | prior.bss_size | replacement.bss_size) & 3) ~= 0 then return false end
+		bss_start, bss_end = prior.bss_target + prior.bss_size, prior.bss_target + replacement.bss_size
+		if bss_start > cop0.ram_end then return false end
+	end
 	local installed<const>: *installed_image_binding = state + layout.installed_image_bindings_offset
 		+ index * sizeof(installed_image_binding)
 	local delta<const> = staged - mounted
@@ -67,11 +78,13 @@ local prepare_plan<const> = function(index, staged, mounted)
 	end
 	local string_prior<const> = installed.bytes // 4 - prior.global_count - prior.system_count
 	if string_count < string_prior then return false end
-	plan.delta, plan.extent = delta, 4 * (replacement.global_count + replacement.system_count + string_count)
+	plan.delta = delta
+	local extent<const> = 4 * (replacement.global_count + replacement.system_count + string_count)
+	if extent ~= installed.bytes then plan.extent = extent end
 	plan.constant_count, plan.string_count, plan.string_prior = count, string_count, string_prior
 	plan.global_count, plan.global_prior = replacement.global_count, prior.global_count
 	plan.system_count, plan.system_prior = replacement.system_count, prior.system_count
-	return true
+	return true, bss_start, bss_end
 end
 
 local lookup_staged<const> = function(index, payload, length, hash)
@@ -253,9 +266,15 @@ local bind_live<const> = function(arguments_address)
 	local arguments<const>: *u32 = arguments_address
 	local plans<const>: *image_operand_plan = image_operands
 	local total_names, name_images = 0, 0
+	local bss_start, bss_end = 0, 0
 	for index = 0, 2 do
-		if not prepare_plan(index, arguments[2 * index], arguments[2 * index + 1]) then return invalid_image end
-		if plans[index].staged ~= 0 then
+		local valid<const>, first<const>, last<const> = prepare_plan(index, arguments[2 * index], arguments[2 * index + 1])
+		if not valid then return invalid_image end
+		if first ~= 0 then
+			if bss_start ~= 0 then return invalid_image end
+			bss_start, bss_end = first, last
+		end
+		if plans[index].extent ~= 0 then
 			local added<const> = plans[index].global_count - plans[index].global_prior
 				+ plans[index].system_count - plans[index].system_prior
 			if added ~= 0 then name_images = name_images + 1 end
@@ -266,11 +285,20 @@ local bind_live<const> = function(arguments_address)
 	local cart0_extent<const>: *word = 0x080101f8
 	local cart1_extent<const>: *word = 0x080101fc
 	local system<const>, cart0<const>, cart1<const> = *system_extent, *cart0_extent, *cart1_extent
+	-- Claim the new static prefix before operand allocations may enter it.
+	-- Keep its RAM aperture unpublished until the whole load can commit.
+	local prior_floor, ram_end = 0, cop0.ram_end
+	local floor_claimed<const> = bss_end > ram_end
+	if floor_claimed then
+		prior_floor = arena.bmsx_dlmalloc_floor(allocator)
+		ram_end = floor.admit_static_end(bss_end)
+		if ram_end == 0 then return no_storage end
+	end
 	local cycles = cop0.event_cycles
 	local fault = 0
 	for index = 0, 2 do
 		local plan<const>: *image_operand_plan = &plans[index]
-		if plan.staged ~= 0 and plan.extent ~= 0 then
+		if plan.extent ~= 0 then
 			local accepted, offset
 			accepted, offset, cycles = admission.reserve(management, 0, 0, plan.extent, plan.extent, true, cycles, 0, 0)
 			if not accepted then
@@ -300,7 +328,7 @@ local bind_live<const> = function(arguments_address)
 	local ordinary_added, system_added = 0, 0
 	if fault == 0 then
 		for index = 0, 2 do
-			if plans[index].staged ~= 0 then
+			if plans[index].extent ~= 0 then
 				local plan<const> = &plans[index]
 				local ordinary<const> = stage_names(index, plan, false, pending, mask, false, system, cart0, cart1)
 				local special<const> = stage_names(index, plan, true, pending, mask, false, system, cart0, cart1)
@@ -332,7 +360,7 @@ local bind_live<const> = function(arguments_address)
 		-- No collection follows this pass. Earlier admission could reclaim a
 		-- RAM String absent from the installed names and operand roots.
 		for index = 0, 2 do
-			if plans[index].staged ~= 0 then
+			if plans[index].extent ~= 0 then
 				local plan<const> = &plans[index]
 				if stage_names(index, plan, false, 0, 0, true, system, cart0, cart1) < 0
 					or stage_names(index, plan, true, 0, 0, true, system, cart0, cart1) < 0
@@ -350,10 +378,11 @@ local bind_live<const> = function(arguments_address)
 			local plan<const>: *image_operand_plan = &plans[index]
 			if plan.offset ~= 0 then records.bmsx_dlmalloc_release_record(allocator, plan.offset, plan.extent, occupied) end
 		end
+		if floor_claimed then arena.bmsx_dlmalloc_set_floor(allocator, prior_floor) end
 		return fault
 	end
 	for index = 0, 2 do
-		if plans[index].staged ~= 0 then
+		if plans[index].extent ~= 0 then
 			local plan<const> = &plans[index]
 			ordinary_storage, ordinary_capacity = publish_names(plan, false, ordinary_storage, ordinary_capacity)
 			system_storage, system_capacity = publish_names(plan, true, system_storage, system_capacity)
@@ -362,6 +391,11 @@ local bind_live<const> = function(arguments_address)
 	end
 	if ordinary_storage ~= 0 then arena.bmsx_dlmalloc_free(allocator, ordinary_storage) end
 	if system_storage ~= 0 then arena.bmsx_dlmalloc_free(allocator, system_storage) end
+	if bss_start ~= 0 then
+		local suffix<const>: *u32 = bss_start
+		for word = 0, (bss_end - bss_start) // 4 - 1 do suffix[word] = 0 end
+		if floor_claimed then cop0.ram_end = ram_end end
+	end
 	return 0
 end
 

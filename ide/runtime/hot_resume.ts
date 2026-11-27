@@ -258,8 +258,10 @@ export function prepareBlua32RevisionInstallation(
 		if (blua32ToolingImageForDomain(sources.currentBlua32Media, domain)?.layout !== revision.previousImage) {
 			throw new Error('The installed ROM changed while preparing Hot Resume.');
 		}
-		if (cpu.isExecutionDomainResident(domain) && verifyHotResumeBinding(cpu, domain, revision.previousImage, revision.nextImage)) {
-			if (bindingChanges === undefined) throw new Error('Publishing additional operands requires a firmware bind.');
+		const staticStorageChanged = revision.previousImage.header.bssByteCount !== revision.nextImage.header.bssByteCount;
+		if ((staticStorageChanged || cpu.isExecutionDomainResident(domain))
+			&& verifyHotResumeBinding(cpu, domain, revision.previousImage, revision.nextImage)) {
+			if (bindingChanges === undefined) throw new Error('Publishing this image requires firmware preparation.');
 			bindingChanges.push(domain);
 		}
 	}
@@ -468,7 +470,7 @@ export function admitHotResume(
 				const system = sources.currentBlua32Media.system!;
 				const bind = system.symbols?.metadata.functionIds.indexOf('module:kernel/bind_image_entry/module');
 				if (bind === undefined || bind < 0)
-					throw new Error('The installed System ROM has no executable operand loader.');
+				throw new Error('The installed System ROM has no live executable loader.');
 				const fn = system.layout.functions[bind];
 				bindFunctionAddress = fn.address;
 				valueEnd = Math.max(valueEnd, tail + Math.max(1, fn.numParams, fn.maxStack));

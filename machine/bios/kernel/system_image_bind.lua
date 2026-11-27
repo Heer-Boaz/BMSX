@@ -50,6 +50,13 @@ struct immutable_image_operands
 	system_count: u32 -- F:15
 	string_buckets: addr -- F:16
 	string_bucket_count: u32 -- F:17
+	rodata: addr
+	rodata_size: u32
+	data_source: addr
+	data_size: u32
+	data_target: addr
+	bss_target: addr
+	bss_size: u32
 end
 
 struct constant_record

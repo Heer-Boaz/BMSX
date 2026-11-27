@@ -160,10 +160,11 @@ export function deriveBlua32FixedStack(
 							reject('not an authored exception vector');
 						continue;
 					}
-					if (b === COP0_CONTEXT || b === COP0_RAM_END) {
-						if (index !== boundary?.reset) reject('context and RAM aperture belong to the reset root');
-						if (b === COP0_CONTEXT) continue;
-					} else if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR) {
+					if (b === COP0_CONTEXT) {
+						if (index !== boundary?.reset) reject('context selection belongs to the reset root');
+						continue;
+					}
+					if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR && b !== COP0_RAM_END) {
 						reject('not a bounded direct-vector control write');
 					}
 					break;
