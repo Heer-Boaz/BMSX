@@ -53,7 +53,8 @@ export class GuestFixture {
 		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		this.initialized = true;
-		this.beginCall('bind', [cpu.getGlobalByKey(pool.intern(this.suiteSlot)), caseName === null ? valueNil() : valueString(pool.intern(caseName))]);
+		// The preloaded suite exports and its literal case keys are already installed.
+		this.beginCall('bind', [cpu.getGlobalByKey(pool.find(this.suiteSlot)!), caseName === null ? valueNil() : valueString(pool.find(caseName)!)]);
 	}
 
 	/** A physical exception returns first; it is never truncated to admit a host call. */
@@ -93,7 +94,7 @@ export class GuestFixture {
 
 	public cancelPhase(phase: string): void {
 		if (!this.runtime.admitExternalCpuMutation()) throw new Error('Guest fixture requires a settled CPU and device frontier.');
-		this.beginCall('cancel', [valueString(this.runtime.machine.cpu.stringPool.intern(phase))]);
+		this.beginCall('cancel', [valueString(this.runtime.machine.cpu.stringPool.find(phase)!)]);
 	}
 
 	/** The compiled context retains recorder roots across history restore. No phase call or heap scan is needed. */
@@ -106,10 +107,10 @@ export class GuestFixture {
 	private beginCall(method: 'bind' | 'resume' | 'cancel', args: readonly Value[]): void {
 		const cpu = this.runtime.machine.cpu, pool = cpu.stringPool;
 		// Resolve the current guest module, not closures borrowed from an older heap.
-		const execution = valuePayload(cpu.getGlobalByKey(pool.intern(EXECUTION_SLOT)));
+		const execution = valuePayload(cpu.getGlobalByKey(pool.find(EXECUTION_SLOT)!));
 		this.returnThread = cpu.activeThread.address;
 		this.returnDepth = cpu.getFrameDepth();
-		cpu.beginCompletionCall(asClosure(cpu.gc.tables.getStringKey(execution, pool.intern(method)), cpu.gc), args);
+		cpu.beginCompletionCall(asClosure(cpu.gc.tables.getStringKey(execution, pool.find(method)!), cpu.gc), args);
 		this.callPending = true;
 	}
 }

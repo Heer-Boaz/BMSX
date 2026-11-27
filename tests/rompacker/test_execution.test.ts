@@ -238,7 +238,7 @@ test(`O${optLevel}: integration code waits sequentially, injects ICU samples, st
 	try {
 		const source = `local game<const> = require('game')
 return { kind = 'integration', tests = {
- input_and_boundary = function(t)
+ ['input and boundary 🧪\\0\\255'] = function(t)
   t:wait_until('game starts', function() return game.updates >= 2 end, 10)
   t:press('KeyA', 3)
   assert(game.down_samples == 3)
@@ -280,9 +280,10 @@ end`,
 		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source });
 		const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 		const results = new ScenarioResultService();
-		const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: 'scenario:0:integration', caseName: 'input_and_boundary',
-			parentId: 'scenario-module:0:fixture', label: 'input_and_boundary', assetId: 'fixture', sourceTimestamp: 0,
-			resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
+		const { name: caseName, range } = program.suite.tests[0];
+		const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: 'scenario:0:integration', caseName,
+			parentId: 'scenario-module:0:fixture', label: caseName, assetId: 'fixture', sourceTimestamp: 0,
+			resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range };
 		const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
 		const result = results.startItem(run, 0, 0);
 		let captures = 0;

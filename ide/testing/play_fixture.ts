@@ -109,7 +109,7 @@ export class PlayFixture {
 
 	private nextPhase(phase: Phase): void {
 		this.phase = phase; this.phaseCycles = 0;
-		this.args.length = 1; this.args[0] = valueString(this.target.runtime.machine.cpu.stringPool.intern(phase));
+		this.args.length = 1; this.args[0] = valueString(this.target.runtime.machine.cpu.stringPool.find(phase)!);
 	}
 	private ready(): void {
 		this.input.reset(); this.state = 'ready'; this.bindHook();
