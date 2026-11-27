@@ -19,6 +19,7 @@ import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image'
 import { readBlua32BiosImports, type Blua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 import { readBlua32CompiledSource, type Blua32CompiledSource } from '../../toolchain/ts/rompack/blua32_sources';
+import { ROM_GENERATED_MODULE_PATHS } from '../../toolchain/ts/rompack/generated_modules';
 
 export const enum Blua32GlobalRegisterFile { Global = 1, System = 2 }
 
@@ -174,8 +175,11 @@ function sourceRevisionForInstallation(catalog: WorkspaceSourceCatalog, contextI
 	if (image === null || image.symbols === null) return -1;
 	const context = catalog.getContext(contextId);
 	for (const path of image.symbols.metadata.compiledModulePaths) {
+		// Generated members belong to the installed image's link recipe, not
+		// to the workspace's authored input set.
+		if (ROM_GENERATED_MODULE_PATHS.includes(path)) continue;
 		const record = context.luaSources.module2lua[path], text = installed.get(path);
-		if (record === undefined || text === undefined || !record.generated && text !== readWorkspaceLuaSourceText(context.luaSources, record)) return -1;
+		if (record === undefined || text === undefined || text !== readWorkspaceLuaSourceText(context.luaSources, record)) return -1;
 	}
 	return context.programRevision;
 }

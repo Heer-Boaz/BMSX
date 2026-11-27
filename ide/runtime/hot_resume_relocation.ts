@@ -155,10 +155,6 @@ export function buildHotResumeRelocation(
 	for (let index = 0; index < windows.length; index += 3) {
 		const oldEnd = windows[index + 1], newEnd = windows[index + 2];
 		if (oldEnd === newEnd) continue;
-		if (newEnd > thread.stackRegisters.capacity()) {
-			unmappedWords.push(`frame ${index / 3} register backing`);
-			continue;
-		}
 		for (let other = 0; other < windows.length; other += 3) {
 			if (index !== other && oldEnd < windows[other + 2] && windows[other] < newEnd) {
 				unmappedWords.push(`frame ${index / 3} overlaps live frame ${other / 3}`);

@@ -396,42 +396,62 @@ export function admitHotResume(
 		initCalls,
 		failedCompletionFrameIndex,
 	};
-	const installation = (): HotResumeAdmission => {
-		if (deferUntilUserExecution && !runtime.admitExternalCpuMutation()) {
+	const installation = (windowRequested = false): HotResumeAdmission => {
+		if ((deferUntilUserExecution || windowRequested) && !runtime.admitExternalCpuMutation()) {
 			report({ kind: 'rejected', error: new Error('Finish the active CPU/device frontier before installing an image revision.') });
 			return 'rejected';
 		}
 		const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
 			? prepared.failedCompletionFrameIndex
 			: cpu.getFrameDepth();
+		const thread = cpu.activeThread;
 		let relocation: HotResumeRelocation | null;
+		let valueEnd = 0, frameEnd = 0;
 		try {
 			relocation = prepared.built === null
 				? null
 				: prepareBlua32RevisionInstallation(sources, runtime, prepared.built, retainedFrameCount);
-			if (prepared.initCalls.length !== 0) {
-				// Install the revision only if the complete nested init batch has backing.
-				const thread = cpu.activeThread;
-				let end = relocation?.valueEnd ?? 0;
+			if (relocation !== null || prepared.initCalls.length !== 0) {
+				valueEnd = relocation === null ? 0 : relocation.valueEnd;
 				for (let index = 0; relocation === null && index < retainedFrameCount; ++index) {
 					const base = cpu.readThreadFrameWord(thread.address, index, FrameField.StackBase) & FRAME_WINDOW_MASK;
 					const width = cpu.readThreadFrameWord(thread.address, index, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
-					end = Math.max(end, base + width);
+					valueEnd = Math.max(valueEnd, base + width);
 				}
 				for (const call of prepared.initCalls) {
 					const image = blua32ToolingImageForDomain(freshMedia, call.executionDomain)!.layout;
 					const fn = image.functions[blua32FunctionIndexAtAddress(image, call.functionAddress)];
-					end += Math.max(1, fn.maxStack, fn.numParams);
+					valueEnd += Math.max(1, fn.maxStack, fn.numParams);
 				}
-				if (end > thread.stackRegisters.capacity() || retainedFrameCount + prepared.initCalls.length + 1 > thread.frameBackingBytes / FRAME_CONTROL_BYTES) {
-					throw new Error('Hot Resume init calls exceed the prepared frame backing.');
-				}
+				frameEnd = retainedFrameCount + prepared.initCalls.length + 1;
 			}
 		} catch (error) {
 			// Unsupported live edits reject before any media/CPU write. They
 			// must not fault the mutation queue or stop the installed program.
 			report({ kind: 'rejected', error });
 			return 'rejected';
+		}
+		if (valueEnd > thread.stackRegisters.capacity() || frameEnd > thread.frameBackingBytes / FRAME_CONTROL_BYTES) {
+			if (windowRequested) {
+				report({ kind: 'rejected', error: new Error('Not enough guest memory for the new register windows.') });
+				return 'rejected';
+			}
+			// Reserve on the installed image. Collection can retire closures,
+			// so recompute relocation once this exception has returned.
+			const plan = new RuntimeGuestCallPlan(runtime, cpu.getFrameDepth(), 'exception', false, completed => {
+				if (!completed) {
+					report({ kind: 'discarded' });
+					return;
+				}
+				void runtimeTasks.schedule(() => {
+					if (isCurrent()) installation(true);
+				}, error => report({ kind: 'failed', error }));
+			});
+			runtime.history.stop();
+			guest.invalidate();
+			cpu.requestRegisterWindow(valueEnd, frameEnd, runtime.machine.scheduler.cyclesUntilDeadline());
+			pushRuntimeDebuggerControlPlan(debuggerState, plan, context);
+			return 'deferred';
 		}
 		applyPreparedHotResume(
 			sources,

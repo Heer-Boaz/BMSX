@@ -301,10 +301,18 @@ test('admission releases the exclusive queue while nested physical init roots re
 	assert.equal(first.result, null);
 	assert.equal(first.applied, true);
 	assert.equal(f.tasks.ready, true, 'guest initialization is not an exclusive task');
+	const olderPc = f.cpu.readFramePc(depth);
 	const second = f.service.resume();
 	assert.equal(f.service.latestOperation, second);
-	await second.admission;
+	assert.deepEqual(await second.admission, { status: 'accepted', mode: 'deferred' });
+	for (let grant = 0; grant < 32 && second.status === 'waiting-for-user'; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
 	assert.equal(second.status, 'initializing');
+	assert.equal(f.cpu.readFramePc(depth), olderPc, 'preparing backing must not run the older initializer');
 	assert.equal(f.cpu.runUntilDepth(depth + 1, 10000), RunResult.Halted);
 	f.debuggerState.plans.pruneCompletedCompletionBatches();
 	assert.deepEqual(await second.completion, { status: 'completed', applied: true });
@@ -348,6 +356,34 @@ test('workbench Hot Resume runs init to its physical return without continuing t
 	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, false);
 	assert.equal(f.debuggerState.plans.mutationActive, false);
 	assert.equal(f.execution.userPaused, true, 'a formerly running game remains paused after bounded init');
+});
+
+test('Hot Resume reserves backing for an initializer above an already-full caller', async t => {
+	const f = await fixture(t, 'local function refresh<init>() refreshed = (refreshed or 0) + 1 end');
+	const { cpu } = f, thread = cpu.activeThread, owner = thread.address;
+	const oldMedia = f.sources.currentBlua32Media;
+	const image = oldMedia.cartridgeSlots[0]!.layout, entry = image.header.initFunctionAddress;
+	const width = image.functions[blua32FunctionIndexAtAddress(image, entry)].maxStack;
+	while (thread.frameSpaceFits(thread.stackTop + width)) cpu.beginCompletionCallInExecutionDomain(0, entry);
+	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+	const beforeValues = thread.stackRegisters.capacity(), beforeFrames = thread.frameBackingBytes;
+	const key = cpu.stringPool.find('refreshed')!;
+	assert.equal(cpu.getGlobalByKey(key), valueNil(), 'pending initializers have not run');
+	const operation = f.service.resume('workbench');
+	assert.deepEqual(await operation.admission, { status: 'accepted', mode: 'deferred' });
+	assert.equal(f.sources.currentBlua32Media, oldMedia, 'preparation executes against the installed ROM');
+	for (let grant = 0; grant < 32 && operation.result === null; ++grant) {
+		willExecuteRuntimeDebuggerPlan(f.debuggerState);
+		f.target.advanceGame(10_000);
+		didExecuteRuntimeDebuggerPlan(f.debuggerState);
+		await f.tasks.join();
+	}
+	assert.deepEqual(operation.result, { status: 'completed', applied: true });
+	assert.equal(cpu.activeThread.address, owner);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc);
+	assert.ok(thread.stackRegisters.capacity() > beforeValues || thread.frameBackingBytes > beforeFrames);
+	assert.equal(cpu.getGlobalByKey(key), valueInteger(1), 'only the requested initializer ran');
 });
 
 for (const reason of ['machine-reset', 'shutdown'] as const) test(`${reason} cancels queued admission before any media write`, async t => {

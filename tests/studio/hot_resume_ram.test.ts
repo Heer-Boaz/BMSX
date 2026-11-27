@@ -51,7 +51,7 @@ test('Hot Resume admits numeric edits but rejects equal-sized retargeting of ins
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 });
 
-test('Hot Resume rejects a widened retained frame before replacing its ROM', () => {
+test('Hot Resume plans backing for a widened retained frame without mutating it', () => {
 	const text = new Uint8Array(4);
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	const system = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
@@ -66,7 +66,8 @@ test('Hot Resume rejects a widened retained frame before replacing its ROM', () 
 	writeLE32(nextBytes, fn - image.address + BLUA32_FUNCTION_MAX_STACK_OFFSET, cpu.activeThread.stackRegisters.capacity() + 1);
 	const revision = { ...identityHotResumeRevision(image), nextImage: decodeBlua32Image(nextBytes, image.address) };
 	const before = cpu.captureRuntimeState();
-	assert.throws(() => buildHotResumeRelocation(cpu, [revision, null, null], cpu.getFrameDepth()), /register backing/);
+	const relocation = buildHotResumeRelocation(cpu, [revision, null, null], cpu.getFrameDepth());
+	assert.ok(relocation.valueEnd > cpu.activeThread.stackRegisters.capacity());
 	assert.deepEqual(cpu.captureRuntimeState(), before);
 });
 

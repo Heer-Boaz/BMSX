@@ -54,10 +54,11 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	) { this.cpu = runtime.machine.cpu; this.thread = this.cpu.activeThread.address; }
 
 	public shouldStop(): boolean {
+		if (this.boundary === 'exception') return !this.cpu.hasFramesAbove(this.thread, this.returnDepth);
 		// A parked caller can accept an IRQ before the next hook. That IRQ may
 		// reuse the returned call's depth, but it is not its completion root.
 		return this.cpu.readThreadFrameDepth(this.thread) <= this.returnDepth
-			|| this.boundary === 'completion' && (this.cpu.readThreadFrameWord(this.thread, this.returnDepth, FrameField.Flags) & FRAME_COMPLETION) === 0;
+			|| (this.cpu.readThreadFrameWord(this.thread, this.returnDepth, FrameField.Flags) & FRAME_COMPLETION) === 0;
 	}
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {

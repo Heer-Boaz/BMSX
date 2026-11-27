@@ -3,10 +3,14 @@ import { join } from 'node:path';
 import { MANAGED_CART_LAUNCH } from './managed_cart_launch';
 
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
-import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
+import { BIOS_EXCEPTION_BRIDGE, BIOS_FUNCTION_EXPORTS, BIOS_MANAGED_ENTRIES, BIOS_PREPARED_ENTRY, BIOS_USER_IRQ_ENTRY, SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { BLUA32_FIRMWARE_MODULE_PATH, GX_DISPLAY_PRESET_MODULE_PATH, GX_REGISTER_MODULE_PATH, ROM_ASSET_SYMBOL_MODULE_PATH } from '../../toolchain/ts/rompack/generated_modules';
+import { buildRelocatableRomAssetSymbolModule } from '../../toolchain/ts/rompack/asset_symbols';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
-import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
@@ -16,6 +20,11 @@ import {
 
 const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
 const SYSTEM_PROJECT_ROOT = 'test-fixtures/scenario/system';
+const SCENARIO_BOOT = {
+	resetModule: 'kernel/reset', irqModule: 'kernel/irq', exceptionModule: 'kernel/cold_exception',
+	preparedEntry: BIOS_PREPARED_ENTRY, userIrqEntry: BIOS_USER_IRQ_ENTRY,
+	exceptionBridge: BIOS_EXCEPTION_BRIDGE, managedEntries: BIOS_MANAGED_ENTRIES,
+};
 
 export const SCENARIO_FIXTURE_TEST_SOURCE_PATH = 'tests/carts/example/example_assert.lua';
 export const SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE = 'return "source only"';
@@ -69,11 +78,20 @@ export async function buildScenarioMediaFixture(
 		`${SYSTEM_PROJECT_ROOT}/entry.lua`)];
 	// The executable fixture uses the real heap firmware. The public utility
 	// slots below are unrelated to the tested runtime scenario.
-	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.filter(exported => !exported.fixedStack).map(exported => [exported.path, {
+	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.map(exported => [exported.path, {
 		path: exported.path,
 		source: 'module<const>\nreturn function(value) return value end',
 	}]));
-	for (const path of SYSTEM_KERNEL_MODULES) {
+	const firmware = new Set<string>(SYSTEM_KERNEL_MODULES);
+	if (options?.launchCartridge) for (const path of [
+		SCENARIO_BOOT.resetModule, SCENARIO_BOOT.irqModule, SCENARIO_BOOT.exceptionModule,
+		BIOS_PREPARED_ENTRY.path, BIOS_USER_IRQ_ENTRY.path, BIOS_EXCEPTION_BRIDGE.path,
+		'kernel/heap_bootstrap', 'kernel/boot_diagnostics', 'kernel/root_activation', 'kernel/warm_bindings',
+		'kernel/interrupts', 'kernel/exception_report', 'kernel/register_window', 'kernel/protected_return',
+		'kernel/coroutine_transfer', 'kernel/function_binding',
+		...BIOS_MANAGED_ENTRIES.map(entry => entry.path),
+	]) firmware.add(path);
+	for (const path of firmware) {
 		systemModules.set(path, { path, source: await readFile(`machine/bios/${path}.lua`, 'utf8') });
 	}
 	for (const module of options?.systemModules ?? []) systemModules.set(module.path, module);
@@ -83,7 +101,8 @@ export async function buildScenarioMediaFixture(
 	}
 	if (options?.systemAssets !== undefined) systemAssets.push(...options.systemAssets);
 	const systemBlua32 = buildRomBlua32Tail(systemAssets, {
-		generatedLuaModules: [],
+		...options?.launchCartridge && SCENARIO_BOOT,
+		generatedLuaModules: options?.launchCartridge ? [{ path: BLUA32_FIRMWARE_MODULE_PATH, source: BLUA32_FIRMWARE_MODULE_SOURCE }] : [],
 		includeDiagnostics: true,
 		includeSymbols: true,
 		optLevel: options?.systemOptLevel ?? 0,
@@ -143,7 +162,11 @@ export async function buildScenarioMediaFixture(
 	if (options?.cartAssets !== undefined) cartAssets.push(...options.cartAssets);
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
-		generatedLuaModules: [],
+		generatedLuaModules: options?.launchCartridge ? [
+			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, ...buildRelocatableRomAssetSymbolModule(cartLayout.entries, 'cart', cartLayout.nextOffset) },
+			{ path: GX_DISPLAY_PRESET_MODULE_PATH, source: GX_DISPLAY_PRESET_MODULE_SOURCE },
+			{ path: GX_REGISTER_MODULE_PATH, source: GX_REGISTER_MODULE_SOURCE },
+		] : [],
 		includeDiagnostics: true,
 		includeSymbols: true,
 		optLevel: options?.cartOptLevel ?? 0,
