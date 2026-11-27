@@ -132,7 +132,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TABLE_INDEX_CHAIN_LIMIT, HASH_STORE_DECLINED,
+import { TableRecords, TableHeader, TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT, TABLE_STORE_FIRMWARE,
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_LATCHED_PROTOTYPE, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
@@ -611,26 +611,30 @@ export class CPU implements MappedPageInvalidator {
 	private storeTableIndex(frame: CallFrame, base: Value, key: Value, value: Value): boolean {
 		if (valueTag(base) !== ValueTag.Table) throw new LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 		const tables = this.gc.tables;
+		const canonical = canonicalTableKey(key);
 		let receiver = valuePayload(base);
+		let selected = TABLE_HASH_UNPROBED;
 		if (tables.metatableAddress(receiver) !== 0) {
 			const assignment = this.tableLookupResult;
-			tables.resolveAssignment(receiver, key, assignment);
+			tables.resolveAssignment(receiver, canonical, assignment);
 			if (this.finishTableAssignment(frame, key, value, assignment)) return true;
 			receiver = assignment.receiver;
+			selected = assignment.slot;
 		}
-		if (tables.tryStore(receiver, key, value) !== HASH_STORE_DECLINED) return false;
-		this.enterTableStorageFault(receiver, key, value, 0);
+		const slot = tables.tryStore(receiver, canonical, value, selected);
+		if (slot >= -1) return false;
+		this.enterTableStorageFault(receiver, canonical, value, 0, TABLE_STORE_FIRMWARE - slot);
 		return true;
 	}
 
-	private enterTableStorageFault(receiver: number, key: Value, value: Value, extra: number): void {
-		// The table unit could not write into the existing backing. A
-		// precise exception supplies the resolved instruction operands,
-		// not an allocator entry point or a native continuation.
+	private enterTableStorageFault(receiver: number, key: Value, value: Value, extra: number, placement: number): void {
 		const cycles = this.remainingDeviceCycles();
 		const vector = this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_STORAGE_WINDOW,
-			this.currentInstructionPc, valueTable(receiver), canonicalTableKey(key), value, valueInteger(extra), 5);
-		vector?.registers.setInteger(4, cycles);
+			this.currentInstructionPc, valueTable(receiver), key, value, valueInteger(extra), 6);
+		if (vector !== null) {
+			vector.registers.setInteger(4, cycles);
+			vector.registers.setInteger(5, placement);
+		}
 	}
 
 	// The linked allocate_record body owns admission, assistance and retry.
@@ -701,8 +705,10 @@ export class CPU implements MappedPageInvalidator {
 		if (this.finishTableAssignment(frame, field, value, assignment)) return true;
 		const extraHashSlots = assignment.extraVisits === 0 ? page.operandByte[pageOffset] : 0;
 		const slot = tables.tryStore(assignment.receiver, field, value, assignment.slot);
-		if (slot === HASH_STORE_DECLINED) {
-			this.enterTableStorageFault(assignment.receiver, field, value, extraHashSlots);
+		if (slot < -1) {
+			const placement = TABLE_STORE_FIRMWARE - slot;
+			if (assignment.extraVisits === 0 && placement >= 0) page.tableCacheSlots[pageOffset] = placement;
+			this.enterTableStorageFault(assignment.receiver, field, value, extraHashSlots, placement);
 			return true;
 		}
 		if (assignment.extraVisits === 0) page.tableCacheSlots[pageOffset] = slot;

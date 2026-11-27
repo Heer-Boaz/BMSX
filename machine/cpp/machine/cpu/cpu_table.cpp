@@ -92,9 +92,9 @@ bool CPU::finishTableAssignment(CallFrame& frame, Value key, Value value, const 
 	BMSX_UNREACHABLE();
 }
 
-bool CPU::enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots) {
+bool CPU::enterStorageWindowException(u32 receiver, Value key, Value value, u8 extraHashSlots, int position) {
 	const std::array arguments{valueTable(receiver), canonicalTableKey(key), value,
-		valueInteger(extraHashSlots), valueInteger(remainingDeviceCycles())};
+		valueInteger(extraHashSlots), valueInteger(remainingDeviceCycles()), valueInteger(position)};
 	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_STORAGE_WINDOW,
 		m_currentInstructionPc, arguments);
 	return true;
@@ -103,46 +103,48 @@ bool CPU::enterStorageWindowException(u32 receiver, Value key, Value value, u8 e
 bool CPU::storeTableIndex(CallFrame& frame, Value base, Value key, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	u32 receiver = valuePayload(base);
+	int position = TABLE_HASH_UNPROBED;
 	const TableRecord table(m_heap, receiver);
 	if (table.metatableAddress() != 0u) {
 		TableLookupResult result;
 		table.resolveAssignment(key, result);
 		if (finishTableAssignment(frame, key, value, result)) return true;
 		receiver = result.receiver;
+		position = result.slot;
 	}
-	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value) != TableRecord::HASH_STORE_DECLINED)
+	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value, position))
 		return false;
-	return enterStorageWindowException(receiver, key, value, 0u);
+	return enterStorageWindowException(receiver, key, value, 0u, position);
 }
 
 bool CPU::storeTableIntegerIndex(CallFrame& frame, Value base, int index, Value value) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	u32 receiver = valuePayload(base);
 	const Value key = valueInteger(index);
+	int position = TABLE_HASH_UNPROBED;
 	const TableRecord table(m_heap, receiver);
 	if (table.metatableAddress() != 0u) {
 		TableLookupResult result;
 		table.resolveIntegerAssignment(index, result);
 		if (finishTableAssignment(frame, key, value, result)) return true;
 		receiver = result.receiver;
+		position = result.slot;
 	}
-	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value) != TableRecord::HASH_STORE_DECLINED)
+	if (TableRecord(m_heap, receiver).tryAssignOwn(key, value, position))
 		return false;
-	return enterStorageWindowException(receiver, key, value, 0u);
+	return enterStorageWindowException(receiver, key, value, 0u, position);
 }
 
 bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots) {
 	if (!valueIsTable(base)) throw LuaExecutionError(LUA_FAULT_REASON_ASSIGN_NON_TABLE);
 	TableLookupResult result;
-	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result);
+	TableRecord(m_heap, valuePayload(base)).resolveStringAssignment(key, result, predictedSlot);
 	if (finishTableAssignment(frame, valueString(key), value, result)) return true;
 	if (result.extraVisits != 0u) extraHashSlots = 0;
 	const Value field = valueString(key);
-	const int slot = TableRecord(m_heap, result.receiver).tryAssignOwn(field, value, result.slot);
-	if (slot == TableRecord::HASH_STORE_DECLINED)
-		return enterStorageWindowException(result.receiver, field, value, extraHashSlots);
-	if (result.extraVisits == 0) predictedSlot = slot;
-	return false;
+	const bool stored = TableRecord(m_heap, result.receiver).tryAssignOwn(field, value, result.slot);
+	if (result.extraVisits == 0 && (stored || result.slot >= 0)) predictedSlot = result.slot;
+	return !stored && enterStorageWindowException(result.receiver, field, value, extraHashSlots, result.slot);
 }
 
 bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {

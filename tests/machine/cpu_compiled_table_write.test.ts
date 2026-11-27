@@ -48,7 +48,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	writeInstruction(code, 3, OpCode.RFE, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text: code, constants: ['field'], functions: [
-		{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1, maxStack: 5 },
+		{ firstWord: 0, wordCount: 3, maxStack: 2 }, { firstWord: 3, wordCount: 1, numParams: 6, maxStack: 6 },
 	], exceptionFunctionIndex: 1 }, 0x10000);
 	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestHeapServiceCpu(image, mode));
 	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
@@ -95,9 +95,10 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 				assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 				assert.equal(cpu.readEpcWord(), pc);
 				const { argumentCount, registers } = cpu.activeThread.currentFrame!;
-				assert.equal(argumentCount, 5);
+				assert.equal(argumentCount, 6);
 				assert.deepEqual([registers.get(0), registers.get(1), registers.get(2), registers.get(3)],
 					[valueTable(table), valueString(key), valueInteger(value!), valueInteger(hint)]);
+				assert.equal(registers.get(5), valueInteger(-1));
 			}
 			if (throughMetatable) assert.equal(tables.getStringKey(source, key), valueNil());
 		}
@@ -106,7 +107,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 			for (const { cpu } of cases) assert.equal(cpu.fixedInterruptActive(), false);
 		}
 	};
-	assign(2, 73, false, null, 2); // No growth.
+	assign(2, 73, false, 6, 2); // Insertion is firmware-owned even with spare backing.
 	assign(1, null, false, null, 2); // Nil to missing.
 	assign(1, 73, true, 0, 2); // No hint on the forwarded table.
 	assign(1, 73, false, 6, 2);
@@ -153,7 +154,7 @@ test('ordinary bus writes cannot rebind an array or alter its private elements',
 });
 
 for (const generic of [false, true]) for (const constant of [false, true]) {
-	test(`generated string stores resume through topology changes and keep predicted overwrites inline (generic=${generic}, constant=${constant})`, () => {
+	test(`generated string stores keep primitive own-slot overwrites inline (generic=${generic}, constant=${constant})`, () => {
 		const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 		writeInstruction(text, 0, OpCode.MOV, 8, 3, 0);
 		writeInstruction(text, 1, OpCode.MOV, 2, 4, 0);
@@ -164,18 +165,21 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 10 }] });
 		const cpu = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers, key = cpu.stringPool.intern('field');
-		r.setTable(0, cpu.createTable(0, 8)); r.setString(1, key); r.setInteger(4, 13);
+		const warm = cpu.createTable(0, 8);
+		cpu.gc.tables.setStringKey(warm, key, valueInteger(5));
+		r.setTable(0, warm); r.setString(1, key); r.setInteger(4, 13);
 		cpu.runUntilDepth(0, 600);
 		const pc = image.image.functions[0].codeAddress, page = frame.decodedPage!, entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		const block = page.compiledBlocks!.entries[entry]!;
 		assert.ok(block);
 		const parent = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(parent, key, valueInteger(71));
 		const meta = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent));
-		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueTable(cpu.createTable()), valueString(key), valueNil()];
+		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueInteger(17)];
 		for (let n = 0; n < values.length; n++) {
 			const table = cpu.createTable(0, 8); cpu.gc.tables.setMetatableAddress(table, meta);
 			for (let prior = 0; prior < n; prior++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
-			for (const value of [values[n], valueNil(), values[n], values[n]]) {
+			cpu.gc.tables.setStringKey(table, key, valueInteger(5));
+			for (const value of [values[n], valueInteger(43), values[n]]) {
 				r.setTable(0, table); r.set(3, values[n]); r.set(4, value);
 				const before = cpu.gc.tables.getTrackedHeapBytes(table);
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
@@ -189,6 +193,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			}
 		}
 		const existing = cpu.createTable(0, 8);
+		cpu.gc.tables.setStringKey(existing, key, valueInteger(5));
 		r.setTable(0, existing); r.setInteger(4, 17);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 24);
@@ -197,16 +202,16 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		const updated = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, inline)];
 		assert.equal(updated.exit, CompiledBlockExit.Continue);
 		assert.equal(cpu.gc.tables.getStringKey(existing, key), constant ? valueBool(false) : valueInteger(29));
-		const empty = cpu.createTable(); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
+		const empty = cpu.createTable(0, 8); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
 		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0 };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
-		assert.equal(cpu.gc.tables.storedSlotCount(empty), 0); assert.equal(cpu.gc.tables.getStringKey(empty, key), valueNil());
+		assert.equal(cpu.gc.tables.hashSize(empty), 8); assert.equal(cpu.gc.tables.getStringKey(empty, key), valueNil());
 		assert.equal(r.get(8), values[3]); assert.equal(r.get(2), values[3]); assert.equal(r.get(9), valueNil());
 	});
 }
 
-for (const generic of [false, true]) test(`a storage-window vector receives a moved reference from a generated string write (generic=${generic})`, () => {
+for (const generic of [false, true]) test(`a storage-window vector receives a moved reference and the exact live node (generic=${generic})`, () => {
 	const text = new Uint8Array(MAPPED_PAGE_BYTE_SIZE);
 	writeInstruction(text, 0, OpCode.MOV, 7, 9, 0);
 	writeInstruction(text, 1, OpCode.KNIL, 9, 0, 0);
@@ -214,22 +219,26 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 	writeInstruction(text, 3, OpCode.JMP, 0, 63, 60, 255);
 	writeInstruction(text, 4, OpCode.HALT, 0, 0, 0);
 	const image = linkRawTestSystemBlua32({ text, constants: ['field'], functions: [
-		{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, maxStack: 5 },
+		{ firstWord: 0, wordCount: 4, maxStack: 16 }, { firstWord: 4, wordCount: 1, numParams: 6, maxStack: 6 },
 	], exceptionFunctionIndex: 1 });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(0, 1)); r.setString(1, cpu.stringPool.intern('field')); r.setInteger(9, 1);
+		const key = cpu.stringPool.intern('field'), receiver = cpu.createTable(0, 1);
+		cpu.gc.tables.setStringKey(receiver, key, valueInteger(11));
+		r.setTable(0, receiver); r.setString(1, key); r.setInteger(9, 1);
 		cpu.runUntilDepth(0, 504);
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'growth is reached from adopted generated code');
+	assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'the write is reached from adopted generated code');
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const retained = cpu.createTable(1024, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
-		r.setTable(0, cpu.createTable()); r.setTable(9, retained); frame.top = 0;
+		const key = cpu.stringPool.find('field')!, receiver = cpu.createTable(0, 1);
+		cpu.gc.tables.setStringKey(receiver, key, valueInteger(71));
+		r.setTable(0, receiver); r.setTable(9, retained); frame.top = 0;
 
 	}
 	runCpuParity(js, ref, 516);
@@ -239,7 +248,10 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 		assert.equal(r.get(9), valueNil());
 		assert.equal(cpu.fixedInterruptActive(), true);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
-		assert.equal(cpu.activeThread.currentFrame!.registers.get(2), valueTable(retained));
-		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueNil());
+		const packet = cpu.activeThread.currentFrame!;
+		assert.equal(packet.argumentCount, 6);
+		assert.equal(packet.registers.get(2), valueTable(retained));
+		assert.equal(packet.registers.get(5), valueInteger(0));
+		assert.equal(cpu.gc.tables.getStringKey(r.getPayload(0), cpu.stringPool.find('field')!), valueInteger(71));
 	}
 });

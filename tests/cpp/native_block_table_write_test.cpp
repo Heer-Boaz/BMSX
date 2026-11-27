@@ -567,11 +567,11 @@ void storesRequireAPredictedOverwrite(CPU& cpu, Memory& memory) {
 				NativeBlockRunState state{.constants = constants.view(), .heap = &cpu.gcHeap(), .remainingCycles = 100};
 				const auto* exit = block->run(registers.view(), state);
 				const Value expected = constant ? constants.get(1) : value;
-				const bool hit = own && !isNil(expected);
+				const bool hit = own && !isNil(expected) && !valueIsTable(expected) && !valueIsString(expected);
 				require(hit ? exit->exit == NativeBlockExit::Continue && exit->currentPc == source[5].pc && exit->nextPc == decoded[5].bx()
 					: exit->exit == (generic ? NativeBlockExit::WriteIndex : NativeBlockExit::WriteField)
 						&& exit->currentPc == source[3].pc && exit->nextPc == source[4].pc,
-					"only a predicted non-nil overwrite runs directly; shape changes enter the semantic owner");
+					"only a predicted primitive overwrite runs directly; references and shape changes enter the semantic owner");
 				require(table.getStringKey(key) == (hit ? expected : own ? previous : valueNil())
 					&& table.trackedHeapBytes() == before, "direct overwrites preserve raw values and a miss leaves the table untouched");
 				require(registers.get(8) == values[n] && registers.get(9) == (hit ? values[n] : valueInteger(73)) && registers.get(2) == value,
@@ -652,7 +652,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 		NativeBlockRunState state{.heap = &cpu.gcHeap()};
 		for (int index : {1, 2, 4, 3, 4, 2, 1}) {
 			const int slot = generic ? index : 1;
-			for (Value v : {valueFloatBits(0xffa12345), ref, valueNil()}) {
+			for (Value v : {valueFloatBits(0xffa12345), valueNil()}) {
 				registers.set(1, valueInteger(slot));
 				registers.set(2, v);
 				state.remainingCycles = 100;
@@ -690,14 +690,14 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 			require(previousHead == ((model.address() & GC_RECORD_MASK) >> GC_RECORD_SHIFT), "scalar Table write publishes the prior link");
 			state.remainingCycles = 100;
 			const auto* exit = block->run(registers.view(), state);
-			require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source[1].pc
-				&& state.remainingCycles == 100 - write.baseCycles - read.baseCycles,
-				"the scanned table's barrier completes in-frame before the following read at the same grant");
-			require(table.getInteger(1) == valueTable(child.address()) && registers.get(1) == valueTable(child.address())
-				&& memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 2
-				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == (weakLink | previousHead)
-				&& memory.readRamRecordWord(head) == ((header & GC_RECORD_MASK) >> GC_RECORD_SHIFT),
-				"the narrow barrier links the scanned Table without losing its independent weak link");
+			require(exit->exit == NativeBlockExit::WriteIndex && exit->currentPc == source[0].pc
+				&& exit->nextPc == source[1].pc && state.remainingCycles == 100 - write.baseCycles,
+				"the started reference store leaves before the following native instruction");
+			require(table.getInteger(1) == valueInteger(71) && registers.get(1) == valueInteger(1)
+				&& memory.readRamRecordByte(header + GC_COLOR_OFFSET) == 3
+				&& memory.readRamRecordWord(header + GC_RECORD_LINK) == previousLink
+				&& memory.readRamRecordWord(head) == previousHead,
+				"the generated reference exit does not mutate the Table or either collector link");
 		}
 		if (generic) for (Value k : {valueInteger(0), valueInteger(-1), valueInteger(5), valueFloat(1), valueBool(true)}) {
 			registers.set(1, k);
@@ -708,7 +708,7 @@ void compactArraySlots(CPU& cpu, Memory& memory) {
 	}
 }
 
-void remarkTableStoresForwardTheCommittedValue() {
+void remarkTableStoresLeaveTheValueUncommitted() {
 	for (const bool field : {false, true}) {
 		Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 		IrqController irq(memory); ExecutionAddressSpace addresses(memory); CPU cpu(memory, irq, addresses);
@@ -722,6 +722,9 @@ void remarkTableStoresForwardTheCommittedValue() {
 		memory.writeRamRecordByte(owner.address() + GC_COLOR_OFFSET, 3u);
 		auto& heap = cpu.gcHeap();
 		const auto changed = memory.readRamRecordWord(heap.changedHeadOffset());
+		const auto trace = memory.readRamRecordWord(control + GC_TRACE_HEAD);
+		const u32 record = valuePayload(child);
+		const u8 color = memory.readRamRecordByte(record + GC_COLOR_OFFSET);
 
 		// Exercise a register-source Table append and a trained field
 		// overwrite with a Thread loaded directly from the constant bank.
@@ -748,18 +751,18 @@ void remarkTableStoresForwardTheCommittedValue() {
 		state.constants = constants.view(); state.heap = &heap;
 		state.remainingCycles = instructionCharge(decoded);
 		const auto* exit = block->run(registers.view(), state);
-		require(exit->exit == NativeBlockExit::Continue && exit->currentPc == source.back().pc
-			&& exit->nextPc == 0x2000u && state.remainingCycles == 0 && registers.get(3) == valueInteger(1),
-			"the black-store helper preserves the native prefix and completes the next native instruction");
-		require((field ? owner.getStringKey(name) : owner.getInteger(1)) == child
-			&& owner.lengthHint() == (field ? 0u : 1u), "the exact input and append effect committed at the original store");
-		const u32 record = valuePayload(child);
+		require(exit->exit == (field ? NativeBlockExit::WriteField : NativeBlockExit::WriteInteger)
+			&& exit->currentPc == source[1].pc && exit->nextPc == source[2].pc
+			&& state.remainingCycles == decoded[2].baseCycles + decoded[3].baseCycles
+			&& registers.get(2) == valueInteger(1) && isNil(registers.get(3)),
+			"the generated exit publishes only the prefix and charges the started store");
+		require((field ? owner.getStringKey(name) : owner.getInteger(1)) == (field ? valueInteger(17) : valueNil())
+			&& owner.lengthHint() == 0u, "the exit has changed neither the value lanes nor the array boundary");
 		require(memory.readRamRecordByte(owner.address() + GC_COLOR_OFFSET) == 3u
 			&& memory.readRamRecordWord(heap.changedHeadOffset()) == changed
-			&& memory.readRamRecordByte(record + GC_COLOR_OFFSET) == 2u
-			&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == (record & GC_RECORD_MASK) >> GC_RECORD_SHIFT
-			&& (memory.readRamRecordWord(record + GC_RECORD_LINK) & GC_GRAY_INDEX_MASK) == 0u,
-			"the committed referent joins the live trace once; the strong owner does not join the changed queue");
+			&& memory.readRamRecordByte(record + GC_COLOR_OFFSET) == color
+			&& memory.readRamRecordWord(control + GC_TRACE_HEAD) == trace,
+			"generated code does no collector work even during remark");
 	}
 }
 
@@ -1051,7 +1054,7 @@ int main() {
 		numericFieldArithmeticKeepsNativeFrame(cpu, memory);
 		storesRequireAPredictedOverwrite(cpu, memory);
 		compactArraySlots(cpu, memory);
-		remarkTableStoresForwardTheCommittedValue();
+		remarkTableStoresLeaveTheValueUncommitted();
 
 		firstPrivateArrayWriteMarksAllHistoryPages(cpu, memory);
 		boundaryLengthRetainsNativeFrame(cpu, memory);

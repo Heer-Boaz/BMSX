@@ -3,8 +3,8 @@ module<const>
 -- Source basis: 45025f5cd2063d4c4b2315b9de8ea19f1956b4ae.
 -- T/C: Table records, P/Q: CPU parked Table write, H/N: LuaHeap,
 -- G/K: GcHeap; X/Y: CPU projection; S/J: StringPool.
--- The initial attempt already resolved __newindex and found
--- an absent canonical key which cannot fit the existing backing.
+-- The initial attempt has resolved __newindex and selected the owning
+-- array slot, hash node, or a canonical key absent from that backing.
 local layout<const> = require('kernel/gc_runtime_layout') -- P:4047-4052,5245 Q:102 X:170-176
 local root_inputs<const> = require('kernel/gc_root_inputs') -- P:4043-4058 X:165-182 S:452-458 J:442-448
 local table_create<const> = require('kernel/table_create') -- T:98,852 H:139
@@ -37,6 +37,8 @@ local scheduled_mode<const> = 0 -- P:669-679,852-856 Q:301-314; General covers D
 local current_or_fresh<const> = 0 -- P:806-808 Q:198
 local out_of_memory<const> = 9 -- P:867 Q:267
 local cpp_policy<const> = 1 -- K:95-102; use the existing C++ color-write policy
+local array_store<const> = -2
+local unprobed<const> = -3
 
 struct growth_receiver
 	before_hash_storage: u32[3] -- T:35-36 C:309 H:55
@@ -111,15 +113,16 @@ local find_hash_node<const> = function(words, tags, hash, kt, kw, match_dead)
 	return -1
 end
 
--- Retry begins at setOwn on the already-resolved receiver, not the
--- initial-absence shortcut used by General physical recovery.
-local retry_old_hash<const> = function(management, record, hash, kt, kw, vt, vw) -- P:850-855 Q:246-250 T:509-568 C:740-761,787-845
+-- Ordinary instruction faults already have the matching node (or -1).
+-- RawSet and post-collection retries still own their first/current probe.
+local store_hash<const> = function(management, record, hash, kt, kw, vt, vw, selected) -- P:850-855 Q:246-250 T:509-568 C:740-761,787-845
 	if hash == 0 then return false end -- T:542,552 C:793,829; no hash probe without backing
 	local header<const>: *growth_receiver = ram_base + (record & ram_word_mask) -- T:138 C:793
 	local words<const> = ram_base + (header.hash_storage & ram_word_mask) -- T:536 C:792
 	local tags<const> = words + 8 * hash -- T:536 C:791
 	local tag_bytes<const>: *u8 = tags
-	local slot<const> = find_hash_node(words, tags, hash, kt, kw, true)
+	local slot = selected
+	if selected == unprobed then slot = find_hash_node(words, tags, hash, kt, kw, true) end
 	if slot < 0 then -- T:552-562 C:829-838
 		local found<const> = existing.insert_hash_without_growth(management + layout.control_offset, record, kt, kw, vt, vw, cpp_policy) -- T:555 C:835
 		if found < 0 then return false end -- T:556,564 C:836,844
@@ -259,7 +262,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 			*parked = 0 -- P:853-863 Q:251-268
 			root_inputs.release_string_work(management) -- P:4055-4058 X:179-182
 			source_cycles = cop0.event_cycles -- P:849-854 Q:245-250; a resumed instruction's allowance
-			if retry_old_hash(management, record, old_hash, kt, kw, vt, vw) then return true end -- P:852-858 Q:249-257
+			if store_hash(management, record, old_hash, kt, kw, vt, vw, unprobed) then return true end -- P:852-858 Q:249-257
 			resume = true -- T:510,770,786,791 C:740,323,351
 		else -- T:803-809 C:367-373; General does not park or repeat the own-key probe
 			local work<const> = collection.finish_epoch(management, collection.step_words, 0, 0, operands_offset) -- T:803 C:367 G:1119-1124 K:1223-1227; scoped operands, original fixed epoch quantum
@@ -276,21 +279,34 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 	end
 end
 
--- A backing fault supplies the already-resolved own assignment. Do not
--- repeat the metatable traversal, probe or key canonicalization.
-local store_without_backing<const> = function(receiver, key, value, extra, cycles)
+-- A Storage Window exception supplies the resolved own assignment before
+-- a barrier, slot move, or reservation changes RAM. Only a failed insertion
+-- publishes the operands for allocation assistance and recovery.
+local store_resolved<const> = function(receiver, key, value, extra, cycles, selected)
 	local management<const> = layout.management_offset
 	local scratch<const> = ram_base + management + layout.value_cell_offset
 	local operand<const>: *value = scratch
 	local word<const>: *u32 = scratch
 	local tag<const>: *u8 = scratch + layout.value_cell_tag_offset
-	local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 	*operand = receiver
-	operands.receiver = *word
+	local record<const> = *word
 	*operand = key
-	operands.key_tag, operands.key_word = *tag, *word
+	local kt<const>, kw<const> = *tag, *word
 	*operand = value
-	operands.value_tag, operands.value_word = *tag, *word
+	local vt<const>, vw<const> = *tag, *word
+	local header<const>: *growth_receiver = record
+	if selected == array_store then
+		local words<const> = header.array_storage
+		assignment.overwrite_table_value(management, record, words, words + 4 * header.array, kw - 1, vt, vw)
+		local hint<const> = header.length
+		if vt == nil_tag and kw == hint then header.length = kw - 1
+		elseif vt ~= nil_tag and kw - 1 == hint then header.length = kw end
+		return true
+	end
+	if store_hash(management, record, header.hash, kt, kw, vt, vw, selected) then return true end
+	local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
+	operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
+	operands.value_tag, operands.value_word = vt, vw
 	return (grow_table(management, cycles, extra, scheduled_mode, true))
 end
 
@@ -346,7 +362,7 @@ local raw_set<const> = function(target, key, value, supplied)
 				end
 			end
 		end
-	elseif not retry_old_hash(management, record, header.hash, kt, kw, vt, vw) then
+	elseif not store_hash(management, record, header.hash, kt, kw, vt, vw, unprobed) then
 		local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 		operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
 		operands.value_tag, operands.value_word = vt, vw
@@ -365,6 +381,6 @@ local raw_set<const> = function(target, key, value, supplied)
 end
 
 return {
-	internal = { borrow_collection_roots = borrow_collection_roots, retry_old_hash = retry_old_hash, find_hash_node = find_hash_node },
-	grow_table = grow_table, raw_set = raw_set, store_without_backing = store_without_backing,
+	internal = { borrow_collection_roots = borrow_collection_roots, store_hash = store_hash, find_hash_node = find_hash_node },
+	grow_table = grow_table, raw_set = raw_set, store_resolved = store_resolved,
 }

@@ -922,58 +922,75 @@ void contradictoryOwnFieldProofRetiresItsSource() {
 #endif
 }
 
-void stringStoreGrowthRoots(bool generic, bool full) {
+void nativeStorePublishesReferenceAndResolvedSlot(OpCode op) {
+	const bool array = op == OpCode::SETI;
 	test::Blua32TestImage image; image.text.resize(MAPPED_PAGE_BYTE_SIZE);
-	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 7, 9, 0);
-	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KNIL), 9, 0, 0);
-	writeInstruction(image.text, 2, static_cast<u8>(generic ? OpCode::SETT : OpCode::SETFIELD), 0, generic ? 1 : 0, 7);
-	writeInstruction(image.text, 3, static_cast<u8>(OpCode::JMP), 0, 63, 60, 255);
-	image.functions = {{.firstWord = 0, .wordCount = 4, .maxStack = 16}};
+	writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 4, 2, 0);
+	writeInstruction(image.text, 1, static_cast<u8>(OpCode::KNIL), 2, 0, 0);
+	writeInstruction(image.text, 2, static_cast<u8>(op), 0, op == OpCode::SETFIELD ? 0 : 1, 4);
+	writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 2, 4, 0);
+	writeInstruction(image.text, 4, static_cast<u8>(OpCode::JMP), 0, 63, 59, 255);
+	writeInstruction(image.text, 16, static_cast<u8>(OpCode::HALT), 0, 0, 0);
+	image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 5},
+		{.firstWord = 16, .wordCount = 1, .numParams = 6, .maxStack = 6}};
 	image.constants = {std::string("field")};
+	image.exceptionFunctionIndex = 1;
 	CpuMachine native(image), scalar(image, true);
 	for (auto* m : {&native, &scalar}) {
-		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers;
-		r.set(0, valueTable(bmsx::test::allocateTableReference(m->cpu, 0, 1).address())); r.set(1, valueString(m->cpu.stringPool().intern("field"))); r.set(9, valueInteger(1));
-		m->cpu.runUntilDepth(0, NATIVE_WARM_SCALE * 500);
+		auto& cpu = m->cpu;
+		const auto key = cpu.stringPool().intern("field");
+		auto receiver = bmsx::test::allocateTableReference(cpu, array ? 1 : 0, array ? 0 : 1);
+		receiver.set(array ? valueInteger(1) : valueString(key), valueInteger(11));
+		auto& r = cpu.activeThread()->currentFrame->registers;
+		r.set(0, valueTable(receiver.address())); r.set(1, valueString(key)); r.set(2, valueInteger(31));
 	}
+	const int grant = BASE_CYCLES[static_cast<u8>(OpCode::MOV)]
+		+ BASE_CYCLES[static_cast<u8>(OpCode::KNIL)] + BASE_CYCLES[static_cast<u8>(op)];
+	const int loop = grant + BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::JMP)];
+	test::runCpuParity(native.cpu, scalar.cpu, loop * (NATIVE_BLOCK_COMPILATION_THRESHOLD + 8));
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	auto& page = *native.cpu.activeThread()->frameAtDepth(0)->decodedPage;
+	auto& page = *native.cpu.activeThread()->currentFrame->decodedPage;
 	const u32 word = (native.rom.textAddress & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 	test::waitForNativeEntry(native.cpu, page, word);
-	requireParity(native, scalar);
-	const auto& block = page.nativeBlocks->entries[word];
-	require(block != nullptr, "growing string store starts from adopted native code");
+	require(page.nativeBlocks->entries[word] != nullptr, "primitive stores train a native entry");
 #endif
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	const auto exitKind = op == OpCode::SETFIELD ? NativeBlockExit::WriteField
+		: array ? NativeBlockExit::WriteInteger : NativeBlockExit::WriteIndex;
+	const auto& write = native.cpu.nativeGateProfile().exits[static_cast<size_t>(exitKind)];
+	const auto before = write.entries;
+#endif
+	test::runCpuParity(native.cpu, scalar.cpu, loop);
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(write.entries == before, "the hot primitive store stays inline");
+#endif
+	u32 receiver = 0, retained = 0;
 	for (auto* m : {&native, &scalar}) {
-		m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
-		auto& frame = *m->cpu.activeThread()->frameAtDepth(0); auto& r = frame.registers;
-		auto& strings = m->cpu.stringPool(); auto retained = bmsx::test::allocateTableReference(m->cpu, 1024, 1);
-		retained.setStringKey(strings.intern("payload"), valueString(strings.intern("retained")));
-		auto receiver = bmsx::test::allocateTableReference(m->cpu, 0, full ? 1 : 0);
-		if (full) receiver.setStringKey(strings.intern("resident"), valueInteger(71));
-		r.set(0, valueTable(receiver.address())); r.set(9, valueTable(retained.address())); frame.writeControl(bmsx::FrameField::Top, 0);
-		const auto heap = std::pair{m->cpu.luaHeap().usedBytes(), m->cpu.luaHeap().collectionTarget()};
-		m->cpu.luaHeap().setCollectionTarget(heap.first);
+		auto& cpu = m->cpu;
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress);
+		auto& r = cpu.activeThread()->currentFrame->registers;
+		receiver = valuePayload(r.get(0));
+		retained = bmsx::test::allocateTableReference(cpu).address();
+		r.set(2, valueTable(retained));
 	}
-	test::runCpuParity(native.cpu, scalar.cpu, 3); requireParity(native, scalar);
-	for (size_t i = 0; i < 2; ++i) {
-		auto& machine = i == 0 ? native : scalar;
-		require(machine.cpu.readFramePc(0) == machine.rom.textAddress + 2u * INSTRUCTION_BYTES
-			&& !machine.cpu.collecting(),
-			"an exhausted grant stops before the store and its possible collection");
-	}
-	test::runCpuParity(native.cpu, scalar.cpu, 516); requireParity(native, scalar);
+	require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Yielded, "reference handoff consumes the store charge once");
+	requireParity(native, scalar);
 	for (auto* m : {&native, &scalar}) {
-		auto& strings = m->cpu.stringPool();
-		auto& r = m->cpu.activeThread()->frameAtDepth(0)->registers; auto retained = asTable(r.get(7), m->cpu.gcHeap());
-		require(m->cpu.collecting() && m->memory.readRamRecordByte(retained.address() + GC_COLOR_OFFSET) == 3, "the hash growth assist traced the moved reference");
-		m->cpu.collectHeap();
-		require(retained.getStringKey(*strings.find("payload")) == valueString(*strings.find("retained")),
-			"growth sees all reference roots published by the completed native prefix");
-		auto receiver = asTable(r.get(0), m->cpu.gcHeap());
-		require(receiver.getStringKey(*strings.find("field")) == r.get(7), "growth commits the requested reference store once");
-		if (full) require(receiver.getStringKey(*strings.find("resident")) == valueInteger(71), "growth preserves the occupied hash slot");
+		auto& cpu = m->cpu;
+		const Value key = array ? valueInteger(1) : valueString(*cpu.stringPool().find("field"));
+		const auto& vector = *cpu.activeThread()->currentFrame;
+		require(cpu.fixedInterruptActive() && cpu.readCauseWord() == CPU_CAUSE_CODE_STORAGE_WINDOW
+			&& cpu.readEpcWord() == m->rom.textAddress + 2 * INSTRUCTION_BYTES,
+			"storage exception is taken at the original store");
+		require(vector.readWindow(FrameField::ArgumentCount) == 6
+			&& vector.registers.get(0) == valueTable(receiver) && vector.registers.get(1) == key
+			&& vector.registers.get(2) == valueTable(retained) && vector.registers.get(5) == valueInteger(array ? -2 : 0),
+			"the actual moved reference and already determined slot arrive at the vector");
+		require(TableRecord(cpu.gcHeap(), receiver).get(key) == valueInteger(31), "the host has not mutated the storage");
 	}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+	require(write.entries == before + 1, "the generated reference store leaves once at the precise side exit");
+#endif
 }
 
 void nativeFieldOperationsLearnTheDecodedSite() {
@@ -2548,6 +2565,7 @@ void nativeDynamicStringMissReturnsWithinTheGrant() {
 
 int main() {
 	try {
+		for (const auto op : {OpCode::SETI, OpCode::SETT, OpCode::SETFIELD}) nativeStorePublishesReferenceAndResolvedSlot(op);
 		completedOwnStringProbeKeepsLookupSemantics();
 		stringReadChainBoundaries();
 		observedArithmeticResumesAtItsOwnInstruction();
@@ -2556,7 +2574,6 @@ int main() {
 		nativeTypedIndexRechecksAnExternalEntry();
 		tableIteratorRetainsItsCursorAcrossDeletionAndRestore();
 		tableIteratorUsesNativeEdgesAndRecordsTheCursor();
-		for (const bool generic : {false, true}) for (const bool full : {false, true}) stringStoreGrowthRoots(generic, full);
 
 		nativeFieldOperationsLearnTheDecodedSite();
 		nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite();

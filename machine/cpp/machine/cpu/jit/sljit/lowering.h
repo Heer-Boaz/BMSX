@@ -167,7 +167,6 @@ private:
 		sljit_jump* mutation;
 		State registers;
 		sljit_label* resume;
-		StoreBarrierRecord record;
 		int source;
 	};
 	struct SingleStringRead {

@@ -65,8 +65,10 @@ public:
 
 	Value get(const Value& key) const;
 	int set(const Value& key, const Value& value);
-	// The caller has resolved the owning Table. No allocation on a miss.
-	int tryAssignOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
+	// Resolve once on the owner. A false result leaves every table lane
+	// untouched and returns the position for the System vector.
+	bool tryAssignOwn(Value key, Value value, int& position);
+	static constexpr i32 ARRAY_STORE_POSITION = -2;
 	// Returning probes also defer __newindex to the instruction owner.
 	bool tryAssignIdentityHash(Value key, Value value) noexcept;
 	bool tryAssignIntegerHash(i32 key, Value value) noexcept;
@@ -81,12 +83,14 @@ public:
 		if (slot >= arrayCapacity()) {
 			return false;
 		}
+		m_heap->writeTableValue(m_address, value);
 		setArraySlot(slot, value);
 		return true;
 	}
 	bool tryAssignIntegerArrayKey(int key, const Value& value) {
 		const u32 slot = arraySlot(key);
-		if (slot >= arrayCapacity() || (metatableAddress() != 0u && values().tag(slot) == ValueTag::Nil)) return false;
+		if (valueTagHasGcEdge(valueTag(value)) || slot >= arrayCapacity()
+			|| (metatableAddress() != 0u && values().tag(slot) == ValueTag::Nil)) return false;
 		setArraySlot(slot, value);
 		return true;
 	}
@@ -126,7 +130,7 @@ public:
 	u32 resolveStringIndexCached(StringId key, int predictedSlot, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	void resolveAssignment(Value key, TableLookupResult& result) const;
 	void resolveIntegerAssignment(int key, TableLookupResult& result) const;
-	void resolveStringAssignment(StringId key, TableLookupResult& result) const;
+	void resolveStringAssignment(StringId key, TableLookupResult& result, int predicted = -1) const;
 	// Find a boundary and remember it after a search.
 	static i32 length(TableRecord* table) noexcept;
 	void clear();
@@ -208,13 +212,12 @@ private:
 
 	size_t hashValueSlot(size_t index) const { return hashSlots() + index; }
 	int findNodeIndex(const Value& key, bool matchDead = false) const;
+	bool probeAssignment(const Value& key, int& position) const;
 	struct ResizePlan { size_t array, hash; bool keepHash; };
 	friend class CPU;
 	ResizePlan planRehash(Value key, u8 extraHashSlots) const;
-	enum class HashStore : u8 { General, Resolved, ReturningIndex, ReturningField };
+	enum class HashStore : u8 { General, ReturningIndex, ReturningField };
 	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots);
-	template <HashStore Policy>
-	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED);
 	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested);
 	int resize(const ResizePlan&, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindHash(size_t hashSize, u32 address);

@@ -102,10 +102,11 @@ return ok, result, ${scenario.read}
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 	assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), successor);
 	const packet = cpu.activeThread.currentFrame!;
-	assert.equal(packet.argumentCount, 5);
+	assert.equal(packet.argumentCount, 6);
 	assert.deepEqual([packet.registers.get(0), packet.registers.get(1), packet.registers.get(2), packet.registers.get(3)],
 		[valueTable(receiver), key, valueInteger(61), valueInteger(0)]);
 	assert.equal(valueTag(packet.registers.get(4)), ValueTag.Integer);
+	assert.equal(packet.registers.get(5), valueInteger(-1));
 	assert.equal(tables.get(receiver, key), valueNil());
 	assert.equal(tables.arrayCapacity(receiver), 0);
 	assert.equal(tables.hashSize(receiver), 0);
@@ -199,7 +200,7 @@ test('a bare System ROM controls retirement of a table store without backing', t
 	for (const [index, [op, a, b, c]] of instructions.entries()) writeInstruction(text, index, op, a, b, c);
 	const image = linkRawTestSystemBlua32({ text, exceptionFunctionIndex: 1, verifiedControlFlow: true,
 		constants: [table, slot, slot + VALUE_MEMORY_TAG_OFFSET, report].map(integerConstant),
-		functions: [{ firstWord: 0, wordCount: 13, maxStack: 3 }, { firstWord: 13, wordCount: 7, numParams: 5, maxStack: 5 }],
+		functions: [{ firstWord: 0, wordCount: 13, maxStack: 3 }, { firstWord: 13, wordCount: 7, numParams: 6, maxStack: 6 }],
 	});
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();

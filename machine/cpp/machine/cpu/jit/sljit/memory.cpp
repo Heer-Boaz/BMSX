@@ -4,9 +4,7 @@
 #include <limits>
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/gc_heap.h"
-#include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/runtime/execution.h"
-#include "machine/cpu/jit/sljit/table_access.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -17,9 +15,6 @@ namespace bmsx {
 namespace {
 u32 SLJIT_FUNC writeLocalIoWord(Memory* memory, u32 address, u32 value) {
 	return memory->tryWriteLocalIoWord(address, value);
-}
-void SLJIT_FUNC writeNativeTableBarrier(GcHeap* heap, u32 address, u32 word, u32 tag) {
-	heap->writeBlackTableValue(address, valueFromTag(static_cast<ValueTag>(tag), word));
 }
 void SLJIT_FUNC markNativeGlobalWrite(GcHeap* heap, u32 word, u32 tag) {
 	heap->markGlobalWrite(valueFromTag(static_cast<ValueTag>(tag), word));
@@ -102,30 +97,26 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 		};
 	}
 	sljit_jump* mutation;
-	if (cell) {
-		// Closed-cell references enter firmware before either lane is written.
-		// Only firmware decides whether the collector needs a barrier.
-		mutation = sljit_emit_jump(c, SLJIT_JUMP);
-	} else if (global) {
+	if (global) {
 		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.gcPhase));
 		sljit_emit_op2(c, SLJIT_AND32, flags, 0, flags, 0, SLJIT_IMM, 7);
 		sljit_emit_op2(c, SLJIT_SUB32, flags, 0, flags, 0, SLJIT_IMM, static_cast<u8>(GcPhase::Mark));
 		mutation = sljit_emit_cmp(c, SLJIT_LESS_EQUAL | SLJIT_32, flags, 0, SLJIT_IMM,
 			static_cast<u8>(GcPhase::Atomic) - static_cast<u8>(GcPhase::Mark));
 	} else {
-		sljit_emit_op1(c, SLJIT_MOV_U8, flags, 0, SLJIT_MEM1(SLJIT_R0), GC_COLOR_OFFSET);
-		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R3, 0, flags, 0, SLJIT_IMM, GC_COLOR_MASK);
-		mutation = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R3, 0, SLJIT_IMM, 3);
+		// Private Table and closed-cell references defer before either lane is
+		// written. The System vector owns the store and any collector barrier.
+		mutation = sljit_emit_jump(c, SLJIT_JUMP);
 	}
 	if (barrier == NativeGcBarrier::Dynamic) {
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	if (cell) {
+	if (!global) {
 		fault(mutation, exit, m_cache.state());
 		return;
 	}
-	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), record, source});
+	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), source});
 }
 
 void NativeLowering::emitStoreBarriers() {
@@ -133,24 +124,13 @@ void NativeLowering::emitStoreBarriers() {
 	for (const auto& barrier : m_workspace.storeBarriers) {
 		sljit_set_label(barrier.mutation, sljit_emit_label(c));
 		m_cache.setState(barrier.registers);
-		const bool global = barrier.record == StoreBarrierRecord::Global;
-		constexpr auto savedAddress = NativeTableScratch::receiver;
 		// The leaf marks or enqueues the exact input, without tracing,
 		// allocating or inspecting any unpublished activation.
-		emitRawLoad(barrier.source, global ? SLJIT_R1 : SLJIT_R2, global ? SLJIT_R2 : SLJIT_R3);
+		emitRawLoad(barrier.source, SLJIT_R1, SLJIT_R2);
 		m_cache.spillCall(false, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R0, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, heap));
-		if (global) {
-			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
-		} else {
-			sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
-			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&writeNativeTableBarrier));
-		}
+		sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
 		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
-		if (!global) {
-			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-			NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
-		}
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resume);
 	}
 }

@@ -120,7 +120,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 	const changed = memory.readRamRecordWord(gc.changedHeadOffset());
 	tables.setInteger(strong, 1, valueClosure(onlyClosure));
 	tables.setInteger(strong, 2, valueString(stringValue));
-	assert.equal(tables.storePredictedStringKey(strong, field, predicted, ValueTag.Table, fieldValue), true);
+	assert.equal(tables.storeStringKey(strong, field, ValueTag.Table, fieldValue, predicted), predicted);
 	const storage = tables.hashAddress(strong);
 	tables.set(strong, valueTable(key), valueInteger(71));
 	assert.equal(tables.hashAddress(strong), storage, 'the key was inserted without a rehash');

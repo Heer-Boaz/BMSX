@@ -189,7 +189,7 @@ DISPATCH_LABEL(SETFIELD) {
 	const StringId key = asStringId(IMAGE.constPool.get(static_cast<size_t>(decoded->b)));
 	const Value value = readRK(IMAGE, FRAME.registers, decoded->c);
 	int& predicted = TABLE_CACHE_SLOT();
-	// An own overwrite and its write barrier do not observe the frame.
+	// A direct non-reference overwrite does not observe the frame.
 	const bool isTable = valueIsTable(base);
 	const u8 extraHashSlots = instructionFieldExtraHashSlots(decodedPage->sourceWords[pageOffset], decoded->width);
 	if (isTable) {

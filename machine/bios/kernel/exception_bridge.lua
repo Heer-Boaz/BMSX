@@ -125,7 +125,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		end
 		transfer_fault = reason
 	end
-	if denied_storage and table_growth.store_without_backing(values, depth, instruction, source_cycles, r4) then
+	if denied_storage and table_growth.store_resolved(values, depth, instruction, source_cycles, r4, r5) then
 		local context<const>: *stopped_thread = *interrupted
 		local depth<const> = context.frame_depth & control_count_mask
 		local frame<const>: *stopped_frame = layout.ram_base + ((context.frame_block + (depth - 1) * sizeof(stopped_frame)) & ram_word_mask)

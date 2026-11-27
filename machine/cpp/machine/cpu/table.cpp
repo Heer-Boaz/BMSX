@@ -24,7 +24,6 @@ void TableRecord::setMetatableAddress(u32 address) {
 }
 
 void TableRecord::setArraySlot(size_t slot, const Value& value) {
-	m_heap->writeTableValue(m_address, value);
 	values().set(slot, value);
 	updateLengthHint(slot, !isNil(value));
 }
@@ -524,9 +523,10 @@ void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::sp
 
 void TableRecord::removeFromHash(const Value& key, int slot) {
 	const int existingIndex = slot == TABLE_HASH_UNPROBED ? findNodeIndex(key) : slot;
-	if (existingIndex < 0 || hashBody(hashSlots()).slots.tag(static_cast<u32>(hashValueSlot(existingIndex))) == ValueTag::Nil) {
-		return;
-	}
+	if (existingIndex < 0) return;
+	const u32 count = hashSlots();
+	const auto tag = hashBody(count).slots.tag(count + static_cast<u32>(existingIndex));
+	if (tag == ValueTag::Nil || tag == ValueTag::DeadKey) return;
 	markHashNodeDead(static_cast<size_t>(existingIndex));
 }
 
@@ -564,35 +564,57 @@ Value TableRecord::getHash(const Value& key) const {
 	return index < 0 ? valueNil() : body.slots.get(count + static_cast<u32>(index));
 }
 
-int TableRecord::set(const Value& key, const Value& value) {
-	return setOwn<HashStore::General>(key, value);
-}
-
-int TableRecord::tryAssignOwn(Value key, Value value, int slot) {
-	return setOwn<HashStore::Resolved>(key, value, slot);
-}
-
-template <TableRecord::HashStore Policy>
-int TableRecord::setOwn(Value rawKey, Value value, int slot) {
+int TableRecord::set(const Value& rawKey, const Value& value) {
 	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
 	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
 	const Value key = canonicalTableKey(rawKey);
 	const u32 index = arraySlot(key);
-	const u32 array = arrayCapacity();
-	if (index < array) {
+	if (index < arrayCapacity()) {
+		m_heap->writeTableValue(m_address, value);
 		setArraySlot(index, value);
 		return -1;
 	}
 	const bool present = !isNil(value);
-	if (!present) {
-		removeFromHash(key, slot);
-		slot = -1;
-	} else {
-		slot = assignHash<Policy>(key, value, slot);
-		if (slot == HASH_STORE_DECLINED) return slot;
-	}
+	const int slot = setHash(key, value);
 	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
 	return slot;
+}
+
+bool TableRecord::tryAssignOwn(Value rawKey, Value value, int& position) {
+	if (isNil(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NIL);
+	if (valueIsNaN(rawKey)) throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NAN);
+	const Value key = canonicalTableKey(rawKey);
+	const u32 index = arraySlot(key);
+	const bool reference = valueTagHasGcEdge(valueTag(value));
+	if (index < arrayCapacity()) {
+		position = ARRAY_STORE_POSITION;
+		if (reference) return false;
+		setArraySlot(index, value);
+		return true;
+	}
+	const bool present = !isNil(value);
+	if (!present) {
+		removeFromHash(key, position);
+		position = -1;
+	} else {
+		if (reference && position != TABLE_HASH_UNPROBED) return false;
+		const u32 count = hashSlots();
+		const auto body = hashBody(count);
+		if (position == TABLE_HASH_UNPROBED) {
+			position = -1;
+			if (count != 0u) {
+				const u32 home = hashCanonicalTableKey(key) & (count - 1u);
+				position = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
+			}
+		}
+		if (position < 0 || reference) return false;
+		const u32 slot = count + static_cast<u32>(position);
+		const auto prior = body.slots.tag(slot);
+		if (prior == ValueTag::Nil || prior == ValueTag::DeadKey) return false;
+		body.slots.set(slot, value);
+	}
+	if (index != NO_ARRAY_SLOT) updateLengthHint(index, present);
+	return true;
 }
 
 int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots) {
@@ -611,6 +633,8 @@ void TableRecord::publishHashInsertion(Value key, Value value) {
 template <TableRecord::HashStore Policy>
 int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashSlots)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
+	if constexpr (Policy != HashStore::General)
+		if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
 	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
@@ -640,7 +664,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 				markHashNodeDead(nodeIndex);
 				return -1;
 			}
-			m_heap->writeTableValue(m_address, value);
+			if constexpr (!returning) m_heap->writeTableValue(m_address, value);
 			body.slots.set(valueSlot, value);
 			return nodeIndex;
 		}
@@ -648,28 +672,27 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 	// Only an absent own field can trigger __newindex. Keep the probe's
 	// slot (including a tombstone) for the insertion below.
 	if constexpr (returning) {
+		if (!erase) return HASH_STORE_DECLINED;
 		const u32 meta = newIndexMetatable();
 		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)))) return HASH_STORE_DECLINED;
-		if (erase) return -1;
-	}
-	if (count != 0u) {
-		if (nodeIndex >= 0) {
-			const u32 slot = static_cast<u32>(nodeIndex);
-			if (count > HASH_CENSUS_LIMIT) { body.setLive(body.live() + 1u); body.adjustIntegerBand(key, 1); }
-			body.slots.set(slot, key);
-			body.slots.set(slot + count, value);
-		} else nodeIndex = insertHashWithoutGrowth(body, home, key, value);
-		if (nodeIndex >= 0) {
-			publishHashInsertion(key, value);
-			return nodeIndex;
+		return -1;
+	} else {
+		if (count != 0u) {
+			if (nodeIndex >= 0) {
+				const u32 slot = static_cast<u32>(nodeIndex);
+				if (count > HASH_CENSUS_LIMIT) { body.setLive(body.live() + 1u); body.adjustIntegerBand(key, 1); }
+				body.slots.set(slot, key);
+				body.slots.set(slot + count, value);
+			} else nodeIndex = insertHashWithoutGrowth(body, home, key, value);
+			if (nodeIndex >= 0) {
+				publishHashInsertion(key, value);
+				return nodeIndex;
+			}
 		}
-	}
-	if constexpr (Policy == HashStore::General) {
 		nodeIndex = insertHashWithAdmission(key, value, extraHashSlots);
 		publishHashInsertion(key, value);
 		return nodeIndex;
 	}
-	return HASH_STORE_DECLINED;
 }
 
 bool TableRecord::tryAssignIdentityHash(Value key, Value value) noexcept {
@@ -688,6 +711,7 @@ int TableRecord::tryAssignStringField(StringId key, Value value) noexcept {
 }
 
 int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predicted) noexcept {
+	if (valueTagHasGcEdge(valueTag(value))) return HASH_STORE_DECLINED;
 	const u32 count = hashSlots();
 	const auto body = hashBody(count);
 	// The site supplies a hint, never an authoritative assignment slot.
@@ -695,7 +719,6 @@ int TableRecord::tryAssignCachedStringField(StringId key, Value value, int predi
 	if (static_cast<u32>(predicted) < count && body.matchesString(predicted, key)) {
 		const u32 slot = count + static_cast<u32>(predicted);
 		if (!isNil(value) && body.slots.tag(slot) != ValueTag::Nil) {
-			m_heap->writeTableValue(m_address, value);
 			body.slots.set(slot, value);
 			return predicted;
 		}
@@ -715,6 +738,7 @@ Value TableRecord::getInteger(int indexValue) const {
 void TableRecord::setInteger(int indexValue, const Value& value) {
 	const u32 index = arraySlot(indexValue), array = arrayCapacity();
 	if (index < array) {
+		m_heap->writeTableValue(m_address, value);
 		setArraySlot(index, value);
 		return;
 	}
@@ -895,19 +919,48 @@ u32 TableRecord::resolveStringIndexCached(StringId key, int predictedSlot, Table
 	return links;
 }
 
+bool TableRecord::probeAssignment(const Value& key, int& position) const {
+	const u32 index = arraySlot(key);
+	if (index < arrayCapacity()) {
+		position = TABLE_HASH_UNPROBED;
+		return values().tag(index) != ValueTag::Nil;
+	}
+	const u32 count = hashSlots();
+	position = -1;
+	if (count == 0u) return false;
+	const auto body = hashBody(count);
+	const u32 home = hashCanonicalTableKey(key) & (count - 1u);
+	position = valueIsString(key) ? body.findString(asStringId(key), home) : body.findNode(key, home, true);
+	if (position < 0) return false;
+	const auto tag = body.slots.tag(count + static_cast<u32>(position));
+	return tag != ValueTag::Nil && tag != ValueTag::DeadKey;
+}
+
 void TableRecord::resolveAssignment(Value rawKey, TableLookupResult& result) const {
 	const Value key = canonicalTableKey(rawKey);
 	const bool miss = isNil(key) || valueIsNaN(key);
-	resolveIndexChain<true>(-1, result, [key, miss](const TableRecord& table, int&) {
-		return !miss && !isNil(table.getCanonical(key));
+	resolveIndexChain<true>(-1, result, [key, miss](const TableRecord& table, int& slot) {
+		return !miss && table.probeAssignment(key, slot);
 	});
 }
 
 void TableRecord::resolveIntegerAssignment(int key, TableLookupResult& result) const {
-	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int&) { return !isNil(table.getInteger(key)); });
+	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int& slot) {
+		return table.probeAssignment(valueInteger(key), slot);
+	});
 }
 
-void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& result) const {
+void TableRecord::resolveStringAssignment(StringId key, TableLookupResult& result, int predicted) const {
+	if (predicted >= 0) {
+		const u32 count = hashSlots();
+		if (static_cast<u32>(predicted) < count) {
+			const auto body = hashBody(count);
+			if (body.matchesString(predicted, key) && body.slots.tag(count + static_cast<u32>(predicted)) != ValueTag::Nil) {
+				result = {valueNil(), predicted, 0u, TableLookupStatus::Store, m_address};
+				return;
+			}
+		}
+	}
 	resolveIndexChain<true>(-1, result, [key](const TableRecord& table, int& slot) {
 		const u32 count = table.hashSlots();
 		if (count == 0u) return false;
@@ -922,13 +975,12 @@ int TableRecord::setStringKey(StringId key, const Value& value, int slot, u8 ext
 }
 
 bool TableRecord::storePredictedStringKey(StringId key, Value value, int predicted) noexcept {
-	if (isNil(value) || predicted < 0) return false;
+	if (isNil(value) || valueTagHasGcEdge(valueTag(value)) || predicted < 0) return false;
 	const u32 count = hashSlots();
 	if (static_cast<u32>(predicted) >= count) return false;
 	const auto body = hashBody(count);
 	const u32 node = static_cast<u32>(predicted), valueSlot = node + count;
 	if (!body.matchesString(node, key) || body.slots.tag(valueSlot) == ValueTag::Nil) return false;
-	m_heap->writeTableValue(m_address, value);
 	body.slots.set(valueSlot, value);
 	return true;
 }
