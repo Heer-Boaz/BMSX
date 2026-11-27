@@ -4,7 +4,7 @@ import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
-import { LuaAllocationMode, LuaAllocationRecovery } from './lua_heap';
+import { LuaAllocationRecovery } from './lua_heap';
 import { gcPacedPhase, type GcHeap } from './gc_heap';
 import type { CPU } from './cpu';
 import type { StringId } from './string_pool';
