@@ -13,7 +13,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { COP0_EXCEPTION_TARGET as EXCEPTION_TARGET, CPU_CAUSE_IRQ, CPU_STATUS_SYSTEM_ENTRY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -81,7 +81,6 @@ try {
 			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, biosExports: [],
 		});
 		const { layout, functionProtoIndices } = built.linked, { header } = layout;
-		assert.equal(header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 		const irq = layout.functions[functionProtoIndices.indexOf(built.object.vectors.irqProtoIndex)];
 		assert.equal(built.object.sections.rodata.staticModulePaths.includes(irqPath), false);
 		assert.equal(built.object.sections.rodata.moduleProtos.some(module => module.path === irqPath), false);

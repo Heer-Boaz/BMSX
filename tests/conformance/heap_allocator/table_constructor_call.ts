@@ -13,7 +13,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -62,7 +62,7 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
 			const management = arena.managementOffset(), resident = management + HEAP_SERVICE_RESIDENT_OFFSET;
-			const closureLatch = management + HEAP_SERVICE_CLOSURE_OFFSET;
+
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			for (let i = 0; i < 256 && !cpu.isCartridgeExecutionActive(); ++i) run(4096);
@@ -96,9 +96,8 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 			function grant(cycles: number) {
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				const stage = memory.readRamRecordWord(closureLatch);
-				assert.equal(stage, 0, 'resident CLOSURE loads a function without allocating');
-				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+
+				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return used;
 			}
 			assert.equal(grant(1), BASE_CYCLES[OpCode.CALL] + 2);

@@ -22,7 +22,7 @@ import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OF
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -599,7 +599,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const prior = scheduler.nowCycles, tick = frames.lastTickSequence;
 	const step = frames.stepInstruction(1);
 	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick), +cpu.heapServiceActive(),
-		memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET), memory.readIoU32(IO_IRQ_FLAGS),
+		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.equal(scheduler.nowCycles, 0);
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -665,7 +665,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const held = frames.stepInstruction(1);
 	trace.observe('d', [held, scheduler.nowCycles - secondBefore, +(frames.lastTickSequence !== secondTick),
 		+cpu.heapServiceActive(),
-		memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET), memory.readIoU32(IO_IRQ_FLAGS),
+		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.ok(scheduler.nowCycles >= secondBefore);
 	assert.equal(rt.machine.systemController.hasResetRequest(), true, 'a second RESET remains pending');
@@ -748,7 +748,8 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	assert.equal(cpu.readEpcWord(), issue);
 	assert.equal(cpu.readThreadFrameWord(stopped.address, depth - 1, FrameField.Pc), successor);
 	const request = cpu.activeThread.currentFrame!;
-	assert.equal(request.argumentCount, 5);
+	assert.equal(request.argumentCount, 6);
+	assert.equal(request.registers.get(5), valueInteger(-1));
 	assert.deepEqual([request.registers.get(0), request.registers.get(1), request.registers.get(2), request.registers.get(3)],
 		[valueTable(receiver), valueInteger(1025), valueInteger(17), valueInteger(0)]);
 	assert.equal(valueTag(request.registers.get(4)), ValueTag.Integer);

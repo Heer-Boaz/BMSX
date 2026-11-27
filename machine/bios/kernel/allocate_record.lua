@@ -16,7 +16,7 @@ local collector<const> = require('kernel/gc_step') -- C:154-159,181-186 A:238-25
 local records<const> = require('kernel/dlmalloc_record') -- C:55-57 L:119-139,145
 local tables<const> = require('kernel/table_create') -- C:7-8,78-83 T:803-804,855-861
 local closures<const> = require('kernel/closure_create') -- C:8,84-86 T:804,863-866
-local tags<const> = require('kernel/value_type')
+local tags<const> = require('kernel/value_type') -- T:859,864; returned record kinds for the scoped final mark
 
 local table_kind<const> = 0 -- S:49 C:6 T:802
 local table_copy_kind<const> = 3 -- B:33-37 J:69-73; firmware-only operation using the same Direct admission
@@ -117,10 +117,11 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 		collector.finish_epoch(management, collector.step_words, 0, 0, scope) -- C:181-186 A:238-251 G:1228; the epoch always runs at least one quantum
 		admitted = mode == direct or admission.logical_fits(state, charged) ~= 0 -- C:9-14,206-208 A:299-300 T:807 L:152-153,162; direct physical retries never re-admit
 	end
-	if roots_published then
+	if roots_published then -- C:154-158; settle the collector only with its borrowed roots still published
 		collector.finish_result(management, table and tags.table_tag or tags.closure_tag, offset ~= 0 and layout.ram_base + offset or 0) -- C:154-158 G:1228
 	end
 	return offset -- C:102-142 T:889-920; 0 is the original terminal OOM signal before CPU fault delivery
 end
 
-return { allocate_record = allocate_record, table_copy_kind = table_copy_kind, dynamic_closure_kind = dynamic_closure_kind, direct_mode = direct }
+return { allocate_record = allocate_record, table_copy_kind = table_copy_kind, canonical_closure_kind = canonical_closure_kind,
+	dynamic_closure_kind = dynamic_closure_kind, direct_mode = direct }

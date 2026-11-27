@@ -171,7 +171,7 @@ for (const optLevel of [0, 3] as const) {
 			mem.writeRamRecordWord(address + ThreadField.FrameCapacity, mem.readRamRecordWord(address + ThreadField.FrameCapacity) | 0xa0000000);
 			return address;
 		});
-		function closure(captures: number, canonical: boolean, latched: boolean, kind = ValueTag.Closure) {
+		function closure(captures: number, latched: boolean, kind = ValueTag.Closure) {
 			return allocate(target => {
 				let existing = 0;
 				target.gc.visitObjectRecords(null, (_, record) => {
@@ -180,16 +180,15 @@ for (const optLevel of [0, 3] as const) {
 				assert.ok(existing !== 0, 'firmware entry owns a real Closure prototype');
 				const prototype = target.captureClosureBinding(existing);
 				const address = target.luaHeap.allocateClosureRecord(captures, latched);
-				initializeClosure(target.memory, address, prototype, canonical, target.gc.white(), captures, latched);
+				initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures, latched);
 				target.memory.writeRamRecordByte(address, kind);
 				target.gc.publishObject(address);
-				if (canonical) target['staticClosures'].insert(prototype.functionAddress, address);
 				return address;
 			});
 		}
-		const canonical = closure(2, true, true);
-		const opaque = closure(0x2001, false, false, ValueTag.DeadKey);
-		const ordinary = closure(7, false, true);
+		const fewerCaptures = closure(2, true);
+		const opaque = closure(0x2001, false, ValueTag.DeadKey);
+		const ordinary = closure(7, true);
 		const unchangedThread = allocate(target => allocateThreadRecordReference(target, 0));
 		const liveThread = allocate(target => {
 			const address = allocateThreadRecordReference(target, 0);
@@ -199,7 +198,7 @@ for (const optLevel of [0, 3] as const) {
 		const table = allocate(target => target.createTable(4, 2));
 		const deadCell = cell();
 		const white = oracle.gc.white();
-		const dead = [deadThread, canonical, opaque, ordinary, table, deadCell];
+		const dead = [deadThread, fewerCaptures, opaque, ordinary, table, deadCell];
 		for (const address of dead) color(address, white ^ 1);
 		color(liveThread, 3);
 		const published = control + OBJECT_HEAD;
@@ -228,19 +227,15 @@ for (const optLevel of [0, 3] as const) {
 		const liveFrameCapacity = memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity);
 		const threadDebits = [valueCapacity * THREAD_STACK_SLOT_BYTES, (frameCapacity & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES,
 			THREAD_HEAP_BYTES];
-		const prototype = cpu.captureClosureBinding(canonical).functionAddress;
-		assert.ok(cpu['staticClosures'].find(prototype)?.includes(canonical));
 		const expectedWork = oracle.gc['sweepObjects'](allowance, growing, true);
 		assert.deepEqual(refObserved.map(([address, count, cursor, , issued]) => [address, count, cursor, issued]),
-			[deadCell, table, ordinary, opaque, canonical, deadThread].map(address => [address, inventory, published, 1]));
+			[deadCell, table, ordinary, opaque, fewerCaptures, deadThread].map(address => [address, inventory, published, 1]));
 		begin(allowance, growing, 1);
-		for (let i = 0; i < 8192 && memory.readRamRecordByte(canonical) !== 0; ++i) grant(1);
+		for (let i = 0; i < 8192 && memory.readRamRecordByte(fewerCaptures) !== 0; ++i) grant(1);
 		assert.ok(cpu.heapServiceActive());
-		assert.equal(memory.readRamRecordByte(canonical), 0);
-		assert.equal(cpu.heapAllocator.issuedObjectStart(canonical - RAM_BASE - GC_OBJECT_PREFIX), true,
+		assert.equal(memory.readRamRecordByte(fewerCaptures), 0);
+		assert.equal(cpu.heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX), true,
 			'the kind byte is cleared before the allocator releases its chunk');
-		assert.equal(cpu['staticClosures'].find(prototype)?.includes(canonical), false,
-			'the ordinary byte write already retired the host entry');
 		assert.equal(memory.readRamRecordByte(liveThread + GC_COLOR_OFFSET), white);
 		assert.equal(memory.readRamRecordWord(liveThread + ThreadField.StackCapacity), liveValueCapacity >>> 1);
 		assert.equal(memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity), liveFrameCapacity >>> 1);
@@ -248,18 +243,16 @@ for (const optLevel of [0, 3] as const) {
 		const prefix = observed.slice();
 
 		function finishWholeQuantum() {
-			// The canonical record releases its own extent, then the Thread's
-			// three backing allocations are retired in the original order.
-			for (let i = 0; i < 4096 && cpu.heapAllocator.issuedObjectStart(canonical - RAM_BASE - GC_OBJECT_PREFIX); ++i) grant(1);
-			const afterCanonical = memory.readRamRecordWord(occupied);
-			let charge = afterCanonical;
+			// The Closure releases its own extent before the Thread's backing.
+			for (let i = 0; i < 4096 && cpu.heapAllocator.issuedObjectStart(fewerCaptures - RAM_BASE - GC_OBJECT_PREFIX); ++i) grant(1);
+			let charge = memory.readRamRecordWord(occupied);
 			// Wait for the logical debit of the just-cleared Closure.
-			const canonicalCharge = prefix[prefix.length - 1][3] - closureRecordBytes(2, true);
-			for (let i = 0; i < 4096 && charge !== canonicalCharge; ++i) {
+			const closureCharge = prefix[prefix.length - 1][3] - closureRecordBytes(2, true);
+			for (let i = 0; i < 4096 && charge !== closureCharge; ++i) {
 				grant(1);
 				charge = memory.readRamRecordWord(occupied);
 			}
-			assert.equal(charge, canonicalCharge);
+			assert.equal(charge, closureCharge);
 			for (const bytes of threadDebits) {
 				for (let i = 0; i < 4096 && memory.readRamRecordWord(occupied) === charge; ++i) grant(1);
 				charge -= bytes;

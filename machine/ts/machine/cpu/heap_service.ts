@@ -1,6 +1,6 @@
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET,
-	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET,
+	HEAP_SERVICE_RESULT_OFFSET,
 	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
 } from '../../spec/bmsx/heap_service';
 import { RAM_BASE } from '../../spec/bmsx/memory_map';
@@ -13,7 +13,6 @@ export class HeapService {
 	public readonly thread: Thread;
 	public readonly resultAddress: number;
 	public readonly projectionAddress: number;
-	public readonly closureContinuationAddress: number;
 
 	public constructor(heap: GcHeap) {
 		const memory = heap.memory;
@@ -21,7 +20,6 @@ export class HeapService {
 		const thread = management + HEAP_SERVICE_THREAD_OFFSET;
 		this.resultAddress = management + HEAP_SERVICE_RESULT_OFFSET;
 		this.projectionAddress = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
-		this.closureContinuationAddress = management + HEAP_SERVICE_CLOSURE_OFFSET;
 		this.thread = new Thread(heap);
 		memory.writeRamRecordWord(thread + ThreadField.StackBlock, management + HEAP_SERVICE_VALUE_OFFSET);
 		memory.writeRamRecordWord(thread + ThreadField.StackCapacity, HEAP_SERVICE_VALUE_COUNT);

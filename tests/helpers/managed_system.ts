@@ -9,7 +9,7 @@ import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimize
 import { buildBlua32Image, type Blua32StaticExport } from '../../toolchain/ts/rompack/blua32_image_builder';
 import type { Blua32BiosFunctionExport } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { LinkedSystemBlua32Image } from '../../toolchain/ts/rompack/blua32_linker';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { BIOS_EXCEPTION_BRIDGE, BIOS_MANAGED_ENTRIES, BIOS_PREPARED_ENTRY } from '../../toolchain/ts/rompack/system';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { writeTestBlua32Rom } from './blua32';
@@ -36,7 +36,7 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 	extraModules: readonly { path: string; source: string; linkValues?: ReadonlyMap<string, number> }[] = [],
 	biosExports: readonly Blua32BiosFunctionExport[] = [], entryPath = 'main',
 	options: { irqSource?: string; exceptionSource?: string; userIrqEntry?: Blua32StaticExport } = {}) {
-	const luaModules = Array.from(new Set([...firmware, ...HEAP_SERVICE_MODULES]), path =>
+	const luaModules = Array.from(new Set([...firmware, ...SYSTEM_KERNEL_MODULES]), path =>
 		systemModule(path, path === irqModule && options.irqSource !== undefined ? options.irqSource
 			: path === exceptionModule && options.exceptionSource !== undefined ? options.exceptionSource
 				: readFileSync('machine/bios/' + path + '.lua', 'utf8')));
@@ -50,7 +50,7 @@ export function linkManagedTestSystem(source: string, optLevel: OptimizationLeve
 		resetModule, irqModule, exceptionModule, preparedEntry: BIOS_PREPARED_ENTRY, userIrqEntry: options.userIrqEntry,
 		exceptionBridge: BIOS_EXCEPTION_BRIDGE,
 		managedEntries: BIOS_MANAGED_ENTRIES,
-		preloadModules: HEAP_SERVICE_MODULES, biosExports,
+		preloadModules: SYSTEM_KERNEL_MODULES, biosExports,
 	});
 	return Object.assign(linked, { object, diagnosticSources });
 }

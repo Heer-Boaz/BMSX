@@ -14,7 +14,7 @@ import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT, SYSTEM_BLUA32_IMAGE_LIMIT, SYSTEM_BLUA32_IMAGE_OFFSET } from '../../toolchain/ts/rompack/system';
 import { decodeBlua32RomImage } from '../../toolchain/ts/rompack/blua32_image';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { buildBlua32Media, layoutBlua32MediaInstallation } from '../../ide/runtime/lua_pipeline';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createTestSystemCpu } from '../helpers/blua32';
@@ -29,7 +29,7 @@ local assets<const> = require('bmsx/system_assets')
 local p: *word = assets.bin_probe_addr
 return *p, assets.bin_probe_addr + assets.bin_probe_len - 4`;
 const probe = { type: 'bin' as const, resid: 'probe', buffer: Buffer.from([0x78, 0x56, 0x34, 0x12]) };
-const heapModules = HEAP_SERVICE_MODULES.map(path => ({ type: 'lua' as const, resid: path, program_module: true,
+const heapModules = SYSTEM_KERNEL_MODULES.map(path => ({ type: 'lua' as const, resid: path, program_module: true,
 	source_path: `${path}.lua`, buffer: readFileSync(`machine/bios/${path}.lua`) }));
 
 for (const optLevel of [3] as const) for (const debug of [false, true])
@@ -38,7 +38,7 @@ for (const optLevel of [3] as const) for (const debug of [false, true])
 		afterTest(t, () => rm(directory, { recursive: true, force: true }));
 		const built = buildRomBlua32Tail([probe, { type: 'lua', resid: 'entry', program_module: true,
 			source_path: 'entry.lua', buffer: Buffer.from(source) }, ...heapModules], { domain: 'system',
-			generatedLuaModules: [], biosExports: [], preloadModules: HEAP_SERVICE_MODULES, ramByteCount: RAM_BYTES, optLevel,
+			generatedLuaModules: [], biosExports: [], preloadModules: SYSTEM_KERNEL_MODULES, ramByteCount: RAM_BYTES, optLevel,
 			includeSources: debug, includeSymbols: debug, includeDiagnostics: debug });
 		await finalizeRompack('system', { debug, blua32: built, outputDirectory: directory });
 		const bytes = new Uint8Array(await readFile(join(directory, `system${debug ? '.debug' : ''}.rom`)));

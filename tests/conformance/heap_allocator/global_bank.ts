@@ -91,7 +91,7 @@ try {
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid > 0);
-			observe(`J ${cycles} 1`, `${result} ${paid} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`J ${cycles} 1`, `${result} ${paid} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		}
 		function finish(result: number) {
 			for (let grants = 0; grants < 4096 && cpu.heapServiceActive(); ++grants) grant(37);

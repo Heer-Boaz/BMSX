@@ -10,7 +10,6 @@ import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HeapServiceClosureField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -32,7 +31,7 @@ try {
 		const { cpu, memory, scheduler } = runtime.machine;
 		const heap = cpu.heapAllocator, control = heap.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const work = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK);
-		const stage = heap.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET + HeapServiceClosureField.Destination;
+
 		const commands: string[] = [], expected: string[] = [];
 		const observe = (cmd: string, result?: string | number) => {
 			commands.push(cmd);
@@ -44,7 +43,7 @@ try {
 			const before = scheduler.nowCycles;
 			const result = runtime.cpuExecution.runSuspendedUntilDepth(0, cycles);
 			const elapsed = scheduler.nowCycles - before;
-			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(stage)} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return result;
 		};
 		assert.equal(scheduler.nowCycles, 0);

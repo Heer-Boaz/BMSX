@@ -23,7 +23,6 @@ struct NativeCodeBindings {
 	const u32* ramBusEnd = nullptr;
 	const u32* ramWriteGroups = nullptr;
 	const u32* ramCodeWatchWords = nullptr;
-	const u32* const* const* ramByteMaskPages = nullptr;
 	const Span<const u8>* systemRom = nullptr;
 	const Span<const u8>* cartridgeRom = nullptr;
 	StringPool* strings = nullptr;

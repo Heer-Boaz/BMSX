@@ -9,6 +9,7 @@ module<const>
 -- The capture loops in both references execute zero iterations (N:3974-4025 P:2917-2962).
 local arena<const> = require('kernel/dlmalloc') -- T:231-234 C:246-248 A:56-58 B:54-56
 local collector<const> = require('kernel/gc_control') -- N:1278-1279 P:164-165 U:147-155 V:235-244
+local index<const> = require('kernel/canonical_closure_index') -- N:1280 P:586; the weak index now lives in RAM
 local ram_base<const> = 0x08000000 -- A:58 B:56 M:6
 local object_prefix<const> = 8 -- T:233,250 C:248,264 O:6,9 Q:9,13
 local closure_kind<const> = 7 -- L:63 R:21 J:9-10 K:21-22
@@ -36,6 +37,7 @@ local create_closure<const> = function(state, control, occupied, function_addres
 	record.gray = 0 -- L:64 R:23; no capture-count bits
 	record.prototype = function_address -- L:65,72-74 R:24-25; no latched tail
 	collector.publish_object(control, address) -- N:1279,4026 P:165,2950 U:147-155 V:235-244
+	if canonical ~= 0 then index.publish(address, function_address, execution_domain) end -- N:1280 P:586
 	return offset -- N:1281,4027-4028 P:166,587,2963-2964; zero capture cost, cache publication only for STATIC
 end
 

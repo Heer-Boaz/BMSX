@@ -11,7 +11,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/exec
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -30,7 +30,6 @@ writeInstruction(romCode, 3, OpCode.SHL, 1, 1, 2); // 0x08000000
 writeInstruction(romCode, 4, OpCode.STORE_MEM_D, 0, 1, MemoryAccessKind.Word, 2); // + 8
 writeInstruction(romCode, 5, OpCode.RET, 0, 2, 0);
 const firmware = linkRawTestSystemBlua32({ text: romCode, functions: [{ firstWord: 0, wordCount: 6, maxStack: 3 }] });
-assert.equal(firmware.image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 assert.equal(firmware.image.header.constantCount, 0);
 assert.equal(firmware.image.header.globalNameCount, 0);
 assert.equal(firmware.image.header.systemGlobalNameCount, 0);

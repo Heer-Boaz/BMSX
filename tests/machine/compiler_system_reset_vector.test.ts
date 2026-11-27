@@ -13,7 +13,6 @@ import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../ma
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
-import { HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
 import { writeTestBlua32Rom } from '../helpers/blua32';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 
@@ -55,7 +54,6 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	assert.ok(startup && reset && startup.address !== reset.address);
 	assert.equal(reset.flags & BLUA32_FUNCTION_STATIC, BLUA32_FUNCTION_STATIC);
 	assert.equal(reset.flags & BLUA32_FUNCTION_RESIDENT, 0);
-	assert.equal(linked.layout.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0, 'a raw ROM needs no heap-service roster');
 	assert.equal(linked.symbols.metadata.functionIds[linked.symbols.metadata.functionDisplayNames.indexOf('reset')].endsWith('/reset'), true);
 	assert.equal(readLE32(rom, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), reset.address);
 	assert.equal(linked.symbols.metadata.preloadModules.includes(resetPath), false);

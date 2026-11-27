@@ -29,7 +29,7 @@ export type Blua32FixedStackBoundary = {
 };
 
 /**
- * Derive the backing required for fixed-window heap-service entry points and
+ * Derive the backing required for fixed-window ROM entry points and
  * check that the linked operations stay within their scalar instruction set.
  * Prove over linked instructions, after inlining and relocation. CALL places
  * the next non-vararg frame at A+1 in the current stack, not at the end of
@@ -47,7 +47,7 @@ export function deriveBlua32FixedStack(
 
 	function admitConstant(index: number, reject: (reason: string) => never): void {
 		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
-		if (boundary?.lateConstants.has(index)) reject('constant is relocated after heap service verification');
+		if (boundary?.lateConstants.has(index)) reject('constant is relocated after fixed-stack verification');
 		const tag = readLE32(image.bytes, constantTagOffset + index * BLUA32_CONSTANT_RECORD_SIZE);
 		if (tag !== Blua32ConstantTag.Nil && tag !== Blua32ConstantTag.False
 			&& tag !== Blua32ConstantTag.True && tag !== Blua32ConstantTag.Integer)
@@ -59,7 +59,7 @@ export function deriveBlua32FixedStack(
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
 		if (boundary !== undefined && !boundary.functions.has(index))
-			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the ${boundary.ordinaryCode ? 'permitted ROM function set' : 'heap service module'}.`);
+			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the permitted ROM function set.`);
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
 		if (!fn.staticClosure || fn.isVararg || fn.upvalues.length !== 0)
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static, fixed-arity and capture-free.`);
@@ -121,7 +121,7 @@ export function deriveBlua32FixedStack(
 					if (boundary?.ordinaryCode !== undefined) {
 						if (c > MemoryAccessKind.Value) reject('not an ordinary CPU memory format');
 					} else if (c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8 && c !== MemoryAccessKind.Value)
-						reject('not a heap-service memory format');
+						reject('not a resident memory format');
 				}
 			}
 			switch (op) {
@@ -131,7 +131,7 @@ export function deriveBlua32FixedStack(
 					if ((c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0 || target < 0 || a >= width)
 						reject('requires a local ROM function record');
 					if (boundary !== undefined && !boundary.functions.has(target))
-						reject(boundary.ordinaryCode ? 'static target leaves the permitted ROM function set' : 'static target leaves the heap service module');
+						reject('static target leaves the permitted ROM function set');
 					const record = image.functions[target];
 					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
 						reject('callee must be static, fixed-arity and capture-free');

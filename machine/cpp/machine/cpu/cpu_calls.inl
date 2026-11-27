@@ -13,9 +13,9 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 	}
 	const auto& record = m_functionRecordLatch;
 	const auto domain = record.image->executionDomainId;
-	const bool canonical = record.upvalueCount == 0u && (record.flags & BLUA32_FUNCTION_STATIC) != 0u;
 	if (record.romBacked && domain == SYSTEM_EXECUTION_DOMAIN_ID) {
-		if (canonical && (record.flags & BLUA32_FUNCTION_CODE) != 0u) {
+		if (record.upvalueCount == 0u
+			&& (record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) == (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) {
 			frame.registers.set(destination, valueFromTag(ValueTag::CodeFunction, functionAddress));
 			frame.extendTop(destination + 1);
 			return;
@@ -26,33 +26,15 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 			return;
 		}
 	}
-	if (!canonical) {
-		const std::array arguments{
-			valueInteger(destination), valueInteger(static_cast<i32>(record.address)), valueInteger(domain),
-			valueInteger(static_cast<i32>(record.codeAddress)), valueInteger(static_cast<i32>(record.numParams)),
-			valueInteger(static_cast<i32>(record.maxStack)), valueInteger(static_cast<i32>(record.flags)),
-			valueInteger(static_cast<i32>(record.upvalueTableAddress)), valueInteger(static_cast<i32>(record.upvalueCount)),
-			valueInteger(record.romBacked), valueInteger(remainingDeviceCycles()),
-		};
-		enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_FUNCTION_BINDING,
-			m_currentInstructionPc, arguments);
-		return;
-	}
-	if (const u32 closure = findStaticClosure(decodePrototype(record))) {
-		frame.registers.set(destination, valueClosure(closure));
-		frame.extendTop(destination + 1);
-		return;
-	}
-	const auto operation = record.romBacked ? HeapServiceOperation::AllocateRecord : HeapServiceOperation::CapturedClosure;
-	if (m_systemImage->heapServiceFunctions[static_cast<size_t>(operation)] == 0u) {
-		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return;
-	}
-	if (record.romBacked)
-		beginClosureReservation(frame, destination, functionAddress, static_cast<u32>(domain), frame.readControl(FrameField::Pc));
-	else
-		beginCanonicalLatchedClosure(frame, destination);
-	requestYield();
+	const std::array arguments{
+		valueInteger(destination), valueInteger(static_cast<i32>(record.address)), valueInteger(domain),
+		valueInteger(static_cast<i32>(record.codeAddress)), valueInteger(static_cast<i32>(record.numParams)),
+		valueInteger(static_cast<i32>(record.maxStack)), valueInteger(static_cast<i32>(record.flags)),
+		valueInteger(static_cast<i32>(record.upvalueTableAddress)), valueInteger(static_cast<i32>(record.upvalueCount)),
+		valueInteger(record.romBacked), valueInteger(remainingDeviceCycles()),
+	};
+	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_FUNCTION_BINDING,
+		m_currentInstructionPc, arguments);
 }
 
 inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requested) {

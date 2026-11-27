@@ -11,16 +11,15 @@ import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/st
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import {
-	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
-	HeapServiceClosureField, HeapServiceResidentField,
+	HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 import { CPU_CAUSE_CODE_STORAGE_WINDOW } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -86,7 +85,6 @@ test('a real VBlank latches its IRQ across allocator service grants and restore'
 
 test('scheduled Table constructor CALL allocates across VBlank and replays its continuation from RAM', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
-	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
@@ -146,7 +144,6 @@ test('scheduled Table constructor CALL allocates across VBlank and replays its c
 test('the resident full collection crosses VBlank during String reclamation', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
 		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
-	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
@@ -277,7 +274,6 @@ test('a storage-window exception preserves the resolved operands across a recove
 test('production object sweep clears the kind byte before release without publishing the frontier', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
 		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
-	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
@@ -332,62 +328,28 @@ test('production object sweep clears the kind byte before release without publis
 	assert.deepEqual(finish(), completed);
 });
 
-test('a requested system reset waits for the current BIOS operation and skips the old caller', (t) => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('halt_until_irq', 0));
+test('a device-only grant keeps RESET pending and the next CPU boundary resets before delivering an IRQ', t => {
+	const text = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, memory, scheduler, systemController } = runtime.machine;
+	const { cpu, scheduler, systemController } = runtime.machine;
 	const startup = cpu.readFramePc(0);
 	const frames = runtime.frameScheduler;
 	let resets = 0;
 	runtime.onStateReset = () => { ++resets; };
-	assert.equal(frames.runCyclesToNextLogicalTick(1), false);
-	assert.equal(cpu.heapServiceActive(), true);
-	const continuation = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
-	const successor = memory.readRamRecordWord(continuation + HeapServiceClosureField.NextPc);
-	assert.notEqual(successor, startup);
-	let oldCallerInstructions = 0;
-	cpu.setInstructionObserver({
-		points: [new Set([successor]), new Set(), new Set()],
-		observe: () => { ++oldCallerInstructions; },
-	});
-	systemController.requestReset();
-	systemController.requestReset();
-	const checkpoint = captureRuntimeSaveState(runtime);
-	assert.equal(checkpoint.machineState.machine.systemControl.resetRequested, true);
-	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
-	assert.equal(resets, 0);
-	assert.equal(scheduler.nowCycles, checkpoint.machineState.schedulerNowCycles);
-	const finish = () => {
-		const priorResets = resets;
-		assert.equal(frames.runCyclesToNextLogicalTick(64), false);
-		assert.equal(cpu.heapServiceActive(), true);
-		assert.equal(systemController.hasResetRequest(), true);
-		assert.ok(scheduler.nowCycles > checkpoint.machineState.schedulerNowCycles, `now=${scheduler.nowCycles} checkpoint=${checkpoint.machineState.schedulerNowCycles}`);
-		assert.equal(resets, priorResets);
-		assert.equal(frames.runCyclesToNextLogicalTick(10_000), false);
-		assert.equal(resets, priorResets + 1);
-		assert.equal(systemController.hasResetRequest(), false);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.readFramePc(0), startup);
-		assert.equal(scheduler.nowCycles, 0);
-		assert.equal(oldCallerInstructions, 0);
-	};
-	finish();
-	applyRuntimeSaveState(runtime, checkpoint);
-	finish();
-
 	// A debugger device-only grant may advance timers, not reboot the CPU.
 	systemController.requestReset();
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
 	assert.equal(systemController.hasResetRequest(), true);
-	assert.equal(resets, 2);
+	assert.equal(resets, 0);
 	assert.equal(cpu.readFramePc(0), startup);
 	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
 	assert.equal(systemController.hasResetRequest(), false);
-	assert.equal(resets, 3);
+	assert.equal(resets, 1);
 	assert.equal(scheduler.nowCycles, 0);
 
 	// The accepted cycles belong to the old timeline. Once they settle,
@@ -401,7 +363,7 @@ test('a requested system reset waits for the current BIOS operation and skips th
 	assert.equal(scheduler.acceptedCpuCycles, 32);
 	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
 	assert.equal(acceptInterrupt.mock.callCount(), 0);
-	assert.equal(resets, 4);
+	assert.equal(resets, 2);
 	assert.equal(scheduler.acceptedCpuCycles, 0);
 	assert.equal(scheduler.nowCycles, 0);
 });

@@ -1,21 +1,5 @@
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_FRAME_OFFSET, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_OFFSET } from './memory_map';
 
-// System BLua32 image extension. The descriptor lives in immutable RODATA
-// and is not part of the cartridge-callable BIOS slot list.
-export const HEAP_SERVICE_IMAGE_FLAG = 1 << 1;
-export const HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92;
-export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
-
-export const enum HeapServiceOperation {
-	AllocateRecord, CapturedClosure, Count,
-}
-
-export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
-export const HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4;
-export const HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8;
-export const HEAP_SERVICE_ENTRY_COUNT = HeapServiceOperation.Count;
-export const HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HEAP_SERVICE_ENTRY_COUNT;
-
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
 export const HEAP_SERVICE_THREAD_OFFSET = 0x800;
@@ -25,19 +9,6 @@ export const HEAP_SERVICE_VALUE_OFFSET = CPU_FIXED_VALUE_OFFSET;
 export const HEAP_SERVICE_FRAME_COUNT = CPU_FIXED_FRAME_COUNT;
 export const HEAP_SERVICE_VALUE_COUNT = CPU_FIXED_VALUE_COUNT;
 
-
-// Pinned CLOSURE return frontier. The marked destination is the presence
-// word; all admission/retry locals live only in the guest activation.
-export const HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
-export const enum HeapServiceClosureField {
-	Destination = 0, InstructionPc = 4, LastPc = 8, NextPc = 12,
-}
-
-export const HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
-export const enum HeapServiceCaptureBindingField { Prototype = 0, Domain = 4, BindingFlags = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 }
-
-export const enum HeapServiceRecordKind { Table, CanonicalClosure }
-export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 export const HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;

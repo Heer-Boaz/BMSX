@@ -84,17 +84,13 @@ import {
 	BLUA32_FUNCTION_VARARG,
 	BLUA32_GLOBAL_NAME_ADDRESS_OFFSET,
 	BLUA32_GLOBAL_NAME_RECORD_SIZE,
-	BLUA32_IMAGE_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_COUNT_OFFSET,
 	BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET,
-	BLUA32_IMAGE_FLAGS_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET,
 	BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET,
 	BLUA32_IMAGE_HEADER_SIZE,
 	BLUA32_IMAGE_MAGIC,
 	BLUA32_IMAGE_MAGIC_OFFSET,
-	BLUA32_IMAGE_RODATA_ADDRESS_OFFSET,
-	BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET,
 	BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET,
 	BLUA32_IMAGE_SYSTEM_GLOBAL_NAME_COUNT_OFFSET,
@@ -135,8 +131,7 @@ import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from
 import { TableRecords, TableHeader, TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT, TABLE_STORE_FIRMWARE,
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_LATCHED_PROTOTYPE, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
-import { StaticClosureIndex } from './static_closure_index';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, sameFunctionPrototype, type FunctionPrototype } from './closure';
 import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_VALUE_WORD, UPVALUE_OWNER } from './upvalue';
 import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
@@ -177,16 +172,12 @@ import { LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
 import {
-	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
-	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
-	HeapServiceCaptureBindingField,
-	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceClosureField, HeapServiceOperation,
+	HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
+	HEAP_SERVICE_FRAME_COUNT,
+	HEAP_SERVICE_VALUE_COUNT,
 	HeapServiceProjection, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
-	HeapServiceRecordKind, HeapServiceRecordMode,
 	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
 	HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
 	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
@@ -294,7 +285,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
-	private readonly closureArgs: number[];
 	public readonly stringPool: StringPool;
 	private haltedUntilIrqFrameDepth = -1;
 	private haltedUntilIrqThread = 0;
@@ -341,7 +331,6 @@ export class CPU implements MappedPageInvalidator {
 	private builtinResultsScratchIndex = 0;
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
-	private readonly capturedClosureArgs = [0, 0, 0, 0, 0, 0];
 	private readonly tableLookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
@@ -384,8 +373,6 @@ export class CPU implements MappedPageInvalidator {
 		byteLength: 0,
 	};
 	private readonly latchedCallEntry: Closure.FunctionEntry = { codeAddress: 0, numParams: 0, maxStack: 0, flags: 0 };
-	private readonly canonicalBinding: FunctionPrototype = { functionAddress: 0, codeAddress: 0, numParams: 0, maxStack: 0, flags: 0, upvalueTableAddress: 0, recordUpvalueCount: 0, executionDomainId: SYSTEM_EXECUTION_DOMAIN_ID };
-	private readonly staticClosures: StaticClosureIndex;
 	private stateReplacementListeners: Set<() => void> | null = null;
 	private readonly systemGlobalBank: GlobalBank;
 	private readonly globalBank: GlobalBank;
@@ -401,12 +388,10 @@ export class CPU implements MappedPageInvalidator {
 		private readonly executionBackend = CpuExecutionBackend.Interpreter,
 	) {
 		this.memory = memory;
-		this.staticClosures = new StaticClosureIndex(memory);
 		memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
 		this.luaHeap = new LuaHeap(this);
-		this.closureArgs = [this.heapAllocator.managementOffset(), HeapServiceRecordKind.CanonicalClosure, 0, 0, HeapServiceRecordMode.Direct, 0];
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator);
 		this.heapService = new HeapService(this.gc);
@@ -637,56 +622,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	// The linked allocate_record body owns admission, assistance and retry.
-	private beginClosureReservation(frame: CallFrame, destination: number, prototype: number, domain: number, nextPc: number): void {
-		const base = this.heapService.closureContinuationAddress, memory = this.memory;
-		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
-		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, nextPc);
-		frame.pc = this.currentInstructionPc;
-		const args = this.closureArgs;
-		args[2] = prototype;
-		args[3] = domain;
-		args[5] = this.remainingDeviceCycles();
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
-	}
-
-	private beginMappedCanonicalClosure(frame: CallFrame, destination: number): void {
-		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
-		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
-		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
-		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
-		frame.pc = this.currentInstructionPc;
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Prototype, record.functionAddress, record.executionDomainId);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.BindingFlags, CLOSURE_CANONICAL | CLOSURE_LATCHED_PROTOTYPE, record.codeAddress);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
-		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
-		const args = this.capturedClosureArgs;
-		args[0] = management; args[1] = RAM_BASE + frame.controlOffset; args[2] = frame.thread.address;
-		args[3] = RAM_BASE + binding; args[5] = this.remainingDeviceCycles();
-		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CapturedClosure], args);
-	}
-
-	private finishClosureReservation(): void {
-		const base = this.heapService.closureContinuationAddress, memory = this.memory;
-		const destination = memory.readRamRecordWord(base + HeapServiceClosureField.Destination);
-		if (destination === 0) return;
-		this.currentInstructionPc = memory.readRamRecordWord(base + HeapServiceClosureField.InstructionPc);
-		this.lastPc = memory.readRamRecordWord(base + HeapServiceClosureField.LastPc);
-		this.lastExecutionDomainId = this.activeExecutionDomainId;
-		memory.writeRamRecordWord(base + HeapServiceClosureField.Destination, 0);
-		const frame = this.activeThread.currentFrame!;
-		const offset = this.heapServiceResult();
-		if (offset === 0) {
-			this.retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
-			return;
-		}
-		const address = RAM_BASE + offset;
-		this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
-		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
-		frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
-	}
-
 	private finishTableAssignment(frame: CallFrame, key: Value, value: Value, assignment: TableLookupResult): boolean {
 		this.charge(assignment.extraVisits * TABLE_INDEX_VISIT_CYCLES);
 		if (assignment.status === TableLookupStatus.Store) return false;
@@ -800,7 +735,6 @@ export class CPU implements MappedPageInvalidator {
 		this.nmiReturnExceptionDomainWord = 0;
 		this.nonMaskableInterruptPending = false;
 		this.yieldRequested = false;
-		this.staticClosures.clear();
 		this.memory.clearMappedPageWriteWatches();
 		this.initializeResetBank();
 		this.executionImagesByDomain.fill(null);
@@ -941,40 +875,6 @@ export class CPU implements MappedPageInvalidator {
 		const imageBindingBytes = nameBytes + 4 * stringCount;
 		if (imageBindingBytes > MAIN_RAM_SIZE) throw new Error('BLua32 image bank extents exceed main RAM.');
 		const romFunctions = readRomFunctionDirectory(this.memory, executionBoot.executionDomainId, this.executionReadView);
-		let heapServiceFunctions: Uint32Array | null = null;
-		if ((readLE32(bytes, byteOffset + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) !== 0) {
-			if (executionBoot.executionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID || romFunctions.mappedCode
-				|| readLE32(bytes, byteOffset + BLUA32_IMAGE_BYTE_COUNT_OFFSET) < HEAP_SERVICE_IMAGE_HEADER_SIZE)
-				throw new Error('Heap service requires an extended linked System ROM image.');
-			this.executionAddressSpace.bindReadOnlyView(SYSTEM_EXECUTION_DOMAIN_ID, executionBoot.imageAddress,
-				HEAP_SERVICE_IMAGE_HEADER_SIZE, this.executionTableView);
-			const extended = this.executionTableView;
-			const address = readLE32(extended.bytes, extended.byteOffset + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
-			const rodata = readLE32(bytes, byteOffset + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET);
-			const rodataEnd = rodata + readLE32(bytes, byteOffset + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET);
-			if ((address & 3) !== 0 || address < rodata || address + HEAP_SERVICE_DESCRIPTOR_SIZE > rodataEnd
-				|| address + HEAP_SERVICE_DESCRIPTOR_SIZE > SYSTEM_ROM_SIZE)
-				throw new Error('Heap service descriptor is outside immutable system RODATA.');
-			this.executionAddressSpace.bindReadOnlyView(SYSTEM_EXECUTION_DOMAIN_ID, address,
-				HEAP_SERVICE_DESCRIPTOR_SIZE, this.executionTableView);
-			const descriptor = this.executionTableView.bytes, offset = this.executionTableView.byteOffset;
-			const values = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
-			const frames = readLE32(descriptor, offset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
-			if (values === 0 || values > HEAP_SERVICE_VALUE_COUNT || frames === 0 || frames > HEAP_SERVICE_FRAME_COUNT)
-				throw new Error('Heap service descriptor does not fit the private CPU stack.');
-			const functions = offset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
-			const versions = romFunctions.versions;
-			heapServiceFunctions = new Uint32Array(HEAP_SERVICE_ENTRY_COUNT);
-			for (let index = 0; index < HEAP_SERVICE_ENTRY_COUNT; ++index) {
-				const record = readLE32(descriptor, functions + 4 * index);
-				const lane = romFunctionVersionLane(romFunctions, record);
-				if (lane < 0 || versions[lane + RomFunctionLane.UpvalueCount] !== 0
-					|| Math.max(1, versions[lane + RomFunctionLane.NumParams], versions[lane + RomFunctionLane.MaxStack]) > values
-					|| (versions[lane + RomFunctionLane.Flags] & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) !== BLUA32_FUNCTION_STATIC)
-					throw new Error('Heap service descriptor does not name a fixed System ROM activation.');
-				heapServiceFunctions[index] = record;
-			}
-		}
 		return {
 			constantBytes, constantOffset, constantCount, stringCount, nameBytes, imageBindingBytes, reused,
 			globalNameTableAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET),
@@ -983,7 +883,7 @@ export class CPU implements MappedPageInvalidator {
 			systemGlobalNameCount,
 			stringBucketAddress: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET),
 			stringBucketCount: readLE32(bytes, byteOffset + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET),
-			romFunctions, heapServiceFunctions,
+			romFunctions,
 		};
 	}
 
@@ -1029,7 +929,6 @@ export class CPU implements MappedPageInvalidator {
 			executionDomainId,
 			irqFunctionAddress: executionBoot.irqFunctionAddress,
 			staticEnd: executionBoot.staticEnd,
-			heapServiceFunctions: header.heapServiceFunctions,
 			constTags,
 			constWords,
 			constantRecordBytes: constantBytes,
@@ -1095,29 +994,25 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private staticClosureFromLatch(): number {
-		return this.findStaticClosureFromLatch() || this.allocateStaticClosureFromLatch();
-	}
-
-	private findStaticClosureFromLatch(): number {
 		const record = this.functionRecordLatch;
-		const closures = this.staticClosures.find(record.functionAddress);
-		if (closures === undefined) return 0;
 		let match = 0;
-		for (const address of closures) {
-			if ((match !== 0 && address >= match) || this.gc.sweepGarbage(address)) continue;
-			this.readClosureBinding(address, this.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), this.canonicalBinding);
-			if (sameFunctionPrototype(this.canonicalBinding, record)) match = address;
-		}
-		return match;
-	}
-
-	private allocateStaticClosureFromLatch(): number {
-		const record = this.functionRecordLatch;
+		const binding: FunctionPrototype = { ...record };
+		// Host-injected calls are cold tooling, not CLOSURE. Inspect issued
+		// records without maintaining an index alongside firmware.
+		this.gc.visitObjectRecords(this, (cpu, address) => {
+			const header = cpu.memory.readRamRecordWord(address);
+			if ((header & 0xff) !== ValueTag.Closure
+				|| (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) === 0
+				|| cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) !== record.functionAddress
+				|| (match !== 0 && address >= match) || cpu.gc.sweepGarbage(address)) return;
+			cpu.readClosureBinding(address, cpu.memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS), binding);
+			if (sameFunctionPrototype(binding, record)) match = address;
+		});
+		if (match !== 0) return match;
 		const latched = !record.romBacked;
 		const address = this.luaHeap.allocateClosureRecord(0, latched);
-		Closure.initializeRecord(this.memory, address, record, true, this.gc.white(), 0, latched);
+		Closure.initializeRecord(this.memory, address, record, false, this.gc.white(), 0, latched);
 		this.gc.publishObject(address);
-		this.staticClosures.insert(record.functionAddress, address);
 		return address;
 	}
 
@@ -1129,19 +1024,6 @@ export class CPU implements MappedPageInvalidator {
 	private readClosureBinding(address: number, flags: number, target: FunctionPrototype): void {
 		const image = this.executionImageForDomain(Closure.executionDomain(flags))!;
 		Closure.readBinding(this.memory, address, flags, image.romFunctions, this.executionReadView, target);
-	}
-	public reindexCanonicalClosures(): void {
-		this.staticClosures.clear();
-		// Inventory does not advance a saved in-flight sweep.
-		this.gc.visitObjectRecords(this, (cpu, address) => {
-			const header = cpu.memory.readRamRecordWord(address);
-			if ((header & 0xff) === ValueTag.Closure
-				&& (header & (CLOSURE_CANONICAL << (8 * CLOSURE_BINDING_FLAGS))) !== 0
-				&& !cpu.gc.sweepGarbage(address)) {
-				const functionAddress = cpu.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-				cpu.staticClosures.insert(functionAddress, address);
-			}
-		});
 	}
 
 	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
@@ -1244,7 +1126,6 @@ export class CPU implements MappedPageInvalidator {
 			if (relocation !== undefined) {
 				for (const [closure, record] of relocation.closures)
 					this.memory.writeRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS, record);
-				if (relocation.closures.size !== 0) this.reindexCanonicalClosures();
 				for (let i = 0; i < relocation.frames.length; ++i) {
 					const target = relocation.frames[i];
 					if (target !== null) this.writeFrameExecution(i, target.domain, target.functionAddress, target.pc);
@@ -1952,12 +1833,12 @@ export class CPU implements MappedPageInvalidator {
 		this.enterDirectFrame();
 	}
 
-	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
+	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, codeFunction = 0): void {
 		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
-		this.localRoots.push(valueClosure(closure));
+		if (closure !== 0) this.localRoots.push(valueClosure(closure));
 		for (const arg of args) this.localRoots.push(arg);
 		try {
 			this.gc.finishFinalMark();
@@ -1967,7 +1848,7 @@ export class CPU implements MappedPageInvalidator {
 			this.clearCompletionValues();
 			this.completionThread = this.activeThread.address;
 			this.yieldRequested = false;
-			this.pushFrame(closure, args, 0, 0, true);
+			this.pushFrame(closure, args, 0, 0, true, false, undefined, 0, 0, false, codeFunction);
 		} finally {
 			this.releaseLocalRoots(roots);
 		}
@@ -1985,7 +1866,11 @@ export class CPU implements MappedPageInvalidator {
 			this.hardHalt();
 			return;
 		}
-		this.beginCompletionCall(this.staticClosureFromLatch());
+		const record = this.functionRecordLatch;
+		if (record.romBacked && record.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID && record.recordUpvalueCount === 0
+			&& (record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) === (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC)) {
+			this.beginCompletionCall(0, EMPTY_CALL_ARGS, functionAddress);
+		} else this.beginCompletionCall(this.staticClosureFromLatch());
 	}
 
 	public requestYield(): void {
@@ -2413,7 +2298,6 @@ export class CPU implements MappedPageInvalidator {
 					}
 					try {
 						if (resident) this.finishResidentCall();
-						else this.finishClosureReservation();
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
@@ -2941,22 +2825,6 @@ export class CPU implements MappedPageInvalidator {
 			&& (record.flags & BLUA32_FUNCTION_RESIDENT) !== 0) {
 			registers.setEncoded(a, ValueTag.ResidentFunction, functionAddress);
 			this.bumpRegisterTop(frame, a);
-			return;
-		}
-		if (record.recordUpvalueCount === 0 && (record.flags & BLUA32_FUNCTION_STATIC) !== 0) {
-			const closure = this.findStaticClosureFromLatch();
-			if (closure !== 0) {
-				this.setRegisterClosureFast(frame, registers, a, closure);
-				return;
-			}
-			if (this.systemImage.heapServiceFunctions === null) {
-				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-				return;
-			}
-			if (record.romBacked)
-				this.beginClosureReservation(frame, a, record.functionAddress, record.executionDomainId, frame.pc);
-			else this.beginMappedCanonicalClosure(frame, a);
-			this.requestYield();
 			return;
 		}
 		// Exception entry decodes the vector on the same record latch.
@@ -4080,7 +3948,7 @@ export class CPU implements MappedPageInvalidator {
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots | ReadonlyArray<Value>,
 		returnBase: number, returnCount: number, returnToCompletionLatch: boolean,
-		exception?: boolean, callSitePc?: number, argBase?: number, supplied?: number,
+		exception?: boolean, callSitePc?: number, argBase?: number, supplied?: number, ordinaryCall?: false, codeFunction?: number,
 	): CallFrame;
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots,
@@ -4144,7 +4012,7 @@ export class CPU implements MappedPageInvalidator {
 			return null;
 		}
 		const frame = thread.acquireFrame();
-		if (!ordinaryCall && !fits) this.ensureStackCapacity(end, valueClosure(closure), true, exception);
+		if (!ordinaryCall && !fits) this.ensureStackCapacity(end, closure === 0 ? valueNil() : valueClosure(closure), true, exception);
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
@@ -4295,11 +4163,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private setRegisterIntegerFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
 		registers.setInteger(index, value);
-		this.bumpRegisterTop(frame, index);
-	}
-
-	private setRegisterClosureFast(frame: CallFrame, registers: ValueSlots, index: number, value: number): void {
-		registers.setClosure(index, value);
 		this.bumpRegisterTop(frame, index);
 	}
 
@@ -4533,11 +4396,9 @@ export class CPU implements MappedPageInvalidator {
 		this.memory.clearMappedPageWriteWatches();
 		const boardBank = state.rootThreadAddress === CPU_RESET_BANK_ADDRESS;
 		if (boardBank) {
-			this.staticClosures.clear();
 			this.systemGlobalBank.slots.unbind();
 			this.globalBank.slots.unbind();
 		} else {
-			this.reindexCanonicalClosures();
 			this.systemGlobalBank.bind();
 			this.globalBank.bind();
 		}
@@ -4626,8 +4487,6 @@ export class CPU implements MappedPageInvalidator {
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
-		for (const versions of this.staticClosures.addressGroups())
-			for (const closure of versions) if (!this.gc.sweepGarbage(closure)) objects.push(closure);
 		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);

@@ -21,7 +21,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode, BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
@@ -63,7 +63,6 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 			firstWord: 8, wordCount: suffix ? 3 : 2, maxStack: 6, numParams: formals, isVararg: suffix,
 		}],
 	});
-	assert.equal(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 	const caller = image.image.functions[0], callee = image.image.functions[1], rom = image.romBytes;
 	// Author the wire-level System CodeFunction. No Closure allocation/link
 	// metadata or managed bootstrap is available to this ROM.
@@ -182,7 +181,6 @@ test('bare System ROM enters closures from its own private arena, including a ca
 			{ firstWord: plainBody + 2, wordCount: 2, maxStack: 1, staticClosure: false, upvalueDescs: [{ inStack: true, index: 0 }] },
 		],
 	});
-	assert.equal(linked.image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 	const rom = linked.romBytes;
 	for (const { slot, fn, code } of bindingLanes) {
 		const entry = linked.image.functions[fn];

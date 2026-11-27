@@ -19,7 +19,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -147,7 +147,6 @@ function assemble(status: number, payload: Value, source: number, edit: ReturnEd
 	for (const [index, instruction] of instructions.entries()) writeInstruction(text, index, ...instruction);
 	const { image, romBytes: rom } = linkRawTestSystemBlua32({ text, functions, closureRelocations, constants: constants.map(integerConstant),
 		verifiedControlFlow: true, irqFunctionIndex: 3, exceptionFunctionIndex: 2 });
-	assert.equal(image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 	assert.equal(image.header.globalNameCount, 0);
 	assert.equal(image.header.systemGlobalNameCount, 0);
 	for (const { slot, fn, at } of relocations) {

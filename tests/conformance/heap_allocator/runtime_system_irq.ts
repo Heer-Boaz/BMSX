@@ -20,7 +20,7 @@ import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_EXCEPTION_FUNCTION_ADDRESS_OFFSET, BMSX_ROM_HEADER_BLUA32_IRQ_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { HEAP_SERVICE_MODULES } from '../../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../../toolchain/ts/rompack/system';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -58,7 +58,7 @@ try {
 		const built = buildBlua32Image({
 			domain: 'system', luaModules: [...sources, ...library], generatedLuaModules: [], loadAddress: 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
-			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, preloadModules: HEAP_SERVICE_MODULES, biosExports: [],
+			resetModule: resetPath, irqModule: irqPath, exceptionModule: exceptionPath, preloadModules: SYSTEM_KERNEL_MODULES, biosExports: [],
 		});
 		const { layout, functionProtoIndices } = built.linked, { header } = layout;
 		const irq = layout.functions[functionProtoIndices.indexOf(built.object.vectors.irqProtoIndex)];

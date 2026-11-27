@@ -10,6 +10,7 @@ module<const>
 -- They survive a failed attempt and any collector work between attempts.
 local allocator<const> = require('kernel/dlmalloc') -- L:248-255,269-270 R:255-261,275-276
 local collector<const> = require('kernel/gc_control') -- L:260-264 R:266-270
+local closure_index<const> = require('kernel/canonical_closure_index') -- T:4125-4127 C:3065-3068 S:35 N:19; weak publication is now part of the guest writer
 local captures<const> = require('kernel/gc_capture_trace') -- P:159-168,176-178 Q:253-256,288-294 T:4108-4109 C:3046-3047
 local layout<const> = require('kernel/gc_runtime_layout') -- L:260 R:265
 local ram_size<const> = 0x00400000 -- M:7 T:4079 C:3021
@@ -264,6 +265,7 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 		plan = plan >> 1 -- T:4116-4117 C:3053,3055
 		index = index + 1 -- T:4116 C:3053
 	end
+	if (binding_flags & closure_index.canonical_flag) ~= 0 then closure_index.publish(address, proto.prototype, proto.domain) end -- T:4125-4127 C:3065-3068 S:35 N:19
 	return offset -- T:4127 C:3065; capture instructions pay ordinary cycles
 end
 

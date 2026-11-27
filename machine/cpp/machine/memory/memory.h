@@ -65,14 +65,6 @@ public:
 	MappedPageWriteWatches& ramWriteWatches() { return m_ramPageWriteWatches; }
 	const MappedPageWriteWatches& ramWriteWatches() const { return m_ramPageWriteWatches; }
 
-	// Physical writes notify only exact registered bytes, after committing
-	// the bytes. Offsets are relative to the backing, not bus addresses.
-	void attachRamWriteObserver(void* context, MappedPageWriteWatches::ByteWriteObserver observer) {
-		m_ramPageWriteWatches.attachByteWriteObserver(context, observer);
-	}
-	void detachRamWriteObserver() { m_ramPageWriteWatches.detachByteWriteObserver(); }
-	void watchRamByte(u32 physicalOffset) { m_ramPageWriteWatches.watchByte(physicalOffset); }
-	void unwatchRamByte(u32 physicalOffset) { m_ramPageWriteWatches.unwatchByte(physicalOffset); }
 	// The CPU record port addresses physical RAM, including bytes under MMIO.
 	u32 readRamRecordWord(u32 address) const {
 		return readLE32(m_ram.data() + (address & RAM_RECORD_WORD_MASK));

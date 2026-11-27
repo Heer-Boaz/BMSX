@@ -6,8 +6,6 @@
 
 #include <array>
 #include <stdexcept>
-#include <utility>
-#include <vector>
 
 namespace {
 using namespace bmsx;
@@ -22,55 +20,9 @@ struct Watches final : MappedPageInvalidator {
 	void invalidateMappedRange(u64, u64) override {}
 };
 
-void physicalByteWatchesFollowCommittedWrites() {
-	Memory memory({{}, {}}, PSX_MACHINE_SPEC.ramBytes);
-	Watches invalidator;
-	memory.attachMappedPageInvalidator(invalidator);
-	auto& groups = memory.ramWriteWatches();
-	constexpr u32 page = MAPPED_PAGE_BYTE_SIZE;
-	constexpr u32 boundary = MAIN_RAM_SIZE - 8u * page;
-	constexpr u32 first = boundary - page - 1u, second = first + 1u, privateByte = boundary + 16u;
-	memory.setRamBusEnd(RAM_BASE + boundary);
-	struct Trace {
-		Memory& memory;
-		std::vector<std::pair<u32, u8>> writes;
-	} trace{memory, {}};
-	memory.attachRamWriteObserver(&trace, [](void* context, u32 offset) {
-		auto& log = *static_cast<Trace*>(context);
-		log.writes.emplace_back(offset, log.memory.readRamRecordByte(offset));
-		if (offset == privateByte) log.memory.unwatchRamByte(offset);
-	});
-	memory.watchRamByte(first);
-	memory.watchRamByte(second);
-	memory.watchRamByte(privateByte);
-
-	groups.armHistoryWrites();
-	groups.armCodeRange(privateByte, 4u);
-	memory.writeRamRecordByte(privateByte + 1u, 1);
-	require(trace.writes.empty() && invalidator.code == 0
-		&& groups.historyPageDirty(privateByte / page, privateByte / page + 1u),
-		"a neighboring color byte dirties history without notifying a lifetime or code watch");
-	memory.writeRamRecordByte(privateByte, 2);
-	memory.writeRamRecordByte(privateByte, 3);
-	require(trace.writes == std::vector<std::pair<u32, u8>>{{privateByte, 2}} && invalidator.code == 0,
-		"private mirrored writes publish an exact watched byte and allow removal during notification");
-
-	groups.disarmHistoryWrites();
-	memory.clearMappedPageWriteWatches();
-	const std::array<u8, 2> pair{4, 5};
-	memory.writeBytes(RAM_BASE + first, pair.data(), pair.size());
-	memory.writeMappedU8(RAM_BASE + second, 6);
-	require(trace.writes == std::vector<std::pair<u32, u8>>{{privateByte, 2}, {first, 4}, {second, 5}, {second, 6}},
-		"bulk and mapped writes notify committed bytes across pages independently of code and rewind watch lifetimes");
-
-	memory.detachRamWriteObserver();
-	memory.writeMappedU8(RAM_BASE + second, 7);
-	require(trace.writes.size() == 4u, "detaching the observer removes all its watches");
-}
 }
 
 int main() {
-	physicalByteWatchesFollowCommittedWrites();
 	const std::array<u8, 8> rom{1, 2, 3, 4, 5, 6, 7, 8};
 	Memory memory({rom, {}}, PSX_MACHINE_SPEC.ramBytes);
 	Watches counter;

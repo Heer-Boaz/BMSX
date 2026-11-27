@@ -1,6 +1,7 @@
-import type { FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
 import { FrameField, type FrameExecutionTarget } from '../../machine/ts/machine/cpu/call_state';
 import type { ExecutionImageRelocation } from '../../machine/ts/machine/cpu/execution_image';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
 	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
@@ -48,6 +49,20 @@ export function buildHotResumeRelocation(
 	const frames = new Array<FrameExecutionTarget | null>(frameCount).fill(null);
 	const closures = new Map<number, number>();
 	const unmappedWords: string[] = [];
+	// A weak binding can be found again before the next sweep. The linker
+	// can replace its code, but a live canonical record keeps its address.
+	cpu.gc.visitObjectRecords(cpu, (owner, closure) => {
+		const memory = owner.memory;
+		const header = memory.readRamRecordWord(closure);
+		const flags = header >>> (8 * CLOSURE_BINDING_FLAGS);
+		if ((header & 0xff) !== ValueTag.Closure || (flags & CLOSURE_CANONICAL) === 0 || owner.gc.sweepGarbage(closure)) return;
+		const target = revisions[executionDomain(flags) + 1];
+		if (target === null) return;
+		const record = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+		const index = blua32FunctionIndexAtAddress(target.previousImage, record);
+		if (index >= 0 && target.revision.functionAddresses[index] !== record)
+			unmappedWords.push(`canonical function 0x${record.toString(16)} must retain its record address`);
+	});
 	let binding: FunctionPrototype | undefined;
 	cpu.visitReachableExecutionRecords(closure => {
 		binding = cpu.captureClosureBinding(closure, binding);

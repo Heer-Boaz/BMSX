@@ -86,7 +86,7 @@ void countedStoresPreserveTheirPrefixOnWindowFault() {
 	}
 }
 
-void publishedStoresObserveNewPhysicalByteWatches() {
+void publishedStoresObserveNewCodeWords() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
 	ExecutionAddressSpace addresses(memory);
@@ -98,36 +98,29 @@ void publishedStoresObserveNewPhysicalByteWatches() {
 	store.a = 0; store.b = 1; store.c = static_cast<u8>(MemoryAccessKind::U8);
 	store.width = 1; store.baseCycles = BASE_CYCLES[store.op];
 	const std::array source{NativeBlockInstruction{&store, 0x1000u}};
-	const std::array runs{NativeBlockSource{source}};
-	for (const bool privateFirmware : {false, true}) {
-		NativeCodeBindings bindings(memory, cpu.stringPool(), nullptr, {}, false);
-		bindings.privateFirmware = privateFirmware;
-		bindings.privateStoreEnd = RAM_BASE + memory.ramByteCount();
-		const u32 address = privateFirmware ? memory.ramBusEnd() + 8u : DYNAMIC_RAM_BASE + 8u;
-		const u32 offset = address - RAM_BASE;
-		auto emitted = NativeCompiler{}.compile(runs, bindings);
-		const auto& block = *emitted.front();
-		ValueSlots operands(2);
-		operands.set(1, valueInteger(address));
-		NativeBlockRunState state;
-		const auto run = [&](i32 byte) {
-			operands.set(0, valueInteger(byte));
-			state.remainingCycles = 10;
-			return block.run(operands.view(), state);
-		};
-		require(run(41) == &block.terminal && memory.readRamRecordByte(offset) == 41,
-			"the unobserved store retires directly");
-		memory.watchRamByte(offset + 1u);
-		require(run(43) == &block.terminal && memory.readRamRecordByte(offset) == 43,
-			"a neighboring byte in the same watched word does not take the owner exit");
-		memory.watchRamByte(offset);
-		require(run(0)->exit == NativeBlockExit::WriteMemory && memory.readRamRecordByte(offset) == 43,
-			"already published public and firmware code exit before committing the watched byte");
-		memory.unwatchRamByte(offset);
-		require(run(42) == &block.terminal && memory.readRamRecordByte(offset) == 42,
-			"removing the overlapping watch readmits the same emitted store while its neighbor is still watched");
-		memory.unwatchRamByte(offset + 1u);
-	}
+	auto block = test::compileNative(source, memory, cpu.stringPool());
+	constexpr u32 address = DYNAMIC_RAM_BASE + 8u;
+	constexpr u32 offset = address - RAM_BASE;
+	auto& watches = memory.ramWriteWatches();
+	ValueSlots operands(2);
+	operands.set(1, valueInteger(address));
+	NativeBlockRunState state;
+	const auto run = [&](i32 byte) {
+		operands.set(0, valueInteger(byte));
+		state.remainingCycles = 10;
+		return block->run(operands.view(), state);
+	};
+	require(run(41) == &block->terminal && memory.readRamRecordByte(offset) == 41,
+		"the store retires directly before executable words are watched");
+	watches.armCodeRange(offset + 4u, 4u);
+	require(run(43) == &block->terminal && memory.readRamRecordByte(offset) == 43,
+		"a neighboring code word in the same page does not take the owner exit");
+	watches.armCodeRange(offset, 4u);
+	require(run(0)->exit == NativeBlockExit::WriteMemory && memory.readRamRecordByte(offset) == 43,
+		"already published code exits before committing a byte of a watched word");
+	watches.clearCodeRange(offset, 4u);
+	require(run(42) == &block->terminal && memory.readRamRecordByte(offset) == 42,
+		"removing the overlapping watch readmits the same emitted store");
 }
 
 void ramScalarDatapathsAndGuards() {
@@ -217,11 +210,6 @@ void ramScalarDatapathsAndGuards() {
 		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
 		"the high half's code watch exits before either half of a direct F64 store");
 	memory.clearMappedPageWriteWatches();
-	memory.watchRamByte(target + 5u - RAM_BASE);
-	require(block->run(registers.view(), nativeRunState = {.remainingCycles = block->terminal.cycles})->exit == NativeBlockExit::WriteMemory
-		&& readLE64(memory.ramData() + target - RAM_BASE) == before,
-		"a physical byte in the high half of a cross-page F64 transfer exits before either half is written");
-	memory.unwatchRamByte(target + 5u - RAM_BASE);
 	DecodedInstruction load = store;
 	load.op = static_cast<u8>(OpCode::LOAD_MEM); load.a = 2;
 	const std::array numericSource{NativeBlockInstruction{&store, 0x1000}, NativeBlockInstruction{&load, 0x1008}};
@@ -377,7 +365,6 @@ void generatedTaggedValueTransfers() {
 
 		for (const bool watchTag : {false, true}) {
 			CpuMachine native(image), scalar(image, true);
-			native.cpu.prepareSystemNativeCode();
 			const Value value = displaced ? valueFloatBits(0xff812345u) : valueFromTag(ValueTag::Nil, 0xdecafbad);
 			for (auto* machine : {&native, &scalar}) {
 				auto& registers = machine->cpu.activeThread()->currentFrame->registers;
@@ -385,8 +372,13 @@ void generatedTaggedValueTransfers() {
 				registers.set(1, valueInteger(destination - displacement * INSTRUCTION_BYTES));
 				registers.set(3, valueInteger(destination - displacement * INSTRUCTION_BYTES));
 				std::memset(machine->memory.ramData() + offset, 0xb6, VALUE_MEMORY_SIZE);
-				machine->memory.watchRamByte(offset + (watchTag ? VALUE_MEMORY_TAG_OFFSET : VALUE_MEMORY_SIZE - 1));
+				if (watchTag) {
+					auto& history = machine->memory.ramWriteWatches();
+					history.armHistoryWrites();
+					history.consumeHistoryWrites(offset, VALUE_MEMORY_TAG_OFFSET);
+				}
 			}
+			native.cpu.prepareSystemNativeCode();
 			const int grant = BASE_CYCLES[store] + BASE_CYCLES[load] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1;
 			require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Halted
 				&& native.cpu.instructionBudgetRemaining == 0, "tagged native transfer consumes exactly its instruction grant");
@@ -397,12 +389,17 @@ void generatedTaggedValueTransfers() {
 					&& cell[VALUE_MEMORY_TAG_OFFSET] == static_cast<u8>(valueTag(value))
 					&& cell[5] == 0xb6 && cell[6] == 0xb6 && cell[7] == 0xb6,
 					"tagged transfer neither normalizes tag/payload nor overwrites the padding");
+				if (watchTag) {
+					constexpr auto tagPage = (offset + VALUE_MEMORY_TAG_OFFSET) >> MAPPED_PAGE_BYTE_SHIFT;
+					require(machine->memory.ramWriteWatches().historyPageDirty(tagPage, tagPage + 1u),
+						"tag publication dirties its own history page");
+				}
 			}
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 			const auto& exits = native.cpu.nativeGateProfile().exits;
 			require(exits[static_cast<size_t>(NativeBlockExit::ReadMemory)].entries == 0
 				&& exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries == static_cast<u64>(watchTag),
-				"the generated Value store exits only for the actual next-page tag byte, not padding");
+				"the generated Value store exits when its next-page tag is the first write to that history page");
 			if (!watchTag) require(exits[static_cast<size_t>(NativeBlockExit::Return)].entries == 1
 				&& exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == 0,
 				"the valid transfer retired in generated code rather than the scalar dispatcher");
@@ -1002,7 +999,7 @@ void wordProducerBoundariesMatchCompleteScalarState() {
 int main() {
 	try {
 		countedStoresPreserveTheirPrefixOnWindowFault();
-		publishedStoresObserveNewPhysicalByteWatches();
+		publishedStoresObserveNewCodeWords();
 		ramScalarDatapathsAndGuards();
 		coldExitsPreserveAddressOperands();
 		generatedTaggedValueTransfers();

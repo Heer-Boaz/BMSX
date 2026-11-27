@@ -1,30 +1,11 @@
 #pragma once
 
-#include <array>
 #include "memory_map.h"
 
 #include <cstdint>
 
 
 namespace bmsx {
-
-// System BLua32 image extension. The descriptor lives in immutable RODATA
-// and is not part of the cartridge-callable BIOS slot list.
-constexpr uint32_t HEAP_SERVICE_IMAGE_FLAG = 1u << 1u;
-constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
-constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
-
-enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, CapturedClosure, Count,
-};
-constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
-using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
-
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET = 4u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET = 8u;
-constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
-	+ 4u * HEAP_SERVICE_ENTRY_COUNT;
 
 // Private CPU runtime stack, inside the management reservation. These
 // offsets are relative to its start; ordinary bus masters cannot see them.
@@ -35,19 +16,6 @@ constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = CPU_FIXED_VALUE_OFFSET;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = CPU_FIXED_FRAME_COUNT;
 constexpr uint32_t HEAP_SERVICE_VALUE_COUNT = CPU_FIXED_VALUE_COUNT;
 
-
-// Pinned CLOSURE return frontier. The marked destination is the presence
-// word; all admission/retry locals live only in the guest activation.
-constexpr uint32_t HEAP_SERVICE_CLOSURE_OFFSET = 0xf00;
-enum class HeapServiceClosureField : uint32_t {
-	Destination = 0, InstructionPc = 4, LastPc = 8, NextPc = 12,
-};
-
-constexpr uint32_t HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
-enum class HeapServiceCaptureBindingField : uint32_t { Prototype = 0, Domain = 4, BindingFlags = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 };
-
-enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
-enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
 // BIOS-owned data in the unused tail of the physical management reservation.
 constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;

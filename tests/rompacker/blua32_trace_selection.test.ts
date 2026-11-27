@@ -6,7 +6,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk, runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -26,7 +26,7 @@ ${MANAGED_CART_LAUNCH}
 	const system = buildBlua32Image({
 		luaModules: [{ path: 'entry', displayPath: 'entry.lua', source: systemSource, chunk: parseLuaChunk(systemSource, 'entry') },
 			...[...loadHeapServiceTestModules(), ...loadTestBiosUtilityModules()].map(module => ({ ...module, displayPath: `${module.path}.lua` }))],
-		preloadModules: HEAP_SERVICE_MODULES,
+		preloadModules: SYSTEM_KERNEL_MODULES,
 		generatedLuaModules: [],
 		loadAddress: SYSTEM_ROM_BASE + 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,

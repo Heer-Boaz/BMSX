@@ -11,7 +11,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../../machine/ts/spec/blua32/cop0';
 import { MemoryAccessKind, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -138,7 +138,7 @@ try {
 					const result = scheduler.runCpuSlice(0, n, undefined, CpuRunKind.Direct);
 					assert.equal(result, RunResult.Yielded);
 					assert.ok(n > cpu.instructionBudgetRemaining);
-					record(`J ${n} 0`, `${result} ${n - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+					record(`J ${n} 0`, `${result} ${n - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				}
 				for (let n = 0; n < 1024 && memory.readRamRecordByte(cell + VALUE_MEMORY_TAG_OFFSET) !== ValueTag.Nil; ++n) grant(1);
 				assert.ok(cpu.heapServiceActive());
@@ -201,7 +201,7 @@ try {
 			for (let i = 0; i < 128 && (cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) !== CPU_CAUSE_CODE_RESERVED_INSTRUCTION; ++i) {
 				const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Direct);
 				trace.push('J 1 0');
-				rows.push(`${result} ${1 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${1 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			}
 			assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			assert.equal(memory.readRamRecordWord(cell), 17);

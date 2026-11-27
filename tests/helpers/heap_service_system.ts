@@ -16,7 +16,7 @@ import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/mem
 import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram, type SystemCompileOptions } from '../../toolchain/ts/lua/compiler';
 import type { ProgramModule } from '../../toolchain/ts/lua/compiler/passes/module_contract';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import { allocateThreadRecordReference } from './thread_allocation_reference';
@@ -35,7 +35,7 @@ let heapServiceTestModules: readonly FixtureModule[] | undefined;
 let biosUtilityTestModules: readonly FixtureModule[] | undefined;
 
 export function loadHeapServiceTestModules(): readonly FixtureModule[] {
-	return heapServiceTestModules ??= [...HEAP_SERVICE_MODULES, 'kernel/value_type', 'kernel/byte_string_input', 'string/from_bytes'].map(path => {
+	return heapServiceTestModules ??= [...SYSTEM_KERNEL_MODULES, 'kernel/byte_string_input', 'string/from_bytes'].map(path => {
 		const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 		return { path, source, chunk: parseLuaChunk(source, path).chunk };
 	});
@@ -49,13 +49,13 @@ export function loadTestBiosUtilityModules(): readonly FixtureModule[] {
 		.map(({ path, source }) => ({ path, source, chunk: parseLuaChunk(source, path).chunk }));
 }
 
-/** Compile an executable fixture with the System BIOS operation roster. */
+/** Compile an executable fixture with the linked System runtime. */
 export function compileTestSystemWithHeap(chunk: LuaChunk, modules: readonly ProgramModule[],
 	options: SystemCompileOptions) {
 	const fixturePaths = new Set(modules.map(module => module.path));
 	const firmware = loadHeapServiceTestModules().filter(module => !fixturePaths.has(module.path));
 	return compileLuaChunkToProgram(chunk, [...firmware, ...modules], {
-		...options, preloadModules: [...HEAP_SERVICE_MODULES, ...(options.preloadModules ?? [])],
+		...options, preloadModules: [...SYSTEM_KERNEL_MODULES, ...(options.preloadModules ?? [])],
 	});
 }
 

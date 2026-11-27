@@ -2,7 +2,7 @@ import { loadHeapServiceTestModules, loadTestBiosUtilityModules } from './heap_s
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_IMAGE_FUNCTION_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { CART_ROM_MAGIC } from '../../machine/ts/spec/bmsx/rom_package';
@@ -37,7 +37,7 @@ export function buildPublicBiosFixture(source: string, optLevel: 0 | 3) {
 	];
 	const built = buildBlua32Image({
 		domain: 'system',
-		preloadModules: HEAP_SERVICE_MODULES,
+		preloadModules: SYSTEM_KERNEL_MODULES,
 		luaModules: sources.map(module => ({
 			...module, displayPath: `${module.path}.lua`,
 		})),

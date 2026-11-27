@@ -18,7 +18,6 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_IMAGE_FLAG } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
@@ -137,7 +136,6 @@ function assemble(operation: OpcodeCase) {
 	for (const [index, op] of ops.entries()) writeInstruction(text, index, ...op);
 	const { image, romBytes } = linkRawTestSystemBlua32({ text, functions, constants: constants.map(integerConstant),
 		closureRelocations: closures, exceptionFunctionIndex: 2, verifiedControlFlow: true });
-	assert.equal(image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 	const [, caller, handler, child] = image.functions;
 	for (const [slot, value] of [[functionSlot, caller.address], [pcSlot, caller.codeAddress]])
 		writeLE32(romBytes, image.header.constantTableAddress + slot * BLUA32_CONSTANT_RECORD_SIZE + BLUA32_CONSTANT_PAYLOAD_OFFSET, value);

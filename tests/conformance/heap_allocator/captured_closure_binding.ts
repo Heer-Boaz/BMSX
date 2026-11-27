@@ -19,7 +19,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_
 	BLUA32_IMAGE_MAPPED_CODE_FLAG, BLUA32_UPVALUE_INDEX_MASK } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_RETAINED_WORD_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_CPU } from '../../../machine/ts/machine/memory/bus_signals';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -78,20 +78,20 @@ try {
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
-		const arena = cpu.heapAllocator, latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+		const arena = cpu.heapAllocator;
 		const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
 		const cells = workspace + newCellsOffset, bits = workspace + missingOffset;
 		const history = new RamHistory();
 		history.start(memory);
 		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		function atIssue() {
-			if (!cpu.getFrameDepth() || cpu.heapServiceActive() || cpu.activeCartridgeSlot() !== (domain === 'system' ? -1 : 0)) return false;
+			if (!cpu.getFrameDepth() || cpu.fixedInterruptActive() || cpu.activeCartridgeSlot() !== (domain === 'system' ? -1 : 0)) return false;
 			const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const instruction = decodeBlua32InstructionAtPc(layout.textBytes, textAddress, pc);
 			return instruction.op === OpCode.CLOSURE && instruction.bx * 16 === target!.address;
 		}
 		for (let i = 0; i < 8192 && !atIssue(); ++i)
-			assert.notEqual(slice(cpu.heapServiceActive() ? 193 : 1), RunResult.Halted);
+			assert.notEqual(slice(cpu.fixedInterruptActive() ? 193 : 1), RunResult.Halted);
 		assert.ok(atIssue());
 		const stem = join(folder, `O${optLevel}-${domain}`);
 		const rom = stem + '.rom', seed = stem + '.seed';
@@ -105,14 +105,14 @@ try {
 		function grant(cycles: number) {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(latch)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
 		const initialPages = history.capture(memory, null);
 		assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		for (let n = 0; n < 8192 && memory.readRamRecordWord(bits + 48) === 0; ++n) grant(127);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(memory.readRamRecordWord(bits + 48), 0xffffffff, '416 descriptors staged');
 		assert.equal(memory.readRamRecordWord(bits + 64), 0, 'the final descriptor is not yet staged');
 		assert.equal(memory.readRamRecordWord(cells), 0, 'reservation has not issued a Cell');
@@ -123,7 +123,7 @@ try {
 		writeFileSync(checkpoint, encodeRuntimeSaveState(partial));
 		const split = commands.length, logicalBeforeReservation = cpu.luaHeap.usedBytes();
 		for (let n = 0; n < 8192 && memory.readRamRecordWord(cells + 32 * 4) === 0; ++n) grant(221);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(memory.readRamRecordWord(bits + 64), 1, 'the final descriptor went into the last bitmap word');
 		assert.notEqual(memory.readRamRecordWord(cells + 32 * 4), 0);
 		assert.equal(memory.readRamRecordWord(cells + (names.length - 1) * 4), 0);
@@ -209,16 +209,16 @@ return make(7, 8)()
 			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine;
-			const arena = cpu.heapAllocator, latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+			const arena = cpu.heapAllocator;
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const atIssue = () => {
-				if (cpu.heapServiceActive() || cpu.getFrameDepth() === 0) return false;
+				if (cpu.fixedInterruptActive() || cpu.getFrameDepth() === 0) return false;
 				const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 				const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
 				return instruction.op === OpCode.CLOSURE && instruction.bx * 16 === target.address;
 			};
 			for (let i = 0; i < 8192 && !atIssue(); ++i)
-				assert.notEqual(slice(cpu.heapServiceActive() ? 193 : 1), RunResult.Halted);
+				assert.notEqual(slice(cpu.fixedInterruptActive() ? 193 : 1), RunResult.Halted);
 			assert.ok(atIssue());
 			const depth = cpu.getFrameDepth(), origin = cpu.readFramePc(depth - 1);
 			const decode = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, origin);
@@ -253,10 +253,10 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(latch)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			};
 			grant(1);
-			assert.ok(cpu.heapServiceActive());
+			assert.ok(cpu.fixedInterruptActive());
 			assert.equal(frame.pc, origin);
 			if (sampled) {
 				for (let i = 0; i < 2; ++i) {
@@ -276,8 +276,8 @@ return make(7, 8)()
 				commands.push('C');
 				rows.push('708');
 			} else {
-				for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) grant(127);
-				assert.equal(cpu.heapServiceActive(), false);
+				for (let i = 0; i < 512 && cpu.fixedInterruptActive(); ++i) grant(127);
+				assert.equal(cpu.fixedInterruptActive(), false);
 				assert.equal(frame.openUpvalueHead, openHead);
 				assert.equal(frame.registers.get(decode.a), destinationBefore);
 				const busFault = test === 'bus-fault';
@@ -361,10 +361,10 @@ return make(7, 8)()
 			const { cpu, memory, scheduler } = runtime.machine;
 			const arena = cpu.heapAllocator, management = arena.managementOffset();
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			const atIssue = () => !cpu.heapServiceActive() && cpu.getFrameDepth() !== 0
+			const atIssue = () => !cpu.fixedInterruptActive() && cpu.getFrameDepth() !== 0
 				&& cpu.activeCartridgeSlot() === (cart ? 0 : -1) && cpu.readFramePc(cpu.getFrameDepth() - 1) === issuePc;
 			for (let n = 0; n < 8192 && !atIssue(); ++n)
-				assert.notEqual(slice(cpu.heapServiceActive() ? 193 : 1), RunResult.Halted);
+				assert.notEqual(slice(cpu.fixedInterruptActive() ? 193 : 1), RunResult.Halted);
 			assert.ok(atIssue());
 			if (!romPrototype && !readFault) {
 				for (let i = 0; i < offsets.length; ++i) memory.writeMappedWord(prototypeAddress + offsets[i], prototypeWords[i]);
@@ -386,15 +386,15 @@ return make(7, 8)()
 			const commands = ['X'], rows: string[] = [];
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
-				const front = memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET);
+
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${front} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return spent;
 			};
 			let checkpoint = '', cut = 0, rowCut = 0;
 			assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
 			if (readFault || sizeFault) {
-				assert.equal(cpu.heapServiceActive(), false);
+				assert.equal(cpu.fixedInterruptActive(), false);
 				assert.equal(frame.openUpvalueHead, openHead);
 				assert.equal(memory.readBusFaultSequence(), faultSequence + (readFault ? offsets.length : 0));
 				assert.equal(cpu.captureRuntimeState().hardHalted, readFault);
@@ -402,7 +402,7 @@ return make(7, 8)()
 				if (readFault) assert.equal(frame.pc, sourceInstruction.pc + INSTRUCTION_BYTES);
 				else assert.equal(cpu.readEpcWord(), issuePc);
 			} else {
-				assert.ok(cpu.heapServiceActive());
+				assert.ok(cpu.fixedInterruptActive());
 				if (!romPrototype) {
 					// Destroy the entire original mutable prototype before firmware
 					// has sampled even the first descriptor. CALL must use the tail.
@@ -422,8 +422,8 @@ return make(7, 8)()
 				checkpoint = stem + '.checkpoint';
 				writeFileSync(checkpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 				cut = commands.length; rowCut = rows.length;
-				for (let n = 0; n < 512 && cpu.heapServiceActive(); ++n) grant(127);
-				assert.equal(cpu.heapServiceActive(), false);
+				for (let n = 0; n < 512 && cpu.fixedInterruptActive(); ++n) grant(127);
+				assert.equal(cpu.fixedInterruptActive(), false);
 				const closure = valuePayload(frame.registers.get(sourceInstruction.a));
 				assert.equal((memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS) & CLOSURE_LATCHED_PROTOTYPE) !== 0, !romPrototype);
 				const binding = cpu.captureClosureBinding(closure);
@@ -473,17 +473,17 @@ return make(7, 8)()
 			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
-			const latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+
 			const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const atIssue = () => {
-				if (cpu.heapServiceActive() || !cpu.getFrameDepth()) return false;
+				if (cpu.fixedInterruptActive() || !cpu.getFrameDepth()) return false;
 				const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 				const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
 				return instruction.op === OpCode.CLOSURE && instruction.bx * BLUA32_FUNCTION_ALIGNMENT === target.address;
 			};
 			for (let n = 0; n < 8192 && !atIssue(); ++n)
-				assert.notEqual(slice(cpu.heapServiceActive() ? 193 : 1), RunResult.Halted);
+				assert.notEqual(slice(cpu.fixedInterruptActive() ? 193 : 1), RunResult.Halted);
 			assert.ok(atIssue());
 			const frame = cpu.activeThread.currentFrame!, origin = frame.pc;
 			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, origin);
@@ -505,18 +505,18 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(latch)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return spent;
 			};
 			assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
-			for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) {
+			for (let n = 0; n < 4096 && cpu.fixedInterruptActive(); ++n) {
 				if (!fits) {
 					assert.equal(arena.occupiedBytes(), physical);
 					assert.equal(cpu.luaHeap.usedBytes(), logical);
 				}
 				grant(4096);
 			}
-			assert.equal(cpu.heapServiceActive(), false);
+			assert.equal(cpu.fixedInterruptActive(), false);
 			assert.equal(sampled, count);
 			assert.equal(memory.readBusFaultSequence(), bus + +fault);
 			assert.equal(cpu.captureRuntimeState().hardHalted, fault);

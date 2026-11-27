@@ -1,6 +1,7 @@
 import type { Blua32BiosFunctionExport } from './blua32_bios_imports';
 import type { Blua32PreparedEntry, Blua32StaticExport } from './blua32_image_builder';
 import type { ManagedEntry } from '../lua/compiler';
+import { SYSTEM_RESIDENT_EXPORTS } from '../lua/compiler/program';
 import { BIOS_FUNCTION_SLOTS } from '../../../machine/ts/spec/bmsx/bios';
 
 export const SYSTEM_ROM_NAME = 'bmsx-bios';
@@ -38,6 +39,22 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 	{ symbol: 'coroutine_yieldable', path: 'kernel/coroutine_yieldable', callable: true },
 	{ symbol: 'coroutine_entry', path: 'kernel/coroutine_entry' },
 ];
+
+export const SYSTEM_KERNEL_MODULES = [
+	'kernel/allocate_record', ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
+	'kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_strings',
+	'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/thread_retire', 'kernel/gc_objects', 'kernel/table_create',
+	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
+	'kernel/gc_table_mode', 'kernel/gc_weak_mode', 'kernel/string_record', 'kernel/image_string_bindings', 'kernel/gc_trace',
+	'kernel/gc_weak_table', 'kernel/gc_weak_quantum', 'kernel/gc_remark', 'kernel/gc_root_banks',
+	'kernel/closure_create', 'kernel/canonical_closure_index', 'kernel/table_reserve_growth', 'kernel/table_prepare_rebuild',
+	'kernel/table_publish_growth', 'kernel/table_finish_resize', 'kernel/table_reinsert',
+	'kernel/table_assignment', 'kernel/table_resize', 'kernel/table_plan', 'kernel/table_insert_existing',
+	'kernel/allocate_captured_closure', 'kernel/closure_capture_create', 'kernel/gc_maintenance', 'kernel/gc_vblank', 'kernel/gc_step',
+	'kernel/gc_mark_quantum', 'kernel/gc_atomic_quantum', 'kernel/gc_sweep_quantum', 'kernel/gc_epoch',
+	'kernel/gc_runtime_layout', 'kernel/global_bank', 'kernel/gc_root_inputs', 'kernel/gc_pace', 'kernel/heap_admission', 'kernel/word_arithmetic', 'kernel/value_type',
+	'kernel/allocate_string_slice', 'kernel/string_slice', 'kernel/string_char_bytes', 'kernel/number_bytes', 'kernel/boot_image_admission', 'kernel/gc_stopped_roots',
+] as const;
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {
 	if (imageEndOffset > SYSTEM_BLUA32_IMAGE_LIMIT) {

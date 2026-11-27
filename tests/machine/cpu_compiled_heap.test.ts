@@ -10,7 +10,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE } from '../../ma
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField, HEAP_SERVICE_IMAGE_FLAG } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../machine/ts/spec/bmsx/heap_service';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { createTestHeapServiceCpu, compileHeapServiceSystem } from '../helpers/heap_service_system';
@@ -26,7 +26,6 @@ function assertParity(js: CPU, ref: CPU): void {
 
 test('a warm JavaScript CALL to the resident constructor yields to the bound BIOS before its compiled continuation', t => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
-	assert.ok(image.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const functionAddress = image.vectors.entryFunctionAddress;
 	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
 	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);

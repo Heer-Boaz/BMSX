@@ -133,7 +133,7 @@ try {
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid > 0);
 			paidTotal += paid;
-			note(`J ${cycles} 1`, `${result} ${paid} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+			note(`J ${cycles} 1`, `${result} ${paid} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 		}
 		function start(fn: number, args: readonly number[]) {
 			assert.ok(cpu.beginHeapService(fn, args));

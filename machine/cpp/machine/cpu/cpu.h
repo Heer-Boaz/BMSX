@@ -25,7 +25,6 @@
 #include "machine/cpu/run_result.h"
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
-#include "machine/cpu/static_closure_index.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
 #include "machine/cpu/global_bank.h"
@@ -217,7 +216,7 @@ public:
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
 
-	void beginCompletionCall(u32 closure, BuiltinArgsView args = {});
+	void beginCompletionCall(u32 closure, BuiltinArgsView args = {}, u32 codeFunction = 0u);
 	void beginCompletionCallInExecutionDomain(
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
@@ -382,8 +381,6 @@ private:
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested = nullptr);
 #endif
-	u32 findStaticClosure(const FunctionPrototype& record);
-	u32 allocateStaticClosure(const FunctionPrototype& record);
 	u32 staticClosureForRecord(const FunctionPrototype& record);
 	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
@@ -409,7 +406,7 @@ private:
 	void enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);
-	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
+	u32 allocateClosure(const FunctionPrototype&, u32 count);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
@@ -439,9 +436,6 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
-	void beginClosureReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
-	void finishClosureReservation();
-	void beginCanonicalLatchedClosure(CallFrame&, int destination);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);
@@ -611,7 +605,6 @@ private:
 	Thread m_irqView;
 	Thread m_heapServiceView;
 	std::array<Thread, 2> m_transferViews;
-	StaticClosureIndex m_staticClosuresByAddress;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 
 	ScratchBuffer<BuiltinResults> m_builtinResultScratch;

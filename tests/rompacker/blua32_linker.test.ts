@@ -52,7 +52,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { compileTestSystemWithHeap, loadHeapServiceTestModules } from '../helpers/heap_service_system';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
@@ -358,13 +358,13 @@ test('compiler object and physical BLua32 image ignore source registry enumerati
 		entrySource,
 		optLevel: 3,
 		programDomain: 'system',
-		preloadModules: HEAP_SERVICE_MODULES,
+		preloadModules: SYSTEM_KERNEL_MODULES,
 	});
 	const reverse = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry.lua'), modules.slice().reverse(), {
 		entrySource,
 		optLevel: 3,
 		programDomain: 'system',
-		preloadModules: HEAP_SERVICE_MODULES,
+		preloadModules: SYSTEM_KERNEL_MODULES,
 	});
 	const forwardImage = linkSystemBlua32Image(
 		encodeCompiledProgramObject(forward),

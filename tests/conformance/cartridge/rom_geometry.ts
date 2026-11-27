@@ -8,7 +8,6 @@ import { valueInteger, valuePayload, valueTag } from '../../../machine/ts/machin
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_IMAGE_FLAG } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT, IO_CART_SELECT, IO_SYS_ROM_BYTE_COUNT } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -42,7 +41,6 @@ try {
 	for (const optLevel of [0, 3] as const) {
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'rom_geometry.lua').chunk, [], { entrySource: source, optLevel, programDomain: 'system' });
 		const linked = linkTestSystemBlua32(compiled);
-		assert.equal(linked.image.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 		assert.equal(linked.image.header.globalNameCount, 0);
 		assert.deepEqual(linked.staticModulePaths, []);
 		// The System bus has an odd fitted tail outside the linked program.

@@ -7,7 +7,6 @@ import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { ValueTag, valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { HEAP_SERVICE_IMAGE_FLAG } from '../../../machine/ts/spec/bmsx/heap_service';
 import { CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
@@ -59,7 +58,6 @@ try {
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel, traceStatements: 'erase',
 			resetModule: 'reset', irqModule: 'irq', exceptionModule: 'exception', biosExports: [],
 		});
-		assert.equal(linked.layout.header.flags & HEAP_SERVICE_IMAGE_FLAG, 0);
 		const romBytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},

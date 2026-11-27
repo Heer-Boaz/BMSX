@@ -11,7 +11,6 @@ import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { BiosFunction } from '../../../machine/ts/spec/bmsx/bios';
-import { HEAP_SERVICE_CLOSURE_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
@@ -71,13 +70,13 @@ try {
 		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		writeFileSync(rom, pair.systemRomBytes);
 		writeFileSync(cartRom, pair.cartRomBytes);
-		const latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+
 		const commands = ['X'], rows: string[] = [];
 		function grant(cycles: number): number {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
-			const stage = memory.readRamRecordWord(latch);
+
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
 		assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);

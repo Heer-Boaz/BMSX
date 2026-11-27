@@ -13,7 +13,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -66,7 +66,7 @@ try {
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
 			const management = arena.managementOffset(), resident = management + HEAP_SERVICE_RESIDENT_OFFSET;
-			const closure = management + HEAP_SERVICE_CLOSURE_OFFSET;
+
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const inCopy = () => cpu.heapServiceActive() && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function) === entry;
@@ -98,8 +98,8 @@ try {
 			function grant(cycles: number) {
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				const latch = memory.readRamRecordWord(closure);
-				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${latch} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+
+				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return result;
 			}
 			for (let i = 0; i < 8192 && gc.phase() !== GcPhase.Strings; ++i) {

@@ -8,27 +8,32 @@ import {
 	closureRecordBytes, initializeRecord,
 } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
+import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { Blua32FunctionRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestCartBlua32 } from '../helpers/blua32';
+import { linkTestCartBlua32, writeTestBlua32Rom } from '../helpers/blua32';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 
 const MODULE = 'kernel/closure_create', port = `machine/bios/${MODULE}.lua`;
 const basis = 'fdbb99cb46fbf8381dff4e5a065ae765dee1b525';
 const source = readFileSync(port, 'utf8').replaceAll('\r\n', '\n');
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
+// Firmware test only: weak membership occupies the spare object prefix word
+// plus this private group of bucket heads, not a CPU or save-state layout.
+const WEAK_HEADS = 0x3d00, WEAK_HEAD_COUNT = 128;
 
 function fixture(optLevel: 0 | 3) {
 	const cartSource = 'return 42';
@@ -49,18 +54,29 @@ function fixture(optLevel: 0 | 3) {
 	});
 	// The same mapped cartridge program is installed separately on both sockets.
 	function create() {
-		const { cpu } = bootManagedTestSystem(system, 'main', cartridgeSlots(linkedCart.cartRomBytes, linkedCart.cartRomBytes));
-		runGuestToHalt(cpu, 10_000);
+		const runtime = new Runtime({
+			systemRomBytes: writeTestBlua32Rom(system), cartridgeSlots: cartridgeSlots(linkedCart.cartRomBytes, linkedCart.cartRomBytes),
+			machineModel: PSX_MACHINE_SPEC,
+		}, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} });
+		runtime.boot();
+		const { cpu } = runtime.machine;
+		runGuestToHalt(cpu, 1_000_000);
+		assert.ok(cpu.isHaltedUntilIrq());
 		return cpu;
 	}
 	const cpu = create(), oracle = create(), memory = cpu.memory;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
-	function compare() {
-		const actual = memory.ramData().subarray(first, last), expected = oracle.memory.ramData().subarray(first, last);
-		if (Buffer.compare(actual, expected) === 0) return;
-		const index = actual.findIndex((value, index) => value !== expected[index]);
-		assert.equal(actual[index], expected[index], `private RAM differs at offset 0x${(first + index).toString(16)}`);
+	function compare(weakMembers: readonly number[] = []) {
+		const actual = memory.ramData(), expected = oracle.memory.ramData();
+		let previous = first;
+		for (const member of weakMembers.toSorted((left, right) => left - right)) {
+			const link = member - RAM_BASE - GC_OBJECT_PREFIX;
+			assert.equal(Buffer.compare(actual.subarray(previous, link), expected.subarray(previous, link)), 0,
+				`native storage and firmware differ before weak word at 0x${link.toString(16)}`);
+			previous = link + 4;
+		}
+		assert.equal(Buffer.compare(actual.subarray(previous, last), expected.subarray(previous, last)), 0);
 	}
 	function begin(proto: FunctionPrototype, canonical: boolean) {
 		assert.equal(proto.recordUpvalueCount, 0);
@@ -85,12 +101,16 @@ function fixture(optLevel: 0 | 3) {
 		oracle.gc.publishObject(address);
 		return address;
 	}
-	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, prototypes: [prototype(firmware, -1), prototype(cart, 0), prototype(cart, 1)] };
+	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, heads: management + WEAK_HEADS,
+		prototypes: [prototype(firmware, -1), prototype(cart, 0), prototype(cart, 1)] };
 }
 
 for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 	test(`captureless ROM Closure (${canonical}) BIOS reservation and inventory match native at O${optLevel}`, () => {
 		const f = fixture(optLevel);
+		const members: number[] = [];
+		const readHeads = () => Array.from({ length: WEAK_HEAD_COUNT }, (_, i) => f.memory.readRamRecordWord(f.heads + 4 * i));
+		const heads = readHeads();
 		for (const [step, proto] of f.prototypes.entries()) {
 			const before = f.memory.readRamRecordWord(f.control + OBJECT_HEAD), count = f.memory.readRamRecordWord(f.control + OBJECT_COUNT);
 			const sweep = step === 0 ? before - GC_OBJECT_LINK_BEFORE : f.control + OBJECT_HEAD;
@@ -127,11 +147,22 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 			assert.equal(f.memory.readRamRecordWord(f.control + OBJECT_HEAD), address);
 			assert.equal(f.memory.readRamRecordWord(f.control + OBJECT_COUNT), count + 1);
 			assert.equal(f.memory.readRamRecordWord(f.control + SWEEP_LINK), step === 0 ? sweep : address - GC_OBJECT_LINK_BEFORE);
-			f.compare();
+			const link = f.memory.readRamRecordWord(address - GC_OBJECT_PREFIX);
+			if (canonical) {
+				const bucket = link >>> GC_GRAY_INDEX_BITS;
+				assert.ok(bucket < heads.length);
+				assert.equal(link & GC_GRAY_INDEX_MASK, heads[bucket], 'publication links only the chosen previous head');
+				heads[bucket] = (address - RAM_BASE) >>> GC_RECORD_SHIFT;
+				members.push(address);
+			}
+			assert.deepEqual(readHeads(), heads);
+			f.compare(members);
 			if (checkpoint !== undefined) {
 				restoreCpuCheckpoint(f.cpu, checkpoint);
 				assert.equal(f.finish(), spent);
-				f.compare();
+				assert.equal(f.memory.readRamRecordWord(address - GC_OBJECT_PREFIX), link);
+				assert.deepEqual(readHeads(), heads);
+				f.compare(members);
 			}
 		}
 	});
@@ -159,8 +190,8 @@ const pins = [
 	['L', 'machine/ts/machine/cpu/closure.ts', 'dccda2a02992d7ad7a04ae4ee78b46ae7d310b6cf19d787252d73af3cf40d024', [[35, 35], [39, 43], [61, 65], [72, 74]]],
 	['R', 'machine/cpp/machine/cpu/closure.cpp', '989524624c0955ea61dde1cfe19a2e5bc6476902194c7117d95c1dc12c7a86c6', [[18, 25]]],
 	['H', 'machine/cpp/machine/cpu/closure.h', 'ef85f807bc81dc47034d15cabcf80bffd408c4e9f890827fcabbf11af8512663', [[54, 54], [58, 60], [64, 65], [69, 70]]],
-	['N', 'machine/ts/machine/cpu/cpu.ts', 'c199f4a87b23e09d9a9156020aa4acc8e616c083ef678b7f392b312802e700d8', [[1276, 1279], [1281, 1281], [4013, 4015], [4026, 4028]]],
-	['P', 'machine/cpp/machine/cpu/cpu.cpp', '518a1cfeafda8b2774ac2f8b09686656fd788cba82e909d9050074aae0ce4e30', [[161, 166], [585, 585], [587, 587], [2950, 2950], [2963, 2964]]],
+	['N', 'machine/ts/machine/cpu/cpu.ts', 'c199f4a87b23e09d9a9156020aa4acc8e616c083ef678b7f392b312802e700d8', [[1276, 1281], [4013, 4015], [4026, 4028]]],
+	['P', 'machine/cpp/machine/cpu/cpu.cpp', '518a1cfeafda8b2774ac2f8b09686656fd788cba82e909d9050074aae0ce4e30', [[161, 166], [585, 587], [2950, 2950], [2963, 2964]]],
 	['U', 'machine/ts/machine/cpu/gc_heap.ts', 'c2c3aa2c781339b31dc4c01215ab4573eda384c133efdeb4e653be0b61e6dba2', [[102, 102], [147, 155]]],
 	['V', 'machine/cpp/machine/cpu/gc_heap.cpp', '3b381497094c08ac1fdd96cad70a76fd8ab42d560bf23041cd87224afc7c4b3d', [[235, 244]]],
 	['W', 'machine/cpp/machine/cpu/gc_heap.h', '306c39028d8f2c953ca62d821a6f726646e12bd8cd21ac4693d98e0696ce84db', [[93, 93]]],
@@ -217,8 +248,8 @@ test('captureless ROM Closure firmware binds the mirrored record layout and sour
 			assert.ok(native.covered.has(n), `${key}:${n}: no firmware mapping for ${statement.trim()}`);
 		}
 	}
-	for (const [key, line] of [['T', 229], ['T', 230], ['C', 244], ['C', 245], ['N', 1280], ['P', 586]] as const) {
+	for (const [key, line] of [['T', 229], ['T', 230], ['C', 244], ['C', 245]] as const) {
 		const native = sources.get(key)!;
-		assert.equal(native.covered.has(line), false, 'logical admission and canonical index publication stay with the caller');
+		assert.equal(native.covered.has(line), false, 'logical admission stays with the caller');
 	}
 });

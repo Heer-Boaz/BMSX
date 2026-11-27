@@ -132,10 +132,8 @@ int main(int argc, char** argv) {
 					int cycles, mode;
 					trace >> cycles >> mode;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
-					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination));
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< cpu.heapServiceActive() << ' ' << cpu.fixedInterruptActive() << ' ' << cpu.heapAllocator().occupiedBytes()
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -260,10 +258,8 @@ int main(int argc, char** argv) {
 					trace >> cycles;
 					const auto before = scheduler.nowCycles();
 					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles);
-					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination));
 					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
-						<< ' ' << cpu.heapServiceActive() << ' ' << stage << ' '
+						<< ' ' << cpu.heapServiceActive() << ' ' << cpu.fixedInterruptActive() << ' '
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -271,13 +267,12 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'C' && opcode != 'F' && opcode != 'Y' && opcode != 'V')
-						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, coroutine.create or VARARG");
+					if (opcode != 'F' && opcode != 'Y' && opcode != 'V')
+						throw std::runtime_error("Expected generated SETFIELD, coroutine.create or VARARG");
 					const bool growField = opcode == 'F';
 					const bool coroutine = opcode == 'Y';
 					const bool vararg = opcode == 'V';
-					const auto gate = vararg ? NativeBlockExit::Vararg : coroutine ? NativeBlockExit::Call
-						: growField ? NativeBlockExit::WriteField : NativeBlockExit::CreateClosure;
+					const auto gate = vararg ? NativeBlockExit::Vararg : coroutine ? NativeBlockExit::Call : NativeBlockExit::WriteField;
 					u32 coroutineRoot = 0u;
 					if (coroutine) {
 						auto& frame = *cpu.activeThread()->currentFrame;
@@ -329,7 +324,7 @@ int main(int argc, char** argv) {
 							+ std::to_string(allocation.entries - before.entries) + " entries, "
 							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
 							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
-					if (vararg || growField) {
+					if (!coroutine) {
 						const u32 cause = vararg ? CPU_CAUSE_CODE_REGISTER_WINDOW : CPU_CAUSE_CODE_STORAGE_WINDOW;
 						if (result != RunResult::Halted || cpu.heapServiceActive() || cpu.fixedInterruptActive()
 							|| cpu.readCauseWord() != cause || cpu.activeThread()->address != (growField ? cpu.rootThread()->address : owner)
@@ -342,22 +337,14 @@ int main(int argc, char** argv) {
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					if (result != RunResult::Yielded || !cpu.heapServiceActive())
 						throw std::runtime_error("The generated allocation did not suspend");
-					if (coroutine) {
-						const u32 frame = management + HEAP_SERVICE_FRAME_OFFSET;
-						const u32 activeRoot = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
-						const u32 origin = memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc));
-						if (activeRoot != coroutineRoot || origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES
-							|| memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags)) != FRAME_RESIDENT_ACTIVATION)
-							throw std::runtime_error("The generated instruction did not issue its bound resident continuation");
-					} else if (memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
-							+ static_cast<u32>(HeapServiceClosureField::Destination)) == 0u || caller != cpu.readCurrentInstructionPc()) {
-						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
-					}
-					std::cout << allocation.entries - before.entries;
-					if (coroutine)
-						std::cout << ' ' << FRAME_RESIDENT_ACTIVATION
-						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
-					std::cout << '\n';
+					const u32 frame = management + HEAP_SERVICE_FRAME_OFFSET;
+					const u32 activeRoot = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
+					const u32 origin = memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc));
+					if (activeRoot != coroutineRoot || origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES
+						|| memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags)) != FRAME_RESIDENT_ACTIVATION)
+						throw std::runtime_error("The generated instruction did not issue its bound resident continuation");
+					std::cout << allocation.entries - before.entries << ' ' << FRAME_RESIDENT_ACTIVATION
+						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
 #endif
@@ -370,10 +357,9 @@ int main(int argc, char** argv) {
 					const auto cycles = scheduler.nowCycles();
 					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
-					const u32 management = cpu.heapAllocator().managementOffset();
 					std::cout << result << ' ' << (scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
 						<< ' ' << cpu.heapServiceActive()
-						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)
+						<< ' ' << cpu.fixedInterruptActive()
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
@@ -582,7 +568,7 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'N': cpu.requestNonMaskableInterrupt(); break;
-								case 'h': cpu.clearHaltUntilIrq(); break;
+				case 'h': cpu.clearHaltUntilIrq(); break;
 				case 'i': {
 					u32 flags;
 					trace >> flags;

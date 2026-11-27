@@ -94,7 +94,6 @@ CPU::CPU(
 	, m_irqView(m_heap)
 	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
-	, m_staticClosuresByAddress(memory)
 	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
 	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
 	m_memory.setRamBusEnd(DYNAMIC_RAM_BASE);
@@ -164,10 +163,10 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(id);
 }
 
-u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count, bool canonical) {
+u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count) {
 	const bool latched = !m_functionRecordLatch.romBacked;
 	const u32 address = m_luaHeap.allocateClosureRecord(count, latched);
-	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, canonical, latched);
+	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, false, latched);
 	m_heap.publishObject(address);
 	return address;
 }
@@ -211,7 +210,6 @@ void CPU::reset() {
 	m_nmiReturnBadAddressWord = 0u;
 	m_nmiReturnLuaFaultReasonWord = 0u;
 	m_nmiReturnExceptionDomainWord = 0u;
-	m_staticClosuresByAddress.clear();
 	m_memory.clearMappedPageWriteWatches();
 	initializeResetBank();
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
@@ -371,35 +369,6 @@ std::unique_ptr<Blua32ExecutionImage> CPU::activateExecutionImage(
 	if (nameCount + stringCount > MAIN_RAM_SIZE / sizeof(u32))
 		throw BMSX_RUNTIME_ERROR("BLua32 image bank extents exceed main RAM.");
 	image->romFunctions = Blua32RomFunctionDirectory::read(m_memory, executionDomainId, header);
-	if ((readLE32(header + BLUA32_IMAGE_FLAGS_OFFSET) & HEAP_SERVICE_IMAGE_FLAG) != 0u) {
-		if (executionDomainId != SYSTEM_EXECUTION_DOMAIN_ID || image->romFunctions.mappedCode
-			|| readLE32(header + BLUA32_IMAGE_BYTE_COUNT_OFFSET) < HEAP_SERVICE_IMAGE_HEADER_SIZE)
-			throw BMSX_RUNTIME_ERROR("Heap service requires an extended linked System ROM image.");
-		Span<const u8> bytes;
-		m_executionAddressSpace.bindReadOnlyView(executionDomainId,
-			executionBoot.imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, sizeof(u32), bytes);
-		const u32 address = readLE32(bytes.data());
-		const u32 offset = address - readLE32(header + BLUA32_IMAGE_RODATA_ADDRESS_OFFSET);
-		const u32 size = readLE32(header + BLUA32_IMAGE_RODATA_BYTE_COUNT_OFFSET);
-		if ((address & 3u) != 0u || offset > size || HEAP_SERVICE_DESCRIPTOR_SIZE > size - offset
-			|| address >= SYSTEM_ROM_SIZE || HEAP_SERVICE_DESCRIPTOR_SIZE > SYSTEM_ROM_SIZE - address)
-			throw BMSX_RUNTIME_ERROR("Heap service descriptor is outside System ROM RODATA.");
-		m_executionAddressSpace.bindReadOnlyView(executionDomainId, address, HEAP_SERVICE_DESCRIPTOR_SIZE, bytes);
-		const u8* descriptor = bytes.data();
-		const u32 values = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET);
-		const u32 frames = readLE32(descriptor + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET);
-		if (values == 0u || values > HEAP_SERVICE_VALUE_COUNT || frames == 0u || frames > HEAP_SERVICE_FRAME_COUNT)
-			throw BMSX_RUNTIME_ERROR("Heap service descriptor does not fit the private CPU stack.");
-		const u8* functions = descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET;
-		for (u32 index = 0; index < HEAP_SERVICE_ENTRY_COUNT; ++index) {
-			const u32 entry = readLE32(functions + index * sizeof(u32));
-			const auto* version = image->romFunctions.find(entry);
-			if (!version || version->upvalueCount != 0u || version->entry.registerCapacity() > values
-				|| (version->entry.flags & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) != BLUA32_FUNCTION_STATIC)
-				throw BMSX_RUNTIME_ERROR("Heap service descriptor does not name a fixed System ROM activation.");
-			image->heapServiceFunctions[index] = entry;
-		}
-	}
 	if (update == ExecutionImageUpdate::Replace) {
 		admitImageReplacement(*image);
 		if (executionDomainId == m_programExecutionDomainId && !m_heapAllocator.setFloor(executionBoot.staticEnd)) {
@@ -597,25 +566,24 @@ FunctionPrototype CPU::readClosureBinding(u32 closure) {
 	return ClosureRecord::readBinding(m_memory, closure, binding, executionImageForDomain(binding.domain())->romFunctions);
 }
 
-u32 CPU::findStaticClosure(const FunctionPrototype& record) {
-	u32 first = 0u;
-	for (const u32 closure : m_staticClosuresByAddress.find(record.functionAddress)) {
-		if ((first == 0u || closure < first) && !m_heap.sweepGarbage(closure)
-			&& readClosureBinding(closure) == record)
-			first = closure;
-	}
-	return first;
-}
-
+// Tool-driven entry and frame editing can borrow a live canonical record.
+// Only firmware publishes new canonical bindings.
 u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
-	if (const u32 first = findStaticClosure(record)) return first;
-	return allocateStaticClosure(record);
-}
-
-u32 CPU::allocateStaticClosure(const FunctionPrototype& record) {
-	const u32 closure = allocateClosure(record, 0, true);
-	m_staticClosuresByAddress.insert(record.functionAddress, closure);
-	return closure;
+	struct Lookup {
+		CPU& cpu;
+		const FunctionPrototype& prototype;
+		u32 first = 0u;
+	} lookup{*this, record};
+	m_heap.visitObjectRecords(&lookup, [](void* context, u32 address) {
+		auto& [cpu, prototype, first] = *static_cast<Lookup*>(context);
+		if ((first == 0u || address < first)
+			&& cpu.m_memory.readRamRecordByte(address) == static_cast<u8>(ValueTag::Closure)
+			&& (cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u
+			&& cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == prototype.functionAddress
+			&& !cpu.m_heap.sweepGarbage(address) && cpu.readClosureBinding(address) == prototype)
+			first = address;
+	});
+	return lookup.first != 0u ? lookup.first : allocateClosure(record, 0);
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
@@ -1101,24 +1069,25 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 #endif
 }
 
-void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args) {
+void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args, u32 codeFunction) {
 	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
 	auto roots = acquireLocalRoots();
-	trackLocalRoot(valueClosure(closure));
+	if (closure != 0u) trackLocalRoot(valueClosure(closure));
 	for (size_t index = 0; index < args.size(); ++index) trackLocalRoot(args[index]);
 	m_heap.finishFinalMark();
 	// Call injection takes over the physical instruction stream. The suspended
 	// frame retains its PC; an unaccepted endpoint access must not follow it.
 	abortStalledMemoryWrite();
 	// The input span may borrow the completion latch being cleared below.
-	args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
+	if (!args.empty())
+		args = BuiltinArgsView(m_localRoots.data() + m_localRoots.size() - args.size(), args.size());
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
 	m_completionThreadAddress = m_activeThread->address;
 	m_runSignals &= ~RunYield;
-	pushFrame(closure, args, {}, FRAME_COMPLETION);
+	pushFrame(closure, args, {}, FRAME_COMPLETION, std::nullopt, false, codeFunction);
 }
 
 void CPU::beginCompletionCallInExecutionDomain(
@@ -1133,7 +1102,13 @@ void CPU::beginCompletionCallInExecutionDomain(
 		hardHalt();
 		return;
 	}
-	beginCompletionCall(staticClosureForRecord(decodePrototype(m_functionRecordLatch)));
+	const auto& record = m_functionRecordLatch;
+	constexpr u32 direct = BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC;
+	if (record.romBacked && executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		&& record.upvalueCount == 0u && (record.flags & direct) == direct)
+		beginCompletionCall(0u, {}, functionAddress);
+	else
+		beginCompletionCall(staticClosureForRecord(decodePrototype(record)));
 }
 
 CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) const {
@@ -1189,7 +1164,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	clearNativeContinuationBindings();
 #endif
 	m_completionValues.clear(0, m_completionValueCount); m_completionValueCount = 0;
-	m_staticClosuresByAddress.clear();
 	m_rootView.select(state.rootThreadAddress);
 	const bool boardBank = state.rootThreadAddress == CPU_RESET_BANK_ADDRESS;
 	for (auto& view : m_transferViews) view.select(0u);
@@ -1199,21 +1173,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		m_systemGlobalBank.detach();
 		m_globalBank.detach();
 	} else {
-		// This scan is independent of the in-flight collector sweep cursor.
-		m_heap.visitObjectRecords(this, [](void* context, u32 address) {
-			auto& cpu = *static_cast<CPU*>(context);
-			auto& heap = cpu.m_heap;
-			switch (cpu.m_memory.readRamRecordByte(address)) {
-				case static_cast<u8>(ValueTag::Closure): {
-					const u8 binding = cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS);
-					if ((binding & CLOSURE_CANONICAL) != 0u && !heap.sweepGarbage(address)) {
-						const u32 functionAddress = cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS);
-						cpu.m_staticClosuresByAddress.insert(functionAddress, address);
-					}
-					break;
-				}
-			}
-		});
 		m_systemGlobalBank.bind();
 		m_globalBank.bind();
 	}
@@ -1676,7 +1635,6 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 
 #include "machine/cpu/cpu_calls.inl"
 #include "machine/cpu/cpu_heap_service.inl"
-#include "machine/cpu/cpu_heap_record.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
@@ -2350,7 +2308,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				if (&view != m_activeThread && view.address != 0u) view.select(0u);
 			try {
 				if (resident) finishResidentCall(flags);
-				else finishClosureReservation();
 			} catch (const LuaOutOfMemorySignal&) {
 				retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 			} catch (const LuaThrownValueError& error) {
@@ -2627,7 +2584,7 @@ void CPU::writeFrameExecution(
 			frame.writeControl(FrameField::Closure, staticClosureForRecord(prototype));
 		} else {
 			const u32 count = frame.captureCount();
-			u32 replacement = allocateClosure(prototype, count, false);
+			u32 replacement = allocateClosure(prototype, count);
 			for (u32 index = 0; index < count; ++index)
 				ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
 			frame.writeControl(FrameField::Closure, replacement);

@@ -27,7 +27,6 @@
 #include "machine/cpu/jit/runtime/field_feedback.h"
 #endif
 
-#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 
@@ -184,7 +183,6 @@ struct Blua32ExecutionImage {
 	ExecutionDomainId executionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 irqFunctionAddress = 0;
 	u32 staticEnd = 0;
-	HeapServiceFunctions heapServiceFunctions{};
 	// Borrowed identity of the installed ROM extent. A remount drops the
 	// key without changing the values of the still-active image.
 	Span<const u8> constantSource;

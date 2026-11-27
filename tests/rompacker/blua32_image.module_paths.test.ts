@@ -15,7 +15,7 @@ import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_registe
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
@@ -26,7 +26,7 @@ import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
 
 for (const optLevel of [3] as const) {
 	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {
-		const firmwarePaths = new Set<string>(HEAP_SERVICE_MODULES);
+		const firmwarePaths = new Set<string>(SYSTEM_KERNEL_MODULES);
 		const systemSources = [
 			['entry', `module<entry>
 ${MANAGED_CART_LAUNCH}`],
@@ -43,7 +43,7 @@ return function(value) return value + delta.amount end`],
 				})),
 				...loadHeapServiceTestModules().map(module => ({ ...module, displayPath: `${module.path}.lua` })),
 			],
-			preloadModules: HEAP_SERVICE_MODULES,
+			preloadModules: SYSTEM_KERNEL_MODULES,
 			generatedLuaModules: [],
 			loadAddress: SYSTEM_ROM_BASE + 0x100,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes,

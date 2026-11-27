@@ -46,7 +46,7 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 
 });
 
-test('the object sweep maps executable collector work and separates derived host observations', () => {
+test('the object sweep maps its weak Closure retirement separately from host observations', () => {
 	const sources = new Map<string, { lines: string[]; mapped: Set<number> }>();
 	for (const [key, path] of pins) {
 		const lines = execFileSync('git', ['show', basis + ':' + path], { encoding: 'utf8' }).split('\n');
@@ -72,19 +72,17 @@ test('the object sweep maps executable collector work and separates derived host
 		}
 	}
 	const mapped = [
-		['T', [[738, 776], [779, 779], [781, 782], [784, 786], [789, 792], [794, 797], [799, 800], [802, 802], [804, 805]]],
-		['C', [[801, 837], [839, 839], [841, 845], [849, 853], [857, 857], [859, 860], [862, 864]]],
+		['T', [[738, 776], [779, 779], [781, 782], [784, 792], [794, 797], [799, 800], [802, 802], [804, 805]]],
+		['C', [[801, 837], [839, 839], [841, 853], [857, 857], [859, 860], [862, 864]]],
 		['A', [[165, 173]]], ['B', [[73, 75], [508, 517]]],
 		['L', [[42, 44], [50, 54]]], ['K', [[64, 66]]], ['E', [[68, 72]]],
 		['I', [[118, 120], [122, 123], [128, 128]]], ['J', [[59, 61], [63, 63]]],
 		['Q', [[66, 68]]], ['R', [[69, 71]]],
 	] as const;
-	// Old inspector and index dispatch belongs to the physical writer and
-	// host consumers, not to the collector control flow.
+	// RAM observation belongs to the physical writer, not collector policy.
 	const hostOnly = [
-		['T', 783, /onRecordRetirement/], ['T', 787, /CLOSURE_CANONICAL/], ['T', 788, /retireStaticClosure/],
+		['T', 783, /onRecordRetirement/],
 		['T', 793, /onRecordRetirement/], ['T', 803, /onRecordRetirement/],
-		['C', 846, /ValueTag::Closure/], ['C', 847, /CLOSURE_CANONICAL/], ['C', 848, /retireStaticClosure/],
 	] as const;
 	for (const [key, line, origin] of hostOnly) {
 		const ref = sources.get(key)!;

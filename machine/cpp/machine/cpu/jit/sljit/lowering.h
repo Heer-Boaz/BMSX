@@ -109,7 +109,7 @@ private:
 	void admitTableValueWrite(NativeBlockExitSite&);
 	void emitTableValueWrite(int value);
 	void emitRamWordWriteWatch(NativeBlockExitSite&, sljit_s32 address, sljit_sw addressArg,
-		sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords = 1u, u32 byteWidth = 0u);
+		sljit_s32 bits, sljit_s32 group, std::optional<u32> codeWords = 1u);
 	// R2 is the host address; result is a word in R0 or external binary64 in FR0.
 	void emitBackingLoad(MemoryAccessKind kind, bool unaligned);
 	void emitRomReads();

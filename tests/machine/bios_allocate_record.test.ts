@@ -12,32 +12,32 @@ import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
 import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRecordKind as Kind, HeapServiceRecordMode as Mode,
+	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { linkManagedTestSystem } from '../helpers/managed_system';
 
+const enum Kind { Table, CanonicalClosure }
+const enum Mode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 const modulePath = 'kernel/allocate_record', sourcePath = `machine/bios/${modulePath}.lua`;
 const nativeBasis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
 const entrySource = 'halt_until_irq', headOffset = 0x6c;
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [], { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
+	const linked = linkManagedTestSystem(entrySource, optLevel), { object, layout } = linked;
 	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === modulePath && entry.exportPathKey === 'allocate_record')!;
 	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
 	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
+	const { frames, valueSlots } = deriveBlua32FixedStack(layout, [root]);
 	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
-	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
-	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
+	const rom = { romBytes: writeTestBlua32Rom(linked) };
+	const { cpu, memory } = createTestSystemCpu(rom), oracle = createTestSystemCpu(rom).cpu;
+	for (const target of [cpu, oracle]) runGuestToHalt(target, 1_000_000);
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const prototype = linked.image.functions[root].address;
+	const prototype = layout.functions[root].address;
 	function begin(kind: Kind, operand0: number, operand1: number, mode: Mode, sourceCycles = 0) {
 		assert.ok(cpu.beginHeapService(prototype, [management, kind, operand0, operand1, mode, sourceCycles]));
 	}

@@ -3,10 +3,8 @@
 #include "common/compiler.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <memory>
-#include <unordered_map>
 
 #include "common/primitives.h"
 #include "spec/bmsx/memory_map.h"
@@ -45,8 +43,6 @@ constexpr u32 mappedWatchWordMask(u32 group, u32 firstWord, u32 lastWord) {
 constexpr u32 MAPPED_WATCH_GROUP_MASK = (1u << MAPPED_PAGE_WATCH_GROUP_COUNT) - 1u;
 // The first physical write consumes this bit, independently of code watches.
 constexpr u32 MAPPED_WATCH_HISTORY_CLEAN = 1u << MAPPED_PAGE_WATCH_GROUP_COUNT;
-// Unlike the other bits, a physical byte watch persists until removal.
-constexpr u32 MAPPED_WATCH_PHYSICAL_BYTES = MAPPED_WATCH_HISTORY_CLEAN << 1u;
 
 constexpr u32 mappedWatchGroupRange(u32 first, u32 last) {
 	return (2u << last) - (1u << first);
@@ -90,15 +86,6 @@ struct MappedPageBinding {
 
 class MappedPageWriteWatches {
 public:
-	using ByteWriteObserver = void (*)(void*, u32 physicalOffset);
-	void attachByteWriteObserver(void* context, ByteWriteObserver observer) {
-		m_observerContext = context;
-		m_observer = observer;
-	}
-	void detachByteWriteObserver();
-	void watchByte(u32 offset);
-	void unwatchByte(u32 offset);
-
 	bool anyWatched() const { return m_watchedPages != 0u; }
 	bool anyWatched(size_t first, size_t length) const {
 		if (length == 0u) return false;
@@ -122,9 +109,6 @@ public:
 	u32* groupData() { return m_groups.get(); }
 	const u32* groupData() const { return m_groups.get(); }
 	const u32* codeWordMasks() const { return m_words.get(); }
-	// Native code borrows the directory's stable latch, including code
-	// published before the first physical watch allocates the directory.
-	const u32* const* const* byteMaskPagesAddress() const { return &m_byteMaskPages; }
 
 	explicit MappedPageWriteWatches(size_t byteLength) {
 		m_pageCount = (byteLength + MAPPED_PAGE_BYTE_SIZE - 1u) >> MAPPED_PAGE_BYTE_SHIFT;
@@ -175,7 +159,7 @@ public:
 		if (firstPage == lastPage) {
 			const u32 flags = m_groups[firstPage];
 			if (flags == 0u) return;
-			if ((flags & (MAPPED_WATCH_HISTORY_CLEAN | MAPPED_WATCH_PHYSICAL_BYTES)) == 0u) {
+			if ((flags & MAPPED_WATCH_HISTORY_CLEAN) == 0u) {
 				if (!codeVisible) return;
 				const u32 firstWord = (offset & MAPPED_PAGE_BYTE_MASK) >> 2u, lastWord = (last & MAPPED_PAGE_BYTE_MASK) >> 2u;
 				const u32 firstGroup = firstWord >> 5u, lastGroup = lastWord >> 5u;
@@ -191,12 +175,6 @@ public:
 	}
 
 private:
-	struct ByteWatchPage {
-		std::array<u32, MAPPED_PAGE_BYTE_SIZE / 32u> masks{};
-		u32 count = 0;
-	};
-	void notifyByteWrites(u32 page, u32 firstByte, u32 endByte);
-
 	// Keep mask consumption and virtual invalidation out of ordinary RAM stores,
 	// including under LTO: most data pages never contain decoded instructions.
 	BMSX_NOINLINE
@@ -210,11 +188,6 @@ private:
 	size_t m_pageCount;
 	u32 m_watchedPages = 0;
 	u32 m_historyEpoch = 0;
-	std::unordered_map<u32, ByteWatchPage> m_bytePages;
-	std::unique_ptr<const u32*[]> m_byteMaskDirectory;
-	const u32** m_byteMaskPages = nullptr;
-	void* m_observerContext = nullptr;
-	ByteWriteObserver m_observer = nullptr;
 };
 
 } // namespace bmsx

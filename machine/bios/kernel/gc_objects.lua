@@ -9,6 +9,7 @@ module<const>
 local control_layout<const> = require('kernel/gc_control') -- T:740,744,762 C:802,806,824
 local allocator<const> = require('kernel/dlmalloc_record') -- T:789,792,799-802 C:849,852,859-862 A:167-168,172 B:510-511,516
 local thread_compact<const> = require('kernel/gc_thread_compact') -- T:774-776 C:836-837
+local closures<const> = require('kernel/canonical_closure_index') -- T:790-792 C:850-852 L:35 K:54; weak membership is retired by its RAM owner
 local ram_base<const> = 0x08000000 -- M:6
 local ram_word_mask<const> = 0x003ffffc -- M:9
 local ram_byte_mask<const> = 0x003fffff -- M:7
@@ -16,6 +17,7 @@ local color_offset<const> = 1 -- O:3 P:6
 local color_mask<const> = 3 -- O:4 P:7
 local object_link_before<const> = 4 -- O:10 P:14
 local table_kind<const> = 6 -- V:9-11 W:21-23
+local closure_kind<const> = 7 -- V:9-11 W:21-22
 local thread_kind<const> = 4 -- I:33 J:18
 local upvalue_kind<const> = 11 -- U:11 Z:13
 local upvalue_bytes<const> = 16 -- U:9 Z:11
@@ -71,6 +73,7 @@ local free_table<const> = function(arena, occupied, address, hash_first) -- T:78
 end
 
 local free_closure<const> = function(arena, occupied, address, header) -- T:789-792 C:849-852
+	if (header & 0xff) == closure_kind and (header & (closures.canonical_flag << 16)) ~= 0 then closures.retire(address) end -- T:787-788 C:846-848 L:35 K:54
 	local low_word<const>: *u32 = ram_base + ((address + capture_gray_word) & ram_word_mask) -- L:50-51 E:68-69
 	local low<const> = *low_word >> gray_index_bits -- L:51 E:69
 	local high_byte<const>: *u8 = ram_base + ((address + capture_high_byte) & ram_byte_mask) -- L:52 E:70

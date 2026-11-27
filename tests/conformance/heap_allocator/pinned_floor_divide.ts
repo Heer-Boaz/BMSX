@@ -10,7 +10,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceClosureField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -61,8 +61,8 @@ try {
 		function pulse(n: number) {
 			const result = scheduler.runCpuSlice(0, n, undefined, CpuRunKind.Direct);
 			const used = n - cpu.instructionBudgetRemaining;
-			const stage = memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET + HeapServiceClosureField.Destination);
-			return { used, row: `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}` };
+
+			return { used, row: `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}` };
 		}
 		// Save-state import recreates native image caches. Warm actual
 		// invocations in the same installed System image without restoring.

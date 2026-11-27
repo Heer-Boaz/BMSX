@@ -25,6 +25,8 @@ const source = readFileSync('machine/bios/' + path + '.lua', 'utf8');
 const module = { path, source, chunk: parseLuaChunk(source, path) };
 const arenaStateBytes = 24 + 33 * 8 + 32 * 4 + 16; // shared C state, including control terminator
 const firstSmallBinBack = 24 + 12;
+const weakClosureHeadsOffset = 0x3d00, weakClosureHeadsBytes = 128 * 4;
+const coldCollectionTarget = 1024 * 1024; // LuaHeap at fb40f6432
 
 for (const optLevel of [0, 3] as const) {
 	test('BIOS cold heap on poisoned metadata matches the independent native owners and restores during bin initialization at O' + optLevel, () => {
@@ -55,21 +57,30 @@ for (const optLevel of [0, 3] as const) {
 			const floor = oracle.heapAllocator.floorOffset(staticEnd);
 			const expectedBytes = oracle.memory.ramData().subarray(metadata, end);
 			const actualBytes = memory.ramData().subarray(metadata, end);
+			const heads = management + weakClosureHeadsOffset;
+			const weakHeads = memory.ramData().subarray(heads, heads + weakClosureHeadsBytes);
 			// Poison every word the firmware owns. No bins, phase, directory or
 			// admission target may come from the CPU fixture's startup path.
 			actualBytes.fill(0x6d);
+			weakHeads.fill(0x6d);
 			memory.writeRamRecordWord(metadata - 4, 0xdecafbad);
 			memory.writeRamRecordWord(end, 0xdecafbad);
+			memory.writeRamRecordWord(heads - 4, 0xdecafbad);
+			memory.writeRamRecordWord(heads + weakClosureHeadsBytes, 0xdecafbad);
 			// Mechanical bus state comes from reset independent of the algorithm.
 			memory.setRamBusEnd(RAM_BASE + floor);
 			resetAllocatorReference(oracle.memory, oracle.heapAllocator, staticEnd);
 			const nativeBudget = new LuaHeap(oracle);
+			nativeBudget.setCollectionTarget(coldCollectionTarget);
 			oracle.stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, bucketAddress, bucketCount);
 
 			const compare = () => {
 				assert.deepEqual(actualBytes, expectedBytes);
 				assert.equal(memory.readRamRecordWord(metadata - 4), 0xdecafbad);
 				assert.equal(memory.readRamRecordWord(end), 0xdecafbad);
+				assert.equal(memory.readRamRecordWord(heads - 4), 0xdecafbad);
+				assert.equal(memory.readRamRecordWord(heads + weakClosureHeadsBytes), 0xdecafbad);
+				assert.ok(weakHeads.every(byte => byte === 0), 'cold firmware cleared only the weak bucket heads');
 				assert.equal(memory.ramBusEnd(), oracle.memory.ramBusEnd());
 			};
 			const grant = () => {

@@ -15,7 +15,7 @@ import { createTestBlua32PairCpu } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { loadHeapServiceTestModules } from '../helpers/heap_service_system';
 import { buildPublicBiosFixture } from '../helpers/bios_linkage';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { afterTest } from '../helpers/test_cleanup';
 
 for (const optLevel of [3] as const) test(`packer debug metadata cannot change trace erasure, results or cycles (O${optLevel})`, async t => {
@@ -63,7 +63,7 @@ return value`;
 	const target = domain === 'system'
 		? { domain, assets: [entry, ...loadHeapServiceTestModules().map(({ path, source }) => ({
 			resid: path, type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: `${path}.lua`,
-		}))], biosExports: [], preloadModules: HEAP_SERVICE_MODULES, includeSources: true }
+		}))], biosExports: [], preloadModules: SYSTEM_KERNEL_MODULES, includeSources: true }
 		: { domain, assets: [entry], biosImports: buildPublicBiosFixture('module<entry>\nreturn 0', optLevel).linked.biosImports, imageOffset: 0x100 };
 	const { assets, ...linkOptions } = target;
 	const images = [];

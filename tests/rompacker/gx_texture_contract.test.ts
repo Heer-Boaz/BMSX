@@ -1,7 +1,7 @@
 import { MANAGED_CART_LAUNCH } from '../helpers/managed_cart_launch';
 import { createTestBlua32PairCpu } from '../helpers/blua32';
 import { BASE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -234,7 +234,7 @@ ${MANAGED_CART_LAUNCH}
 `;
 		const systemModuleSources = [
 			...BASE_FIRMWARE_MODULES.map(({path, source}) => [path, source] as const),
-			...HEAP_SERVICE_MODULES.map(path => [path, readFileSync(`machine/bios/${path}.lua`, 'utf8')] as const),
+			...SYSTEM_KERNEL_MODULES.map(path => [path, readFileSync(`machine/bios/${path}.lua`, 'utf8')] as const),
 			['tty/console', 'return { write = function() end, end_line = function() end }'],
 			['table', readFileSync('machine/bios/table.lua', 'utf8')],
 			['string/base', readFileSync('machine/bios/string/base.lua', 'utf8')],
@@ -271,7 +271,7 @@ ${MANAGED_CART_LAUNCH}
 			optLevel: 3,
 			includeSources: false,
 			domain: 'system',
-			preloadModules: HEAP_SERVICE_MODULES,
+			preloadModules: SYSTEM_KERNEL_MODULES,
 			ramByteCount: 0x00400000,
 			biosExports: BIOS_FUNCTION_EXPORTS,
 		});

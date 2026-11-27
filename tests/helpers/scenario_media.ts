@@ -6,7 +6,7 @@ import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
-import { HEAP_SERVICE_MODULES } from '../../toolchain/ts/rompack/blua32_heap_service';
+import { SYSTEM_KERNEL_MODULES } from '../../toolchain/ts/rompack/system';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
@@ -73,7 +73,7 @@ export async function buildScenarioMediaFixture(
 		path: exported.path,
 		source: 'module<const>\nreturn function(value) return value end',
 	}]));
-	for (const path of HEAP_SERVICE_MODULES) {
+	for (const path of SYSTEM_KERNEL_MODULES) {
 		systemModules.set(path, { path, source: await readFile(`machine/bios/${path}.lua`, 'utf8') });
 	}
 	for (const module of options?.systemModules ?? []) systemModules.set(module.path, module);
@@ -89,7 +89,7 @@ export async function buildScenarioMediaFixture(
 		optLevel: options?.systemOptLevel ?? 0,
 		ramByteCount: 0x00400000,
 		domain: 'system',
-		preloadModules: HEAP_SERVICE_MODULES,
+		preloadModules: SYSTEM_KERNEL_MODULES,
 		includeSources: true,
 		biosExports: BIOS_FUNCTION_EXPORTS,
 	});
