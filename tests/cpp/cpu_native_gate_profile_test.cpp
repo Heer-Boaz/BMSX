@@ -163,13 +163,13 @@ void builtinPaths() {
 	Machine generated(rom, false), scalar(rom, true);
 	for (auto* machine : {&generated, &scalar}) {
 		auto& frame = *machine->cpu.rootThread()->currentFrame;
-		frame.registers.set(0, machine->cpu.createBuiltinFunction(BuiltinFunctionId::Type));
+		frame.registers.set(0, machine->cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineRunning));
 		frame.registers.set(1, valueInteger(17));
 		frame.writeControl(bmsx::FrameField::Top, 2);
 	}
 	parity(generated, scalar, 100);
-	require(generated.cpu.rootThread()->currentFrame->registers.get(0) == valueString(generated.cpu.stringPool().intern("number")),
-		"the full type builtin publishes the guest result");
+	require(generated.cpu.rootThread()->currentFrame->registers.get(0) == valueThread(generated.cpu.rootThread()->address),
+		"the nonleaf builtin places its first guest result");
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(generated.cpu.nativeGateProfile().builtinAttempts == 0 && row(generated, NativeBlockExit::Call).entries == 1,
 		"a nonleaf builtin enters its semantic handler without a rejected leaf call");

@@ -23,7 +23,8 @@ inline unsigned fixedWordUses(const NativeNot& op) { return op.sourceTruthy ? 0 
 inline unsigned fixedWordUses(const NativeConstantLoad&) { return 3; }
 inline unsigned fixedWordUses(const NativePoolRead&) { return 0x7; }
 inline unsigned fixedWordUses(const NativeMove& op) {
-	return op.conversion == ValueMoveKind::Copy && !op.copyTag ? 3 : 1;
+	if (op.conversion == ValueMoveKind::Tag) return op.sourceTag ? 0 : 1;
+	return op.conversion == ValueMoveKind::Copy && !op.sourceTag ? 3 : 1;
 }
 // Helper argument/result registers are distinct from the call clobbers
 // handled by spillCall. The unused argument registers remain allocatable.

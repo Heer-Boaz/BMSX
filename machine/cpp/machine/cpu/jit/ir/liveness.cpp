@@ -183,7 +183,9 @@ NativeOperandDemand NativeRegisterUses::nextOperandDemand(size_t nextInstruction
 	if (const auto* op = std::get_if<NativeNot>(&row.operation))
 		return op->sourceTruthy ? NativeOperandDemand::None : NativeOperandDemand::Tag;
 	if (const auto* move = std::get_if<NativeMove>(&row.operation)) {
-		if (move->conversion == ValueMoveKind::Copy ? move->copyTag.has_value() : move->conversionCheck == NativeTagCheck::Proved)
+		if (move->conversion == ValueMoveKind::Tag)
+			return move->sourceTag ? NativeOperandDemand::None : NativeOperandDemand::Tag;
+		if (move->conversion == ValueMoveKind::Copy ? move->sourceTag.has_value() : move->conversionCheck == NativeTagCheck::Proved)
 			return NativeOperandDemand::Payload;
 	}
 	if (const auto* cmp = std::get_if<NativeComparison>(&row.operation)) {

@@ -1,13 +1,13 @@
-local number_type<const> = __bmsx_number_type
+local types<const> = require('kernel/value_type')
 
 return function(value, byte_count)
-	local kind<const> = number_type(value)
-	if kind == nil then error('string.pack float value must be a number.') end
+	local tag<const> = blua32.tag(value)
+	if tag ~= types.integer_tag and tag ~= types.float_tag then error('string.pack float value must be a number.') end
 	if byte_count == 4 then
-		if kind == 'integer' then value = value * 1.0 end
+		if tag == types.integer_tag then value = value * 1.0 end
 		return blua32.float_bits(value)
 	end
-	if kind == 'integer' then
+	if tag == types.integer_tag then
 		if value == 0 then return 0, 0 end
 		local sign = 0
 		if value < 0 then sign = 0x80000000; value = -value end

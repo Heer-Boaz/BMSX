@@ -131,7 +131,6 @@ import {
 	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread, asThread,
 	isNil, valueTag, valueToInteger,
-	valueTypeNameForLuaTag,
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
@@ -2520,7 +2519,7 @@ export class CPU implements MappedPageInvalidator {
 							const dispatchOp = page.dispatchOps[pageOffset];
 							this.currentInstructionPc = pc;
 							nextPc = (pc + width * INSTRUCTION_BYTES) >>> 0;
-							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.FloatFromBits)) {
+							if (SCALAR_LOCAL_PC[dispatchOp] || (dispatchOp === OpCode.MOV && page.c[pageOffset] <= ValueMoveKind.Tag)) {
 								if (scalarFrame === null) this.scalarRegisterTop = frame.top;
 								scalarFrame = frame;
 							} else {
@@ -3627,6 +3626,7 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.MOV: {
 					const kind = page.c[pageOffset], b = page.b[pageOffset];
 					if (kind === ValueMoveKind.Copy) this.copyRegisterFast(frame, registers, a, b);
+					else if (kind === ValueMoveKind.Tag) this.setRegisterIntegerFast(frame, registers, a, registers.getTag(b));
 					else if (kind === ValueMoveKind.FloatBits || kind === ValueMoveKind.FloatFromBits) {
 						const sourceTag = kind === ValueMoveKind.FloatBits ? ValueTag.Float : ValueTag.Integer;
 						if (registers.getTag(b) !== sourceTag) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -4332,18 +4332,6 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.Next:
 				this.runBuiltinNextValue(args, out);
 				break;
-			case BuiltinFunctionId.Type:
-				this.runBuiltinType(
-					args.length > 0 ? args.registers.getTag(args.base) : ValueTag.Nil,
-					out,
-				);
-				break;
-			case BuiltinFunctionId.NumberType: {
-				const tag = args.length > 0 ? args.registers.getTag(args.base) : ValueTag.Nil;
-				out.push(tag === ValueTag.Integer || tag === ValueTag.Float
-					? valueString(this.stringPool.intern(tag === ValueTag.Integer ? 'integer' : 'float')) : valueNil());
-				break;
-			}
 			case BuiltinFunctionId.ToInteger: {
 				const integer = valueToInteger(args.length > 0 ? args.registers.get(args.base) : valueNil());
 				out.push(integer === null ? valueNil() : valueInteger(integer));
@@ -4446,10 +4434,6 @@ export class CPU implements MappedPageInvalidator {
 		this.charge(count);
 		this.bumpRegisterTop(frame, destination + count - 1);
 		return true;
-	}
-
-	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {
-		out.push(valueString(this.stringPool.intern(valueTypeNameForLuaTag(tag))));
 	}
 
 	private runBuiltinGetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {

@@ -35,7 +35,7 @@ let heapServiceTestModules: readonly FixtureModule[] | undefined;
 let biosUtilityTestModules: readonly FixtureModule[] | undefined;
 
 export function loadHeapServiceTestModules(): readonly FixtureModule[] {
-	return heapServiceTestModules ??= HEAP_SERVICE_MODULES.map(path => {
+	return heapServiceTestModules ??= [...HEAP_SERVICE_MODULES, 'kernel/value_type'].map(path => {
 		const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 		return { path, source, chunk: parseLuaChunk(source, path).chunk };
 	});

@@ -30,7 +30,7 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 			// Source values belong to the admitted bus operation, after readiness.
 			return static_cast<u16>(std::max(0, row.b + 1));
 		case OpCode::MOV:
-			if (row.c > static_cast<i16>(ValueMoveKind::FloatFromBits)) return 0;
+			if (row.c > static_cast<i16>(ValueMoveKind::Tag)) return 0;
 			break;
 		default: break;
 	}

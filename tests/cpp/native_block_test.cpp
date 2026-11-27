@@ -756,7 +756,7 @@ void comparisonDatapathsRespectEveryValueKind() {
 		valueTable(bmsx::test::allocateTableReference(cpu).address()), valueTable(bmsx::test::allocateTableReference(cpu).address()), valueClosure(firstClosure), valueClosure(secondClosure),
 		valueFromTag(ValueTag::Table, 37), valueFromTag(ValueTag::Table, 0x80000025u),
 		valueFromTag(ValueTag::BuiltinFunction, 37), valueFromTag(ValueTag::BuiltinFunction, 0x80000025u),
-		valueThread(cpu.activeThread()->address), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::Type),
+		valueThread(cpu.activeThread()->address), valueThread(cpu.activeThread()->address - THREAD_HEAP_BYTES), valueBuiltinFunction(BuiltinFunctionId::StringByte),
 		valueBuiltinFunction(BuiltinFunctionId::Next)};
 	for (const auto op : {OpCode::EQ, OpCode::LT, OpCode::LE}) for (const bool expected : {false, true}) {
 		DecodedInstruction compare;
@@ -979,6 +979,27 @@ void movesAndLiteralsPreserveRawValues() {
 		auto registers = test::valueBank(std::array{Value{0}, Value{0}});
 		block->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = block->terminal.cycles});
 		require(registers.get(0) == pool[index] && registers.get(1) == pool[index], "moves preserve every raw tagged and number bit");
+
+		move.c = static_cast<i16>(ValueMoveKind::Tag);
+		auto tagBlock = test::compileNative(instructions, memory, cpu.stringPool());
+		tagBlock->run(registers.view(), nativeRunState = {.constants = poolBank.view(), .remainingCycles = tagBlock->terminal.cycles});
+		require(registers.get(0) == pool[index] && registers.get(1) == valueInteger(static_cast<u8>(valueTag(pool[index]))),
+			"native MOV Tag uses a proven literal tag without moving its payload");
+	}
+	for (const u16 target : {u16{0}, u16{1}}) {
+		const auto opcode = static_cast<u8>(OpCode::MOV);
+		const DecodedInstruction move{.a = target, .c = static_cast<i16>(ValueMoveKind::Tag), .op = opcode,
+			.width = 1, .baseCycles = BASE_CYCLES[opcode]};
+		const std::array instructions{NativeBlockInstruction{&move, 0x1000}};
+		auto block = test::compileNative(instructions, memory, cpu.stringPool());
+		for (const Value source : {valueFloatBits(0x7fa12345), valueFromTag(ValueTag::Nil, 91),
+			valueFromTag(static_cast<ValueTag>(255), 0x12345678)}) {
+			auto regs = test::valueBank(std::array{source, valueNil()});
+			const auto* exit = block->run(regs.view(), nativeRunState = {.remainingCycles = BASE_CYCLES[opcode], .registerTop = 1});
+			require(exit == &block->terminal && regs.get(target) == valueInteger(static_cast<u8>(valueTag(source)))
+				&& nativeRunState.remainingCycles == 0 && nativeRunState.registerTop == target + 1,
+				"generated MOV Tag reads the current tag lane before any aliased write");
+		}
 	}
 	for (const auto op : {OpCode::KNIL, OpCode::KFALSE, OpCode::KTRUE, OpCode::K0, OpCode::K1, OpCode::KSMI}) {
 		DecodedInstruction load;

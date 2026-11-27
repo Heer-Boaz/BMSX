@@ -38,7 +38,7 @@ function values(cpu: CPU): Value[] {
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
 		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(closure),
 		valueThread(cpu.rootThread.address), valueThread(allocateThreadRecordReference(cpu, closure)),
-		valueBuiltinFunction(BuiltinFunctionId.Type), valueBuiltinFunction(BuiltinFunctionId.Next)];
+		valueBuiltinFunction(BuiltinFunctionId.RawGet), valueBuiltinFunction(BuiltinFunctionId.Next)];
 }
 
 for (const op of [OpCode.EQ, OpCode.LT, OpCode.LE]) for (const expected of [false, true]) {

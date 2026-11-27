@@ -212,11 +212,11 @@ struct NativeTypePropagation::Transfer {
 	}
 
 	void operator()(NativeMove& op) {
-		if (op.conversion == ValueMoveKind::Copy) {
+		if (op.conversion == ValueMoveKind::Copy || op.conversion == ValueMoveKind::Tag) {
 			const auto type = input(0);
-			// Copying bits does not need a speculative admission check. A
-			// downstream typed consumer can still require the copied proof.
-			if (type && type->assumption == 0) op.copyTag = type->tag;
+			// Reading bits requires no speculative admission check.
+			if (type && type->assumption == 0) op.sourceTag = type->tag;
+			if (op.conversion == ValueMoveKind::Tag) result(ValueTag::Integer);
 		} else {
 			const auto expected = op.conversion == ValueMoveKind::FloatBits ? ValueTag::Float : ValueTag::Integer;
 			op.conversionCheck = check(0, expected);

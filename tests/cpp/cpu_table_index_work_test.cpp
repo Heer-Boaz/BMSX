@@ -541,7 +541,7 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 		Program program(OpCode::SELF, wide); Machine generated(program.image, false), scalar(program.image, true);
 		for (auto* m : {&generated, &scalar}) {
 			auto root = bmsx::test::allocateTableReference(m->cpu, 0, 1), meta = bmsx::test::allocateTableReference(m->cpu, 0, 1);
-			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::Type));
+			meta.setStringKey(m->cpu.stringPool().intern("__index"), m->cpu.createBuiltinFunction(fault ? BuiltinFunctionId::Error : BuiltinFunctionId::GetMetatable));
 			root.setMetatableAddress(meta.address());
 			auto* frame = m->cpu.activeThread()->currentFrame;
 			frame->registers.set(0, valueTable(root.address())); frame->registers.set(8, valueInteger(57));
@@ -559,8 +559,8 @@ void builtinIndexPreservesResultAndFaultBoundaries() {
 				"faulting builtin indexer blames the original narrow/WIDE SELF and leaves its result untouched");
 		} else {
 			const Value result = frame->registers.get(6);
-			require(valueIsString(result) && generated.cpu.stringPool().toString(asStringId(result)) == "table"
-				&& generated.cpu.instructionBudgetRemaining == 3 - 2 - 17 - 1 - 1,
+			require(result == valueTable(asTable(frame->registers.get(0), generated.cpu.gcHeap()).metatableAddress())
+				&& generated.cpu.instructionBudgetRemaining == 3 - 2 - 17 - 2 - 1,
 				"the builtin sees the receiver Table and returns one result at its ordinary primitive price");
 		}
 		sameSnapshot(generated.cpu.captureRuntimeState(), scalar.cpu.captureRuntimeState());

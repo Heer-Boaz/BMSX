@@ -208,7 +208,21 @@ void wordMoves() {
 			require(m.cpu.instructionBudgetRemaining == -1, "failed word move retains its started charge");
 		}
 	}
-	for (u32 kind : {3, 255, 256, 257, 258, 511, 512, 16384, MAX_EXT_REGISTER_BC}) {
+	for (const int target : {0, 2}) {
+		auto image = operation(OpCode::MOV, static_cast<u32>(ValueMoveKind::Tag));
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), target, 0, static_cast<u8>(ValueMoveKind::Tag));
+		for (const Value source : {valueInteger(0x55aa), valueFloatBits(0xffa12345),
+			valueFromTag(ValueTag::False, 37), valueFromTag(static_cast<ValueTag>(255), 0x0badbeef)}) {
+			Number32Machine m(image);
+			m.cpu.activeThread()->currentFrame->registers.set(0, source);
+			m.cpu.runUntilDepth(0, 1);
+			require(m.cpu.readFrameRegister(0, target) == valueInteger(static_cast<u8>(valueTag(source)))
+				&& m.cpu.instructionBudgetRemaining == -1 && m.cpu.readCauseWord() == 0,
+				"MOV Tag reads only the encoded tag, including aliased operands and architectural u8 patterns");
+			if (target != 0) require(m.cpu.readFrameRegister(0, 0) == source, "MOV Tag leaves a separate source untouched");
+		}
+	}
+	for (u32 kind : {4, 255, 256, 257, 258, 511, 512, 16384, MAX_EXT_REGISTER_BC}) {
 		auto image = operation(OpCode::MOV, kind);
 		Number32Machine m(image);
 		m.cpu.activeThread()->currentFrame->registers.set(2, valueInteger(917));

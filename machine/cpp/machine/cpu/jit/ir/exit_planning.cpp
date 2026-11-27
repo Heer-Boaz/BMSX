@@ -19,7 +19,8 @@ struct NativeCheckedExit {
 	NativeExitPlan operator()(const auto&) const { return {}; }
 
 	NativeExitPlan operator()(const NativeMove& move) const {
-		return move.conversion != ValueMoveKind::Copy && move.conversionCheck == NativeTagCheck::Dynamic
+		return (move.conversion == ValueMoveKind::FloatBits || move.conversion == ValueMoveKind::FloatFromBits)
+			&& move.conversionCheck == NativeTagCheck::Dynamic
 			? NativeExitPlan{NativeBlockExit::InvalidOperand} : NativeExitPlan{};
 	}
 

@@ -8,6 +8,7 @@ local console<const> = require('tty/console')
 local numeric_parse<const> = require('number/parse')
 local collector<const> = require('kernel/gc_collect_step')
 local heap<const> = require('kernel/gc_full')
+local types<const> = require('kernel/value_type')
 
 local select_arguments<const> = function(selector, ...)
 	local count<const> = blua32.argument_count() - 1
@@ -19,7 +20,19 @@ local select_arguments<const> = function(selector, ...)
 end
 
 next = __bmsx_next
-type = __bmsx_type
+type = function(value)
+	local tag<const> = blua32.tag(value)
+	if tag == types.nil_tag then return 'nil' end
+	if tag == types.false_tag or tag == types.true_tag then return 'boolean' end
+	if tag == types.integer_tag or tag == types.float_tag then return 'number' end
+	if tag == types.string_tag then return 'string' end
+	if tag == types.table_tag then return 'table' end
+	if tag == types.thread_tag then return 'thread' end
+	if tag == types.closure_tag or tag == types.builtin_tag or tag == types.resident_tag or tag == types.code_tag then
+		return 'function'
+	end
+	raise_error('Internal table metadata is not a language value.')
+end
 setmetatable = metatables.set_metatable
 getmetatable = __bmsx_getmetatable
 rawget = __bmsx_rawget

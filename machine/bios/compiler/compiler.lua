@@ -1,4 +1,4 @@
-local number_type<const> = __bmsx_number_type
+local types<const> = require('kernel/value_type')
 local bytecode<const> = require('compiler/bytecode')
 local isa<const> = require('bmsx/blua32')
 local semantic<const> = require('compiler/semantic')
@@ -62,7 +62,7 @@ end
 local add_constant<const> = function(state, value)
 	local indices = state.program.constant_index_by_value
 	local key = value
-	if number_type(value) == 'float' then
+	if blua32.tag(value) == types.float_tag then
 		indices = state.program.float_constant_index_by_bits
 		key = blua32.float_bits(value)
 	end
@@ -162,7 +162,7 @@ prepare_value_operands = function(state, expression)
 	end
 	local value<const> = expression.constant_value
 	if is_number_literal(expression)
-		and number_type(value) == 'integer'
+		and blua32.tag(value) == types.integer_tag
 		and value >= isa.min_signed_bx
 		and value <= isa.max_signed_bx then
 		expression.immediate_number = value

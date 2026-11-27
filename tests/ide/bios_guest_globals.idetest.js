@@ -8,7 +8,6 @@ const names = [
 	'devtools',
 	'cart_project_root_path',
 	'__bmsx_next',
-	'__bmsx_type',
 	'__bmsx_string_byte',
 	'__bmsx_error',
 	'require',

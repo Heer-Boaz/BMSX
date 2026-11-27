@@ -301,7 +301,7 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 			// Source values are consumed only after the bus admits the write.
 			return Math.max(0, b + 1);
 		case OpCode.MOV:
-			if (c > ValueMoveKind.FloatFromBits) return 0;
+			if (c > ValueMoveKind.Tag) return 0;
 			break;
 		case OpCode.MFC0:
 			return cop0FieldImplemented(b) ? a + 1 : 0;

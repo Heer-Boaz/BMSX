@@ -111,7 +111,7 @@ struct NativeMove {
 	NativeSlot result;
 	NativeValueRef source;
 	ValueMoveKind conversion;
-	std::optional<ValueTag> copyTag{};
+	std::optional<ValueTag> sourceTag{};
 	NativeTagCheck conversionCheck = NativeTagCheck::Dynamic;
 	constexpr NativeSlotAccess slots() const { return {{source, NATIVE_NO_OPERAND, NATIVE_NO_OPERAND}, {result, 1}}; }
 };

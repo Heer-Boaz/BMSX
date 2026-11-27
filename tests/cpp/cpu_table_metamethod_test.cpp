@@ -130,7 +130,8 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		const auto index = cpu.stringPool().intern("__index");
 		const Value forwarded = valueString(cpu.stringPool().intern("proxy"));
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
-		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::Type)); methods.setMetatableAddress(methodsMeta.address());
+		cpu.setGlobalByKey(asStringId(forwarded), valueInteger(73));
+		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::GetGlobal)); methods.setMetatableAddress(methodsMeta.address());
 		const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
 		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
 		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), methods.address());
@@ -140,7 +141,7 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 	}
 	parity(generated, scalar, 1);
 	const auto result = generated.cpu.readFrameRegister(0, 0);
-	require(valueIsString(result) && generated.cpu.stringPool().toString(asStringId(result)) == "string"
+	require(result == valueInteger(73)
 		&& generated.cpu.instructionBudgetRemaining == 1 - cycles(OpCode::GETT) - TABLE_INDEX_VISIT_CYCLES - 2,
 		"a String forwarding target enters its installed Table but passes the String itself to its function");
 	for (auto* m : {&generated, &scalar}) {

@@ -115,8 +115,8 @@ void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 	}
 	CpuMachine machine(image);
 	auto& frame = *machine.cpu.activeThread()->frameAtDepth(0);
-	frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::Type));
-	frame.registers.set(1, valueBuiltinFunction(BuiltinFunctionId::Type));
+	frame.registers.set(0, machine.cpu.createBuiltinFunction(BuiltinFunctionId::StringByte));
+	frame.registers.set(1, valueBuiltinFunction(BuiltinFunctionId::StringByte));
 	frame.registers.set(2, valueInteger(0));
 	require(machine.cpu.runUntilDepth(0, 20) == RunResult::Halted && frame.registers.get(2) == valueInteger(0),
 		"EQ compares builtin identifiers from independent producers");
@@ -1864,7 +1864,7 @@ void reservedMoveKindIgnoresUnusedRegisterOperands() {
 	for (const bool instrumented : {false, true}) {
 		auto image = returnImage();
 		image.text.resize(INSTRUCTION_BYTES);
-		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 15, 14, 3);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::MOV), 15, 14, 4);
 		image.functions[0].wordCount = 1;
 		image.functions[0].maxStack = 1;
 		CpuMachine machine(image);

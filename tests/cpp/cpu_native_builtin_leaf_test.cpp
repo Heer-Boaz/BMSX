@@ -141,12 +141,12 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	require(run.state.diagnosticOpcodes.call == 1, "the admitted native CALL is counted once");
 #endif
 	const int receiving = results == 1 ? 0 : 1;
-	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::Type) {
+	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::CoroutineRunning) {
 		require(machine.marker() == 99, "one real native gate follows the builtin raw continuation, not C++ CALL redispatch");
 		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving - 3 - 2,
 			"prefix, CALL, primitive, receiving slots and marker are each charged once");
-	} else if (id == BuiltinFunctionId::Type) {
-		require(machine.marker() == 0, "Type remains on its allocating ordinary CALL path");
+	} else if (id == BuiltinFunctionId::CoroutineRunning) {
+		require(machine.marker() == 0, "A nonleaf builtin uses the ordinary CALL path");
 		return;
 	} else {
 		require(machine.marker() == 0 && frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES,
@@ -221,7 +221,7 @@ int main() {
 		}
 		directGate(BuiltinFunctionId::RawGet, 2, 64);
 		directGate(BuiltinFunctionId::RawGet, 2, 64, false, 1);
-		directGate(BuiltinFunctionId::Type, 2, 64);
+		directGate(BuiltinFunctionId::CoroutineRunning, 2, 64);
 #endif
 		#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		directGate(BuiltinFunctionId::StringByte, 2, 64, false, 1);

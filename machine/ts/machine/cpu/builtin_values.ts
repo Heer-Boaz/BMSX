@@ -22,7 +22,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.ToInteger, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.Next, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.RawGet, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.Type, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.Error, cost: BUILTIN_COST_TIER2 },
 	{ id: BuiltinFunctionId.CoroutineStatus, cost: BUILTIN_COST_TIER4 },
 	{ id: BuiltinFunctionId.CoroutineRunning, cost: BUILTIN_COST_TIER4 },
@@ -32,7 +31,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ id: BuiltinFunctionId.SetFrameRegister, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.GetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.FrameHeader, cost: BUILTIN_COST_TIER1 },
-	{ id: BuiltinFunctionId.NumberType, cost: BUILTIN_COST_TIER1 },
 	{ id: BuiltinFunctionId.StringFromBytes, cost: BUILTIN_COST_TIER2 },
 ];
 

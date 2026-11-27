@@ -1,6 +1,6 @@
 local trig<const> = require('math/trig')
 local tointeger<const> = __bmsx_tointeger
-local type_name<const> = __bmsx_number_type
+local types<const> = require('kernel/value_type')
 local time_ms<const>: *word = 0x08010228
 
 local pi<const> = 3.141592653589793238462643383279502884
@@ -40,10 +40,10 @@ local trunc<const> = function(value)
 end
 
 local abs<const> = function(value)
-	local kind<const> = type_name(value)
-	if kind == nil then error('number expected.') end
+	local tag<const> = blua32.tag(value)
+	if tag ~= types.integer_tag and tag ~= types.float_tag then error('number expected.') end
 	if value < 0 then return -value end
-	if value == 0 and kind == 'float' then return 0.0 end
+	if value == 0 and tag == types.float_tag then return 0.0 end
 	return value
 end
 
@@ -58,7 +58,7 @@ local round<const> = function(value)
 end
 
 local fmod<const> = function(left, right)
-	if type_name(left) == 'integer' and type_name(right) == 'integer' then
+	if blua32.tag(left) == types.integer_tag and blua32.tag(right) == types.integer_tag then
 		local remainder = left % right
 		if remainder ~= 0 and (left < 0) ~= (right < 0) then
 			remainder = remainder - right
@@ -282,7 +282,8 @@ local ult<const> = function(left, right)
 end
 
 local sign<const> = function(value)
-	if type_name(value) == nil then error('number expected.') end
+	local tag<const> = blua32.tag(value)
+	if tag ~= types.integer_tag and tag ~= types.float_tag then error('number expected.') end
 	if value > 0 then
 		return 1
 	end
@@ -374,6 +375,11 @@ return {
 	sqrt = sqrt,
 	tan = trig.tan,
 	tointeger = tointeger,
-	type = type_name,
+	type = function(value)
+		local tag<const> = blua32.tag(value)
+		if tag == types.integer_tag then return 'integer' end
+		if tag == types.float_tag then return 'float' end
+		return nil
+	end,
 	ult = ult,
 }

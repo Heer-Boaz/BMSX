@@ -108,7 +108,10 @@ struct OperationPlan {
 	}
 	void operator()(const NativeMove& op) const {
 		if (op.conversion == ValueMoveKind::Copy) {
-			if (op.copyTag) out << " copy-tag=" << unsigned(*op.copyTag);
+			if (op.sourceTag) out << " copy-tag=" << unsigned(*op.sourceTag);
+		} else if (op.conversion == ValueMoveKind::Tag) {
+			out << " tag";
+			if (op.sourceTag) out << " constant=" << unsigned(*op.sourceTag);
 		} else out << " conversion=" << unsigned(op.conversion) << " source-tag=" << tagChecks[unsigned(op.conversionCheck)];
 	}
 	void operator()(const NativeNot& op) const {

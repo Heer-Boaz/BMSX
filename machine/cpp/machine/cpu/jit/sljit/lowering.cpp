@@ -149,18 +149,29 @@ void NativeLowering::fault(sljit_jump* jump, NativeBlockExitSite& site, const St
 void NativeLowering::lowerOperation(const NativeMove& instruction, const NativeInstruction& row) {
 	const auto mode = instruction.conversion;
 	if (mode == ValueMoveKind::Copy) {
-		if (!instruction.copyTag) {
+		if (!instruction.sourceTag) {
 			emitRawLoad(instruction.source, SLJIT_R0, SLJIT_R1);
 			emitRawStore(instruction.result, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, instruction.result));
 			return;
 		}
-		const auto source = readTyped(instruction.source, *instruction.copyTag);
+		const auto source = readTyped(instruction.source, *instruction.sourceTag);
 		const auto target = m_cache.write(instruction.result, source.tag);
 		if (source.reg != target.reg) {
 			if (source.tag == ValueTag::Float)
 				sljit_emit_fop1(m_compiler, SLJIT_MOV_F32, target.reg, 0, source.reg, 0);
 			else
 				sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, source.reg, 0);
+		}
+		return;
+	}
+	if (mode == ValueMoveKind::Tag) {
+		if (instruction.sourceTag) {
+			emitConstant(instruction.result, valueInteger(static_cast<u8>(*instruction.sourceTag)));
+		} else {
+			emitTag(instruction.source, SLJIT_R0);
+			const auto target = m_cache.write(instruction.result, ValueTag::Integer);
+			if (target.reg != SLJIT_R0)
+				sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
 		}
 		return;
 	}

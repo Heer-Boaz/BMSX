@@ -10,7 +10,6 @@ assert = function(value, message) if not value then raise(message) end end
 pcall = blua32.closure(entries.protected_call)
 xpcall = blua32.closure(entries.protected_xcall)
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end
-type = __bmsx_type
 setmetatable = require([[kernel/gc_barrier]]).set_metatable
 error = raise
 next = __bmsx_next`;
@@ -146,7 +145,8 @@ assert(ok and r0 == 100 and r47 == 147)
 return true`,
 	transfer: `
 local main, ismain = coroutine.running()
-assert(ismain and type(main) == 'thread' and not coroutine.isyieldable())
+local types<const> = require('kernel/value_type')
+assert(ismain and blua32.tag(main) == types.thread_tag and not coroutine.isyieldable())
 local co = coroutine.create(function(a, ...)
   assert(coroutine.isyieldable())
   local self, root = coroutine.running()

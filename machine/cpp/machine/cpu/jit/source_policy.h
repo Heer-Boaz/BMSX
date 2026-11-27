@@ -135,7 +135,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 		// Fixed firmware shares ALU/branch lowering but selects the private
 		// record aperture instead of the ordinary bus.
 		switch (static_cast<OpCode>(instruction.op)) {
-			case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
+			case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Tag);
 			case OpCode::JMP: return instruction.a == 0;
 			case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
 			case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
@@ -160,7 +160,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 		case OpCode::MFC0: return instruction.b != COP0_EVENT_CYCLES;
 		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);
 		case OpCode::JMP: return instruction.a == 0;
-		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
+		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Tag);
 		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
 		default: return nativeBlockSupports(instruction.op);
 	}

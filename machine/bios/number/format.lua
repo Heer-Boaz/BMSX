@@ -8,7 +8,7 @@ local byte<const> = string.byte
 local char<const> = string.char
 local sub<const> = string.sub
 local rep<const> = string.rep
-local number_type<const> = __bmsx_number_type
+local types<const> = require('kernel/value_type')
 
 rodata powers_five_data: word[8] = { 1, 5, 25, 125, 625, 3125, 15625, 78125 }
 local powers_five<const>: *word = powers_five_data
@@ -123,7 +123,7 @@ local scientific<const> = function(digits, exponent, precision, alternate, upper
 end
 
 return function(value, specifier, precision, alternate)
-	if number_type(value) == 'integer' then value = value * 1.0 end
+	if blua32.tag(value) == types.integer_tag then value = value * 1.0 end
 	local bits<const> = blua32.float_bits(value)
 	local magnitude<const> = bits & 0x7fffffff
 	local negative<const> = bits < 0

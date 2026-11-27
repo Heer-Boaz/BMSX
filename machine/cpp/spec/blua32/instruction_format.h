@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-enum class ValueMoveKind : uint32_t { Copy = 0, FloatBits = 1, FloatFromBits = 2 };
+enum class ValueMoveKind : uint32_t { Copy = 0, FloatBits = 1, FloatFromBits = 2, Tag = 3 };
 enum class ReturnSource : uint32_t { Registers = 0, ExtraArguments = 1 };
 
 constexpr int INSTRUCTION_BYTES = 4;

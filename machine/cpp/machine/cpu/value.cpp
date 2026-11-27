@@ -19,27 +19,4 @@ void appendValueString(std::string& out, Value value, const StringPool& strings)
 std::string valueToString(Value value, const StringPool& strings) {
 	std::string out; appendValueString(out, value, strings); return out;
 }
-const char* valueTypeName(Value value) {
-	switch (valueTag(value)) {
-		case ValueTag::Nil: return "nil";
-		case ValueTag::False: case ValueTag::True: return "boolean";
-		case ValueTag::Integer: return "integer";
-		case ValueTag::Float: return "float";
-		case ValueTag::String: return "string";
-		case ValueTag::Thread: return "thread";
-		case ValueTag::Table: return "table";
-		case ValueTag::Closure: return "closure";
-		case ValueTag::BuiltinFunction: return "builtin_function";
-		case ValueTag::ResidentFunction: return "resident_function";
-		case ValueTag::CodeFunction: return "code_function";
-		default: BMSX_UNREACHABLE();
-	}
-}
-const char* valueTypeNameForLua(Value value) {
-	switch (valueTag(value)) {
-		case ValueTag::Integer: case ValueTag::Float: return "number";
-		case ValueTag::Closure: case ValueTag::BuiltinFunction: case ValueTag::ResidentFunction: case ValueTag::CodeFunction: return "function";
-		default: return valueTypeName(value);
-	}
-}
 } // namespace bmsx

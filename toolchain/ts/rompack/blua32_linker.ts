@@ -14,7 +14,6 @@ import {
 	MAX_LOW_BX,
 	MAX_LOW_OPERAND,
 	MAX_OPERAND_BITS,
-	ValueMoveKind,
 	readInstructionWord,
 	writeInstruction,
 } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -819,7 +818,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		// to the trap instead of falling through into someone else's code.
 		const word = text.code.byteLength / INSTRUCTION_BYTES;
 		const back = (1 << BASE_BX_BITS) - 2;
-		writeInstruction(code, word, OpCode.MOV, 0, 0, ValueMoveKind.FloatFromBits + 1);
+		writeInstruction(code, word, OpCode.MOV, 0, 0, MAX_LOW_OPERAND);
 		writeInstruction(code, word + 1, OpCode.JMP, 0,
 			(back & MAX_LOW_BX) >>> MAX_OPERAND_BITS, back & MAX_LOW_OPERAND, back >>> MAX_BX_BITS);
 	}

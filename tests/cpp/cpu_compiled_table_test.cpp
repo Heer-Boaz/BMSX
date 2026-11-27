@@ -118,7 +118,7 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 						"the non-string key with identical payload occupies the probed node");
 				}
 				if (path == Path::InheritedFalse) { meta.setStringKey(index, valueTable(holder.address())); holder.setStringKey(key, valueFromTag(ValueTag::False, 37)); }
-				if (path == Path::Callable) meta.setStringKey(index, valueBuiltinFunction(BuiltinFunctionId::Type));
+				if (path == Path::Callable) meta.setStringKey(index, valueBuiltinFunction(BuiltinFunctionId::GetMetatable));
 				if (path == Path::BadForward) meta.setStringKey(index, valueInteger(47));
 				if (path == Path::Loop) meta.setStringKey(index, valueTable(root.address()));
 				if (path == Path::TwoHops) {
@@ -165,7 +165,8 @@ void completedOwnStringProbeKeepsLookupSemantics() {
 			const auto result = native.cpu.readFrameRegister(0, 4);
 			if (path == Path::NoMetatable || path == Path::EmptyMetatable || path == Path::IndexWordAlias) require(result == valueNil(), "an ordinary terminal miss commits nil");
 			if (path == Path::InheritedFalse) require(result == valueFromTag(ValueTag::False,37), "an inherited false is not absence");
-			if (path == Path::Callable) require(result == valueString(*native.cpu.stringPool().find("table")), "the callable sees the original receiver after the own miss");
+			if (path == Path::Callable) require(result == valueTable(asTable(native.cpu.readFrameRegister(0, 0), native.cpu.gcHeap()).metatableAddress()),
+				"the callable sees the original receiver after the own miss");
 			if (path == Path::BadForward) require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INDEX_NON_TABLE && result == valueInteger(73),
 				"an invalid forwarded __index keeps its exact fault and unexecuted suffix");
 			if (path == Path::Loop) require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_METATABLE_LOOP && result == valueInteger(73),
@@ -698,7 +699,7 @@ void tableIteratorUsesNativeEdgesAndRecordsTheCursor() {
 			const auto table = bmsx::test::allocateTableReference(cpu, 0, 4);
 			TableRecord(cpu.gcHeap(), table.address()).setInteger(-4, valueBool(false));
 			auto& frame = *cpu.activeThread()->currentFrame;
-			frame.registers.set(0, valueBuiltinFunction(guard == 1 ? BuiltinFunctionId::Type : BuiltinFunctionId::Next));
+			frame.registers.set(0, valueBuiltinFunction(guard == 1 ? BuiltinFunctionId::RawGet : BuiltinFunctionId::Next));
 			frame.registers.set(1, guard == 2 ? valueInteger(3) : valueTable(table.address()));
 			frame.registers.set(2, guard == 3 ? valueInteger(4) : valueNil());
 			frame.registers.set(3, valueInteger(31));
@@ -1119,10 +1120,10 @@ void nativeFieldCacheMissReturnsOwnValueAndTrainsTheSameSite() {
 		auto& owner = machine->cpu;
 		auto receiver = asTable(owner.readFrameRegister(0, 7), owner.gcHeap());
 		auto meta = bmsx::test::allocateTableReference(owner, 0, 1);
-		meta.setStringKey(owner.stringPool().intern("__index"), owner.createBuiltinFunction(BuiltinFunctionId::Type));
+		meta.setStringKey(owner.stringPool().intern("__index"), owner.createBuiltinFunction(BuiltinFunctionId::GetMetatable));
 		receiver.setMetatableAddress(meta.address());
 	}
-	read(7, valueString(*cpu.stringPool().find("table")), 2, linkedSlot);
+	read(7, valueTable(asTable(cpu.readFrameRegister(0, 7), cpu.gcHeap()).metatableAddress()), 3, linkedSlot);
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	require(fieldExits == initialExits + 1, "only callable __index needs the semantic owner");
 #endif

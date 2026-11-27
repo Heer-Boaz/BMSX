@@ -13,7 +13,7 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction, 
 	switch (op) {
 	case OpCode::MOV:
 		switch (static_cast<ValueMoveKind>(c)) {
-		case ValueMoveKind::Copy: case ValueMoveKind::FloatBits: case ValueMoveKind::FloatFromBits:
+		case ValueMoveKind::Copy: case ValueMoveKind::FloatBits: case ValueMoveKind::FloatFromBits: case ValueMoveKind::Tag:
 			return NativeMove{a, b, static_cast<ValueMoveKind>(c)};
 		}
 		return NativeReplay{};

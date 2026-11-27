@@ -152,7 +152,7 @@ void rawContinuity(BuiltinFunctionId id, int results, int mode = 0, float positi
 void rawDeclines() {
 	for (const int variant : {0, 1, 2, 3, 4}) {
 		const int results = variant == 0 ? 3 : 2;
-		const auto rom = image(results, variant == 4 ? 0 : 3); Machine machine(rom, false); machine.seed(variant == 1 ? BuiltinFunctionId::Type : BuiltinFunctionId::StringByte, variant == 2 ? 3 : 0);
+		const auto rom = image(results, variant == 4 ? 0 : 3); Machine machine(rom, false); machine.seed(variant == 1 ? BuiltinFunctionId::CoroutineRunning : BuiltinFunctionId::StringByte, variant == 2 ? 3 : 0);
 		if (variant == 3) machine.selectClosure();
 		auto* frame = machine.cpu.rootThread()->currentFrame;
 		NativeBlockRunState state{.constants=frame->executionImage->constPool, .frame=frame, .remainingCycles=64, .registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
@@ -186,11 +186,11 @@ void completedDebtDoesNotRunTheSuccessor() {
 
 void mutableCalleesUseTheirCurrentIdentity() {
 	const auto rom=image(2,3);Machine machine(rom,false);auto* caller=preparedCaller(machine);
-	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::Type}) {
+	for(const auto id:{BuiltinFunctionId::StringByte,BuiltinFunctionId::GetMetatable,BuiltinFunctionId::CoroutineRunning}) {
 		machine.seed(id);auto* frame=machine.cpu.rootThread()->currentFrame;
 		NativeBlockRunState state{.constants=frame->executionImage->constPool,.frame=frame, .remainingCycles=64,.registerTop=static_cast<bmsx::i32>(frame->readControl(bmsx::FrameField::Top))};
 		const auto* exit=caller->run(frame->registers, state);
-		if(id==BuiltinFunctionId::Type)
+		if(id==BuiltinFunctionId::CoroutineRunning)
 			require(exit==&caller->terminal && frame->registers.get(0)==frame->registers.get(12) && frame->registers.get(8)==valueInteger(-8),
 				"a reused callsite returns ordinary CALL for the current non-leaf builtin");
 		else require(exit->exit==NativeBlockExit::Halt && frame->registers.get(8)==machine.expected,"one published callsite observes each actual supported primitive ID");

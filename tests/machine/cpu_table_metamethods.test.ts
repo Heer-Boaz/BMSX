@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { ValueTag, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueBool, valueClosure, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
@@ -14,6 +14,7 @@ import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua3
 import { BASE_CYCLES, OpCode, TABLE_INDEX_VISIT_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 	test(`WIDE __newindex and __len use the ordinary activation and preserve result placement (${backend})`, () => {
@@ -117,10 +118,13 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		writeInstruction(text, 0, OpCode.GETT, 3, 0, 1);
 		writeInstruction(text, 1, OpCode.JMP, 0, 63, 62, 255);
 		writeInstruction(text, 16, OpCode.HALT, 0, 0, 0);
+		writeInstruction(text, 17, OpCode.RET, 0, 2, 0);
 		const image = linkRawTestSystemBlua32({ text, functions: [
 			{ firstWord: 0, wordCount: 2, maxStack: 12 }, { firstWord: 16, wordCount: 1 },
+			{ firstWord: 17, wordCount: 1, numParams: 2, maxStack: 2 },
 		], exceptionFunctionIndex: 1 });
-		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+		const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!;
+		cpu.rootThread.reserveFrame(16);
 		const record = cpu.createTable(), meta = cpu.createTable();
 		const stringIndex = cpu.createTable(), stringMeta = cpu.createTable();
 		const field = valueString(cpu.stringPool.intern('present')), forwarded = valueString(cpu.stringPool.intern('forward receiver'));
@@ -154,13 +158,20 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(1 - cpu.instructionBudgetRemaining, cycles + TABLE_INDEX_VISIT_CYCLES);
 		assert.equal(frame.registers.get(3), valueBool(false));
 
-		tables.setStringKey(stringMeta, indexKey, valueBuiltinFunction(BuiltinFunctionId.Type));
+		const indexMethod = valueClosure(seedTestRomClosure(cpu, image.symbols.functionAddresses[2]));
+		tables.setStringKey(stringMeta, indexKey, indexMethod);
 		tables.setMetatableAddress(stringIndex, stringMeta);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		frame.registers.set(1, valueFloatBits(0xffc12345));
-		cpu.runUntilDepth(0, 1);
+		const nan = valueFloatBits(0xffc12345);
+		frame.registers.set(1, nan);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 		assert.equal(1 - cpu.instructionBudgetRemaining, cycles + TABLE_INDEX_VISIT_CYCLES + 2);
-		assert.equal(frame.registers.get(3), valueString(cpu.stringPool.find('string')!));
+		assert.equal(cpu.rootThread.frameDepth, 2);
+		const callback = cpu.rootThread.currentFrame!;
+		assert.equal(callback.registers.get(0), forwarded);
+		assert.equal(callback.registers.get(1), nan);
+		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);
+		assert.equal(frame.registers.get(3), forwarded);
 
 		tables.setStringKey(meta, indexKey, valueBool(false));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);

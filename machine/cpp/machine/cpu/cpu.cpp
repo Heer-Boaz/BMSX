@@ -1296,14 +1296,6 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
 			break;
-		case BuiltinFunctionId::Type:
-			out.push_back(valueString(m_stringPool.intern(valueTypeNameForLua(args[0]))));
-			break;
-		case BuiltinFunctionId::NumberType:
-			out.push_back(valueIsNumber(args[0])
-				? valueString(m_stringPool.intern(valueIsInteger(args[0]) ? "integer" : "float"))
-				: valueNil());
-			break;
 		case BuiltinFunctionId::ToInteger:
 		case BuiltinFunctionId::GetMetatable:
 		case BuiltinFunctionId::RawGet:

@@ -132,7 +132,8 @@ export function compiledBlockAdmits(block: CompiledBlock, frame: CallFrame, rema
 type StatementEmitter = (page: DecodedInstructionPage, word: number,
 	registers: JavaScriptRegisterCache, exitIndex: number) => string;
 const emitters: (StatementEmitter | undefined)[] = new Array(OPCODE_COUNT);
-emitters[OpCode.MOV] = (p, w, r) => r.copy(p.a[w], p.b[w]);
+emitters[OpCode.MOV] = (p, w, r) => p.c[w] === ValueMoveKind.Tag
+	? r.writeInteger(p.a[w], r.tagOperand(p.b[w])) : r.copy(p.a[w], p.b[w]);
 emitters[OpCode.LOADK] = (p, w, r) => r.copy(p.a[w], -p.bx[w] - 1);
 emitters[OpCode.KNIL] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.Nil}`, '0');
 emitters[OpCode.KFALSE] = (p, w, r) => r.writeEncoded(p.a[w], `${ValueTag.False}`, '0');
@@ -157,7 +158,7 @@ emitters[OpCode.SVC] = emitters[OpCode.JMP];
 emitters[OpCode.RFE] = emitters[OpCode.JMP];
 
 export function compiledBlockSupports(op: number, a: number, c: number): boolean {
-	if (op === OpCode.MOV && c > ValueMoveKind.FloatFromBits || op === OpCode.JMP && a !== 0
+	if (op === OpCode.MOV && c > ValueMoveKind.Tag || op === OpCode.JMP && a !== 0
 		|| op === OpCode.RET && c !== ReturnSource.Registers) return false;
 	return emitters[op] !== undefined || compiledArithmeticSupports(op)
 		|| compiledContextSupports(op)
@@ -277,7 +278,7 @@ export function emitJavaScriptBlock(
 				linkedBlock: null, previousIncoming: null, nextIncoming: null });
 		}
 		const arithmetic = compiledArithmeticSupports(op);
-		const bitMove = op === OpCode.MOV && page.c[word] !== ValueMoveKind.Copy;
+		const bitMove = op === OpCode.MOV && (page.c[word] === ValueMoveKind.FloatBits || page.c[word] === ValueMoveKind.FloatFromBits);
 		const needsOperandFault = bitMove || arithmetic || load || store || words || (control && op === OpCode.MTC0);
 		let numericFault = '';
 		if (needsOperandFault) {

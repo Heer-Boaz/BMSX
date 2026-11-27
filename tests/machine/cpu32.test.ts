@@ -9,6 +9,7 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
+import { ValueMoveKind } from '../../machine/ts/spec/blua32/instruction_format';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { OpCode, BASE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
@@ -64,18 +65,23 @@ test(`${backend}: operand faults retain their charge and do not publish a destin
 	}
 });
 
-test(`${backend}: numeric MOV kinds preserve payloads and reject reserved selectors`, { skip: !runner }, () => {
-	for (const kind of [1,2,3,255,256,257,258,511,512,16384,32767]) {
+test(`${backend}: MOV preserves raw payloads and tags and rejects reserved selectors`, { skip: !runner }, () => {
+	for (const kind of [ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits, ValueMoveKind.Tag, 4,255,256,257,258,511,512,16384,32767]) {
 		const cpu = createMachine(OpCode.MOV, kind, backend);
 		const regs = cpu.activeThread.currentFrame!.registers;
-		regs.set(0, kind === 1 ? v.valueFloatBits(0xffa12345) : v.valueInteger(0xffa12345));
+		regs.set(0, kind === ValueMoveKind.FloatBits ? v.valueFloatBits(0xffa12345)
+			: kind === ValueMoveKind.Tag ? v.valueBool(true) : v.valueInteger(0xffa12345));
 		regs.setInteger(2,917);
 		cpu.runUntilDepth(0,1);
 		assert.equal(cpu.instructionBudgetRemaining,-1);
-		if (kind > 2) {
+		if (kind > ValueMoveKind.Tag) {
 			assert.equal(cpu.readCauseWord(),CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 			assert.equal(cpu.readFrameRegister(0,2),v.valueInteger(917));
-		} else assert.equal(cpu.readFrameRegister(0,2),kind===1?v.valueInteger(0xffa12345):v.valueFloatBits(0xffa12345));
+		} else {
+			const expected = kind === ValueMoveKind.Tag ? v.valueInteger(v.ValueTag.True)
+				: kind === ValueMoveKind.FloatBits ? v.valueInteger(0xffa12345) : v.valueFloatBits(0xffa12345);
+			assert.equal(cpu.readFrameRegister(0, 2), expected);
+		}
 	}
 });
 
