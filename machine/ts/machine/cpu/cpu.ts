@@ -4,7 +4,7 @@ import { ConcatAssembly, type ConcatAssemblyState } from './concat_assembly';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -177,9 +177,8 @@ import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_WORK_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET,
-	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT, HEAP_SERVICE_CAPTURE_ISSUED_PORT,
-	HEAP_SERVICE_CAPTURE_MISSING_PORT, HEAP_SERVICE_CAPTURE_PLANE_SHIFT, HEAP_SERVICE_CAPTURE_PORT_END,
+	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
+	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
 	HEAP_SERVICE_EXEC_BUS_OFFSET, HEAP_SERVICE_EXEC_FLOOR_OFFSET, HEAP_SERVICE_EXEC_PC_OFFSET,
 	HEAP_SERVICE_EXEC_STAGE_OFFSET, HEAP_SERVICE_EXEC_TARGET_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
@@ -236,7 +235,6 @@ export type CpuRuntimeState = {
 	stringComparison: StringComparisonLatch;
 	rebuild: TableRebuild | null;
 	concat: ConcatAssemblyState | null;
-	capturedClosureOperands: readonly [Uint32Array, Uint32Array, Uint32Array] | null;
 	pendingMemory: PendingMemoryOperation;
 	pendingAllocation: PendingAllocation | null;
 	statusWord: number;
@@ -376,8 +374,6 @@ export class CPU implements MappedPageInvalidator {
 	private builtinResultsScratchIndex = 0;
 	private readonly localRoots: Value[] = [];
 	private localRootScopeDepth = 0;
-	private readonly capturedClosureOperands = [new Uint32Array(0), new Uint32Array(0), new Uint32Array(0)];
-	private readonly capturedClosureExtent = new Uint32Array(3);
 	private readonly capturedClosureArgs = [0, 0, 0, 0, 0, 0];
 	private readonly tableLookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
@@ -696,7 +692,6 @@ export class CPU implements MappedPageInvalidator {
 	private beginCapturedClosure(frame: CallFrame, destination: number): void {
 		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
 		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
-		const workspace = management + HEAP_SERVICE_CAPTURE_WORK_OFFSET;
 		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
 		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
 		frame.pc = this.currentInstructionPc;
@@ -705,13 +700,10 @@ export class CPU implements MappedPageInvalidator {
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
 		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
-		memory.writeRamRecordPair(workspace, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, HEAP_SERVICE_CAPTURE_RESOLVED_PORT);
-		memory.writeRamRecordPair(workspace + 8, HEAP_SERVICE_CAPTURE_ISSUED_PORT, HEAP_SERVICE_CAPTURE_MISSING_PORT);
 		memory.writeRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET, record.busSignals);
-		this.capturedClosureExtent.fill(0);
 		const args = this.capturedClosureArgs;
 		args[0] = management; args[1] = RAM_BASE + frame.controlOffset; args[2] = frame.thread.address;
-		args[3] = RAM_BASE + binding; args[4] = RAM_BASE + workspace; args[5] = this.remainingDeviceCycles();
+		args[3] = RAM_BASE + binding; args[4] = HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT; args[5] = this.remainingDeviceCycles();
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CapturedClosure], args);
 	}
 
@@ -4084,10 +4076,6 @@ export class CPU implements MappedPageInvalidator {
 					this.hardHalt();
 					return;
 				}
-			} else if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
-				&& kind !== MemoryAccessKind.U8) {
-				const lane = (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> HEAP_SERVICE_CAPTURE_PLANE_SHIFT;
-				word = this.capturedClosureOperands[lane][((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2];
 			} else if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
 				// Raw records may project into the bus-visible part or beneath MMIO.
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
@@ -4113,20 +4101,6 @@ export class CPU implements MappedPageInvalidator {
 			}
 			this.setRegisterIntegerFast(frame, frame.registers, register, word);
 		} else {
-			if (((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> 0) < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
-				&& kind !== MemoryAccessKind.U8) {
-				const lane = (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >>> HEAP_SERVICE_CAPTURE_PLANE_SHIFT;
-				const index = ((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1)) >>> 2;
-				let words = this.capturedClosureOperands[lane];
-				if (index === words.length) {
-					const grown = new Uint32Array(Math.max(8, words.length * 2));
-					grown.set(words);
-					this.capturedClosureOperands[lane] = words = grown;
-				}
-				words[index] = wordOperand(frame.registers.get(register));
-				this.capturedClosureExtent[lane] = Math.max(this.capturedClosureExtent[lane], index + 1);
-				return;
-			}
 			if (address === HEAP_SERVICE_CALL_FAULT_ADDRESS && kind !== MemoryAccessKind.U8) {
 				const reason = wordOperand(frame.registers.get(register));
 				memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase,
@@ -4134,8 +4108,11 @@ export class CPU implements MappedPageInvalidator {
 				do this.heapService.thread.leaveFrame(); while (this.heapServiceActive());
 				return;
 			}
-			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address)
-				throw new Error('Heap service write is outside its private RAM port.');
+			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address) {
+				const data = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+				if (((address - data) >>> 0) >= RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET)
+					throw new Error('Heap service write is outside its private RAM port.');
+			}
 			const word = wordOperand(frame.registers.get(register));
 			if (((address - this.heapService.projectionAddress) >>> 0) < 4) {
 				if (kind === MemoryAccessKind.U8) throw new Error('Heap projection requires a word store.');
@@ -5159,12 +5136,6 @@ export class CPU implements MappedPageInvalidator {
 			stringComparison: { ...this.stringComparison },
 			rebuild: this.tableRebuild.record ? { ...this.tableRebuild } : null,
 			concat: this.concat.capture(),
-			capturedClosureOperands: this.heapServiceActive() && this.heapService.thread.firstFrame!.functionAddress
-				=== this.systemImage.heapServiceFunctions?.[HeapServiceOperation.CapturedClosure]
-				? [this.capturedClosureOperands[0].slice(0, this.capturedClosureExtent[0]),
-					this.capturedClosureOperands[1].slice(0, this.capturedClosureExtent[1]),
-					this.capturedClosureOperands[2].slice(0, this.capturedClosureExtent[2])]
-				: null,
 			pendingMemory: { ...this.pendingMemory },
 			pendingAllocation: this.pendingAllocation === null ? null : { ...this.pendingAllocation },
 			statusWord: this.cop0Words[COP0_STATUS],
@@ -5233,14 +5204,6 @@ export class CPU implements MappedPageInvalidator {
 		if (state.rebuild) Object.assign(this.tableRebuild, state.rebuild);
 		else this.tableRebuild.record = 0;
 		this.concat.restore(state.concat);
-		if (state.capturedClosureOperands !== null) {
-			for (let lane = 0; lane < state.capturedClosureOperands.length; ++lane) {
-				const words = state.capturedClosureOperands[lane];
-				if (words.length > this.capturedClosureOperands[lane].length) this.capturedClosureOperands[lane] = new Uint32Array(words.length);
-				this.capturedClosureOperands[lane].set(words);
-				this.capturedClosureExtent[lane] = words.length;
-			}
-		}
 		Object.assign(this.pendingMemory, state.pendingMemory);
 		this.pendingAllocation = state.pendingAllocation === null ? null : { ...state.pendingAllocation };
 		this.cop0Words[COP0_STATUS] = state.statusWord;

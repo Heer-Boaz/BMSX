@@ -7,7 +7,8 @@ static_assert(HEAP_SERVICE_IRQ_FORWARD_OFFSET + static_cast<u32>(HeapServiceIrqF
 static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTROL_BYTES <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_PREPARED_FRAME_OFFSET);
 static_assert(static_cast<u32>(PreparedFrameField::SourceSlot) == FRAME_CONTROL_BYTES);
-static_assert(HEAP_SERVICE_PREPARED_FRAME_OFFSET + static_cast<u32>(PreparedFrameField::RelocateFormals) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
+static_assert(HEAP_SERVICE_PREPARED_FRAME_OFFSET + static_cast<u32>(PreparedFrameField::RelocateFormals) + sizeof(u32) <= HEAP_SERVICE_FIRMWARE_DATA_OFFSET);
+static_assert(HEAP_SERVICE_FIRMWARE_DATA_OFFSET < RUNTIME_MANAGEMENT_SIZE);
 static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
@@ -28,15 +29,10 @@ static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_GC
 static_assert(HEAP_SERVICE_GC_ARGUMENTS_OFFSET + static_cast<u32>(HeapServiceGcArgumentField::PendingTop) + sizeof(u32)
 	<= HEAP_SERVICE_VALUE_CELL_OFFSET);
 static_assert(HEAP_SERVICE_VALUE_CELL_OFFSET + HEAP_SERVICE_VALUE_CELL_SIZE <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_WORK_OFFSET);
-static_assert((HEAP_SERVICE_CAPTURE_WORK_OFFSET & 7u) == 0u);
-static_assert(HEAP_SERVICE_CAPTURE_WORK_OFFSET + 4 * sizeof(u32) == HEAP_SERVICE_CAPTURE_BUS_OFFSET);
+static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_BUS_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
 static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT >= HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32));
-static_assert(HEAP_SERVICE_CAPTURE_PORT_END <= RAM_BASE);
-static_assert((1u << HEAP_SERVICE_CAPTURE_PLANE_SHIFT) == MAIN_RAM_SIZE);
-static_assert(HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_MISSING_PORT == MAIN_RAM_SIZE / 32u);
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
@@ -266,10 +262,6 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 			hardHalt();
 			return;
 		}
-	} else if (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
-		&& kind != MemoryAccessKind::U8) {
-		const auto& plane = m_capturedClosureOperands[(address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >> HEAP_SERVICE_CAPTURE_PLANE_SHIFT];
-		word = plane[((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1u)) >> 2];
 	} else if (address - RAM_BASE < m_memory.ramByteCount()) {
 		// Raw records may project into the bus-visible part or beneath MMIO.
 		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
@@ -307,15 +299,6 @@ void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind
 		return;
 	}
 	admitHeapServiceAccess(kind, address);
-	if (address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT < HEAP_SERVICE_CAPTURE_PORT_END - HEAP_SERVICE_CAPTURE_RESOLVED_PORT
-		&& kind != MemoryAccessKind::U8) {
-		auto& plane = m_capturedClosureOperands[(address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) >> HEAP_SERVICE_CAPTURE_PLANE_SHIFT];
-		const size_t index = ((address - HEAP_SERVICE_CAPTURE_RESOLVED_PORT) & (MAIN_RAM_SIZE - 1u)) >> 2;
-		const u32 value = wordOperand(frame.registers.get(source));
-		if (index == plane.size()) plane.push_back(value);
-		else plane[index] = value;
-		return;
-	}
 	const u32 end = management + HEAP_SERVICE_THREAD_OFFSET;
 	if (address == HEAP_SERVICE_CALL_FAULT_ADDRESS && kind != MemoryAccessKind::U8) {
 		const u32 reason = wordOperand(frame.registers.get(source));
@@ -326,7 +309,8 @@ void CPU::executeHeapServiceStore(CallFrame& frame, int source, MemoryAccessKind
 		do m_heapServiceView.leaveFrame(); while (heapServiceActive());
 		return;
 	}
-	if (address < m_memory.ramBusEnd() || address >= end)
+	if ((address < m_memory.ramBusEnd() || address >= end)
+		&& address - (management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET) >= RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET)
 		throw BMSX_RUNTIME_ERROR("Heap service write is outside its private RAM port.");
 	const u32 word = wordOperand(frame.registers.get(source));
 	if (address - (management + HEAP_SERVICE_GC_PROJECTION_OFFSET) < sizeof(u32)) {

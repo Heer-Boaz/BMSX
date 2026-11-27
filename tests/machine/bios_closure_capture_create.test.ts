@@ -15,7 +15,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_UPVALUE_IN_STACK_MASK, BLUA32_UPVALUE
 import { INSTRUCTION_BYTES, instructionBx, instructionLowB, instructionOpcode } from '../../machine/ts/spec/blua32/instruction_format';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -84,13 +84,9 @@ for (const level of [0, 3] as const) {
 		restoreCpuCheckpoint(actual, seed);
 		const arena = actual.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
-		// Isolated test workspace: no production capture count cap or heap reservation.
-		const workspace = RAM_BASE + management + 0x200, binding = workspace + 16, descriptors = binding + 36;
-		const resolved = descriptors + 4 * target.upvalues.length, cells = resolved + 4 * target.upvalues.length;
-		memory.writeRamRecordWord(workspace, descriptors);
-		memory.writeRamRecordWord(workspace + 4, resolved);
-		memory.writeRamRecordWord(workspace + 8, cells);
-		memory.writeRamRecordWord(workspace + 12, cells + 4 * target.upvalues.length);
+		const workspace = RAM_BASE + management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+		const binding = RAM_BASE + management + 0x200, descriptors = binding + 36;
+		const resolved = workspace, cells = workspace + 4 * 1024;
 		const frame = actual.activeThread.currentFrame!, owner = frame.thread.address;
 		function bind(latched: boolean) {
 			[target.address, -1, +latched, target.codeAddress, target.numParams, target.maxStack, target.flags,
@@ -111,7 +107,7 @@ for (const level of [0, 3] as const) {
 			return spent;
 		}
 		function plan() {
-			assert.ok(actual.beginHeapService(prepare, [state, RAM_BASE + frame.controlOffset, binding, workspace]));
+			assert.ok(actual.beginHeapService(prepare, [state, RAM_BASE + frame.controlOffset, binding, descriptors, workspace]));
 			finish();
 			return actual.heapServiceResult() | 0;
 		}
@@ -123,7 +119,7 @@ for (const level of [0, 3] as const) {
 			return createReferenceCapturedClosure(oracle, frame, oracle['functionRecordLatch']);
 		}
 		function startWhole() {
-			assert.ok(actual.beginHeapService(driver, [management, RAM_BASE + frame.controlOffset, owner, binding, workspace, 0]));
+			assert.ok(actual.beginHeapService(driver, [management, RAM_BASE + frame.controlOffset, owner, binding, descriptors, 0]));
 		}
 		function start(missing: number) {
 			assert.ok(actual.beginHeapService(attempt, [state, control, occupied, RAM_BASE + frame.controlOffset, owner, binding, workspace, missing]));

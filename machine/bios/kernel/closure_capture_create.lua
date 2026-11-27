@@ -78,11 +78,12 @@ end
 -- a missing Cell. Its bit plane distinguishes them without narrowing either
 -- word or re-reading a descriptor on the mapped bus after allocation.
 struct closure_work
-	descriptors: addr -- T:4084,4089-4099 C:3024,3027-3038
-	resolved: addr -- T:4082,4085-4086,4104,4109 C:3022-3023,3043,3047
-	new_cells: addr -- T:4111-4112,4121 L:256,262,269 C:3050-3051,3056 R:262,268,275
-	missing: addr -- T:4104-4105,4117 C:3043-3044,3055; compact transport of the source predicate
+	resolved: u32[1024] -- T:4082,4085-4086,4104,4109 C:3022-3023,3043,3047; physical BIOS scratch
+	new_cells: u32[1024] -- T:4111-4112,4121 L:256,262,269 C:3050-3051,3056 R:262,268,275
+	missing: u32[32] -- T:4104-4105,4117 C:3043-3044,3055; compact transport of the source predicate
 end
+
+local capture_limit<const> = offsetof(closure_work.new_cells) >> 2 -- T:4085,4111 C:3023,3050; fixed pre-reservation workspace capacity
 
 local cell_flags_offset<const> = 2 -- U:12 V:29,35
 local non_capture_bytes<const> = sizeof(closure_record) -- S:40-43 N:24
@@ -114,7 +115,7 @@ local find_open<const> = function(state, frame, slot) -- T:567-577 C:2975-2986
 	return 0 -- T:577 C:2985
 end
 
-local prepare_closure<const> = function(state, frame, binding, workspace) -- T:4075-4111 C:3021-3050
+local prepare_closure<const> = function(state, frame, binding, descriptor_address, workspace) -- T:4075-4111 C:3021-3050
 	local proto<const>: *closure_binding = binding -- T:4076 C:3003
 	local count<const> = proto.count -- T:4077 C:3021
 	if (count ~ in_stack) > (((ram_size - non_capture_bytes - proto.latched * latched_bytes) >> 2) ~ in_stack) then -- T:4079 C:3021 K:61-62; compare before signed multiplication
@@ -122,34 +123,38 @@ local prepare_closure<const> = function(state, frame, binding, workspace) -- T:4
 	end
 	local frame_view<const>: *closure_frame = frame -- T:4102,4108-4109 C:3041,3046-3047
 	local work<const>: *closure_work = workspace -- T:4080-4086 C:3022-3024
-	local descriptors<const>: *u32 = work.descriptors -- T:4084,4099 C:3024,3038; each load performs one mapped read
-	local resolved<const>: *u32 = work.resolved -- T:4082,4085-4086 C:3022-3023
-	local missing_bits<const>: *u32 = work.missing -- T:4104-4105,4117 C:3043-3044,3055
+	local descriptors<const>: *u32 = descriptor_address -- T:4084,4099 C:3024,3038; each load performs one mapped read
+	local resolved<const>: *u32 = &work.resolved[0] -- T:4082,4085-4086 C:3022-3023
+	local missing_bits<const>: *u32 = &work.missing[0] -- T:4104-4105,4117 C:3043-3044,3055
+	local staged<const> = count <= capture_limit -- T:4085,4111 C:3023,3050; retain only if the fixed plan fits
 	local missing, index, plan = 0, 0, 0 -- T:4088-4089 C:3026-3027
 	while index < count do -- T:4089 C:3027
 		local word<const> = descriptors[index] -- T:4099-4100 C:3038-3039
 		local capture<const> = word & index_mask -- T:4100 C:3039
+		local reference -- T:4104,4109 C:3043,3047
 		if (word & in_stack) ~= 0 then -- T:4101 C:3040
 			if capture >= (frame_view.stack_capacity & frame_window_mask) then return -(invalid_argument + 1) end -- T:4102 F:52 C:3041 H:128 E:44
 			local cell<const> = find_open(state, frame, (frame_view.stack_base & frame_window_mask) + capture) -- T:568,4103 F:51 C:2976,3042 H:128
 			if cell == 0 then -- T:4104-4105 C:3043-3044
-				resolved[index] = capture -- T:4104,4117,4122 C:3043,3055,3058; retain original validated slot
+				reference = capture -- T:4104,4117,4122 C:3043,3055,3058; retain original validated slot
 				plan = plan | (1 << (index & 31)) -- T:4104-4105,4117 C:3043-3044,3055
 				missing = missing + 1 -- T:4105 C:3044
 			else -- T:4104-4105 C:3043-3044
-				resolved[index] = cell -- T:4104 C:3043
+				reference = cell -- T:4104 C:3043
 			end
 		else -- T:4107-4108 C:3045
 			local parent<const> = frame_view.closure -- T:4108-4109 F:69,103,106-108 C:3046-3047 H:33
 			if capture >= captures.internal.capture_count(parent) then return -(invalid_argument + 1) end -- T:4108 C:3046 E:44 S:37,50-53 B:68-71
-			resolved[index] = captures.internal.capture_address(parent, capture) -- T:4109 C:3047 S:55-56 B:74-75
+			reference = captures.internal.capture_address(parent, capture) -- T:4109 C:3047 S:55-56 B:74-75
 		end
+		if staged then resolved[index] = reference end -- T:4104,4109 C:3043,3047
 		index = index + 1 -- T:4089 C:3027
-		if (index & 31) == 0 then -- T:4089,4104-4105 C:3027,3043-3044; flush the complete predicate word
+		if staged and (index & 31) == 0 then -- T:4089,4104-4105 C:3027,3043-3044; flush the complete predicate word
 			missing_bits[(index >> 5) - 1] = plan -- T:4104-4105,4117 C:3043-3044,3055
 			plan = 0 -- T:4104-4105 C:3043-3044
 		end
 	end
+	if not staged then return -(out_of_memory + 1) end -- T:4079,4089-4112 C:3021,3027-3051; capacity refusal follows ordered validation
 	if (index & 31) ~= 0 then missing_bits[index >> 5] = plan end -- T:4089,4104-4105,4117 C:3027,3043-3044,3055
 	return missing -- T:4111-4112 C:3050-3051; source-prepared count, retained across retries
 end
@@ -190,7 +195,7 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 	local base<const> = allocator.bmsx_dlmalloc_allocate(state, bytes + object_prefix, 1) -- L:250-251 R:257
 	if base == 0 then return 0 end -- L:251,272 R:257,278; caller owns retry
 	local work<const>: *closure_work = workspace -- T:4084-4085,4121 C:3038,3054-3056
-	local cells<const>: *u32 = work.new_cells -- L:256,262 R:262,268
+	local cells<const>: *u32 = &work.new_cells[0] -- L:256,262 R:262,268
 	local issued = 0 -- L:252 R:258
 	while issued < missing do -- L:253 R:259
 		local raw<const> = allocator.bmsx_dlmalloc_allocate(state, cell_bytes + object_prefix, 1) -- L:254 R:260
@@ -241,8 +246,8 @@ local create_prepared_closure<const> = function(state, control, occupied, frame_
 	-- after the following loop (T:4125); the mutator is paused in both cases.
 	collector.publish_object(control, address) -- T:4125 C:162 P:147-155 Q:235-244
 	local frame<const>: *closure_frame = frame_address -- T:4122 C:3057
-	local missing_bits<const>: *u32 = work.missing -- T:4104-4105,4117 C:3043-3044,3055
-	local resolved<const>: *u32 = work.resolved -- T:4085,4117-4118 C:3043,3047,3054
+	local missing_bits<const>: *u32 = &work.missing[0] -- T:4104-4105,4117 C:3043-3044,3055
+	local resolved<const>: *u32 = &work.resolved[0] -- T:4085,4117-4118 C:3043,3047,3054
 	local edges<const>: *u32 = address + non_capture_bytes -- T:4118,4123 S:58-59 C:3060 K:85-86 B:78-79
 	local next_cell, plan = 0, 0 -- T:4115 C:3052
 	index = 0 -- T:4116 C:3053

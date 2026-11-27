@@ -145,17 +145,17 @@ for (const mode of [CpuExecutionBackend.Interpreter]) test(`predicate-to-HALT ra
 	runtime.frameScheduler.runDevicesToNextLogicalTick(10000);
 	assert.equal(memory.readMappedWord(IO_GEO_STATUS) & GEO_STATUS_DONE, GEO_STATUS_DONE);
 	assert.notEqual(memory.readMappedWord(IO_IRQ_FLAGS) & IRQ_GEO_DONE, 0);
-	let sawAccepted = false, consumedAtHalt = false;
-	for (let step = 0; step < 100000 && memory.readU32(marker) === 1; ++step) {
-		if (cpu.isHaltedUntilIrq() && (memory.readMappedWord(IO_IRQ_FLAGS) & IRQ_GEO_DONE) === 0) break;
-		const event = cpu.captureRuntimeState().interruptEventPending;
-		const depth = cpu.getFrameDepth();
-		const pc = depth > 0 ? cpu.readFramePc(depth - 1) : 0;
-		const opcode = pc === 0 ? -1 : memory.readMappedWord(pc) & opcodeMask;
-		if (event) sawAccepted = true;
+	const haltPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
+	let eventAtHalt: boolean | undefined;
+	cpu.setInstructionObserver({
+		points: [new Set(), new Set([haltPc]), new Set()],
+		observe() { eventAtHalt = cpu.captureRuntimeState().interruptEventPending; },
+	});
+	// Device-only service can leave an already admitted CPU grant unspent.
+	// Observe the exact HALT rather than assuming one scheduler call means one instruction.
+	for (let step = 0; step < 100000 && memory.readU32(marker) === 1; ++step)
 		runtime.frameScheduler.runCyclesToNextLogicalTick(1);
-		if (event && opcode === haltOpcode && !cpu.captureRuntimeState().interruptEventPending) consumedAtHalt = true;
-	}
+	assert.equal(eventAtHalt, true, 'the resumed HALT sees the accepted GEO event');
 	assert.equal(memory.readU32(marker), 2, 'the completed GEO task does not need another interrupt');
-	assert.ok(sawAccepted && consumedAtHalt, 'the real GEO IRQ is retained across the check-to-HALT interval');
+	assert.equal(cpu.captureRuntimeState().interruptEventPending, false, 'the resumed HALT consumed the retained event');
 });

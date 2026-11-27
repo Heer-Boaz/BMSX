@@ -171,7 +171,6 @@ struct CpuRuntimeState {
 	StringComparisonLatch stringComparison;
 	TableRebuild rebuild;
 	ConcatAssembly concat;
-	std::optional<std::array<std::vector<u32>, 3>> capturedClosureOperands;
 	PendingAllocation pendingAllocation;
 	u32 statusWord = CPU_STATUS_CART_ENTRY;
 	u32 causeWord = 0;
@@ -697,7 +696,6 @@ private:
 	std::vector<Value> m_localRoots;
 	int m_localRootScopeDepth = 0;
 
-	std::array<std::vector<u32>, 3> m_capturedClosureOperands;
 	GlobalBank m_systemGlobalBank;
 	GlobalBank m_globalBank;
 	Value m_stringIndexTable = valueNil();

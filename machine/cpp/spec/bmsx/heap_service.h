@@ -57,14 +57,8 @@ enum class HeapServiceClosureField : uint32_t {
 
 constexpr uint32_t HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
 enum class HeapServiceCaptureBindingField : uint32_t { Prototype = 0, Domain = 4, Latched = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 };
-constexpr uint32_t HEAP_SERVICE_CAPTURE_WORK_OFFSET = 0x7d8;
 constexpr uint32_t HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e8;
 constexpr uint32_t HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_RESOLVED_PORT = 0x03400000;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_ISSUED_PORT = 0x03800000;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_MISSING_PORT = 0x03c00000;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_PLANE_SHIFT = 22;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_PORT_END = 0x03c20000;
 
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
@@ -84,6 +78,9 @@ enum class HeapServiceBiosCallField : uint32_t {
 
 // One pending ordinary VM transfer owns this scratch while backing is acquired.
 constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
+
+// BIOS-owned data in the unused tail of the physical management reservation.
+constexpr uint32_t HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
 // Entry: 56 bytes of canonical control words followed by the argument plan.
 enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 };
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.

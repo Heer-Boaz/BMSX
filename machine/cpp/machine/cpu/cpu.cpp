@@ -1056,10 +1056,6 @@ CpuRuntimeState CPU::captureRuntimeState(std::vector<Value> completionStorage) c
 	state.stringComparison = m_stringComparison;
 	if (tableRebuild.record) state.rebuild = tableRebuild;
 	if (m_concat.active()) state.concat = m_concat;
-	if (heapServiceActive() && m_heapServiceView.firstFrame->readControl(FrameField::Function)
-		== m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)]) {
-		state.capturedClosureOperands = m_capturedClosureOperands;
-	}
 	state.pendingAllocation = m_pendingAllocation;
 	state.statusWord = m_cop0Words[COP0_STATUS];
 	state.causeWord = m_cop0Words[COP0_CAUSE];
@@ -1140,7 +1136,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_stringComparison = state.stringComparison;
 	tableRebuild = state.rebuild;
 	m_concat = state.concat;
-	if (state.capturedClosureOperands) m_capturedClosureOperands = *state.capturedClosureOperands;
 	if (m_concat.registersLeft) m_concat.sources.reserve(m_concat.sources.size() + m_concat.registersLeft);
 	else m_concat.bytes.reserve(m_concat.length);
 	m_pendingAllocation = state.pendingAllocation;

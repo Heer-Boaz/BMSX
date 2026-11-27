@@ -11,10 +11,11 @@ local object_prefix<const> = require('kernel/dlmalloc_record').internal.object_p
 local current_or_fresh<const> = 0 -- H:91 C:103
 local out_of_memory<const> = 9 -- H:86 C:98
 
-local allocate_captured_closure<const> = function(management, frame, owner, binding, workspace, source_cycles) -- T:4151-4197 N:3012-3068
+local allocate_captured_closure<const> = function(management, frame, owner, binding, descriptor_address, source_cycles) -- T:4151-4197 N:3012-3068
 	local state<const>, control<const>, occupied<const> = management + layout.arena_offset, -- H:243-266 C:250-272
 		management + layout.control_offset, management + layout.occupied_offset -- H:243-266 C:250-272
-	local missing<const> = closure.prepare_closure(state, frame, binding, workspace) -- T:4152-4188 N:3031-3055
+	local workspace<const> = layout.ram_base + management + layout.firmware_data_offset -- T:4160-4166 N:3032-3035; physical BIOS scratch
+	local missing<const> = closure.prepare_closure(state, frame, binding, descriptor_address, workspace) -- T:4152-4188 N:3031-3055
 	if missing < 0 then return missing == -(out_of_memory + 1) and 0 or missing end -- T:4155,4177,4184 N:3031,3047,3052; unified raw closure result
 	local charged<const> = closure.capture_charge(binding, missing) -- H:244-245 C:251-252
 	local effects<const>: *u32 = layout.ram_base + management + layout.effect_offset -- H:95 C:106 G:1121-1124 R:1225-1229

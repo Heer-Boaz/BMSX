@@ -4,6 +4,7 @@ module<const>
 -- The CPU makes data available without selecting collector phases. The
 -- effect address is a private store strobe, not RAM.
 return {
+	firmware_data_offset = 0x1c00,
 	ram_base = 0x08000000,
 	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
 	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request

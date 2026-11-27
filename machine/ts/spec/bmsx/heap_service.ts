@@ -47,14 +47,8 @@ export const enum HeapServiceClosureField {
 
 export const HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
 export const enum HeapServiceCaptureBindingField { Prototype = 0, Domain = 4, Latched = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 }
-export const HEAP_SERVICE_CAPTURE_WORK_OFFSET = 0x7d8;
 export const HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e8;
 export const HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
-export const HEAP_SERVICE_CAPTURE_RESOLVED_PORT = 0x03400000;
-export const HEAP_SERVICE_CAPTURE_ISSUED_PORT = 0x03800000;
-export const HEAP_SERVICE_CAPTURE_MISSING_PORT = 0x03c00000;
-export const HEAP_SERVICE_CAPTURE_PLANE_SHIFT = 22;
-export const HEAP_SERVICE_CAPTURE_PORT_END = 0x03c20000;
 
 export const enum HeapServiceRecordKind { Table, CanonicalClosure, DynamicClosure }
 export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
@@ -73,6 +67,9 @@ export const enum HeapServiceBiosCallField {
 
 // One pending ordinary VM transfer owns this scratch while backing is acquired.
 export const HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
+
+// BIOS-owned data in the unused tail of the physical management reservation.
+export const HEAP_SERVICE_FIRMWARE_DATA_OFFSET = 0x1c00;
 // Entry: 56 bytes of canonical control words followed by the argument plan.
 export const enum PreparedFrameField { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 }
 // Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.

@@ -7,8 +7,9 @@ import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_CAPTURE_WORDS, CLOSURE_LATCHED_PROTOTYPE } from '../../../machine/ts/machine/cpu/closure';
 import { valueInteger, valuePayload } from '../../../machine/ts/machine/cpu/value';
+import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
+import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_FLAGS_OFFSET,
@@ -17,7 +18,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_
 	BLUA32_IMAGE_MAPPED_CODE_FLAG, BLUA32_UPVALUE_INDEX_MASK } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_PAYLOAD_BUFFER_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_CPU } from '../../../machine/ts/machine/memory/bus_signals';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -52,6 +53,12 @@ return closure()
 
 const boot = `cop0.exec = mem32le[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`;
 
+// BIOS closure_work layout; the source-map test checks its field sizes.
+const captureLimit = 1024;
+const newCellsOffset = 4 * captureLimit;
+const missingOffset = 2 * newCellsOffset;
+const workspaceBytes = missingOffset + (captureLimit >>> 5) * 4;
+
 const folder = mkdtempSync(join('tmp', 'bmsx-captured-closure-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
@@ -72,6 +79,10 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		const arena = cpu.heapAllocator, latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+		const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+		const cells = workspace + newCellsOffset, bits = workspace + missingOffset;
+		const history = new RamHistory();
+		history.start(memory);
 		const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		function atIssue() {
 			if (!cpu.getFrameDepth() || cpu.heapServiceActive() || cpu.activeCartridgeSlot() !== (domain === 'system' ? -1 : 0)) return false;
@@ -97,33 +108,27 @@ try {
 			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(latch)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
+		const initialPages = history.capture(memory, null);
 		assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
 		assert.ok(cpu.heapServiceActive());
-		for (let n = 0; n < 8192; ++n) {
-			const words = cpu.captureRuntimeState().capturedClosureOperands;
-			assert.ok(words, `grant ${n}: capture still active (cause ${cpu.readCauseWord()}, reason ${cpu.readLuaFaultReasonWord()}, result ${cpu.heapServiceResult()})`);
-			if (words[0].length > HEAP_SERVICE_VALUE_COUNT) break;
-			grant(127);
-		}
+		for (let n = 0; n < 8192 && memory.readRamRecordWord(bits + 48) === 0; ++n) grant(127);
+		assert.ok(cpu.heapServiceActive());
+		assert.equal(memory.readRamRecordWord(bits + 48), 0xffffffff, '416 descriptors staged');
+		assert.equal(memory.readRamRecordWord(bits + 64), 0, 'the final descriptor is not yet staged');
+		assert.equal(memory.readRamRecordWord(cells), 0, 'reservation has not issued a Cell');
+		const partialState = captureRuntimeCheckpointState(runtime);
+		const partialPages = history.capture(memory, initialPages);
 		const partial = captureRuntimeSaveState(runtime);
-		const planes = partial.cpuState.capturedClosureOperands!;
-		assert.ok(planes[0].length > HEAP_SERVICE_VALUE_COUNT && planes[0].length < names.length);
-		assert.equal(planes[1].length, 0);
-		assert.equal(planes[2].length, planes[0].length >>> 5);
-		assert.ok(planes[2].every(word => word === 0xffffffff));
+		const plan = partial.ram.slice(workspace, workspace + workspaceBytes);
 		writeFileSync(checkpoint, encodeRuntimeSaveState(partial));
 		const split = commands.length, logicalBeforeReservation = cpu.luaHeap.usedBytes();
-		for (let n = 0; n < 8192; ++n) {
-			const words = cpu.captureRuntimeState().capturedClosureOperands;
-			assert.ok(words);
-			if (words[1].length > 32) break;
-			grant(221);
-		}
-		const issued = captureRuntimeSaveState(runtime), issuedPlanes = issued.cpuState.capturedClosureOperands!;
-		assert.equal(issuedPlanes[0].length, names.length);
-		assert.equal(issuedPlanes[2].length, (names.length + 31) >>> 5);
-		assert.equal(issuedPlanes[2].at(-1), 1);
-		assert.ok(issuedPlanes[1].length > 32 && issuedPlanes[1].length < names.length);
+		for (let n = 0; n < 8192 && memory.readRamRecordWord(cells + 32 * 4) === 0; ++n) grant(221);
+		assert.ok(cpu.heapServiceActive());
+		assert.equal(memory.readRamRecordWord(bits + 64), 1, 'the final descriptor went into the last bitmap word');
+		assert.notEqual(memory.readRamRecordWord(cells + 32 * 4), 0);
+		assert.equal(memory.readRamRecordWord(cells + (names.length - 1) * 4), 0);
+		const issued = captureRuntimeSaveState(runtime);
+		const issuedPlan = issued.ram.slice(workspace, workspace + workspaceBytes);
 		assert.equal(cpu.luaHeap.usedBytes(), logicalBeforeReservation,
 			'partial reservation has not published logical ownership');
 		writeFileSync(issueCheckpoint, encodeRuntimeSaveState(issued));
@@ -134,6 +139,15 @@ try {
 			assert.deepEqual(runtime.readCompletionValues(), [valueInteger(expect)]);
 			commands.push('C');
 			rows.push(String(expect));
+			const probe = RAM_BASE + cells + 32 * 4, savedCell = memory.readRamRecordWord(probe);
+			const sequence = memory.readBusFaultSequence();
+			assert.notEqual(savedCell, 0);
+			assert.equal(memory.readMappedWord(probe), 0);
+			memory.writeMappedWord(probe, 0);
+			assert.equal(memory.readBusFaultSequence(), sequence + 2);
+			assert.equal(memory.readRamRecordWord(probe), savedCell);
+			commands.push(`M ${probe}`, `O ${probe} 0`);
+			rows.push('0 1');
 			const first = memory.ramBusEnd() - RAM_BASE, last = memory.ramData().length;
 			commands.push(`H ${first} ${last}`);
 			rows.push(String(hashBytes(memory.ramData(), first, last - first)));
@@ -152,17 +166,23 @@ try {
 			...commands.slice(split, phase), `x ${cppIssue}`, ...commands.slice(phase)], rows);
 		nativeCheck('issue', issueCheckpoint, ['X', ...commands.slice(phase)], rows.slice(phase));
 		const restoredIssue = decodeRuntimeSaveState(readFileSync(cppIssue), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(restoredIssue.cpuState.capturedClosureOperands, issuedPlanes);
+		assert.deepEqual(restoredIssue.ram.subarray(workspace, workspace + workspaceBytes), issuedPlan);
 		nativeCheck('restore', checkpoint, ['X', ...tail], after);
 		const restored = decodeRuntimeSaveState(readFileSync(cpp), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
-		assert.deepEqual(restored.cpuState.capturedClosureOperands, planes);
-		applyRuntimeSaveState(runtime, restored);
+		assert.deepEqual(restored.ram.subarray(workspace, workspace + workspaceBytes), plan);
+		nativeCheck('rewind', seed, ['X', 'l', ...commands.slice(0, split), 's', ...tail, 'u', ...tail], [...rows, ...after]);
+		const endPages = history.capture(memory, partialPages);
+		history.restore(memory, endPages, partialPages);
+		applyRuntimeCheckpointState(runtime, partialState, RuntimeRestoreOrigin.HistorySeek);
+		assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), plan);
 		commands.length = rows.length = split;
 		for (let i = split; i < phase; ++i) grant(221);
 		drain();
 		assert.deepEqual(commands.slice(split), tail);
 		assert.deepEqual(rows.slice(split), after);
-		console.log(`CAPTURED-CLOSURE:PASS O${optLevel} ${domain} (${names.length} captures; ${planes[0].length} prepared and ${issuedPlanes[1].length} issued in checkpoints; exact TS/C++ grants, RAM and portable restore)`);
+		applyRuntimeSaveState(runtime, restored);
+		assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), plan);
+		console.log(`CAPTURED-CLOSURE:PASS O${optLevel} ${domain} (${names.length} captures; staged and issued RAM; exact grants, portable restore and rewind)`);
 	}
 	const descriptorSource = `
 bss descriptors: word[2]
@@ -240,10 +260,10 @@ return make(7, 8)()
 			assert.equal(frame.pc, origin);
 			if (sampled) {
 				for (let i = 0; i < 2; ++i) {
-					for (let n = 0; n < 512 && cpu.captureRuntimeState().capturedClosureOperands![0].length === i; ++n) grant(1);
-					const plan = cpu.captureRuntimeState().capturedClosureOperands!;
-					assert.equal(plan[0].length, i + 1);
-					assert.equal(plan[1].length, 0, 'no allocation while sampling descriptors');
+					for (let n = 0; n < 512 && reads.length === i; ++n) grant(1);
+					assert.equal(reads.length, i + 1);
+					assert.equal(memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET + newCellsOffset),
+						0, 'no allocation while sampling descriptors');
 					assert.equal(frame.openUpvalueHead, openHead, 'no open-cell publication while sampling descriptors');
 					memory.writeMappedWord(descriptor + 4 * i, 0xffffffff);
 					commands.push(`O ${descriptor + 4 * i} 4294967295`);
@@ -391,8 +411,14 @@ return make(7, 8)()
 						commands.push(`O ${prototypeAddress + offset} 4294967295`);
 					}
 				}
-				for (let n = 0; n < 512 && cpu.captureRuntimeState().capturedClosureOperands![0].length === 0; ++n) grant(1);
-				assert.equal(cpu.captureRuntimeState().capturedClosureOperands![0].length, 1);
+				let sampled = false;
+				const readWord = memory.readMappedBusU32LE.bind(memory);
+				memory.readMappedBusU32LE = (address, signals, access) => {
+					if (address === target.upvalueTableAddress) sampled = true;
+					return readWord(address, signals, access);
+				};
+				for (let n = 0; n < 512 && !sampled; ++n) grant(1);
+				assert.ok(sampled);
 				checkpoint = stem + '.checkpoint';
 				writeFileSync(checkpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 				cut = commands.length; rowCut = rows.length;
@@ -429,6 +455,101 @@ return make(7, 8)()
 			console.log(`CAPTURED-PROTOTYPE:PASS O${optLevel} ${test} (exact paired grants, result and RAM)`);
 		}
 	}
+	for (const optLevel of [0, 3] as const) {
+		const linked = linkTestSystemBlua32(compileHeapServiceSystem(descriptorSource, optLevel));
+		const { image, romBytes } = linked;
+		const target = image.functions.find(fn => fn.upvalues.length === 2)!;
+		const originals = [readLE32(romBytes, target.upvalueTableAddress), readLE32(romBytes, target.upvalueTableAddress + 4)];
+		for (const test of ['fits-1024', 'valid-1025', 'invalid-1025', 'fault-1025'] as const) {
+			const fits = test === 'fits-1024', fault = test === 'fault-1025', invalid = test === 'invalid-1025';
+			const count = fits ? captureLimit : captureLimit + 1;
+			const descriptors = romBytes.length;
+			const rom = new Uint8Array(descriptors + 4 * (count - +fault));
+			rom.set(romBytes);
+			writeLE32(rom, target.address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, descriptors);
+			writeLE32(rom, target.address + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET, count);
+			for (let index = 0; index < count - +fault; ++index)
+				writeLE32(rom, descriptors + 4 * index, invalid && index + 1 === count ? 0xffffffff : originals[0]);
+			const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+			runtime.boot();
+			const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+			const latch = arena.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+			const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			const atIssue = () => {
+				if (cpu.heapServiceActive() || !cpu.getFrameDepth()) return false;
+				const pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
+				const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
+				return instruction.op === OpCode.CLOSURE && instruction.bx * BLUA32_FUNCTION_ALIGNMENT === target.address;
+			};
+			for (let n = 0; n < 8192 && !atIssue(); ++n)
+				assert.notEqual(slice(cpu.heapServiceActive() ? 193 : 1), RunResult.Halted);
+			assert.ok(atIssue());
+			const frame = cpu.activeThread.currentFrame!, origin = frame.pc;
+			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, origin);
+			const oldLink = frame.openUpvalueHead, oldValue = frame.registers.get(instruction.a);
+			const physical = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
+			const oldWork = memory.ramData().slice(workspace, workspace + workspaceBytes);
+			const bus = memory.readBusFaultSequence();
+			let sampled = 0;
+			const readWord = memory.readMappedBusU32LE.bind(memory);
+			memory.readMappedBusU32LE = (address, signals, access) => {
+				if (address >= descriptors && address < descriptors + 4 * count)
+					assert.equal(address, descriptors + 4 * sampled++, 'each descriptor is read exactly once in order');
+				return readWord(address, signals, access);
+			};
+			const stem = join(folder, `capacity-${optLevel}-${test}`), systemFile = stem + '.rom', seed = stem + '.seed';
+			writeFileSync(systemFile, rom);
+			writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
+			const commands = ['X'], rows: string[] = [];
+			const grant = (cycles: number) => {
+				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
+				commands.push(`J ${cycles} 1`);
+				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.readRamRecordWord(latch)} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				return spent;
+			};
+			assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
+			for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) {
+				if (!fits) {
+					assert.equal(arena.occupiedBytes(), physical);
+					assert.equal(cpu.luaHeap.usedBytes(), logical);
+				}
+				grant(4096);
+			}
+			assert.equal(cpu.heapServiceActive(), false);
+			assert.equal(sampled, count);
+			assert.equal(memory.readBusFaultSequence(), bus + +fault);
+			assert.equal(cpu.captureRuntimeState().hardHalted, fault);
+			if (fits) {
+				assert.notEqual(frame.openUpvalueHead, oldLink);
+				assert.equal(memory.readRamRecordWord(workspace + missingOffset + 31 * 4), 0xffffffff);
+				assert.notEqual(memory.readRamRecordWord(workspace + newCellsOffset + 1023 * 4), 0);
+				for (let n = 0; n < 4096 && cpu.getFrameDepth(); ++n) grant(127);
+				assert.deepEqual(runtime.readCompletionValues(), [valueInteger(707)]);
+				commands.push('C'); rows.push('707');
+			} else {
+				assert.equal(frame.openUpvalueHead, oldLink);
+				assert.equal(frame.registers.get(instruction.a), oldValue);
+				assert.deepEqual(memory.ramData().subarray(workspace, workspace + workspaceBytes), oldWork);
+				assert.equal(cpu.readLuaFaultReasonWord(), fault ? 0 : invalid ? LUA_FAULT_REASON_INVALID_ARGUMENT : LUA_FAULT_REASON_OUT_OF_MEMORY);
+				if (!fault) assert.equal(cpu.readEpcWord(), origin);
+			}
+			commands.push('Z', 'F');
+			rows.push(`${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`,
+				String(+cpu.captureRuntimeState().hardHalted));
+			const first = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
+			commands.push(`H ${first} ${end}`);
+			rows.push(String(hashBytes(memory.ramData(), first, end - first)));
+			const file = stem + '.trace';
+			writeFileSync(file, commands.join('\n'));
+			const actual = execFileSync(native, [systemFile, file, seed], { encoding: 'utf8' }).trimEnd().split('\n');
+			const mismatch = actual.findIndex((row, i) => row !== rows[i]);
+			assert.equal(mismatch, -1, `O${optLevel} ${test} row ${mismatch}: TS ${rows[mismatch]} C++ ${actual[mismatch]}`);
+			assert.equal(actual.length, rows.length);
+			console.log(`CAPTURE-WORKSPACE:PASS O${optLevel} ${test} (bounded RAM, exact ordered reads and paired CPU grants)`);
+		}
+	}
+
 	rmSync(folder, { recursive: true });
 } catch (error) {
 	console.error(`Evidence retained: ${folder}`);

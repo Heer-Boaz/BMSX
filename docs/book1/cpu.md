@@ -1108,6 +1108,13 @@ source raises `INVALID_ARGUMENT` without writing `R(A)`. A fault on a
 descriptor bus read halts execution. Neither failure allocates or links any
 captures.
 
+The BIOS can prepare at most **1024 captures** in its fixed private RAM
+workspace. If the record fits in main RAM but calls for more than 1024
+captures, descriptors are still read and checked in order. If all are valid,
+`CLOSURE` reports `OUT_OF_MEMORY` without allocating or linking any captures.
+A record whose own size exceeds installed main RAM is refused before any
+descriptor read.
+
 An open upvalue names the owning Thread and the slot for its captured
 parent-frame register. Moving the Thread's value slots to a larger block
 does not change the capture. Captures of the same register in one activation
