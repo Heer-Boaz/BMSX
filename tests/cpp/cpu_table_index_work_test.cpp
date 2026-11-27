@@ -646,7 +646,10 @@ void yieldingBuiltinIndexRestoresItsPlacement() {
 		auto root = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
 		meta.setStringKey(cpu.stringPool().intern("__index"), cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineYield));
 		root.setMetatableAddress(meta.address());
-		frame->registers.set(0, valueThread(cpu.luaHeap().allocateThreadRecord(entry)));
+		const u32 thread = cpu.luaHeap().allocateThreadRecord(entry);
+		frame->registers.set(0, valueThread(thread));
+		// Isolate the yielding index operation from first-resume allocation.
+		cpu.luaHeap().reserveThreadFrameStorage(thread, image.functions[1].maxStack, THREAD_INITIAL_FRAMES, valueClosure(entry));
 		frame->registers.set(12, cpu.createBuiltinFunction(BuiltinFunctionId::CoroutineResume));
 		frame->registers.set(13, valueTable(root.address()));
 		frame->extendTop(14);
