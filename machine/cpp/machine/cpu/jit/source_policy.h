@@ -115,14 +115,15 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	return boundaries;
 }();
 
-inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
+inline constexpr bool nativeBlockEndsBlock(u8 op, int field, bool privateFirmware = false) {
+	if (privateFirmware && op == static_cast<u8>(OpCode::CLOSURE)) return false;
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
 		|| (op == static_cast<u8>(OpCode::MTC0) && (field == COP0_STATUS || field == COP0_EXEC || !cop0FieldImplemented(field)));
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row) {
-	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b)
+inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row, bool privateFirmware = false) {
+	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b, privateFirmware)
 		? DecodedDispatchOp::NativeWarmBoundary : DecodedDispatchOp::NativeWarm);
 }
 
@@ -151,6 +152,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 			case OpCode::NOT: case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR:
 			case OpCode::SHL: case OpCode::SHR: case OpCode::BNOT:
 			case OpCode::JMPIF: case OpCode::JMPIFNOT: case OpCode::EQ: case OpCode::LT: case OpCode::LE:
+			case OpCode::CLOSURE: case OpCode::CALL: case OpCode::RET:
 				return true;
 			default: return false;
 		}

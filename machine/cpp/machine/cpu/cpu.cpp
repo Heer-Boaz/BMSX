@@ -2295,7 +2295,7 @@ dispatch_instruction:
 					const bool replay = nativeState.replay && nativeState.replay->pc == pc;
 					if (!replay || !nativeState.replay->arithmetic) nativeState.replay.reset();
 					if (replay || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
-						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, HeapService);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
@@ -2517,7 +2517,7 @@ dispatch_observe:
 			PUBLISH_SCALAR_FRONTIER();
 			canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
+			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, HeapService);
 #endif
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;

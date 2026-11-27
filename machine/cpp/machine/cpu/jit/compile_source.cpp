@@ -218,7 +218,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				if (feedback) (*feedback)[cursor] = true;
 #endif
 				const u32 successor = cursor + instruction.width;
-				if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
+				if (nativeBlockEndsBlock(instruction.op, instruction.b, page.privateFirmware) || successor >= DECODED_PAGE_WORDS
 					|| !available[successor] || leaders[successor]) break;
 				if (instructionCount - start == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders.set(successor); break; }
 				cursor = successor;

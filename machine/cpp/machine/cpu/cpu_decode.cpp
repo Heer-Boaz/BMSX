@@ -211,7 +211,7 @@ void CPU::decodeInstructionWords(
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (instructionCacheable && (page.privateFirmware ? nativeSourceCanEmit(decoded, true)
 		: nativeBlockSupports(decoded.op) && (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0))) {
-		decoded.dispatchOp = nativeWarmDispatch(decoded);
+		decoded.dispatchOp = nativeWarmDispatch(decoded, page.privateFirmware);
 		page.nativeVisits[pageOffset] = 0;
 	}
 #endif

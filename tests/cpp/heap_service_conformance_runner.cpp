@@ -198,6 +198,18 @@ int main(int argc, char** argv) {
 #endif
 					break;
 				}
+				case 't': {
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+					const auto& exits = cpu.nativeGateProfile().exits;
+					std::cout << "firmware-transfer " << cpu.heapServiceResult() << ' '
+						<< exits[static_cast<size_t>(NativeBlockExit::PrivateCall)].entries << ' '
+						<< exits[static_cast<size_t>(NativeBlockExit::PrivateReturn)].entries << ' '
+						<< exits[static_cast<size_t>(NativeBlockExit::CreateClosure)].entries << '\n';
+#else
+					throw std::runtime_error("Fixed transfer evidence requires BMSX_NATIVE_GATE_PROFILE.");
+#endif
+					break;
+				}
 				case 'q': {
 					int depth, cycles;
 					trace >> depth >> cycles;
@@ -234,8 +246,9 @@ int main(int argc, char** argv) {
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
 					auto result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-					// The generated entry wrapper first reserves its static Closure.
-					for (int grant = 0; grant < 8 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
+					// Startup and the entry wrapper can each reserve ROM closures
+					// before this guest instruction, on separate firmware grants.
+					for (int grant = 0; grant < 512 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
 						result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
 					const u32 management = cpu.heapAllocator().managementOffset();
 					const auto stage = memory.readRamRecordWord(management + (growField
@@ -244,7 +257,10 @@ int main(int argc, char** argv) {
 					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Destination)) != 0u;
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
-						throw std::runtime_error("The generated allocation exit did not hand off exactly once");
+						throw std::runtime_error("The generated allocation exit did not hand off exactly once: "
+							+ std::to_string(allocation.entries - before.entries) + " entries, "
+							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
+							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					const bool parked = growField
 						? stage == static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)

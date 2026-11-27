@@ -73,7 +73,7 @@ void NativeCodeRegion::retire(NativeRetirement reason) {
 			block.reset();
 			page->nativeBlocks->occupied.reset(entry);
 			--page->nativeBlocks->count;
-			page->words[entry].dispatchOp = nativeWarmDispatch(page->words[entry]);
+			page->words[entry].dispatchOp = nativeWarmDispatch(page->words[entry], page->privateFirmware);
 			page->nativeVisits[entry] = reason == NativeRetirement::Feedback ? NATIVE_BLOCK_COMPILATION_THRESHOLD : 0u;
 		}
 		if (page->nativeBlocks->count == 0u) page->nativeBlocks.reset();

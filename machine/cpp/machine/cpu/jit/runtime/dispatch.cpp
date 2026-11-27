@@ -214,6 +214,14 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 				else cpu.executeHeapServiceStore(*frame, access.slot, access.format, address);
 				break;
 			}
+			case NativeBlockExit::PrivateCall: {
+				const auto& call = exit->operands.call;
+				cpu.executeHeapServiceCall(*frame, call.callee, call.supplied, call.requested);
+				break;
+			}
+			case NativeBlockExit::PrivateReturn:
+				cpu.executeHeapServiceReturn(*frame, exit->operands.returned.first, exit->operands.returned.produced);
+				break;
 			case NativeBlockExit::SkipInstruction: cpu.skipNextInstruction(*frame, true); break;
 			case NativeBlockExit::InvalidOperand:
 			case NativeBlockExit::InvalidConstant: throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
@@ -463,6 +471,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::Continue:
 		case NativeBlockExit::ScalarBoundary:
+		case NativeBlockExit::PrivateCall:
+		case NativeBlockExit::PrivateReturn:
 		case NativeBlockExit::Count:
 			BMSX_UNREACHABLE();
 		}

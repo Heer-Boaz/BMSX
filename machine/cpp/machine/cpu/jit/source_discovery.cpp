@@ -70,7 +70,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
 			enqueue(instruction.bx(), true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);
-		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
+		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b, page.privateFirmware)) enqueue(successorPc, false);
 		else if (nativeBlockHasTerminalContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
 	}
 }

@@ -80,7 +80,7 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 	size_t fixedFieldReads = 0;
 	for (const auto& source : sources) {
 		for (const auto& inst : source.instructions) {
-			auto operation = translateNativeOperation(*inst.decoded);
+			auto operation = translateNativeOperation(*inst.decoded, options.privateFirmware);
 			if (auto* field = std::get_if<NativeTableAccess>(&operation); field && field->keyKind == NativeTableKey::Field) {
 				if (field->readsFixedField()) ++fixedFieldReads;
 				else if (field->mode == NativeTableMode::Write) {
@@ -116,7 +116,7 @@ void NativeIrRegion::build(std::span<const NativeBlockSource> sources, NativeReg
 			const size_t length = index - segment + 1;
 			const NativeBlockSource slice{source.instructions.subspan(segment, length),
 				last ? source.skippedInstruction : nullptr};
-			buildBlock(slice, operations.subspan(segment, length), cpuOwned);
+			buildBlock(slice, operations.subspan(segment, length), cpuOwned, options.privateFirmware);
 			m_blocks.back().sourcePc = source.instructions.front().pc;
 			bindOwnFieldAddresses(m_blocks.back(), std::span(addressUses).subspan(segment, length), segment);
 			segment = index + 1;
