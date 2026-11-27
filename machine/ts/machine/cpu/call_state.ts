@@ -60,12 +60,12 @@ function frameBankWord(domain: ExecutionDomainId): number {
 }
 
 export function writeFrameEntryControl(memory: Memory, offset: number, fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
-	varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
+	varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
 	const ram = memory.ramData();
 	writeLE32(ram, (offset + FrameField.Function) & RAM_RECORD_WORD_MASK, fn);
 	writeLE32(ram, (offset + FrameField.CallSite) & RAM_RECORD_WORD_MASK, callSite);
 	writeLE32(ram, (offset + FrameField.OpenHead) & RAM_RECORD_WORD_MASK, 0);
-	writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, -1);
+	writeLE32(ram, (offset + FrameField.Protected) & RAM_RECORD_WORD_MASK, protectedIndex);
 	const bank = frameBankWord(domain);
 	const placement = (returnCount & CALL_RESULT_EXTEND_TOP) !== 0 ? FRAME_EXTEND_RESULT_TOP : 0;
 	writeLE32(ram, (offset + FrameField.Flags) & RAM_RECORD_WORD_MASK, bank | placement | (completion ? FRAME_COMPLETION : 0));
@@ -116,9 +116,9 @@ export class CallFrame {
 
 	public bindControl(offset: number): void { this.controlOffset = offset & RAM_RECORD_WORD_MASK; }
 	public initializeControl(fn: number, pc: number, callSite: number, completion: boolean, domain: ExecutionDomainId,
-		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number): void {
+		varargBase: number, varargCount: number, returnBase: number, returnCount: number, top: number, closureAddress: number, base: number, capacity: number, protectedIndex = -1): void {
 		writeFrameEntryControl(this.controlMemory, this.controlOffset, fn, pc, callSite, completion, domain, varargBase, varargCount,
-			returnBase, returnCount, top, closureAddress, base, capacity);
+			returnBase, returnCount, top, closureAddress, base, capacity, protectedIndex);
 		this.registers.rebind(this.thread.stackRegisters, base, capacity);
 	}
 	public applyPreparedControl(source: number): void {

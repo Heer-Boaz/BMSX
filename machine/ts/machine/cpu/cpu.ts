@@ -4177,12 +4177,12 @@ export class CPU implements MappedPageInvalidator {
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots,
 		returnBase: number, returnCount: number, returnToCompletionLatch: false,
-		exception: false, callSitePc: number, argBase: number, supplied: number, ordinaryCall: true,
+		exception: false, callSitePc: number, argBase: number, supplied: number, ordinaryCall: true, protectedIndex?: number,
 	): CallFrame | null;
 	private pushFrame(
 		closure: number, args: CallFrame | ValueSlots | ReadonlyArray<Value>,
 		returnBase: number, returnCount: number, returnToCompletionLatch: boolean,
-		exception = false, callSitePc?: number, argBase = 0, supplied = 0, ordinaryCall = false,
+		exception = false, callSitePc?: number, argBase = 0, supplied = 0, ordinaryCall = false, protectedIndex = -1,
 	): CallFrame | null {
 		const flags = this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS);
 		const domain = Closure.executionDomain(flags);
@@ -4206,7 +4206,12 @@ export class CPU implements MappedPageInvalidator {
 		const stackBase = vararg ? argumentBase + count : argumentBase;
 		const capacity = Math.max(1, numParams, maxStack);
 		const end = stackBase + capacity;
-		if (end > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
+		if (end > MAX_THREAD_VALUE_SLOTS) {
+			// Report an impossible protected placement just like a refusal
+			// after acquiring backing, including while starting a handler.
+			if (protectedIndex >= 0) throw new LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
+			throw LUA_OUT_OF_MEMORY_SIGNAL;
+		}
 		const varargBase = argumentBase + numParams;
 		const fits = ordinaryCall && thread.frameSpaceFits(end);
 		if (ordinaryCall && !fits) {
@@ -4215,7 +4220,7 @@ export class CPU implements MappedPageInvalidator {
 			if (services !== null) {
 				const management = this.heapAllocator.managementOffset(), prepared = management + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
 				writeFrameEntryControl(this.memory, prepared, prototype, codeAddress, callSitePc!, false, domain,
-					varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity);
+					varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
 				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, detached ? PREPARED_FRAME_DETACHED_SOURCE : first, supplied);
 				this.memory.writeRamRecordWord(prepared + PreparedFrameField.RelocateFormals, +vararg);
 				let roots = closure;
@@ -4242,7 +4247,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.executionImage = image;
 		frame.decodedPage = null;
 		frame.initializeControl(prototype, codeAddress, callSitePc ?? codeAddress, returnToCompletionLatch,
-			domain, varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity);
+			domain, varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity, protectedIndex);
 		const copied = Math.min(numParams, count);
 		if (fromSlots) {
 			const slots = fromFrame ? args.thread.stackRegisters : args;
@@ -4758,9 +4763,9 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.Closure: {
 				const closure = this.gc.closureRecordAddress(valuePayload(target));
 				if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-				const frame = this.pushFrame(closure, detached ?? caller, 0, 0, false, false,
-					detached === undefined ? caller.pc - INSTRUCTION_BYTES : this.currentInstructionPc, argumentBase, argumentCount);
-				frame.protectedContinuationIndex = continuationIndex;
+				this.pushFrame(closure, detached ?? caller, 0, 0, false, false,
+					detached === undefined ? caller.pc - INSTRUCTION_BYTES : this.currentInstructionPc,
+					argumentBase, argumentCount, true, continuationIndex);
 				return;
 			}
 			case ValueTag.ResidentFunction: {

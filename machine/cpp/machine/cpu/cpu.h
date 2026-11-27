@@ -468,7 +468,7 @@ private:
 		return m_haltedUntilIrqThreadAddress == thread.address && m_haltedUntilIrqFrameDepth == depth;
 	}
 	CallFrame* pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false);
+		CallResultPlacement result, u32 callSitePc, bool ordinaryCall = false, i32 protectedIndex = -1);
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
 	void placeForeignFormals(CallFrame&, const ValueSpan& source, int first, int copied, int padded, int varargBase, int extras);
@@ -477,7 +477,7 @@ private:
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
 	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
-		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false);
+		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, i32 protectedIndex = -1);
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
 	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);

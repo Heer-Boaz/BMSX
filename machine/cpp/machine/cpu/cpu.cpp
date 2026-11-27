@@ -1451,10 +1451,10 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 	if (valueIsClosure(target)) {
 		u32 closure = asClosure(target, m_heap);
 		if (!closure) throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		auto* frame = arguments.frame
-			? pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {}, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES)
-			: pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc);
-		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
+		const auto protectedIndex = static_cast<i32>(continuationIndex);
+		if (arguments.frame) pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {},
+			caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES, true, protectedIndex);
+		else pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc, true, protectedIndex);
 		return;
 	}
 	if (valueTag(target) == ValueTag::ResidentFunction) {
@@ -2962,19 +2962,24 @@ CPU::ClosureActivation CPU::resolveClosureActivation(u32 closure) {
 }
 
 CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCount,
-	CallResultPlacement result, u32 callSitePc, bool ordinaryCall) {
+	CallResultPlacement result, u32 callSitePc, bool ordinaryCall, i32 protectedIndex) {
 	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const int callerArgBase = caller.stackBase() + argBase;
 	const bool sharedStack = caller.thread == m_activeThread;
 	const int argumentBase = sharedStack ? callerArgBase : m_activeThread->stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, argCount, functionRecord.entry);
-	if (!admitted) throw LuaOutOfMemorySignal{};
+	if (!admitted) {
+		// Protected handlers receive the same fault whether the window
+		// is impossible at placement or BIOS backing acquisition fails.
+		if (protectedIndex >= 0) throw LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
+		throw LuaOutOfMemorySignal{};
+	}
 	const auto& placement = *admitted;
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc,
 		frameBankWord(image->executionDomainId),
 		placement.varargBase, placement.varargCount, result, placement.top(),
-		closure, placement.stackBase, static_cast<int>(placement.capacity),
+		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
 	};
 	auto& thread = *m_activeThread;
 	const size_t end = placement.stackEnd();
@@ -3080,19 +3085,24 @@ void CPU::enterPreparedFrame() {
 }
 
 CallFrame* CPU::pushFrame(u32 closure, BuiltinArgsView args,
-	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall) {
+	CallResultPlacement result, u32 flags, std::optional<u32> callSitePc, bool instructionCall, i32 protectedIndex) {
 	const auto [image, functionRecord] = resolveClosureActivation(closure);
 	const size_t argCount = args.size();
 	auto& thread = *m_activeThread;
 	const int argumentBase = thread.stackTop();
 	const auto admitted = ArgumentPlacement::forEntry(argumentBase, static_cast<int>(argCount), functionRecord.entry);
-	if (!admitted) throw LuaOutOfMemorySignal{};
+	if (!admitted) {
+		// Protected handlers receive the same fault whether the window
+		// is impossible at placement or BIOS backing acquisition fails.
+		if (protectedIndex >= 0) throw LuaExecutionError(LUA_FAULT_REASON_OUT_OF_MEMORY);
+		throw LuaOutOfMemorySignal{};
+	}
 	const auto& placement = *admitted;
 	const FrameEntryControl entry{
 		functionRecord.functionAddress, functionRecord.entry.codeAddress, callSitePc.value_or(functionRecord.entry.codeAddress),
 		frameBankWord(image->executionDomainId) | flags,
 		placement.varargBase, placement.varargCount, result, placement.top(),
-		closure, placement.stackBase, static_cast<int>(placement.capacity),
+		closure, placement.stackBase, static_cast<int>(placement.capacity), protectedIndex,
 	};
 	if (instructionCall && !thread.frameSpaceFits(placement.stackEnd())) {
 		const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
