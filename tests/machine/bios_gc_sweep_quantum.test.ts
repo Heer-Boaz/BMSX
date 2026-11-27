@@ -3,21 +3,19 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
-const MODULE = 'kernel/gc_sweep_quantum', entrySource = 'halt_until_irq';
+const MODULE = 'kernel/gc_sweep_quantum';
 const basis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_pace', 'kernel/word_arithmetic',
 	'kernel/gc_strings', 'kernel/gc_thread_compact', 'kernel/gc_objects', 'kernel/heap_admission', 'kernel/gc_epoch',
@@ -29,18 +27,11 @@ const objectCount = 0x70, sweepLink = 0x74;
 const liveText = 'fused sweep-alive', deadText = 'fused sweep-garbage';
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'sweep_quantum');
-	assert.ok(symbol);
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: 'sweep_quantum', arity: 4 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const state = cpu.heapAllocator.managementOffset(), control = state + HEAP_GC_CONTROL_OFFSET;
-	const floor = memory.ramBusEnd() - RAM_BASE, last = state + HEAP_SERVICE_THREAD_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, last = state + GC_WORKSPACE_END;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);
@@ -75,20 +66,18 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function begin(limit: number) {
 		const expected = oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
-		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [state, limit, 0, 0]));
+		issueFirmwareProbe(cpu, [state, limit, 0, 0]);
 		return expected;
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish(expected: number) {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), expected);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(512);
+		assert.equal(firmwareProbeResult(cpu), expected);
 		assert.deepEqual(notices, nativeNotices, 'derived notices are emitted once in retirement order');
 		compare();
 		return spent;
@@ -106,7 +95,7 @@ for (const opt of [0, 3] as const) {
 		const work = f.begin(12);
 		assert.equal(work, 12);
 		for (let n = 0; n < 8192 && memory.readRamRecordByte(f.deadHash) !== 0; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive(), 'the kind write does not retire the fused root');
+		assert.ok(!cpu.isHaltedUntilIrq(), 'the kind write does not retire the fused root');
 		assert.equal(memory.readRamRecordByte(f.deadHash), 0);
 		assert.equal(cpu.heapAllocator.issuedObjectStart(f.deadHash - RAM_BASE - GC_OBJECT_PREFIX), true);
 		assert.equal(f.count(), count, 'the count still belongs to the live object quantum');
@@ -116,7 +105,7 @@ for (const opt of [0, 3] as const) {
 		const notice = captureCpuCheckpoint(cpu);
 		assert.equal(cpu.gc.phase(), GcPhase.Sweep);
 		for (let n = 0; n < 8192 && cpu.gc.phase() === GcPhase.Sweep; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive(), 'the same root owns both phases');
+		assert.ok(!cpu.isHaltedUntilIrq(), 'the same root owns both phases');
 		assert.equal(cpu.gc.phase(), GcPhase.Strings);
 		assert.equal(f.count(), f.nativeCount());
 		assert.ok(f.count() <= count - 2);

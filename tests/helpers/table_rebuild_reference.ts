@@ -1,5 +1,5 @@
 import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
-import { HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
+import { GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import type { GcHeap } from '../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueFromTag, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
@@ -12,6 +12,13 @@ export class TableRebuildReference {
 	arrayStorage = 0; arraySlots = 0; arrayCleared = 0;
 	cleared = 0; homes = 0; cursor = 0; free = 0; collisions = 0;
 	key = valueNil(); value = valueNil();
+}
+
+// Pinned native spendCensusGrant, 3c4f901cbd0343dfcce3e0c3c0ea78486a56a481:table.ts:685–689.
+export function spendTableCensusReference(heap: GcHeap, record: number, capacity: number, density: TableRebuildReference, cycles: number): number {
+	const paidStart = Math.max(density.scanned, 64), n = Math.min(capacity - paidStart, 4 * Math.max(0, cycles));
+	heap.tables['countArrayRange'](record, capacity, density, paidStart + n);
+	return cycles - ((n + 3) >>> 2);
 }
 
 function emptyTailSlots(ram: Uint8Array, tagOffset: number, remaining: number, cycles: number): number {
@@ -177,7 +184,7 @@ export function advanceTableRebuildReference(heap: GcHeap, j: TableRebuildRefere
 		if (j.free !== mask) tables['writeHeader'](j.record, TableHeader.Free, j.free);
 	}
 	heap.budget.replaceRecord(j.source, TableRecords.allocationCharge(oldArray, oldHash), TableRecords.allocationCharge(array, tables.hashSize(j.record)));
-	if (valueTag(j.key) === ValueTag.String && valuePayload(j.key) === heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
+	if (valueTag(j.key) === ValueTag.String && valuePayload(j.key) === heap.diagnosticWord(GcDiagnosticField.NewIndex)) memory.writeRamRecordByte(j.record + TableHeader.NewIndexAbsent, 0);
 	heap.writeTableAssignment(j.record, valueTag(j.value), valuePayload(j.value), j.key);
 	const index = tables['getArrayIndex'](j.key);
 	if (index >= 0) tables['updateLengthHint'](j.record, index, true);

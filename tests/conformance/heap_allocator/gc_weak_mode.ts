@@ -48,9 +48,8 @@ try {
 				trace.push(`G ${budget}`);
 				assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
 				const spent = budget - cpu.instructionBudgetRemaining;
-				expected.push(`${spent} ${+cpu.heapServiceActive()} ${cpu.heapServiceResult()}`);
+				expected.push(`${spent} ${cpu.heapServiceResult()}`);
 			}
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.heapServiceResult(), value);
 		}
 

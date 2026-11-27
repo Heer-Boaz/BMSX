@@ -13,7 +13,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { COP0_EXCEPTION_TARGET as EXCEPTION_TARGET, CPU_CAUSE_IRQ, CPU_STATUS_SYSTEM_ENTRY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_DMA1_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -113,7 +113,7 @@ try {
 		const { cpu, memory, scheduler, irqController } = runtime.machine;
 		const trace: string[] = [], expected: string[] = [];
 		const arena = cpu.heapAllocator, management = arena.managementOffset();
-		const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 		const zeroHeap = new Uint8Array(heapEnd - heapFirst), heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		function observe(cmd: string, output?: string | number) {
@@ -133,10 +133,9 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const elapsed = cycles - cpu.instructionBudgetRemaining;
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.luaHeap.usedBytes(), 0);
 			assert.equal(arena.occupiedBytes(), 0);
-			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0 0`);
+			observe(`J ${cycles} 1`, `${result} ${elapsed} 0 0 0`);
 			return result;
 		}
 		assert.equal(scheduler.nowCycles, 0);

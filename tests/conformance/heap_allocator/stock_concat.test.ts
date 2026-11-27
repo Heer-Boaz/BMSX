@@ -60,7 +60,6 @@ test('ordinary cartridge concatenation preserves bytes and a full-arena intern h
 					assert.equal(op.b, floats.length + 6, 'the window contains the token and the original operands, with no explicit count lane');
 					assert.equal(cpu.readThreadFrameWord(stopped, frame, FrameField.Pc), successor);
 					assert.equal(cpu.readThreadRegister(stopped, frame, op.a), valueInteger(1));
-					assert.equal(cpu.heapServiceActive(), false);
 					return { frame, register: op.a };
 				}
 				assert.fail(`missing BIOS concatenation (cause=${cpu.readCauseWord()}, Lua fault=${cpu.readLuaFaultReasonWord()})`);
@@ -69,11 +68,10 @@ test('ordinary cartridge concatenation preserves bytes and a full-arena intern h
 				for (let grant = 0; grant < 16000 && cpu.fixedInterruptActive(); ++grant) {
 					const result = scheduler.runCpuSlice(0, 73, undefined, CpuRunKind.Scheduled);
 					commands.push('E 73');
-					want.push([result, 73 - cpu.instructionBudgetRemaining, Number(cpu.heapServiceActive()),
+					want.push([result, 73 - cpu.instructionBudgetRemaining,
 						memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 				}
 				assert.equal(cpu.fixedInterruptActive(), false);
-				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(cpu.readLuaFaultReasonWord(), 0);
 				const result = cpu.readFrameRegister(frame, register);
 				assert.equal(valueTag(result), ValueTag.String);

@@ -4,7 +4,7 @@ import { readLE32 } from '../../machine/ts/common/endian';
 import { CpuRunKind } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
@@ -53,7 +53,6 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 	const reset = linked.layout.functions[linked.functionProtoIndices.indexOf(built.object.vectors.resetProtoIndex)];
 	assert.ok(startup && reset && startup.address !== reset.address);
 	assert.equal(reset.flags & BLUA32_FUNCTION_STATIC, BLUA32_FUNCTION_STATIC);
-	assert.equal(reset.flags & BLUA32_FUNCTION_RESIDENT, 0);
 	assert.equal(linked.symbols.metadata.functionIds[linked.symbols.metadata.functionDisplayNames.indexOf('reset')].endsWith('/reset'), true);
 	assert.equal(readLE32(rom, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET), reset.address);
 	assert.equal(linked.symbols.metadata.preloadModules.includes(resetPath), false);
@@ -72,7 +71,6 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
-		assert.equal(cpu.heapServiceActive(), false);
 	};
 	assertRaw();
 	assert.equal(cpu.readFramePc(0), reset.codeAddress);
@@ -87,7 +85,7 @@ for (const optLevel of [0, 3] as const) test('System ROM publishes and runs its 
 		retired.push(instruction.op);
 		if (instruction.op === OpCode.CLOSURE) {
 			const fn = linked.layout.functions.find(body => body.address === instruction.bx * BLUA32_FUNCTION_ALIGNMENT)!;
-			assert.equal(readLE32(rom, fn.address + BLUA32_FUNCTION_FLAGS_OFFSET) & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_RESIDENT), BLUA32_FUNCTION_CODE);
+			assert.equal(readLE32(rom, fn.address + BLUA32_FUNCTION_FLAGS_OFFSET) & (BLUA32_FUNCTION_CODE), BLUA32_FUNCTION_CODE);
 			assert.equal(frame.registers.getTag(instruction.a), ValueTag.CodeFunction);
 		}
 		assertRaw();

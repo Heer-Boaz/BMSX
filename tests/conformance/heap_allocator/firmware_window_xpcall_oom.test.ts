@@ -90,7 +90,7 @@ return ok, result, trailing
 	function grant(rt: Runtime, budget = 3072) {
 		const { cpu, memory, scheduler } = rt.machine;
 		const run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
-		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return run;
 	}
 

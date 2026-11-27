@@ -1,24 +1,20 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_CHANGED_HEAD, GC_TRACE_HEAD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import { UPVALUE_NEXT } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const MARK = 'kernel/gc_mark', PROBE = 'test/gc_mark';
-const entrySource = 'halt_until_irq';
 const probeSource = `module<const>
 local mark<const> = require('${MARK}')
 local mark_value<const> = function(control, arena, metadata, tag, payload, queue, replace, output)
@@ -29,29 +25,22 @@ local mark_value<const> = function(control, arena, metadata, tag, payload, queue
 end
 return { mark_value = mark_value }
 `;
-const modules = [
-	...['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', MARK].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
-	{ path: PROBE, source: probeSource },
-].map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
+const modules = [{ path: PROBE, source: probeSource, chunk: parseLuaChunk(probeSource, PROBE) }];
+const leaves = [
+	{ path: PROBE, member: 'mark_value', arity: 8 },
+	{ path: MARK, member: 'mark_record', arity: 6 },
+	{ path: MARK, member: 'enqueue', arity: 5, result: false },
+] as const;
+type Entry = typeof leaves[number]['member'];
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
-	const entries = new Map<string, number>();
-	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
-		if (path !== PROBE && (path !== MARK || exportPathKey.startsWith('internal.') || exportPathKey === 'mark_value')) continue;
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-		assert.ok(index >= 0, `${path}.${exportPathKey}`);
-		entries.set(exportPathKey, index);
-	}
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
+	const linked = linkFirmwareProbe(optLevel, modules, leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const output = management + HEAP_SERVICE_THREAD_OFFSET - 4;
+	const output = management + GC_WORKSPACE_END - 4;
 	const floor = memory.ramBusEnd() - RAM_BASE;
 	function compare(label = 'private heap state') {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
@@ -69,19 +58,16 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(address, value);
 		oracle.memory.writeRamRecordWord(address, value);
 	}
-	function begin(name: string, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entries.get(name)!].address, [control, ...args]));
+	function begin(name: Entry, ...args: number[]) {
+		issueFirmwareProbe(cpu, [control, ...args], leaves.findIndex(leaf => leaf.member === name));
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < cycles, 'ordinary guest instructions retire');
-		return cycles - cpu.instructionBudgetRemaining;
+		return grantFirmwareProbe(cpu, cycles);
 	}
 	function finish(cycles = 128) {
 		let retired = 0;
-		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) retired += grant(cycles);
-		assert.equal(cpu.heapServiceActive(), false);
-		return [cpu.heapServiceResult(), retired];
+		for (let i = 0; i < 512 && !cpu.isHaltedUntilIrq(); ++i) retired += grant(cycles);
+		return [firmwareProbeResult(cpu), retired];
 	}
 	function markValue(tag: ValueTag, payload: number) {
 		const objectWork = +oracle.gc.markValue(valueFromTag(tag, payload));
@@ -101,7 +87,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua markValue follows raw tags, object issuance and String work at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, metadata, add, word, markValue } = fixture(optLevel);
 		const table = add(target => target.createTable(3, 2));
-		const closure = add(target => target.rootThread.currentFrame!.closure);
+		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
 		const backing = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
 		const string = add(target => target.stringPool.intern('unvisited-ram-string'));
@@ -130,7 +116,6 @@ for (const optLevel of [0, 3] as const) {
 			assert.deepEqual(markValue(ValueTag.String, id), [0, 0]);
 		for (const tag of [ValueTag.Nil, ValueTag.Integer, ValueTag.Float, ValueTag.BuiltinFunction, ValueTag.DeadKey])
 			assert.deepEqual(markValue(tag, table), [0, 0]);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(oracle.stringPool.takeMarkWork(), 0);
 	});
 
@@ -145,7 +130,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(oracle.gc['markRecord'](table, ValueTag.Table, GC_CHANGED_HEAD), true);
 		begin('mark_record', arena, table, ValueTag.Table, GC_CHANGED_HEAD, 0);
 		for (let i = 0; i < 512 && memory.readRamRecordByte(table + GC_COLOR_OFFSET) !== 0x5e; ++i) grant(1);
-		assert.equal(cpu.heapServiceActive(), true);
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(memory.readRamRecordByte(table + GC_COLOR_OFFSET), 0x5e);
 		assert.equal(memory.readRamRecordWord(table + GC_RECORD_LINK), ((oldLink & ~GC_GRAY_INDEX_MASK) | (oldHead & GC_GRAY_INDEX_MASK)) >>> 0);
 		assert.equal(memory.readRamRecordWord(control + GC_CHANGED_HEAD), oldHead, 'queue publication has not yet retired');

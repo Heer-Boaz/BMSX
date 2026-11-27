@@ -2,11 +2,10 @@
 
 #include "machine/cpu/decoded_instruction.h"
 #include "spec/blua32/cop0.h"
-#include "spec/blua32/image_format.h"
 
 namespace bmsx {
 
-NativeOperation translateNativeOperation(const DecodedInstruction& instruction, bool privateFirmware) {
+NativeOperation translateNativeOperation(const DecodedInstruction& instruction) {
 	const auto op = static_cast<OpCode>(instruction.op);
 	const auto a = instruction.a;
 	const auto b = instruction.b, c = instruction.c;
@@ -95,8 +94,6 @@ NativeOperation translateNativeOperation(const DecodedInstruction& instruction, 
 	case OpCode::RET: return NativeReturnSite{{a, static_cast<i16>(decodeValueCount(b, -1))}};
 	case OpCode::HALT: return NativeHalt{};
 	case OpCode::CLOSURE:
-		if (privateFirmware)
-			return NativeLiteral{a, valueInteger(static_cast<i32>(instruction.bx() * BLUA32_FUNCTION_ALIGNMENT))};
 		return NativeClosure{{instruction.bx(), a, static_cast<u16>(c)}};
 	case OpCode::SVC: return NativeSupervisorCall{{a, static_cast<u16>(b)}};
 	case OpCode::RFE: return NativeExceptionReturn{};

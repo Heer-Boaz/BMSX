@@ -66,7 +66,7 @@ bool FrameLoopState::prepareScheduledFrame(Runtime& runtime) {
 }
 
 void FrameLoopState::finalizeUpdateSlice(Runtime& runtime) {
-	if ((runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) && !runtime.vblank.tickCompleted()) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry && !runtime.vblank.tickCompleted()) {
 		return;
 	}
 	abandonFrameState(runtime);
@@ -80,7 +80,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 			|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		if (consumeSystemReset(runtime)) return false;
 	}
-	if (runtime.m_pendingCall == Runtime::PendingCall::Entry || runtime.machine.cpu.heapServiceActive()) {
+	if (runtime.m_pendingCall == Runtime::PendingCall::Entry) {
 		const bool executionStopped = runUpdatePhase(runtime);
 		frameState.updateExecuted = runtime.m_pendingCall != Runtime::PendingCall::Entry;
 		finalizeUpdateSlice(runtime);
@@ -96,7 +96,7 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 		finalizeUpdateSlice(runtime);
 		return InstructionStepResult::Advanced;
 	}
-	if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !runtime.machine.cpu.heapServiceActive()) {
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 		finalizeUpdateSlice(runtime);
 		return InstructionStepResult::Advanced;
 	}
@@ -109,14 +109,14 @@ InstructionStepResult FrameLoopState::runActiveFrameInstruction(Runtime& runtime
 bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
 	while (true) {
-		if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 			const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-			if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 				return false;
 			}
 			continue;
 		}
-		if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !cpu.heapServiceActive()) {
+		if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 			return false;
 		}
 		const CpuExecutionResult result = runtime.cpuExecution.runWithBudget(runtime, frameState);
@@ -138,20 +138,20 @@ bool FrameLoopState::runUpdatePhase(Runtime& runtime) {
 
 InstructionStepResult FrameLoopState::runUpdateInstruction(Runtime& runtime) {
 	auto& cpu = runtime.machine.cpu;
-	if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+	if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 		const i64 previousRemaining = frameState.cycleBudgetRemaining;
 		const bool tickCompleted = runtime.cpuExecution.runStoppedCpu(runtime, frameState);
-		if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+		if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 			return tickCompleted || frameState.cycleBudgetRemaining != previousRemaining
 				? InstructionStepResult::Advanced
 				: InstructionStepResult::Blocked;
 		}
 	}
-	if (runtime.m_pendingCall != Runtime::PendingCall::Entry && !cpu.heapServiceActive()) {
+	if (runtime.m_pendingCall != Runtime::PendingCall::Entry) {
 		return InstructionStepResult::Blocked;
 	}
 	const InstructionStepResult result = runtime.cpuExecution.runInstruction(runtime, frameState);
-	if (cpu.getFrameDepth() == 0 && !cpu.heapServiceActive()) {
+	if (cpu.getFrameDepth() == 0) {
 		runtime.m_pendingCall = Runtime::PendingCall::None;
 		runtime.frameScheduler.clearQueuedTime();
 		abandonFrameState(runtime);
@@ -178,7 +178,7 @@ bool FrameLoopState::tickUpdate(Runtime& runtime) {
 		return false;
 	}
 	if (frameActive
-		&& ((!runtime.machine.cpu.heapServiceActive() && runtime.machine.cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld())
+		&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 		&& runtime.machine.scheduler.nextDeadline() == std::numeric_limits<i64>::max()) {
 		// Cart parked waiting for an interrupt that nothing has scheduled: report
 		// no progress so the scheduler yields the host slice instead of spinning.

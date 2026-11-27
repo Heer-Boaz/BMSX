@@ -3,15 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_BITS } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueInteger, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField, HeapServiceTraceField,
-} from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -40,16 +37,16 @@ function fixture(optLevel: 0 | 3) {
 	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(fn >= 0);
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
+	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-	const roots = management + HEAP_SERVICE_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;
+	const context = management + GC_TRACE_CONTEXT_OFFSET;
+	const roots = management + GC_ROOT_BANKS_OFFSET, first = memory.ramBusEnd() - RAM_BASE;
 	const beforeWork = control + GC_LAST_EPOCH_WORK - 4;
 	const records: number[][] = [];
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		const { gc, stringPool } = target, modeKey = gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
+		const { gc, stringPool } = target, modeKey = gc.diagnosticWord(GcDiagnosticField.Mode);
 		const weak = target.createTable(arraySlots, 0), meta = target.createTable(0, 2);
 		const firstDead = target.createTable(0, 0), secondDead = target.createTable(0, 0), retained = target.createTable(0, 0);
 		gc.tables.set(meta, valueString(modeKey), valueString(stringPool.intern('v')));
@@ -68,7 +65,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.deepEqual(records[0], records[1]);
 	const [weak, array, firstDead, secondDead, retained] = records[0];
 	function begin(limit: number) {
-		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0, 0]));
 	}
 	function grant(cycles: number) {
@@ -80,9 +77,8 @@ function fixture(optLevel: 0 | 3) {
 	function finish() {
 		let cycles = 0;
 		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) cycles += grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(context + HeapServiceTraceField.PendingStringWork));
+		cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork));
 		return [cpu.heapServiceResult(), cycles];
 	}
 	function compare() {

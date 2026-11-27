@@ -71,7 +71,7 @@ for (const opt of [0, 3] as const) test(`firmware canonicalizes and reclaims a R
 	const grant = (cycles: number) => {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		commands.push(`J ${cycles} 1`);
-		rows.push(`${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+		rows.push(`${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 		return result;
 	};
 	const seek = () => {
@@ -82,7 +82,7 @@ for (const opt of [0, 3] as const) test(`firmware canonicalizes and reclaims a R
 				&& frame!.argumentCount === 11 && frame!.registers.get(1) === valueInteger(proto)) return frame!;
 			assert.notEqual(grant(1), RunResult.Halted);
 		}
-		assert.fail(`missed CLOSURE @${proto.toString(16)}: pc ${cpu.lastPc.toString(16)}, epc ${cpu.readEpcWord().toString(16)}, cause ${cpu.readCauseWord()}, depth ${cpu.getFrameDepth()}, fixed ${cpu.fixedInterruptActive()}, resident ${cpu.heapServiceActive()}`);
+		assert.fail(`missed CLOSURE @${proto.toString(16)}: pc ${cpu.lastPc.toString(16)}, epc ${cpu.readEpcWord().toString(16)}, cause ${cpu.readCauseWord()}, depth ${cpu.getFrameDepth()}, fixed ${cpu.fixedInterruptActive()}`);
 	};
 	const land = (packet: ReturnType<typeof seek>) => {
 		const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);

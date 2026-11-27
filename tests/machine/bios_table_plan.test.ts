@@ -1,20 +1,17 @@
-import { TableRebuildReference } from '../helpers/table_rebuild_reference';
+import { spendTableCensusReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, type Value, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const MODULE = 'kernel/table_plan';
 const port = 'machine/bios/kernel/table_plan.lua';
@@ -46,23 +43,15 @@ const probe = `module<const>
 		return 1
 	end
 	return { record_plan = record_plan, policy_plan = policy_plan }`;
-const entrySource = 'halt_until_irq';
-const roots = [[PROBE, 'record_plan'], [PROBE, 'policy_plan'], [MODULE, 'spend_census_grant']] as const;
 const modules = [{ path: MODULE, source }, { path: PROBE, source: probe }].map(module =>
 	({ ...module, chunk: parseLuaChunk(module.source, module.path) }));
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const protoIndices = roots.map(([path, key]) => {
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === key);
-		assert.ok(symbol);
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-		assert.ok(index >= 0);
-		return index;
-	});
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, protoIndices);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `stack: ${frames} frames, ${valueSlots} values`);
+	const linked = linkFirmwareProbe(optLevel, modules, [
+		{ path: PROBE, member: 'record_plan', arity: 6 },
+		{ path: PROBE, member: 'policy_plan', arity: 8 },
+		{ path: MODULE, member: 'spend_census_grant', arity: 3 },
+	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	function same<T>(action: (target: CPU) => T): T {
@@ -78,17 +67,17 @@ function fixture(optLevel: 0 | 3) {
 	const out = (count: number) => Array.from({ length: count }, (_, i) => memory.readRamRecordWord(scratch + SCRATCH_BYTES + 4 * i));
 	const densityWords = () => Array.from({ length: 4 }, (_, i) => memory.readRamRecordWord(scratch + 4 * i));
 	function begin(which: 0 | 1 | 2, args: readonly number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[protoIndices[which]].address, args));
+		issueFirmwareProbe(cpu, args, which);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cycles - cpu.instructionBudgetRemaining > 0);
+		const spent = grantFirmwareProbe(cpu, cycles);
+		assert.ok(spent > 0);
+		return spent;
 	}
 	function finish() {
-		for (let i = 0; i < 2048 && cpu.heapServiceActive(); ++i) grant(256);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 2048 && !cpu.isHaltedUntilIrq(); ++i) grant(256);
 		assert.equal(memory.readRamRecordWord(scratch + SCRATCH_BYTES + 28), 0x27a0bf63);
-		return cpu.heapServiceResult() | 0;
+		return firmwareProbeResult(cpu) | 0;
 	}
 	function plan(record: number, key: Value, extra: number, counted?: TableRebuildReference) {
 		const { tables } = oracle.gc;
@@ -163,14 +152,13 @@ for (const opt of [0, 3] as const) {
 		});
 		const job = new TableRebuildReference();
 		for (const budget of [0, 3, -2, 147, 23, 2000]) {
-			f.oracle.instructionBudgetRemaining = budget;
-			f.oracle.gc.tables['spendCensusGrant'](record, array, job, f.oracle);
-			const expected = { cycles: f.oracle.instructionBudgetRemaining, density: [job.scanned, job.live, job.slots, job.kept] };
+			const cycles = spendTableCensusReference(f.oracle.gc, record, array, job, budget);
+			const expected = { cycles, density: [job.scanned, job.live, job.slots, job.kept] };
 			f.begin(2, [record, f.scratch, budget]);
 			if (budget === 147) {
 				const before = f.densityWords()[0];
-				do { f.grant(49); } while (f.cpu.heapServiceActive() && f.densityWords()[0] === before);
-				assert.equal(f.cpu.heapServiceActive(), true);
+				do { f.grant(49); } while (!f.cpu.isHaltedUntilIrq() && f.densityWords()[0] === before);
+				assert.equal(f.cpu.isHaltedUntilIrq(), false);
 				assert.ok(f.densityWords()[0] > before && f.densityWords()[0] < expected.density[0]);
 				const checkpoint = captureCpuCheckpoint(f.cpu);
 				assert.equal(f.finish(), expected.cycles);

@@ -221,15 +221,11 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
-	// Trusted entry to an immutable, link-verified system routine.
-	bool beginHeapService(u32 functionAddress, std::span<const u32> args);
-	bool heapServiceActive() const;
 	bool fixedInterruptActive() const { return m_activeThread == &m_irqView; }
 	bool fixedInterruptDefersReset() const { return fixedInterruptActive() && (m_runSignals & RunHardHalted) == 0u; }
 	bool systemResetInhibited() const {
-		return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u || heapServiceActive() || fixedInterruptDefersReset();
+		return (m_cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) != 0u || fixedInterruptDefersReset();
 	}
-	u32 heapServiceResult() const;
 	// Move an evicted snapshot here to reuse its storage without copying it.
 	CpuRuntimeState captureRuntimeState(std::vector<Value> completionStorage = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
@@ -332,24 +328,11 @@ private:
 	GrantAdmission admitGrant(const Thread&, int targetDepth, int remainingCycles) const;
 	static RunResult runUntilDepthNormal(CPU& cpu, int targetDepth, int instructionBudget);
 	static RunResult runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instructionBudget);
-	template <bool RootBoundary, bool Instrumented, bool HeapService = false>
+	template <bool RootBoundary, bool Instrumented>
 	RunResult runLoop(
 		int targetDepth,
 		int instructionBudget
 	);
-	void initializeHeapService();
-	CallFrame& prepareHeapServiceFrame(u32 functionAddress, int base, int supplied,
-		CallResultPlacement result, std::optional<u32> callSite);
-	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result);
-	void finishResidentCall(u32 flags);
-	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
-	void executeHeapServiceReturn(CallFrame&, int base, int produced);
-	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);
-	void executeHeapServiceStore(CallFrame&, int source, MemoryAccessKind, u32 address);
-	void writeHeapServiceProjection(u32 word);
-	void admitHeapServiceAccess(MemoryAccessKind, u32 address) const;
-	void admitPrivateValueSpan(u32 address, u32 management) const;
-	u32 readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const;
 	void runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, CallResultPlacement, BuiltinArgsView);
 	void callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out);
 	void runBuiltinNextValue(Value target, Value key, BuiltinResults& out);
@@ -372,7 +355,7 @@ private:
 	void clearNativeContinuationBindings();
 #endif
 	void invalidateDecodedWords(u64 key, u32 firstWord, u32 endWord);
-	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc, bool privateFirmware = false);
+	DecodedInstructionPage& decodedPageForFrame(CallFrame& frame, u32 pc);
 	void refreshDecodedFusion(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc);
 	bool decodeInstruction(CallFrame& frame, DecodedInstructionPage& page, u32 pageOffset, u32 pc, bool allowFusion);
 	void decodeInstructionWords(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
@@ -448,7 +431,7 @@ private:
 	void releaseLocalRoots(size_t base);
 	void trackLocalRoot(Value value);
 
-	void skipNextInstruction(CallFrame& frame, bool privateFirmware = false);
+	void skipNextInstruction(CallFrame& frame);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	friend class NativeBlockGate;
 	friend struct NativeCpuRunState;
@@ -468,7 +451,7 @@ private:
 	void compileNativeRoot(Blua32ExecutionImage&, u32 functionAddress, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	void prepareNativeBlock(CallFrame&, DecodedInstructionPage&, u32 pc, MappedBusSignals);
 	bool prepareNativeFunction(Blua32ExecutionImage&, const Blua32RomFunctionVersion&, u32 rootPc,
-		MappedBusSignals, NativeWarmupAdmission* = nullptr, bool privateFirmware = false);
+		MappedBusSignals, NativeWarmupAdmission* = nullptr);
 	void observeNativeArithmeticReplay(DecodedInstructionPage&, u32 word, NativeArithmeticFeedback assumption, Value left, Value right);
 	void retireNativeInstructionUsers(DecodedInstructionPage&, u32 word);
 	void recompileNativeSource(CallFrame&, DecodedInstructionPage&, u32 changedWord, u32 sourcePc);
@@ -492,7 +475,7 @@ private:
 		// backing words or the rest of the physical page.
 		std::array<std::bitset<DECODED_PAGE_WORDS>, NATIVE_VERSION_REGION_MAX_PAGES> feedbackHeads;
 		u32 pageCount = 0, slot = 0, rootPc = 0;
-		bool invalidated = false, privateFirmware = false;
+		bool invalidated = false;
 		std::span<const NativeCodeSourcePage> sources() const { return std::span(pages).first(pageCount); }
 	} m_pendingNativeCompilation;
 #endif
@@ -536,8 +519,6 @@ private:
 	void hardHalt();
 	void blockMappedWrite(CallFrame& frame, uint32_t address);
 	void resumePendingMemoryOperation();
-	void publishHeapRemarkHead();
-	void publishHeapRootBanks();
 	void markRootHead(GcHeap& heap);
 	void markScopedRoots(GcHeap& heap);
 	void markRootThreads(GcHeap& heap);
@@ -603,7 +584,6 @@ private:
 	GcHeap m_heap;
 	Thread m_rootView;
 	Thread m_irqView;
-	Thread m_heapServiceView;
 	std::array<Thread, 2> m_transferViews;
 	std::array<BuiltinFunction, BUILTIN_FUNCTION_COUNT> m_builtinFunctions;
 

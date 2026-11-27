@@ -75,7 +75,7 @@ local prepare<const> = function(width, argument)
 	end
 	-- There is no issuing allocation allowance in the fixed vector. If
 	-- backing remains unavailable the direct target cannot be entered.
-	return frames.prepare_frame_space(management, interrupted, values, depth, root, 0, true) == 0
+	return frames.prepare_frame_space(management, interrupted, values, depth, root, 0) == 0
 end
 
 local take_trap_value<const> = function()

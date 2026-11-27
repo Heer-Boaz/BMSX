@@ -11,7 +11,7 @@ import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/exec
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -40,7 +40,7 @@ const runtime = new Runtime({
 });
 const { cpu, memory, scheduler } = runtime.machine;
 const arena = cpu.heapAllocator, management = arena.managementOffset();
-const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 const zeroHeap = new Uint8Array(heapEnd - heapFirst);
 const heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap, 'power-on has no managed metadata');
@@ -60,12 +60,11 @@ const trace = ['P', `M ${IO_IRQ_MASK}`, `H ${heapFirst} ${heapEnd}`], expected =
 function grant(cycles: number, result: RunResult, paid: number) {
 	assert.equal(scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled), result);
 	assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(arena.occupiedBytes(), 0);
 	assert.equal(cpu.luaHeap.usedBytes(), 0);
 	assert.deepEqual(memory.ramData().subarray(heapFirst, heapEnd), zeroHeap);
 	trace.push(`J ${cycles} 1`, `H ${heapFirst} ${heapEnd}`);
-	expected.push(`${result} ${paid} 0 0 0 0`, String(heapHash));
+	expected.push(`${result} ${paid} 0 0 0`, String(heapHash));
 }
 grant(1, RunResult.Yielded, 2);
 assert.equal(cpu.readFramePc(0), entryPc + INSTRUCTION_BYTES);

@@ -82,7 +82,7 @@ try {
 			const ready = cpu.stringPool.find('interrupt_ready')!;
 			for (let grant = 0; grant < 20000 && result === RunResult.Yielded; grant++) {
 				if (!admitted && cpu.activeThread !== cpu.rootThread && cpu.getFrameDepth() !== 0
-					&& !cpu.fixedInterruptActive() && !cpu.heapServiceActive() && cpu.getGlobalByKey(ready) === valueBool(true)) {
+					&& !cpu.fixedInterruptActive() && cpu.getGlobalByKey(ready) === valueBool(true)) {
 					cpu.requestNonMaskableInterrupt();
 					assert.equal(cpu.enterPendingInterrupt(), true);
 					admitted = true;

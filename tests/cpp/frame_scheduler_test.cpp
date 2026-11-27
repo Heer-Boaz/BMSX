@@ -273,7 +273,7 @@ void testDeviceVblankDoesNotStartPhysicalCollection() {
 			&& scheduler.lastTickSequence == 1 && heap.phase() == GcPhase::Pause,
 			"device time reaches VBlank without a CPU IRQ or any marking");
 		require((runtime.machine.memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK) != 0u
-			&& runtime.machine.memory.readRamRecordWord(workAddress) == 0u && !cpu.heapServiceActive(),
+			&& runtime.machine.memory.readRamRecordWord(workAddress) == 0u,
 			"VBlank leaves only a hardware request without a hidden pressure opportunity");
 		const auto clock = runtime.machine.scheduler.nowCycles();
 		scheduler.clearQueuedTime();

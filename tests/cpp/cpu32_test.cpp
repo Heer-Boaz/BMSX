@@ -744,8 +744,7 @@ void tableHeap() {
 }
 } // namespace
 int main(int argc, char** argv) {
-	const bool profileFullGc = argc == 5 && std::string_view(argv[3]) == "--profile-full-gc";
-	if ((argc == 2 || argc == 3 || profileFullGc) &&
+	if ((argc == 2 || argc == 3) &&
 		std::string(argv[1]) == "--execute-rom") {
 		const std::vector<u8> bytes(std::istreambuf_iterator<char>(std::cin), {});
 		Memory memory(MemoryInit{bytes, test::cartridgeSlots()}, PSX_MACHINE_SPEC.ramBytes);
@@ -756,15 +755,12 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 		cpu.prepareSystemNativeCode();
 #endif
-		int fullGcCycles = 0;
-		if (test::runCpuWithinBudget(cpu, argc >= 3 ? std::stoi(argv[2]) : 100000, 0,
-			profileFullGc ? &fullGcCycles : nullptr, profileFullGc ? static_cast<u32>(std::stoul(argv[4])) : 0u) != RunResult::Halted) {
+		if (test::runCpuWithinBudget(cpu, argc >= 3 ? std::stoi(argv[2]) : 100000) != RunResult::Halted) {
 			std::cerr << "ROM did not finish within its cycle grant\n";
 			return 1;
 		}
 		auto results = cpu.readCompletionValues();
 		std::cout << "budget " << cpu.instructionBudgetRemaining << " fault " << cpu.readLuaFaultReasonWord() << "\n";
-		if (profileFullGc) std::cout << "full-gc " << fullGcCycles << '\n';
 		for (size_t i = 0; i < results.size(); ++i) {
 			const auto value = results.get(i);
 			if (valueIsString(value))

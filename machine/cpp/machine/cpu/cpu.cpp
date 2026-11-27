@@ -23,7 +23,6 @@
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"
-#include "spec/bmsx/heap_service.h"
 #include "machine/memory/memory.h"
 #include "machine/scheduler/device.h"
 #include <algorithm>
@@ -92,7 +91,6 @@ CPU::CPU(
 	, m_heap(*this, m_luaHeap, m_memory, m_heapAllocator, m_stringPool)
 	, m_rootView(m_heap)
 	, m_irqView(m_heap)
-	, m_heapServiceView(m_heap)
 	, m_transferViews{Thread{m_heap}, Thread{m_heap}}
 	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
 	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
@@ -111,7 +109,6 @@ CPU::CPU(
 	}
 	m_activeThread = &m_rootView;
 	m_memory.attachMappedPageInvalidator(*this);
-	initializeHeapService();
 }
 
 static_assert(CPU_RESET_BANK_ADDRESS + THREAD_HEAP_BYTES == CPU_RESET_BANK_END);
@@ -173,7 +170,6 @@ u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count) {
 
 void CPU::reset() {
 	if (fixedInterruptDefersReset()) throw BMSX_RUNTIME_ERROR("System IRQ must retire before reset.");
-	if (heapServiceActive()) throw BMSX_RUNTIME_ERROR("Heap service must retire before CPU reset.");
 	const u32 previousRoot = m_rootView.address;
 	if (previousRoot != 0u && previousRoot != CPU_RESET_BANK_ADDRESS) {
 		m_cop0Words[COP0_CONTEXT] = previousRoot;
@@ -511,7 +507,7 @@ void CPU::resumeFrameBank() {
 }
 
 void CPU::replaceExecutionImage(Blua32ExecutionBoot executionBoot) {
-	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
+	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	std::unique_ptr<Blua32ExecutionImage>& imageEntry = m_executionImagesByDomain[
 		static_cast<size_t>(executionBoot.executionDomainId + 1)
 	];
@@ -762,19 +758,17 @@ void CPU::invalidateMappedRange(u64 firstKey, u64 endKey) {
 			}
 		};
 		rebindPages(image->decodedPages);
-		if (image->privateFirmwareCode && address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
-			rebindPages(image->privateFirmwareCode->decoded);
 	}
 }
 
-DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc, bool privateFirmware) {
+DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc) {
 	const u32 pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-	const auto slot = privateFirmware ? 0u : m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
+	const auto slot = m_memory.cartridgeController().selectedSlot(m_executionBusSignals);
 	const u64 key = mappedPageAddressKey(pageAddress, slot);
-	if (frame.decodedPage && frame.decodedPage->mapping.key == key && frame.decodedPage->privateFirmware == privateFirmware) {
+	if (frame.decodedPage && frame.decodedPage->mapping.key == key) {
 		return *frame.decodedPage;
 	}
-	auto& directory = frame.executionImage->decodedDirectory(privateFirmware);
+	auto& directory = frame.executionImage->decodedPages;
 	auto* page = directory.find(key);
 	if (!page) {
 		MappedPageBinding binding;
@@ -787,9 +781,9 @@ DecodedInstructionPage& CPU::decodedPageForFrame(CallFrame& frame, u32 pc, bool 
 }
 
 
-void CPU::skipNextInstruction(CallFrame& frame, bool privateFirmware) {
+void CPU::skipNextInstruction(CallFrame& frame) {
 	const u32 pc = frame.readControl(FrameField::Pc);
-	DecodedInstructionPage& page = decodedPageForFrame(frame, pc, privateFirmware);
+	DecodedInstructionPage& page = decodedPageForFrame(frame, pc);
 	const u32 offset = (pc & MAPPED_PAGE_BYTE_MASK) >> 2;
 	if ((page.refreshState[offset] & DECODED_REFRESH_DECODE) != 0u
 		&& !decodeInstruction(frame, page, offset, pc, false)) {
@@ -1072,7 +1066,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 }
 
 void CPU::beginCompletionCall(u32 closure, BuiltinArgsView args, u32 codeFunction) {
-	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
+	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	if (m_unpublishedRomMask != 0u)
 		throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
@@ -1096,7 +1090,7 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
-	if (heapServiceActive() || fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
+	if (fixedInterruptActive()) throw BMSX_RUNTIME_ERROR("Fixed execution must retire before replacing code execution.");
 	if (m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	m_heap.finishFinalMark();
 	auto* image = executionImageForDomain(executionDomainId);
@@ -1191,7 +1185,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
 	bindPhysicalFrames(m_rootView);
-	bindPhysicalFrames(m_heapServiceView);
 	m_activeThread = &bindThread(state.activeThreadAddress);
 	if (!boardBank) {
 		bindFixedIrqBank();
@@ -1367,7 +1360,7 @@ AcceptedInterruptKind CPU::peekPendingInterrupt() const {
 }
 
 bool CPU::enterPendingInterrupt() {
-	if (fixedInterruptActive() || heapServiceActive()) return false;
+	if (fixedInterruptActive()) return false;
 	if (m_pendingMemory.kind != PendingMemoryKind::None || m_stringComparison.remaining) return false;
 	if ((m_runSignals & RunNonMaskableInterrupt) != 0u) {
 		m_runSignals &= ~RunNonMaskableInterrupt;
@@ -1636,7 +1629,6 @@ void CPU::resumeMemoryWrite(uint32_t address) {
 }
 
 #include "machine/cpu/cpu_calls.inl"
-#include "machine/cpu/cpu_heap_service.inl"
 #include "machine/cpu/cpu_memory.inl"
 #include "machine/cpu/cpu_control.inl"
 #include "machine/cpu/cpu_strings.inl"
@@ -1651,13 +1643,13 @@ inline CPU::GrantAdmission CPU::admitGrant(const Thread& thread, int targetDepth
 	return GrantAdmission::Admitted;
 }
 
-template <bool RootBoundary, bool Instrumented, bool HeapService>
+template <bool RootBoundary, bool Instrumented>
 RunResult CPU::runLoop(
 	int targetDepth,
 	int instructionBudget
 ) {
 	instructionBudgetRemaining = instructionBudget;
-	Thread& thread = HeapService ? m_heapServiceView : *m_activeThread;
+	Thread& thread = *m_activeThread;
 	const bool canInterrupt = &thread != &m_irqView;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
@@ -1692,14 +1684,12 @@ RunResult CPU::runLoop(
 	} \
 } while (0)
 	bool canReuseFrame = false;
-	constexpr bool privateFirmware = HeapService;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	const NativeBlock* nativeBlock = nullptr;
 	int nativeFirstDispatchCycles = 0;
 	NativeCpuRunState nativeState(*this, targetDepth);
-	nativeState.privateFirmware = privateFirmware;
 #define OBSERVE_SCALAR_ARITHMETIC(left, right) do { \
-	if constexpr (!Instrumented && !HeapService) { \
+	if constexpr (!Instrumented) { \
 		if (nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic) { \
 			const auto assumption = *nativeState.replay->arithmetic; \
 			nativeState.replay.reset(); \
@@ -1713,37 +1703,26 @@ RunResult CPU::runLoop(
 #endif
 	for (;;) {
 		try {
-			if constexpr (HeapService) {
-				if ((m_runSignals & RunHardHalted) != 0u || thread.frameDepth() == 0) return RunResult::Halted;
-				if ((m_runSignals & RunYield) != 0u) {
+			auto admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+			if (admission == GrantAdmission::Admitted && m_pendingMemory.kind != PendingMemoryKind::None) {
+				resumePendingMemoryOperation();
+				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+			}
+			if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
+				advanceStringComparison(*thread.currentFrame);
+				admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
+			}
+			switch (admission) {
+				case GrantAdmission::Admitted: break;
+				case GrantAdmission::Halted: return RunResult::Halted;
+				case GrantAdmission::RequestedYield:
 					m_runSignals &= ~RunYield;
 					return RunResult::Yielded;
-				}
-				if (instructionBudgetRemaining <= 0) return RunResult::Yielded;
-			} else {
-				auto admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-				if (admission == GrantAdmission::Admitted && m_pendingMemory.kind != PendingMemoryKind::None) {
-					resumePendingMemoryOperation();
-					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-				}
-				if (admission == GrantAdmission::Admitted && m_stringComparison.remaining) {
-					advanceStringComparison(*thread.currentFrame);
-					admission = admitGrant(thread, RootBoundary ? 0 : targetDepth, instructionBudgetRemaining);
-				}
-				switch (admission) {
-					case GrantAdmission::Admitted: break;
-					case GrantAdmission::Halted: return RunResult::Halted;
-					case GrantAdmission::RequestedYield:
-						m_runSignals &= ~RunYield;
-						return RunResult::Yielded;
-					case GrantAdmission::OutOfCycles: return RunResult::Yielded;
-				}
+				case GrantAdmission::OutOfCycles: return RunResult::Yielded;
 			}
 			frame = thread.currentFrame;
 			image = frame->executionImage;
-			if constexpr (!HeapService) {
-				if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
-			}
+			if (image && image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
 
 			if constexpr (Instrumented) {
 				if (canInterrupt && (m_runSignals & RunNonMaskableInterrupt) != 0u) {
@@ -1768,7 +1747,7 @@ RunResult CPU::runLoop(
 					}
 					continue;
 				}
-			} else if constexpr (!HeapService) {
+			} else {
 				if (canInterrupt && ((m_runSignals & RunNonMaskableInterrupt) != 0u || canAcceptMaskableInterruptLine())) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 					// The next instruction belongs to the interrupt handler; retry admission
@@ -1799,14 +1778,14 @@ dispatch_fetch:
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 				continue;
 			}
-			if (!image || (!HeapService && resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
+			if (!image || (resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
 				m_cop0Words[COP0_BAD_ADDRESS] = pc;
 				enterInstructionFetchException(*frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 				continue;
 			}
 			if constexpr (!Instrumented) publishedTop = registerTop = frame->readWindow(FrameField::Top);
 			pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-			decodedPage = &decodedPageForFrame(*frame, pc, privateFirmware);
+			decodedPage = &decodedPageForFrame(*frame, pc);
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 dispatch_bound_page:
 			if constexpr (!Instrumented) {
@@ -1816,7 +1795,7 @@ dispatch_bound_page:
 					const u32 word = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 					if (atTarget && !decodedPage->refreshState[word]
 						&& isNativeWarmDispatch(decodedPage->words[word].dispatchOp))
-						prepareNativeBlock(*frame, *decodedPage, pc, HeapService ? mappedBusSignalsForCartridgeSlot(0u) : m_executionBusSignals);
+						prepareNativeBlock(*frame, *decodedPage, pc, m_executionBusSignals);
 				}
 			}
 #endif
@@ -1835,7 +1814,7 @@ dispatch_decode:
 				rewritten = (refresh & DECODED_REFRESH_DECODE) && decoded->width != 0u;
 #endif
 				PUBLISH_SCALAR_FRONTIER();
-				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented && !HeapService)) continue;
+				if (!decodeInstruction(*frame, *decodedPage, pageOffset, pc, !Instrumented)) continue;
 				if constexpr (!Instrumented) {
 					canReuseFrame = !(decodedPage->refreshState[pageOffset] & DECODED_REFRESH_DECODE);
 					publishedTop = registerTop = frame->readWindow(FrameField::Top);
@@ -1885,14 +1864,14 @@ dispatch_decode:
 		} \
 	} \
 	PUBLISH_SCALAR_FRONTIER(); \
-	skipNextInstruction(FRAME, privateFirmware); \
+	skipNextInstruction(FRAME); \
 	DISPATCH_CONTINUE(); \
 } while (0)
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 // On fallthrough the comparison owns the paired JMP. A separate incoming
 // edge to that same PC still requests an independent native entry.
 #define COMPARISON_FALLTHROUGH() do { \
-	if constexpr (!Instrumented && !HeapService) { \
+	if constexpr (!Instrumented) { \
 		if ((nextPc & ~MAPPED_PAGE_BYTE_MASK) == pageAddress) { \
 			const u32 word = (nextPc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES; \
 			if (!(decodedPage->refreshState[word] & DECODED_REFRESH_DECODE) \
@@ -1965,7 +1944,7 @@ dispatch_instruction:
 						if (visits < NATIVE_BLOCK_COMPILATION_THRESHOLD) ++visits;
 						if (entry && visits == NATIVE_BLOCK_COMPILATION_THRESHOLD
 							&& !(nativeState.replay && nativeState.replay->pc == pc && nativeState.replay->arithmetic)) {
-							prepareNativeBlock(FRAME, *decodedPage, pc, HeapService ? mappedBusSignalsForCartridgeSlot(0u) : m_executionBusSignals);
+							prepareNativeBlock(FRAME, *decodedPage, pc, m_executionBusSignals);
 							if (decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::NativeBlock))
 								dispatchOp = decoded->dispatchOp;
 						}
@@ -2007,7 +1986,7 @@ dispatch_instruction:
 					const bool replay = nativeState.replay && nativeState.replay->pc == pc;
 					if (!replay || !nativeState.replay->arithmetic) nativeState.replay.reset();
 					if (replay || std::endian::native == std::endian::big || thread.stackRequiresScalar()) {
-						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, HeapService);
+						FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 						dispatchOp = decoded->op;
 						goto dispatch_instruction;
 					}
@@ -2151,16 +2130,6 @@ dispatch_native_block: {
 				const int nativeStartBudget = nativeState.state.remainingCycles;
 #endif
 				nativeBlock->execute(nativeState);
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-				if constexpr (HeapService) {
-					const int retiredCycles = nativeBudget - instructionBudgetRemaining;
-					if (retiredCycles > 0) {
-						++m_nativeGateProfile.privateFirmwareEntries;
-						m_nativeGateProfile.privateFirmwareCycles += retiredCycles;
-						m_nativeGateProfile.lastPrivateFirmwareEntryPc = nativeBlock->firstPc;
-					}
-				}
-#endif
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 				// Helpers publish the authoritative CPU grant before returning or
 				// reporting an error; the native state's copy can then be stale.
@@ -2186,16 +2155,12 @@ dispatch_rebind_frame:
 					if (static_cast<int>(thread.frameDepth()) <= targetDepth) return RunResult::Halted;
 				}
 				// A pure frame transition can activate the depth-sensitive HALT latch.
-				if constexpr (!HeapService) {
-					if (m_haltedUntilIrqThreadAddress == m_activeThread->address
-						&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
-				}
+				if (m_haltedUntilIrqThreadAddress == m_activeThread->address
+					&& m_haltedUntilIrqFrameDepth == static_cast<int>(thread.frameDepth())) return RunResult::Halted;
 				frame = thread.currentFrame;
 				image = frame->executionImage;
 				if (!image) goto dispatch_continue;
-				if constexpr (!HeapService) {
-					if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
-				}
+				if (image != m_activeExecutionImage) latchActiveExecutionImage(image->executionDomainId, image);
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 				pc = frame->readControl(FrameField::Pc);
@@ -2203,7 +2168,7 @@ dispatch_rebind_frame:
 				// its address exception to the ordinary instruction-fetch boundary.
 				if ((pc & (INSTRUCTION_BYTES - 1u)) == 0u) {
 					pageAddress = pc & ~MAPPED_PAGE_BYTE_MASK;
-					decodedPage = &decodedPageForFrame(FRAME, pc, privateFirmware);
+					decodedPage = &decodedPageForFrame(FRAME, pc);
 					if (decodedPage->nativeBlocks) {
 						nativeBlock = decodedPage->nativeBlocks->entries[(pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES].get();
 						if (nativeBlock && std::endian::native == std::endian::little && !thread.stackRequiresScalar()) {
@@ -2225,7 +2190,7 @@ dispatch_observe:
 			PUBLISH_SCALAR_FRONTIER();
 			canReuseFrame = false;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b, HeapService);
+			FRAME.compilationEntry = rewritten || nativeBlockEndsBlock(decoded->op, decoded->b);
 #endif
 			// Observation precedes the original instruction's charge.
 			instructionBudgetRemaining += decoded->baseCycles;
@@ -2254,15 +2219,12 @@ dispatch_continue:
 			continue;
 		} catch (const LuaOutOfMemorySignal&) {
 			PUBLISH_SCALAR_FRONTIER();
-			if constexpr (HeapService) throw;
 			retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 		} catch (const LuaThrownValueError& error) {
 			PUBLISH_SCALAR_FRONTIER();
-			if constexpr (HeapService) throw;
 				enterLuaFaultException(error.value);
 		} catch (const LuaExecutionError& error) {
 			PUBLISH_SCALAR_FRONTIER();
-			if constexpr (HeapService) throw;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 			nativeState.replay.reset();
 #endif
@@ -2286,41 +2248,6 @@ int CPU::remainingDeviceCycles() const {
 RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target, CpuRunKind kind, const DeviceScheduler* deviceClock) {
 	m_deviceClock = deviceClock;
 	ScopeExit endClock([this] { m_deviceClock = nullptr; });
-	if (heapServiceActive()) {
-		const u32 flags = m_heapServiceView.firstFrame->readControl(FrameField::Flags);
-		const bool resident = (flags & FRAME_RESIDENT_ACTIVATION) != 0u;
-		m_runKind = kind;
-		ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		synchronizeNativeHistoryWrites();
-#endif
-#if defined(BMSX_ENABLE_NATIVE_COMPILER_WORKER)
-		publishNativeCompilation();
-		serviceNativeDemand();
-#endif
-		runLoop<true, false, true>(0, instructionBudget);
-		if (!heapServiceActive()) {
-			// An inactive borrow might name reused storage. The selected
-			// Thread itself is rooted but its physical planes can change.
-			m_activeThread->bindStack(true);
-			if (m_activeThread != &m_rootView) m_rootView.bindStack(true);
-			m_globalBank.bind();
-			m_systemGlobalBank.bind();
-			for (auto& view : m_transferViews)
-				if (&view != m_activeThread && view.address != 0u) view.select(0u);
-			try {
-				if (resident) finishResidentCall(flags);
-			} catch (const LuaOutOfMemorySignal&) {
-				retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
-			} catch (const LuaThrownValueError& error) {
-				enterLuaFaultException(error.value);
-			} catch (const LuaExecutionError& error) {
-				retireNumericLuaFault(error.reason);
-			}
-		}
-		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return RunResult::Yielded;
-	}
 	m_runKind = kind;
 	ScopeExit endGrant([this] { m_runKind = CpuRunKind::Idle; });
 	if (m_unpublishedRomMask != 0u)
@@ -2564,7 +2491,7 @@ void CPU::writeFrameExecution(
 	u32 functionAddress,
 	u32 pc
 ) {
-	if (heapServiceActive() || fixedInterruptActive() || m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
+	if (fixedInterruptActive() || m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
 	auto* publishedImage = executionImageForDomain(executionDomainId);
 	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
 		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))
@@ -2818,17 +2745,8 @@ void CPU::trackLocalRoot(Value value) {
 	}
 }
 
-void CPU::publishHeapRemarkHead() {
-	using Field = HeapServiceRemarkHeadField;
-	const u32 head = m_heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	m_memory.writeRamRecordWord(head + static_cast<u32>(Field::ComparisonRemaining), m_stringComparison.remaining);
-	if (m_stringComparison.remaining) {
-		m_memory.writeRamRecordPair(head + static_cast<u32>(Field::ComparisonLeft), m_stringComparison.left, m_stringComparison.right);
-	}
-}
-
 void CPU::markRootHead(GcHeap& heap) {
-	using Field = HeapServiceRemarkHeadField;
+	using Field = GcDiagnosticField;
 	// Opcode metamethod selectors stay interned independently of guest tables.
 	heap.markString(heap.diagnosticWord(Field::Index));
 	heap.markString(heap.diagnosticWord(Field::NewIndex));
@@ -2852,36 +2770,6 @@ void CPU::markScopedRoots(GcHeap& heap) {
 	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
-}
-
-void CPU::publishHeapRootBanks() {
-	using Field = HeapServiceRootBankField;
-	const u32 descriptor = m_heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
-	m_memory.writeRamRecordPair(descriptor, m_rootView.address, m_activeThread ? m_activeThread->address : 0u);
-	m_memory.writeRamRecordPair(descriptor + 8u, m_completionThreadAddress, m_haltedUntilIrqThreadAddress);
-	const u32 destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
-	m_memory.writeRamRecordPair(destination, static_cast<u32>(m_completionValueCount),
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionPayloads) * HEAP_SERVICE_ROOT_PORT_STRIDE);
-	m_memory.writeRamRecordWord(destination + static_cast<u32>(Field::Tags),
-		HEAP_SERVICE_ROOT_PORT_BASE + static_cast<u32>(HeapServiceRootPlane::CompletionTags) * HEAP_SERVICE_ROOT_PORT_STRIDE);
-
-}
-
-u32 CPU::readHeapServiceRoot(u32 offset, MemoryAccessKind kind) const {
-	const auto plane = static_cast<HeapServiceRootPlane>(offset >> HEAP_SERVICE_ROOT_PORT_SHIFT);
-	const u32 address = offset & (HEAP_SERVICE_ROOT_PORT_STRIDE - 1u);
-	const bool byte = kind == MemoryAccessKind::U8;
-	const u32 slot = byte ? address : address >> 2u;
-	switch (plane) {
-		case HeapServiceRootPlane::CompletionPayloads:
-		case HeapServiceRootPlane::CompletionTags:
-			if (byte == (plane == HeapServiceRootPlane::CompletionTags) && slot < m_completionValueCount)
-				return byte ? m_completionValues.tags()[slot] : m_completionValues.words()[slot];
-			break;
-		case HeapServiceRootPlane::Count:
-			break;
-	}
-	throw BMSX_RUNTIME_ERROR("Heap service read is outside its root port.");
 }
 
 size_t CPU::rootBankSlots(GcRootBank bank) const {

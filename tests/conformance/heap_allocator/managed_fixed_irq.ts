@@ -108,7 +108,6 @@ try {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			assert.equal(cpu.heapServiceActive(), false);
 			observe(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 			return result;
 		}
@@ -123,7 +122,6 @@ try {
 		raiseIrq();
 		assert.equal(cpu.enterPendingInterrupt(), true);
 		observe('I', 1);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.activeThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), retained);
 		assert.equal(memory.readRamRecordWord(CPU_RESET_BANK_ADDRESS + ThreadField.FrameBlock), CPU_FIXED_FRAME_ADDRESS);

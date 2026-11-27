@@ -113,7 +113,7 @@ return 77
 	function grant(rt: Runtime, cycles: number) {
 		const { cpu, memory, scheduler } = rt.machine;
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		record(`E ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		record(`E ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return result;
 	}
 

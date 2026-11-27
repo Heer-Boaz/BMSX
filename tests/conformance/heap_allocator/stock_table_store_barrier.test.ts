@@ -112,7 +112,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		const grant = (cycles: number) => {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 			commands.push(`E ${cycles}`);
-			rows.push([result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+			rows.push([result, cycles - cpu.instructionBudgetRemaining, memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 			return result;
 		};
 		for (let i = 0; i < 128 && readInstruction().op !== op; ++i) grant(1);
@@ -136,7 +136,6 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		rows.length = 0;
 		assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[op]);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 		assert.equal(cpu.readEpcWord(), issuePc);

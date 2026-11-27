@@ -18,7 +18,6 @@ function grant(cpu: CPU, budget: number) {
 function finish(cpu: CPU, budget = 64) {
 	let spent = 0;
 	for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(cpu, budget);
-	assert.equal(cpu.heapServiceActive(), false);
 	return spent;
 }
 

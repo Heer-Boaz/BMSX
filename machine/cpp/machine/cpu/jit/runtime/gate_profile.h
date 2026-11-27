@@ -17,10 +17,6 @@ struct NativeGateExitProfile {
 
 struct NativeGateProfile {
 	std::array<NativeGateExitProfile, static_cast<size_t>(NativeBlockExit::Count)> exits{};
-	// Only grants that actually execute decoded fixed System firmware.
-	u64 privateFirmwareEntries = 0;
-	u64 privateFirmwareCycles = 0;
-	u32 lastPrivateFirmwareEntryPc = 0;
 	u64 builtinAttempts = 0;
 	u64 builtinDeclines = 0;
 	u64 builtinResumes = 0;
@@ -34,7 +30,7 @@ inline constexpr auto NATIVE_GATE_EXIT_NAMES = std::to_array<const char*>({
 	"ReadInteger", "WriteInteger", "Length", "ControlFault",
 	"ExceptionReturn",
 	"CreateClosure", "WriteWords", "WriteControl", "WriteGlobal", "WriteSystemGlobal", "ReadUpvalue", "IterateTable",
-	"PrivateCall", "PrivateReturn", "SupervisorCall",
+	"SupervisorCall",
 });
 static_assert(NATIVE_GATE_EXIT_NAMES.size() == static_cast<size_t>(NativeBlockExit::Count));
 

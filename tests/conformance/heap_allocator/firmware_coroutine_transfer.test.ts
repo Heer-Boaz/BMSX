@@ -62,7 +62,7 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 	function grant(rt: Runtime, cycles: number) {
 		const { cpu, memory, scheduler } = rt.machine;
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		observe(`E ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return result;
 	}
 	for (let i = 0; !cpu.isHaltedUntilIrq() && i < 2048; ++i) grant(runtime, 1024);
@@ -79,7 +79,6 @@ for (const optLevel of [0, 3] as const) test(`ordinary coroutine transfers use t
 		const depth = cpu.readThreadFrameDepth(interrupted), frame = depth - 1;
 		const fn = cpu.readThreadFrameWord(interrupted, frame, FrameField.Function);
 		assert.equal(fn, visits[next++]);
-		assert.equal(cpu.heapServiceActive(), false);
 		if (fn === entry) {
 			assert.equal(depth, 1, 'the original coroutine entry is the only suspended frame');
 			const active = cpu.activeThread.currentFrame!;

@@ -1,45 +1,33 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
+import { seedTestRomClosure } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const weak = 'kernel/gc_weak_table', entrySource = 'halt_until_irq';
-const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark', weak].map(path => {
-	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path) };
-});
+const weak = 'kernel/gc_weak_table';
+const leaves = [
+	{ path: weak, member: 'value_is_alive', arity: 4 },
+	{ path: weak, member: 'clear_weak_entries', arity: 8 },
+] as const;
+type Entry = typeof leaves[number]['member'];
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const entries = new Map<string, number>();
-	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
-		if (path !== weak || exportPathKey.startsWith('internal.')) continue;
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-		assert.ok(index >= 0, exportPathKey);
-		entries.set(exportPathKey, index);
-	}
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	const linked = linkFirmwareProbe(optLevel, [], leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const firstByte = memory.ramBusEnd() - RAM_BASE, lastByte = management + HEAP_SERVICE_THREAD_OFFSET;
-	const newIndex = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex);
+	const firstByte = memory.ramBusEnd() - RAM_BASE, lastByte = management + GC_WORKSPACE_END;
+	const newIndex = cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex);
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(firstByte, lastByte), expected = oracle.memory.ramData().subarray(firstByte, lastByte);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -60,19 +48,16 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordByte(address, value);
 		oracle.memory.writeRamRecordByte(address, value);
 	}
-	function begin(name: string, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entries.get(name)!].address, [control, arena, ...args]));
+	function begin(name: Entry, ...args: number[]) {
+		issueFirmwareProbe(cpu, [control, arena, ...args], leaves.findIndex(leaf => leaf.member === name));
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < cycles);
-		return cycles - cpu.instructionBudgetRemaining;
+		return grantFirmwareProbe(cpu, cycles);
 	}
 	function finish(cycles = 97) {
 		let elapsed = 0;
-		for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) elapsed += grant(cycles);
-		assert.equal(cpu.heapServiceActive(), false);
-		return [cpu.heapServiceResult(), elapsed];
+		for (let i = 0; i < 8192 && !cpu.isHaltedUntilIrq(); ++i) elapsed += grant(cycles);
+		return [firmwareProbeResult(cpu), elapsed];
 	}
 	function beginClear(record: number, mode: number, first: number, end: number) {
 		oracle.gc.tables.clearWeakEntries(record, (mode & 1) !== 0, (mode & 2) !== 0, oracle.gc['alive'], first, end);
@@ -116,7 +101,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua weak liveness uses record kind, issued bit and current white at O${optLevel}`, () => {
 		const { cpu, oracle, add, byte, begin, finish, compare } = fixture(optLevel);
 		const table = add(target => target.createTable());
-		const closure = add(target => target.rootThread.currentFrame!.closure);
+		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
 		const unissued = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
 		byte(unissued, ValueTag.Table);
@@ -133,12 +118,11 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(finish()[0], expected);
 		}
 		compare('liveness is read-only');
-		assert.equal(cpu.heapServiceActive(), false);
 	});
 
 	test(`BLua weak clear preserves ranges, tombstones, counters and String edge order at O${optLevel}`, () => {
 		const { cpu, memory, newIndex, add, byte, word, table, string, clear, beginClear, grant, finish, compare } = fixture(optLevel);
-		const dead = add(target => target.createTable()), alive = add(target => target.rootThread.currentFrame!.closure);
+		const dead = add(target => target.createTable()), alive = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		byte(dead + GC_COLOR_OFFSET, 0xe1);
 		byte(alive + GC_COLOR_OFFSET, 0xe2);
 		const arrString = string('surviving array'), keyString = string('surviving hash key'), valString = string('surviving hash value');
@@ -168,7 +152,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordByte(arrayBase + 16), ValueTag.Nil);
 		assert.equal(beginClear(record, 1, 4, 6), 2);
 		for (let i = 0; i < 1024 && memory.readRamRecordByte(keyString + 1) !== 1; ++i) grant(1);
-		assert.equal(cpu.heapServiceActive(), true);
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(memory.readRamRecordByte(keyString + 1), 1);
 		assert.equal(memory.readRamRecordByte(valString + 1), 0x94, 'the key is marked before the value');
 		assert.equal(memory.readRamRecordByte(skipped + 1), 0x94, 'a removed pair contributes no String mark');
@@ -192,13 +176,12 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(record + TableHeader.Free), free);
 		assert.equal(memory.readRamRecordByte(link), 1);
 		assert.equal(memory.readRamRecordByte(link + 1), 3);
-		assert.equal(cpu.heapServiceActive(), false);
 	});
 
 
 	test(`BLua weak hash clearing adjusts byte/word census and Integer bands at O${optLevel}`, () => {
 		const { memory, add, word, byte, table, clear } = fixture(optLevel);
-		const dead = add(target => target.rootThread.currentFrame!.closure);
+		const dead = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		byte(dead + GC_COLOR_OFFSET, 0xe1);
 		for (const hash of [128, 256, 1024]) {
 			const { record, hashBase, hashSlot, readHash } = table(0, hash);
@@ -242,7 +225,7 @@ for (const optLevel of [0, 3] as const) {
 		word(live, 1);
 		assert.equal(beginClear(record, 1, 0, 1), 0);
 		for (let i = 0; i < 1024 && readHash(0)[1] !== ValueTag.Table; ++i) grant(1);
-		assert.equal(cpu.heapServiceActive(), true);
+		assert.ok(cpu.fixedInterruptActive());
 		assert.deepEqual(readHash(0), [ValueTag.Table, ValueTag.Table], 'word precedes clearing tag');
 		assert.deepEqual(readHash(128), [ValueTag.Integer, 5], 'dead-key value marker not yet published');
 		assert.equal(memory.readRamRecordWord(live), 0, 'census decremented before either marker');

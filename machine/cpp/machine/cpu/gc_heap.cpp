@@ -5,7 +5,6 @@
 #include "machine/cpu/upvalue.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/image_format.h"
-#include "spec/bmsx/heap_service.h"
 #include <algorithm>
 #include <limits>
 #include <utility>
@@ -320,7 +319,7 @@ std::pair<int, size_t> GcHeap::probeTableMode(const TableRecord& table, size_t l
 	const u32 current = memory.readRamRecordWord(m_controlOffset + GC_MODE_META);
 	if (address != 0u) {
 		const TableRecord meta(*this, address);
-		const StringId modeKey = diagnosticWord(HeapServiceRemarkHeadField::Mode);
+		const StringId modeKey = diagnosticWord(GcDiagnosticField::Mode);
 		auto probe = address == current
 			? TableStringProbe{static_cast<i32>(memory.readRamRecordWord(m_controlOffset + GC_MODE_NODE)),
 				memory.readRamRecordWord(m_controlOffset + GC_MODE_REMAINING)}
@@ -958,7 +957,7 @@ size_t GcHeap::stepWork(Value root0, Value root1, Value root2, u32 growingThread
 #endif
 			setPhase(GcPhase::Mark);
 			m_stringPool.beginReachabilityEpoch();
-			m_stringPool.markReachable(diagnosticWord(HeapServiceRemarkHeadField::Mode));
+			m_stringPool.markReachable(diagnosticWord(GcDiagnosticField::Mode));
 			m_cpu.markRootHead(*this);
 			beginInitialBanks();
 		}

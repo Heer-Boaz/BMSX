@@ -26,7 +26,7 @@ local land<const> = function(interrupted, control_address, index, fn, raised, ta
 	local end_slot<const> = base + width
 	if end_slot > thread.stack_capacity then
 		local scope<const> = roots.single_value_scope(layout.management_offset, tag, raised)
-		if frames.prepare_frame_space(layout.management_offset, interrupted, end_slot, 0, scope, deadline, true) ~= 0 then return nil end
+		if frames.prepare_frame_space(layout.management_offset, interrupted, end_slot, 0, scope, deadline) ~= 0 then return nil end
 	end
 	local words_address<const>, tags_address<const> = frames.internal.value_planes(interrupted, base)
 	local words<const>: *u32 = words_address

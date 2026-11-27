@@ -7,42 +7,36 @@ import { type Value, hashCanonicalTableKey, valueInteger, valuePayload, valueTag
 import { advanceRuntimeTime, runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { writeTestBlua32Rom } from '../helpers/blua32';
 import { runGuestToHalt } from '../helpers/cpu_execution';
-import { linkManagedTestSystem } from '../helpers/managed_system';
+
+import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const ENTRY = 'kernel/table_resize', NAME = 'execute_staged_table_growth';
-const halt = 'halt_until_irq';
 const jobSentinel = 0xb9c82f31;
 const oldResult = [0x142d231d, 0xd62c1a75] as const;
 
 function fixture(optLevel: 0 | 3) {
-	const linked = linkManagedTestSystem(halt, optLevel), { object } = linked;
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === ENTRY && entry.exportPathKey === NAME);
-	assert.ok(symbol);
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(root >= 0);
-	assert.equal(linked.layout.functions[root].numParams, 6);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.layout, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack ${frames}/${valueSlots}`);
+	const linked = linkFirmwareProbe(optLevel, [], [{ path: ENTRY, member: NAME, arity: 6 }]);
 	function runtime() {
-		const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(linked), cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		const runtime = new Runtime({ systemRomBytes: linked.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 		});
 		runtime.boot();
-		runGuestToHalt(runtime.machine.cpu, 4_194_304);
+		const { cpu, executionAddressSpace } = runtime.machine;
+		admitTestHeapServiceCpu(cpu, executionAddressSpace);
+		runGuestToHalt(cpu, 10_000);
 		return runtime;
 	}
-	return { runtime, entry: linked.layout.functions[root].address };
+	return runtime;
 }
 
 for (const optLevel of [0, 3] as const) {
 	test(`staged reservation through complete assignment is one real deadline-clocked BIOS activation at O${optLevel}`, () => {
-		const { runtime, entry } = fixture(optLevel);
+		const runtime = fixture(optLevel);
 		for (const [oldArray, array, oldHash, hash, keep] of [
 			[0, 0, 128, 256, false], [1024, 2048, 8, 8, true], [2048, 1024, 128, 1024, false],
 			[1024, 1 << 20, 8, 128, false],
@@ -99,21 +93,21 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(reference.record, 0, 'reference completes the original staged rebuild');
 			}
 			const initial = captureRuntimeSaveState(guest);
-			const begin = () => assert.ok(cpu.beginHeapService(entry, [management, record, array, hash, +(array > oldArray && oldArray >= 1024), reservation]));
+			const begin = () => issueFirmwareProbe(cpu, [management, record, array, hash, +(array > oldArray && oldArray >= 1024), reservation]);
 			const pay = (fragment: number) => {
 				runDueRuntimeTimers(guest);
 				const grant = Math.min(fragment, scheduler.nextDeadline() - scheduler.nowCycles);
 				assert.ok(grant > 0);
-				assert.equal(scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+				const result = scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled);
+				assert.ok(result === RunResult.Yielded || (result === RunResult.Halted && cpu.isHaltedUntilIrq()));
 				const used = grant - cpu.instructionBudgetRemaining;
 				assert.ok(used > 0);
 				advanceRuntimeTime(guest, used);
 			};
 			const finish = (fragment: number) => {
-				for (let i = 0; i < 60000 && cpu.heapServiceActive(); ++i) pay(fragment);
-				assert.equal(cpu.heapServiceActive(), false);
-				assert.equal(cpu.heapServiceResult(), blocked ? 0 : 1);
-				const start = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
+				for (let i = 0; i < 60000 && !cpu.isHaltedUntilIrq(); ++i) pay(fragment);
+				assert.equal(firmwareProbeResult(cpu), blocked ? 0 : 1);
+				const start = memory.ramBusEnd() - RAM_BASE, end = management + GC_WORKSPACE_END;
 				for (const [from, to] of [[start, reservation], [reservation + 8, job], [job + jobSize, end]]) {
 					const got = memory.ramData().subarray(from, to), wanted = oracle.memory.ramData().subarray(from, to);
 					const diff = got.findIndex((byte, index) => byte !== wanted[index]);
@@ -126,7 +120,7 @@ for (const optLevel of [0, 3] as const) {
 			// the old Table headers change. On refusal no job word is written.
 			if (!blocked) {
 				for (let i = 0; i < 4096 && memory.readRamRecordWord(job + 28) === jobSentinel; ++i) pay(1);
-				assert.equal(cpu.heapServiceActive(), true);
+				assert.ok(cpu.fixedInterruptActive());
 				assert.equal(memory.readRamRecordWord(record + TableHeader.ArrayStorage), oldWords);
 				assert.equal(memory.readRamRecordWord(record + TableHeader.HashStorage), oldStorage);
 				cpu.requestNonMaskableInterrupt();

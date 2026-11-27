@@ -2,7 +2,7 @@ import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 
-type ReferenceTag = ValueTag.Table | ValueTag.Closure | ValueTag.Thread | ValueTag.ResidentFunction;
+type ReferenceTag = ValueTag.Table | ValueTag.Closure | ValueTag.Thread | ValueTag.CodeFunction;
 type RecordLifetimes = { ram: Map<number, number>; rom?: Map<number, number>; nextId: number };
 const byCpu = new WeakMap<CPU, RecordLifetimes>();
 
@@ -21,7 +21,7 @@ export function observedRecordLifetime(cpu: CPU, tag: ReferenceTag, address: num
 	}
 	// The linked System function is an immutable ROM reference. Replacing
 	// the observed state ends its token without arming any physical RAM.
-	const rom = tag === ValueTag.ResidentFunction;
+	const rom = tag === ValueTag.CodeFunction;
 	const observed = rom ? lifetimes.rom ??= new Map() : lifetimes.ram;
 	const offset = rom ? address : address - RAM_BASE;
 	const existing = observed.get(offset);

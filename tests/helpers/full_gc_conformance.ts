@@ -11,8 +11,8 @@ import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../machine/ts/spec/blua32/cop0';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
 interface StoreCheckpoint {
@@ -25,7 +25,7 @@ interface StoreCheckpoint {
 }
 
 /** Drive the same submitted grants against the two actual cores. The observer
- * sees raw stores while the private root stays active, not fake phase re-entry. */
+ * sees raw stores while the architectural exception context stays active, not fake phase re-entry. */
 export class FullGcConformance {
 	private readonly trace: string[] = [];
 	private readonly expected: string[] = [];
@@ -34,10 +34,11 @@ export class FullGcConformance {
 	private pages: ReturnType<RamHistory['capture']>;
 	private readonly seed: string;
 	private caller = -1;
+	private owner = 0;
 	private callerPc = 0;
 
 	constructor(private readonly runtime: Runtime, private readonly native: string,
-		private readonly directory: string, private readonly rom: string, private readonly functionAddress: number, private readonly cartridge?: string) {
+		private readonly directory: string, private readonly rom: string, private readonly cartridge?: string) {
 		const memory = runtime.machine.memory;
 		this.history.start(memory);
 		this.pages = this.history.capture(memory, null);
@@ -52,44 +53,45 @@ export class FullGcConformance {
 
 	grant(cycles: number): RunResult {
 		const { cpu, scheduler } = this.runtime.machine, { gc } = cpu;
-		const active = cpu.heapServiceActive();
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		const used = cycles - cpu.instructionBudgetRemaining;
 		assert.ok(used > 0);
-		if (this.caller !== -1 && active) {
+		if (this.caller !== -1 && this.collecting()) {
 			assert.equal(result, RunResult.Yielded);
 			this.held();
 		}
 		this.trace.push(`L ${cycles}`);
-		this.expected.push(`${result} ${used} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		this.expected.push(`${result} ${used} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 		return result;
 	}
 
 	launch(): void {
 		const { cpu, memory } = this.runtime.machine;
-		const root = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
-		const fn = this.functionAddress;
-		for (let n = 0; n < 256 && !(cpu.heapServiceActive() && memory.readRamRecordWord(root) === fn); ++n)
-			this.grant(16_384);
-		assert.equal(cpu.heapServiceActive(), true, 'ordinary CALL enters the composed root');
-		assert.equal(memory.readRamRecordWord(root), fn);
+		for (let n = 0; n < 256 && !cpu.fixedInterruptActive(); ++n) this.grant(1);
+		assert.ok(cpu.fixedInterruptActive(), 'the authored SVC enters the fixed System vector');
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 		assert.equal(cpu.gc.fullEpochs(), 0, 'the firmware owns the epoch latch before reclamation');
-		this.caller = cpu.getFrameDepth() - 1;
-		this.callerPc = cpu.readFramePc(this.caller);
+		this.owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+		this.caller = cpu.readThreadFrameDepth(this.owner) - 1;
+		this.callerPc = cpu.readEpcWord();
 		this.reach(() => cpu.gc.fullEpochs() !== 0, 'epoch count publication');
 	}
 
 	private held(): void {
 		const { cpu } = this.runtime.machine;
-		assert.equal(cpu.readFramePc(this.caller), this.callerPc, 'the collector cannot resume its paused guest');
+		assert.equal(cpu.readThreadFrameWord(this.owner, this.caller, FrameField.Pc), this.callerPc, 'the collector cannot resume its paused guest');
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 	}
 
+	private collecting(): boolean {
+		const { cpu } = this.runtime.machine;
+		return cpu.fixedInterruptActive() && cpu.readEpcWord() === this.callerPc;
+	}
+
 	reach(predicate: () => boolean, store: string, cycles = 1, limit = 32768): void {
-		const cpu = this.runtime.machine.cpu;
-		for (let n = 0; n < limit && cpu.heapServiceActive() && !predicate(); ++n) this.grant(cycles);
+		for (let n = 0; n < limit && this.collecting() && !predicate(); ++n) this.grant(cycles);
 		assert.ok(predicate(), `expected firmware store not reached: ${store}`);
-		assert.equal(cpu.heapServiceActive(), true, 'the store must precede the outer RET');
+		assert.equal(this.collecting(), true, 'the store must precede RFE');
 		this.held();
 	}
 
@@ -103,7 +105,8 @@ export class FullGcConformance {
 			this.expected.push(String(hashBytes(memory.ramData(), start, end - start)));
 		}
 		this.trace.push('P');
-		this.expected.push(`${this.caller + 1} ${this.callerPc}`);
+		const activeDepth = cpu.getFrameDepth();
+		this.expected.push(`${activeDepth} ${cpu.readFramePc(activeDepth - 1)}`);
 		this.points.push({ name, row, resume: this.trace.length, file, state: captureRuntimeCheckpointState(this.runtime),
 			pages: this.pages = this.history.capture(memory, this.pages) });
 		cpu.requestNonMaskableInterrupt();
@@ -114,17 +117,15 @@ export class FullGcConformance {
 	finish(completion: number, validate: () => void): void {
 		const { cpu, memory } = this.runtime.machine;
 		const drain = () => {
-			for (let i = 0; i < 32768 && cpu.heapServiceActive(); ++i) this.grant(911);
-			assert.equal(cpu.heapServiceActive(), false);
+			let result = RunResult.Yielded;
+			for (let i = 0; i < 32768 && this.collecting(); ++i) result = this.grant(911);
 			assert.equal(cpu.gc.fullEpochs(), 0);
 			assert.equal(cpu.gc.phase(), GcPhase.Pause);
 			validate();
-			this.held();
 			const low = memory.ramBusEnd() - RAM_BASE, end = memory.ramData().length;
 			this.trace.push(`H ${low} ${end}`);
 			this.expected.push(String(hashBytes(memory.ramData(), low, end - low)));
 			this.caller = -1;
-			let result = RunResult.Yielded;
 			for (let n = 0; n < 256 && result !== RunResult.Halted; ++n) result = this.grant(1_173);
 			assert.equal(result, RunResult.Halted);
 			assert.equal(this.runtime.readCompletionValues()[0], valueInteger(completion));

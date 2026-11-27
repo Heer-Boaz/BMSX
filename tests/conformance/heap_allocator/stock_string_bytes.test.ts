@@ -94,7 +94,6 @@ return copied, reused, media, ok, reason
 	for (let i = 0; i < 50000 && arena.occupiedBytes() === physical; ++i) grant(1);
 	assert.ok(cpu.fixedInterruptActive(), 'the provisional record lives in the ordinary vector');
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(readStage(), 1);
 	assert.ok(arena.occupiedBytes() >= physical + size);
 	const before = join(dir, 'before-copy.state');
@@ -119,7 +118,7 @@ return copied, reused, media, ok, reason
 	};
 	const offset = report - RAM_BASE;
 	assert.deepEqual(replay(before, ['X', `W ${lastWord - RAM_BASE} ${input[size - 1]}`, `E ${budget}`, `H ${offset} ${offset + 8}`]), [
-		[copiedResult, copiedCycles, 0, memory.ramBusEnd(), 0].join(' '),
+		[copiedResult, copiedCycles, memory.ramBusEnd(), 0].join(' '),
 		String(hashBytes(memory.ramData(), offset, 8)),
 	]);
 
@@ -136,7 +135,7 @@ return copied, reused, media, ok, reason
 	for (let i = 0; i < 250; ++i) {
 		const result = grant(budget);
 		commands.push(`E ${budget}`);
-		expected.push([result, budget - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+		expected.push([result, budget - cpu.instructionBudgetRemaining, memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 		if (result === RunResult.Halted) break;
 	}
 	const result = runtime.readCompletionValues();

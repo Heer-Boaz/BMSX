@@ -14,7 +14,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -70,7 +70,7 @@ try {
 			assert.ok(cpu.isHaltedUntilIrq());
 			memory.writeMappedWord(report, 1);
 			cpu.clearHaltUntilIrq();
-			const management = arena.managementOffset(), traceLimit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
+			const management = arena.managementOffset(), traceLimit = management + GC_TRACE_CONTEXT_OFFSET + GcTraceContextField.Limit;
 			const control = management + HEAP_GC_CONTROL_OFFSET;
 			luaHeap.setCollectionTarget(luaHeap.capacity());
 			const owner = cpu.activeThread.address;
@@ -106,8 +106,7 @@ try {
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				observe(`L ${cycles}`, `${result} ${used} 0 ${gc.fullEpochs()} ${gc.phase()} ${luaHeap.usedBytes()}`);
-				assert.equal(cpu.heapServiceActive(), false);
+				observe(`L ${cycles}`, `${result} ${used} ${gc.fullEpochs()} ${gc.phase()} ${luaHeap.usedBytes()}`);
 				if (cycles > 0) assert.ok(used > 0, `an admitted quantum pays ordinary instruction cycles (result=${result}, phase=${gc.phase()}, depth=${cpu.getFrameDepth()}, cause=${cpu.readCauseWord()}, reason=${cpu.readLuaFaultReasonWord()}, pc=${cpu.lastPc})`);
 				return result;
 			}

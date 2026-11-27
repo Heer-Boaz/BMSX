@@ -23,7 +23,6 @@ for (const level of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(cell + Upvalue.UPVALUE_VALUE_WORD), callee.stackBase);
 		function issueReturn() {
 			assert.deepEqual(f.grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.RET] });
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.fixedInterruptActive(), true);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 			assert.equal(cpu.readEpcWord(), issue);

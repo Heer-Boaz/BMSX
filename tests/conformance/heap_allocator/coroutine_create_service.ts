@@ -102,7 +102,7 @@ try {
 			function checksum(first: number, last: number) { observe(`H ${first} ${last}`, hashBytes(memory.ramData(), first, last - first)); }
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				return result;
 			}
 			const history = new RamHistory();
@@ -110,7 +110,6 @@ try {
 			const baseline = history.capture(memory, null);
 			for (let i = 0; i < 256 && !cpu.fixedInterruptActive(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.ok(cpu.fixedInterruptActive());
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 			assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 			const caller = cpu.readThreadFrameDepth(owner) - 1, next = cpu.readEpcWord();
@@ -144,7 +143,6 @@ try {
 				for (let i = 0; i < 8192 && result === RunResult.Yielded; ++i) result = grant(509);
 				assert.equal(result, RunResult.Halted);
 				assert.equal(cpu.fixedInterruptActive(), false);
-				assert.equal(cpu.heapServiceActive(), false);
 				const values = runtime.readCompletionValues();
 				if (invalid) {
 					assert.equal(arena.occupiedBytes(), before);

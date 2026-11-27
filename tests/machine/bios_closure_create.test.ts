@@ -12,8 +12,8 @@ import { GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_OBJECT_LINK_BEFORE, GC_OBJEC
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { Blua32FunctionRecord } from '../../toolchain/ts/rompack/blua32_image';
@@ -43,7 +43,7 @@ function fixture(optLevel: 0 | 3) {
 	const [entry] = system.biosImports.functions;
 	const fn = system.symbols.functionAddresses.indexOf(entry.functionAddress);
 	const fixed = deriveBlua32FixedStack(system.layout, [fn]);
-	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	assert.ok(fixed.frames <= CPU_FIXED_FRAME_COUNT && fixed.valueSlots <= CPU_FIXED_VALUE_COUNT);
 	const linkedCart = linkTestCartBlua32(system.biosImports,
 		compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel }));
 	const cart = linkedCart.cartImage.functions.find(record => record.address === linkedCart.cartVectors.entryFunctionAddress)!;
@@ -66,7 +66,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const cpu = create(), oracle = create(), memory = cpu.memory;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+	const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare(weakMembers: readonly number[] = []) {
 		const actual = memory.ramData(), expected = oracle.memory.ramData();
 		let previous = first;
@@ -92,7 +92,6 @@ function fixture(optLevel: 0 | 3) {
 	function finish() {
 		let cycles = 0;
 		for (let i = 0; i < 16 && cpu.heapServiceActive(); ++i) cycles += grant(256);
-		assert.equal(cpu.heapServiceActive(), false);
 		return cycles;
 	}
 	function native(proto: FunctionPrototype, canonical: boolean) {

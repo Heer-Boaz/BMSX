@@ -9,8 +9,7 @@ import type { GcHeap } from './gc_heap';
 export const enum ValueTag {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
 	DeadKey, // Table retirement metadata, never a language value.
-	ResidentFunction, // Resident System ROM entry; not a managed record.
-	CodeFunction, // Immutable System Function with no environment.
+	CodeFunction = 12, // Immutable System Function with no environment.
 	UnboundStringLiteral = 0xff, // Only in a decoded operand bank, never a guest Value.
 }
 declare const valueBrand: unique symbol;
@@ -34,7 +33,6 @@ export function valueString(id: StringId): Value { return valueFromTag(ValueTag.
 export function valueTable(reference: number): Value { return valueFromTag(ValueTag.Table, reference); }
 export function valueClosure(reference: number): Value { return valueFromTag(ValueTag.Closure, reference); }
 export function valueThread(reference: number): Value { return valueFromTag(ValueTag.Thread, reference); }
-export function valueResidentFunction(address: number): Value { return valueFromTag(ValueTag.ResidentFunction, address); }
 export function valueBuiltinFunction(id: BuiltinFunctionId): Value { return valueFromTag(ValueTag.BuiltinFunction, id); }
 export function valueIsInteger(value: Value): boolean { return valueTag(value) === ValueTag.Integer; }
 export function valueIsFloat(value: Value): boolean { return valueTag(value) === ValueTag.Float; }
@@ -94,7 +92,7 @@ export function tableKeysEqual(left: Value, right: Value): boolean { return cano
 export function hashCanonicalTableKey(value: Value): number {
 	switch (valueTag(value)) {
 		case ValueTag.Integer: case ValueTag.Float:
-		case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: {
+		case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: case ValueTag.CodeFunction: {
 			let bits = valuePayload(value);
 			bits = Math.imul(bits ^ ((bits << 14) | (bits >>> 18)), 0x85ebca6b) >>> 0;
 			return (bits ^ (bits >>> 13)) >>> 0;
@@ -116,7 +114,7 @@ export function valueTypeNameForLuaTag(tag: ValueTag): string {
 		case ValueTag.String: return 'string';
 		case ValueTag.Table: return 'table';
 		case ValueTag.Thread: return 'thread';
-		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: return 'function';
+		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.CodeFunction: return 'function';
 		default: throw new Error('Internal table metadata is not a language value.');
 	}
 }
@@ -134,7 +132,7 @@ export function valueToByteString(value: Value, strings: StringPool): string {
 		case ValueTag.String: return strings.bytes(asStringId(value));
 		case ValueTag.Table: return 'table';
 		case ValueTag.Thread: return 'thread';
-		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.ResidentFunction: case ValueTag.CodeFunction: return 'function';
+		case ValueTag.Closure: case ValueTag.BuiltinFunction: case ValueTag.CodeFunction: return 'function';
 		default: throw new Error('Internal table metadata is not a language value.');
 	}
 }

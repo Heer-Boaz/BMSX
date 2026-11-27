@@ -132,9 +132,9 @@ void stringForwardingUsesLiveStringReceiverAndVisitBound() {
 		meta.setStringKey(index, forwarded); root.setMetatableAddress(meta.address());
 		cpu.setGlobalByKey(asStringId(forwarded), valueInteger(73));
 		methodsMeta.setStringKey(index, cpu.createBuiltinFunction(BuiltinFunctionId::GetGlobal)); methods.setMetatableAddress(methodsMeta.address());
-		const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
-		m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), methods.address());
+		const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
+		m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexTag), static_cast<u32>(ValueTag::Table));
+		m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexWord), methods.address());
 		auto r = cpu.activeThread()->currentFrame->registers;
 		r.set(0, valueTable(root.address())); r.set(1, valueNil()); r.set(2, forwarded);
 		r.set(3, valueTable(methodsMeta.address())); r.set(4, valueTable(root.address()));
@@ -163,9 +163,9 @@ void stringIndexUsesTheRestoredRamRoot() {
 	auto& cpu = machine.cpu;
 	auto& gc = cpu.gcHeap();
 	auto& memory = machine.memory;
-	const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	const u32 tag = head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag);
-	const u32 word = head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord);
+	const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
+	const u32 tag = head + static_cast<u32>(GcDiagnosticField::StringIndexTag);
+	const u32 word = head + static_cast<u32>(GcDiagnosticField::StringIndexWord);
 	auto methods = bmsx::test::allocateTableReference(cpu, 0, 1);
 	const auto key = cpu.stringPool().intern("watched-method");
 	methods.setStringKey(key, valueInteger(73));

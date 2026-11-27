@@ -181,36 +181,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 	void* const* continuation = exit->continuationCells[run->cartridgeSlot];
 	u32 continuationPc = exit->nextPc;
 	try {
-		if (run->privateFirmware) {
-			// This lane never enters an ordinary closure gate or the public bus.
-			switch (kind) {
-			case NativeBlockExit::ReadMemory:
-			case NativeBlockExit::WriteMemory: {
-				const auto& access = exit->operands.memory;
-				const u32 address = wordOperand(readRK(*frame->executionImage, frame->registers, access.address)) + access.displacement;
-				if (kind == NativeBlockExit::ReadMemory)
-					cpu.executeHeapServiceLoad(*frame, access.slot, access.format, address);
-				else cpu.executeHeapServiceStore(*frame, access.slot, access.format, address);
-				break;
-			}
-			case NativeBlockExit::PrivateCall: {
-				const auto& call = exit->operands.call;
-				cpu.executeHeapServiceCall(*frame, call.callee, call.supplied, call.requested);
-				break;
-			}
-			case NativeBlockExit::PrivateReturn:
-				cpu.executeHeapServiceReturn(*frame, exit->operands.returned.first, exit->operands.returned.produced);
-				break;
-			case NativeBlockExit::SkipInstruction: cpu.skipNextInstruction(*frame, true); break;
-			case NativeBlockExit::InvalidOperand:
-			case NativeBlockExit::InvalidConstant: throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			default: BMSX_UNREACHABLE();
-			}
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-			++gateProfile.returns;
-#endif
-			return nullptr;
-		}
 		auto transition = NativeBlockTransition::NextInstruction;
 		switch (kind) {
 		case NativeBlockExit::CompletedCall:
@@ -441,8 +411,6 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 		}
 		case NativeBlockExit::Continue:
 		case NativeBlockExit::ScalarBoundary:
-		case NativeBlockExit::PrivateCall:
-		case NativeBlockExit::PrivateReturn:
 		case NativeBlockExit::Count:
 			BMSX_UNREACHABLE();
 		}

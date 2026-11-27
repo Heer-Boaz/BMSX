@@ -17,8 +17,9 @@ import { INSTRUCTION_BYTES, instructionBx, instructionLowB, instructionOpcode } 
 import { LUA_FAULT_REASON_INVALID_ARGUMENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { FIRMWARE_DATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -63,7 +64,7 @@ for (const level of [0, 3] as const) {
 			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
 			assert.ok(index >= 0);
 			const stack = deriveBlua32FixedStack(image, [index]);
-			assert.ok(stack.frames <= HEAP_SERVICE_FRAME_COUNT && stack.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+			assert.ok(stack.frames <= CPU_FIXED_FRAME_COUNT && stack.valueSlots <= CPU_FIXED_VALUE_COUNT);
 			return image.functions[index].address;
 		}
 		const prepare = entry('prepare_closure'), attempt = entry('create_prepared_closure');
@@ -100,7 +101,7 @@ for (const level of [0, 3] as const) {
 		restoreCpuCheckpoint(actual, seed);
 		const arena = actual.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
-		const workspace = RAM_BASE + management + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+		const workspace = RAM_BASE + management + FIRMWARE_DATA_OFFSET;
 		const binding = RAM_BASE + management + 0x200, descriptors = binding + 36;
 		const resolved = workspace, cells = workspace + 4 * 1024;
 		const frame = actual.activeThread.currentFrame!, owner = frame.thread.address;

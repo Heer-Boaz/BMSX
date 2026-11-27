@@ -319,7 +319,6 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 }
 
 export type DecodedInstructionPage = MappedPageBinding & {
-	readonly privateFirmware: boolean;
 	widths: Uint8Array;
 	ops: Uint8Array;
 	dispatchOps: Uint8Array;
@@ -382,7 +381,6 @@ export type Blua32ExecutionImage = {
 	romFunctions: Blua32RomFunctionDirectory;
 	readonly romCallBindings: RomCallBindings;
 	decodedPages: Map<number, DecodedInstructionPage>;
-	privateDecodedPages?: Map<number, DecodedInstructionPage>;
 	compiledCodeLookup: CompiledCodeLookup | null;
 };
 
@@ -400,7 +398,7 @@ export type Blua32FunctionRecordLatch = FunctionPrototype & {
 };
 
 export function createDecodedInstructionPage(
-	binding: MappedPageBinding, privateFirmware = false,
+	binding: MappedPageBinding,
 ): DecodedInstructionPage {
 	// Bx, KSMI's signed immediate and a field instruction's mutable cache slot
 	// are alternative payloads; no opcode consumes more than one.
@@ -423,7 +421,7 @@ export function createDecodedInstructionPage(
 		tableCacheSlots: signedPayload,
 		refreshState: new Uint8Array(DECODED_PAGE_WORDS),
 		...binding,
-		compiledBlocks: null, privateFirmware,
+		compiledBlocks: null,
 	};
 	page.refreshState.fill(DECODED_REFRESH_DECODE);
 	page.ops.fill(OpCode.WIDE);

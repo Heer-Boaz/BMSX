@@ -9,8 +9,8 @@ import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueClosure, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
 import { THREAD_HEAP_BYTES, THREAD_INITIAL_FRAMES, THREAD_INITIAL_VALUES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_ROOT_BANKS_OFFSET, GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -38,7 +38,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 	}
 	const fn = functionIndex('create_thread'), whole = functionIndex('internal.allocate_coroutine');
 	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, [fn, whole]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT);
 	const { cpu, memory } = createTestHeapServiceCpu(image), oracle = createTestHeapServiceCpu(image).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 65_536);
 	function same<T>(action: (target: CPU) => T): T {
@@ -59,7 +59,7 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 		assert.ok(paid > 0);
 		return paid;
 	}
-	function compare(extent = HEAP_SERVICE_THREAD_OFFSET) {
+	function compare(extent = GC_WORKSPACE_END) {
 		const first = memory.ramBusEnd() - RAM_BASE, end = cpu.heapAllocator.managementOffset() + extent;
 		const have = memory.ramData().subarray(first, end), want = oracle.memory.ramData().subarray(first, end);
 		if (Buffer.compare(have, want) === 0) return;
@@ -69,7 +69,6 @@ function fixture(opt: 0 | 3, entrySource = 'halt_until_irq') {
 	function finish(expected: number) {
 		let paid = 0;
 		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) paid += grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.equal(cpu.heapServiceResult(), expected);
 		compare();
@@ -221,7 +220,6 @@ for (const opt of [0, 3] as const) {
 		function drain() {
 			let cycles = 0;
 			for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) cycles += f.grant(4096);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
 			assert.equal(cpu.gc.white(), oldWhite ^ 1);
@@ -230,7 +228,7 @@ for (const opt of [0, 3] as const) {
 			assert.equal(memory.readRamRecordWord(control + objectHead), record);
 			assert.equal(memory.readRamRecordWord(record + ThreadField.Entry), entry);
 			// Native work does not materialize the private BIOS root/frontier scratch.
-			f.compare(HEAP_SERVICE_ROOT_BANKS_OFFSET);
+			f.compare(GC_ROOT_BANKS_OFFSET);
 			return cycles;
 		}
 		const cycles = drain();
@@ -260,10 +258,9 @@ for (const opt of [0, 3] as const) {
 		assert.equal(cpu.luaHeap.collectionTarget(), oracle.luaHeap.collectionTarget());
 		assert.equal(cpu.gc.epochWork(), oracle.gc.epochWork());
 		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) f.grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapServiceResult(), record - RAM_BASE);
 		assert.equal(memory.readRamRecordWord(control + objectHead), record);
-		f.compare(HEAP_SERVICE_ROOT_BANKS_OFFSET);
+		f.compare(GC_ROOT_BANKS_OFFSET);
 	});
 
 	test(`Coroutine reports terminal physical OOM only after the permitted rooted epoch at O${opt}`, () => {
@@ -285,13 +282,12 @@ for (const opt of [0, 3] as const) {
 		oracle['runKind'] = CpuRunKind.Idle;
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) f.grant(4096);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapServiceResult(), 0);
 		assert.equal(cpu.gc.white(), white ^ 1, 'only one fresh epoch was permitted from Pause');
 		assert.equal(cpu.gc.closureRecordAddress(entry), entry);
 		assert.equal(arena.occupiedBytes(), before);
 		assert.equal(memory.readRamRecordWord(control + objectCount), count);
-		f.compare(HEAP_SERVICE_ROOT_BANKS_OFFSET);
+		f.compare(GC_ROOT_BANKS_OFFSET);
 	});
 }
 

@@ -3,31 +3,36 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { GcPhase, GC_PACE_PAID, GC_WORK_WORD_CYCLES } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS, LuaAllocationRecovery } from '../../machine/ts/machine/cpu/lua_heap';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/heap_admission', entrySource = 'halt_until_irq';
+const MODULE = 'kernel/heap_admission';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
-const names = ['heap_capacity', 'allocation_debt', 'logical_fits', 'logical_assist_pressure', 'logical_assist_allowance',
-	'limit_assist_allowance', 'spend_assist_allowance', 'credit_logical_assist', 'finish_collection', 'reservation_assist_allowance', 'begin_allocation_recovery'] as const;
-type Entry = typeof names[number];
+const leaves = [
+	{ path: MODULE, member: 'heap_capacity', arity: 1 },
+	{ path: MODULE, member: 'allocation_debt', arity: 2 },
+	{ path: MODULE, member: 'logical_fits', arity: 2 },
+	{ path: MODULE, member: 'logical_assist_pressure', arity: 2 },
+	{ path: MODULE, member: 'logical_assist_allowance', arity: 2 },
+	{ path: MODULE, member: 'limit_assist_allowance', arity: 2 },
+	{ path: MODULE, member: 'spend_assist_allowance', arity: 2 },
+	{ path: MODULE, member: 'credit_logical_assist', arity: 5, result: false },
+	{ path: MODULE, member: 'finish_collection', arity: 1, result: false },
+	{ path: MODULE, member: 'reservation_assist_allowance', arity: 3 },
+	{ path: MODULE, member: 'begin_allocation_recovery', arity: 2 },
+] as const;
+type Entry = typeof leaves[number]['member'];
 
 function fixture(optLevel: 0 | 3) {
-	const linked = linkManagedTestSystem(entrySource, optLevel, [], names.map(exportPathKey =>
-		({ path: MODULE, exportPathKey })));
-	const rootsToCheck = linked.biosImports.functions.map(entry => linked.symbols.functionAddresses.indexOf(entry.functionAddress));
-	const fixed = deriveBlua32FixedStack(linked.layout, rootsToCheck);
-	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
-	const roots = new Map(linked.biosImports.functions.map(entry => [entry.exportPathKey, entry.functionAddress]));
-	const { cpu, memory } = bootManagedTestSystem(linked), oracle = bootManagedTestSystem(linked).cpu;
+	const linked = linkFirmwareProbe(optLevel, [], leaves);
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const arena = cpu.heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, state = arena.allocatorStateOffset();
 	const pace = control + GC_PACE_PAID - 12;
@@ -36,23 +41,21 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function phase(value: number) { same(target => target.memory.writeRamRecordByte(control, value)); }
 	function begin(name: Entry, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(roots.get(name)!, args));
+		issueFirmwareProbe(cpu, args, leaves.findIndex(leaf => leaf.member === name));
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish() {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(128);
 		return spent;
 	}
 	function call(name: Entry, ...args: number[]) {
 		begin(name, ...args); finish();
-		return cpu.heapServiceResult() | 0;
+		return firmwareProbeResult(cpu) | 0;
 	}
 	function setPace(words: readonly number[]) {
 		same(target => words.forEach((word, index) => target.memory.writeRamRecordWord(pace + 4 * index, word)));
@@ -144,12 +147,12 @@ for (const opt of [0, 3] as const) {
 		setPace(cases[5]);
 		f.begin('reservation_assist_allowance', state, requested, budget);
 		f.grant(128);
-		assert.equal(cpu.heapServiceActive(), true, 'widened division can be interrupted');
+		assert.ok(cpu.fixedInterruptActive(), 'widened division can be interrupted');
 		const checkpoint = captureCpuCheckpoint(cpu), remaining = f.finish();
-		assert.equal(cpu.heapServiceResult(), 2);
+		assert.equal(firmwareProbeResult(cpu), 2);
 		restoreCpuCheckpoint(cpu, checkpoint);
 		assert.equal(f.finish(), remaining);
-		assert.equal(cpu.heapServiceResult(), 2);
+		assert.equal(firmwareProbeResult(cpu), 2);
 		assert.equal(call('reservation_assist_allowance', state, 0xffffffff, budget), GC_STEP_WORDS, 'wide occupied + requested reaches capacity');
 		assert.equal(call('reservation_assist_allowance', state, capacity - arena.occupiedBytes(), 3), 1, 'physical-capacity edge lends one work unit');
 		assert.equal(call('reservation_assist_allowance', state, capacity, 2), -1, 'unavailable policy grant is not a zero-word assist');

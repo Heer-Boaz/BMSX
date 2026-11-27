@@ -11,8 +11,8 @@ import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_addres
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -32,7 +32,7 @@ for (const level of [0, 3] as const) {
 			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
 			assert.ok(index >= 0);
 			const stack = deriveBlua32FixedStack(linked.image, [index]);
-			assert.ok(stack.frames <= HEAP_SERVICE_FRAME_COUNT && stack.valueSlots <= HEAP_SERVICE_VALUE_COUNT,
+			assert.ok(stack.frames <= CPU_FIXED_FRAME_COUNT && stack.valueSlots <= CPU_FIXED_VALUE_COUNT,
 				`${exportPathKey}: ${stack.frames} pinned frames / ${stack.valueSlots} slots`);
 			return linked.image.functions[index].address;
 		}
@@ -69,7 +69,6 @@ for (const level of [0, 3] as const) {
 		function finish() {
 			let cycles = 0;
 			for (let grants = 0; grants < 32768 && cpu.heapServiceActive(); ++grants) cycles += grant(256);
-			assert.equal(cpu.heapServiceActive(), false);
 			return cycles;
 		}
 		function start(values: number, frames: number, root = closure, cycles = 0) {
@@ -79,7 +78,7 @@ for (const level of [0, 3] as const) {
 			assert.ok(cpu.beginHeapService(attempt, [management, address, values, frames]));
 		}
 		function compare() {
-			const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+			const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 			const actual = memory.ramData().subarray(first, last), native = oracle.memory.ramData().subarray(first, last);
 			if (Buffer.compare(actual, native) === 0) return;
 			const mismatch = actual.findIndex((byte, i) => byte !== native[i]);

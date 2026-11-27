@@ -122,7 +122,7 @@ public:
 	}
 	int setStringKey(StringId key, const Value& value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0);
 	bool storePredictedStringKey(StringId key, Value value, int predicted) noexcept;
-	Value metatableField(HeapServiceRemarkHeadField field) const;
+	Value metatableField(GcDiagnosticField field) const;
 	u32 resolveIndex(const Value& key, TableLookupResult& result, u32 visitLimit = TABLE_INDEX_CHAIN_LIMIT) const;
 	u32 resolveIntegerIndex(int key, TableLookupResult& result) const;
 	void resolveStringIndex(StringId key, TableLookupResult& result) const;

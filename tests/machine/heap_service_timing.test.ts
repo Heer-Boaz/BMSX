@@ -10,9 +10,6 @@ import { advanceRuntimeTime } from '../../machine/ts/machine/runtime/cpu_executo
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
-import {
-	HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField,
-} from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -25,171 +22,6 @@ import { runCpuWithinBudget, runGuestToHalt } from '../helpers/cpu_execution';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { linkManagedTestSystem } from '../helpers/managed_system';
-
-test('a real VBlank latches its IRQ across allocator service grants and restore', () => {
-	const path = 'kernel/dlmalloc';
-	const entrySource = `local allocator<const> = require('${path}')\nhalt_until_irq`;
-	const { romBytes, symbols } = linkTestSystemBlua32(compileHeapServiceSystem(entrySource, 3));
-	const resetIndex = symbols.metadata.functionIds.findIndex(id =>
-		id.startsWith(`module:${path}/`) && id.endsWith('|constant|bmsx_dlmalloc_reset'));
-	assert.notEqual(resetIndex, -1);
-	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-	});
-	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine;
-	const frames = runtime.frameScheduler;
-	const boot = captureRuntimeSaveState(runtime);
-	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
-	const edge = scheduler.nowCycles;
-	applyRuntimeSaveState(runtime, boot);
-	runGuestToHalt(cpu, 10_000);
-	assert.equal(cpu.isHaltedUntilIrq(), true);
-	const callerPc = cpu.readFramePc(cpu.getFrameDepth() - 1);
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 16);
-
-	const floor = 0x80000;
-	const limit = floor + 0x10000;
-	const control = limit + 0x400;
-	const end = control + 0x200;
-	const reference = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
-	const arena = reference.bindDlmalloc(control);
-	for (let address = control; address < end; address += 4) {
-		memory.writeRamRecordWord(RAM_BASE + address, 0x6d6d6d6d);
-		reference.writeRamRecordWord(RAM_BASE + address, 0x6d6d6d6d);
-	}
-	arena.reset(floor, limit);
-	assert.equal(cpu.beginHeapService(symbols.functionAddresses[resetIndex], [control, floor, limit]), true);
-	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
-	assert.ok(scheduler.nowCycles >= edge);
-	assert.ok(frames.lastTickCpuUsedCycles > 0, 'the service, not an idle wait, used the pre-VBlank grant');
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.notDeepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end), 'arena reset is incomplete at the edge');
-	const partial = captureRuntimeSaveState(runtime);
-	const start = scheduler.nowCycles;
-	let finish = 0;
-	for (let attempt = 0; attempt < 2; ++attempt) {
-		assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), callerPc);
-		assert.deepEqual(memory.ramData().subarray(control, end), reference.ramData().subarray(control, end));
-		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK, 'service retirement leaves hardware pending state intact');
-		if (attempt === 0) finish = scheduler.nowCycles;
-		else assert.equal(scheduler.nowCycles, finish);
-		assert.ok(finish > start);
-		if (attempt === 0) applyRuntimeSaveState(runtime, partial);
-	}
-});
-
-test('scheduled Table constructor CALL allocates across VBlank and replays its continuation from RAM', () => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-	});
-	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine;
-	const frames = runtime.frameScheduler;
-	const boot = captureRuntimeSaveState(runtime);
-	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
-	const edge = scheduler.nowCycles;
-	applyRuntimeSaveState(runtime, boot);
-	const resident = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
-	// The startup itself allocates via the same resident BIOS. Retire it
-	// before timing the independently selected constructor at the edge.
-	const entry = system.image.functions.find(fn => fn.address === system.vectors.entryFunctionAddress)!;
-	let issuePc = entry.codeAddress;
-	const { textBytes, header: { textAddress } } = system.image;
-	let call = decodeBlua32InstructionAtPc(textBytes, textAddress, issuePc);
-	while (call.op !== OpCode.CALL && issuePc < entry.codeAddress + entry.codeByteCount) {
-		issuePc = call.pc + INSTRUCTION_BYTES;
-		assert.ok(issuePc < entry.codeAddress + entry.codeByteCount);
-		call = decodeBlua32InstructionAtPc(textBytes, textAddress, issuePc);
-	}
-	assert.deepEqual([call.op, call.b, call.c], [OpCode.CALL, 3, 2]);
-	cpu.setExecutionHook((_domain, pc) => pc === issuePc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	assert.equal(runCpuWithinBudget(cpu, 10_000), RunResult.ExecutionStopped);
-	cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-	assert.equal(cpu.heapServiceActive(), false);
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - BASE_CYCLES[OpCode.CALL] - 2 - 32);
-	assert.equal(frames.runCyclesToNextLogicalTick(96), true);
-	assert.ok(scheduler.nowCycles >= edge);
-	assert.ok(frames.lastTickCpuUsedCycles > 0);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(memory.readRamRecordWord(resident + HeapServiceResidentField.IssuePc), issuePc);
-	const destination = call.a;
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(cpu.enterPendingInterrupt(), false);
-	const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
-	assert.notEqual(valueTag(cpu.readFrameRegister(caller, destination)), ValueTag.Table);
-	const beforeRetirement = scheduler.nowCycles, partial = captureRuntimeSaveState(runtime);
-	const retire = () => {
-		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.readFramePc(caller), successor);
-		assert.equal(valueTag(cpu.readFrameRegister(caller, destination)), ValueTag.Table);
-		assert.deepEqual(runtime.readCompletionValues(), [], 'the BIOS grant retires before the successor executes');
-		assert.ok(scheduler.nowCycles > beforeRetirement);
-		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-		return [scheduler.nowCycles, cpu.readFrameRegister(caller, destination)];
-	};
-	const retired = retire();
-	applyRuntimeSaveState(runtime, partial);
-	assert.deepEqual(retire(), retired, 'restore repeats the same allocation and timed BIOS frontier');
-	assert.equal(frames.runCyclesToNextLogicalTick(30_000), false);
-	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
-});
-
-test('the resident full collection crosses VBlank during String reclamation', () => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
-		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-	});
-	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine;
-	const frames = runtime.frameScheduler;
-	const boot = captureRuntimeSaveState(runtime);
-	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
-	const edge = scheduler.nowCycles;
-	applyRuntimeSaveState(runtime, boot);
-	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-vblank-string-${i}`);
-
-	// Stop within the one full BIOS activation, before String reclamation.
-	const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-	for (let i = 0; i < 16384 && cpu.gc.phase() !== GcPhase.Strings; ++i) slice(cpu.gc.phase() < GcPhase.Atomic ? 512 : 1);
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(cpu.gc.phase(), GcPhase.Strings);
-	assert.equal(cpu.gc.fullEpochs(), 1);
-	const depth = cpu.getFrameDepth(), callerPc = cpu.readFramePc(depth - 1);
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
-	assert.equal(frames.runCyclesToNextLogicalTick(64), true);
-	assert.ok(scheduler.nowCycles >= edge);
-	assert.ok(frames.lastTickCpuUsedCycles > 0, 'firmware used the pre-VBlank grant, not an idle wait');
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(cpu.gc.phase(), GcPhase.Strings);
-	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(cpu.readFramePc(depth - 1), callerPc);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-
-	const partial = captureRuntimeSaveState(runtime);
-	function finish() {
-		assert.equal(frames.stepInstruction(0), InstructionStepResult.Advanced, 'String GC instruction grants do not retire a caller instruction');
-		assert.equal(cpu.readFramePc(depth - 1), callerPc);
-		assert.equal(frames.runCyclesToNextLogicalTick(100_000), false);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
-		assert.equal(cpu.gc.fullEpochs(), 0);
-		assert.equal(cpu.stringPool.find('dead-vblank-string-23'), undefined);
-		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
-		return scheduler.nowCycles;
-	}
-	const finishedAt = finish();
-	applyRuntimeSaveState(runtime, partial);
-	assert.equal(finish(), finishedAt);
-});
 
 test('a storage-window exception preserves the resolved operands across a recovery VBlank and restore', () => {
 	const system = linkManagedTestSystem('return function(owner, key, value)\nowner[key] = value\nreturn 42\nend', 0);
@@ -244,7 +76,6 @@ test('a storage-window exception preserves the resolved operands across a recove
 	assert.ok(frames.lastTickCpuUsedCycles > 0, 'the recovery pays ordinary CPU time');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(pc(), successor);
 	const checkpoint = captureRuntimeSaveState(runtime);
@@ -257,7 +88,6 @@ test('a storage-window exception preserves the resolved operands across a recove
 			grants.push([scheduler.nowCycles, gc.phase(), +cpu.fixedInterruptActive()]);
 		}
 		assert.equal(cpu.fixedInterruptActive(), false);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(gc.tableRecordAddress(garbage), 0);
 		assert.equal(gc.tableRecordAddress(owner), owner);
 		assert.equal(tables.getInteger(owner, slots + 1), payload);
@@ -268,63 +98,6 @@ test('a storage-window exception preserves the resolved operands across a recove
 	}
 	const completed = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
-	assert.deepEqual(finish(), completed);
-});
-
-test('production object sweep clears the kind byte before release without publishing the frontier', () => {
-	const system = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 42', 0,
-		[{ path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
-	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
-		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
-	});
-	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { gc } = cpu;
-	const older = cpu.createTable(7, 2), newer = cpu.createTable(9, 3);
-	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-	const count = () => memory.readRamRecordWord(control + 0x70);
-	const cursor = () => memory.readRamRecordWord(control + 0x74);
-	const slice = (cycles: number) => {
-		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		return [result, cycles - cpu.instructionBudgetRemaining];
-	};
-	const callbacks: number[][] = [];
-	for (const address of [newer, older]) memory.watchRamByte(address - RAM_BASE);
-	memory.onRamWrite(offset => {
-		const address = RAM_BASE + offset;
-		if ((address === older || address === newer) && memory.readRamRecordByte(offset) === 0
-			&& !callbacks.some(([seen]) => seen === address))
-			callbacks.push([address, count(), cursor(), +cpu.heapAllocator.issuedObjectStart(offset - GC_OBJECT_PREFIX)]);
-	});
-	for (let i = 0; i < 16384 && gc.phase() !== GcPhase.Sweep; ++i) slice(gc.phase() < GcPhase.Atomic ? 512 : 1);
-	assert.equal(gc.phase(), GcPhase.Sweep);
-	assert.equal(cpu.heapServiceActive(), true);
-	const newerBlock = newer - RAM_BASE - GC_OBJECT_PREFIX;
-	assert.ok(cpu.heapAllocator.issuedObjectStart(newerBlock));
-	for (let i = 0; i < 16384 && callbacks.length === 0; ++i) assert.equal(slice(1)[0], RunResult.Yielded);
-	const frontier = [count(), cursor()];
-	assert.notEqual(frontier[1], 0);
-	assert.deepEqual(callbacks, [[newer, ...frontier, 1]]);
-	assert.equal(memory.readRamRecordByte(newer), 0);
-	assert.equal(cpu.heapAllocator.issuedObjectStart(newerBlock), true, 'the kind store precedes the allocator mutation');
-	assert.equal(cpu.heapServiceActive(), true, 'the retired Table stays within the same firmware activation');
-	const checkpoint = captureRuntimeSaveState(runtime);
-
-	function finish() {
-		callbacks.length = 1;
-		const grants: number[][] = [];
-		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) grants.push(slice(1024));
-		assert.equal(gc.fullEpochs(), 0);
-		assert.equal(cpu.heapServiceActive(), false);
-		const marked = callbacks.slice(1);
-		assert.deepEqual(marked.map(([address, , , allocated]) => [address, allocated]), [[older, 1]]);
-		assert.ok(count() < marked[0][1], 'the older record is counted out after its retirement callback');
-		assert.equal(cursor(), 0);
-		assert.deepEqual(runtime.readCompletionValues(), [valueInteger(42)]);
-		return { grants, callbacks: callbacks.slice() };
-	}
-	const completed = finish();
-	applyRuntimeSaveState(runtime, checkpoint);
-	assert.deepEqual([count(), cursor()], frontier);
 	assert.deepEqual(finish(), completed);
 });
 
@@ -385,7 +158,6 @@ test('the storage-window deadline is the hardware allowance, not the caller gran
 	const op = () => instructionOpcode(memory.readMappedU32LE(cpu.readFramePc(depth)));
 	for (let i = 0; i < 16 && op() !== OpCode.SETT; ++i) {
 		assert.equal(scheduler.runCpuSlice(0, 1), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false);
 	}
 	assert.equal(op(), OpCode.SETT);
 	const start = scheduler.nowCycles, next = scheduler.nextDeadline();

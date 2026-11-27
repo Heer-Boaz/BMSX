@@ -146,7 +146,7 @@ void numericFieldArithmeticKeepsNativeFrame(CPU& cpu, Memory& memory) {
 
 void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 	const StringId indexKey = cpu.stringPool().intern("__index");
-	const u32 indexKeyOffset = cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	const u32 indexKeyOffset = cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index);
 	const auto* indexKeyWord = memory.ramData() + indexKeyOffset;
 	const StringId key = cpu.stringPool().intern("inherited method");
 	auto root = bmsx::test::allocateTableReference(cpu, 3, 4), middle = bmsx::test::allocateTableReference(cpu, 0, 1), holder = bmsx::test::allocateTableReference(cpu, 2, 4);
@@ -264,7 +264,7 @@ void inheritedReadFollowsLiveOwners(CPU& cpu, Memory& memory) {
 void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("native read field");
 	const auto indexKey = cpu.stringPool().intern("__index");
-	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index);
 	const auto other = cpu.stringPool().intern("other read field");
 	ValueSlots constants(1); constants.set(0, valueString(key));
 	const std::array values{valueFromTag(ValueTag::False, 37), valueFloat(-0.0f),
@@ -419,7 +419,7 @@ void stringReadsFollowLiveTables(CPU& cpu, Memory& memory) {
 void oneHopStringReadsProveTheCurrentPath(CPU& cpu, Memory& memory) {
 	const auto key = cpu.stringPool().intern("bounded lookup");
 	const auto indexKey = cpu.stringPool().intern("__index");
-	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	const auto* indexKeyWord = memory.ramData() + cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index);
 	const u32 home = hashCanonicalTableKey(valueString(key)) & 1u;
 	StringId collision = 0;
 	for (int i = 0; i < 64 && !collision; ++i) {

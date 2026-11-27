@@ -7,7 +7,7 @@ import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
 import { IMAGE_STRING_RAM_ORDINAL } from '../../../machine/ts/machine/cpu/execution_image';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../../machine/ts/machine/cpu/table';
@@ -22,7 +22,7 @@ import { EXECUTION_IMAGE_BINDINGS_OFFSET, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OF
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_COUNT_OFFSET, BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_FLAGS, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -100,7 +100,7 @@ function verifySystemExec(rom: string, native: string, out: string): void {
 	const wire = join(out, 'system-exec-before.state');
 	writeFileSync(wire, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 	const first = arena.managementOffset() + HEAP_LOGICAL_OCCUPIED_OFFSET;
-	const end = arena.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const end = arena.managementOffset() + GC_ROOT_BANKS_OFFSET;
 	const ledger = memory.ramData().slice(first, end);
 	const digest = hashBytes(ledger, 0, ledger.length);
 	const trace = new Trace(native, join(out, 'system-exec.trace'));
@@ -112,7 +112,7 @@ function verifySystemExec(rom: string, native: string, out: string): void {
 	assert.equal(pc, readLE32(system, target + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET));
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.deepEqual(memory.ramData().subarray(first, end), ledger, 'EXEC did not reserve or collect');
-	trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining, 0,
+	trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
 		cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	trace.observe('P', `1 ${pc}`);
 	trace.observe(`H ${first} ${end}`, digest);
@@ -134,7 +134,7 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	rt.boot();
 	for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) {
 		const result = scheduler.runCpuSlice(0, 127, 0, CpuRunKind.Scheduled);
-		trace.observe('L 127', [result, 127 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+		trace.observe('L 127', [result, 127 - cpu.instructionBudgetRemaining,
 			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	assert.equal(cpu.isHaltedUntilIrq(), true);
@@ -146,7 +146,7 @@ function verifyColdRefusal(rom: string, native: string, dir: string): void {
 	trace.observe(`O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
 	const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 	const done = frames.runCyclesToNextLogicalTick(1);
-	trace.observe('p 1', `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
+	trace.observe('p 1', `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.isHaltedUntilIrq()}`);
 	assert.equal(systemController.hasResetRequest(), false, 'cold diagnostic refusal must not retain the reset interlock');
 	assert.equal(cpu.captureRuntimeState().previousRootContextWord, 0);
 	assert.equal(cpu.isHaltedUntilIrq(), false);
@@ -251,14 +251,13 @@ return 43, pick(2, 99, nil, 707, nil)
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const complete = frames.runCyclesToNextLogicalTick(65536);
 		trace.observe('p 65536', [
-			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq(),
 		].join(' '));
 	}
 	assert.equal(memory.readMappedU32LE(report), 1);
 	function grant(trace: Trace, cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-		trace.observe(`E ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+		trace.observe(`E ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining,
 			memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 		return result;
 	}
@@ -284,7 +283,7 @@ return 43, pick(2, 99, nil, 707, nil)
 	let argcObserved = false, returnPc = -1, varargBase = -1;
 	for (let n = 0; n < 4096 && cpu.getFrameDepth() !== 0; ++n) {
 		const frame = cpu.activeThread.currentFrame!;
-		if (!cpu.heapServiceActive() && cpu.activeCartridgeSlot() === SYSTEM_EXECUTION_DOMAIN_ID && frame.argumentCount === 5) {
+		if (cpu.activeCartridgeSlot() === SYSTEM_EXECUTION_DOMAIN_ID && frame.argumentCount === 5) {
 			const next = decodeBlua32InstructionAtPc(system, SYSTEM_ROM_BASE, frame.pc);
 			if (next.op === OpCode.ARGC) {
 				varargBase = assertArguments().varargBase;
@@ -319,7 +318,6 @@ return 43, pick(2, 99, nil, 707, nil)
 	const cut = trace.commands.length, count = trace.expected.length;
 
 	function finish(trace: Trace) {
-		assert.equal(cpu.heapServiceActive(), false);
 		const frame = assertArguments();
 		assert.equal(frame.pc, returnPc);
 		assert.equal(frame.varargBase, varargBase);
@@ -385,8 +383,7 @@ halt_until_irq
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const complete = frames.runCyclesToNextLogicalTick(65536);
 		trace.observe('p 65536', [
-			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq(),
 		].join(' '));
 	}
 	assert.equal(memory.readMappedU32LE(report), 43);
@@ -433,8 +430,7 @@ halt_until_irq
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const complete = frames.runCyclesToNextLogicalTick(65536);
 		trace.observe('p 65536', [
-			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+			+complete, scheduler.nowCycles - before, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq(),
 		].join(' '));
 	}
 	assert.ok(early.before > 0 && early.before < early.required && early.after >= early.required,
@@ -485,7 +481,7 @@ function verifyExceptionBridge(rom: string, native: string, dir: string, optLeve
 	trace.observe('X');
 	function step() {
 		const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+		trace.observe('L 1', [result, 1 - cpu.instructionBudgetRemaining,
 			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	for (let grant = 0; grant < 20000 && fixedTrap(); ++grant) step();
@@ -546,7 +542,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 		}
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const done = frames.runCyclesToNextLogicalTick(grant);
-		trace.observe(`p ${grant}`, `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
+		trace.observe(`p ${grant}`, `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.isHaltedUntilIrq()}`);
 	}
 	function runUntilCartHalt() {
 		for (let i = 0; i < 2048 && (!cpu.isHaltedUntilIrq() || cpu.activeCartridgeSlot() !== 0 || memory.readMappedWord(report) !== expectedReport); ++i) runFrame(65536);
@@ -557,8 +553,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	function rawGrant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, 0, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	rt.boot();
 	assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -577,10 +572,10 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const cell = memory.readRamRecordWord(oldFrame + FrameField.OpenHead);
 	assert.notEqual(cell, 0);
 	assert.equal(isOpen(memory, cell), true);
-	const diagnostics = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + HeapServiceRemarkHeadField.Index;
+	const diagnostics = management + GC_DIAGNOSTIC_OFFSET + GcDiagnosticField.Index;
 	const key = memory.readRamRecordWord(diagnostics);
-	const indexTag = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + HeapServiceRemarkHeadField.StringIndexTag;
-	const indexWord = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + HeapServiceRemarkHeadField.StringIndexWord;
+	const indexTag = management + GC_DIAGNOSTIC_OFFSET + GcDiagnosticField.StringIndexTag;
+	const indexWord = management + GC_DIAGNOSTIC_OFFSET + GcDiagnosticField.StringIndexWord;
 	const index = memory.readRamRecordWord(indexWord);
 	assert.equal(memory.readRamRecordWord(indexTag), ValueTag.Table);
 	assert.notEqual(index, 0);
@@ -599,7 +594,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	trace.observe(`O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
 	const prior = scheduler.nowCycles, tick = frames.lastTickSequence;
 	const step = frames.stepInstruction(1);
-	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick), +cpu.heapServiceActive(),
+	trace.observe('d', [step, scheduler.nowCycles - prior, +(frames.lastTickSequence !== tick),
 		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.equal(scheduler.nowCycles, 0);
@@ -665,7 +660,6 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const secondBefore = scheduler.nowCycles, secondTick = frames.lastTickSequence;
 	const held = frames.stepInstruction(1);
 	trace.observe('d', [held, scheduler.nowCycles - secondBefore, +(frames.lastTickSequence !== secondTick),
-		+cpu.heapServiceActive(),
 		+cpu.fixedInterruptActive(), memory.readIoU32(IO_IRQ_FLAGS),
 		arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 	assert.ok(scheduler.nowCycles >= secondBefore);
@@ -715,7 +709,7 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 		}
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const done = frames.runCyclesToNextLogicalTick(cycles);
-		trace.observe(`p ${cycles}`, `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
+		trace.observe(`p ${cycles}`, `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.isHaltedUntilIrq()}`);
 	}
 	function fingerprint(address: number, count: number) {
 		const first = address - RAM_BASE;
@@ -725,13 +719,12 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	for (let i = 0; i < 1024 && memory.readMappedWord(progress) !== 1024; ++i) grant(65536);
 	assert.equal(memory.readMappedWord(progress), 1024);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
-	assert.equal(cpu.heapServiceActive(), false);
 	const root = cpu.rootThread.address;
 	memory.writeMappedWord(gate, 1);
 	trace.observe(`O ${gate} 1`);
 	function issueGrant() {
 		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
-		trace.observe('E 1', `${result} ${1 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		trace.observe('E 1', `${result} ${1 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		assert.equal(result, RunResult.Yielded);
 	}
 	const stopped = cpu.activeThread, frame = stopped.currentFrame!, depth = stopped.frameDepth;
@@ -744,7 +737,6 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	assert.equal(memory.readRamRecordWord(receiver + TableHeader.Array), 1024);
 	issueGrant();
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 	assert.equal(cpu.readEpcWord(), issue);
 	assert.equal(cpu.readThreadFrameWord(stopped.address, depth - 1, FrameField.Pc), successor);
@@ -779,7 +771,6 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	assert.equal(systemController.hasResetRequest(), true);
 	assert.equal(cpu.rootThread.address, root);
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	trace.observe('l');
 	trace.observe('s');
 	trace.observe(`x ${nativeState}`);
@@ -848,8 +839,7 @@ halt_until_irq`;
 	const nativePartial = join(dir, label + '-native.state');
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-		assert.equal(cpu.heapServiceActive(), false);
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, 0, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
 		trace.observe(`H ${offset} ${offset + length}`, hashBytes(memory.ramData(), offset, length));
@@ -933,7 +923,7 @@ halt_until_irq`;
 		fingerprint(cartBinding, EXECUTION_IMAGE_BINDING_SIZE);
 		fingerprint(alias - RAM_BASE, 16);
 		fingerprint(management + HEAP_STRING_METADATA_OFFSET, HEAP_GC_CONTROL_OFFSET - HEAP_STRING_METADATA_OFFSET);
-		fingerprint(management + HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET - HEAP_LOGICAL_OCCUPIED_OFFSET);
+		fingerprint(management + HEAP_LOGICAL_OCCUPIED_OFFSET, GC_ROOT_BANKS_OFFSET - HEAP_LOGICAL_OCCUPIED_OFFSET);
 	}
 	finishFloorRecovery();
 	const tail = commands.slice(start), tailResults = expected.slice(before);
@@ -998,8 +988,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		assert.equal(result, cpu.isHaltedUntilIrq() ? RunResult.Halted : RunResult.Yielded);
 		assert.ok(cycles - cpu.instructionBudgetRemaining > 0, 'stopped guest work charges ordinary instructions');
-		assert.equal(cpu.heapServiceActive(), false, 'the reset context itself executes the collection');
-		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, 0,
+		trace.observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining,
 			cpu.gc.fullEpochs(), cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 	}
 	function fingerprint(offset: number, length: number) {
@@ -1067,7 +1056,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		}
 		fingerprint(installed, bindingBytes);
 		fingerprint(management + HEAP_STRING_METADATA_OFFSET, HEAP_GC_CONTROL_OFFSET - HEAP_STRING_METADATA_OFFSET);
-		fingerprint(management + HEAP_GC_CONTROL_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET - HEAP_GC_CONTROL_OFFSET);
+		fingerprint(management + HEAP_GC_CONTROL_OFFSET, GC_ROOT_BANKS_OFFSET - HEAP_GC_CONTROL_OFFSET);
 	}
 	finish();
 	const tail = commands.slice(start), tailResults = expected.slice(before);
@@ -1090,7 +1079,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 		trace.observe(`O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const done = frames.runCyclesToNextLogicalTick(1);
-		trace.observe('p 1', `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
+		trace.observe('p 1', `${+done} ${scheduler.nowCycles - before} ${frames.lastTickSequence - tick} ${+cpu.isHaltedUntilIrq()}`);
 		assert.equal(rt.machine.systemController.hasResetRequest(), false, 'terminal binding refusal must not retain the reset interlock');
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		assert.equal(cpu.captureRuntimeState().previousRootContextWord, root);
@@ -1146,8 +1135,7 @@ halt_until_irq
 		}
 		const cycles = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const complete = frames.runCyclesToNextLogicalTick(65536);
-		trace.observe('p 65536', [ +complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq() ].join(' '));
+		trace.observe('p 65536', [ +complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq() ].join(' '));
 	}
 	cpu.setExecutionHook(null, 0, 0);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
@@ -1167,7 +1155,7 @@ halt_until_irq
 	assert.ok(absoluteFloor < otherFloor);
 	assert.equal(memory.ramBusEnd(), absoluteFloor, 'the selected socket supplies the exact aperture, not the private socket-0 view');
 	const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
-	trace.observe('E 1', [result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+	trace.observe('E 1', [result, 1 - cpu.instructionBudgetRemaining,
 		memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 	trace.observe(`H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + 8}`, hashBytes(memory.ramData(), bssAddress - RAM_BASE, 8));
 	trace.observe(`H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`, hashBytes(memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE));
@@ -1194,8 +1182,7 @@ function verifyResetAfterRejectedExec(rom: string, native: string, dir: string, 
 		const cycles = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const complete = frames.runCyclesToNextLogicalTick(grant);
 		trace.observe(`p ${grant}`, [
-			+complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq(),
+			+complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq(),
 		].join(' '));
 	}
 	runtime.boot();

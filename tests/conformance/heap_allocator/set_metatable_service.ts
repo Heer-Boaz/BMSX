@@ -108,7 +108,7 @@ try {
 		const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		const grant = (cycles = 1) => {
 			const result = run(cycles);
-			observe(`J ${cycles} 1`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), +cpu.fixedInterruptActive(),
+			observe(`J ${cycles} 1`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.fixedInterruptActive(),
 				cpu.heapAllocator.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 			return result;
 		};
@@ -129,7 +129,6 @@ try {
 
 		for (let i = 0; !cpu.fixedInterruptActive() && i < 256; ++i) assert.equal(grant(), RunResult.Yielded);
 		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 		const owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), depth = cpu.rootThread.frameDepth - 1;
 		assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Function), entry);

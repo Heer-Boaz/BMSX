@@ -4956,8 +4956,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		this.emitLoadConst(base + 1, integerConstant(arraySize));
 		this.emitLoadConst(base + 2, integerConstant(hashSize));
-		// Keep the constructor window in the issuer: ordinary CALL to the
-		// former resident function used a hidden privileged stack.
+		// Keep the constructor arguments in the issuing register window.
 		this.emitLoadConst(base, integerConstant(StockFirmwareOperand.CreateTable));
 		this.emitABC(OpCode.SVC, base, 3, 0);
 		const construction = this.code[this.code.length - 1];

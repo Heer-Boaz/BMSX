@@ -67,7 +67,7 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 	function grant(machine: Runtime, cycles: number) {
 		const { cpu, memory, scheduler } = machine.machine;
 		const state = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		observe(`E ${cycles}`, `${state} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${cycles}`, `${state} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return state;
 	}
 	function hash(machine: Runtime, first: number, length: number) {

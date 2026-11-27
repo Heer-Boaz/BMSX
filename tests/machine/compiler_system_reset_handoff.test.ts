@@ -65,7 +65,6 @@ for (const optLevel of [0, 3] as const) test('ordinary System reset admits the f
 	for (let step = 0; step < 8192 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++step) {
 		const budget = ordinaryCall ? 257 : 1;
 		assert.equal(scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false, 'raw reset runs ordinary code, not a resident service');
 		if (cpu.rootThread.address === CPU_RESET_BANK_ADDRESS && cpu.getFrameDepth() > 1) {
 			ordinaryCall = true;
 			assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
@@ -100,14 +99,13 @@ for (const optLevel of [0, 3] as const) test('ordinary System reset admits the f
 			observations.push([outcome, budget - cpu.instructionBudgetRemaining, depth, depth === 0 ? 0 : cpu.readFramePc(depth - 1)]);
 		}
 		// Observe each DATA/BSS write before the ordinary initializer reads them.
-		for (let i = 0; i < 8192 && memory.readMappedWord(dataAddress) !== 41; ++i) grant(cpu.heapServiceActive() ? 257 : 1);
+		for (let i = 0; i < 8192 && memory.readMappedWord(dataAddress) !== 41; ++i) grant(1);
 		assert.equal(memory.readMappedWord(dataAddress), 41);
 		assert.equal(memory.readMappedWord(bssAddress), 73);
 		for (let i = 0; i < 8192 && memory.readMappedWord(bssAddress) === 73; ++i) grant(1);
 		assert.equal(memory.readMappedWord(bssAddress), 0, 'section init cleared BSS before executing the initializer');
 		for (let i = 0; i < 512 && cpu.getFrameDepth() !== 0; ++i) grant(257);
 		assert.equal(cpu.getFrameDepth(), 0);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.deepEqual(target.readCompletionValues(), [valueInteger(4241)]);
 		assert.equal(memory.readMappedWord(bssAddress), 42, 'the module initializer ran exactly once before entry');
@@ -152,7 +150,6 @@ cop0.context = ${context}`],
 	}
 	assert.equal(cpu.rootThread.address, context);
 	assert.equal(cpu.activeThread.currentFrame!.closureAddress, 0);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 	assert.equal(scheduler.runCpuSlice(0, 64, undefined, CpuRunKind.Scheduled), RunResult.Halted);
 	assert.deepEqual(runtime.readCompletionValues(), [valueInteger(73)]);

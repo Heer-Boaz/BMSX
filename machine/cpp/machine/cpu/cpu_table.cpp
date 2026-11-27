@@ -7,7 +7,7 @@ namespace bmsx {
 u32 CPU::tableIndexAddress(Value base) const {
 	if (valueIsTable(base)) return valuePayload(base);
 	if (valueIsString(base)) {
-		if (const u32 index = m_heap.diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord)) return index;
+		if (const u32 index = m_heap.diagnosticWord(GcDiagnosticField::StringIndexWord)) return index;
 	}
 	throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
 }
@@ -26,9 +26,7 @@ void CPU::invokeImplicit(CallFrame& frame, CallResultPlacement placement, Value 
 	auto roots = acquireLocalRoots();
 	trackLocalRoot(method);
 	for (const Value arg : args) trackLocalRoot(arg);
-	if (valueTag(method) == ValueTag::ResidentFunction) {
-		beginResidentCall(valuePayload(method), {args.data(), args.size()}, placement);
-	} else if (valueIsBuiltinFunction(method)) {
+	if (valueIsBuiltinFunction(method)) {
 		runBuiltinFunction(m_builtinFunctions[static_cast<size_t>(asBuiltinFunctionId(method))], frame, placement, {args.data(), args.size()});
 	} else throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 }
@@ -38,7 +36,7 @@ bool CPU::finishTableRead(CallFrame& frame, int destination, Value base, Value k
 	while (result.status == TableLookupStatus::Forward) {
 		carried += result.extraVisits;
 		base = result.value;
-		const u32 index = valueIsString(base) ? m_heap.diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord) : 0u;
+		const u32 index = valueIsString(base) ? m_heap.diagnosticWord(GcDiagnosticField::StringIndexWord) : 0u;
 		if (index == 0u) {
 			instructionBudgetRemaining -= static_cast<int>(carried) * TABLE_INDEX_VISIT_CYCLES;
 			throw LuaExecutionError(LUA_FAULT_REASON_INDEX_NON_TABLE);
@@ -149,7 +147,7 @@ bool CPU::storeTableFieldIndexCached(CallFrame& frame, int& predictedSlot, Value
 
 bool CPU::executeLength(CallFrame& frame, int destination, Value operand) {
 	if (valueIsTable(operand)) {
-		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(HeapServiceRemarkHeadField::Length);
+		const Value method = TableRecord(m_heap, valuePayload(operand)).metatableField(GcDiagnosticField::Length);
 		if (!isNil(method)) {
 			const std::array args{operand, operand};
 			invokeImplicit(frame, CallResultPlacement::single(destination), method, args);

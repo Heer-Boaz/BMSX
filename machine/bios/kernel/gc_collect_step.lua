@@ -14,7 +14,7 @@ local collect_step<const> = function() -- C:286-289 T:283-286
 	local control<const> = management + layout.control_offset -- G:1270
 	local phase<const> = gc.internal.phase(control) -- G:1007
 	local borrows_roots<const> = phase <= atomic_phase -- G:1122-1124,697-703
-	if borrows_roots then root_inputs.publish_interrupt(management) end -- G:1122-1124,1274-1276; read the stopped context
+	if borrows_roots then root_inputs.publish(management) end -- G:1122-1124,1274-1276; read the stopped context
 	if phase == atomic_phase then -- G:1007
 		collector.finish_atomic(management, 0, false) -- G:696-702; public Step supplies no scoped roots
 	else -- G:1008; the normal step owns one quantum

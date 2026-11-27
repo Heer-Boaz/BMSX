@@ -11,7 +11,6 @@
 #include "machine/runtime/history/ram_history.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
-#include "spec/bmsx/heap_service.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
 #include "spec/bmsx/rom_header.h"
@@ -52,7 +51,6 @@ int main(int argc, char** argv) {
 		auto& cpu = runtime.machine.cpu;
 		auto& memory = runtime.machine.memory;
 		auto& scheduler = runtime.machine.scheduler;
-		const auto occupied = cpu.heapAllocator().occupiedBytes();
 		std::vector<u8> replacementSystemRom;
 		RuntimeSaveState saved;
 		RuntimeCheckpointState historyCheckpoint;
@@ -100,31 +98,12 @@ int main(int argc, char** argv) {
 					break;
 				}
 
-				case 'B': {
-					u32 function, count, args[8];
-					trace >> function >> count;
-					if (count > std::size(args)) throw std::runtime_error("Unexpected fixture arity");
-					for (u32 i = 0; i < count; ++i) trace >> args[i];
-					std::cout << cpu.beginHeapService(function, {args, count}) << '\n';
-					break;
-				}
-				case 'G': {
-					int cycles;
-					trace >> cycles;
-					if (scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled) != RunResult::Yielded)
-						throw std::runtime_error("Heap service did not yield to its caller");
-					if (cpu.heapAllocator().occupiedBytes() != occupied)
-						throw std::runtime_error("Ordinary heap supplied service frames or closures");
-					std::cout << cycles - cpu.instructionBudgetRemaining << ' ' << cpu.heapServiceActive()
-						<< ' ' << cpu.heapServiceResult() << '\n';
-					break;
-				}
 				case 'E': {
 					int cycles;
 					trace >> cycles;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << memory.ramBusEnd()
+						<< memory.ramBusEnd()
 						<< ' ' << static_cast<int>(cpu.activeCartridgeSlot()) << '\n';
 					break;
 				}
@@ -133,7 +112,7 @@ int main(int argc, char** argv) {
 					trace >> cycles >> mode;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << cpu.fixedInterruptActive() << ' ' << cpu.heapAllocator().occupiedBytes()
+						<< cpu.fixedInterruptActive() << ' ' << cpu.heapAllocator().occupiedBytes()
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -142,7 +121,7 @@ int main(int argc, char** argv) {
 					trace >> cycles >> target;
 					const auto result = scheduler.runCpuSlice(target, cycles, 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
 				case 'L': {
@@ -150,7 +129,7 @@ int main(int argc, char** argv) {
 					trace >> cycles;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << cpu.gcHeap().fullEpochs()
+						<< cpu.gcHeap().fullEpochs()
 						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -159,11 +138,11 @@ int main(int argc, char** argv) {
 					trace >> address >> word;
 					int grants = 0;
 					while (memory.readRamRecordWord(address) != word && grants < 16384) {
-						if (scheduler.runCpuSlice(0, 1, 0u, CpuRunKind::Scheduled) != RunResult::Yielded || !cpu.heapServiceActive())
+						if (scheduler.runCpuSlice(0, 1, 0u, CpuRunKind::Scheduled) != RunResult::Yielded || !cpu.fixedInterruptActive())
 							throw std::runtime_error("Object sweep lost the CPU before the observed store");
 						++grants;
 					}
-					if (grants == 0 || memory.readRamRecordWord(address) != word || !cpu.heapServiceActive())
+					if (grants == 0 || memory.readRamRecordWord(address) != word || !cpu.fixedInterruptActive())
 						throw std::runtime_error("Object sweep did not suspend at the observed store");
 					std::cout << grants << '\n';
 					break;
@@ -219,37 +198,13 @@ int main(int argc, char** argv) {
 #endif
 					break;
 				}
-				case 'n': {
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-					const auto& profile = cpu.nativeGateProfile();
-					std::cout << "native-firmware " << profile.privateFirmwareEntries << ' '
-						<< profile.privateFirmwareCycles << ' ' << profile.lastPrivateFirmwareEntryPc << ' '
-						<< cpu.heapServiceResult() << ' '
-						<< profile.exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries << '\n';
-#else
-					throw std::runtime_error("Firmware native PC evidence requires BMSX_NATIVE_GATE_PROFILE.");
-#endif
-					break;
-				}
-				case 't': {
-#if defined(BMSX_NATIVE_GATE_PROFILE)
-					const auto& exits = cpu.nativeGateProfile().exits;
-					std::cout << "firmware-transfer " << cpu.heapServiceResult() << ' '
-						<< exits[static_cast<size_t>(NativeBlockExit::PrivateCall)].entries << ' '
-						<< exits[static_cast<size_t>(NativeBlockExit::PrivateReturn)].entries << ' '
-						<< exits[static_cast<size_t>(NativeBlockExit::CreateClosure)].entries << '\n';
-#else
-					throw std::runtime_error("Fixed transfer evidence requires BMSX_NATIVE_GATE_PROFILE.");
-#endif
-					break;
-				}
 				case 'q': {
 					int depth, cycles;
 					trace >> depth >> cycles;
 					const auto before = scheduler.nowCycles();
 					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, depth, cycles);
 					std::cout << static_cast<unsigned>(result) << ' ' << scheduler.nowCycles() - before
-						<< ' ' << cpu.heapServiceActive() << ' ' << cpu.getFrameDepth()
+						<< ' ' << cpu.getFrameDepth()
 						<< ' ' << cpu.readFramePc(depth - 1) << ' ' << cpu.isHaltedUntilIrq() << '\n';
 					break;
 				}
@@ -259,7 +214,7 @@ int main(int argc, char** argv) {
 					const auto before = scheduler.nowCycles();
 					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles, cpu.rootThread()->address);
 					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
-						<< ' ' << cpu.heapServiceActive() << ' ' << cpu.fixedInterruptActive() << ' '
+						<< ' ' << cpu.fixedInterruptActive() << ' '
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -267,33 +222,11 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'F' && opcode != 'Y' && opcode != 'V')
-						throw std::runtime_error("Expected generated SETFIELD, coroutine.create or VARARG");
+					if (opcode != 'F' && opcode != 'V')
+						throw std::runtime_error("Expected generated SETFIELD or VARARG");
 					const bool growField = opcode == 'F';
-					const bool coroutine = opcode == 'Y';
 					const bool vararg = opcode == 'V';
-					const auto gate = vararg ? NativeBlockExit::Vararg : coroutine ? NativeBlockExit::Call : NativeBlockExit::WriteField;
-					u32 coroutineRoot = 0u;
-					if (coroutine) {
-						auto& frame = *cpu.activeThread()->currentFrame;
-						const u32 closure = frame.readControl(FrameField::Closure);
-						const std::array original{frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)};
-						if (valueTag(original[0]) != ValueTag::ResidentFunction) throw std::runtime_error("Expected a linked resident argument");
-						coroutineRoot = valuePayload(original[0]);
-						// Same CALL site, a real nonallocating builtin with a valid argument.
-						const std::array warmArgs{valueBuiltinFunction(BuiltinFunctionId::GetMetatable), original[2]};
-						frame.registers.set(0, warmArgs[0]);
-						frame.registers.set(1, warmArgs[1]);
-						for (int visit = 0; visit < 128; ++visit) {
-							if (visit != 0) cpu.beginCompletionCall(closure, {warmArgs.data(), warmArgs.size()});
-							auto warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-							for (int grant = 0; grant < 8 && warm == RunResult::Yielded && !cpu.heapServiceActive(); ++grant)
-								warm = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-							if (warm != RunResult::Halted || cpu.heapServiceActive())
-								throw std::runtime_error("Warm read-only builtin did not finish without a resident service");
-						}
-						cpu.beginCompletionCall(closure, {original.data(), original.size()});
-					}
+					const auto gate = vararg ? NativeBlockExit::Vararg : NativeBlockExit::WriteField;
 					if (vararg) {
 						auto& frame = *cpu.activeThread()->currentFrame;
 						const u32 closure = frame.readControl(FrameField::Closure);
@@ -301,7 +234,7 @@ int main(int argc, char** argv) {
 						for (int visit = 0; visit < 128; ++visit) {
 							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
 							const auto outcome = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-							if (outcome != RunResult::Halted || cpu.heapServiceActive())
+							if (outcome != RunResult::Halted)
 								throw std::runtime_error("A fitting VARARG suspend would invalidate the native gate warm-up");
 						}
 						std::array<Value, 33> args;
@@ -317,34 +250,19 @@ int main(int argc, char** argv) {
 					// before this guest instruction, on separate firmware grants.
 					for (int grant = 0; grant < 512 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
 						result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
-					const u32 management = cpu.heapAllocator().managementOffset();
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once: "
 							+ std::to_string(allocation.entries - before.entries) + " entries, "
 							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
 							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
-					if (!coroutine) {
-						const u32 cause = vararg ? CPU_CAUSE_CODE_REGISTER_WINDOW : CPU_CAUSE_CODE_STORAGE_WINDOW;
-						if (result != RunResult::Halted || cpu.heapServiceActive() || cpu.fixedInterruptActive()
-							|| cpu.readCauseWord() != cause || cpu.activeThread()->address != (growField ? cpu.rootThread()->address : owner)
-							|| memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) != 0u)
-							throw std::runtime_error("Generated instruction did not retire through its ordinary window exception: cause "
-								+ std::to_string(cpu.readCauseWord()) + ", run " + std::to_string(static_cast<int>(result)));
-						std::cout << allocation.entries - before.entries << ' ' << cpu.readCauseWord() << ' ' << cpu.readEpcWord() << '\n';
-						break;
-					}
-					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
-					if (result != RunResult::Yielded || !cpu.heapServiceActive())
-						throw std::runtime_error("The generated allocation did not suspend");
-					const u32 frame = management + HEAP_SERVICE_FRAME_OFFSET;
-					const u32 activeRoot = memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Function));
-					const u32 origin = memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc));
-					if (activeRoot != coroutineRoot || origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES
-						|| memory.readRamRecordWord(frame + static_cast<u32>(FrameField::Flags)) != FRAME_RESIDENT_ACTIVATION)
-						throw std::runtime_error("The generated instruction did not issue its bound resident continuation");
-					std::cout << allocation.entries - before.entries << ' ' << FRAME_RESIDENT_ACTIVATION
-						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					const u32 cause = vararg ? CPU_CAUSE_CODE_REGISTER_WINDOW : CPU_CAUSE_CODE_STORAGE_WINDOW;
+					if (result != RunResult::Halted || cpu.fixedInterruptActive()
+						|| cpu.readCauseWord() != cause || cpu.activeThread()->address != (growField ? cpu.rootThread()->address : owner)
+						|| memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) != 0u)
+						throw std::runtime_error("Generated instruction did not retire through its ordinary window exception: cause "
+							+ std::to_string(cpu.readCauseWord()) + ", run " + std::to_string(static_cast<int>(result)));
+					std::cout << allocation.entries - before.entries << ' ' << cpu.readCauseWord() << ' ' << cpu.readEpcWord() << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
 #endif
@@ -358,7 +276,6 @@ int main(int argc, char** argv) {
 					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
 					std::cout << result << ' ' << (scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
-						<< ' ' << cpu.heapServiceActive()
 						<< ' ' << cpu.fixedInterruptActive()
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
@@ -379,7 +296,7 @@ int main(int argc, char** argv) {
 					const auto tick = frames.lastTickSequence;
 					const bool completed = frames.runCyclesToNextLogicalTick(runtime, cycles);
 					std::cout << completed << ' ' << scheduler.nowCycles() - before << ' '
-						<< frames.lastTickSequence - tick << ' ' << cpu.heapServiceActive() << ' '
+						<< frames.lastTickSequence - tick << ' '
 						<< cpu.isHaltedUntilIrq() << '\n';
 					break;
 				}
@@ -428,29 +345,8 @@ int main(int argc, char** argv) {
 					std::cout << cpu.gcHeap().step(valueString(string), valueNil(), valueNil(), 0u, false, 1) << '\n';
 					break;
 				}
-				case ':': {
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
-					const auto& profile = cpu.nativeGateProfile();
-					std::cout << profile.privateFirmwareEntries << ' '
-						<< profile.exits[static_cast<size_t>(NativeBlockExit::ReadMemory)].entries << ' '
-						<< profile.exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries << '\n';
-#else
-					throw std::runtime_error("The native Value port proof requires the gate profile.");
-#endif
-					break;
-				}
 				case 'Z': std::cout << cpu.readCauseWord() << ' ' << cpu.readLuaFaultReasonWord() << ' ' << cpu.readEpcWord() << '\n'; break;
 				case 'F': std::cout << cpu.captureRuntimeState().hardHalted << '\n'; break;
-				case 'T': {
-					runtime.frameLoop.beginFrameState(runtime, 1000000, 0);
-					const auto before = scheduler.nowCycles();
-					if (runtime.cpuExecution.runInstruction(runtime, runtime.frameLoop.frameState) != InstructionStepResult::Executed
-						|| !cpu.heapServiceActive())
-						throw std::runtime_error("Heap service did not execute a scheduled instruction");
-					std::cout << scheduler.nowCycles() - before << ' '
-						<< runtime.frameLoop.frameState.activeCpuUsedCycles << '\n';
-					break;
-				}
 				case '&': {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					int grant, generated;
@@ -463,7 +359,7 @@ int main(int argc, char** argv) {
 						frame.registers.set(0, warm[0]);
 						for (int visit = 0; visit < 128; ++visit) {
 							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
-							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted || cpu.heapServiceActive())
+							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted)
 								throw std::runtime_error("Read-only CALL warm-up did not reach its ordinary return.");
 						}
 						cpu.prepareSystemNativeCode();
@@ -474,7 +370,7 @@ int main(int argc, char** argv) {
 					const auto outcome = scheduler.runCpuSlice(0, grant, 0u, CpuRunKind::Scheduled);
 					const auto after = cpu.nativeGateProfile().exits[gate];
 					std::cout << static_cast<int>(outcome) << ' ' << grant - cpu.instructionBudgetRemaining
-						<< ' ' << cpu.heapServiceActive() << ' ' << after.entries - before.entries << ' ' << after.returns - before.returns << ' '
+						<< ' ' << after.entries - before.entries << ' ' << after.returns - before.returns << ' '
 						<< after.resumes - before.resumes << ' ' << after.exceptions - before.exceptions << '\n';
 #else
 					throw std::runtime_error("Ordinary CALL gate proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
@@ -495,7 +391,7 @@ int main(int argc, char** argv) {
 						frame.registers.set(0, warm[0]);
 						for (int visit = 0; visit < 128; ++visit) {
 							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
-							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted || cpu.heapServiceActive())
+							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted)
 								throw std::runtime_error("Warm scalar closed SETUP did not finish as an ordinary write");
 						}
 						cpu.prepareSystemNativeCode();
@@ -506,7 +402,7 @@ int main(int argc, char** argv) {
 					const auto result = scheduler.runCpuSlice(0, grant, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
 					const auto after = cpu.nativeGateProfile().exits[gate];
 					std::cout << static_cast<int>(result) << ' ' << grant - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << after.entries - before.entries << ' ' << after.returns - before.returns
+						<< after.entries - before.entries << ' ' << after.returns - before.returns
 						<< ' ' << after.resumes - before.resumes << ' ' << after.exceptions - before.exceptions << '\n';
 #else
 					throw std::runtime_error("SETUP gate proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
@@ -588,7 +484,6 @@ int main(int argc, char** argv) {
 				}
 				case 'R': {
 					const auto before = scheduler.nowCycles();
-					const bool fixed = cpu.fixedInterruptActive();
 					const auto pc = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					const auto requireRefusal = [&](auto&& change, std::string_view refusal) {
 						try {
@@ -596,19 +491,17 @@ int main(int argc, char** argv) {
 						} catch (const std::runtime_error& error) {
 							if (std::string_view(error.what()) != refusal) throw;
 							if (scheduler.nowCycles() != before || cpu.readFramePc(cpu.getFrameDepth() - 1) != pc
-								|| !(fixed ? cpu.fixedInterruptActive() : cpu.heapServiceActive()))
+								|| !cpu.fixedInterruptActive())
 								throw std::runtime_error("Refused control transfer changed suspended execution");
 							return;
 						}
 						throw std::runtime_error("Control transfer entered while fixed execution was suspended");
 					};
 					const std::string_view fixedRefusal = "System IRQ must retire before reset.";
-					requireRefusal([&] { runtime.rebootSystem(); }, fixed ? fixedRefusal : "Heap service must retire before system boot.");
-					if (fixed) {
-						requireRefusal([&] { cpu.reset(); }, fixedRefusal);
-						requireRefusal([&] { runtime.callClosure(0u); }, "External Lua closure execution requires a settled CPU and device frontier.");
-						requireRefusal([&] { cpu.abortCompletionCall(0); }, "Fixed execution must retire before replacing code execution.");
-					}
+					requireRefusal([&] { runtime.rebootSystem(); }, fixedRefusal);
+					requireRefusal([&] { cpu.reset(); }, fixedRefusal);
+					requireRefusal([&] { runtime.callClosure(0u); }, "External Lua closure execution requires a settled CPU and device frontier.");
+					requireRefusal([&] { cpu.abortCompletionCall(0); }, "Fixed execution must retire before replacing code execution.");
 					std::cout << "reset deferred\n";
 					break;
 				}

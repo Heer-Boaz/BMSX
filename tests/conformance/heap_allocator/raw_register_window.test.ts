@@ -178,7 +178,6 @@ for (const operation of ['CALL', 'VARARG', 'RET'] as const) test(`bare System RO
 		assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), outcome, `PC 0x${pc.toString(16)}`);
 		const paid = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(paid, BASE_CYCLES[op] + extra, `PC 0x${pc.toString(16)}`);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
 		record('E 1', `${outcome} ${paid} 0 ${memory.ramBusEnd()} -1`);

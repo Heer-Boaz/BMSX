@@ -100,7 +100,6 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 		assert.ok(tag === ValueTag.Closure || tag === ValueTag.CodeFunction, 'the public function is ordinary guest code');
 	}
 	assert.ok(cpu.isHaltedUntilIrq());
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(arena.occupiedBytes(), occupied);
 	assert.equal(cpu.luaHeap.usedBytes(), logical);
 	assert.equal(hashBytes(memory.ramData(), first, end - first), ledger, 'no string index or collector administration changed');

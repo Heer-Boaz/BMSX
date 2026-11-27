@@ -10,7 +10,6 @@
 #include "machine/memory/memory.h"
 #include "spec/blua32/execution_domain.h"
 #include "spec/blua32/opcode.h"
-#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 
@@ -36,7 +35,6 @@ constexpr u32 FRAME_BANK_CART = 1u << 3;
 constexpr u32 FRAME_BANK_SECOND = 1u << 4;
 constexpr u32 FRAME_BANK_MASK = FRAME_BANK_CART | FRAME_BANK_SECOND;
 constexpr u32 FRAME_EXTEND_RESULT_TOP = 1u << 5;
-constexpr u32 FRAME_RESIDENT_ACTIVATION = 1u << 6;
 constexpr u32 frameBankWord(ExecutionDomainId domain) {
 	return domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u : FRAME_BANK_CART | (static_cast<u32>(domain) << 4);
 }

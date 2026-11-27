@@ -38,8 +38,6 @@ enum class NativeBlockExit : u8 {
 	WriteSystemGlobal,
 	ReadUpvalue,
 	IterateTable,
-	PrivateCall,
-	PrivateReturn,
 	SupervisorCall,
 	Count,
 };

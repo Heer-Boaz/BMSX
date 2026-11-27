@@ -3,11 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { residentFunctionAddress } from '../../helpers/heap_service_system';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -34,6 +33,7 @@ local saved<const> = co.create(function(seed)
 end)
 local started, yielded = co.resume(saved, 24)
 fixture_live_thread = saved
+halt_until_irq
 fixture_collect()
 local done, value = co.resume(saved, 7)
 if not started or not done then return -1 end
@@ -44,7 +44,7 @@ const boot = {
 	path: 'fixture_sweep_boot',
 	source: `
 local co<const> = require('coroutine')
-local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
+local gc_ids<const> = require('kernel/heap_control_ids'); fixture_collect = function() blua32.svc(gc_ids.collect_full) end
 local make_dead_thread<const> = function(count)
 	return co.create(function()
 		count = count + 1
@@ -72,11 +72,8 @@ try {
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
-		const startup = system.symbols.functionAddresses[system.symbols.metadata.functionIds.indexOf('module:main/startup')];
-		for (let grant = 0; grant < 256 && cpu.readFrameFunctionAddress(0) !== startup; ++grant) {
-			assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
-		}
-		assert.equal(cpu.readFrameFunctionAddress(0), startup);
+		runGuestToHalt(cpu, 4_194_304);
+		assert.ok(cpu.isHaltedUntilIrq());
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const head = () => memory.readRamRecordWord(control + OBJECT_HEAD);
@@ -84,8 +81,8 @@ try {
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
 		const occupied = () => cpu.luaHeap.usedBytes();
 		const tail = cpu.createTable(6, 16);
-		const driver = new FullGcConformance(runtime, native, path, rom,
-			residentFunctionAddress({ image: system.layout, symbols: system.symbols }, 'kernel/gc_full', 'collect_full'));
+		cpu.clearHaltUntilIrq();
+		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		assert.equal(gc.fullEpochs(), 1);
 		const live = cpu.getGlobalByKey(cpu.stringPool.intern('fixture_live_thread'));

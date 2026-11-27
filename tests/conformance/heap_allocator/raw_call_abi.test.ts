@@ -21,7 +21,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { OpCode, BASE_CYCLES } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CPU_FIXED_STACK_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { integerConstant } from '../../../toolchain/ts/lua/number';
@@ -69,7 +69,7 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 	writeLE32(rom, callee.address - SYSTEM_ROM_BASE + BLUA32_FUNCTION_FLAGS_OFFSET, callee.flags | BLUA32_FUNCTION_CODE);
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler } = runtime.machine;
-	const management = cpu.heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET, end = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const management = cpu.heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
 	const empty = new Uint8Array(end - first);
 	runtime.boot();
 	const commands: string[] = [], expected: string[] = [];
@@ -83,11 +83,10 @@ for (const scenario of cases) test(scenario.name + ' in a bare System ROM', t =>
 		assert.equal(run, depth === 1 && op === OpCode.RET ? RunResult.Halted : RunResult.Yielded);
 		assert.equal(1 - cpu.instructionBudgetRemaining, cycles, `op=${op} pc=${pc.toString(16)} run=${run} cause=${cpu.readCauseWord()} next=${cpu.activeThread.currentFrame?.pc}`);
 		assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
 		commands.push('E 1');
-		expected.push(`${run} ${cycles} 0 ${memory.ramBusEnd()} -1`);
+		expected.push(`${run} ${cycles} ${memory.ramBusEnd()} -1`);
 	}
 	const word = INSTRUCTION_BYTES;
 	for (const [index, op] of [OpCode.CLOSURE, OpCode.KSMI, OpCode.KNIL, OpCode.KSMI, OpCode.KNIL, OpCode.CALL].entries())
@@ -191,7 +190,7 @@ test('bare System ROM enters closures from its own private arena, including a ca
 		const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC, cpuExecutionBackend }, input);
 		const { cpu, memory, scheduler } = runtime.machine;
 		const management = cpu.heapAllocator.managementOffset();
-		const first = management + HEAP_STRING_METADATA_OFFSET, end = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		const first = management + HEAP_STRING_METADATA_OFFSET, end = management + GC_ROOT_BANKS_OFFSET;
 		const empty = new Uint8Array(end - first);
 		assert.deepEqual(memory.ramData().subarray(first, end), empty);
 		runtime.boot();
@@ -207,8 +206,7 @@ test('bare System ROM enters closures from its own private arena, including a ca
 			const grant = enteredCapture && capturedVisits === warmVisits ? 2048 : 1;
 			commands.push('P', `E ${grant}`);
 			result = scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled);
-			assert.equal(cpu.heapServiceActive(), false);
-			rows.push(`${depth} ${pc}`, `${result} ${grant - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} -1`);
+			rows.push(`${depth} ${pc}`, `${result} ${grant - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} -1`);
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.rootThread.address, context);

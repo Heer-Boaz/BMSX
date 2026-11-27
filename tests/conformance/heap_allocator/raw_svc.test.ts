@@ -19,7 +19,7 @@ import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUN
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CPU_FIXED_STACK_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -214,10 +214,9 @@ for (const { name, status, source, payload, edit } of [
 		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		const paid = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(paid, op === OpCode.SVC ? 2 : BASE_CYCLES[op] + (op === OpCode.RET ? 1 : 0), `pc=0x${pc.toString(16)}`);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
-		observe('E 1', `${result} ${paid} 0 ${memory.ramBusEnd()} -1`);
+		observe('E 1', `${result} ${paid} ${memory.ramBusEnd()} -1`);
 		return result;
 	}
 	for (let i = 0; i < 256 && cpu.activeThread.address !== a; ++i) assert.equal(grant(runtime), RunResult.Yielded);
@@ -294,7 +293,7 @@ for (const { name, status, source, payload, edit } of [
 		assert.deepEqual(rt.readCompletionValues(), [expectedValue]);
 		observe('c', `1 ${valueTag(expectedValue)} ${valuePayload(expectedValue)}`);
 		const management = cpu.heapAllocator.managementOffset(), first = management + HEAP_STRING_METADATA_OFFSET;
-		const length = management + HEAP_SERVICE_ROOT_BANKS_OFFSET - first;
+		const length = management + GC_ROOT_BANKS_OFFSET - first;
 		assert.deepEqual(memory.ramData().subarray(first, first + length), new Uint8Array(length));
 		hash(rt, first, length);
 	}

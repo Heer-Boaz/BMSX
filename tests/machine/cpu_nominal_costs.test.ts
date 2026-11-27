@@ -146,7 +146,6 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		assert.equal(cpu.instructionBudgetRemaining, -1, 'one instruction-supply charge');
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 		assert.equal(cpu.readEpcWord(), pc, 'EPC points to WIDE, not the body');
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), before);
 		assert.deepEqual([frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)],
 			[valueInteger(17), valueInteger(2), valueInteger(3)]);

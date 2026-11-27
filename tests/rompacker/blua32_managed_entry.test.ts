@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_STATIC } from '../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -31,7 +31,7 @@ for (const optLevel of [0, 3] as const) for (const callable of [false, true]) te
 	assert.equal(record.numParams, 1);
 	assert.equal(record.isVararg, true);
 	assert.equal(record.upvalues.length, 0);
-	assert.equal(record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_RESIDENT | BLUA32_FUNCTION_STATIC),
+	assert.equal(record.flags & (BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC),
 		callable ? BLUA32_FUNCTION_CODE | BLUA32_FUNCTION_STATIC : 0);
 	const relocation = object.link.constValueRelocs.find(reloc => reloc.kind === 'link_value' && reloc.modulePath === 'bmsx/startup');
 	assert.ok(relocation);

@@ -68,12 +68,11 @@ try {
 		const commands: string[] = [], observations: string[] = [];
 		function grant(budget: number, expected: RunResult) {
 			assert.equal(scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled), expected);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 			assert.equal(cpu.luaHeap.usedBytes(), 0);
 			assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 			commands.push(`L ${budget}`);
-			observations.push(`${expected} ${budget - cpu.instructionBudgetRemaining} 0 0 0 0`);
+			observations.push(`${expected} ${budget - cpu.instructionBudgetRemaining} 0 0 0`);
 		}
 		const base = head - RAM_BASE;
 		function fingerprint() {

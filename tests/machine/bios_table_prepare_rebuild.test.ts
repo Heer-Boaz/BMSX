@@ -4,25 +4,23 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
+import { GC_CHANGED_HEAD, GC_MODE_META, GC_TRACE_RECORD, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueInteger, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/table_prepare_rebuild', port = `machine/bios/${MODULE}.lua`, entrySource = 'halt_until_irq';
+const MODULE = 'kernel/table_prepare_rebuild', port = `machine/bios/${MODULE}.lua`;
 const basis = 'edfe988ff624b541b9162691b5d8bdae295b70bc';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/table_create', 'kernel/table_reinsert', 'kernel/table_assignment', MODULE].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
@@ -33,20 +31,14 @@ const fields = ['source', 'count', 'storage', 'capacity', 'array_storage', 'arra
 const dirty = 0x9d;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const roots = ['prepare_table_rebuild', 'place_table_rebuild', 'publish_table_rebuild'].map(operation => {
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === operation);
-		assert.ok(symbol);
-		const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-		assert.ok(root >= 0);
-		return root;
-	});
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, roots);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
+	const linked = linkFirmwareProbe(optLevel, modules, [
+		{ path: MODULE, member: 'prepare_table_rebuild', arity: 3 },
+		{ path: MODULE, member: 'place_table_rebuild', arity: 3 },
+		{ path: MODULE, member: 'publish_table_rebuild', arity: 4 },
+	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const first = memory.ramBusEnd() - RAM_BASE, last = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
+	const first = memory.ramBusEnd() - RAM_BASE, last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);
@@ -68,20 +60,18 @@ function fixture(optLevel: 0 | 3) {
 		oracleMemory.writeRamRecordPair(jobOffset + 24, job.arrayCleared, job.cleared);
 		oracleMemory.writeRamRecordPair(jobOffset + 48, job.homes, job.cursor);
 		oracleMemory.writeRamRecordPair(jobOffset + 56, job.free, job.collisions);
-		assert.ok(cpu.beginHeapService(linked.image.functions[roots[placement ? 1 : 0]].address, [job.record, jobOffset, allowance]));
+		issueFirmwareProbe(cpu, [job.record, jobOffset, allowance], placement ? 1 : 0);
 		return expected;
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const used = cycles - cpu.instructionBudgetRemaining;
-		assert.ok(used > 0);
-		return used;
+		const spent = grantFirmwareProbe(cpu, cycles);
+		assert.ok(spent > 0);
+		return spent;
 	}
 	function retire(expected: number) {
 		let spent = 0;
-		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) spent += grant(256);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult() | 0, expected);
+		for (let i = 0; i < 512 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(256);
+		assert.equal(firmwareProbeResult(cpu) | 0, expected);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		return spent;
 	}
@@ -108,9 +98,9 @@ function fixture(optLevel: 0 | 3) {
 		// A pure keep-hash resize can enter the final prep grant with no
 		// placements; otherwise these fixtures reach publication via place.
 		const prepareOnly = job.source === 0 && job.storage === 0;
-		assert.ok(cpu.beginHeapService(linked.image.functions[roots[prepareOnly ? 0 : 1]].address, [record, jobOffset, allowance]));
+		issueFirmwareProbe(cpu, [record, jobOffset, allowance], prepareOnly ? 0 : 1);
 		retire(expected);
-		assert.ok(cpu.beginHeapService(linked.image.functions[roots[2]].address, [management, record, jobOffset, expected]));
+		issueFirmwareProbe(cpu, [management, record, jobOffset, expected], 2);
 		return expected;
 	}
 	const frontiers = () => [memory.readRamRecordWord(jobOffset + 24), memory.readRamRecordWord(jobOffset + 28)];
@@ -160,7 +150,7 @@ for (const opt of [0, 3] as const) {
 				const priorHigh = f.memory.readRamRecordByte(high), priorLow = f.memory.readRamRecordByte(low);
 				assert.equal(f.begin(j, grant), 0);
 				for (let i = 0; i < 4096 && f.memory.readRamRecordByte(high) === priorHigh; ++i) f.grant(1);
-				assert.ok(f.cpu.heapServiceActive());
+				assert.ok(!f.cpu.isHaltedUntilIrq());
 				assert.notEqual(f.memory.readRamRecordByte(high), priorHigh);
 				assert.equal(f.memory.readRamRecordByte(low), priorLow, 'overlapping transfer moves its high end first');
 				assert.deepEqual(f.frontiers(), [0, 0], 'the original batch cursor is not published on a partial move');
@@ -260,7 +250,7 @@ for (const opt of [0, 3] as const) {
 			const expected = f.begin(j, 8, true);
 			const tagAddress = tags + mask - 1;
 			for (let step = 0; step < 256 && f.memory.readRamRecordByte(tagAddress) === ValueTag.Nil; ++step) f.grant(1);
-			assert.equal(f.cpu.heapServiceActive(), true);
+			assert.equal(f.cpu.isHaltedUntilIrq(), false);
 			assert.equal(f.memory.readRamRecordByte(tagAddress), ValueTag.Integer);
 			const nextLink = () => hash <= 128 ? f.memory.readRamRecordByte(links + mask) : f.memory.readRamRecordWord(links + 4 * mask);
 			assert.equal(nextLink(), hash <= 128 ? 255 : 0xffffffff, 'the key tag became visible before the chain link');
@@ -335,7 +325,7 @@ for (const opt of [0, 3] as const) {
 			const expected = f.beginPublication(j, 8192);
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.ArrayStorage), oldBase);
 			for (let i = 0; i < 4096 && f.memory.readRamRecordWord(record + TableHeader.Array) === oldArray; ++i) f.grant(1);
-			assert.ok(f.cpu.heapServiceActive());
+			assert.ok(!f.cpu.isHaltedUntilIrq());
 			assert.equal(f.memory.readRamRecordWord(control + GC_TRACE_RECORD), 0);
 			assert.equal(f.memory.readRamRecordWord(control + GC_MODE_META), 0);
 			assert.equal(f.memory.readRamRecordWord(control + GC_CHANGED_HEAD), (record & GC_RECORD_MASK) >>> GC_RECORD_SHIFT);
@@ -360,7 +350,7 @@ for (const opt of [0, 3] as const) {
 		const oldHash = 128, hash = 256, record = f.same(cpu => cpu.createTable(0, oldHash));
 		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
 		const storage = f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
-		const key = valueString(f.cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)), value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
+		const key = valueString(f.cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
 		f.same(cpu => {
 			cpu.gc.tables.set(record, valueInteger(-10), valueInteger(40));
 			cpu.stringPool.beginReachabilityEpoch();
@@ -375,7 +365,7 @@ for (const opt of [0, 3] as const) {
 		const expected = f.beginPublication(j, 4096);
 		const oldValueMark = f.memory.readRamRecordByte(valuePayload(value) + 1);
 		for (let i = 0; i < 4096 && f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent) !== 0; ++i) f.grant(1);
-		assert.ok(f.cpu.heapServiceActive());
+		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.memory.readRamRecordByte(record + TableHeader.NewIndexAbsent), 0);
 		assert.equal(f.memory.readRamRecordWord(record + TableHeader.HashStorage), storage);
 		assert.equal(f.cpu.gc.tables.get(record, key), value);

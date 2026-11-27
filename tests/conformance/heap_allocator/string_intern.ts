@@ -16,8 +16,8 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_LENGTH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE } from '../../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
-import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { HEAP_SERVICE_RESULT_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkRawTestBlua32Pair, linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -59,7 +59,7 @@ try {
 		const entry = system.symbols.metadata.functionIds.findIndex(id => id.startsWith('module:test/intern_probe/') && id.endsWith('|constant|run'));
 		assert.ok(entry >= 0);
 		const fixed = deriveBlua32FixedStack(system.image, [entry]);
-		assert.ok(fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT && fixed.frames <= HEAP_SERVICE_FRAME_COUNT);
+		assert.ok(fixed.valueSlots <= CPU_FIXED_VALUE_COUNT && fixed.frames <= CPU_FIXED_FRAME_COUNT);
 		const fn = system.image.functions[entry].address;
 		console.log(`BIOS-INTERN O${optLevel}: ${fixed.valueSlots} fixed Value slots, ${fixed.frames} frames`);
 		const rom = join(directory, 'system.rom');
@@ -187,7 +187,7 @@ try {
 				assert.equal(state, RunResult.Yielded);
 				const paid = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(paid > 0);
-				observe(`J ${cycles} 1`, [state, paid, +cpu.heapServiceActive(), 0, arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
+				observe(`J ${cycles} 1`, [state, paid, 0, arena.occupiedBytes(), cpu.luaHeap.usedBytes()].join(' '));
 			};
 			const trace = join(directory, 'observations');
 			const reproduce = (label: string, commands: readonly string[], expected: readonly string[], state = seed) => {
@@ -249,7 +249,6 @@ try {
 			function finish() {
 				const cycles = scenario === 'invalid-chain' ? 4096 : 257;
 				for (let i = 0; cpu.heapServiceActive() && i < 8192; ++i) grant(cycles);
-				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(cpu.heapServiceResult(), reference);
 				const result = management + HEAP_SERVICE_RESULT_OFFSET;
 				observe(`H ${result} ${result + 4}`, hashBytes(recordRaw, result, 4));

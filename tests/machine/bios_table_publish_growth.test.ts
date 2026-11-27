@@ -3,24 +3,22 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_CHANGED_HEAD, GC_MODE_META, GC_ROOT_CURSOR, GC_TRACE_CURSOR, GC_TRACE_RECORD } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/table_publish_growth', port = `machine/bios/${MODULE}.lua`, entrySource = 'halt_until_irq';
+const MODULE = 'kernel/table_publish_growth', port = `machine/bios/${MODULE}.lua`;
 const basis = 'f2aac88e703a8d8fe40beb96163224142d11e98a';
 const source = readFileSync(port, 'utf8').replaceAll('\r\n', '\n');
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_strings',
@@ -31,18 +29,11 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 const dirty = 0x9d;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'publish_table_growth');
-	assert.ok(symbol);
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: 'publish_table_growth', arity: 8, result: false }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const first = memory.ramBusEnd() - RAM_BASE, management = cpu.heapAllocator.managementOffset();
-	const last = management + HEAP_SERVICE_THREAD_OFFSET, control = management + HEAP_GC_CONTROL_OFFSET;
+	const last = management + GC_WORKSPACE_END, control = management + HEAP_GC_CONTROL_OFFSET;
 	function same<T>(action: (target: CPU) => T): T {
 		const result = action(cpu);
 		assert.deepEqual(action(oracle), result);
@@ -68,20 +59,18 @@ function fixture(optLevel: 0 | 3) {
 		if (!keepHash) tables['bindHash'](record, hash, storage);
 		oracle.memory.writeRamRecordWord(record + TableHeader.ArrayStorage, base);
 		if (!keepHash) tables['initializeHash'](storage, hash);
-		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [
+		issueFirmwareProbe(cpu, [
 			control, record, array, hash, TableRecords.hashStorageBytes(hash), +keepHash, reservation - RAM_BASE, +cppMirror,
-		]));
+		]);
 	}
-	function grant(budget: number) {
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
-		const spent = budget - cpu.instructionBudgetRemaining;
+	function grant(cycles: number) {
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish() {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(1024);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(1024);
 		compare();
 		return spent;
 	}
@@ -155,7 +144,7 @@ for (const optLevel of [0, 3] as const) {
 		});
 		f.begin(record, array, hash, false, storage, base);
 		for (let i = 0; i < 4096 && memory.readRamRecordWord(record + TableHeader.Array) !== array; ++i) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(memory.readRamRecordWord(record + TableHeader.Array), array);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0, 'scan invalidates before publishing the new extent');
 		assert.equal(memory.readRamRecordWord(control + GC_MODE_META), 0);
@@ -163,14 +152,14 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(record + TableHeader.HashStorage), oldHash);
 		assert.equal(memory.readRamRecordWord(record + TableHeader.ArrayStorage), oldArray);
 		for (let i = 0; i < 4096 && memory.readRamRecordWord(record + TableHeader.ArrayStorage) !== base; ++i) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(memory.readRamRecordWord(record + TableHeader.ArrayStorage), base);
 		assert.equal(memory.readRamRecordWord(record + TableHeader.HashStorage), storage);
 		assert.equal(memory.readRamRecordWord(record + TableHeader.Hash), hash);
 		assert.equal(memory.readRamRecordWord(record + TableHeader.Free), hash - 1);
 		assert.equal(memory.readRamRecordByte(storage), dirty, 'all backing words publish before the fill');
 		for (let i = 0; i < 4096 && memory.readRamRecordByte(storage) === dirty; ++i) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(memory.readRamRecordWord(storage), 0);
 		assert.equal(memory.readRamRecordByte(storage + 10 * hash), dirty, 'link fill is still pending');
 		const checkpoint = captureCpuCheckpoint(cpu);

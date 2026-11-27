@@ -112,15 +112,14 @@ inline constexpr auto NATIVE_BLOCK_BOUNDARY_OPS = [] {
 	return boundaries;
 }();
 
-inline constexpr bool nativeBlockEndsBlock(u8 op, int field, bool privateFirmware = false) {
-	if (privateFirmware && op == static_cast<u8>(OpCode::CLOSURE)) return false;
+inline constexpr bool nativeBlockEndsBlock(u8 op, int field) {
 	return NATIVE_BLOCK_BOUNDARY_OPS[op]
 		|| (op == static_cast<u8>(OpCode::MTC0) && (cop0WriteRetiresControl(field) || !cop0FieldImplemented(field)));
 }
 
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row, bool privateFirmware = false) {
-	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b, privateFirmware)
+inline constexpr u8 nativeWarmDispatch(const DecodedInstruction& row) {
+	return static_cast<u8>(nativeBlockEndsBlock(row.op, row.b)
 		? DecodedDispatchOp::NativeWarmBoundary : DecodedDispatchOp::NativeWarm);
 }
 
@@ -130,32 +129,8 @@ inline constexpr bool isNativeWarmDispatch(u8 dispatch) {
 }
 #endif
 
-inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool privateFirmware = false) {
-	if (privateFirmware) {
-		// Fixed firmware shares ALU/branch lowering but selects the private
-		// record aperture instead of the ordinary bus.
-		switch (static_cast<OpCode>(instruction.op)) {
-			case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::Tag);
-			case OpCode::JMP: return instruction.a == 0;
-			case OpCode::LOAD_MEM: case OpCode::LOAD_MEM_D:
-			case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
-				return instruction.c == static_cast<int>(MemoryAccessKind::U8)
-					|| instruction.c == static_cast<int>(MemoryAccessKind::U32LE)
-					|| instruction.c == static_cast<int>(MemoryAccessKind::Word)
-					|| instruction.c == static_cast<int>(MemoryAccessKind::Value);
-			case OpCode::KSMI: case OpCode::K0: case OpCode::K1:
-			case OpCode::KNIL: case OpCode::KTRUE: case OpCode::KFALSE: case OpCode::LOADNIL:
-			case OpCode::LOADK: case OpCode::LOADKR:
-			case OpCode::ADD: case OpCode::SUB: case OpCode::MUL: case OpCode::UNM: case OpCode::FLOORDIV:
-			case OpCode::NOT: case OpCode::BAND: case OpCode::BOR: case OpCode::BXOR:
-			case OpCode::SHL: case OpCode::SHR: case OpCode::BNOT:
-			case OpCode::JMPIF: case OpCode::JMPIFNOT: case OpCode::EQ: case OpCode::LT: case OpCode::LE:
-			case OpCode::CLOSURE: case OpCode::CALL:
-				return true;
-			case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);
-			default: return false;
-		}
-	}
+inline bool nativeSourceCanEmit(const DecodedInstruction& instruction) {
+
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::MFC0: return instruction.b != COP0_EVENT_CYCLES;
 		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);

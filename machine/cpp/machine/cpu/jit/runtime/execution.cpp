@@ -11,7 +11,7 @@ NativeCpuRunState::NativeCpuRunState(CPU& owner, int depth)
 	state.globalValues = &owner.m_globalBank.values();
 	state.systemGlobalValues = &owner.m_systemGlobalBank.values();
 	state.cop0Words = owner.m_cop0Words.data();
-	state.tableIndexKeyWord = owner.m_memory.ramData() + owner.m_heap.diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	state.tableIndexKeyWord = owner.m_memory.ramData() + owner.m_heap.diagnosticOffset(GcDiagnosticField::Index);
 	state.ram = owner.m_memory.ramData();
 }
 
@@ -26,8 +26,8 @@ void NativeCpuRunState::enterFrame(CallFrame& frame, int budget) {
 	nativeStackCapacity = thread.stackCapacity;
 	nativeFrameLimit = thread.retainedFrameLimit();
 	haltedCallDepth = cpu->m_haltedUntilIrqThreadAddress == thread.address ? cpu->m_haltedUntilIrqFrameDepth : -1;
-	cartridgeSlot = privateFirmware ? 0u : cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
-	codeRoot = (privateFirmware ? image.privateFirmwareCode->lookup : image.nativeCodeLookup)->root(cartridgeSlot);
+	cartridgeSlot = cpu->m_memory.cartridgeController().selectedSlot(cpu->m_executionBusSignals);
+	codeRoot = image.nativeCodeLookup->root(cartridgeSlot);
 	state.constants = image.constPool;
 	state.frame = &frame;
 	state.remainingCycles = budget;

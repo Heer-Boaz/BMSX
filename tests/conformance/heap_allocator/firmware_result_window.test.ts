@@ -32,12 +32,11 @@ const locals = Array.from({ length: 49 }, (_, index) => `local r${index} = ${ind
 const fixedResults = 80;
 const deadText = 'unreachable room for completed CALL results '.repeat(256);
 
-for (const kind of ['open', 'fixed', 'refusal', 'resident', 'weak'] as const) test(`firmware places a completed ${kind} CALL result without repeating the producer`, t => {
-	const resident = kind === 'resident', refusal = kind === 'refusal', weak = kind === 'weak';
+for (const kind of ['open', 'fixed', 'refusal', 'weak'] as const) test(`firmware places a completed ${kind} CALL result without repeating the producer`, t => {
+	const refusal = kind === 'refusal', weak = kind === 'weak';
 	const linked = linkManagedTestSystem(`
 local entries<const> = require('bmsx/startup')
 local protect<const> = blua32.closure(entries.protected_call)
-${resident ? "local heap<const> = require('kernel/gc_full')" : ''}
 ${weak ? `
 local set_meta<const> = require('kernel/set_metatable')
 local function weak_owner()
@@ -46,20 +45,20 @@ end
 ` : ''}
 local function caller(${weak ? 'owner' : ''})
 	${locals}
-	${resident || weak ? '' : 'local thread = (__bmsx_coroutine_running())'}
+	${weak ? '' : 'local thread = (__bmsx_coroutine_running())'}
 	halt_until_irq
-	return ${resident ? 'heap.heap_bytes()' : weak ? '__bmsx_next(owner, nil)' : '__bmsx_frame_header(thread, 0)'}
+	return ${weak ? '__bmsx_next(owner, nil)' : '__bmsx_frame_header(thread, 0)'}
 end
 return protect(caller${weak ? ', weak_owner()' : ''})
 `, 0);
 	const rom = writeTestBlua32Rom(linked);
-	if (resident || weak || kind === 'fixed') {
+	if (weak || kind === 'fixed') {
 		// Bytecode may request more results than its present window can hold.
 		// A source assignment would statically reserve the padding instead.
 		const slot = linked.symbols.metadata.functionIds.findIndex(id => id.endsWith(':caller'));
 		assert.ok(slot >= 0);
 		const caller = linked.layout.functions[slot];
-		const supplied = resident ? 1 : 3;
+		const supplied = 3;
 		let patched = false;
 		for (let pc = caller.codeAddress; pc < caller.codeAddress + caller.codeByteCount; pc += INSTRUCTION_BYTES) {
 			const op = decodeBlua32InstructionAtPc(rom, SYSTEM_ROM_BASE, pc);
@@ -89,8 +88,8 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 		assert.equal(runtime.machine.scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 	const instruction = decode();
 	assert.equal(instruction.op, OpCode.CALL);
-	assert.equal(valueTag(caller.registers.get(instruction.a)), resident ? ValueTag.ResidentFunction : ValueTag.BuiltinFunction);
-	if (!resident) assert.equal(valuePayload(caller.registers.get(instruction.a)), weak ? BuiltinFunctionId.Next : BuiltinFunctionId.FrameHeader);
+	assert.equal(valueTag(caller.registers.get(instruction.a)), ValueTag.BuiltinFunction);
+	assert.equal(valuePayload(caller.registers.get(instruction.a)), weak ? BuiltinFunctionId.Next : BuiltinFunctionId.FrameHeader);
 	const issue = caller.pc, successor = instruction.pc + INSTRUCTION_BYTES;
 	const stack = memory.readRamRecordWord(owner + ThreadField.StackBlock);
 	const controls = memory.readRamRecordWord(owner + ThreadField.FrameBlock);
@@ -98,8 +97,7 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 	const observedCallSite = cpu.readThreadFrameWord(owner, 0, FrameField.CallSite);
 	const flags = cpu.readThreadFrameWord(owner, 0, FrameField.Flags);
 	const weakOwner = weak ? valuePayload(caller.registers.get(instruction.a + 1)) : 0;
-	const output = resident ? [valueInteger(cpu.luaHeap.usedBytes()), valueInteger(cpu.luaHeap.capacity())]
-		: weak ? [valueInteger(1), cpu.gc.tables.getInteger(weakOwner, 1)] : [
+	const output = weak ? [valueInteger(1), cpu.gc.tables.getInteger(weakOwner, 1)] : [
 		valueInteger(cpu.readThreadFrameWord(owner, 0, FrameField.Function)),
 		valueInteger(cpu.readThreadFrameWord(owner, 0, FrameField.Pc)),
 		valueInteger(observedCallSite),
@@ -150,17 +148,12 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 		const { cpu, memory, scheduler } = rt.machine;
 		const result = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
 		const used = budget - cpu.instructionBudgetRemaining;
-		observe(`E ${budget}`, `${result} ${used} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${budget}`, `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return { result, used };
 	}
 	const issued = grant(runtime, 1);
 	assert.equal(issued.result, RunResult.Yielded);
-	if (resident) {
-		assert.equal(cpu.heapServiceActive(), true, 'the existing resident producer is entered once');
-		for (let step = 0; !cpu.fixedInterruptActive() && step < 4096; ++step)
-			assert.equal(grant(runtime, 1).result, RunResult.Yielded);
-	} else assert.equal(issued.used, BASE_CYCLES[OpCode.CALL] + 1, 'placement is not charged before the BIOS receives the result');
-	assert.equal(cpu.heapServiceActive(), false, 'result growth runs in the ordinary exception, not the producer bank');
+	assert.equal(issued.used, BASE_CYCLES[OpCode.CALL] + 1, 'placement is not charged before the BIOS receives the result');
 	assert.equal(cpu.fixedInterruptActive(), true);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 	assert.equal(cpu.readEpcWord(), issue);
@@ -182,7 +175,7 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 	hash(runtime, CPU_FIXED_VALUE_ADDRESS + 4 * packet.stackBase, 4 * packet.argumentCount);
 	hash(runtime, CPU_FIXED_VALUE_ADDRESS + 4 * CPU_FIXED_VALUE_COUNT + packet.stackBase, packet.argumentCount);
 
-	if (!resident && !weak) {
+	if (!weak) {
 		// An externally edited diagnostic lane of the parked ancestor does
 		// not affect control flow. Re-running FrameHeader would now return
 		// the new callsite instead of the already sampled one.

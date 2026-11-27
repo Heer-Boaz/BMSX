@@ -148,7 +148,7 @@ void reservedOpcode10ChargesBeforeDispatch() {
 		require(test::runCpuParity(generated.cpu, scalar.cpu, 1) == RunResult::Yielded
 				&& generated.cpu.instructionBudgetRemaining == 1 - 2
 				&& generated.cpu.readCauseWord() == CPU_CAUSE_CODE_RESERVED_INSTRUCTION
-				&& generated.cpu.readEpcWord() == generated.rom.textAddress && !generated.cpu.heapServiceActive(),
+				&& generated.cpu.readEpcWord() == generated.rom.textAddress,
 			"reserved 10H charges instruction supply and faults at the narrow or WIDE head without reading operands");
 		require(generated.cpu.readFrameRegister(0, 0) == valueInteger(17)
 				&& generated.cpu.readFrameRegister(0, 1) == valueInteger(2)

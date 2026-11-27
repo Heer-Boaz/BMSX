@@ -9,7 +9,7 @@ import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_OBJECT_PREFIX } from '../../../machi
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_WORKSPACE_END } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -81,7 +81,7 @@ try {
 			seed.push(`W ${address} ${memory.readRamRecordWord(address)}`);
 		}
 		const ranges = [[floor, management], [occupied, occupied + 4],
-			[arena, management + HEAP_SERVICE_THREAD_OFFSET], [control + OBJECT_HEAD, control + SWEEP_LINK + 4]];
+			[arena, management + GC_WORKSPACE_END], [control + OBJECT_HEAD, control + SWEEP_LINK + 4]];
 		const verify = ranges.map(([first, end]) => `H ${first} ${end}`);
 		const hashes = () => ranges.map(([first, end]) => String(hashBytes(memory.ramData(), first, end - first)));
 		function run(name: string, quantum: string[]) {
@@ -110,7 +110,6 @@ try {
 			const result = grant(65536), cycles = 65536 - cpu.instructionBudgetRemaining;
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(cycles > 0 && cycles < 65536);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.heapServiceResult(), 1);
 			return [`${result} ${cycles} 0 ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`, ...hashes()];
 		};

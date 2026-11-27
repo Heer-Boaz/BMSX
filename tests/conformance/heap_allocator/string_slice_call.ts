@@ -63,7 +63,6 @@ try {
 			const { owner, depth, pc } = call;
 			const inSlice = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
 				&& memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) === owner;
-			assert.equal(cpu.heapServiceActive(), false);
 			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (outcome === 'oom') {
 				for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
@@ -84,7 +83,7 @@ try {
 			}
 			function grant(cycles: number) {
 				const result = run(cycles);
-				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${
+				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${
 					+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return result;
 			}

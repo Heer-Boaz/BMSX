@@ -25,7 +25,7 @@ type = function(value)
 	if tag == types.string_tag then return 'string' end
 	if tag == types.table_tag then return 'table' end
 	if tag == types.thread_tag then return 'thread' end
-	if tag == types.closure_tag or tag == types.builtin_tag or tag == types.resident_tag or tag == types.code_tag then
+	if tag == types.closure_tag or tag == types.builtin_tag or tag == types.code_tag then
 		return 'function'
 	end
 	raise_error('Internal table metadata is not a language value.')

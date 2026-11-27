@@ -3,11 +3,10 @@ import test from 'node:test';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 import { RuntimePropertyIndex } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
-import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, valueResidentFunction, type Value } from '../../machine/ts/machine/cpu/value';
+import { valueString, valueTable, valueInteger, valueFloat, valueFloatBits, valueBool, valueNil, valuePayload, valueFromTag, type Value, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { CPU_RESET_BANK_ADDRESS } from '../../machine/ts/spec/bmsx/memory_map';
 import { writeTestBlua32Rom } from '../helpers/blua32';
-import { residentFunctionAddress } from '../helpers/heap_service_system';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
@@ -18,14 +17,14 @@ const watchBudget = 1_000_000;
 function bootWatchGuest() {
 	if (firmware === undefined) {
 		const linked = linkManagedTestSystem(`
-local collector<const> = require('kernel/gc_full')
+local ids<const> = require('kernel/heap_control_ids')
 while true do
 	halt_until_irq
-	collector.collect_full()
+	blua32.svc(ids.collect_full)
 end`, 3);
 		firmware = {
 			rom: writeTestBlua32Rom(linked),
-			collectionEntry: residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/gc_full', 'collect_full'),
+			collectionEntry: linked.startupFunctionAddress,
 		};
 	}
 	const runtime = createTestRuntime(firmware.rom);
@@ -137,7 +136,7 @@ test('a replaced heap retires tool lifetime tokens without a collector notificat
 	const runtime = bootWatchGuest(), { cpu } = runtime.machine;
 	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
 	const table = valueTable(cpu.createTable());
-	const romFunction = valueResidentFunction(firmware!.collectionEntry);
+	const romFunction = valueFromTag(ValueTag.CodeFunction, firmware!.collectionEntry);
 	const checkpoint = captureRuntimeSaveState(runtime);
 	const previous = observer.identity(table);
 	const previousFunction = observer.identity(romFunction);

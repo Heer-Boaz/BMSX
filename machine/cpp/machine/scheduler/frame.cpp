@@ -23,7 +23,7 @@ bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
 	if (runtime.history.executionPaused() || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 	if (runtime.machine.scheduler.acceptedCpuCycles() != 0) return true;
 	const auto& cpu = runtime.machine.cpu;
-	if (!cpu.heapServiceActive() && runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())
+	if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited())
 		return true;
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 		|| m_carriedCycleBudget > 0

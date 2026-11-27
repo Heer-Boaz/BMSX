@@ -4,58 +4,52 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { CLOSURE_PROTOTYPE_ADDRESS, closureRecordBytes } from '../../machine/ts/machine/cpu/closure';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { LuaAllocationMode } from '../../machine/ts/machine/cpu/lua_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueNil } from '../../machine/ts/machine/cpu/value';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
+import { GC_ROOT_BANKS_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const enum Kind { Table, CanonicalClosure }
 const enum Mode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 const modulePath = 'kernel/allocate_record', sourcePath = `machine/bios/${modulePath}.lua`;
 const nativeBasis = '027fe97a6495926028a4cea6ef8cd15af8f5d191';
-const entrySource = 'halt_until_irq', headOffset = 0x6c;
+const headOffset = 0x6c;
 function fixture(optLevel: 0 | 3) {
-	const linked = linkManagedTestSystem(entrySource, optLevel), { object, layout } = linked;
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === modulePath && entry.exportPathKey === 'allocate_record')!;
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(layout, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
-	const rom = { romBytes: writeTestBlua32Rom(linked) };
-	const { cpu, memory } = createTestSystemCpu(rom), oracle = createTestSystemCpu(rom).cpu;
-	for (const target of [cpu, oracle]) runGuestToHalt(target, 1_000_000);
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	const linked = linkFirmwareProbe(optLevel, [], [
+		{ path: modulePath, member: 'allocate_record', arity: 6 },
+	]);
+	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const prototype = layout.functions[root].address;
+	for (const target of [cpu, oracle]) {
+		runGuestToHalt(target, 10_000);
+		target.memory.writeRamRecordWord(management + GC_ROOT_BANKS_OFFSET, target.rootThread.address);
+	}
+	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	const prototype = linked.vectors.startupFunctionAddress;
 	function begin(kind: Kind, operand0: number, operand1: number, mode: Mode, sourceCycles = 0) {
-		assert.ok(cpu.beginHeapService(prototype, [management, kind, operand0, operand1, mode, sourceCycles]));
+		issueFirmwareProbe(cpu, [management, kind, operand0, operand1, mode, sourceCycles]);
 	}
 	function grant(budget: number): number {
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
-		const spent = budget - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, budget);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish() {
 		let cycles = 0;
-		for (let n = 0; n < 512 && cpu.heapServiceActive(); ++n) cycles += grant(1024);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let n = 0; n < 512 && !cpu.isHaltedUntilIrq(); ++n) cycles += grant(1024);
+		assert.ok(cpu.isHaltedUntilIrq());
 		return cycles;
 	}
 	function compare() {
 		// Root and sweep transport are not mirrored in the native oracle.
-		const from = memory.ramBusEnd() - RAM_BASE, to = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+		const from = memory.ramBusEnd() - RAM_BASE, to = management + GC_ROOT_BANKS_OFFSET;
 		const actual = memory.ramData().subarray(from, to), expected = oracle.memory.ramData().subarray(from, to);
 		if (Buffer.compare(actual, expected) === 0) return;
 		const index = actual.findIndex((word, i) => word !== expected[i]);
@@ -96,17 +90,17 @@ for (const optLevel of [0, 3] as const) {
 			f.begin(Kind.Table, array, hash, mode);
 			for (let n = 0; n < 16384 && memory.readRamRecordByte(dead) !== 0; ++n) f.grant(1);
 			assert.equal(memory.readRamRecordByte(dead), 0, 'real recovery frees the disposable String');
-			assert.ok(cpu.heapServiceActive(), 'physical refusal and reclamation do not retire the request');
+			assert.ok(cpu.fixedInterruptActive(), 'physical refusal and reclamation do not retire the request');
 			assert.equal(f.head(), previous, 'new Table is not published during the sweep');
 			assert.equal(cpu.luaHeap.usedBytes(), occupied, 'the released kind byte precedes returning its logical charge');
 			const halfway = captureCpuCheckpoint(cpu);
 			const spent = f.finish();
-			assert.equal(cpu.heapServiceResult(), address - RAM_BASE);
+			assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
 			assert.equal(cpu.gc.phase(), GcPhase.Pause);
 			f.compare();
 			restoreCpuCheckpoint(cpu, halfway);
 			assert.equal(f.finish(), spent);
-			assert.equal(cpu.heapServiceResult(), address - RAM_BASE);
+			assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
 			f.compare();
 		}
 	});
@@ -116,7 +110,7 @@ for (const optLevel of [0, 3] as const) {
 		const charge = cpu.luaHeap.usedBytes(), previous = f.head();
 		f.begin(Kind.CanonicalClosure, f.prototype, -1, Mode.Direct);
 		f.finish();
-		const address = RAM_BASE + cpu.heapServiceResult();
+		const address = RAM_BASE + firmwareProbeResult(cpu);
 		assert.equal(f.head(), address);
 		assert.notEqual(f.head(), previous);
 		assert.equal(memory.readRamRecordByte(address), ValueTag.Closure);
@@ -128,7 +122,7 @@ for (const optLevel of [0, 3] as const) {
 		const physical = cpu.heapAllocator.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
 		f.begin(Kind.Table, 4, 8, Mode.RetryFresh, 2048);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(firmwareProbeResult(cpu), 0);
 		assert.equal(f.head(), address);
 		assert.equal(cpu.gc.phase(), GcPhase.Pause, 'terminal RetryFresh has no additional epoch');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
@@ -144,12 +138,12 @@ for (const optLevel of [0, 3] as const) {
 		const white = cpu.gc.white();
 		f.begin(Kind.Table, 4, 129, Mode.Direct);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0, 'the fresh epoch cannot supply an adequate backing');
+		assert.equal(firmwareProbeResult(cpu), 0, 'the fresh epoch cannot supply an adequate backing');
 		assert.equal(cpu.gc.phase(), GcPhase.Pause);
 		assert.equal(cpu.gc.white(), white ^ 1, 'only the additional fresh epoch flips the white mark');
 		f.begin(Kind.Table, 4, 129, Mode.RetryCurrent);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(firmwareProbeResult(cpu), 0);
 		assert.equal(cpu.gc.phase(), GcPhase.Pause);
 		assert.equal(cpu.gc.white(), white, 'RetryCurrent refusal runs one fresh epoch before exhausting');
 	});

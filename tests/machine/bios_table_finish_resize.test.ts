@@ -3,27 +3,25 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import { HASH_STORE_DECLINED, TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, hashCanonicalTableKey, valueBool, valueBuiltinFunction, valueFloatBits, valueInteger, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const REINSERT = 'kernel/table_reinsert', FINISH = 'kernel/table_finish_resize', RESIZE = 'kernel/table_resize';
-const ASSIGNMENT = 'kernel/table_assignment', entrySource = 'halt_until_irq';
+const ASSIGNMENT = 'kernel/table_assignment';
 const basis = 'c36fafd44eea29507af392041fda24f433709f18';
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/gc_mark',
 	'kernel/gc_barrier', 'kernel/table_create', 'kernel/table_reserve_growth', 'kernel/table_publish_growth', REINSERT, FINISH, RESIZE, ASSIGNMENT].map(path => {
@@ -33,19 +31,12 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 const untouchedReservation = [0x168151d7, 0xf10b4a91] as const;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	function functionIndex(path: string, name: string) {
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === name);
-		assert.ok(symbol);
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-		assert.ok(index >= 0);
-		return index;
-	}
-	const root = functionIndex(RESIZE, 'execute_table_resize');
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
-	const entry = linked.image.functions[root].address;
+	const linked = linkFirmwareProbe(optLevel, modules, [
+		{ path: RESIZE, member: 'execute_table_resize', arity: 5 },
+		{ path: 'kernel/table_reserve_growth', member: 'reserve_table_growth', arity: 8 },
+		{ path: 'kernel/table_publish_growth', member: 'publish_table_growth', arity: 8, result: false },
+		{ path: FINISH, member: 'finish_table_resize', arity: 8 },
+	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
@@ -59,7 +50,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(scratch > 0);
 	const reserved = () => [memory.readRamRecordWord(scratch), memory.readRamRecordWord(scratch + 4)];
 	function compare() {
-		const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+		const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 		// Only the protocol's reservation-result lanes differ from the native caller's locals.
 		for (const [from, to] of [[first, scratch], [scratch + 8, last]]) {
 			const actual = memory.ramData().subarray(from, to), expected = oracle.memory.ramData().subarray(from, to);
@@ -69,15 +60,13 @@ function fixture(optLevel: 0 | 3) {
 		}
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function drain() {
 		let cycles = 0;
-		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) cycles += grant(2048);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) cycles += grant(2048);
 		return cycles;
 	}
 	function begin(record: number, array: number, hash: number, keepHash: boolean, key: Value, value: Value, cppMirror = true) {
@@ -99,25 +88,21 @@ function fixture(optLevel: 0 | 3) {
 				const index = tables['getArrayIndex'](key);
 				if (index >= 0) tables['updateLengthHint'](record, index, true);
 			}
-			assert.ok(cpu.beginHeapService(entry, [management, record, array, hash, scratch]));
+			issueFirmwareProbe(cpu, [management, record, array, hash, scratch]);
 		} else {
 			// Exercise the original TS cursor order through the same port
 			// leaves, separately from the one production entry policy.
-			const functions = linked.image.functions;
-			assert.ok(cpu.beginHeapService(functions[functionIndex('kernel/table_reserve_growth', 'reserve_table_growth')].address,
-				[state, record, array, hash, hashBytes, +keepHash, 0, scratch]));
+			issueFirmwareProbe(cpu, [state, record, array, hash, hashBytes, +keepHash, 0, scratch], 1);
 			drain();
-			assert.equal(cpu.heapServiceResult(), 1);
-			assert.ok(cpu.beginHeapService(functions[functionIndex('kernel/table_publish_growth', 'publish_table_growth')].address,
-				[control, record, array, hash, hashBytes, +keepHash, scratch, 0]));
+			assert.equal(firmwareProbeResult(cpu), 1);
+			issueFirmwareProbe(cpu, [control, record, array, hash, hashBytes, +keepHash, scratch, 0], 2);
 			drain();
-			assert.ok(cpu.beginHeapService(functions[functionIndex(FINISH, 'finish_table_resize')].address,
-				[state, occupied, record, oldArray, oldHash, oldStorage, scratch + 8, 0]));
+			issueFirmwareProbe(cpu, [state, occupied, record, oldArray, oldHash, oldStorage, scratch + 8, 0], 3);
 		}
 		return expected;
 	}
 	function verify(expected: number, cppMirror = true) {
-		assert.equal(cpu.heapServiceResult(), cppMirror ? +(expected !== HASH_STORE_DECLINED) : expected >>> 0);
+		assert.equal(firmwareProbeResult(cpu), cppMirror ? +(expected !== HASH_STORE_DECLINED) : expected >>> 0);
 		if (expected === HASH_STORE_DECLINED) assert.deepEqual(reserved(), untouchedReservation);
 		compare();
 	}
@@ -162,7 +147,7 @@ for (const opt of [0, 3] as const) {
 			let checkpoint: ReturnType<typeof captureCpuCheckpoint> | undefined;
 			if (keepHash) {
 				for (let n = 0; n < 4096 && f.cpu.gc.tables.arrayCapacity(record) !== array; ++n) f.grant(1);
-				assert.ok(f.cpu.heapServiceActive());
+				assert.ok(!f.cpu.isHaltedUntilIrq());
 				assert.equal(f.cpu.gc.tables.arrayCapacity(record), array);
 				assert.equal(f.cpu.gc.tables.arrayAddress(record), oldBase, 'header count changed before its backing lane');
 				assert.equal(f.cpu.luaHeap.usedBytes(), charged);
@@ -173,7 +158,7 @@ for (const opt of [0, 3] as const) {
 				assert.ok(base >= RAM_BASE);
 				const mux = base + 4 * array, last = mux + oldArray - 1, prior = f.memory.readRamRecordByte(last);
 				for (let n = 0; n < 4096 && f.memory.readRamRecordByte(last) === prior; ++n) f.grant(1);
-				assert.ok(f.cpu.heapServiceActive());
+				assert.ok(!f.cpu.isHaltedUntilIrq());
 				assert.equal(f.memory.readRamRecordByte(last), valueTag(mappings[oldArray - 1][1]));
 				assert.notEqual(f.memory.readRamRecordByte(mux), valueTag(mappings[0][1]));
 				checkpoint = captureCpuCheckpoint(f.cpu);
@@ -232,11 +217,11 @@ for (const opt of [0, 3] as const) {
 		}
 	});
 
-	test(`the resident resize clears method absence before its direct marking barrier at O${opt}`, () => {
+	test(`the firmware resize clears method absence before its direct marking barrier at O${opt}`, () => {
 		const f = fixture(opt);
 		const owner = f.same(target => target.createTable(0, 1));
 		const id = f.same(target => target.stringPool.intern('a new collectable edge'));
-		const key = f.same(target => valueString(target.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)));
+		const key = f.same(target => valueString(target.gc.diagnosticWord(GcDiagnosticField.NewIndex)));
 		f.same(target => {
 			const pending = target.stringPool.intern('a String marked before the table write');
 			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
@@ -249,7 +234,7 @@ for (const opt of [0, 3] as const) {
 		const expected = f.begin(owner, 0, 2, false, key, valueString(id));
 		for (let i = 0; i < 4096 && f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent) !== 0; ++i) f.grant(1);
 		assert.equal(f.memory.readRamRecordByte(owner + TableHeader.NewIndexAbsent), 0);
-		assert.ok(f.cpu.heapServiceActive());
+		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.cpu.gc.epochWork(), work, 'the key cache was cleared before barrier accounting');
 		const checkpoint = captureCpuCheckpoint(f.cpu);
 		const cycles = f.drain();
@@ -274,12 +259,11 @@ for (const opt of [0, 3] as const) {
 		const oldHash = f.cpu.gc.tables.hashAddress(record);
 		const expected = f.begin(record, 31, hash, false, valueInteger(-1), valueBool(true));
 		assert.equal(expected, HASH_STORE_DECLINED);
-		for (let n = 0; n < 8192 && f.cpu.heapServiceActive(); ++n) {
+		for (let n = 0; n < 8192 && !f.cpu.isHaltedUntilIrq(); ++n) {
 			f.grant(1);
 			assert.equal(f.cpu.gc.tables.arrayCapacity(record), 32);
 			assert.equal(f.cpu.gc.tables.hashAddress(record), oldHash);
 		}
-		assert.equal(f.cpu.heapServiceActive(), false);
 		assert.equal(f.cpu.heapAllocator.occupiedBytes(), before);
 		assert.equal(f.cpu.luaHeap.usedBytes(), charged);
 		f.verify(expected);

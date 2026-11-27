@@ -16,7 +16,7 @@ import { EXECUTION_IMAGE_BINDING_SIZE, GLOBAL_BANK_OFFSET, GlobalBankField, exec
 import { INSTRUCTION_BYTES, instructionLowB, instructionOpcode, MAX_LOW_OPERAND, MAX_OPERAND_BITS, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { IO_CART_SELECT, IO_IRQ_MASK, IO_SYS_CONTROL, IO_SYS_STATUS, SYS_CONTROL_RESET, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../machine/ts/spec/bmsx/io';
-import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, BLUA32_FUNCTION_RESIDENT, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_MAX_STACK_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CART_ROM_BASE, CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
@@ -45,8 +45,6 @@ test('stock firmware binds the selected socket before EXEC; RESET discards an un
 			const imageAddress = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 			const imageBytes = readLE32(system, BMSX_ROM_HEADER_BLUA32_IMAGE_BYTE_COUNT_OFFSET);
 			const image = decodeBlua32Image(system.subarray(imageAddress, imageAddress + imageBytes), imageAddress);
-			assert.ok(image.functions.every(fn => (fn.flags & BLUA32_FUNCTION_RESIDENT) === 0),
-				'the shipped System image does not enter the resident heap bank');
 			const payload = 'socket one cartridge literal';
 			const source = `bss report: word[0x2000]
 selected_payload = '${payload}'
@@ -99,8 +97,7 @@ halt_until_irq
 					const cycles = scheduler.nowCycles, tick = frames.lastTickSequence;
 					const complete = frames.runCyclesToNextLogicalTick(grant);
 					commands.push(`p ${grant}`);
-					expected.push([+complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick,
-						+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq()].join(' '));
+					expected.push([+complete, scheduler.nowCycles - cycles, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq()].join(' '));
 				};
 				for (let grant = 0; grant < 2048 && !done(cpu, runtime); ++grant) pulse(65536);
 				assert.ok(done(cpu, runtime), 'the real System startup reached the requested machine boundary');
@@ -152,7 +149,7 @@ halt_until_irq
 			assert.equal(memory.ramBusEnd(), floor, 'the ordinary mapped selected socket supplies the exact aperture');
 			const result = scheduler.runCpuSlice(0, 1, 0, CpuRunKind.Scheduled);
 			commands.push('E 1', `H ${bssAddress - RAM_BASE} ${bssAddress - RAM_BASE + 24}`, `H ${installed} ${installed + EXECUTION_IMAGE_BINDING_SIZE}`);
-			expected.push([result, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(),
+			expected.push([result, 1 - cpu.instructionBudgetRemaining,
 				memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 			expected.push(String(hashBytes(memory.ramData(), bssAddress - RAM_BASE, 24)),
 				String(hashBytes(memory.ramData(), installed, EXECUTION_IMAGE_BINDING_SIZE)));
@@ -208,7 +205,7 @@ halt_until_irq
 			writeFileSync(probeTrace, ['X', `O ${IO_CART_SELECT} 0`, 'L 1', 'F', `H ${absent} ${absent + EXECUTION_IMAGE_BINDING_SIZE}`].join('\n'));
 			const attemptedRows = execFileSync(native, [probeSystem, probeTrace, seed, otherPath, selectedPath], { encoding: 'utf8' });
 			assert.deepEqual(attemptedRows.trimEnd().split('\n'), [
-				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, 0, attempted.cpu.gc.fullEpochs(),
+				[attemptedResult, 1 - attempted.cpu.instructionBudgetRemaining, attempted.cpu.gc.fullEpochs(),
 					attempted.cpu.gc.phase(), preparedCharge].join(' '),
 				'1', String(hashBytes(empty, 0, empty.length)),
 			]);
@@ -303,11 +300,10 @@ halt_until_irq
 			assert.equal(paid, BASE_CYCLES[OpCode.MTC0]);
 			assert.equal(wideMachine.cpu.activeCartridgeSlot(), 1);
 			assert.equal(wideMachine.cpu.rootThread.frameAtDepth(0).stackCapacity, entrySlots);
-			assert.equal(wideMachine.cpu.heapServiceActive(), false);
 			assert.equal(wideMachine.cpu.heapAllocator.occupiedBytes(), occupied);
 			assert.equal(wideMachine.cpu.luaHeap.usedBytes(), chargedBytes);
 			compare('prepared-frame-exec.trace', ['X', 'J 1 1'], [
-				`${entered} ${paid} 0 0 ${occupied} ${chargedBytes}`,
+				`${entered} ${paid} 0 ${occupied} ${chargedBytes}`,
 			], wideSeed, otherPath, widePath);
 			const wideLaunch = boot(cartridgeSlots(other, wide), cpu =>
 				cpu.activeCartridgeSlot() === 1 && cpu.isHaltedUntilIrq());
@@ -330,7 +326,7 @@ halt_until_irq
 			assert.equal(without.cpu.heapAllocator.occupiedBytes(), unpreparedPhysical);
 			assert.equal(without.cpu.luaHeap.usedBytes(), preparedCharge);
 			compare('unprepared-frame-exec.trace', ['X', 'J 1 1', 'F'], [
-				`${refused} ${1 - without.cpu.instructionBudgetRemaining} 0 0 ${unpreparedPhysical} ${preparedCharge}`, '1',
+				`${refused} ${1 - without.cpu.instructionBudgetRemaining} 0 ${unpreparedPhysical} ${preparedCharge}`, '1',
 			], seed, otherPath, widePath);
 
 

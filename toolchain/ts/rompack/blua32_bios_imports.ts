@@ -11,7 +11,6 @@ import {
 export type Blua32BiosFunctionExport = {
 	readonly path: string;
 	readonly exportPathKey: string;
-	readonly fixedStack?: true;
 };
 
 export type Blua32BiosFunctionImport = {

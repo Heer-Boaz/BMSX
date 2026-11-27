@@ -177,10 +177,9 @@ return 1
 	const coldRam = cpu.memory.captureSaveState();
 	const build = () => {
 		assert.equal(cpu.runUntilDepth(frame, BASE_CYCLES[OpCode.CLOSURE]), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), true, 'a cold canonical Closure enters resident firmware');
-		for (let grant = 0; grant < 32 && cpu.heapServiceActive(); ++grant)
+		assert.equal(cpu.fixedInterruptActive(), true, 'a cold canonical Closure enters the System vector');
+		for (let grant = 0; grant < 32 && cpu.fixedInterruptActive(); ++grant)
 			assert.equal(cpu.runUntilDepth(frame, 1024), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false);
 		return cpu.readFrameRegister(frame, 0);
 	};
 	const first = build(), closureAddress = valuePayload(first);

@@ -92,7 +92,6 @@ for (const explicit of [true, false]) test(explicit
 	function step() {
 		const result = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		assert.equal(result, RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false);
 		observe('E 1', `${result} ${1 - cpu.instructionBudgetRemaining} 0 ${memory.ramBusEnd()} -1`);
 	}
 	function hash(first: number, length: number) {

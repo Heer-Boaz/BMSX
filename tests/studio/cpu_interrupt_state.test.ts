@@ -631,7 +631,6 @@ coroutine.resume(worker)
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	irqController.raise(IRQ_VBLANK);
 	assert.equal(cpu.enterPendingInterrupt(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.activeThread.address, suspended.activeThreadAddress);
 	assert.equal(cpu.readFrameExecutionDomain(cpu.getFrameDepth() - 1), 0);
 	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), cart.irqFunctionAddress);

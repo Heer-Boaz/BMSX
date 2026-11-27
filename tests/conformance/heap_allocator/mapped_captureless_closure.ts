@@ -132,7 +132,7 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`E ${cycles}`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+				rows.push(`${result} ${spent} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 				return spent;
 			};
 			const writeCodeAddress = (address: number) => {
@@ -170,7 +170,6 @@ return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 
 					assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);
 					const miss = !canonical || (visit & 1) === 0;
 					assert.ok(cpu.fixedInterruptActive());
-					assert.equal(cpu.heapServiceActive(), false);
 					assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
 					assert.equal(cpu.readEpcWord(), issue);
 					assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Pc), decoded.pc + INSTRUCTION_BYTES);

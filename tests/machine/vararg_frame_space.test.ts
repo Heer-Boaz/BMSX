@@ -21,7 +21,6 @@ for (const level of [0, 3] as const) {
 		const priorFrames = readThread(ThreadField.FrameBlock);
 		function launch() {
 			assert.deepEqual(f.grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.VARARG] });
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.fixedInterruptActive(), true);
 			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 			assert.equal(cpu.readEpcWord(), issue);
@@ -84,7 +83,6 @@ for (const level of [0, 3] as const) {
 		f.thread.resizeStack(128);
 		const block = f.readThread(ThreadField.StackBlock), occupied = f.arena.occupiedBytes();
 		assert.deepEqual(f.grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.VARARG] + args.length });
-		assert.equal(f.cpu.heapServiceActive(), false);
 		assert.equal(f.cpu.fixedInterruptActive(), false);
 		assert.equal(f.frame.stackCapacity, 64);
 		assert.equal(f.frame.top, args.length + 1);

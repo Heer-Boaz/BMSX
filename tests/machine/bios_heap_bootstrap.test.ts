@@ -8,8 +8,7 @@ import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_a
 import { LuaHeap } from '../../machine/ts/machine/cpu/lua_heap';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { readLE32 } from '../../machine/ts/common/endian';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -43,8 +42,8 @@ for (const optLevel of [0, 3] as const) {
 			return index;
 		});
 		const fixed = deriveBlua32FixedStack(linked.image, indices);
-		assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT);
-		assert.ok(fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+		assert.ok(fixed.frames <= CPU_FIXED_FRAME_COUNT);
+		assert.ok(fixed.valueSlots <= CPU_FIXED_VALUE_COUNT);
 		const system = linked.image.address;
 		const bucketAddress = readLE32(linked.romBytes, system + BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET);
 		const bucketCount = readLE32(linked.romBytes, system + BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET);
@@ -90,7 +89,6 @@ for (const optLevel of [0, 3] as const) {
 			function finish(expected: number) {
 				let cycles = 0;
 				for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) cycles += grant();
-				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(cpu.heapServiceResult(), expected);
 				return cycles;
 			}

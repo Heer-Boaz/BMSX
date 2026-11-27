@@ -1,20 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const PACE = 'kernel/gc_pace', PROBE = 'test/word_arithmetic';
-const entrySource = 'halt_until_irq';
 const probe = `module<const>
 local word<const> = require('kernel/word_arithmetic')
 local ram_base<const> = 0x08000000
@@ -47,18 +42,12 @@ function referenceCpp(basis: number, paid: number, estimate: number, runway: num
 }
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
-	function prototype(path: string, symbol: string) {
-		const exported = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === symbol);
-		assert.ok(exported);
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-		assert.ok(index >= 0);
-		return index;
-	}
-	const begin = prototype(PACE, 'begin_pace_credit'), update = prototype(PACE, 'update_pace_credit'), words = prototype(PROBE, 'run');
-	const stack = deriveBlua32FixedStack(linked.image, [begin, update, words]);
-	assert.ok(stack.valueSlots <= HEAP_SERVICE_VALUE_COUNT && stack.frames <= HEAP_SERVICE_FRAME_COUNT);
+	const begin = 0, update = 1, words = 2;
+	const linked = linkFirmwareProbe(optLevel, modules, [
+		{ path: PACE, member: 'begin_pace_credit', arity: 5, result: false },
+		{ path: PACE, member: 'update_pace_credit', arity: 5, result: false },
+		{ path: PROBE, member: 'run', arity: 5 },
+	]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
@@ -66,18 +55,17 @@ function fixture(optLevel: 0 | 3) {
 	const state = control + GC_PACE_PAID - 12, scratch = management + 0x680;
 	const occupied = cpu.heapAllocator.occupiedBytes();
 	const beginCall = (index: number, args: readonly number[]) => {
-		assert.ok(cpu.beginHeapService(linked.image.functions[index].address, args));
+		issueFirmwareProbe(cpu, args, index);
 	};
 	const grant = (cycles: number) => {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	};
 	function finish() {
 		let spent = 0;
-		for (let count = 0; count < 128 && cpu.heapServiceActive(); ++count) spent += grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let count = 0; count < 128 && !cpu.isHaltedUntilIrq(); ++count) spent += grant(128);
+		assert.ok(cpu.isHaltedUntilIrq());
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
 		return spent;
 	}
@@ -112,7 +100,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(memory.readRamRecordWord(scratch), Number(numerator >> 32n));
 			assert.equal(memory.readRamRecordWord(scratch + 4), Number(BigInt.asUintN(32, numerator)));
 			assert.equal(memory.readRamRecordWord(scratch + 8), Number(quotient >> 32n));
-			assert.equal(cpu.heapServiceResult(), Number(BigInt.asUintN(32, quotient)));
+			assert.equal(firmwareProbeResult(cpu), Number(BigInt.asUintN(32, quotient)));
 		}
 	});
 
@@ -146,11 +134,11 @@ for (const optLevel of [0, 3] as const) {
 			beginCall(update, [control, basis, paid, estimate, runway]);
 			if (index === 0) {
 				grant(64);
-				assert.ok(cpu.heapServiceActive());
+				assert.ok(cpu.fixedInterruptActive());
 				assert.deepEqual(lanes(), before, 'widened division has not published a threshold');
 				const arithmetic = captureCpuCheckpoint(cpu);
 				for (let count = 0; count < 2048 && lanes()[0] === before[0]; ++count) grant(1);
-				assert.ok(cpu.heapServiceActive());
+				assert.ok(cpu.fixedInterruptActive());
 				assert.deepEqual(lanes(), [basis >>> 0, ...before.slice(1)], 'basis is the first update store');
 				const publication = captureCpuCheckpoint(cpu);
 				const final = finish();

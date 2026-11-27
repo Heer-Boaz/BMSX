@@ -174,7 +174,7 @@ void CPU::decodeInstructionWords(
 				break;
 		}
 		if (rawC > static_cast<u32>(MemoryAccessKind::Value)
-			&& ((static_cast<OpCode>(op) == OpCode::LOAD_MEM && (page.privateFirmware || rawC != static_cast<u32>(MemoryAccessKind::ContextWord)))
+			&& ((static_cast<OpCode>(op) == OpCode::LOAD_MEM && rawC != static_cast<u32>(MemoryAccessKind::ContextWord))
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
@@ -206,15 +206,14 @@ void CPU::decodeInstructionWords(
 		bodyPage->mapping.writeWatch.armWord(0u);
 	}
 	const auto& observed = m_instructionObserver.points[static_cast<size_t>(image.executionDomainId + 1)];
-	if (!page.privateFirmware && observed.contains(pc)) {
+	if (observed.contains(pc)) {
 		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
 		return;
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-	if (instructionCacheable && (page.privateFirmware ? nativeSourceCanEmit(decoded, true)
-		: nativeBlockSupports(decoded.op) && (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)
-			&& (decoded.op != static_cast<u8>(OpCode::LOAD_MEM) || decoded.c != static_cast<int>(MemoryAccessKind::ContextWord)))) {
-		decoded.dispatchOp = nativeWarmDispatch(decoded, page.privateFirmware);
+	if (instructionCacheable && nativeBlockSupports(decoded.op) && (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)
+		&& (decoded.op != static_cast<u8>(OpCode::LOAD_MEM) || decoded.c != static_cast<int>(MemoryAccessKind::ContextWord))) {
+		decoded.dispatchOp = nativeWarmDispatch(decoded);
 		page.nativeVisits[pageOffset] = 0;
 	}
 #endif
@@ -247,14 +246,14 @@ bool CPU::decodeInstruction(
 	if (instructionOpcode(sourceWord) == static_cast<u8>(OpCode::WIDE)) {
 		const u32 bodyPc = pc + INSTRUCTION_BYTES;
 		if (pageOffset == DECODED_PAGE_WORDS - 1u) {
-			bodyPage = &decodedPageForFrame(frame, bodyPc, page.privateFirmware);
+			bodyPage = &decodedPageForFrame(frame, bodyPc);
 			instructionCacheable &= bodyPage->mapping.cacheable;
 		}
 		if (!fetchWord(bodyPage ? *bodyPage : page, bodyPc, bodyWord)) return false;
 	}
 	decodeInstructionWords(*frame.executionImage, page, pageOffset, pc,
 		sourceWord, bodyWord, instructionCacheable, bodyPage);
-	if (!page.privateFirmware && instructionCacheable && decoded.dispatchOp == decoded.op && decodedDispatchCanFuse(decoded.op)) {
+	if (instructionCacheable && decoded.dispatchOp == decoded.op && decodedDispatchCanFuse(decoded.op)) {
 		page.refreshState[pageOffset] = DECODED_REFRESH_FUSION;
 		if (allowFusion) refreshDecodedFusion(frame, page, pageOffset, pc);
 	}
@@ -333,7 +332,7 @@ bool CPU::decodeBackedInstruction(
 			if (requested && !requested->include(bodyPc)) return false;
 			if (bodyBinding.readBytes) bodyWord = readLE32(bodyBinding.readBytes);
 			else if (!readPublishedWord(bodyPc, bodyWord)) return false;
-			bodyPage = &image.decodedDirectory(page.privateFirmware).bind(bodyBinding);
+			bodyPage = &image.decodedPages.bind(bodyBinding);
 		} else if (binding.readBytes) bodyWord = readLE32(binding.readBytes + (pageOffset + 1u) * INSTRUCTION_BYTES);
 		else if (!readPublishedWord(pc + INSTRUCTION_BYTES, bodyWord)) return false;
 	}

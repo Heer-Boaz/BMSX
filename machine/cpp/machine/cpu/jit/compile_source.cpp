@@ -15,7 +15,6 @@
 #endif
 #include "machine/memory/memory.h"
 #include "spec/blua32/instruction_format.h"
-#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 
@@ -113,7 +112,7 @@ void CPU::prepareNativeBlock(CallFrame& frame, DecodedInstructionPage& page,
 		// when the original root is still being compiled.
 		if (!(job.pageCount && !job.invalidated
 			&& job.image == frame.executionImage && job.rootPc == pc
-			&& job.slot == slot && job.privateFirmware == page.privateFirmware)) {
+			&& job.slot == slot)) {
 			m_nativeDemand.enqueue({frame.executionImage, &page, frame.readControl(FrameField::Function), pc, slot});
 		}
 		serviceNativeDemand();
@@ -133,7 +132,7 @@ void CPU::compileNativeRoot(Blua32ExecutionImage& image, u32 functionAddress, De
 		const bool singlePage = verified && version->entry.codeAddress >= pagePc
 			&& version->endPc - pagePc <= MAPPED_PAGE_BYTE_SIZE;
 		if (!singlePage) {
-			if (version->contains(pc) && prepareNativeFunction(image, *version, pc, busSignals, nullptr, page.privateFirmware)) return;
+			if (version->contains(pc) && prepareNativeFunction(image, *version, pc, busSignals, nullptr)) return;
 			// A verified prototype never supplies an unbounded page source.
 			if (verified) return;
 		}
@@ -218,7 +217,7 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 				if (feedback) (*feedback)[cursor] = true;
 #endif
 				const u32 successor = cursor + instruction.width;
-				if (nativeBlockEndsBlock(instruction.op, instruction.b, page.privateFirmware) || successor >= DECODED_PAGE_WORDS
+				if (nativeBlockEndsBlock(instruction.op, instruction.b) || successor >= DECODED_PAGE_WORDS
 					|| !available[successor] || leaders[successor]) break;
 				if (instructionCount - start == NATIVE_BLOCK_MAX_INSTRUCTIONS) { leaders.set(successor); break; }
 				cursor = successor;
@@ -253,12 +252,6 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 	std::ranges::sort(specializations.fieldGrowth, {}, &NativeFieldGrowth::pc);
 	const auto bindingsPages = std::span(codePages).first(codePageCount);
 	NativeCodeBindings bindings(m_memory, m_stringPool, this, bindingsPages, m_nativeHistoryWrites);
-	bindings.privateFirmware = first.page.privateFirmware;
-	if (bindings.privateFirmware) {
-		const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
-		bindings.privateStoreEnd = management + HEAP_SERVICE_THREAD_OFFSET;
-		bindings.privateProjection = management + HEAP_SERVICE_GC_PROJECTION_OFFSET;
-	}
 #if defined(BMSX_NATIVE_COMPILER_WORKER)
 	if (pending) {
 		pending->image = &image;
@@ -266,7 +259,6 @@ void CPU::prepareNativeSources(Blua32ExecutionImage& image, std::span<NativeComp
 		std::ranges::copy(bindingsPages, pending->pages.begin());
 		pending->pageCount = static_cast<u32>(codePageCount);
 		pending->slot = first.slot;
-		pending->privateFirmware = first.page.privateFirmware;
 		pending->invalidated = false;
 		m_nativeCompilerWorker->submit(bindings, options, profile != nullptr);
 		return;

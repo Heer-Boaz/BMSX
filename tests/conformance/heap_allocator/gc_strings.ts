@@ -5,10 +5,11 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
@@ -16,11 +17,12 @@ const source = `
 bss input: word
 *input = 211
 local keep<const> = 'keep' .. *input
+halt_until_irq
 fixture_collect()
 return #keep
 `;
 
-const boot = { path: 'fixture_gc_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
+const boot = { path: 'fixture_gc_boot', source: "local gc_ids<const> = require('kernel/heap_control_ids'); fixture_collect = function() blua32.svc(gc_ids.collect_full) end" };
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 mkdirSync('tmp', { recursive: true });
@@ -30,14 +32,18 @@ try {
 	for (const opt of [0, 3] as const) {
 		const path = join(directory, `O${opt}`);
 		mkdirSync(path);
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, [boot]));
+		const system = linkManagedTestSystem(`require('${boot.path}')\n${source}`, opt, [boot]);
+		const bytes = writeTestBlua32Rom(system);
 		const rom = join(path, 'system.rom');
-		writeFileSync(rom, system.romBytes);
-		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		writeFileSync(rom, bytes);
+		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		runGuestToHalt(cpu, 4_194_304);
+		assert.ok(cpu.isHaltedUntilIrq());
+		cpu.clearHaltUntilIrq();
 		const dead = Array.from({ length: 12 }, (_, i) => cpu.stringPool.intern(`unrooted-intern-${i}`));
-		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
+		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		driver.reach(() => gc.phase() >= GcPhase.Sweep, 'object sweep phase', 113);
 		driver.reach(() => gc.phase() === GcPhase.Strings, 'String sweep phase');

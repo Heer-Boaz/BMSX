@@ -58,7 +58,7 @@ local deliver<const> = function(destination, source, first, supplied, status, pa
 			local extent<const> = stack_base + width
 			if extent > maximum_values then return nil end
 			if extent > context.stack_capacity then
-				if frames.prepare_frame_space(layout.management_offset, destination, extent, 0, 0, deadline, true) ~= 0 then
+				if frames.prepare_frame_space(layout.management_offset, destination, extent, 0, 0, deadline) ~= 0 then
 					return nil
 				end
 			end
@@ -104,7 +104,7 @@ local first_resume<const> = function(interrupted, target, first, count) -- TS:46
 	local extent<const> = base + prototype.maximum
 	if extent > maximum_values then return nil end
 	if extent > context.stack_capacity or (context.frame_capacity & control_count_mask) < 2 then
-		if frames.prepare_frame_space(layout.management_offset, target, extent, 2, context.entry, 0, true) ~= 0 then return nil end
+		if frames.prepare_frame_space(layout.management_offset, target, extent, 2, context.entry, 0) ~= 0 then return nil end
 	end
 	local word_address<const>, tag_address<const> = frames.internal.value_planes(target, 1)
 	if count ~= 0 then copy_values(interrupted, first, word_address, tag_address, count) end

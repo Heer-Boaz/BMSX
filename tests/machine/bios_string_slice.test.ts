@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { hashText } from '../../machine/ts/common/hash';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from '../../machine/ts/machine/cpu/errors';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { CPU_CAUSE_CODE_DATA_BUS_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE } from '../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { BUS_FAULT_UNALIGNED_IO, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 import { internStringSliceReference } from '../helpers/string_slice_reference';
 
 const SLICE = 'kernel/string_slice', PROBE = 'test/slice_publication';
-const entrySource = 'halt_until_irq';
 const probeSource = `module<const>
 local strings<const> = require('kernel/gc_strings')
 local records<const> = require('kernel/dlmalloc_record')
@@ -45,17 +46,16 @@ const buckets = 0, capacity = 4, used = 8, rehashBase = 56, rehashReady = 60;
 const growFlag = 0x80000000, shrinkFlag = 0x40000000;
 
 function fixture(optLevel: 0 | 3) {
-	const linked = linkManagedTestSystem(entrySource, optLevel, [{ path: PROBE, source: probeSource }], [
-		...['publish', 'retain', 'hash_slice', 'lookup_ram_slice'].map(exportPathKey =>
-			({ path: PROBE, exportPathKey })),
-		{ path: SLICE, exportPathKey: 'prepare_existing_directory' },
-	]);
-	const rootsToCheck = linked.biosImports.functions.map(entry => linked.symbols.functionAddresses.indexOf(entry.functionAddress));
-	const fixed = deriveBlua32FixedStack(linked.layout, rootsToCheck);
-	assert.ok(fixed.frames <= HEAP_SERVICE_FRAME_COUNT && fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT);
-	const entries = new Map(linked.biosImports.functions.map(entry => [entry.exportPathKey, entry.functionAddress]));
-	const { cpu, memory } = bootManagedTestSystem(linked);
-	const oracle = bootManagedTestSystem(linked).cpu;
+	const leaves = [
+		{ path: PROBE, member: 'publish', arity: 7 },
+		{ path: PROBE, member: 'retain', arity: 5 },
+		{ path: PROBE, member: 'hash_slice', arity: 3 },
+		{ path: PROBE, member: 'lookup_ram_slice', arity: 5 },
+		{ path: SLICE, member: 'prepare_existing_directory', arity: 2 },
+	] as const;
+	const linked = linkFirmwareProbe(optLevel, [{ path: PROBE, source: probeSource, chunk: parseLuaChunk(probeSource, PROBE) }], leaves);
+	const { cpu, memory } = createTestHeapServiceCpu(linked);
+	const oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset();
 	const metadata = management + HEAP_STRING_METADATA_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = management + 0x400, floor = memory.ramBusEnd() - RAM_BASE;
@@ -69,25 +69,23 @@ function fixture(optLevel: 0 | 3) {
 	function word(field: number, value: number) {
 		for (const target of [memory, oracle.memory]) target.writeRamRecordWord(metadata + field, value);
 	}
-	function begin(name: string, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(entries.get(name)!, args));
+	function begin(name: typeof leaves[number]['member'], ...args: number[]) {
+		issueFirmwareProbe(cpu, args, leaves.findIndex(leaf => leaf.member === name));
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < cycles);
+		assert.ok(grantFirmwareProbe(cpu, cycles) > 0);
 	}
 	function finish() {
-		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) grant(1024);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 256 && !cpu.isHaltedUntilIrq(); ++i) grant(1024);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		return cpu.heapServiceResult();
+		return firmwareProbeResult(cpu);
 	}
-	function invoke(name: string, ...args: number[]) {
+	function invoke(name: typeof leaves[number]['member'], ...args: number[]) {
 		begin(name, ...args);
 		return finish();
 	}
 	function equalArena() {
-		const stop = management + HEAP_SERVICE_THREAD_OFFSET;
+		const stop = management + GC_WORKSPACE_END;
 		const actual = memory.ramData().subarray(floor, stop), expected = oracle.memory.ramData().subarray(floor, stop);
 		const delta = actual.findIndex((byte, offset) => byte !== expected[offset]);
 		assert.equal(delta, -1, `first arena difference at offset ${(floor + delta).toString(16)}`);
@@ -97,7 +95,7 @@ function fixture(optLevel: 0 | 3) {
 
 for (const optLevel of [0, 3] as const) {
 	test(`borrowed BLua String spans preserve hash, split grow/shrink lookup, and reuse at O${optLevel}`, () => {
-		const { cpu, memory, oracle, metadata, word, seed, invoke, equalArena } = fixture(optLevel);
+		const { cpu, memory, oracle, metadata, word, seed, begin, invoke, equalArena } = fixture(optLevel);
 		const countBefore = memory.readRamRecordWord(metadata + capacity);
 		let text = 'firmware-borrowed\0\xfe-value', hash = hashText(text);
 		while ((hash & countBefore) === 0 || (hash & (countBefore - 1)) === countBefore - 1) {
@@ -106,9 +104,6 @@ for (const optLevel of [0, 3] as const) {
 		}
 		const source = seed('||' + text + '||'), match = seed(text);
 		assert.equal(invoke('hash_slice', source, 2, text.length), hash);
-		const wrapAt = MAIN_RAM_SIZE - 3, raw = memory.ramData();
-		for (let i = 0; i < text.length; ++i) raw[(wrapAt + i) & (MAIN_RAM_SIZE - 1)] = text.charCodeAt(i);
-		assert.equal(invoke('hash_slice', RAM_BASE + wrapAt - BLUA32_STRING_RECORD_HEADER_SIZE, 0, text.length), hash);
 
 		const oldBase = memory.readRamRecordWord(metadata + buckets);
 		const oldCount = memory.readRamRecordWord(metadata + capacity);
@@ -154,11 +149,17 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(internStringSliceReference(oracle.stringPool, source, 2, text.length), match);
 		assert.equal(invoke('retain', metadata, source, 2, text.length, hash), match, 'shrink frontier probes upper after lower');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupiedBefore);
-		// The wrapped probe deliberately overwrote diagnostic backing bytes; synchronize this
-		// raw tape *after* proving its hash so the arena comparison only observes the operations.
-		oracle.memory.ramData().set(raw.subarray(wrapAt), wrapAt);
-		oracle.memory.ramData().set(raw.subarray(0, text.length - 3), 0);
 		equalArena();
+
+		// Fabricated spans crossing the physical wrap cannot read RAM hidden
+		// under MMIO. The ordinary vector uses the same mapped byte access.
+		const wrapAt = RAM_BASE + MAIN_RAM_SIZE - 3;
+		const before = memory.readBusFaultSequence();
+		begin('hash_slice', wrapAt - BLUA32_STRING_RECORD_HEADER_SIZE, 0, text.length);
+		for (let i = 0; i < 4096 && memory.readBusFaultSequence() === before; ++i) cpu.runUntilDepth(0, 1);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_DATA_BUS_ERROR);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), RAM_BASE + 1);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNALIGNED_IO);
 	});
 
 	test(`a BLua slice miss grows and uses the new directory; a partial record is rewindable at O${optLevel}`, () => {
@@ -173,7 +174,7 @@ for (const optLevel of [0, 3] as const) {
 		const hash = hashText(text);
 		assert.equal(invoke('lookup_ram_slice', metadata, source, 2, text.length, hash), 0);
 		const expectedId = internStringSliceReference(oracle.stringPool, source, 2, text.length);
-		assert.equal(invoke('prepare_existing_directory', metadata, arena, source), 0);
+		assert.equal(invoke('prepare_existing_directory', metadata, arena), 0);
 		const destination = memory.readRamRecordWord(metadata + rehashBase);
 		assert.notEqual(destination, 0, 'directory growth has reserved and published the next directory');
 		assert.equal(destination, oracle.memory.readRamRecordWord(metadata + rehashBase));
@@ -187,7 +188,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let i = 0; i < 4096 && memory.readRamRecordWord(expectedId + BLUA32_STRING_HASH_OFFSET) !== hash; ++i) grant(1);
 		assert.equal(memory.readRamRecordWord(expectedId + BLUA32_STRING_HASH_OFFSET), hash);
 		assert.equal(memory.readRamRecordWord(bucket), previousHead, 'header store is not a published chain link');
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		const checkpoint = captureCpuCheckpoint(cpu);
 		assert.equal(finish(), expectedId);
 		equalArena();

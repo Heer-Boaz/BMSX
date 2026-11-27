@@ -62,7 +62,6 @@ try {
 			const state = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
-			assert.equal(cpu.heapServiceActive(), false);
 			observe(`J ${cycles} 1`, `${state} ${paid} 0 0 ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return state;
 		};

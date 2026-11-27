@@ -19,8 +19,7 @@ import { valuePayload } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -78,7 +77,7 @@ for (const optLevel of [0, 3] as const) {
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 		const entry = linked.layout.functions[index].address;
 		const { valueSlots, frames } = deriveBlua32FixedStack(linked.layout, [index]);
-		assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
+		assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
@@ -151,7 +150,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
 			assert.equal(cpu.luaHeap.usedBytes(), logical);
 			commands.push(`g ${cycles} 0`);
-			results.push(`${result} ${paid} ${+cpu.heapServiceActive()} ${physical} ${logical}`);
+			results.push(`${result} ${paid} ${physical} ${logical}`);
 		}
 		for (let i = 0; i < 4000 && isOpen(memory, firstClose); ++i) grant(1);
 		assert.equal(isOpen(memory, firstClose), false);
@@ -162,7 +161,6 @@ for (const optLevel of [0, 3] as const) {
 		const earlier = commands.splice(0), prior = results.splice(0);
 		function finish() {
 			for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) grant(7);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			for (const [i, [base, length]] of tracked.entries()) {
 				assert.deepEqual(ram.subarray(base, base + length), expectedRam[i], `RAM record at ${base.toString(16)}`);

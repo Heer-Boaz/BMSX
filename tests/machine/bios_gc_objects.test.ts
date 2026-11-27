@@ -9,11 +9,9 @@ import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
@@ -33,7 +31,7 @@ function fixture(optLevel: 0 | 3) {
 	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(entry >= 0);
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.layout, [entry]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
+	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT);
 	const rom = { romBytes: writeTestBlua32Rom(linked) };
 	const { cpu, memory } = createTestSystemCpu(rom), oracle = createTestSystemCpu(rom).cpu;
 	runGuestToHalt(cpu, 1_000_000);
@@ -41,7 +39,7 @@ function fixture(optLevel: 0 | 3) {
 	const management = cpu.heapAllocator.managementOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
 	const arena = cpu.heapAllocator.allocatorStateOffset();
-	const floor = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, end = management + GC_WORKSPACE_END;
 	function compare() {
 		const actual = memory.ramData().subarray(floor, end), expected = oracle.memory.ramData().subarray(floor, end);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -78,7 +76,6 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function finish() {
 		for (let i = 0; i < 1024 && cpu.heapServiceActive(); ++i) grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		return cpu.heapServiceResult();
 	}

@@ -1,23 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { HEAP_LOGICAL_OCCUPIED_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { BLUA32_STRING_HASH_OFFSET, BLUA32_STRING_NEXT_OFFSET, BLUA32_STRING_RECORD_HEADER_SIZE, BLUA32_STRING_RECORD_KIND } from '../../machine/ts/spec/blua32/image_format';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const STRINGS = 'kernel/gc_strings';
 const PROBE = 'test/string_pool';
-const entrySource = 'halt_until_irq';
 const probeSource = `module<const>
 local strings<const> = require('${STRINGS}')
 local sweeping<const> = function(metadata)
@@ -42,19 +36,17 @@ const SWEEP_REHASH = 0x80000000, SWEEP_SHRINK = 0xc0000000;
 const names = ['bios-string-collision-a', 'bios-string-collision-b', 'bios-string-collision-c', 'bios-string-collision-d'];
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled);
-	const linked = linkTestSystemBlua32(compiled);
-	const entries = new Map<string, number>();
-	for (const { path, exportPathKey, slotName } of object.sections.rodata.moduleExports) {
-		if (path !== STRINGS && path !== PROBE || exportPathKey.startsWith('internal.')
-			|| path === STRINGS && (exportPathKey === 'sweeping' || exportPathKey === 'sweep_buckets')) continue;
-		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-		assert.ok(index >= 0, exportPathKey);
-		entries.set(exportPathKey, index);
-	}
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
+	const leaves = [
+		{ path: STRINGS, member: 'mark', arity: 2 },
+		{ path: STRINGS, member: 'begin_reachability_epoch', arity: 1, result: false },
+		{ path: STRINGS, member: 'begin_sweep', arity: 1, result: false },
+		{ path: STRINGS, member: 'estimate_sweep_work', arity: 1 },
+		{ path: STRINGS, member: 'rehash_step', arity: 5 },
+		{ path: STRINGS, member: 'sweep_step', arity: 5 },
+		{ path: PROBE, member: 'sweeping', arity: 1 },
+		{ path: PROBE, member: 'sweep_buckets', arity: 8 },
+	] as const;
+	const linked = linkFirmwareProbe(optLevel, modules, leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	const oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset();
@@ -69,7 +61,7 @@ function fixture(optLevel: 0 | 3) {
 		return id;
 	});
 	const floor = memory.ramBusEnd() - RAM_BASE;
-	const end = management + HEAP_SERVICE_THREAD_OFFSET;
+	const end = management + GC_WORKSPACE_END;
 	const actual = memory.ramData().subarray(floor, end);
 	const expected = oracle.memory.ramData().subarray(floor, end);
 
@@ -82,20 +74,18 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordWord(metadata + field, value);
 		oracle.memory.writeRamRecordWord(metadata + field, value);
 	}
-	function begin(name: string, ...args: number[]) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[entries.get(name)!].address, [metadata, ...args]));
+	function begin(name: typeof leaves[number]['member'], ...args: number[]) {
+		issueFirmwareProbe(cpu, [metadata, ...args], leaves.findIndex(leaf => leaf.member === name));
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < cycles, 'retired BIOS instructions');
+		assert.ok(grantFirmwareProbe(cpu, cycles) > 0, 'retired BIOS instructions');
 	}
 	function finish() {
-		for (let i = 0; i < 1024 && cpu.heapServiceActive(); ++i) grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 1024 && !cpu.isHaltedUntilIrq(); ++i) grant(512);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		return cpu.heapServiceResult();
+		return firmwareProbeResult(cpu);
 	}
-	function invoke(name: string, result: number, ...args: number[]) {
+	function invoke(name: typeof leaves[number]['member'], result: number, ...args: number[]) {
 		begin(name, ...args);
 		assert.equal(finish(), result, name);
 		compare();
@@ -169,7 +159,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let i = 0; i < 256 && memory.readRamRecordWord(head) === record; ++i) grant(1);
 		assert.equal(memory.readRamRecordWord(head), next, 'the old bucket has been unlinked');
 		assert.equal(memory.readRamRecordWord(bucket), 0, 'the new bucket has not published the String yet');
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		const partial = captureCpuCheckpoint(cpu);
 		const firstWork = pool['rehashStep'](count, nextBase, 1);
 		assert.equal(finish(), firstWork);
@@ -356,7 +346,7 @@ for (const optLevel of [0, 3] as const) {
 		for (let i = 0; i < 256 && memory.readRamRecordWord(upper) === record; ++i) grant(1);
 		assert.equal(memory.readRamRecordWord(upper), next, 'the upper bucket has unlinked');
 		assert.equal(memory.readRamRecordWord(lower), oldLower, 'the lower bucket has not published');
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		const partial = captureCpuCheckpoint(cpu);
 		const work = pool.sweepStep(1);
 		assert.equal(finish(), work);

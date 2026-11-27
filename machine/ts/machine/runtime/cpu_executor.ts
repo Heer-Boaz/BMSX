@@ -41,21 +41,20 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
-		const service = cpu.heapServiceActive();
 		const gxGpu = machine.gxGpu;
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		if (gxGpu.backendServiceBlocksMachine()) {
 			return tickCompleted;
 		}
-		if ((service || !cpu.isHaltedUntilIrq()) && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
+		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		const scheduler = machine.scheduler;
 		while (true) {
-			if (!service && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
+			if (!machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 				return tickCompleted;
 			}
-			if ((service || !cpu.isHaltedUntilIrq()) && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
+			if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld() && !machine.dmaController.cpuBusHeld()) {
 				return tickCompleted;
 			}
 			if (tickCompleted) {
@@ -151,14 +150,13 @@ export class CpuExecutionState {
 		if (scheduler.acceptedCpuCycles !== 0) return CpuSuspendedRunResult.Yielded;
 		const endCycle = scheduler.nowCycles + cycleBudget;
 		runDueRuntimeTimers(runtime);
-		// A fixed service can own the next grant without a deeper guest frame.
-		while (cpu.heapServiceActive() || cpu.hasFramesAbove(targetThread, targetDepth)) {
+		while (cpu.hasFramesAbove(targetThread, targetDepth)) {
 			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
-			if ((!cpu.heapServiceActive() && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
+			if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
@@ -194,7 +192,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 			}
-			if (!cpu.heapServiceActive() && !cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
+			if (!cpu.hasFramesAbove(targetThread, targetDepth)) return CpuSuspendedRunResult.Completed;
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSuspendedRunResult.ExecutionStopped;
 			}
@@ -206,7 +204,7 @@ export class CpuExecutionState {
 					return CpuSuspendedRunResult.Halted;
 				}
 				let advancedDeadline = false;
-				while (cpu.isHaltedUntilIrq() && !cpu.heapServiceActive()) {
+				while (cpu.isHaltedUntilIrq()) {
 					if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 					if (machine.gxGpu.backendServiceBlocksMachine()) {
 						return CpuSuspendedRunResult.Halted;
@@ -224,7 +222,7 @@ export class CpuExecutionState {
 					}
 					const cyclesToDeadline = Math.min(haltedDeadline, endCycle) - scheduler.nowCycles;
 					if (cyclesToDeadline <= 0) {
-						if (runDueRuntimeTimers(runtime) && !cpu.heapServiceActive()) {
+						if (runDueRuntimeTimers(runtime)) {
 							return CpuSuspendedRunResult.Halted;
 						}
 						continue;
@@ -251,14 +249,13 @@ export class CpuExecutionState {
 		const runtime = this.runtime;
 		const scheduler = runtime.machine.scheduler;
 		const cpu = runtime.machine.cpu;
-		const service = cpu.heapServiceActive();
 		let advanced = scheduler.hasDueTimer();
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		while (state.cycleBudgetRemaining > 0
 			&& !tickCompleted
 			&& !runtime.machine.gxGpu.backendServiceBlocksMachine()
 			&& !runtime.machine.systemController.cpuHeld()) {
-			if ((!service && cpu.isMemoryWriteBlocked()) || runtime.machine.dmaController.cpuBusHeld()) {
+			if (cpu.isMemoryWriteBlocked() || runtime.machine.dmaController.cpuBusHeld()) {
 				const nextDeadline = scheduler.nextDeadline();
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
 				if (deadlineBudget <= 0) {
@@ -305,8 +302,6 @@ export class CpuExecutionState {
 			if (result === RunResult.ExecutionStopped) {
 				return CpuSliceResult.ExecutionStopped;
 			}
-			// A fixed activation runs machine work, not the next caller instruction.
-			if (service && (consumed === 0 || result === RunResult.Yielded)) return advanced ? CpuSliceResult.Advanced : CpuSliceResult.Blocked;
 			if (cpu.isMemoryWriteBlocked()) {
 				if (consumed > 0) {
 					return result === RunResult.Halted

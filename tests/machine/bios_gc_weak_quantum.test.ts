@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_MODE_META, GC_MODE_NODE, GC_TRACE_CURSOR, GC_TRACE_RECORD, GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, hashCanonicalTableKey, valueString } from '../../machine/ts/machine/cpu/value';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -45,16 +45,16 @@ function fixture(optLevel: 0 | 3) {
 	const step = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[stepSlot]);
 	assert.ok(index >= 0 && step >= 0);
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index, step]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const quantum = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-	const floor = memory.ramBusEnd() - RAM_BASE, output = management + HEAP_SERVICE_THREAD_OFFSET - 4;
-	const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode), newIndex = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex);
-	assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
+	const quantum = management + GC_TRACE_CONTEXT_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, output = management + GC_WORKSPACE_END - 4;
+	const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode), newIndex = cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex);
+	assert.equal(modeKey, oracle.gc.diagnosticWord(GcDiagnosticField.Mode));
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -134,20 +134,20 @@ function fixture(optLevel: 0 | 3) {
 		return [work, pending];
 	}
 	function beginStep(prefix: number, limit: number, atomic: number, policy: number) {
-		word(quantum + HeapServiceTraceField.Work, prefix);
-		word(quantum + HeapServiceTraceField.Limit, limit);
-		word(quantum + HeapServiceTraceField.Atomic, atomic);
-		word(quantum + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
-		word(quantum + HeapServiceTraceField.MirrorPolicy, policy);
+		word(quantum + GcTraceContextField.Work, prefix);
+		word(quantum + GcTraceContextField.Limit, limit);
+		word(quantum + GcTraceContextField.Atomic, atomic);
+		word(quantum + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		word(quantum + GcTraceContextField.MirrorPolicy, policy);
 		const work = prefix + oracle.gc['clearWeakQuantum'](limit - prefix);
 		const pending = oracle.stringPool.takeMarkWork();
-		oracle.memory.writeRamRecordWord(quantum + HeapServiceTraceField.PendingStringWork, pending);
+		oracle.memory.writeRamRecordWord(quantum + GcTraceContextField.PendingStringWork, pending);
 		assert.ok(cpu.beginHeapService(linked.image.functions[step].address, [control, arena, metadata, quantum, modeKey, newIndex, 0]));
 		return [work, pending];
 	}
 	function quantumWords() {
-		return [HeapServiceTraceField.Work, HeapServiceTraceField.Limit, HeapServiceTraceField.Atomic,
-			HeapServiceTraceField.PendingStringWork, HeapServiceTraceField.MirrorPolicy].map(field => memory.readRamRecordWord(quantum + field));
+		return [GcTraceContextField.Work, GcTraceContextField.Limit, GcTraceContextField.Atomic,
+			GcTraceContextField.PendingStringWork, GcTraceContextField.MirrorPolicy].map(field => memory.readRamRecordWord(quantum + field));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -157,7 +157,6 @@ function fixture(optLevel: 0 | 3) {
 	function finish(cycles = 64) {
 		let elapsed = 0;
 		for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) elapsed += grant(cycles);
-		assert.equal(cpu.heapServiceActive(), false);
 		return { result: [cpu.heapServiceResult(), memory.readRamRecordWord(output)], elapsed };
 	}
 	function check(limit: number, expected: number[]) {

@@ -21,9 +21,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
-import {
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField,
-} from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../../helpers/firmware_heap_layout';
 import {
 	IO_CART_SELECT, IO_SYS_CONTROL, SYS_CONTROL_RESET,
 } from '../../../machine/ts/spec/bmsx/io';
@@ -79,7 +77,7 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 		assert.equal(arena.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), charged);
 		commands.push(`J ${cycles} 1`);
-		expected.push(`${expectedResult} ${paid} 0 0 ${occupied} ${charged}`);
+		expected.push(`${expectedResult} ${paid} 0 ${occupied} ${charged}`);
 	}
 	grant(1, RunResult.Yielded, BASE_CYCLES[OpCode.LOADK]);
 	grant(1, RunResult.Yielded, BASE_CYCLES[OpCode.MTC0]);
@@ -136,10 +134,9 @@ function verifyMaskedReset(native: string, directory: string) {
 	for (let i = 0; i < 4096 && memory.ramBusEnd() !== end; ++i) {
 		const run = scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled);
 		commands.push('E 1');
-		expected.push([run, 1 - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+		expected.push([run, 1 - cpu.instructionBudgetRemaining, memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 	}
 	assert.equal(memory.ramBusEnd(), end);
-	assert.equal(cpu.heapServiceActive(), false, 'masking is machine state, not a test heap activation');
 	assert.equal(cpu.systemResetInhibited(), true);
 	memory.writeMappedWord(IO_SYS_CONTROL, SYS_CONTROL_RESET);
 	commands.push(`O ${IO_SYS_CONTROL} ${SYS_CONTROL_RESET}`);
@@ -150,8 +147,7 @@ function verifyMaskedReset(native: string, directory: string) {
 		const cycles = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const completed = frames.runCyclesToNextLogicalTick(1);
 		commands.push('p 1');
-		expected.push([+completed, scheduler.nowCycles - cycles, frames.lastTickSequence - tick,
-			+cpu.heapServiceActive(), +cpu.isHaltedUntilIrq()].join(' '));
+		expected.push([+completed, scheduler.nowCycles - cycles, frames.lastTickSequence - tick, +cpu.isHaltedUntilIrq()].join(' '));
 		const seen = memory.readRamRecordWord(report);
 		assert.notEqual(seen, 13, 'accept RESET before executing the successor of the releasing MTC0');
 		if (seen === 7 && systemController.hasResetRequest()) proceededWithResetPending = true;
@@ -205,7 +201,7 @@ try {
 			const management = heapAllocator.managementOffset();
 			const allocatorState = heapAllocator.allocatorStateOffset(), arena = memory.bindDlmalloc(allocatorState);
 			const control = management + HEAP_GC_CONTROL_OFFSET;
-			const traceLimit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
+			const traceLimit = management + GC_TRACE_CONTEXT_OFFSET + GcTraceContextField.Limit;
 			const parked = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
 				&& cpu.readThreadFrameWord(cpu.rootThread.address, cpu.rootThread.frameDepth - 1, FrameField.Function) === entry;
 			for (let i = 0; i < 262144 && !parked(); ++i) {
@@ -265,13 +261,12 @@ try {
 				const consumed = cycles - cpu.instructionBudgetRemaining;
 				// One admitted instruction can cross the grant, not a host GC cycle charge.
 				if (held) assert.ok(consumed > 0 && consumed < cycles + maxInstructionCycles, `EXEC uses ordinary BIOS grants: paid ${consumed}/${cycles}`);
-				observe(`E ${cycles}`, `${result} ${consumed} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+				observe(`E ${cycles}`, `${result} ${consumed} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 				return result;
 			}
 			assert.equal(gc.phase(), scenario === 'reclaimed' ? GcPhase.Mark : GcPhase.Pause, 'SVC entry does not run the collector');
 			function assertHeld() {
 				assert.ok(parked(), 'floor recovery remains within the architectural exception');
-				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(cpu.readThreadFrameWord(owner, caller, FrameField.Pc), successor);
 				assert.equal(memory.ramBusEnd(), oldFloor, 'do not publish the floor before the activation returns');
 				assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
@@ -346,7 +341,6 @@ try {
 					assert.equal(arena.floor(), floor - RAM_BASE);
 					assert.equal(step(1), RunResult.Yielded);
 					assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MTC0]);
-					assert.equal(cpu.heapServiceActive(), false, 'EXEC does not dispatch firmware');
 					assert.equal(cpu.activeCartridgeSlot(), 1);
 					const entry = cpu.rootThread.frameAtDepth(0);
 					assert.equal(cpu.getFrameDepth(), 1);

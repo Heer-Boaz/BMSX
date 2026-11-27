@@ -66,7 +66,6 @@ std::vector<std::unique_ptr<NativeBlock>> NativeCompiler::compile(
 ) {
 	if (!m_workspace) m_workspace = std::make_unique<Workspace>();
 	auto& [uses, ir, lowering] = *m_workspace;
-	options.privateFirmware = bindings.privateFirmware;
 	ir.build(sources, uses, bindings.cpu != nullptr, options, specializations);
 	const auto plans = ir.blocks();
 	if (plans.empty()) return {};

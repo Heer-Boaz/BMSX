@@ -65,7 +65,6 @@ for (const optLevel of [0, 3] as const) test(`stock rawset O${optLevel} runs the
 	const atRawSet = () => atVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10021);
 	for (let i = 0; i < 250_000 && !atRawSet(); ++i) grant(23);
 	assert.ok(atRawSet(), `no BIOS raw-set: Cause=${cpu.readCauseWord()} EPC=${cpu.readEpcWord().toString(16)} reason=${cpu.readLuaFaultReasonWord()}`);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), cpu.rootThread.address);
 	const frame = cpu.rootThread.frameDepth - 1;
 	assert.equal(cpu.rootThread.frameAtDepth(frame - 1).savedExecutionBank, 0, 'the cartridge called the public function');
@@ -96,7 +95,7 @@ for (const optLevel of [0, 3] as const) test(`stock rawset O${optLevel} runs the
 	const observe = (command: string, expected: string) => { commands.push(command); observations.push(expected); };
 	for (let i = 0; i < 128 && atStore(); ++i) {
 		const result = grant(17);
-		observe('E 17', `${result} ${17 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe('E 17', `${result} ${17 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 	}
 	assert.equal(atStore(), false);
 	assert.equal(memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK, 2);
@@ -106,7 +105,7 @@ for (const optLevel of [0, 3] as const) test(`stock rawset O${optLevel} runs the
 	function finish(record: boolean) {
 		for (let i = 0; i < 2_048; ++i) {
 			const result = grant(4096);
-			if (record) observe('E 4096', `${result} ${4096 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+			if (record) observe('E 4096', `${result} ${4096 - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			if (result === RunResult.Halted) break;
 		}
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);

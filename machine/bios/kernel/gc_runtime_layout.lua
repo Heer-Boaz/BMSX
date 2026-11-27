@@ -1,8 +1,6 @@
 module<const>
 
--- Pinned System context: relative management offsets and CPU-private ports.
--- The CPU makes data available without selecting collector phases. The
--- effect address is a private store strobe, not RAM.
+-- Physical BIOS workspace; offsets are relative to its RAM reservation.
 return {
 	firmware_data_offset = 0x1c00,
 	function_binding_offset = 0x3c80, -- beyond the 1024-entry capture work planes
@@ -27,8 +25,6 @@ return {
 	remark_receiver_offset = 52,
 	trace_context_offset = 0x740,
 	trace_string_work_offset = 12,
-	effect_offset = 0x788,
 	value_cell_offset = 0x7a0, -- firmware scratch; only this module owns the placement
 	value_cell_tag_offset = 4,
-	publish_roots = 0,
 }

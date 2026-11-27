@@ -106,7 +106,6 @@ import type {
 } from './blua32_bios_imports';
 import { SYSTEM_BLUA32_FUNCTION_TABLE_ALIGNMENT } from './system';
 import { evaluateProgramLinkValueExpression } from '../lua/compiler/compile_time_number';
-import { linkBlua32ResidentFunctions } from './blua32_resident';
 
 const RETIRED_FUNCTION_BYTES = 2 * INSTRUCTION_BYTES;
 
@@ -1050,8 +1049,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	};
 	const layout = decodeBlua32Image(bytes, input.loadAddress);
 	if (input.domain === 'system') {
-		const fixedEntries = input.biosExports.flatMap((entry, index) => entry.fixedStack ? [index] : []);
-		linkBlua32ResidentFunctions(layout, object.link.constValueRelocs, fixedEntries);
 		return {
 			domain: 'system',
 			bytes,

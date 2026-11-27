@@ -84,7 +84,7 @@ return set(incoming)
 	function grant(budget: number) {
 		const run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
 		commands.push(`E ${budget}`);
-		observations.push(`${run} ${budget - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observations.push(`${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return run;
 	}
 	function observeCell() {
@@ -94,7 +94,6 @@ return set(incoming)
 	assert.equal(grant(1), RunResult.Yielded);
 	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.SETUP]);
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);
 	assert.equal(cpu.readBadAddressWord(), RAM_BASE + cell);
 	assert.equal(cpu.readEpcWord(), successor);
@@ -126,7 +125,6 @@ return set(incoming)
 	function complete() {
 		for (let step = 0; cpu.fixedInterruptActive() && step < 4096; ++step) assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), false);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.activeThread.address, owner);
 		assert.equal(cpu.readFramePc(depth - 1), successor);
 		assert.equal(load(memory, cell), value);
@@ -164,7 +162,7 @@ return set(incoming)
 		const paid = BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETUP] + 2;
 		for (const mode of [0, 1]) {
 			assert.deepEqual(replay(['X', `! ${paid} ${mode} 1`, 'Z'], warmSeed),
-				[`${RunResult.Yielded} ${paid} 0 ${mode} ${mode} 0 0`, `${CPU_CAUSE_CODE_REFERENCE_STORE} 0 ${successor}`]);
+				[`${RunResult.Yielded} ${paid} ${mode} ${mode} 0 0`, `${CPU_CAUSE_CODE_REFERENCE_STORE} 0 ${successor}`]);
 		}
 	}
 });

@@ -1,8 +1,6 @@
 import { type OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import assert from 'node:assert/strict';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import { readLE32 } from '../../machine/ts/common/endian';
-import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../machine/ts/spec/blua32/image_format';
 import { createTestSystemCpu, linkTestSystemBlua32, type TestBlua32Image } from './blua32';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -11,7 +9,8 @@ import type { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_
 import { Thread } from '../../machine/ts/machine/cpu/thread';
 import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_DIAGNOSTIC_FAULTS_OFFSET } from './firmware_heap_layout';
 import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram, type SystemCompileOptions } from '../../toolchain/ts/lua/compiler';
@@ -80,15 +79,6 @@ export function linkHeapServiceEntry(text: Uint8Array, maxStack: number, isVarar
 	return linkTestSystemBlua32(compiled);
 }
 
-/** Resolve the actual fixed root from fixture linker symbols, not a CPU roster. */
-export function residentFunctionAddress(linked: Pick<TestBlua32Image, 'image' | 'symbols'>, module: string, member: string): number {
-	const index = linked.symbols.metadata.functionIds.findIndex(id => id.startsWith(`module:${module}/`) && id.endsWith(`|constant|${member}`));
-	assert.ok(index >= 0, `linked resident function ${module}:${member}`);
-	const record = linked.image.functions[index];
-	assert.notEqual(readLE32(linked.image.bytes, record.address - linked.image.address + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0);
-	return record.address;
-}
-
 const fixtureFaultTexts = [
 	'Attempted to get length of an unsupported value.',
 	'Attempted to call a non-function value.',
@@ -118,11 +108,11 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 	const index = stringPool.intern('__index'), newIndex = stringPool.intern('__newindex');
 	const length = stringPool.intern('__len'), mode = stringPool.intern('__mode');
 	const error = stringPool.intern('error in error handling');
-	const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
-	memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.Mode, mode);
-	memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Index, index, newIndex);
-	memory.writeRamRecordPair(remark + HeapServiceRemarkHeadField.Length, length, error);
-	memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.FaultIds, RAM_BASE + faults);
+	const remark = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
+	memory.writeRamRecordWord(remark + GcDiagnosticField.Mode, mode);
+	memory.writeRamRecordPair(remark + GcDiagnosticField.Index, index, newIndex);
+	memory.writeRamRecordPair(remark + GcDiagnosticField.Length, length, error);
+	memory.writeRamRecordWord(remark + GcDiagnosticField.FaultIds, RAM_BASE + faults);
 	for (let reason = 0; reason < fixtureFaultTexts.length; ++reason) {
 		const id = reason === LUA_FAULT_REASON_EXPLICIT_ERROR ? 0 : stringPool.intern(fixtureFaultTexts[reason]);
 		memory.writeRamRecordWord(faults + 4 * reason, id);

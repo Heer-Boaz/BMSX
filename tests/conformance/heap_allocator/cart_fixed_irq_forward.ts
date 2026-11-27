@@ -161,7 +161,6 @@ try {
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const paid = cycles - cpu.instructionBudgetRemaining;
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(arena.occupiedBytes(), occupied);
 			assert.equal(heap.usedBytes(), charged);
 			observe(`g ${cycles} 0`, `${result} ${paid} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);

@@ -80,10 +80,15 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts
 import { InstructionStepResult } from '../../machine/ts/machine/runtime/frame/state';
 import { LUA_BOOT_PRIMITIVES } from '../../toolchain/ts/lua/compiler/system_boot_symbols';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../machine/ts/spec/blua32/cop0';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { writeTestBlua32Rom } from '../helpers/blua32';
+import { runGuestToHalt } from '../helpers/cpu_execution';
 import { TableRecords } from '../../machine/ts/machine/cpu/table';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { GcPhase, GC_PACE_PAID } from '../../machine/ts/machine/cpu/gc_heap';
 
 const PCRTC_SYNCH2_SLOW_WORD = 0x004f84bc;
@@ -332,35 +337,46 @@ test('CPU timing store crossing a due VBlank differs from a store after service'
 });
 
 test('a full collection spans CPU grants and resumes its outstanding fresh epoch after restore', () => {
-	const image = linkTestSystemBlua32(compileHeapServiceSystem('fixture_collect()\nreturn 1', 0,
-		[{ path: 'fixture_full_timing', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" }]));
-	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(),
+	const image = linkManagedTestSystem(`
+local ids<const> = require('kernel/heap_control_ids')
+halt_until_irq
+blua32.svc(ids.collect_full)
+return 1
+`, 0);
+	const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(image), cartridgeSlots: cartridgeSlots(),
 		machineModel: PSX_MACHINE_SPEC }, new TimingInputSource());
 	runtime.boot();
-	const { cpu } = runtime.machine, { gc } = cpu;
+	const { cpu, memory } = runtime.machine, { gc } = cpu;
+	runGuestToHalt(cpu, 1_000_000);
+	assert.ok(cpu.isHaltedUntilIrq());
+	cpu.clearHaltUntilIrq();
 	const live = cpu.createTable(8, 0);
 	cpu.setGlobalByKey(cpu.stringPool.intern('retained across both epochs'), valueTable(live));
 	const floating = cpu.createTable();
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 	runtime.frameLoop.beginFrameState(16_000_000, 0);
 	const step = () => runtime.frameScheduler.stepInstruction(0);
-	const full = residentFunctionAddress(image, 'kernel/gc_full', 'collect_full');
-	const explicitCollection = () => cpu.heapServiceActive() && cpu['heapService'].thread.firstFrame!.functionAddress === full;
+	const stepFirmware = () => {
+		const result = step();
+		assert.ok(result === InstructionStepResult.Advanced || result === InstructionStepResult.Executed);
+	};
+	const explicitCollection = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL;
 	for (let steps = 0; !explicitCollection() && steps < 4096; ++steps) assert.notEqual(step(), InstructionStepResult.Blocked);
-	assert.equal(explicitCollection(), true);
-	const caller = cpu.getFrameDepth() - 1, pc = cpu.readFramePc(caller);
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(gc.fullEpochs(), 0, 'CALL binds the service without choosing the epochs');
-	for (let steps = 0; !gc.fullEpochs() && steps < 128; ++steps) assert.equal(step(), InstructionStepResult.Advanced);
+	assert.ok(explicitCollection());
+	const context = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+	const caller = cpu.readThreadFrameDepth(context) - 1, pc = cpu.readEpcWord();
+	const callPc = () => cpu.readThreadFrameWord(context, caller, FrameField.Pc);
+	assert.equal(gc.fullEpochs(), 0, 'the System vector starts before firmware selects the epochs');
+	for (let steps = 0; !gc.fullEpochs() && steps < 128; ++steps) stepFirmware();
 	assert.equal(gc.fullEpochs(), 2);
-	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, cpu.readFrameFunctionAddress(caller)));
+	assert.throws(() => cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, cpu.readThreadFrameWord(context, caller, FrameField.Function)));
 	assert.equal(gc.fullEpochs(), 2, 'the rejected call must not displace either outstanding epoch');
-	assert.equal(cpu.readFramePc(caller), pc);
+	assert.equal(callPc(), pc);
 	for (let i = 0; i < 8; ++i) {
 		const clock = runtime.machine.scheduler.nowCycles;
-		assert.equal(step(), InstructionStepResult.Advanced, 'a paid tracing grant does not execute a caller instruction');
+		stepFirmware();
 		assert.ok(runtime.machine.scheduler.nowCycles > clock);
-		assert.equal(cpu.readFramePc(caller), pc);
+		assert.equal(callPc(), pc);
 	}
 	const snapshot = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const finish = () => {
@@ -369,10 +385,11 @@ test('a full collection spans CPU grants and resumes its outstanding fresh epoch
 		// Supply ordinary bounded CPU grants after the debugger observations.
 		// A one-cycle debugger grant yields a one-word policy allowance, not
 		// a fast-forward of all firmware that works on that word.
-		while (cpu.heapServiceActive()) {
+		while (explicitCollection()) {
 			assert.ok(costs.length < 4096);
 			const grant = 911;
-			assert.equal(runtime.machine.scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
+			const result = runtime.machine.scheduler.runCpuSlice(0, grant, undefined, CpuRunKind.Scheduled);
+			assert.ok(result === RunResult.Yielded || result === RunResult.Halted);
 			const paid = grant - cpu.instructionBudgetRemaining;
 			assert.ok(paid > 0);
 			advanceRuntimeTime(runtime, paid);
@@ -381,7 +398,7 @@ test('a full collection spans CPU grants and resumes its outstanding fresh epoch
 				assert.notEqual(gc.tableRecordAddress(floating), 0, 'floating garbage survived the first epoch');
 				reachedFresh = true;
 			}
-			assert.equal(cpu.readFramePc(caller), pc);
+			if (explicitCollection()) assert.equal(callPc(), pc);
 		}
 		assert.ok(reachedFresh && costs.filter(cost => cost > 0).length > 4);
 		assert.equal(gc.tableRecordAddress(floating), 0);

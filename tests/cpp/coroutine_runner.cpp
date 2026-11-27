@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
 				const auto ready = *cpu.stringPool().find("interrupt_ready");
 				for (int grant = 0; grant < 20000 && result == RunResult::Yielded; ++grant) {
 					if (!admitted && cpu.activeThread() != cpu.rootThread() && cpu.getFrameDepth() != 0
-						&& !cpu.fixedInterruptActive() && !cpu.heapServiceActive() && cpu.getGlobalByKey(ready) == valueBool(true)) {
+						&& !cpu.fixedInterruptActive() && cpu.getGlobalByKey(ready) == valueBool(true)) {
 						cpu.requestNonMaskableInterrupt();
 						if (!cpu.enterPendingInterrupt()) throw std::runtime_error("NMI was not admitted");
 						admitted = true;

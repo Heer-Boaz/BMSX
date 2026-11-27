@@ -631,9 +631,9 @@ void stringReceiver() {
 		for (auto* m : {&generated, &scalar}) {
 			auto& cpu = m->cpu; auto installed = bmsx::test::allocateTableReference(cpu, 0, 2); const auto key = keyFor(cpu, KeyKind::String);
 			makeChain(cpu, installed, 3, key, valueInteger(73));
-			const u32 head = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-			m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexTag), static_cast<u32>(ValueTag::Table));
-			m->memory.writeRamRecordWord(head + static_cast<u32>(HeapServiceRemarkHeadField::StringIndexWord), installed.address());
+			const u32 head = cpu.heapAllocator().managementOffset() + GC_DIAGNOSTIC_OFFSET;
+			m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexTag), static_cast<u32>(ValueTag::Table));
+			m->memory.writeRamRecordWord(head + static_cast<u32>(GcDiagnosticField::StringIndexWord), installed.address());
 			auto r = cpu.activeThread()->currentFrame->registers;
 			r.set(0, valueString(cpu.stringPool().intern("receiver"))); r.set(8, valueInteger(57));
 		}
@@ -647,7 +647,7 @@ void stringReceiver() {
 				&& generated.cpu.luaHeap().collectionTarget() == scalar.cpu.luaHeap().collectionTarget(),
 				"physical allocator and pacing words agree");
 		for (auto* m : {&generated, &scalar}) {
-			TableRecord installed(m->cpu.gcHeap(), m->cpu.gcHeap().diagnosticWord(HeapServiceRemarkHeadField::StringIndexWord));
+			TableRecord installed(m->cpu.gcHeap(), m->cpu.gcHeap().diagnosticWord(GcDiagnosticField::StringIndexWord));
 			TableRecord(m->cpu.gcHeap(), installed.metatableAddress()).setStringKey(m->cpu.stringPool().intern("__index"), valueTable(bmsx::test::allocateTableReference(m->cpu).address()));
 			m->cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, m->rom.functionAddresses[0], m->rom.textAddress + program.starts[0] * INSTRUCTION_BYTES);
 			m->cpu.activeThread()->currentFrame->writeControl(FrameField::Top, 0x49000001u);

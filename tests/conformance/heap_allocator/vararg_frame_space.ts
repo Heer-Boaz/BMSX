@@ -51,12 +51,11 @@ for (const level of [0, 3] as const) test(`generated VARARG issues an ordinary w
 	function record(command: string, row: string) { commands.push(command); expected.push(row); }
 	function grant(n: number) {
 		const result = f.grant(n);
-		record(`E ${n}`, `${result.result} ${result.used} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		record(`E ${n}`, `${result.result} ${result.used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return result;
 	}
 	assert.deepEqual(grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.VARARG] });
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readEpcWord(), issue);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), thread.address);
 	record('Z', `${CPU_CAUSE_CODE_REGISTER_WINDOW} 0 ${issue}`);

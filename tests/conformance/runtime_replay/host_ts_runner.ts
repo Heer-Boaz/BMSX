@@ -82,11 +82,11 @@ async function main(): Promise<void> {
 		}
 		return supervisorRequestLineHigh();
 	};
-	type Frontier = [tick: number, cycles: number, debt: number, privateService: boolean];
+	type Frontier = [tick: number, cycles: number, debt: number];
 	const recordedFrontiers = new Map<number, Frontier>();
 	const actualFrontier = (): Frontier => [
 		runtime.frameScheduler.lastTickSequence, runtime.machine.scheduler.currentNowCycles(),
-		runtime.machine.scheduler.acceptedCpuCycles, runtime.machine.cpu.heapServiceActive(),
+		runtime.machine.scheduler.acceptedCpuCycles,
 	];
 	const tickUpdate = runtime.frameLoop.tickUpdate.bind(runtime.frameLoop);
 	runtime.frameLoop.tickUpdate = () => {

@@ -1,5 +1,5 @@
 import { writeLE32 } from '../../../machine/ts/common/endian';
-import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT, BLUA32_IMAGE_MAPPED_CODE_FLAG } from '../../../machine/ts/spec/blua32/image_format';
+import { BLUA32_FUNCTION_CODE, BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_IMAGE_MAPPED_CODE_FLAG } from '../../../machine/ts/spec/blua32/image_format';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/memory_map';
 import { deriveBlua32FixedStack } from './blua32_fixed_stack';
 import type { Blua32ImageLayout } from './blua32_image';
@@ -7,8 +7,8 @@ import type { Blua32ImageLayout } from './blua32_image';
 export function bindBlua32CodeFunctions(image: Blua32ImageLayout, targets: Iterable<number>): void {
 	for (const index of targets) {
 		const target = image.functions[index];
-		if (target.upvalues.length !== 0 || (target.flags & BLUA32_FUNCTION_RESIDENT) !== 0)
-			throw new Error('An immutable System call target cannot have captures or be a legacy resident activation.');
+		if (target.upvalues.length !== 0)
+			throw new Error('An immutable System call target cannot have captures.');
 		target.flags |= BLUA32_FUNCTION_CODE;
 		writeLE32(image.bytes, target.address - image.address + BLUA32_FUNCTION_FLAGS_OFFSET, target.flags);
 	}
@@ -16,7 +16,7 @@ export function bindBlua32CodeFunctions(image: Blua32ImageLayout, targets: Itera
 
 // Called after immutable System code and operands are linked. The linker
 // derives code-valued CLOSURE targets from the real reachable vector bodies,
-// not from firmware module names or the legacy fixed-service descriptor.
+// not from firmware module names.
 export function linkBlua32ResetCode(
 	image: Blua32ImageLayout, reset: number, irq: number, exception: number, detached: readonly (number | undefined)[],
 ): { valueSlots: number; frames: number } {
@@ -24,12 +24,7 @@ export function linkBlua32ResetCode(
 		throw new Error('A direct System vector must execute immutable System ROM.');
 	const codeTargets = new Set<number>();
 	const vectors = [reset, irq, exception];
-	const functions = new Set(image.functions.keys());
-	const lateConstants = new Set<number>();
-	const boundary = {
-		functions, lateConstants,
-		ordinaryCode: { reset, exceptionVectors: new Set([irq, exception]), interruptible: true, codeTargets },
-	};
+	const boundary = { reset, exceptionVectors: new Set([irq, exception]), interruptible: true, codeTargets };
 	let valueSlots = 0, frames = 0;
 	// Ordinary execution can be interrupted by IRQ and then NMI. Reserve
 	// complete disjoint contexts, even at the deepest ordinary boot call.
@@ -45,8 +40,7 @@ export function linkBlua32ResetCode(
 	for (const vector of detached) {
 		if (vector === undefined) continue;
 		const size = deriveBlua32FixedStack(image, [vector], {
-			functions, lateConstants,
-			ordinaryCode: { exceptionVectors: new Set([vector]), interruptible: false, codeTargets },
+			exceptionVectors: new Set([vector]), interruptible: false, codeTargets,
 		});
 		if (size.frames > CPU_FIXED_FRAME_COUNT || size.valueSlots > CPU_FIXED_VALUE_COUNT)
 			throw new Error(`Detached vector 0x${image.functions[vector].address.toString(16)} requires ${size.frames} frames and ${size.valueSlots} Values, beyond the fixed CPU bank.`);

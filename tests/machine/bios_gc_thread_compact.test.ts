@@ -4,8 +4,8 @@ import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/ca
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ThreadField, ThreadLayout } from '../../machine/ts/machine/cpu/thread_record';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
@@ -52,13 +52,13 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(entry >= 0);
 	const { valueSlots, frames: stackFrames } = deriveBlua32FixedStack(linked.layout, [entry]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && stackFrames <= HEAP_SERVICE_FRAME_COUNT);
+	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && stackFrames <= CPU_FIXED_FRAME_COUNT);
 	const { cpu, memory } = bootManagedTestSystem(linked);
 	const oracle = bootManagedTestSystem(linked).cpu;
 	runGuestToHalt(cpu, 1_000_000);
 	runGuestToHalt(oracle, 1_000_000);
 	const first = memory.ramBusEnd() - RAM_BASE;
-	const last = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
+	const last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	const actual = () => memory.ramData().subarray(first, last);
 	const expected = () => oracle.memory.ramData().subarray(first, last);
 	const compare = () => {
@@ -76,7 +76,6 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 	const finish = () => {
 		let spent = 0;
 		for (let count = 0; count < 256 && cpu.heapServiceActive(); ++count) spent += grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
 		return spent;
 	};
 	const observeRewrite = (changed: number, next: number, replacement: number) => {

@@ -44,7 +44,7 @@ local recover<const> = function(values, depth, instruction, deadline)
 			root = layout.ram_base + (*word & record_mask)
 		end
 	end
-	return frames.prepare_frame_space(management, interrupted, values, depth, root, source_cycles, true) == 0
+	return frames.prepare_frame_space(management, interrupted, values, depth, root, source_cycles) == 0
 end
 
 bss call_operands: exception_argument_roots
@@ -64,7 +64,7 @@ local land_call<const> = function(values, depth, deadline, count,
 	arguments[0], arguments[1] = a, b
 	if count == 3 then arguments[2] = c end
 	local scope<const> = (call_operands - layout.ram_base) | roots.exception_argument_scope
-	if frames.prepare_frame_space(layout.management_offset, interrupted, values, depth, scope, deadline, true) ~= 0 then
+	if frames.prepare_frame_space(layout.management_offset, interrupted, values, depth, scope, deadline) ~= 0 then
 		return nil
 	end
 
@@ -124,7 +124,7 @@ local land_results<const> = function(values, top, deadline, base, selected, avai
 	if available > 7 then arguments[7] = h end
 	if available > 8 then arguments[8] = i end
 	local scope<const> = (call_operands - layout.ram_base) | roots.exception_result_scope
-	if frames.prepare_frame_space(layout.management_offset, interrupted, values, 0, scope, deadline, true) ~= 0 then
+	if frames.prepare_frame_space(layout.management_offset, interrupted, values, 0, scope, deadline) ~= 0 then
 		return nil
 	end
 

@@ -1,54 +1,40 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GcPhase, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { type Value, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../machine/ts/machine/cpu/value';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
+import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { GC_ROOT_BANKS_OFFSET } from '../helpers/firmware_heap_layout';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
 const MODULE = 'kernel/table_grow';
 const ADAPTER = 'table_grow_result';
-const entrySource = `local probe<const> = require('${ADAPTER}')
-halt_until_irq
-return probe.invoke(0, 0, 0, 0)`;
 const adapter = `module<const>
 	local grow<const> = require('${MODULE}')
 	local invoke<const> = function(management, cycles, extra, mode)
-		return grow.grow_table(management, cycles, extra, mode, false) and 1 or 0
+		return grow.grow_table(management, cycles, extra, mode) and 1 or 0
 	end
 	return { invoke = invoke }`;
-const links = new Map<number, ReturnType<typeof linkManagedTestSystem>>();
+const links = new Map<number, ReturnType<typeof linkFirmwareProbe>>();
 
 function fixture(optLevel: 0 | 3) {
 	let linked = links.get(optLevel);
 	if (linked === undefined) {
-		linked = linkManagedTestSystem(entrySource, optLevel, [{ path: ADAPTER, source: adapter }]);
+		linked = linkFirmwareProbe(optLevel, [{ path: ADAPTER, source: adapter, chunk: parseLuaChunk(adapter, ADAPTER) }],
+			[{ path: ADAPTER, member: 'invoke', arity: 4 }]);
 		links.set(optLevel, linked);
 	}
-	const { object } = linked;
-	function exportIndex(path: string, key: string) {
-		const entry = object.sections.rodata.moduleExports.find(candidate => candidate.path === path && candidate.exportPathKey === key);
-		assert.ok(entry);
-		const root = linked!.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
-		assert.ok(root >= 0);
-		return root;
-	}
-	const root = exportIndex(ADAPTER, 'invoke'), actual = exportIndex(MODULE, 'grow_table');
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.layout, [actual]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned growth stack: ${frames} frames, ${valueSlots} values`);
-	const { cpu, memory } = bootManagedTestSystem(linked);
-	runGuestToHalt(cpu, 4_194_304);
+	const { cpu, memory } = createTestHeapServiceCpu(linked);
+	runGuestToHalt(cpu, 10_000);
 	const heap = cpu.luaHeap, arena = cpu.heapAllocator, { gc } = cpu, { tables } = gc;
-	const management = arena.managementOffset(), head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	const management = arena.managementOffset(), head = management + GC_DIAGNOSTIC_OFFSET;
+	memory.writeRamRecordWord(management + GC_ROOT_BANKS_OFFSET, cpu.rootThread.address);
 	const parked = () => memory.readRamRecordWord(head + 48);
 	let scoped = false;
 	function cloneNativeReference() {
-		const reference = bootManagedTestSystem(linked!).cpu;
+		const reference = createTestHeapServiceCpu(linked!).cpu;
 		restoreCpuCheckpoint(reference, captureCpuCheckpoint(cpu));
 		return reference;
 	}
@@ -57,17 +43,15 @@ function fixture(optLevel: 0 | 3) {
 		memory.writeRamRecordPair(head + 56, valueTag(key), valuePayload(key));
 		memory.writeRamRecordPair(head + 64, valueTag(value), valuePayload(value));
 		scoped = mode === 1;
-		assert.ok(cpu.beginHeapService(linked!.layout.functions[root].address, [management, sourceCycles, extra, mode]));
+		issueFirmwareProbe(cpu, [management, sourceCycles, extra, mode]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cycles - cpu.instructionBudgetRemaining > 0);
+		assert.ok(grantFirmwareProbe(cpu, cycles) > 0);
 		if (scoped) assert.equal(parked(), 0, 'General recovery never publishes the parked assignment scope');
 	}
 	function finish(success = true) {
-		for (let i = 0; cpu.heapServiceActive() && i < 2048; ++i) grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), +success);
+		for (let i = 0; !cpu.isHaltedUntilIrq() && i < 2048; ++i) grant(512);
+		assert.equal(firmwareProbeResult(cpu), +success);
 		assert.equal(parked(), 0);
 	}
 	return { cpu, memory, heap, arena, gc, tables, management, begin, grant, finish, parked, cloneNativeReference };
@@ -134,7 +118,7 @@ for (const opt of [0, 3] as const) {
 		f.memory.writeRamRecordWord(cursor, 0);
 		f.begin(receiver, trigger, valueInteger(17), 1);
 		for (let i = 0; i < 1024 && f.memory.readRamRecordWord(cursor) === 0; ++i) f.grant(47);
-		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.ok(f.cpu.fixedInterruptActive());
 		assert.ok(f.memory.readRamRecordWord(cursor) > 0 && f.memory.readRamRecordWord(cursor) < 1024);
 		assert.equal(f.memory.readRamRecordWord(receiver + TableHeader.Array), 1024);
 		const checkpoint = captureCpuCheckpoint(f.cpu);
@@ -164,7 +148,7 @@ for (const opt of [0, 3] as const) {
 		const key = valueInteger(-129);
 		f.begin(receiver, key, valueInteger(7), 0);
 		for (let i = 0; i < 4096 && f.parked() === 0; ++i) f.grant(43);
-		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.ok(f.cpu.fixedInterruptActive());
 		assert.equal(f.parked(), 1, 'the operand tuple becomes the actual parked root');
 		assert.equal(f.tables.hashAddress(receiver), oldHash, 'refusal before recovery did not publish storage');
 		const checkpoint = captureCpuCheckpoint(f.cpu);
@@ -193,7 +177,7 @@ for (const opt of [0, 3] as const) {
 		const oldStorage = f.tables.hashAddress(receiver), white = f.gc.white();
 		f.begin(receiver, trigger, valueInteger(12), 0);
 		for (let i = 0; i < 1024 && f.parked() === 0; ++i) f.grant(43);
-		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.ok(f.cpu.fixedInterruptActive());
 		assert.equal(f.parked(), 1, 'physical refusal opens a real parked recovery');
 		assert.equal(f.tables.get(receiver, oldKey), valueTable(victim), 'weak processing has not yet cleared the old slot');
 		f.finish();
@@ -225,7 +209,7 @@ for (const opt of [0, 3] as const) {
 		// head for the collector. They live only in the typed operand tuple.
 		f.begin(receiver, key, value, 0, 0, 1);
 		for (let i = 0; i < 4096 && f.gc.phase() === GcPhase.Pause; ++i) f.grant(19);
-		assert.equal(f.cpu.heapServiceActive(), true);
+		assert.ok(f.cpu.fixedInterruptActive());
 		assert.equal(f.gc.phase(), GcPhase.Mark);
 		assert.equal(f.parked(), 0);
 		const checkpoint = captureCpuCheckpoint(f.cpu);

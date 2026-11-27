@@ -1,4 +1,4 @@
-import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EVENT_CYCLES, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_RAM_END, COP0_CONTEXT, COP0_EPC, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_STATUS, COP0_SYSTEM_VECTOR, cop0FieldImplemented } from '../../../machine/ts/spec/blua32/cop0';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET, Blua32ConstantTag } from '../../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_FLAG, INSTRUCTION_BYTES, signExtend, ValueMoveKind } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -17,15 +17,10 @@ export type Blua32FixedStack = {
 };
 
 export type Blua32FixedStackBoundary = {
-	readonly functions: ReadonlySet<number>;
-	readonly lateConstants: ReadonlySet<number>;
-	readonly resultWindow?: { readonly roots: ReadonlySet<number>; readonly slots: number };
-	readonly ordinaryCode?: {
-		readonly reset?: number;
-		readonly exceptionVectors: ReadonlySet<number>;
-		readonly interruptible: boolean;
-		readonly codeTargets: Set<number>;
-	};
+	readonly reset?: number;
+	readonly exceptionVectors: ReadonlySet<number>;
+	readonly interruptible: boolean;
+	readonly codeTargets: Set<number>;
 };
 
 /**
@@ -47,7 +42,6 @@ export function deriveBlua32FixedStack(
 
 	function admitConstant(index: number, reject: (reason: string) => never): void {
 		if (index >= image.header.constantCount) reject('constant index exceeds the linked pool');
-		if (boundary?.lateConstants.has(index)) reject('constant is relocated after fixed-stack verification');
 		const tag = readLE32(image.bytes, constantTagOffset + index * BLUA32_CONSTANT_RECORD_SIZE);
 		if (tag !== Blua32ConstantTag.Nil && tag !== Blua32ConstantTag.False
 			&& tag !== Blua32ConstantTag.True && tag !== Blua32ConstantTag.Integer)
@@ -58,8 +52,6 @@ export function deriveBlua32FixedStack(
 		const known = visited.get(index);
 		if (known !== undefined) return known;
 		const fn = image.functions[index];
-		if (boundary !== undefined && !boundary.functions.has(index))
-			throw new Error(`Fixed-stack target 0x${fn.address.toString(16)} leaves the permitted ROM function set.`);
 		if (ancestors.has(index)) throw new Error(`Recursive fixed-stack function at 0x${fn.address.toString(16)}.`);
 		if (!fn.staticClosure || fn.isVararg || fn.upvalues.length !== 0)
 			throw new Error(`Fixed-stack function at 0x${fn.address.toString(16)} must be static, fixed-arity and capture-free.`);
@@ -114,29 +106,22 @@ export function deriveBlua32FixedStack(
 			if (rb < 0) admitConstant(-1 - rb, reject);
 			if (rc < 0) admitConstant(-1 - rc, reject);
 			if (op === OpCode.LOADK) admitConstant(bx, reject);
-			if (op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D) {
-				// The issuing-context bus is a read-only LOAD_MEM format. The CPU
-				// admits it only inside the System vector.
-				if (c !== MemoryAccessKind.ContextWord || op !== OpCode.LOAD_MEM) {
-					if (boundary?.ordinaryCode !== undefined) {
-						if (c > MemoryAccessKind.Value) reject('not an ordinary CPU memory format');
-					} else if (c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8 && c !== MemoryAccessKind.Value)
-						reject('not a resident memory format');
-				}
-			}
+			// Only LOAD_MEM can read the issuing context. Other loads and
+			// stores take the ordinary bus formats.
+			if ((op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D)
+				&& c > MemoryAccessKind.Value && (op !== OpCode.LOAD_MEM || c !== MemoryAccessKind.ContextWord))
+				reject('not an ordinary CPU memory format');
 			switch (op) {
 				case OpCode.CLOSURE: {
 					const address = bx << 4;
 					const target = blua32FunctionIndexAtAddress(image, address);
 					if ((c & CLOSURE_ADDRESS_REGISTER_FLAG) !== 0 || target < 0 || a >= width)
 						reject('requires a local ROM function record');
-					if (boundary !== undefined && !boundary.functions.has(target))
-						reject('static target leaves the permitted ROM function set');
 					const record = image.functions[target];
 					if (!record.staticClosure || record.isVararg || record.upvalues.length !== 0)
 						reject('callee must be static, fixed-arity and capture-free');
 					registers[a] = address;
-					boundary?.ordinaryCode?.codeTargets.add(target);
+					boundary?.codeTargets.add(target);
 					break;
 				}
 				case OpCode.CALL:
@@ -146,40 +131,37 @@ export function deriveBlua32FixedStack(
 					registers.fill(0, a);
 					break;
 				case OpCode.RET:
-					if (boundary?.ordinaryCode?.exceptionVectors.has(index))
+					if (boundary?.exceptionVectors.has(index))
 						reject('exception vector ends with RFE or an exception transfer');
 					if (c !== 0) reject('return from a variadic window requires an ordinary activation');
 					if (b === 0) reject('open return window');
 					if (a + b - 1 > width) reject('return window exceeds the function record');
-					const resultWindow = boundary?.resultWindow;
-					if (resultWindow?.roots.has(index) && b - 1 > resultWindow.slots)
-						reject('return values exceed the BIOS result-fault arguments');
 					continue;
 				case OpCode.HALT:
-					if (boundary?.ordinaryCode?.interruptible !== true) reject('HALT requires an ordinary interruptible frame');
+					if (boundary?.interruptible !== true) reject('HALT requires an ordinary interruptible frame');
 					break;
 				case OpCode.RFE:
-					if (!boundary?.ordinaryCode?.exceptionVectors.has(index)) reject('not an authored exception vector');
+					if (!boundary?.exceptionVectors.has(index)) reject('not an authored exception vector');
 					continue;
 				case OpCode.ARGC:
-					if (boundary?.ordinaryCode === undefined || a >= width) reject('not an ordinary CPU argument count read');
+					if (a >= width) reject('not an ordinary CPU argument count read');
 					registers[a] = 0;
 					break;
 				case OpCode.MFC0:
-					if ((boundary?.ordinaryCode === undefined && b !== COP0_EVENT_CYCLES) || !cop0FieldImplemented(b) || a >= width)
+					if (!cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control read');
 					registers[a] = 0;
 					break;
 				case OpCode.MTC0:
-					if (boundary?.ordinaryCode === undefined || !cop0FieldImplemented(b) || a >= width)
+					if (!cop0FieldImplemented(b) || a >= width)
 						reject('not an ordinary CPU control write');
 					if (b === COP0_EXCEPTION_TARGET) {
-						if (!boundary.ordinaryCode.exceptionVectors.has(index))
+						if (!boundary?.exceptionVectors.has(index))
 							reject('not an authored exception vector');
 						continue;
 					}
 					if (b === COP0_CONTEXT || b === COP0_RAM_END) {
-						if (index !== boundary.ordinaryCode.reset) reject('context and RAM aperture belong to the reset root');
+						if (index !== boundary?.reset) reject('context and RAM aperture belong to the reset root');
 						if (b === COP0_CONTEXT) continue;
 					} else if (b !== COP0_STATUS && b !== COP0_EPC && b !== COP0_IRQ_VECTOR && b !== COP0_SYSTEM_VECTOR) {
 						reject('not a bounded direct-vector control write');
@@ -188,9 +170,8 @@ export function deriveBlua32FixedStack(
 				case OpCode.MOV:
 					if (a >= width) reject('destination exceeds the function record');
 					if (c === ValueMoveKind.Copy) registers[a] = registers[b];
-					else if (boundary?.ordinaryCode !== undefined && (c === ValueMoveKind.Tag
-						|| c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits)) registers[a] = 0;
-					else reject('not a scalar register copy');
+					else if (c === ValueMoveKind.Tag || c === ValueMoveKind.FloatBits || c === ValueMoveKind.FloatFromBits) registers[a] = 0;
+					else reject('invalid register move format');
 					break;
 				case OpCode.LOADNIL:
 					if (a + b > width) reject('nil window exceeds the function record');

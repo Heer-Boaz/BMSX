@@ -90,7 +90,6 @@ for (const optLevel of [0, 3] as const) {
 		for (let step = 0; step < 8192 && !stopped; ++step) {
 			assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 			if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL) continue;
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 			assert.equal(cpu.luaHeap.usedBytes(), usage);
 			assert.equal(cpu.heapAllocator.occupiedBytes(), occupied);
@@ -118,7 +117,7 @@ for (const optLevel of [0, 3] as const) {
 					assert.equal(cpu.readFramePc(cpu.getFrameDepth() - 1), successor, 'RFE resumes the public close function');
 				if (!checkPlacement) {
 					commands.push(`L ${grant}`);
-					expected.push(`${result} ${cycles} ${+cpu.heapServiceActive()} ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+					expected.push(`${result} ${cycles} ${cpu.gc.fullEpochs()} ${cpu.gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 				}
 				if (result === RunResult.Halted) return total;
 				assert.equal(result, RunResult.Yielded);

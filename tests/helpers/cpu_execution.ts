@@ -3,8 +3,6 @@ import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Memory } from '../../machine/ts/machine/memory/memory';
 import { GlobalBankField } from '../../machine/ts/spec/blua32/execution_domain';
 import type { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
 
 /** Both routes receive the same grant, including when the final atomic
  * instruction's complete charge crosses that deadline. */
@@ -17,16 +15,12 @@ export function runCpuParity(generated: CPU, reference: CPU, grant: number, dept
 }
 
 /** Run one aggregate test grant even when firmware pauses between instructions. */
-export function runCpuWithinBudget(cpu: CPU, budget: number, depth = 0, profile?: { functionAddress: number; fullGcCycles: number }): RunResult {
+export function runCpuWithinBudget(cpu: CPU, budget: number, depth = 0): RunResult {
 	let outcome = RunResult.Yielded;
-	const memory = cpu.memory;
-	const functionLane = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
 	// An admitted firmware body can yield at a zero-work phase boundary.
 	// Preserve the submitted aggregate grant; cap fixture pulses independently.
 	for (let slices = 0; slices < 32768 && outcome === RunResult.Yielded && budget > 0; ++slices) {
-		const fullGcGrant = profile !== undefined && cpu.heapServiceActive() && memory.readRamRecordWord(functionLane) === profile.functionAddress;
 		outcome = cpu.runUntilDepth(depth, budget);
-		if (fullGcGrant) profile.fullGcCycles += budget - cpu.instructionBudgetRemaining;
 		budget = cpu.instructionBudgetRemaining;
 	}
 	return outcome;

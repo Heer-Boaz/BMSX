@@ -10,7 +10,8 @@ import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_DIAGNOSTIC_FAULTS_OFFSET } from '../helpers/firmware_heap_layout';
 import { DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -71,7 +72,7 @@ for (const optLevel of [0, 3] as const) {
 		const management = arena.managementOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
 		const constantAddress = readLE32(linked.romBytes, linked.image.address + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
 		const read = (offset: number) => memory.readRamRecordWord(offset);
-		const head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
+		const head = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
 		const nativeFaults = oracle.memory.ramData().slice(faults, faults + 13 * 4);
 		const nativeIds = startupTexts.map(text => oracle.stringPool.find(text)!);
 		assert.ok(nativeIds.every(id => id >= RAM_BASE));
@@ -97,14 +98,14 @@ for (const optLevel of [0, 3] as const) {
 		finish();
 		assert.equal(arena.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
-		for (let address = head + 4; address <= head + HeapServiceRemarkHeadField.FaultIds; address += 4)
+		for (let address = head + 4; address <= head + GcDiagnosticField.FaultIds; address += 4)
 			memory.writeRamRecordWord(address, 0);
 		memory.ramData().fill(0, faults, faults + 13 * 4);
 		start(diag, [management, constantAddress]);
 		for (let i = 0; i < 4096 && cpu.luaHeap.usedBytes() < 200; ++i) grant(31);
 		assert.ok(cpu.heapServiceActive());
 		assert.ok(cpu.luaHeap.usedBytes() >= 200);
-		assert.equal(read(head + HeapServiceRemarkHeadField.FaultIds), 0, 'no diagnostic root was published before the last allocation');
+		assert.equal(read(head + GcDiagnosticField.FaultIds), 0, 'no diagnostic root was published before the last allocation');
 		const stopped = captureCpuCheckpoint(cpu);
 		function compare() {
 			assert.equal(arena.occupiedBytes(), 976);
@@ -113,9 +114,9 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.luaHeap.usedBytes(), oracle.luaHeap.usedBytes());
 			assert.deepEqual(startupTexts.map(text => cpu.stringPool.find(text)), nativeIds);
 			assert.deepEqual(memory.ramData().subarray(faults, faults + 13 * 4), nativeFaults);
-			assert.deepEqual([HeapServiceRemarkHeadField.Index, HeapServiceRemarkHeadField.NewIndex, HeapServiceRemarkHeadField.Length,
-				HeapServiceRemarkHeadField.Mode, HeapServiceRemarkHeadField.Error].map(f => read(head + f)), nativeIds.slice(0, 5));
-			assert.equal(read(head + HeapServiceRemarkHeadField.FaultIds), RAM_BASE + faults);
+			assert.deepEqual([GcDiagnosticField.Index, GcDiagnosticField.NewIndex, GcDiagnosticField.Length,
+				GcDiagnosticField.Mode, GcDiagnosticField.Error].map(f => read(head + f)), nativeIds.slice(0, 5));
+			assert.equal(read(head + GcDiagnosticField.FaultIds), RAM_BASE + faults);
 			assert.deepEqual(memory.ramData().subarray(metadata, management + 0x5b0),
 				oracle.memory.ramData().subarray(metadata, management + 0x5b0), 'directory resize/frontier and allocator bins');
 			const sameEnd = management - 4096 + arena.occupiedBytes() + 8;

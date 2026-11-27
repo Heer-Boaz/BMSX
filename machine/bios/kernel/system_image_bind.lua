@@ -225,7 +225,7 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	if slots == 0 then slots = 1 end
 	if slots > ram_bytes // 5 then return 0 end
 
-	return (frame_storage.prepare_frame_space(management, owner, slots, 2, 0, remaining, true))
+	return (frame_storage.prepare_frame_space(management, owner, slots, 2, 0, remaining))
 end
 
 return {

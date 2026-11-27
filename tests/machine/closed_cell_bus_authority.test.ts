@@ -5,7 +5,6 @@ import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION } from '../../machine/ts/spec/blua32/cop0';
-import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../machine/ts/spec/blua32/image_format';
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode, encodeFixedValueCount } from '../../machine/ts/spec/blua32/opcode';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -40,7 +39,6 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	const id = system.object.link.symbols.exportProtoIdBySlot[binding.slotName];
 	const target = system.symbols.functionAddresses[system.symbols.metadata.functionIds.indexOf(id)];
 	assert.ok(target >= system.layout.header.functionTableAddress);
-	assert.equal(memory.readMappedU32LE(target + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0);
 	const thread = cpu.activeThread, depth = thread.frameDepth;
 	// Make the actual CALL fit; an unrelated legitimate backing request
 	// must not obscure whether the called ROM address gets private access.
@@ -60,17 +58,14 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	caller.registers.setString(2, cpu.stringPool.intern('must not overwrite'));
 	cpu.clearHaltUntilIrq();
 	const callPc = entry.codeAddress + 3 * INSTRUCTION_BYTES;
-	for (let i = 0; i < 4096 && (caller.pc !== callPc || cpu.heapServiceActive()); ++i) cpu.runUntilDepth(0, 1);
+	for (let i = 0; i < 4096 && (caller.pc !== callPc); ++i) cpu.runUntilDepth(0, 1);
 	assert.equal(caller.pc, callPc);
 	assert.equal(caller.registers.getTag(0), ValueTag.CodeFunction, 'the raw address resolves to an ordinary callable');
 	assert.equal(caller.registers.getPayload(0), target);
-	assert.equal(cpu.heapServiceActive(), false);
 	cpu.runUntilDepth(0, 1);
-	assert.equal(cpu.heapServiceActive(), false, 'ordinary CALL cannot dispatch the target as a fixed root');
 	assert.equal(thread.frameDepth, depth + 1);
 	assert.equal(thread.currentFrame!.functionAddress, target, 'the address really is attempted in an ordinary frame');
 	for (let i = 0; i < 64 && (cpu.readCauseWord() & CPU_CAUSE_CODE_MASK) !== CPU_CAUSE_CODE_RESERVED_INSTRUCTION; ++i) {
-		assert.equal(cpu.heapServiceActive(), false);
 		cpu.runUntilDepth(0, 1);
 	}
 	assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
@@ -80,7 +75,6 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	assert.ok(faultPc >= targetCode.codeAddress && faultPc < targetCode.codeAddress + targetCode.codeByteCount);
 	const faulting = decodeBlua32InstructionAtPc(system.layout.textBytes, system.layout.header.textAddress, faultPc);
 	assert.ok(faulting.op === OpCode.STORE_MEM || faulting.op === OpCode.STORE_MEM_D);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), valueCapacity);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity), frameCapacity);
 	assert.equal(memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD), 73);

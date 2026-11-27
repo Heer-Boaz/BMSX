@@ -14,8 +14,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_OFFSET, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -103,13 +102,13 @@ try {
 			function grant(cycles: number) {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(spent > 0);
-				record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
+				record(`L ${cycles}`, `${result} ${spent} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
 				return { result, spent };
 			}
 			assert.deepEqual(grant(1), { result: RunResult.Yielded, spent: BASE_CYCLES[OpCode.CALL] });
 			assert.ok(cpu.heapServiceActive());
 			assert.equal(cpu.readFramePc(caller), next);
-			const residentFrame = management + HEAP_SERVICE_FRAME_OFFSET;
+			const residentFrame = management + CPU_FIXED_FRAME_OFFSET;
 			assert.equal(memory.readRamRecordWord(residentFrame + FrameField.Function), stepAddress);
 			assert.equal(memory.readRamRecordWord(residentFrame + FrameField.Closure), 0);
 			assert.equal(cpu.getFrameRegisterCount(caller), originalTop, 'zero operands leave the caller root window unchanged');
@@ -131,7 +130,6 @@ try {
 			const count = commands.length;
 			function drain() {
 				for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) grant(1);
-				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(cpu.getFrameRegisterCount(caller), resultTop);
 				assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(finished));
 				assert.equal(gc.epochWork(), ref.gc.epochWork());

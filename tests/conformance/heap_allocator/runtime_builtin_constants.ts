@@ -56,7 +56,7 @@ try {
 			command.push(`g ${cycles} 0`);
 			const result = runtime.machine.scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const used = cycles - cpu.instructionBudgetRemaining;
-			output.push(`${result} ${used} ${+cpu.heapServiceActive()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			output.push(`${result} ${used} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return result;
 		}
 		function finish() {

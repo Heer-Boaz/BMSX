@@ -97,7 +97,7 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	const grant = (cycles: number) => {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		commands.push(`E ${cycles}`);
-		rows.push([result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+		rows.push([result, cycles - cpu.instructionBudgetRemaining, memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 		return result;
 	};
 	const seed = snapshot('seed');
@@ -124,7 +124,6 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 		assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[opcode]);
 		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);
 		assert.equal(cpu.readEpcWord(), successor);
 		assert.equal(cpu.readThreadFrameWord(owner, depth, FrameField.Pc), successor);
@@ -150,7 +149,6 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 			for (let step = 0; step < 2048 && cpu.fixedInterruptActive(); ++step) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(cpu.fixedInterruptActive(), false);
 			assert.equal(cpu.readFramePc(depth), successor);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(word(), address);
 			assert.equal(tag(), kind);
 			assert.equal(color(), 2);
@@ -230,7 +228,7 @@ halt_until_irq
 	const grant = (cycles: number) => {
 		const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 		commands.push(`E ${cycles}`);
-		rows.push([result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
+		rows.push([result, cycles - cpu.instructionBudgetRemaining, memory.ramBusEnd(), cpu.activeCartridgeSlot()].join(' '));
 		return result;
 	};
 	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);

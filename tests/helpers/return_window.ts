@@ -36,13 +36,13 @@ export function returnWindowFixture(level: 0 | 3) {
 		return { result, used: cycles - cpu.instructionBudgetRemaining };
 	}
 	function atLeafRet() {
-		if (cpu.heapServiceActive() || cpu.fixedInterruptActive()) return false;
+		if (cpu.fixedInterruptActive()) return false;
 		const frame = cpu.activeThread.currentFrame;
 		return frame !== null && frame.previous !== null && frame.top >= numbers.length + 1 && frame.previous.stackCapacity <= 8
 			&& instructionOpcode(memory.readMappedU32LE(frame.pc)) === OpCode.RET;
 	}
 	for (let n = 0; n < 65_536 && !atLeafRet(); ++n)
-		assert.equal(grant(cpu.heapServiceActive() || cpu.fixedInterruptActive() ? 256 : 1).result, RunResult.Yielded);
+		assert.equal(grant(cpu.fixedInterruptActive() ? 256 : 1).result, RunResult.Yielded);
 	assert.ok(atLeafRet());
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const thread = cpu.activeThread, callee = thread.currentFrame!, caller = callee.previous!;

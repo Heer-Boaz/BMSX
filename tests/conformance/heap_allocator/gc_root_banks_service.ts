@@ -14,8 +14,7 @@ import { GC_COLOR_MASK } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valueString } from '../../../machine/ts/machine/cpu/value';
 import { GLOBAL_BANK_OFFSET, GlobalBankField } from '../../../machine/ts/spec/blua32/execution_domain';
-import { HEAP_SERVICE_ROOT_BANK_SIZE, HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HeapServiceRootBankField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANK_SIZE, GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET, GcRootBankField } from '../../helpers/firmware_heap_layout';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { linkTestBlua32Pair } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
@@ -69,10 +68,10 @@ try {
 		assert.equal(memory.readRamRecordWord(globalBase + 4 * globalSlot), name);
 		assert.equal(memory.readRamRecordWord(globalBase + 12 * capacity + 4 * globalSlot), value);
 		assert.equal(memory.readRamRecordByte(globalBase + 16 * capacity + globalSlot), ValueTag.String);
-		const constantBank = management + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE
-			+ (GcRootBank.Cart0Constants - GcRootBank.SystemConstants) * HEAP_SERVICE_ROOT_BANK_SIZE;
-		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Count), constants.length);
-		assert.equal(memory.readRamRecordWord(constantBank + HeapServiceRootBankField.Payloads),
+		const constantBank = management + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE
+			+ (GcRootBank.Cart0Constants - GcRootBank.SystemConstants) * GC_ROOT_BANK_SIZE;
+		assert.equal(memory.readRamRecordWord(constantBank + GcRootBankField.Count), constants.length);
+		assert.equal(memory.readRamRecordWord(constantBank + GcRootBankField.Payloads),
 			image.constantStringBase);
 
 		let cursor = rootCursor(), before = epochWork();

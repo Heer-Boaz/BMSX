@@ -98,12 +98,11 @@ for (const level of [0, 3] as const) test(`ordinary CALL retries from EPC and re
 		const { cpu, memory, scheduler } = rt.machine;
 		const result = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
 		const used = budget - cpu.instructionBudgetRemaining;
-		observe(`E ${budget}`, `${result} ${used} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${budget}`, `${result} ${used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return { result, used };
 	}
 	assert.deepEqual(grant(runtime, 1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.CALL] });
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REGISTER_WINDOW);
 	assert.equal(cpu.readEpcWord(), issue);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);

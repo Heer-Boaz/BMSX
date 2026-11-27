@@ -13,11 +13,9 @@ import { valueInteger, valuePayload, valueString, valueTable, valueTag } from '.
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_BANKS_SIZE, HEAP_SERVICE_ROOT_PORT_BASE,
-	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { HEAP_SERVICE_ROOT_PORT_BASE } from '../../machine/ts/spec/bmsx/heap_service';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_ROOT_BANKS_OFFSET, GC_ROOT_BANKS_SIZE, GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -61,7 +59,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	const readByte = entryIndex(PORT, 'read_byte'), writeWord = entryIndex(PORT, 'write_word');
 	const entry = linked.image.functions[root].address;
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [root, readByte, writeWord]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
 	const cart = (entrySource: string) => linkTestBlua32Pair(compiled,
 		compileLuaChunkToProgram(parseLuaChunk(entrySource), [], { entrySource, optLevel })).cartRomBytes;
 	const cart0 = cart("return 'retained cart0 one', 42, 'retained cart0 two', 'cart0 ROM only'");
@@ -83,7 +81,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	const cpu = makeCpu(), oracle = makeCpu(), memory = cpu.memory;
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const floor = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, last), expected = oracle.memory.ramData().subarray(floor, last);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -134,7 +132,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	const returned = string('returned String');
 	const finished = [valueString(returned), valueTable(table), valueInteger(19)];
 
-	const descriptor = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const descriptor = management + GC_ROOT_BANKS_OFFSET;
 	const namespace = management + (moved === GcRootBank.SystemGlobals ? SYSTEM_GLOBAL_BANK_OFFSET : GLOBAL_BANK_OFFSET);
 	const lateName = moved === null ? 0 : string('late root name');
 	const lateValue = moved === null ? 0 : string('late root value');
@@ -147,7 +145,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		for (const [slot, value] of finished.entries()) result.setEncoded(slot, valueTag(value), valuePayload(value));
 		target['latchCompletionValues'](result, 0, finished.length);
 		const occupied = target.heapAllocator.occupiedBytes(), charged = target.luaHeap.usedBytes();
-		const descriptorEnd = descriptor + HEAP_SERVICE_ROOT_BANKS_SIZE;
+		const descriptorEnd = descriptor + GC_ROOT_BANKS_SIZE;
 		const before = ram.ramData().slice(floor, descriptor);
 		const after = ram.ramData().slice(descriptorEnd, last);
 		target.publishHeapRootBanks();
@@ -182,7 +180,6 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	function finish() {
 		let cycles = 0;
 		for (let i = 0; i < 16 && cpu.heapServiceActive(); ++i) cycles += grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
 		return cycles;
 	}
 	function step(limit: number, work: number, stop: GcRootBank) {

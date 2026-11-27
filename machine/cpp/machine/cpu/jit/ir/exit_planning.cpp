@@ -92,7 +92,6 @@ struct NativeCheckedExit {
 };
 
 struct NativeTerminalExit {
-	bool privateFirmware;
 	NativeExitPlan operator()(const auto&) const { return {}; }
 	NativeExitPlan operator()(const NativeHalt&) const { return {NativeHalt::terminalExit}; }
 	NativeExitPlan operator()(const NativeSupervisorCall& call) const {
@@ -100,14 +99,14 @@ struct NativeTerminalExit {
 	}
 	NativeExitPlan operator()(const NativeExceptionReturn&) const { return {NativeExceptionReturn::terminalExit}; }
 	NativeExitPlan operator()(const NativeCallSite& call) const {
-		return {privateFirmware ? NativeBlockExit::PrivateCall : call.terminalExit, {.call = call}};
+		return {call.terminalExit, {.call = call}};
 	}
 	NativeExitPlan operator()(const NativeTableIterator& iterator) const {
 		return iterator.ownsSkip() ? NativeExitPlan{NativeBlockExit::Continue, {}} :
 			NativeExitPlan{iterator.terminalExit, {.iterator = iterator}};
 	}
 	NativeExitPlan operator()(const NativeReturnSite& ret) const {
-		return {privateFirmware ? NativeBlockExit::PrivateReturn : ret.terminalExit, {.returned = ret}};
+		return {ret.terminalExit, {.returned = ret}};
 	}
 	NativeExitPlan operator()(const NativeClosure& closure) const { return {closure.terminalExit, {.closure = closure}}; }
 
@@ -145,7 +144,7 @@ NativeIrExit scalarReplay(const NativeResumePoint& before, std::optional<NativeA
 } // namespace
 
 void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations,
-		bool cpuOwned, bool privateFirmware) {
+		bool cpuOwned) {
 	const auto instructions = source.instructions;
 	const auto* skipped = source.skippedInstruction;
 	auto& block = m_blocks.emplace_back(NativeIrBlock{
@@ -174,7 +173,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 	const auto& final = last.operation;
 	const bool reachesEnd = nativeOperationFlow(final) != NativeOperationFlow::LeavesNative;
 	const auto* call = std::get_if<NativeCallSite>(&final);
-	block.inlineBuiltin = reachesEnd && cpuOwned && !privateFirmware && call
+	block.inlineBuiltin = reachesEnd && cpuOwned && call
 		&& static_cast<unsigned>(call->supplied) <= 2u && call->requested <= 1;
 	if (std::holds_alternative<NativeComparison>(final) && skipped) {
 		block.skippedWidth = skipped->width;
@@ -185,7 +184,7 @@ void NativeIrRegion::buildBlock(const NativeBlockSource& source, std::span<Nativ
 		block.skippedWidth = iterator->skipWidth = skipped->width;
 		block.sourceWords += skipped->width;
 	}
-	const auto [kind, operands] = std::visit(NativeTerminalExit{privateFirmware}, final);
+	const auto [kind, operands] = std::visit(NativeTerminalExit{}, final);
 	const auto* jump = std::get_if<NativeJump>(&final);
 	block.terminal = {.exit = kind, .operands = operands,
 		.nextPc = jump ? jump->target : block.hasFusedJump ? skipped->bx() : last.pc + u32{last.width} * INSTRUCTION_BYTES};

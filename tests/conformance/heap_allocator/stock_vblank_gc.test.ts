@@ -15,7 +15,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
-import { HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_HEADER_SIZE, GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CART_ROM_BASE, CPU_IRQ_VECTOR_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -104,8 +104,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 		}
 		const before = scheduler.nowCycles, tick = frames.lastTickSequence;
 		const done = frames.runCyclesToNextLogicalTick(cycles);
-		observe(`p ${cycles}`, [Number(done), scheduler.nowCycles - before, frames.lastTickSequence - tick,
-			Number(cpu.heapServiceActive()), Number(cpu.isHaltedUntilIrq())].join(' '));
+		observe(`p ${cycles}`, [Number(done), scheduler.nowCycles - before, frames.lastTickSequence - tick, Number(cpu.isHaltedUntilIrq())].join(' '));
 	}
 	// Preparing the pressure fixture itself concatenates several MiB of
 	// String data in the BIOS. Only IRQ delivery below is under test here.
@@ -121,7 +120,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const result = runtime.callClosure(asClosure(callee, cpu.gc));
 	assert.equal(result.length, 1);
 	assert.equal(valueTag(result[0]), ValueTag.Table);
-	const completionCount = arena.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
+	const completionCount = arena.managementOffset() + GC_ROOT_BANKS_OFFSET + GC_ROOT_BANKS_HEADER_SIZE;
 	// Native starts at the same real host-call boundary without another injection API in the runner.
 	const initialState = join(output, 'before-collection.ts');
 	writeFileSync(initialState, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
@@ -172,7 +171,7 @@ function verify(romPath: string, native: string, output: string, optLevel: 0 | 3
 	const partialCycle = scheduler.nowCycles;
 	assert.notDeepEqual(traceCursor(), beforeTrace, 'collection advanced before capture');
 	assert.ok(cpu.fixedInterruptActive(), 'ordinary BIOS instructions still own the IRQ');
-	assert.equal(memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET + 4),
+	assert.equal(memory.readRamRecordWord(arena.managementOffset() + GC_ROOT_BANKS_OFFSET + 4),
 		interruptedThread, 'firmware scans the suspended context, not its own IRQ frames');
 	assert.equal(memory.readRamRecordWord(completionCount), 0, 'the IRQ does not read the old host observation');
 	assert.equal(report(Report.Calls), 0, 'the cart has not seen the interrupt while the BIOS collects');

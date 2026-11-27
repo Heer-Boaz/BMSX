@@ -506,7 +506,7 @@ TableConstructorLayout TableRecord::planStringRecord(std::span<const StringId> k
 void TableRecord::fillStringRecord(const TableConstructorLayout& layout, std::span<const StringId> keys,
 	std::span<const Value> values) noexcept {
 	const auto body = hashBody(hashSlots());
-	const StringId newIndexKey = m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex);
+	const StringId newIndexKey = m_heap->diagnosticWord(GcDiagnosticField::NewIndex);
 	for (u32 slot = 0; slot < body.count; ++slot) {
 		const auto& node = layout.nodes[slot];
 		if (node.field < 0) continue;
@@ -540,7 +540,7 @@ void TableRecord::markHashNodeDead(size_t index) {
 		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueFromTag(ValueTag::DeadKey, hashId));
 	} else {
 		hashBody(hashSlots()).slots.set(hashValueSlot(index), valueNil());
-		if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
+		if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 1u);
 	}
 }
 
@@ -626,7 +626,7 @@ int TableRecord::setHash(Value key, Value value, int slot, u8 extraHashSlots) {
 }
 
 void TableRecord::publishHashInsertion(Value key, Value value) {
-	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
+	if (valueIsString(key) && valuePayload(key) == m_heap->diagnosticWord(GcDiagnosticField::NewIndex)) m_memory->writeRamRecordByte(m_address + TABLE_NEW_INDEX_ABSENT_BYTE, 0u);
 	m_heap->writeTableEntry(m_address, key, value);
 }
 
@@ -674,7 +674,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 	if constexpr (returning) {
 		if (!erase) return HASH_STORE_DECLINED;
 		const u32 meta = newIndexMetatable();
-		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->diagnosticWord(HeapServiceRemarkHeadField::NewIndex)))) return HASH_STORE_DECLINED;
+		if (meta != 0u && !isNil(TableRecord(*m_heap, meta).getStringKey(m_heap->diagnosticWord(GcDiagnosticField::NewIndex)))) return HASH_STORE_DECLINED;
 		return -1;
 	} else {
 		if (count != 0u) {
@@ -798,7 +798,7 @@ Value TableRecord::getStringKeyCached(StringId key, int& predictedSlot, u32* lin
 	return valueNil();
 }
 
-Value TableRecord::metatableField(HeapServiceRemarkHeadField field) const {
+Value TableRecord::metatableField(GcDiagnosticField field) const {
 	const u32 address = metatableAddress();
 	return address != 0u ? TableRecord(*m_heap, address).getStringKey(m_heap->diagnosticWord(field)) : valueNil();
 }
@@ -848,14 +848,14 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			}
 		}
 		current.m_address = metatable;
-		if (!method) method = m_heap->diagnosticWord(Assignment ? HeapServiceRemarkHeadField::NewIndex : HeapServiceRemarkHeadField::Index);
+		if (!method) method = m_heap->diagnosticWord(Assignment ? GcDiagnosticField::NewIndex : GcDiagnosticField::Index);
 		Value parent;
 		if constexpr (Assignment) {
 			parent = current.getStringKey(*method);
 		} else parent = current.getStringKey(*method, linkCycles);
 		if (!valueIsTable(parent)) {
 			const auto kind = valueTag(parent);
-			if (kind == ValueTag::Closure || kind == ValueTag::BuiltinFunction || kind == ValueTag::ResidentFunction || kind == ValueTag::CodeFunction)
+			if (kind == ValueTag::Closure || kind == ValueTag::BuiltinFunction || kind == ValueTag::CodeFunction)
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
 			else if (!isNil(parent)) result = {parent, -1, depth, TableLookupStatus::Forward};
 			else if constexpr (Assignment) result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};

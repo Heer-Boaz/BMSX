@@ -10,8 +10,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FRAME_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_OFFSET, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -57,12 +56,12 @@ try {
 		const bind = `B ${fn.address} ${args.length} ${args.join(' ')}`;
 		const seed = join(directory, `O${level}.seed`), checkpoint = join(directory, `O${level}.native`);
 		writeFileSync(seed, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-		const pc = () => memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Pc);
+		const pc = () => memory.readRamRecordWord(management + CPU_FIXED_FRAME_OFFSET + FrameField.Pc);
 		function pulse(n: number) {
 			const result = scheduler.runCpuSlice(0, n, undefined, CpuRunKind.Direct);
 			const used = n - cpu.instructionBudgetRemaining;
 
-			return { used, row: `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}` };
+			return { used, row: `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}` };
 		}
 		// Save-state import recreates native image caches. Warm actual
 		// invocations in the same installed System image without restoring.
@@ -71,7 +70,6 @@ try {
 			assert.ok(cpu.beginHeapService(fn.address, args));
 			warm.push(bind, 'J 65536 0');
 			warmRows.push('1', pulse(65_536).row);
-			assert.equal(cpu.heapServiceActive(), false);
 		}
 		const first = memory.ramBusEnd() - RAM_BASE, stop = memory.ramData().length;
 		const hash = () => String(hashBytes(memory.ramData(), first, stop - first));
@@ -81,7 +79,6 @@ try {
 		}
 		assert.ok(cpu.beginHeapService(fn.address, args));
 		const whole = pulse(65_536), wholeHash = hash();
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapServiceResult(), 172);
 		const summary = runNative(seed, ['X', ...warm, bind, 'n', 'J 65536 0', 'n', `H ${first} ${stop}`]);
 		assert.deepEqual(summary.slice(0, warmRows.length + 1), [...warmRows, '1']);
@@ -115,7 +112,6 @@ try {
 		writeFileSync(tsCheckpoint, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
 		const pulses: string[] = [], mixed = [1, 7, 19, 115, 37];
 		for (let grant = 0; grant < 4096 && cpu.heapServiceActive(); ++grant) pulses.push(pulse(mixed[grant % mixed.length]).row);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapServiceResult(), 172);
 		const final = hash();
 		const frontend = [...warmRows, '1', whole.row, '1', ...prefix.map(row => row.row)];

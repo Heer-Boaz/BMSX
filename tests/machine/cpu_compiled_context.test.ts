@@ -470,7 +470,6 @@ end
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.equal(generatedExit, CompiledBlockExit.WriteUpvalue, 'the generated path exits before either store');
 		else assert.equal(cpu.instructionBudgetRemaining, 0, 'the prefix, SETUP and its two fixed inputs are charged once');
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.fixedInterruptActive(), true);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_REFERENCE_STORE);

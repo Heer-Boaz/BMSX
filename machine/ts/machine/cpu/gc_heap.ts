@@ -1,5 +1,4 @@
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../spec/bmsx/memory_map';
-import { HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
 import type { CPU } from './cpu';
 import type { Memory } from '../memory/memory';
 import { HEAP_GC_CONTROL_OFFSET, type HeapAllocator } from './heap_allocator';
@@ -16,6 +15,12 @@ import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
 import { ceilDiv4, toSignedWord } from '../common/numeric';
 import type { GcDiagnostics } from './gc_diagnostics';
+
+export const GC_DIAGNOSTIC_OFFSET = 0x680;
+export const enum GcDiagnosticField {
+	Mode = 4, Index = 8, NewIndex = 12, Length = 16, Error = 20, FaultIds = 24,
+	StringIndexTag = 28, StringIndexWord = 32,
+}
 
 export const GC_WORK_WORD_CYCLES = 3;
 export const GC_TRACE_HEAD = 4;
@@ -78,7 +83,7 @@ export class GcHeap {
 	public diagnostics: GcDiagnostics | null = null;
 	private readonly controlOffset: number;
 	private readonly diagnosticOffset: number;
-	public diagnosticWord(field: HeapServiceRemarkHeadField): number {
+	public diagnosticWord(field: GcDiagnosticField): number {
 		return this.memory.readRamRecordWord(this.diagnosticOffset + field);
 	}
 	public phase(): GcPhase {
@@ -112,7 +117,7 @@ export class GcHeap {
 		public readonly arena: HeapAllocator) {
 		const management = arena.managementOffset();
 		this.controlOffset = management + HEAP_GC_CONTROL_OFFSET;
-		this.diagnosticOffset = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		this.diagnosticOffset = management + GC_DIAGNOSTIC_OFFSET;
 		this.threads = new ThreadRecords(memory, arena, budget);
 		this.tables = new TableRecords(this);
 	}
@@ -335,7 +340,7 @@ export class GcHeap {
 		const current = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_META);
 		const probe = this.modeProbe;
 		if (address !== 0) {
-			const modeKey = this.diagnosticWord(HeapServiceRemarkHeadField.Mode);
+			const modeKey = this.diagnosticWord(GcDiagnosticField.Mode);
 			if (address === current) {
 				probe.node = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_NODE) | 0;
 				probe.remaining = this.memory.readRamRecordWord(this.controlOffset + GC_MODE_REMAINING);

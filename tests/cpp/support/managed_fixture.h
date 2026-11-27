@@ -3,7 +3,6 @@
 #include "machine/cpu/cpu.h"
 #include "spec/blua32/opcode.h"
 #include "blua32_test_rom.h"
-#include "spec/bmsx/heap_service.h"
 #include "thread_allocation_reference.h"
 
 #include <algorithm>
@@ -46,9 +45,9 @@ inline u32 provisionManagedFixture(CPU& cpu, u32 staticEnd) {
 	faultIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = strings.intern("Invalid argument.");
 	faultIds[LUA_FAULT_REASON_INVALID_NEXT_KEY] = strings.intern("invalid key to 'next'");
 	faultIds[LUA_FAULT_REASON_INDEX_NAN] = strings.intern("Table index is NaN.");
-	using Remark = HeapServiceRemarkHeadField;
-	const u32 remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	const u32 faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
+	using Remark = GcDiagnosticField;
+	const u32 remark = management + GC_DIAGNOSTIC_OFFSET;
+	const u32 faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
 	memory.writeRamRecordWord(remark + static_cast<u32>(Remark::Mode), mode);
 	memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Index), index, newIndex);
 	memory.writeRamRecordPair(remark + static_cast<u32>(Remark::Length), length, errorInHandler);

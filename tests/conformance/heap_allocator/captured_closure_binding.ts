@@ -19,7 +19,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_
 	BLUA32_IMAGE_MAPPED_CODE_FLAG, BLUA32_UPVALUE_INDEX_MASK } from '../../../machine/ts/spec/blua32/image_format';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { FIRMWARE_DATA_OFFSET } from '../../helpers/firmware_heap_layout';
 import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_RETAINED_WORD_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_CPU } from '../../../machine/ts/machine/memory/bus_signals';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -79,7 +79,7 @@ try {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		const arena = cpu.heapAllocator;
-		const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+		const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
 		const cells = workspace + newCellsOffset, bits = workspace + missingOffset;
 		const history = new RamHistory();
 		history.start(memory);
@@ -105,7 +105,7 @@ try {
 		function grant(cycles: number) {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
 		const initialPages = history.capture(memory, null);
@@ -253,7 +253,7 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			};
 			grant(1);
 			assert.ok(cpu.fixedInterruptActive());
@@ -262,7 +262,7 @@ return make(7, 8)()
 				for (let i = 0; i < 2; ++i) {
 					for (let n = 0; n < 512 && reads.length === i; ++n) grant(1);
 					assert.equal(reads.length, i + 1);
-					assert.equal(memory.readRamRecordWord(arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET + newCellsOffset),
+					assert.equal(memory.readRamRecordWord(arena.managementOffset() + FIRMWARE_DATA_OFFSET + newCellsOffset),
 						0, 'no allocation while sampling descriptors');
 					assert.equal(frame.openUpvalueHead, openHead, 'no open-cell publication while sampling descriptors');
 					memory.writeMappedWord(descriptor + 4 * i, 0xffffffff);
@@ -388,7 +388,7 @@ return make(7, 8)()
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return spent;
 			};
 			let checkpoint = '', cut = 0, rowCut = 0;
@@ -474,7 +474,7 @@ return make(7, 8)()
 			runtime.boot();
 			const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
 
-			const workspace = arena.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
+			const workspace = arena.managementOffset() + FIRMWARE_DATA_OFFSET;
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const atIssue = () => {
 				if (cpu.fixedInterruptActive() || !cpu.getFrameDepth()) return false;
@@ -505,7 +505,7 @@ return make(7, 8)()
 			const grant = (cycles: number) => {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				commands.push(`J ${cycles} 1`);
-				rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return spent;
 			};
 			assert.equal(grant(1), BASE_CYCLES[OpCode.CLOSURE]);

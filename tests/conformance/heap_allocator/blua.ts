@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FNV1A32_OFFSET_BASIS, hashBytes } from '../../../machine/ts/common/hash';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
-import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { parseLuaChunk } from '../../helpers/cpu_test_harness';
+import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runSystemCaseRom } from '../../helpers/system_case_rom';
 
@@ -20,14 +21,15 @@ const oracle = memory.bindDlmalloc(state);
 const source = [`
 local alloc<const> = require('kernel/dlmalloc')
 bss arena: u8[${arenaBytes}]
-local ram<const>: *u8 = arena
-local function arena_hash()
+local arena_hash<const> = function()
+	local ram<const>: *u8 = arena
 	local hash = 0x${FNV1A32_OFFSET_BASIS.toString(16)}
 	for i = 0, #arena - 1 do
 		hash = (hash ~ ram[i]) * 0x01000193
 	end
 	return hash
-end`];
+end
+local ram<const>: *u8 = arena`];
 let operationCount = 0;
 
 // Issue the same calls in the ROM on both cores. The C/WASM oracle supplies
@@ -110,12 +112,24 @@ source.push('return true, true');
 
 const modulePath = 'kernel/dlmalloc';
 const entrySource = source.join('\n');
-mkdirSync('tmp', { recursive: true });
-const directory = mkdtempSync(join('tmp', 'bmsx-blua-dlmalloc-'));
+const luaModules = [
+	{ path: 'main', source: 'module<entry>\nreturn' },
+	{ path: 'reset', source: entrySource },
+	{ path: 'irq', source: 'return' },
+	{ path: 'exception', source: 'return' },
+	{ path: modulePath, source: readFileSync(`machine/bios/${modulePath}.lua`, 'utf8') },
+].map(module => ({ ...module, displayPath: module.path + '.lua', chunk: parseLuaChunk(module.source, module.path) }));
+const directory = mkdtempSync('/tmp/bmsx-blua-dlmalloc-');
 try {
 	const nativeRunner = nativeConformanceRunner('bmsx_frame_evaluation_runner', { parallel: '2' });
 	for (const optLevel of [0, 3] as const) {
-		const { image, romBytes, symbols } = linkTestSystemBlua32(compileHeapServiceSystem(entrySource, optLevel, [], 'dlmalloc_probe.lua'));
+		const { linked } = buildBlua32Image({
+			domain: 'system', luaModules, generatedLuaModules: [], loadAddress: 0x100,
+			ramByteCount: MAIN_RAM_SIZE, optLevel, traceStatements: 'erase',
+			resetModule: 'reset', irqModule: 'irq', exceptionModule: 'exception', biosExports: [],
+		});
+		const { layout: image, symbols } = linked;
+		const romBytes = writeTestBlua32Rom(linked);
 		const allocatorEntries = image.functions.flatMap((_, index) =>
 			symbols.metadata.functionIds[index].startsWith(`module:${modulePath}/`)
 			&& symbols.metadata.functionIds[index].includes('|constant|bmsx_dlmalloc_') ? [index] : []);

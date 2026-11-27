@@ -4,14 +4,16 @@ import { join } from 'node:path';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { runGuestToHalt } from '../../helpers/cpu_execution';
 import { FullGcConformance } from '../../helpers/full_gc_conformance';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
-import { linkTestSystemBlua32 } from '../../helpers/blua32';
+import { writeTestBlua32Rom } from '../../helpers/blua32';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { GC_CHANGED_HEAD, GC_LAST_EPOCH_WORK, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank } from '../../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_BITS } from '../../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 const entry = `
+halt_until_irq
 fixture_collect()
 if fixture_weak[1] ~= nil then return -1 end
 if fixture_weak[2] ~= fixture_anchor then return -2 end
@@ -20,7 +22,7 @@ return fixture_anchor.answer
 const boot = {
 	path: 'fixture_remark_boot',
 	source: `
-local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end
+local gc_ids<const> = require('kernel/heap_control_ids'); fixture_collect = function() blua32.svc(gc_ids.collect_full) end
 fixture_anchor = { answer = 43 }
 fixture_weak = require([[kernel/set_metatable]])({ { answer = 17 }, fixture_anchor }, { __mode = 'v' })
 `,
@@ -36,15 +38,19 @@ try {
 	for (const opt of [0, 3] as const) {
 		const path = join(directory, `O${opt}`);
 		mkdirSync(path);
-		const system = linkTestSystemBlua32(compileHeapServiceSystem(entry, opt, [boot]));
+		const system = linkManagedTestSystem(`require('${boot.path}')\n${entry}`, opt, [boot]);
+		const bytes = writeTestBlua32Rom(system);
 		const rom = join(path, 'system.rom');
-		writeFileSync(rom, system.romBytes);
-		const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
+		writeFileSync(rom, bytes);
+		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
 		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		runGuestToHalt(cpu, 4_194_304);
+		assert.ok(cpu.isHaltedUntilIrq());
+		cpu.clearHaltUntilIrq();
 		const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const word = (offset: number) => memory.readRamRecordWord(control + offset);
-		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
+		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		driver.grant(3072);
 		driver.reach(() => word(GC_REMARK_VISIT_STATE) === remarkWeak && word(GC_CHANGED_HEAD) !== 0 && word(GC_TRACE_HEAD) === 0,

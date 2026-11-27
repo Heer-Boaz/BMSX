@@ -13,7 +13,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { CPU_CAUSE_CODE_REGISTER_WINDOW, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -63,13 +63,12 @@ return protect(descend)
 	let issue = 0, required = 0, issues = 0;
 	for (let grant = 0; grant < 8192 && run !== RunResult.Halted; ++grant) {
 		run = scheduler.runCpuSlice(0, budget, undefined, CpuRunKind.Scheduled);
-		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${budget}`, `${run} ${budget - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_REGISTER_WINDOW) continue;
 		const interrupted = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
 		const depth = memory.readRamRecordWord(interrupted + ThreadField.FrameDepth) & THREAD_CONTROL_COUNT_MASK;
 		if (!Array.from({ length: depth }, (_, index) => cpu.readThreadFrameWord(interrupted, index, FrameField.Function)).includes(pcall.address)) continue;
 		assert.equal(interrupted, cpu.rootThread.address);
-		assert.equal(cpu.heapServiceActive(), false);
 		const controls = memory.readRamRecordWord(interrupted + ThreadField.FrameBlock);
 		const issuer = controls + (depth - 1) * FRAME_CONTROL_BYTES, pc = cpu.readEpcWord();
 		if (memory.readRamRecordWord(issuer + FrameField.Pc) !== pc) continue; // Firmware already unwound.
@@ -100,8 +99,8 @@ return protect(descend)
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 	assert.equal(cpu.getFrameDepth(), 0);
 
-	const head = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-	const faults = memory.readRamRecordWord(head + HeapServiceRemarkHeadField.FaultIds);
+	const head = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+	const faults = memory.readRamRecordWord(head + GcDiagnosticField.FaultIds);
 	const diagnostic = memory.readRamRecordWord(faults + INSTRUCTION_BYTES * LUA_FAULT_REASON_OUT_OF_MEMORY);
 	assert.equal(cpu.stringPool.toString(diagnostic), 'Out of memory.');
 	const result = [valueBool(false), valueString(diagnostic)];

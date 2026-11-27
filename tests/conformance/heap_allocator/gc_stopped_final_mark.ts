@@ -123,15 +123,14 @@ try {
 			}
 			const grant = (cycles: number) => {
 				const result = slice(cycles), used = cycles - cpu.instructionBudgetRemaining;
-				observe(`L ${cycles}`, [result, used, +cpu.heapServiceActive(), gc.fullEpochs(), gc.phase(), luaHeap.usedBytes()].join(' '));
+				observe(`L ${cycles}`, [result, used, gc.fullEpochs(), gc.phase(), luaHeap.usedBytes()].join(' '));
 				assert.ok(used > 0, `${opt}/${name}: result=${result} phase=${gc.phase()} depth=${cpu.getFrameDepth()} cause=${cpu.readCauseWord()} reason=${cpu.readLuaFaultReasonWord()} pc=${cpu.lastPc}`);
 				return result;
 			};
-			const active = () => allocation ? cpu.heapServiceActive() : cpu.fixedInterruptActive();
+			const active = () => cpu.fixedInterruptActive();
 			for (let i = 0; i < 8192 && gc.tables.getInteger(weak, 1) !== valueNil(); ++i) grant(137);
 			assert.equal(gc.phase(), GcPhase.Atomic);
 			assert.ok(active());
-			if (!allocation) assert.equal(cpu.heapServiceActive(), false, 'the installed System vector owns the work');
 			if (!irq && !allocation) assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 			assert.equal(word(1), 0, 'the cartridge has not acknowledged its pending IRQ');
 			assert.equal(word(2), 0, 'the mutator cannot pass the collection boundary');

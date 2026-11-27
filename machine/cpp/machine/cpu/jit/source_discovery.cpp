@@ -39,7 +39,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		const auto& instruction = page.words[cursor];
 		if ((page.refreshState[cursor] & DECODED_REFRESH_DECODE) != 0u
 			|| instruction.dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
-			|| !nativeSourceCanEmit(instruction, page.privateFirmware)) continue;
+			|| !nativeSourceCanEmit(instruction)) continue;
 		const u32 finalWordPc = pc + (static_cast<u32>(instruction.width) - 1u) * INSTRUCTION_BYTES;
 		if (finalWordPc > source.lastPc) continue;
 		if (instruction.op >= static_cast<u8>(OpCode::GETSYS) && instruction.op <= static_cast<u8>(OpCode::SETGL)) {
@@ -70,7 +70,7 @@ void CPU::discoverNativeSource(Blua32ExecutionImage& image, NativeCompilationSou
 		} else if (op == OpCode::JMP || op == OpCode::JMPIF || op == OpCode::JMPIFNOT) {
 			enqueue(instruction.bx(), true);
 			if (op != OpCode::JMP) enqueue(successorPc, true);
-		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b, page.privateFirmware)) enqueue(successorPc, false);
+		} else if (!nativeBlockEndsBlock(instruction.op, instruction.b)) enqueue(successorPc, false);
 		else if (nativeBlockHasTerminalContinuation(instruction.op, instruction.b)) enqueue(successorPc, true);
 	}
 }

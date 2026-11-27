@@ -3,15 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_GRAY_INDEX_MASK } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_ROOT_BANKS_OFFSET,
-	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceTraceField, HeapServiceRemarkHeadField,
-} from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_ROOT_BANKS_OFFSET, GC_TRACE_CONTEXT_OFFSET, GcTraceContextField } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -38,11 +35,11 @@ function fixture(optLevel: 0 | 3) {
 	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
 	assert.ok(fn >= 0);
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
+	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} slots`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const metadata = management + HEAP_STRING_METADATA_OFFSET, context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
-	const head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, roots = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+	const metadata = management + HEAP_STRING_METADATA_OFFSET, context = management + GC_TRACE_CONTEXT_OFFSET;
+	const head = management + GC_DIAGNOSTIC_OFFSET, roots = management + GC_ROOT_BANKS_OFFSET;
 	const epochWork = control + GC_LAST_EPOCH_WORK - 4;
 	const first = memory.ramBusEnd() - RAM_BASE;
 	for (const target of [cpu, oracle]) {
@@ -56,11 +53,11 @@ function fixture(optLevel: 0 | 3) {
 	}
 
 	function begin(limit: number) {
-		memory.writeRamRecordWord(context + HeapServiceTraceField.Limit, limit);
-		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
+		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
 			[control, cpu.heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
-				cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
+				cpu.gc.diagnosticWord(GcDiagnosticField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
 	}
 	function grant(cycles: number) {
 		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
@@ -71,7 +68,6 @@ function fixture(optLevel: 0 | 3) {
 	function finish() {
 		let cycles = 0;
 		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) cycles += grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		return [cpu.heapServiceResult(), cycles];
 	}
@@ -132,7 +128,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.finish()[0], want);
 		assert.equal(want, 2);
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD), head);
-		assert.equal(f.memory.readRamRecordWord(f.context + HeapServiceTraceField.PendingStringWork), 0);
+		assert.equal(f.memory.readRamRecordWord(f.context + GcTraceContextField.PendingStringWork), 0);
 		f.compare();
 	});
 }

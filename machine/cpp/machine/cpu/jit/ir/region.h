@@ -121,14 +121,14 @@ private:
 	std::vector<NativeIrExit> m_sideExits;
 	std::vector<NativeIrExit> m_admissionReplays;
 	std::vector<NativeOwnFieldAddress> m_ownFieldAddresses;
-	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned, bool privateFirmware);
+	void buildBlock(const NativeBlockSource& source, std::span<NativeInstruction> operations, bool cpuOwned);
 	void finalizeBlockExits(NativeIrBlock& block);
 	void planAdmissionReplays();
 	void bindOwnFieldAddresses(NativeIrBlock& block, std::span<const NativeFieldAddressUse> uses, size_t firstRow);
 	void truncateOwnFieldAddresses(NativeIrBlock& block);
 };
 
-NativeOperation translateNativeOperation(const DecodedInstruction& source, bool privateFirmware = false);
+NativeOperation translateNativeOperation(const DecodedInstruction& source);
 enum class NativeOperationFlow : u8 { Linear, Checkpoint, Terminal, LeavesNative };
 NativeOperationFlow nativeOperationFlow(const NativeOperation& operation);
 void planNativeFieldReads(std::span<NativeInstruction> instructions, std::span<const NativeBlockInstruction> source,

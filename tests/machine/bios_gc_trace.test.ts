@@ -3,24 +3,22 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { initializeRecord as initializeClosure, setCaptureAddress } from '../../machine/ts/machine/cpu/closure';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GC_THREAD_VISITS, GC_VISIT_COUNT, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
+import { GC_TRACE_CURSOR, GC_TRACE_HEAD, GC_TRACE_RECORD, GC_THREAD_VISITS, GC_VISIT_COUNT, GcPhase, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
-import { HeapServiceTraceField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GcTraceContextField, GC_TRACE_CONTEXT_OFFSET } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { allocateThreadRecordReference } from '../helpers/thread_allocation_reference';
 
-const TRACE = 'kernel/gc_trace', entrySource = 'halt_until_irq';
+const TRACE = 'kernel/gc_trace';
 const modules = [
 	'dlmalloc', 'gc_control', 'gc_strings', 'gc_mark', 'gc_capture_trace', 'gc_thread_trace', 'gc_table_head',
 	'gc_table_mode', 'gc_weak_mode', 'gc_table_trace', 'string_record', 'gc_trace',
@@ -31,14 +29,7 @@ const modules = [
 const indexOfRecord = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system', preloadModules: [TRACE] });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const exported = object.sections.rodata.moduleExports.find(entry => entry.path === TRACE && entry.exportPathKey === 'trace_quantum');
-	assert.ok(exported);
-	const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[exported.slotName]);
-	assert.ok(index >= 0);
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `${valueSlots} slots, ${frames} frames`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{path: TRACE, member: 'trace_quantum', arity: 6}]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
@@ -46,7 +37,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const context = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET;
+	const context = management + GC_TRACE_CONTEXT_OFFSET;
 	const floor = memory.ramBusEnd() - RAM_BASE;
 	const actual = memory.ramData().subarray(floor, context), expected = oracle.memory.ramData().subarray(floor, context);
 	function compare() {
@@ -97,24 +88,23 @@ function fixture(optLevel: 0 | 3) {
 		for (const target of [cpu, oracle]) target.gc['enqueue'](address, link, GC_TRACE_HEAD);
 	}
 	function beginning(limit: number, work: number, pending: number, policy = 0) {
-		const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
-		assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
-		memory.writeRamRecordWord(context + HeapServiceTraceField.Work, work);
-		memory.writeRamRecordWord(context + HeapServiceTraceField.Limit, limit);
-		memory.writeRamRecordWord(context + HeapServiceTraceField.Atomic, 0);
-		memory.writeRamRecordWord(context + HeapServiceTraceField.PendingStringWork, pending);
-		assert.ok(cpu.beginHeapService(linked.image.functions[index].address,
-			[control, arena, metadata, context, modeKey, policy]));
+		const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode);
+		assert.equal(modeKey, oracle.gc.diagnosticWord(GcDiagnosticField.Mode));
+		memory.writeRamRecordWord(context + GcTraceContextField.Work, work);
+		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
+		memory.writeRamRecordWord(context + GcTraceContextField.Atomic, 0);
+		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, pending);
+		issueFirmwareProbe(cpu,
+			[control, arena, metadata, context, modeKey, policy]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
+		assert.ok(grantFirmwareProbe(cpu, cycles) > 0);
 		assert.ok(cpu.instructionBudgetRemaining < cycles);
 	}
 	function finish() {
-		for (let i = 0; i < 1024 && cpu.heapServiceActive(); ++i) grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 1024 && !cpu.isHaltedUntilIrq(); ++i) grant(512);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		return [cpu.heapServiceResult(), memory.readRamRecordWord(context + HeapServiceTraceField.PendingStringWork)];
+		return [firmwareProbeResult(cpu), memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork)];
 	}
 	function check(limit: number, work: number, want: number[]) {
 		beginning(limit, work, cpu.stringPool.takeMarkWork());
@@ -148,7 +138,7 @@ for (const optLevel of [0, 3] as const) {
 
 		beginning(2, 1, cpu.stringPool.takeMarkWork());
 		for (let i = 0; i < 1024 && head() === indexOfRecord(queuedCell); ++i) grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(head(), indexOfRecord(capturing));
 		assert.equal(memory.readRamRecordByte(queuedCell + GC_COLOR_OFFSET), 0xaa, 'publish popped head before recoloring');
 		assert.equal(memory.readRamRecordWord(queuedCell + UPVALUE_NEXT) & GC_GRAY_INDEX_MASK, indexOfRecord(capturing));

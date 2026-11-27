@@ -38,7 +38,6 @@ struct NativeCpuRunState {
 	NativeBlockRunState state;
 	CPU* cpu;
 	int targetDepth;
-	bool privateFirmware = false;
 	NativeCodeLookup::Group* const* codeRoot = nullptr;
 	u32 cartridgeSlot = 0;
 	u32 frameBank = 0;

@@ -67,7 +67,6 @@ struct NativeCompilationOptions {
 	bool observesArithmetic = false;
 	// All admitted source pages have directly backed read-only instructions.
 	bool immutableSource = false;
-	bool privateFirmware = false;
 };
 
 // A contiguous source run between guest entries or control-flow boundaries.

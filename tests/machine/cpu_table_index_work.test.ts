@@ -1,4 +1,4 @@
-import { runGuestToHalt } from '../helpers/cpu_execution';
+import { runGuestToHalt, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -7,13 +7,12 @@ import { CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block
 
 import { hashCanonicalTableKey, ValueTag, valueBool, valueFloat, valueInteger, valueNil, valueTable, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE, MAPPED_PAGE_BYTE_MASK } from '../../machine/ts/machine/memory/mapped_page';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
+import { GcDiagnosticField, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { LUA_FAULT_REASON_METATABLE_LOOP } from '../../machine/ts/spec/blua32/cop0';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
-import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { compileCoroutineTest } from '../helpers/coroutine';
 import { materializeCpuCompletionValues } from '../helpers/cpu_test_harness';
 
@@ -349,9 +348,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		const { image, starts } = readProgram(OpCode.GETFIELD, wide), { cpu } = createTestSystemCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!, base = frame.pc, key = valueString(cpu.stringPool.intern('field'));
 		const installed = cpu.createTable(0, 2); cpu.gc.tables.set(installed, key, valueInteger(19));
-		const remark = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
-		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, installed);
+		const remark = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexTag, ValueTag.Table);
+		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexWord, installed);
 		frame.registers.set(0, valueString(cpu.stringPool.intern('receiver')));
 		cpu.runUntilDepth(0, 22 * 64);
 		cpu.gc.tables.set(installed, key, valueNil()); chain(cpu, installed, 3, key, valueInteger(73));

@@ -17,7 +17,7 @@ local vblank_maintenance<const> = function(management, waiting, rebuilding) -- C
 
 	local control<const> = management + layout.control_offset -- C:933,936
 	local borrows_roots<const> = gc.internal.phase(control) < atomic_phase -- C:937,1093-1158
-	if borrows_roots then root_inputs.publish_interrupt(management) end -- C:1124,1261-1277,1300-1313; fixed IRQ reads the interrupted context
+	if borrows_roots then root_inputs.publish(management) end -- C:1124,1261-1277,1300-1313; fixed IRQ reads the interrupted context
 	local work = collector.step(management, limit, 0, 0, 0) -- C:952-953
 	while gc.internal.phase(control) == atomic_phase do -- C:689,701 E:155,201
 		work = work + collector.step(management, collector.step_words, 0, 0, 0) -- C:697-701; final mark still uses its original policy quanta

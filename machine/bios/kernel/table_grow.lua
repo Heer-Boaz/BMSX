@@ -81,10 +81,9 @@ end
 -- GC root banks remain stationary until RET. Its old split-path String
 -- transport is borrowed alongside their initial projection, and refilled
 -- from the canonical latch only if a later GC fork follows a reserve.
-local borrow_collection_roots<const> = function(management, projected, interrupted) -- P:4043-4053 X:165-177
+local borrow_collection_roots<const> = function(management, projected) -- P:4043-4053 X:165-177
 	if not projected then -- P:4044 X:167
-		if interrupted then root_inputs.publish_interrupt(management)
-		else root_inputs.publish(management) end -- P:4043-4053 X:165-177
+		root_inputs.publish(management) -- P:4043-4053 X:165-177
 	else -- P:4049 X:172; the banks are already projected
 		root_inputs.borrow_string_work(management) -- S:452-455 J:442-445 G:751 K:777
 	end
@@ -153,7 +152,7 @@ local store_hash<const> = function(management, record, hash, kt, kw, vt, vw, sel
 	return true -- T:560 C:838
 end
 
-local grow_table<const> = function(management, source_cycles, preferred_extra, mode, interrupted) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
+local grow_table<const> = function(management, source_cycles, preferred_extra, mode) -- T:758-811 C:297-377 P:662-678,803-869 Q:97-271
 	local scheduled<const> = mode == scheduled_mode -- T:769-771,802 C:322-325,364-368; admission policy, not the CPU's run-kind
 	local state<const> = management + layout.arena_offset -- T:792 C:252
 	local head<const> = management + layout.remark_head_offset -- P:5245 Y:3252
@@ -202,7 +201,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 						local pressure<const> = admission.logical_assist_pressure(state, charged) -- H:88 N:88
 						local words<const> = admission.limit_assist_allowance(admission.logical_assist_allowance(debt, pressure), source_cycles) -- H:89 N:89
 						if not borrowed then -- P:4043-4053 X:165-177
-							borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177
+							borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177
 							projected, borrowed = true, true -- P:4043-4053 X:165-177
 						end
 						local work<const> = collection.step(management, words, 0, 0, operands_offset) -- H:89 N:89; explicit receiver/key/value scope
@@ -215,7 +214,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 				local words<const> = admission.reservation_assist_allowance(state, bytes, source_cycles) -- T:792-793 C:255; zero is an admitted quantum
 				if words >= 0 then -- G:934-953 K:986-1003
 					if not borrowed then -- P:4043-4053 X:165-177
-						borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177
+						borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177
 						projected, borrowed = true, true -- P:4043-4053 X:165-177
 					end
 					local work<const> = collection.step(management, words, 0, 0, operands_offset) -- T:793 C:255
@@ -254,7 +253,7 @@ local grow_table<const> = function(management, source_cycles, preferred_extra, m
 		end
 		recovery = admission.begin_allocation_recovery(state, recovery) -- P:806-808,828-865 Q:197,207-269 G:1110-1115,1121 K:1213-1220,1224; Current if active, then Fresh once
 		if recovery < 0 then return false end -- P:861-869 Q:259-268 G:1111 K:1214; terminal OOM at the original issuer
-		borrow_collection_roots(management, projected, interrupted) -- P:4043-4053 X:165-177; no pending borrowed work at this point
+		borrow_collection_roots(management, projected) -- P:4043-4053 X:165-177; no pending borrowed work at this point
 		projected = true -- P:4043-4053 X:165-177
 		if scheduled then -- T:802 C:364-366; Scheduled owns its stopped, parked recovery
 			*parked = 1 -- P:5252-5259 Y:3258-3265; native parked root, not an explicit assist triple
@@ -307,7 +306,7 @@ local store_resolved<const> = function(receiver, key, value, extra, cycles, sele
 	local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 	operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
 	operands.value_tag, operands.value_word = vt, vw
-	return (grow_table(management, cycles, extra, scheduled_mode, true))
+	return (grow_table(management, cycles, extra, scheduled_mode))
 end
 
 -- No metamethod lookup precedes this own assignment.
@@ -347,7 +346,7 @@ local raw_set<const> = function(record, target_tag, kw, kt, vw, vt)
 		local operands<const>: *growth_operands = ram_base + management + layout.remark_head_offset + layout.remark_receiver_offset
 		operands.receiver, operands.key_tag, operands.key_word = record, kt, kw
 		operands.value_tag, operands.value_word = vt, vw
-		if not grow_table(management, cop0.event_cycles, 0, general_mode, true) then return out_of_memory end
+		if not grow_table(management, cop0.event_cycles, 0, general_mode) then return out_of_memory end
 	end
 	if positive_integer then
 		local hint<const> = header.length

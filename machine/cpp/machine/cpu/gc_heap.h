@@ -8,7 +8,6 @@
 #include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/cpu/lua_heap.h"
-#include "spec/bmsx/heap_service.h"
 
 namespace bmsx {
 class CPU;
@@ -19,6 +18,14 @@ inline constexpr size_t GC_STEP_WORDS = 4096;
 inline constexpr size_t GC_ASSIST_BYTES = 256;
 enum class GcPhase : u32 { Pause, Mark, MarkAgain, Atomic, Sweep, Strings };
 enum class GcRootBank : u32 { None, SystemGlobals, Globals, SystemConstants, Cart0Constants, Cart1Constants, Completion, End };
+
+// Firmware-owned words inspected by the opcode datapath and native diagnostic collector.
+inline constexpr u32 GC_DIAGNOSTIC_OFFSET = 0x680;
+inline constexpr u32 GC_DIAGNOSTIC_FAULTS_OFFSET = 0x6c8;
+enum class GcDiagnosticField : u32 {
+	Mode = 4, Index = 8, NewIndex = 12, Length = 16, Error = 20, FaultIds = 24,
+	StringIndexTag = 28, StringIndexWord = 32,
+};
 
 static_assert(GC_GRAY_INDEX_MASK == GC_RECORD_MASK >> GC_RECORD_SHIFT);
 inline constexpr u32 GC_TRACE_HEAD = 4u;
@@ -69,10 +76,10 @@ public:
 	LuaHeap& budget;
 	Memory& memory;
 	HeapAllocator& arena;
-	u32 diagnosticOffset(HeapServiceRemarkHeadField field) const {
-		return arena.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(field);
+	u32 diagnosticOffset(GcDiagnosticField field) const {
+		return arena.managementOffset() + GC_DIAGNOSTIC_OFFSET + static_cast<u32>(field);
 	}
-	u32 diagnosticWord(HeapServiceRemarkHeadField field) const {
+	u32 diagnosticWord(GcDiagnosticField field) const {
 		return memory.readRamRecordWord(diagnosticOffset(field));
 	}
 	void publishObject(u32 address);

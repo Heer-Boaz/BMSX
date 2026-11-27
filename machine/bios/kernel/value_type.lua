@@ -11,6 +11,5 @@ return {
 	closure_tag = 7,
 	builtin_tag = 8,
 	thread_tag = 9,
-	resident_tag = 11,
 	code_tag = 12,
 }

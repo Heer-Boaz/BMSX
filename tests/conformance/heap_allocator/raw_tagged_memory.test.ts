@@ -109,10 +109,9 @@ function paired(t: TestContext, rom: Uint8Array, cart: Uint8Array | null = null)
 		const charged = 1 - cpu.instructionBudgetRemaining;
 		assert.equal(result, expectedResult, `PC 0x${pc.toString(16)}`);
 		assert.equal(charged, BASE_CYCLES[op] + (op === OpCode.RET ? b - 1 : op === OpCode.STORE_MEM_WORDS ? c : 0), `PC 0x${pc.toString(16)}`);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.heapAllocator.occupiedBytes(), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), 0);
-		observe('E 1', `${result} ${charged} 0 ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe('E 1', `${result} ${charged} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 	}
 	function inspect(rt: Runtime, address: number, bytes: readonly number[]) {
 		const offset = address - RAM_BASE, ram = rt.machine.memory.ramData();

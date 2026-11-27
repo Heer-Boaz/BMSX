@@ -15,7 +15,7 @@ local collect_full<const> = function() -- C:1230-1243 T:1134-1144
 	local control<const> = management + layout.control_offset -- C:1234,1241 T:1136,1142
 	local epochs<const>: *u8 = layout.ram_base + control + control_layout.internal.full_epochs_offset -- C:1234,1241 T:1136,1142
 	*epochs = control_layout.internal.active(control) and 2 or 1 -- C:1234 T:1136
-	root_inputs.publish_interrupt(management) -- C:1124,1261-1277,1300-1313; read the stopped context
+	root_inputs.publish(management) -- C:1124,1261-1277,1300-1313; read the stopped context
 	repeat -- X:2642-2644 Y:2598-2601; the guest loop continues across CPU grants
 		local words = cop0.event_cycles // cycles_per_word -- X:2645-2647 Y:2602-2605; sampled hardware horizon
 		if words < 1 then words = 1 end -- X:2645-2647 Y:2602-2605

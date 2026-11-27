@@ -90,13 +90,12 @@ return ok, result, ${scenario.read}
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		commands.push(`E ${cycles}`);
-		expected.push(`${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		expected.push(`${result} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return result;
 	}
 	assert.equal(grant(1), RunResult.Yielded);
 	assert.equal(1 - cpu.instructionBudgetRemaining, BASE_CYCLES[scenario.op] + (scenario.forwarded ? TABLE_INDEX_VISIT_CYCLES : 0));
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 	assert.equal(cpu.readEpcWord(), issuePc);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
@@ -118,7 +117,6 @@ return ok, result, ${scenario.read}
 		if (!scenario.refuse || cpu.fixedInterruptActive()) assert.equal(outcome, RunResult.Yielded);
 	}
 	assert.equal(cpu.fixedInterruptActive(), false);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.activeThread.address, owner);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), 0);
 	if (!scenario.refuse) {
@@ -210,7 +208,6 @@ test('a bare System ROM controls retirement of a table store without backing', t
 	const result = scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 	assert.equal(result, RunResult.Halted);
 	assert.equal(cpu.fixedInterruptActive(), false);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_STORAGE_WINDOW);
 	const successor = image.image.functions[0].codeAddress + 10 * INSTRUCTION_BYTES;
 	assert.equal(cpu.readEpcWord(), successor);

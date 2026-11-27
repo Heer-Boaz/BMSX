@@ -78,7 +78,7 @@ try {
 			const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 
 			commands.push(`J ${cycles} 1`);
-			rows.push(`${result} ${spent} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${spent} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return spent;
 		}
 		assert.equal(cpu.readFrameRegister(caller(), call.a), valueInteger(0));
@@ -86,7 +86,6 @@ try {
 		assert.equal(cpu.readFrameRegister(caller(), call.a + 2), valueInteger(3));
 		assert.ok(grant(1) >= BASE_CYCLES[OpCode.SVC]);
 		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(cpu.heapServiceActive(), false);
 		for (let i = 0; i < 256 && cpu.getFrameDepth(); ++i) grant(191);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		const values = runtime.readCompletionValues();

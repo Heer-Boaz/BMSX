@@ -2,40 +2,27 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_TRACE_HEAD, GcPhase, GcRootBank, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag, type Value } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
-const path = 'kernel/gc_operand_roots', entrySource = 'halt_until_irq';
+const path = 'kernel/gc_operand_roots';
 const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), [{ path, source, chunk: parseLuaChunk(source, path) }],
-		{ entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const entry = object.sections.rodata.moduleExports.find(entry => entry.path === path && entry.exportPathKey === 'mark_operand_roots');
-	assert.ok(entry);
-	const fn = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
-	assert.ok(fn >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
-
+	const linked = linkFirmwareProbe(optLevel, [{ path, source, chunk: parseLuaChunk(source, path) }], [{ path, member: 'mark_operand_roots', arity: 5 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const arena = cpu.heapAllocator.allocatorStateOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
 	// The fixture borrows the shape of a parked root-head triple. It does not
 	// set HasPendingAssignment or exercise the distinct parked-root path.
-	const operands = management + HEAP_SERVICE_REMARK_HEAD_OFFSET + 52;
+	const operands = management + GC_DIAGNOSTIC_OFFSET + 52;
 	const floor = memory.ramBusEnd() - RAM_BASE;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 
@@ -51,24 +38,22 @@ function fixture(optLevel: 0 | 3) {
 		}
 	}
 	function begin() {
-		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [control, arena, metadata, operands, 0]));
+		issueFirmwareProbe(cpu, [control, arena, metadata, operands, 0]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const paid = cycles - cpu.instructionBudgetRemaining;
+		const paid = grantFirmwareProbe(cpu, cycles);
 		assert.ok(paid > 0);
 		return paid;
 	}
 	function finish() {
 		let cycles = 0;
-		for (let i = 0; i < 64 && cpu.heapServiceActive(); ++i) cycles += grant(128);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 64 && !cpu.isHaltedUntilIrq(); ++i) cycles += grant(128);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		return [cpu.heapServiceResult(), cycles];
+		return [firmwareProbeResult(cpu), cycles];
 	}
 	function compare() {
-		const actual = memory.ramData().subarray(floor, management + HEAP_SERVICE_REMARK_HEAD_OFFSET);
-		const expected = oracle.memory.ramData().subarray(floor, management + HEAP_SERVICE_REMARK_HEAD_OFFSET);
+		const actual = memory.ramData().subarray(floor, management + GC_DIAGNOSTIC_OFFSET);
+		const expected = oracle.memory.ramData().subarray(floor, management + GC_DIAGNOSTIC_OFFSET);
 		if (Buffer.compare(actual, expected) === 0) return;
 		const diff = actual.findIndex((byte, index) => byte !== expected[index]);
 		assert.equal(actual[diff], expected[diff], `first GC heap mismatch at 0x${(floor + diff).toString(16)}`);
@@ -91,7 +76,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.oracle.gc['remarkRoots'](valueTable(receiver), valueTable(key), valueTable(value), limit, limit, false), limit);
 		f.begin();
 		for (let i = 0; i < 4096 && f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD) !== index(receiver); ++i) f.grant(1);
-		assert.ok(f.cpu.heapServiceActive());
+		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD), index(receiver));
 		assert.equal(f.memory.readRamRecordByte(receiver + GC_COLOR_OFFSET), 2);
 		assert.equal(f.memory.readRamRecordByte(key + GC_COLOR_OFFSET), f.cpu.gc.white());

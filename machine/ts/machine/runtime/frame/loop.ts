@@ -98,7 +98,7 @@ export class FrameLoopState {
 			return false;
 		}
 		if (this.frameActive
-			&& ((!runtime.machine.cpu.heapServiceActive() && runtime.machine.cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld())
+			&& (runtime.machine.cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld())
 			&& runtime.machine.scheduler.nextDeadline() === Number.MAX_SAFE_INTEGER) {
 			// Cart parked waiting for an interrupt that nothing has scheduled: report
 			// no progress so the scheduler yields the host slice instead of spinning.
@@ -183,7 +183,7 @@ export class FrameLoopState {
 			if (this.consumeSystemReset()) return false;
 		}
 		const state = this.frameState;
-		if (runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) {
+		if (runtime.pendingCall === 'entry') {
 			const executionStopped = this.runUpdatePhase();
 			state.updateExecuted = runtime.pendingCall !== 'entry';
 			this.finalizeUpdateSlice();
@@ -200,7 +200,7 @@ export class FrameLoopState {
 			this.finalizeUpdateSlice();
 			return InstructionStepResult.Advanced;
 		}
-		if (runtime.pendingCall !== 'entry' && !runtime.machine.cpu.heapServiceActive()) {
+		if (runtime.pendingCall !== 'entry') {
 			this.finalizeUpdateSlice();
 			return InstructionStepResult.Advanced;
 		}
@@ -212,7 +212,7 @@ export class FrameLoopState {
 
 	private finalizeUpdateSlice(): void {
 		const runtime = this.runtime;
-		if ((runtime.pendingCall === 'entry' || runtime.machine.cpu.heapServiceActive()) && !runtime.vblank.tickCompleted) {
+		if (runtime.pendingCall === 'entry' && !runtime.vblank.tickCompleted) {
 			return;
 		}
 		this.abandonFrameState();
@@ -224,14 +224,14 @@ export class FrameLoopState {
 		const cpu = runtime.machine.cpu;
 		const cpuExecution = runtime.cpuExecution;
 		while (true) {
-			if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+			if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 				const tickCompleted = cpuExecution.runStoppedCpu(state);
-				if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+				if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 					return false;
 				}
 				continue;
 			}
-			if (runtime.pendingCall !== 'entry' && !cpu.heapServiceActive()) {
+			if (runtime.pendingCall !== 'entry') {
 				return false;
 			}
 			const result = runtime.cpuExecution.runWithBudget(state);
@@ -255,20 +255,20 @@ export class FrameLoopState {
 		const runtime = this.runtime;
 		const state = this.frameState;
 		const cpu = runtime.machine.cpu;
-		if ((!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+		if (cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 			const previousRemaining = state.cycleBudgetRemaining;
 			const tickCompleted = runtime.cpuExecution.runStoppedCpu(state);
-			if (tickCompleted || (!cpu.heapServiceActive() && cpu.isHaltedUntilIrq()) || runtime.machine.systemController.cpuHeld()) {
+			if (tickCompleted || cpu.isHaltedUntilIrq() || runtime.machine.systemController.cpuHeld()) {
 				return tickCompleted || state.cycleBudgetRemaining !== previousRemaining
 					? InstructionStepResult.Advanced
 					: InstructionStepResult.Blocked;
 			}
 		}
-		if (runtime.pendingCall !== 'entry' && !cpu.heapServiceActive()) {
+		if (runtime.pendingCall !== 'entry') {
 			return InstructionStepResult.Blocked;
 		}
 		const result = runtime.cpuExecution.runInstruction(state);
-		if (cpu.getFrameDepth() === 0 && !cpu.heapServiceActive()) {
+		if (cpu.getFrameDepth() === 0) {
 			runtime.pendingCall = null;
 			runtime.frameScheduler.clearQueuedTime();
 			this.abandonFrameState();

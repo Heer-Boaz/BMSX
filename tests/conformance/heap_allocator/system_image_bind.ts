@@ -51,14 +51,13 @@ try {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			note(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			note(`g ${cycles} 0`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return result;
 		}
 		assert.equal(arena.occupiedBytes(), 0);
 		range(installed, EXECUTION_IMAGE_BINDING_SIZE);
 		for (let i = 0; i < 262144 && readNamespaceBank(memory, ordinary).count < 9; ++i) {
 			grant(1);
-			assert.equal(cpu.heapServiceActive(), false);
 		}
 		assert.equal(readNamespaceBank(memory, ordinary).count, 9, 'the firmware issued the first namespace relocation');
 		assert.equal(readNamespaceBank(memory, ordinary).capacity, 16);

@@ -129,7 +129,7 @@ return make(7, 8)()
 	}
 	function grant(cycles: number) {
 		const outcome = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-		observe(`E ${cycles}`, `${outcome} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		observe(`E ${cycles}`, `${outcome} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return outcome;
 	}
 	function write(address: number, word: number) {
@@ -142,7 +142,6 @@ return make(7, 8)()
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
 	assert.equal(cpu.readEpcWord(), issue);
 	assert.equal(cpu.fixedInterruptActive(), true);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
 	assert.equal(cpu.readThreadFrameWord(owner, depth - 1, FrameField.Pc), successor);
 	assert.equal(frame.registers.get(op.a), original);
@@ -174,7 +173,6 @@ return make(7, 8)()
 		sample(1);
 		for (let step = 0; cpu.fixedInterruptActive() && step < 8192; ++step) assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), false);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.activeThread.address, owner);
 		assert.equal(cpu.readFramePc(depth - 1), successor);
 		assert.equal(cpu.readEpcWord(), successor);
@@ -245,7 +243,7 @@ return first == second, first() + second(), first, second
 	function grant(cycles: number) {
 		const outcome = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		commands.push(`E ${cycles}`);
-		rows.push(`${outcome} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+		rows.push(`${outcome} ${cycles - cpu.instructionBudgetRemaining} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 		return outcome;
 	}
 	const frame = cpu.activeThread.currentFrame!, depth = cpu.getFrameDepth();
@@ -261,7 +259,6 @@ return first == second, first() + second(), first, second
 		const before = frame.registers.get(op.a);
 		assert.equal(grant(1), RunResult.Yielded);
 		assert.equal(cpu.fixedInterruptActive(), true);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
 		assert.equal(cpu.readEpcWord(), issue);
 		assert.equal(frame.pc, successor);
@@ -325,7 +322,6 @@ test('a bare System ROM may decline a Closure without a stock allocator', t => {
 	const outcome = scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 	assert.equal(outcome, RunResult.Halted);
 	assert.equal(cpu.fixedInterruptActive(), false);
-	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_FUNCTION_BINDING);
 	const successor = rom.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
 	assert.equal(cpu.readEpcWord(), successor);

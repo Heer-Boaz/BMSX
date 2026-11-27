@@ -10,7 +10,7 @@ import { GC_OBJECT_PREFIX, GC_RECORD_LINK, GC_RECORD_MASK } from '../../../machi
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { BLUA32_STRING_RECORD_KIND } from '../../../machine/ts/spec/blua32/image_format';
-import { HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_WORKSPACE_END } from '../../helpers/firmware_heap_layout';
 import { CART_ROM_BASE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -63,7 +63,7 @@ try {
 		const [table, tail, string, backing] = initial.slice(1).map(Number);
 		const management = PSX_MACHINE_SPEC.ramBytes - RUNTIME_MANAGEMENT_SIZE;
 		const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-		const arena = management + 0x400, results = management + HEAP_SERVICE_THREAD_OFFSET - 8;
+		const arena = management + 0x400, results = management + GC_WORKSPACE_END - 8;
 		seed.push(`W ${control} ${0xe501}`, `W ${control + GC_TRACE_HEAD} ${0xfff02345}`, `W ${control + GC_CHANGED_HEAD} ${0xe0001439}`,
 			`W ${metadata + 0x0c} ${0x9aceba01}`, `W ${string} ${BLUA32_STRING_RECORD_KIND}`);
 		for (const address of [table, tail, backing + GC_OBJECT_PREFIX]) {

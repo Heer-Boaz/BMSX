@@ -70,28 +70,38 @@ function scalarInstruction(op: OpCode, b: number, c: number, ext = 0, constants:
 		functions: [{ firstWord: 0, wordCount: 2, numParams: 1, maxStack: 2 }] }).image;
 }
 
-test('fixed stack admits only the service port memory formats', () => {
+test('fixed stack uses ordinary bus formats and permits the issuing context only as a direct read', () => {
+	const ordinary = [MemoryAccessKind.Word, MemoryAccessKind.U8, MemoryAccessKind.U16LE, MemoryAccessKind.U32LE,
+		MemoryAccessKind.F32LE, MemoryAccessKind.F64LE, MemoryAccessKind.Value];
 	for (const op of [OpCode.LOAD_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM, OpCode.STORE_MEM_D]) {
-		for (const kind of [MemoryAccessKind.Word, MemoryAccessKind.U32LE, MemoryAccessKind.U8])
+		for (const kind of ordinary)
 			assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(op, 0, kind), [0]), { valueSlots: 2, frames: 1 });
-		for (const kind of [MemoryAccessKind.U16LE, MemoryAccessKind.F32LE, MemoryAccessKind.F64LE])
-			assert.throws(() => deriveBlua32FixedStack(scalarInstruction(op, 0, kind), [0]), /not a resident memory format/);
+		if (op !== OpCode.LOAD_MEM)
+			assert.throws(() => deriveBlua32FixedStack(scalarInstruction(op, 0, MemoryAccessKind.ContextWord), [0]), /not an ordinary CPU memory format/);
 	}
+	assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.LOAD_MEM, 0, MemoryAccessKind.ContextWord), [0]),
+		{ valueSlots: 2, frames: 1 });
 });
 
-test('fixed stack admits register copies but not Float reinterpretation', () => {
-	assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, ValueMoveKind.Copy), [0]), { valueSlots: 2, frames: 1 });
-	for (const kind of [ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits])
-		assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, kind), [0]), /not a scalar register copy/);
+test('fixed stack admits the ordinary scalar moves', () => {
+	for (const kind of [ValueMoveKind.Copy, ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits, ValueMoveKind.Tag])
+		assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, kind), [0]), { valueSlots: 2, frames: 1 });
+	assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, 4), [0]), /invalid register move format/);
 });
 
-test('an ordinary vector may inspect an operand tag without inferring a call target', () => {
-	const tag = scalarInstruction(OpCode.MOV, 0, ValueMoveKind.Tag);
-	assert.throws(() => deriveBlua32FixedStack(tag, [0]), /not a scalar register copy/);
-	assert.deepEqual(deriveBlua32FixedStack(tag, [0], {
-		functions: new Set([0]), lateConstants: new Set(),
-		ordinaryCode: { exceptionVectors: new Set(), interruptible: false, codeTargets: new Set() },
-	}), { valueSlots: 2, frames: 1 });
+test('an ordinary vector inspecting a tag does not retain a callable proof', () => {
+	const text = new Uint8Array(6 * INSTRUCTION_BYTES);
+	writeInstruction(text, 0, OpCode.WIDE, 0, 0, 0);
+	writeInstruction(text, 1, OpCode.CLOSURE, 0, 0, 0);
+	writeInstruction(text, 2, OpCode.MOV, 0, 0, ValueMoveKind.Tag);
+	writeInstruction(text, 3, OpCode.CALL, 0, 1, 1);
+	writeInstruction(text, 4, OpCode.RET, 0, 1, 0);
+	writeInstruction(text, 5, OpCode.RET, 0, 1, 0);
+	const { image } = linkRawTestSystemBlua32({
+		text, verifiedControlFlow: true, closureRelocations: [{ wordIndex: 1, functionIndex: 1 }],
+		functions: [{ firstWord: 0, wordCount: 5 }, { firstWord: 5, wordCount: 1 }],
+	});
+	assert.throws(() => deriveBlua32FixedStack(image, [0]), /no single static callee/);
 });
 
 test('fixed stack checks the linked constant kind for LOADK and both signed RK lanes', () => {

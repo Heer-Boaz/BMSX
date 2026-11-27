@@ -477,12 +477,6 @@ DISPATCH_LABEL(JMPIFNOT) {
 }
 
 DISPATCH_LABEL(CLOSURE) {
-	if constexpr (HeapService) {
-		// Link-verified static edges carry the immutable ROM record, never
-		// an ordinary language Closure. The CALL context owns this word.
-		SET_REGISTER_FAST(decoded->a, valueInteger(static_cast<i32>(decoded->bx() * BLUA32_FUNCTION_ALIGNMENT)));
-		DISPATCH_NEXT();
-	}
 	PUBLISH_SCALAR_FRONTIER();
 	executeClosure(FRAME, decoded->a, decoded->bx(), decoded->c);
 	DISPATCH_CONTINUE();
@@ -517,11 +511,6 @@ DISPATCH_LABEL(VARARG) {
 }
 
 DISPATCH_LABEL(CALL) {
-	if constexpr (HeapService) {
-		PUBLISH_SCALAR_FRONTIER();
-		executeHeapServiceCall(FRAME, decoded->a, decodeValueCount(decoded->b, -1), decodeValueCount(decoded->c, -1));
-		DISPATCH_REBIND_FRAME();
-	}
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES)
 	++m_diagnosticExecutionProfile.interpreterOpcodes.call;
 #endif
@@ -543,11 +532,6 @@ DISPATCH_LABEL(CALL) {
 DISPATCH_LABEL(RET) {
 	PUBLISH_SCALAR_FRONTIER();
 	const bool fromArguments = decoded->c != static_cast<u8>(ReturnSource::Registers);
-	if constexpr (HeapService) {
-		// The fixed bank admits only non-variadic activations.
-		executeHeapServiceReturn(FRAME, fromArguments ? 0 : decoded->a, fromArguments ? 0 : decodeValueCount(decoded->b, -1));
-		DISPATCH_REBIND_FRAME();
-	}
 	if (executeReturn(FRAME, decoded->a, decodeValueCount(decoded->b, -1), fromArguments)) {
 		DISPATCH_REBIND_FRAME();
 	}
@@ -558,10 +542,6 @@ DISPATCH_LABEL(LOAD_MEM_D) {
 	PUBLISH_SCALAR_FRONTIER();
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(REG(decoded->b)) + (decoded->bx() << 2u);
-	if constexpr (HeapService) {
-		executeHeapServiceLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
-		DISPATCH_CONTINUE();
-	}
 	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
@@ -570,10 +550,6 @@ DISPATCH_LABEL(STORE_MEM_D) {
 	PUBLISH_SCALAR_FRONTIER();
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(REG(decoded->b)) + (decoded->bx() << 2u);
-	if constexpr (HeapService) {
-		executeHeapServiceStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
-		DISPATCH_CONTINUE();
-	}
 	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }
@@ -589,10 +565,6 @@ DISPATCH_LABEL(LOAD_MEM) {
 	PUBLISH_SCALAR_FRONTIER();
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(readRK(IMAGE, FRAME.registers, decoded->b));
-	if constexpr (HeapService) {
-		executeHeapServiceLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
-		DISPATCH_CONTINUE();
-	}
 	executeMemoryLoad(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
 	DISPATCH_CONTINUE();
 }
@@ -601,10 +573,6 @@ DISPATCH_LABEL(STORE_MEM) {
 	PUBLISH_SCALAR_FRONTIER();
 	if (decoded->c == static_cast<u8>(MemoryAccessKind::F64LE)) instructionBudgetRemaining -= F64_ACCESS_EXTRA_CYCLES;
 	const u32 address = wordOperand(readRK(IMAGE, FRAME.registers, decoded->b));
-	if constexpr (HeapService) {
-		executeHeapServiceStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address);
-		DISPATCH_CONTINUE();
-	}
 	if (!executeMemoryStore(FRAME, decoded->a, static_cast<MemoryAccessKind>(decoded->c), address)) DISPATCH_BLOCKED();
 	DISPATCH_CONTINUE();
 }

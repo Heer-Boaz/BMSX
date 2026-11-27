@@ -14,7 +14,7 @@ import { CPU_CAUSE_CODE_TRAP, CPU_CAUSE_IRQ, CPU_CAUSE_NMI, LUA_FAULT_REASON_INV
 import { INSTRUCTION_BYTES, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_ROOT_BANKS_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_ROOT_BANKS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { CPU_RESET_BANK_ADDRESS, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_END, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -51,7 +51,7 @@ const pcs = firmware.image.functions.map(fn => fn.codeAddress);
 const runtime = createRuntime(firmware.romBytes), { cpu, memory, scheduler, irqController } = runtime.machine;
 const trace: string[] = [], expected: string[] = [];
 const arena = cpu.heapAllocator, management = arena.managementOffset();
-const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + HEAP_SERVICE_ROOT_BANKS_OFFSET;
+const heapFirst = management + HEAP_STRING_METADATA_OFFSET, heapEnd = management + GC_ROOT_BANKS_OFFSET;
 const zeroHeap = new Uint8Array(heapEnd - heapFirst);
 const heapHash = hashBytes(zeroHeap, 0, zeroHeap.length);
 const observe = (cmd: string, output?: string | number) => {
@@ -73,7 +73,6 @@ function frame(index: number, pc: number, exception: boolean, nmi = false) {
 	assert.equal(cpu.getFrameUpvalueCount(index), 0);
 	assert.equal(current.isExceptionFrame, exception);
 	assert.equal(current.isNonMaskableExceptionFrame, nmi);
-	assert.equal(cpu.heapServiceActive(), false);
 	observe('P', `${index + 1} ${pc}`);
 	const offset = current.controlOffset;
 	observe(`H ${offset} ${offset + FRAME_CONTROL_BYTES}`, hashBytes(memory.ramData(), offset, FRAME_CONTROL_BYTES));
@@ -82,8 +81,7 @@ function frame(index: number, pc: number, exception: boolean, nmi = false) {
 function grant(cycles: number, paid: number) {
 	const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 	assert.equal(cycles - cpu.instructionBudgetRemaining, paid);
-	assert.equal(cpu.heapServiceActive(), false);
-	observe(`J ${cycles} 1`, `${result} ${paid} 0 0 0 0`);
+	observe(`J ${cycles} 1`, `${result} ${paid} 0 0 0`);
 	observeHeap();
 	return result;
 }

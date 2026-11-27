@@ -13,7 +13,8 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NON_TABLE } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_REMARK_FAULTS_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GC_DIAGNOSTIC_FAULTS_OFFSET } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -76,10 +77,10 @@ for (const optLevel of [0, 3] as const) {
 		const probe = asClosure(global('probe'), cpu.gc);
 		const args = [receiver, valueInteger(41)];
 		const management = cpu.heapAllocator.managementOffset();
-		const head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET, faults = management + HEAP_SERVICE_REMARK_FAULTS_OFFSET;
-		const originalError = memory.readRamRecordWord(head + HeapServiceRemarkHeadField.Error);
+		const head = management + GC_DIAGNOSTIC_OFFSET, faults = management + GC_DIAGNOSTIC_FAULTS_OFFSET;
+		const originalError = memory.readRamRecordWord(head + GcDiagnosticField.Error);
 		const originalFault = memory.readRamRecordWord(faults + LUA_FAULT_REASON_INDEX_NON_TABLE * 4);
-		assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.FaultIds), RAM_BASE + faults);
+		assert.equal(memory.readRamRecordWord(head + GcDiagnosticField.FaultIds), RAM_BASE + faults);
 
 		// Warm ordinary and protected receiving windows before the observed call.
 		cpu.beginCompletionCall(probe, args);
@@ -94,9 +95,9 @@ for (const optLevel of [0, 3] as const) {
 			return id;
 		};
 		for (const [offset, name] of [
-			[HeapServiceRemarkHeadField.Index, 'new_index'],
-			[HeapServiceRemarkHeadField.NewIndex, 'new_newindex'],
-			[HeapServiceRemarkHeadField.Length, 'new_len'],
+			[GcDiagnosticField.Index, 'new_index'],
+			[GcDiagnosticField.NewIndex, 'new_newindex'],
+			[GcDiagnosticField.Length, 'new_len'],
 		] as const) {
 			const id = intern(`replacement diagnostic ${name}`);
 			assert.notEqual(memory.readRamRecordWord(head + offset), id);
@@ -113,8 +114,8 @@ for (const optLevel of [0, 3] as const) {
 		// Keep the original plane and its original error intact: offset-only
 		// consumers (as well as constructor-cached Ids) must give the old answer.
 		memory.writeRamRecordWord(alternateFaults + LUA_FAULT_REASON_INDEX_NON_TABLE * 4, fault);
-		patches.push([head + HeapServiceRemarkHeadField.FaultIds, alternateFaults],
-			[head + HeapServiceRemarkHeadField.Error, error]);
+		patches.push([head + GcDiagnosticField.FaultIds, alternateFaults],
+			[head + GcDiagnosticField.Error, error]);
 
 		const rom = join(folder, 'system.rom'), initialFile = join(folder, 'initial.state');
 		const tsMidFile = join(folder, 'ts-mid.state'), cppMidFile = join(folder, 'cpp-mid.state'), traceFile = join(folder, 'trace');
@@ -132,7 +133,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
-			observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, +cpu.heapServiceActive(), cpu.gc.fullEpochs(),
+			observe(`L ${cycles}`, [result, cycles - cpu.instructionBudgetRemaining, cpu.gc.fullEpochs(),
 				cpu.gc.phase(), cpu.luaHeap.usedBytes()].join(' '));
 			return result;
 		}
@@ -153,7 +154,7 @@ for (const optLevel of [0, 3] as const) {
 				'the selected __newindex ran instead of publishing a raw field');
 			observe('c', [values.length, ...values.flatMap(value => [valueTag(value), valuePayload(value)])].join(' '));
 			observe('Z', [cpu.readCauseWord(), cpu.readLuaFaultReasonWord(), cpu.readEpcWord()].join(' '));
-			hash(head, HeapServiceRemarkHeadField.FaultIds + 4);
+			hash(head, GcDiagnosticField.FaultIds + 4);
 			hash(alternateFaults & RAM_RECORD_WORD_MASK, faultBytes);
 		}
 		const atProtectedEntry = () => cpu.activeThread.currentFrame?.pc === protectedCall.codeAddress;
@@ -161,7 +162,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(atProtectedEntry(), 'checkpoint at the ordinary protected call, before its fault');
 		assert.ok(cpu.getFrameDepth() > 1);
 		observe('P', `${cpu.getFrameDepth()} ${cpu.readFramePc(cpu.getFrameDepth() - 1)}`);
-		hash(head, HeapServiceRemarkHeadField.FaultIds + 4);
+		hash(head, GcDiagnosticField.FaultIds + 4);
 		const tsMid = captureRuntimeSaveState(runtime);
 		writeFileSync(tsMidFile, encodeRuntimeSaveState(tsMid));
 		const before = commands.splice(0), beforeResults = results.splice(0);

@@ -1,9 +1,9 @@
 import { ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
+import { GcDiagnosticField, GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
-import { CART_READ_ADDRESS_MASK, CART_READ_SLOT_SHIFT, CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { CART_ROM_BASE, CART_ROM_END, CART_ROM_SIZE, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, CPU_IRQ_VECTOR_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_ADDRESS, CPU_FIXED_VALUE_COUNT, CPU_FIXED_VALUE_END, DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, MAIN_RAM_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE, RAM_RECORD_WORD_MASK, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
 import { isRamStringId, StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -78,7 +78,7 @@ import {
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE,
-	BLUA32_FUNCTION_STATIC, BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_CODE,
+	BLUA32_FUNCTION_STATIC, BLUA32_FUNCTION_CODE,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
@@ -110,7 +110,7 @@ import {
 	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
 	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { ScratchBuffer } from '../../common/scratchbuffer';
 import { luaShiftLeft, luaShiftRight, NumericOrder } from '../../spec/blua32/numeric';
 import {
@@ -164,25 +164,12 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, FRAME_RESIDENT_ACTIVATION, registerWindowBucket } from './call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
-import { HeapService } from './heap_service';
-import {
-	HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
-	HEAP_SERVICE_FRAME_COUNT,
-	HEAP_SERVICE_VALUE_COUNT,
-	HeapServiceProjection, HeapServiceResidentField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
-	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
-	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
-	HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE, HEAP_SERVICE_ROOT_BANKS_OFFSET, HEAP_SERVICE_ROOT_PORT_BASE,
-	HEAP_SERVICE_ROOT_PORT_BYTES, HEAP_SERVICE_ROOT_PORT_SHIFT, HEAP_SERVICE_ROOT_PORT_STRIDE,
-	HeapServiceRootBankField, HeapServiceRootPlane,
-} from '../../spec/bmsx/heap_service';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
 	compiledBlockSupports, compiledBlockEndsBlock, compiledBlockComparison, compiledBlockHasContinuation, compiledBlockAdmits,
@@ -284,7 +271,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly luaHeap: LuaHeap;
 	public readonly heapAllocator: HeapAllocator;
 	public readonly gc: GcHeap;
-	private readonly heapService: HeapService;
 	public readonly stringPool: StringPool;
 	private haltedUntilIrqFrameDepth = -1;
 	private haltedUntilIrqThread = 0;
@@ -394,7 +380,6 @@ export class CPU implements MappedPageInvalidator {
 		this.luaHeap = new LuaHeap(this);
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator);
-		this.heapService = new HeapService(this.gc);
 		const management = this.heapAllocator.managementOffset();
 		this.systemGlobalBank = new GlobalBank(memory, this.gc, management + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, this.gc, management + GLOBAL_BANK_OFFSET);
@@ -517,7 +502,7 @@ export class CPU implements MappedPageInvalidator {
 		switch (valueTag(base)) {
 			case ValueTag.Table: return valuePayload(base);
 			case ValueTag.String: {
-				const address = this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord);
+				const address = this.gc.diagnosticWord(GcDiagnosticField.StringIndexWord);
 				if (address !== 0) return address;
 				break;
 			}
@@ -568,9 +553,6 @@ export class CPU implements MappedPageInvalidator {
 				}
 				case ValueTag.CodeFunction:
 					this.pushFrame(0, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length, true, valuePayload(method));
-					break;
-				case ValueTag.ResidentFunction:
-					this.beginResidentCall(valuePayload(method), args.registers, args.base, args.length, destination, result);
 					break;
 				case ValueTag.BuiltinFunction:
 					this.runBuiltinFunction(valuePayload(method), frame, destination, result, args.length, args.registers, 0);
@@ -697,7 +679,6 @@ export class CPU implements MappedPageInvalidator {
 
 	public reset(): void {
 		if (this.fixedInterruptDefersReset()) throw new Error('System IRQ must retire before reset.');
-		if (this.heapServiceActive()) throw new Error('Heap service must retire before CPU reset.');
 		// Publish the last admitted execution context before detaching views.
 		// A second reset in the board bank has not admitted another context.
 		const previousRoot = this.rootThread.address;
@@ -1028,7 +1009,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public replaceExecutionImages(executionBoots: readonly Blua32ExecutionBoot[], relocation?: ExecutionImageRelocation): void {
 		if (executionBoots.length === 0) return;
-		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
+		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		const headers = executionBoots.map(boot => this.readExecutionImageHeader(boot));
 		const replacements = new Array<Blua32ExecutionImage['romFunctions'] | null>(EXECUTION_DOMAIN_COUNT).fill(null);
 		for (let i = 0; i < executionBoots.length; ++i)
@@ -1142,16 +1123,16 @@ export class CPU implements MappedPageInvalidator {
 
 	private decodedPageForAddress(
 		image: Blua32ExecutionImage,
-		address: number, key: number, slot: number, privateFirmware = false,
+		address: number, key: number, slot: number,
 	): DecodedInstructionPage {
-		const pages = privateFirmware ? (image.privateDecodedPages ??= new Map()) : image.decodedPages;
+		const pages = image.decodedPages;
 		const existing = pages.get(key);
 		if (existing !== undefined) {
 			return existing;
 		}
 		const binding = this.mappedPageBinding;
 		this.memory.bindMappedPage(address, mappedBusSignalsForCartridgeSlot(slot) | MAPPED_BUS_INSTRUCTION_FETCH, binding);
-		const page = createDecodedInstructionPage(binding, privateFirmware);
+		const page = createDecodedInstructionPage(binding);
 		pages.set(binding.key, page);
 		return page;
 	}
@@ -1271,8 +1252,6 @@ export class CPU implements MappedPageInvalidator {
 			if (address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE || (address >= CART_ROM_BASE && address < CART_ROM_END))
 				image.romCallBindings.invalidate();
 			this.rebindDecodedRange(image.decodedPages, invalidationStart, endKey);
-			if (image.privateDecodedPages !== undefined && address < SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)
-				this.rebindDecodedRange(image.privateDecodedPages, invalidationStart, endKey);
 		}
 	}
 
@@ -1286,15 +1265,15 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private decodedPageForFrame(frame: CallFrame, pc: number, privateFirmware = false): DecodedInstructionPage {
+	private decodedPageForFrame(frame: CallFrame, pc: number): DecodedInstructionPage {
 		const pageAddress = (pc & ~MAPPED_PAGE_BYTE_MASK) >>> 0;
-		const slot = privateFirmware ? 0 : this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
+		const slot = this.memory.cartridgeController.selectedSlot(this.executionBusSignals);
 		const key = mappedPageAddressKey(pageAddress, slot);
 		const cached = frame.decodedPage;
-		if (cached !== null && cached.key === key && cached.privateFirmware === privateFirmware) {
+		if (cached !== null && cached.key === key) {
 			return cached;
 		}
-		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot, privateFirmware);
+		const page = this.decodedPageForAddress(frame.executionImage, pageAddress, key, slot);
 		frame.decodedPage = page;
 		frame.compilationEntry = true;
 		return page;
@@ -1329,7 +1308,7 @@ export class CPU implements MappedPageInvalidator {
 		if (op === OpCode.WIDE) {
 			width = 2;
 			if (pageOffset === DECODED_PAGE_WORDS - 1) {
-				bodyPage = this.decodedPageForFrame(frame, (pc + INSTRUCTION_BYTES) >>> 0, page.privateFirmware);
+				bodyPage = this.decodedPageForFrame(frame, (pc + INSTRUCTION_BYTES) >>> 0);
 				instructionCacheable = instructionCacheable && bodyPage.cacheable;
 			}
 			wideA = (sourceWord >>> 12) & 0x3f;
@@ -1404,7 +1383,7 @@ export class CPU implements MappedPageInvalidator {
 					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
 				if (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)
-					&& (op !== OpCode.LOAD_MEM || page.privateFirmware || rawC !== MemoryAccessKind.ContextWord)) {
+					&& (op !== OpCode.LOAD_MEM || rawC !== MemoryAccessKind.ContextWord)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				} else {
 					const constantCount = image.constWords.length;
@@ -1596,7 +1575,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public systemResetInhibited(): boolean {
-		return this.fixedInterruptDefersReset() || this.heapServiceActive() || (this.cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) !== 0;
+		return this.fixedInterruptDefersReset() || (this.cop0Words[COP0_STATUS] & CPU_STATUS_INHIBIT_RESET) !== 0;
 	}
 
 	public isCartridgeExecutionActive(): boolean {
@@ -1836,7 +1815,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public beginCompletionCall(closure: number, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS, codeFunction = 0): void {
-		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
+		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		const roots = this.acquireLocalRoots();
@@ -1860,7 +1839,7 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
-		if (this.heapServiceActive() || this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
+		if (this.fixedInterruptActive()) throw new Error('Fixed execution must retire before replacing code execution.');
 		if (this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		this.gc.finishFinalMark();
 		const image = this.executionImageForDomain(executionDomainId);
@@ -1996,7 +1975,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public enterPendingInterrupt(): boolean {
-		if (this.fixedInterruptActive() || this.pendingMemory.kind !== PendingMemoryKind.None || this.stringComparison.remaining !== 0 || this.heapServiceActive()) return false;
+		if (this.fixedInterruptActive() || this.pendingMemory.kind !== PendingMemoryKind.None || this.stringComparison.remaining !== 0) return false;
 		if (this.nonMaskableInterruptPending) {
 			this.nonMaskableInterruptPending = false;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
@@ -2252,26 +2231,6 @@ export class CPU implements MappedPageInvalidator {
 		return this.activeThread.frameDepth;
 	}
 
-	public heapServiceActive(): boolean {
-		return this.heapService.thread.frameDepth !== 0;
-	}
-
-	public heapServiceResult(): number {
-		return this.memory.readRamRecordWord(this.heapService.resultAddress);
-	}
-
-	/** Internal CPU entry. The host supplies a linked, fixed-stack firmware function. */
-	public beginHeapService(functionAddress: number, args: readonly number[]): boolean {
-		if (this.heapServiceActive()) return false;
-		const frame = this.prepareHeapServiceFrame(functionAddress, 0, args.length, 0, 0);
-		const copied = Math.min(frame.top, args.length);
-		for (let index = 0; index < copied; ++index) frame.registers.setInteger(index, args[index]);
-		frame.registers.clear(frame.top - copied, copied);
-		this.memory.writeRamRecordWord(this.heapService.resultAddress, 0);
-		frame.thread.enterFrame(frame);
-		return true;
-	}
-
 	private remainingDeviceCycles(): number {
 		// Bare CPU execution supplies only an explicit clock horizon.
 		return this.deviceClock === null
@@ -2281,35 +2240,6 @@ export class CPU implements MappedPageInvalidator {
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address,
 		kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
-		if (this.heapServiceActive()) {
-			const resident = (this.memory.readRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION) !== 0;
-			this.runKind = kind;
-			this.deviceClock = deviceClock;
-			try {
-				this.runUntilDepthInstrumented(0, instructionBudget, true);
-				if (!this.heapServiceActive()) {
-					// The fixed activation may have changed the physical Thread
-					// layout or retired an inactive bank's previous referent.
-					this.activeThread.bindStack(true);
-					if (this.activeThread !== this.rootThread) this.rootThread.bindStack(true);
-					this.globalBank.bind();
-					this.systemGlobalBank.bind();
-					for (let i = 1; i < this.threadBanks.length; ++i) {
-						const bank = this.threadBanks[i];
-						if (bank !== this.activeThread && bank.address !== 0) bank.bindAddress(0);
-					}
-					try {
-						if (resident) this.finishResidentCall();
-					} catch (error) {
-						this.handleRunLoopError(error);
-					}
-				}
-				return this.hardHalted ? RunResult.Halted : RunResult.Yielded;
-			} finally {
-				this.runKind = CpuRunKind.Idle;
-				this.deviceClock = null;
-			}
-		}
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
 		this.runKind = kind;
 		this.deviceClock = deviceClock;
@@ -2439,24 +2369,24 @@ export class CPU implements MappedPageInvalidator {
 		this.scalarRegisterTop = -1;
 	}
 
-	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number, service = false): RunResult {
+	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		const thread = service ? this.heapService.thread : this.activeThread;
-		const canInterrupt = !service && !this.fixedInterruptActive();
+		const thread = this.activeThread;
+		const canInterrupt = !this.fixedInterruptActive();
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
 			this.preMaskableInterruptExecutionHookDomainMask;
 		while (thread.frameDepth > targetDepth) {
 			try {
-				if (!service && this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
+				if (this.instructionBudgetRemaining > 0 && !this.memoryWriteBlocked && !this.hardHalted
 					&& !this.yieldRequested && !this.isHaltedUntilIrq()) {
 					this.resumePendingMemoryOperation();
 					if (this.stringComparison.remaining !== 0) this.advanceStringComparison(thread.currentFrame!);
 				}
 				while (thread.frameDepth > targetDepth) {
 					if (this.hardHalted
-						|| (!service && (this.isHaltedUntilIrq() || this.memoryWriteBlocked))) {
+						|| this.isHaltedUntilIrq() || this.memoryWriteBlocked) {
 						return RunResult.Halted;
 					}
 					if (this.yieldRequested) {
@@ -2468,7 +2398,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const frame = thread.currentFrame!;
 					const image = frame.executionImage;
-					if (!service && image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
+					if (image !== null && this.activeExecutionImage !== image) this.latchActiveExecutionImage(image.executionDomainId, image);
 					if (canInterrupt && this.nonMaskableInterruptPending) {
 						this.enterPendingInterrupt();
 						continue;
@@ -2488,7 +2418,7 @@ export class CPU implements MappedPageInvalidator {
 						continue;
 					}
 					const pc = frame.pc;
-					if (!service && (executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
+					if ((executionDomainMask & executionDomainBit(this.activeExecutionDomainId)) !== 0
 						&& executionHook(this.activeExecutionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
@@ -2497,37 +2427,34 @@ export class CPU implements MappedPageInvalidator {
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, pc);
 						continue;
 					}
-					if (image === null || (!service && this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
+					if (image === null || (this.resetBankSelected() && pc >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE)) {
 						this.cop0Words[COP0_BAD_ADDRESS] = pc;
 						this.enterInstructionFetchException(frame, CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR, pc);
 						continue;
 					}
-					const page = this.decodedPageForFrame(frame, pc, service);
+					const page = this.decodedPageForFrame(frame, pc);
 					const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 					if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 						&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
 						continue;
 					}
 					const width = page.widths[pageOffset];
-					const op = !service && page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
+					const op = page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
 						? DecodedDispatchOp.Observe : page.ops[pageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = (pc + (width * INSTRUCTION_BYTES)) >>> 0;
 					this.lastExecutionDomainId = image.executionDomainId;
 					this.lastPc = (pc + ((width - 1) * INSTRUCTION_BYTES)) >>> 0;
-					this.instructionBudgetRemaining -= service ? decodedInstructionBaseCycles(page, pageOffset) : page.dispatchCycles[pageOffset];
+					this.instructionBudgetRemaining -= page.dispatchCycles[pageOffset];
 					this.executeInstruction(
 						frame,
 						page,
 						pageOffset,
 						op,
 						targetDepth,
-						false,
-						service,
 					);
 				}
 			} catch (error) {
-				if (service) throw error;
 				this.handleRunLoopError(error);
 			}
 		}
@@ -2559,9 +2486,9 @@ export class CPU implements MappedPageInvalidator {
 		this.instructionBudgetRemaining -= cycles;
 	}
 
-	private skipNextInstruction(frame: CallFrame, privateFirmware = false): void {
+	private skipNextInstruction(frame: CallFrame): void {
 		const pc = frame.pc;
-		const page = this.decodedPageForFrame(frame, pc, privateFirmware);
+		const page = this.decodedPageForFrame(frame, pc);
 		const pageOffset = (pc & MAPPED_PAGE_BYTE_MASK) >>> 2;
 		if ((page.refreshState[pageOffset] & DECODED_REFRESH_DECODE) !== 0
 			&& !this.decodeInstruction(frame, page, pageOffset, pc, false)) {
@@ -2695,7 +2622,7 @@ export class CPU implements MappedPageInvalidator {
 		functionAddress: number,
 		pc: number,
 	): void {
-		if (this.heapServiceActive() || this.fixedInterruptActive() || this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
+		if (this.fixedInterruptActive() || this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
 		const image = this.executionImageForDomain(executionDomainId);
 		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc)
 			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
@@ -2823,12 +2750,6 @@ export class CPU implements MappedPageInvalidator {
 			this.bumpRegisterTop(frame, a);
 			return;
 		}
-		if (record.romBacked && record.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
-			&& (record.flags & BLUA32_FUNCTION_RESIDENT) !== 0) {
-			registers.setEncoded(a, ValueTag.ResidentFunction, functionAddress);
-			this.bumpRegisterTop(frame, a);
-			return;
-		}
 		// Exception entry decodes the vector on the same record latch.
 		const { executionDomainId, codeAddress, numParams, maxStack, flags, upvalueTableAddress, recordUpvalueCount, romBacked } = record;
 		const cycles = this.remainingDeviceCycles();
@@ -2855,9 +2776,6 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.CodeFunction:
 				return this.pushFrame(0, frame, a, c, false, false, frame.pc - INSTRUCTION_BYTES, a + 1, argCount, true,
 					registers.getPayload(a)) !== null;
-			case ValueTag.ResidentFunction:
-				this.beginResidentCall(registers.getPayload(a), frame.thread.stackRegisters, frame.stackBase + a + 1, argCount, a, c);
-				return false;
 			case ValueTag.BuiltinFunction: {
 				// Unlike closure placement, a primitive does not reserve a new
 				// argument window. Its shared source must already be backed.
@@ -3435,7 +3353,6 @@ export class CPU implements MappedPageInvalidator {
 		op: number,
 		targetDepth: number,
 		rewritten = false,
-		service = false,
 	): Value | undefined {
 		const registers = frame.registers;
 		const image = frame.executionImage;
@@ -3641,7 +3558,7 @@ export class CPU implements MappedPageInvalidator {
 					const rkC = page.c[pageOffset];
 					const eq = this.readRKEquals(frame, rkB, rkC);
 					if (eq !== (a !== 0)) {
-						this.skipNextInstruction(frame, page.privateFirmware);
+						this.skipNextInstruction(frame);
 					}
 					return;
 				}
@@ -3659,7 +3576,7 @@ export class CPU implements MappedPageInvalidator {
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) < 0;
 					}
-					if (ok !== (a !== 0)) this.skipNextInstruction(frame, page.privateFirmware); return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}
 
 				case OpCode.MFC0: {
@@ -3711,7 +3628,7 @@ export class CPU implements MappedPageInvalidator {
 						this.charge(shared);
 						ok = (this.stringPool.compareBytes(l, r, 0, shared) || ln - rn) <= 0;
 					}
-					if (ok !== (a !== 0)) this.skipNextInstruction(frame, page.privateFirmware); return;
+					if (ok !== (a !== 0)) this.skipNextInstruction(frame); return;
 				}
 
 				case OpCode.JMP: {
@@ -3732,8 +3649,7 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.CLOSURE:
-					if (service) this.setRegisterIntegerFast(frame, registers, a, page.bx[pageOffset] * BLUA32_FUNCTION_ALIGNMENT);
-					else this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]);
+					this.executeClosure(frame, a, page.bx[pageOffset], page.c[pageOffset]);
 					return;
 				case OpCode.GETUP: {
 					const index = page.b[pageOffset];
@@ -3754,29 +3670,10 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 				case OpCode.CALL:
-					if (service) {
-						const supplied = page.b[pageOffset] - 1;
-						const callee = this.prepareHeapServiceFrame(registers.getPayload(a), frame.stackBase + a + 1,
-							supplied, a, page.c[pageOffset], frame.pc - INSTRUCTION_BYTES);
-						const padding = Math.max(0, callee.top - supplied);
-						callee.registers.clear(padding, callee.top - padding);
-						this.charge(padding);
-						callee.thread.enterFrame(callee);
-					} else this.executeCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
+					this.executeCall(frame, a, page.b[pageOffset], page.c[pageOffset]);
 					return;
 				case OpCode.RET:
-					if (service) {
-						const count = page.b[pageOffset] - 1;
-						const caller = frame.previous;
-						if (caller !== null) this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, count, true);
-						else if ((this.memory.readRamRecordWord(frame.controlOffset + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION) !== 0) {
-							this.memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase, a, count);
-						} else {
-							this.memory.writeRamRecordWord(this.heapService.resultAddress, count === 0 ? 0 : registers.getPayload(a));
-							this.charge(count);
-						}
-						frame.thread.leaveFrame();
-					} else this.executeReturn(frame, a, page.b[pageOffset], page.c[pageOffset]);
+					this.executeReturn(frame, a, page.b[pageOffset], page.c[pageOffset]);
 					return;
 				case OpCode.LOAD_MEM_D:
 				case OpCode.STORE_MEM_D:
@@ -3789,8 +3686,7 @@ export class CPU implements MappedPageInvalidator {
 					const addr = displaced ? (wordOperand(registers.get(b)) + (page.operandByte[pageOffset] << 2)) >>> 0
 						: wordOperand(this.readRKValue(frame, b));
 					const load = op === OpCode.LOAD_MEM_D || op === OpCode.LOAD_MEM;
-					if (service) this.executeHeapServiceAccess(frame, a, c, addr, load);
-					else if (load) this.executeMemoryLoad(frame, a, c, addr);
+					if (load) this.executeMemoryLoad(frame, a, c, addr);
 					else this.executeMemoryStore(frame, a, c, addr);
 					return;
 				}
@@ -3804,147 +3700,6 @@ export class CPU implements MappedPageInvalidator {
 					return;
 				}
 		}
-	}
-
-	private beginResidentCall(address: number, source: ValueSlots, first: number, supplied: number, base: number, result: number): void {
-		const directory = this.systemImage.romFunctions, lane = romFunctionVersionLane(directory, address);
-		if (lane < 0 || (directory.versions[lane + RomFunctionLane.Flags] & BLUA32_FUNCTION_RESIDENT) === 0)
-			throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
-		const copied = Math.min(supplied, directory.versions[lane + RomFunctionLane.NumParams]);
-		if (supplied !== 0 && first + supplied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		const callee = this.prepareHeapServiceFrame(address, 0, supplied, base, result, this.currentInstructionPc);
-		callee.registers.copyRangeFrom(source, 0, first, copied, callee.top - copied);
-		this.charge(callee.top);
-		this.enterResidentFrame(callee);
-	}
-
-	private enterResidentFrame(frame: CallFrame): void {
-		const flags = frame.controlOffset + FrameField.Flags;
-		this.memory.writeRamRecordWord(flags, this.memory.readRamRecordWord(flags) | FRAME_RESIDENT_ACTIVATION);
-		const context = this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
-		this.memory.writeRamRecordPair(context, this.currentInstructionPc, this.lastPc);
-		this.memory.writeRamRecordPair(context + HeapServiceResidentField.SourceCycles, this.remainingDeviceCycles(), this.runKind);
-		frame.thread.enterFrame(frame);
-		this.requestYield();
-	}
-
-	private finishResidentCall(): void {
-		const context = this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET, memory = this.memory;
-		this.currentInstructionPc = memory.readRamRecordWord(context + HeapServiceResidentField.IssuePc);
-		this.lastPc = memory.readRamRecordWord(context + HeapServiceResidentField.LastPc);
-		this.lastExecutionDomainId = this.activeExecutionDomainId;
-		const sourceBase = memory.readRamRecordWord(context + HeapServiceResidentField.SourceBase);
-		const count = memory.readRamRecordWord(context + HeapServiceResidentField.SourceCount);
-		if (count === HEAP_SERVICE_RESULT_FAULT) {
-			this.retireNumericLuaFault(sourceBase);
-			return;
-		}
-		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
-		const caller = this.activeThread.currentFrame!;
-		const result = frame.returnCount;
-		const copied = Math.min(count, selectedCallResultCount(result, count));
-		this.writeReturnValuesFromRegisters(caller, frame.returnBase, result, source, sourceBase, copied);
-	}
-
-	private prepareHeapServiceFrame(functionAddress: number, stackBase: number, supplied: number, returnBase: number, returnCount: number, callSite?: number): CallFrame {
-		const thread = this.heapService.thread;
-		const image = this.systemImage;
-		if ((functionAddress >>> 0) >= SYSTEM_ROM_SIZE || romFunctionVersionLane(image.romFunctions, functionAddress) < 0
-			|| !this.readFunctionRecord(image, functionAddress, MAPPED_BUS_MASTER_CPU)) {
-			throw new Error('Heap service entry must identify a linked System ROM function.');
-		}
-		const { codeAddress, flags, maxStack, numParams, recordUpvalueCount } = this.functionRecordLatch;
-		const capacity = Math.max(1, numParams, maxStack);
-		if (codeAddress >= SYSTEM_ROM_SIZE || recordUpvalueCount !== 0 || (flags & (BLUA32_FUNCTION_STATIC | BLUA32_FUNCTION_VARARG)) !== BLUA32_FUNCTION_STATIC
-			|| thread.frameDepth >= HEAP_SERVICE_FRAME_COUNT || stackBase + capacity > HEAP_SERVICE_VALUE_COUNT) {
-			throw new Error('Function does not fit its fixed heap service activation.');
-		}
-		const frame = thread.acquireFrame();
-		frame.executionImage = image;
-		frame.decodedPage = null;
-		frame.initializeControl(functionAddress, codeAddress, callSite ?? codeAddress, false, SYSTEM_EXECUTION_DOMAIN_ID,
-			stackBase + numParams, supplied, returnBase, returnCount, numParams, 0, stackBase, capacity);
-		thread.stackTop = stackBase + capacity;
-		return frame;
-	}
-
-	private executeHeapServiceAccess(frame: CallFrame, register: number, kind: MemoryAccessKind, address: number, load: boolean): void {
-		const memory = this.memory;
-		if (kind === MemoryAccessKind.Value) {
-			const data = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
-			if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0
-				|| ((address < memory.ramBusEnd() || address > this.heapService.thread.address - VALUE_MEMORY_SIZE)
-					&& ((address - data) >>> 0) > RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET - VALUE_MEMORY_SIZE)
-				|| ((address + VALUE_MEMORY_TAG_OFFSET - this.heapService.projectionAddress) >>> 0) < VALUE_MEMORY_SIZE) {
-				throw new Error('Tagged Value access requires an aligned private RAM span.');
-			}
-			const tags = address + VALUE_MEMORY_TAG_OFFSET;
-			const slots = frame.registers;
-			if (load) {
-				const word = memory.readRamRecordWord(address);
-				slots.setEncoded(register, memory.readRamRecordByte(tags), word);
-				this.bumpRegisterTop(frame, register);
-			} else {
-				memory.writeRamRecordWord(address, slots.getPayload(register));
-				memory.writeRamRecordByte(tags, slots.getTag(register));
-			}
-			return;
-		}
-		if ((kind !== MemoryAccessKind.Word && kind !== MemoryAccessKind.U32LE && kind !== MemoryAccessKind.U8)
-			|| (address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
-			throw new Error('Heap service access requires an aligned byte or word.');
-		}
-		if (load) {
-			let word: number;
-			if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
-				// Raw records may project into the bus-visible part or beneath MMIO.
-				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
-			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {
-				word = this.readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
-
-			} else if (address === HEAP_SERVICE_MANAGEMENT_ADDRESS && kind !== MemoryAccessKind.U8) {
-				word = this.heapAllocator.managementOffset();
-			} else if (kind !== MemoryAccessKind.U8
-				&& (address === HEAP_SERVICE_CALL_CYCLES_ADDRESS || address === HEAP_SERVICE_CALL_RUN_KIND_ADDRESS)) {
-				word = memory.readRamRecordWord(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET
-					+ HeapServiceResidentField.SourceCycles + address - HEAP_SERVICE_CALL_CYCLES_ADDRESS);
-			} else {
-				const slot = address >>> CART_READ_SLOT_SHIFT;
-				const busAddress = address & CART_READ_ADDRESS_MASK;
-				const view = this.executionReadView;
-				if ((slot !== 0 && busAddress < CART_ROM_BASE)
-					|| !memory.bindRomByteView(busAddress, kind === MemoryAccessKind.U8 ? 1 : 4, slot, view)) {
-					throw new Error('Heap service read is outside installed RAM and ROM.');
-				}
-				word = kind === MemoryAccessKind.U8 ? view.bytes[view.byteOffset] : readLE32(view.bytes, view.byteOffset);
-			}
-			this.setRegisterIntegerFast(frame, frame.registers, register, word);
-		} else {
-			if (address === HEAP_SERVICE_CALL_FAULT_ADDRESS && kind !== MemoryAccessKind.U8) {
-				const reason = wordOperand(frame.registers.get(register));
-				memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase,
-					reason, HEAP_SERVICE_RESULT_FAULT);
-				do this.heapService.thread.leaveFrame(); while (this.heapServiceActive());
-				return;
-			}
-			if (address < memory.ramBusEnd() || address >= this.heapService.thread.address) {
-				const data = RAM_BASE + this.heapAllocator.managementOffset() + HEAP_SERVICE_FIRMWARE_DATA_OFFSET;
-				if (((address - data) >>> 0) >= RUNTIME_MANAGEMENT_SIZE - HEAP_SERVICE_FIRMWARE_DATA_OFFSET)
-					throw new Error('Heap service write is outside its private RAM port.');
-			}
-			const word = wordOperand(frame.registers.get(register));
-			if (((address - this.heapService.projectionAddress) >>> 0) < 4) {
-				if (kind === MemoryAccessKind.U8) throw new Error('Heap projection requires a word store.');
-				this.writeHeapServiceProjection(word);
-			} else if (kind === MemoryAccessKind.U8) memory.writeRamRecordByte(address, word);
-			else memory.writeRamRecordWord(address, word);
-		}
-	}
-
-	private writeHeapServiceProjection(word: number): void {
-		if (word !== HeapServiceProjection.PublishRoots) throw new Error('Unknown heap projection store command.');
-		this.publishHeapRemarkHead();
-		this.publishHeapRootBanks();
 	}
 
 	private pushFrame(
@@ -4099,11 +3854,11 @@ export class CPU implements MappedPageInvalidator {
 		return true;
 	}
 
-	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number, fixedStack = false): void {
+	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
 		const targetCount = selectedCallResultCount(count, sourceCount);
 		const end = base + targetCount;
 		if (targetCount > 0) {
-			if (!fixedStack && end > frame.stackCapacity) {
+			if (end > frame.stackCapacity) {
 				const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
 				if (extent > frame.thread.stackRegisters.capacity()) {
 					if (this.resetBankSelected()) throw LUA_OUT_OF_MEMORY_SIGNAL;
@@ -4412,7 +4167,6 @@ export class CPU implements MappedPageInvalidator {
 			} else this.executionImagesByDomain[index] = null;
 		}
 		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
-		this.bindPhysicalFrames(this.heapService.thread);
 		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1];
 		this.latchActiveExecutionImage(state.executionCartridgeSlot, executionImage);
 
@@ -4485,7 +4239,7 @@ export class CPU implements MappedPageInvalidator {
 		addSlots(this.systemGlobalBank.slots, this.systemGlobalBank.count);
 		addSlots(this.globalBank.slots, this.globalBank.count);
 		addSlots(this.completionValueSlots, this.completionValueCount);
-		add(valueFromTag(this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexTag), this.gc.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord)));
+		add(valueFromTag(this.gc.diagnosticWord(GcDiagnosticField.StringIndexTag), this.gc.diagnosticWord(GcDiagnosticField.StringIndexWord)));
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
@@ -4572,25 +4326,16 @@ export class CPU implements MappedPageInvalidator {
 		return this.luaHeap.usedBytes();
 	}
 
-	public publishHeapRemarkHead(): void {
-		const memory = this.memory, head = this.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		const comparison = this.stringComparison;
-		memory.writeRamRecordWord(head + HeapServiceRemarkHeadField.ComparisonRemaining, comparison.remaining);
-		if (comparison.remaining !== 0) {
-			memory.writeRamRecordPair(head + HeapServiceRemarkHeadField.ComparisonLeft, comparison.left, comparison.right);
-		}
-	}
-
 	public markRootHead(heap: GcHeap): void {
-		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Mode));
-		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Index));
-		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
-		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Length));
-		heap.markString(heap.diagnosticWord(HeapServiceRemarkHeadField.Error));
-		const faults = heap.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
+		heap.markString(heap.diagnosticWord(GcDiagnosticField.Mode));
+		heap.markString(heap.diagnosticWord(GcDiagnosticField.Index));
+		heap.markString(heap.diagnosticWord(GcDiagnosticField.NewIndex));
+		heap.markString(heap.diagnosticWord(GcDiagnosticField.Length));
+		heap.markString(heap.diagnosticWord(GcDiagnosticField.Error));
+		const faults = heap.diagnosticWord(GcDiagnosticField.FaultIds);
 		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
 			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.memory.readRamRecordWord(faults + reason * 4));
-		heap.markValue(valueFromTag(heap.diagnosticWord(HeapServiceRemarkHeadField.StringIndexTag), heap.diagnosticWord(HeapServiceRemarkHeadField.StringIndexWord)));
+		heap.markValue(valueFromTag(heap.diagnosticWord(GcDiagnosticField.StringIndexTag), heap.diagnosticWord(GcDiagnosticField.StringIndexWord)));
 		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
 
 	}
@@ -4601,28 +4346,6 @@ export class CPU implements MappedPageInvalidator {
 			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
 		}
 		for (const value of this.localRoots) heap.markValue(value);
-	}
-
-	/** Publish addresses and extents only. Root data stays with its CPU owner. */
-	public publishHeapRootBanks(): void {
-		const memory = this.memory, descriptor = this.heapAllocator.managementOffset() + HEAP_SERVICE_ROOT_BANKS_OFFSET;
-		memory.writeRamRecordPair(descriptor, this.rootThread.address, this.activeThread.address);
-		memory.writeRamRecordPair(descriptor + 8, this.completionThread, this.haltedUntilIrqThread);
-		const destination = descriptor + HEAP_SERVICE_ROOT_BANKS_HEADER_SIZE;
-		memory.writeRamRecordPair(destination, this.completionValueCount,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionPayloads * HEAP_SERVICE_ROOT_PORT_STRIDE);
-		memory.writeRamRecordWord(destination + HeapServiceRootBankField.Tags,
-			HEAP_SERVICE_ROOT_PORT_BASE + HeapServiceRootPlane.CompletionTags * HEAP_SERVICE_ROOT_PORT_STRIDE);
-	}
-
-	private readHeapServiceRoot(offset: number, kind: MemoryAccessKind): number {
-		const plane = offset >>> HEAP_SERVICE_ROOT_PORT_SHIFT;
-		const address = offset & (HEAP_SERVICE_ROOT_PORT_STRIDE - 1);
-		const byte = kind === MemoryAccessKind.U8;
-		const slot = byte ? address : address >>> 2;
-		if (byte === (plane === HeapServiceRootPlane.CompletionTags) && slot < this.completionValueCount)
-			return byte ? this.completionValueSlots.getTag(slot) : this.completionValueSlots.getPayload(slot);
-		throw new Error('Heap service read is outside its root port.');
 	}
 
 	public rootBankSlots(bank: GcRootBank): number {

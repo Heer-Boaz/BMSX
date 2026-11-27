@@ -1,11 +1,10 @@
 import { RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
-import { HeapServiceRemarkHeadField } from '../../spec/bmsx/heap_service';
 import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL, LUA_FAULT_REASON_INVALID_NEXT_KEY } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
 import { LuaAllocationRecovery } from './lua_heap';
-import { gcPacedPhase, type GcHeap } from './gc_heap';
+import { GcDiagnosticField, gcPacedPhase, type GcHeap } from './gc_heap';
 import type { StringId } from './string_pool';
 import {
 	ValueTag, asInteger, canonicalTableKey, isNil, hashCanonicalTableKey, valueFromTag, valueInteger,
@@ -238,7 +237,7 @@ export class TableRecords {
 		const words = this.arrayAddress(record), tags = words + array * 4;
 		if (this.heap.memory.readRamRecordByte(tags + slot) === ValueTag.Nil) {
 			const meta = this.newIndexMetatable(record);
-			if (meta !== 0 && !isNil(this.getStringKey(meta, this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)))) return false;
+			if (meta !== 0 && !isNil(this.getStringKey(meta, this.heap.diagnosticWord(GcDiagnosticField.NewIndex)))) return false;
 		}
 		this.writeSlot(words, tags, slot, tag, word);
 		this.updateLengthHint(record, slot, tag !== ValueTag.Nil);
@@ -368,13 +367,13 @@ export class TableRecords {
 	}
 	/** A table-valued __index can be inspected without executing a guest function. */
 	public indexParentTable(record: number): number {
-		const field = this.metafield(record, HeapServiceRemarkHeadField.Index);
+		const field = this.metafield(record, GcDiagnosticField.Index);
 		return valueTag(field) === ValueTag.Table ? valuePayload(field) : 0;
 	}
 	public lengthMetamethod(record: number): Value {
-		return this.metafield(record, HeapServiceRemarkHeadField.Length);
+		return this.metafield(record, GcDiagnosticField.Length);
 	}
-	private metafield(record: number, field: HeapServiceRemarkHeadField): Value {
+	private metafield(record: number, field: GcDiagnosticField): Value {
 		const meta = this.metatableAddress(record);
 		return meta !== 0 ? this.getStringKey(meta, this.heap.diagnosticWord(field)) : valueNil();
 	}
@@ -391,7 +390,7 @@ export class TableRecords {
 		if (meta === 0) {
 			result.extraVisits = 0; result.status = TableLookupStatus.Resolved; return links;
 		}
-		const indexKey = this.heap.diagnosticWord(HeapServiceRemarkHeadField.Index);
+		const indexKey = this.heap.diagnosticWord(GcDiagnosticField.Index);
 		const stringKey = valueTag(key) === ValueTag.String;
 		let depth = 0, anchor = 0, anchorDepth = 0, anchorLinks = 0;
 		for (;;) {
@@ -401,7 +400,7 @@ export class TableRecords {
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;
-				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction || tag === ValueTag.CodeFunction) {
+				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.CodeFunction) {
 					result.receiver = current; result.status = TableLookupStatus.Invoke;
 				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
 				return links;
@@ -468,7 +467,7 @@ export class TableRecords {
 						}
 					}
 				}
-				if (!own) next = this.getStringKey(meta, newIndexKey ??= this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex));
+				if (!own) next = this.getStringKey(meta, newIndexKey ??= this.heap.diagnosticWord(GcDiagnosticField.NewIndex));
 			}
 			const tag = valueTag(next);
 			if (tag === ValueTag.Table) {
@@ -479,7 +478,7 @@ export class TableRecords {
 			result.receiver = record;
 			result.value = next;
 			result.status = tag === ValueTag.Nil ? TableLookupStatus.Store
-				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction || tag === ValueTag.CodeFunction
+				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.CodeFunction
 					? TableLookupStatus.Invoke
 				: TableLookupStatus.Forward;
 			result.slot = tag === ValueTag.Nil ? slot : -1;
@@ -561,7 +560,7 @@ export class TableRecords {
 		return index;
 	}
 	private publishHashInsertion(record: number, key: Value, tag: ValueTag, word: number): void {
-		if (valueTag(key) === ValueTag.String && valuePayload(key) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex)) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
+		if (valueTag(key) === ValueTag.String && valuePayload(key) === this.heap.diagnosticWord(GcDiagnosticField.NewIndex)) this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 0);
 		this.heap.writeTableAssignment(record, tag, word, key);
 	}
 	public store(record: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, word: number): void {
@@ -650,7 +649,7 @@ export class TableRecords {
 			this.setEncoded(record, keySlot, ValueTag.Nil, tag); this.setEncoded(record, valueSlot, ValueTag.DeadKey, hashId);
 		} else {
 			this.setEncoded(record, valueSlot, ValueTag.Nil, 0);
-			if (tag === ValueTag.String && this.wordAt(record, keySlot) === this.heap.diagnosticWord(HeapServiceRemarkHeadField.NewIndex))
+			if (tag === ValueTag.String && this.wordAt(record, keySlot) === this.heap.diagnosticWord(GcDiagnosticField.NewIndex))
 				this.heap.memory.writeRamRecordByte(record + TableHeader.NewIndexAbsent, 1);
 		}
 	}

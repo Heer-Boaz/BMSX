@@ -2,16 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import {
-	GC_CHANGED_HEAD, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_THREAD_VISITS, GC_TRACE_HEAD,
-	GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcRootBank,
-} from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_CHANGED_HEAD, GC_REMARK_VISIT_INDEX, GC_REMARK_VISIT_STATE, GC_ROOT_CURSOR, GC_THREAD_VISITS, GC_TRACE_HEAD, GC_VISIT_COUNT, GC_VISIT_HEADER_BYTE, GC_VISIT_MEMBER, GC_VISIT_TAIL, GC_WEAK_VISITS, GcRootBank, GcDiagnosticField, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_GRAY_INDEX_MASK, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, valuePayload, valueString, valueTable, valueTag } from '../../machine/ts/machine/cpu/value';
 import { LUA_FAULT_REASON_INDEX_NAN } from '../../machine/ts/spec/blua32/cop0';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -37,12 +34,12 @@ function fixture(optLevel: 0 | 3) {
 	assert.ok(fn >= 0);
 	const entry = linked.image.functions[fn].address;
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [fn]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
+	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const floor = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function same<T>(make: (target: CPU) => T) {
 		const actual = make(cpu);
 		assert.deepEqual(make(oracle), actual);
@@ -56,23 +53,23 @@ function fixture(optLevel: 0 | 3) {
 	const [w0, w1, w2, staleTrace, changed, stringIndex, receiver, value] = Array.from({ length: 8 }, table);
 	const string = (text: string) => same(t => t.stringPool.intern(text));
 	const left = string('comparison left'), right = string('comparison right'), key = string('pending SETT key');
-	const mode = same(t => t.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
+	const mode = same(t => t.gc.diagnosticWord(GcDiagnosticField.Mode));
 	const descriptor = same(t => {
 		const base = t.heapAllocator.allocate(72 + 4 * (LUA_FAULT_REASON_INDEX_NAN + 1), true);
 		assert.ok(base);
 		const faultBase = base + 72, ram = t.memory;
-		const originalFaults = t.gc.diagnosticWord(HeapServiceRemarkHeadField.FaultIds);
+		const originalFaults = t.gc.diagnosticWord(GcDiagnosticField.FaultIds);
 		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
 			ram.writeRamRecordWord(faultBase + reason * 4, ram.readRamRecordWord(originalFaults + reason * 4));
 		const fields = [
-			9, mode, t.gc.diagnosticWord(HeapServiceRemarkHeadField.Index), t.gc.diagnosticWord(HeapServiceRemarkHeadField.NewIndex), t.gc.diagnosticWord(HeapServiceRemarkHeadField.Length), t.gc.diagnosticWord(HeapServiceRemarkHeadField.Error),
+			9, mode, t.gc.diagnosticWord(GcDiagnosticField.Index), t.gc.diagnosticWord(GcDiagnosticField.NewIndex), t.gc.diagnosticWord(GcDiagnosticField.Length), t.gc.diagnosticWord(GcDiagnosticField.Error),
 			faultBase, valueTag(valueTable(stringIndex)), stringIndex, 1, left, right, 1, receiver,
 			valueTag(valueString(key)), key, valueTag(valueTable(value)), value,
 		];
 		for (const [slot, word] of fields.entries()) ram.writeRamRecordWord(base + slot * 4, word);
-		const remark = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		ram.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
-		ram.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, stringIndex);
+		const remark = management + GC_DIAGNOSTIC_OFFSET;
+		ram.writeRamRecordWord(remark + GcDiagnosticField.StringIndexTag, ValueTag.Table);
+		ram.writeRamRecordWord(remark + GcDiagnosticField.StringIndexWord, stringIndex);
 		t['stringComparison'].left = left;
 		t['stringComparison'].right = right;
 		t['stringComparison'].remaining = 1;
@@ -112,7 +109,6 @@ function fixture(optLevel: 0 | 3) {
 	function finish() {
 		let cycles = 0;
 		for (let i = 0; i < 32 && cpu.heapServiceActive(); ++i) cycles += grant(512);
-		assert.equal(cpu.heapServiceActive(), false);
 		// This isolated call borrows the work latch as a descriptor word.
 		// Return it before comparing the native collector's physical latch.
 		cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(descriptor));

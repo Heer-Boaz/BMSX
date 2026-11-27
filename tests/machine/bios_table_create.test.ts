@@ -1,22 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
-const MODULE = 'kernel/table_create', entrySource = 'halt_until_irq';
+const MODULE = 'kernel/table_create';
 const OBJECT_HEAD = 0x6c, OBJECT_COUNT = 0x70, SWEEP_LINK = 0x74;
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', MODULE].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
@@ -24,19 +21,12 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 });
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const object = encodeCompiledProgramObject(compiled), linked = linkTestSystemBlua32(compiled);
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'create_table');
-	assert.ok(symbol);
-	const entry = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(entry >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [entry]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	const linked = linkFirmwareProbe(optLevel, modules, [{path: MODULE, member: 'create_table', arity: 8}]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const first = memory.ramBusEnd() - RAM_BASE, last = management + HEAP_SERVICE_THREAD_OFFSET;
+	const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
 	function compare() {
 		const left = memory.ramData().subarray(first, last), right = oracle.memory.ramData().subarray(first, last);
 		if (Buffer.compare(left, right) === 0) return;
@@ -45,21 +35,19 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function begin(array: number, hash: number) {
 		const charged = TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, hash);
-		assert.ok(cpu.beginHeapService(linked.image.functions[entry].address, [
+		issueFirmwareProbe(cpu, [
 			cpu.heapAllocator.allocatorStateOffset(), control, cpu.luaHeap.occupiedOffset,
 			array, hash, array * 5, TableRecords.hashStorageBytes(hash), charged,
-		]));
+		]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish() {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(2048);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(2048);
 		return spent;
 	}
 	return { cpu, oracle, control, memory, begin, grant, finish, compare };
@@ -79,7 +67,7 @@ for (const optLevel of [0, 3] as const) {
 			const address = oracle.createTable(array, requested);
 			begin(array, hash);
 			finish();
-			assert.equal(cpu.heapServiceResult(), address - RAM_BASE);
+			assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
 			assert.equal(memory.readRamRecordWord(address + TableHeader.Kind), ValueTag.Table | ((index & 1) << 8) | (1 << 16));
 			assert.equal(memory.readRamRecordWord(address + TableHeader.Free), (hash - 1) >>> 0);
 			assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), address);
@@ -110,7 +98,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.notEqual(memory.readRamRecordWord(field), word);
 			assert.notEqual(next, word);
 			for (let i = 0; i < 32768 && memory.readRamRecordWord(field) !== word; ++i) grant(1);
-			assert.ok(cpu.heapServiceActive(), 'the raw store retired before the pinned firmware return');
+			assert.ok(!cpu.isHaltedUntilIrq(), 'the raw store retired before the pinned firmware return');
 			assert.equal(memory.readRamRecordWord(field), word);
 			assert.equal(memory.readRamRecordWord(field + 4), next, 'the next word is still stale');
 			assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), previous);
@@ -122,7 +110,7 @@ for (const optLevel of [0, 3] as const) {
 		const partialRam = history.capture(memory, baseline);
 		let toPublication = 0;
 		for (let i = 0; i < 32768 && memory.readRamRecordWord(control + OBJECT_HEAD) === previous; ++i) toPublication += grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), address);
 		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), count, 'the result is stopped between the ordered inventory stores');
 		const lastHash = oracle.memory.readRamRecordWord(address + TableHeader.HashStorage) + hashBytes - 4;
@@ -130,7 +118,7 @@ for (const optLevel of [0, 3] as const) {
 		const publication = captureCpuCheckpoint(cpu);
 		const afterPublication = finish();
 		const spent = toPublication + afterPublication;
-		assert.equal(cpu.heapServiceResult(), address - RAM_BASE);
+		assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
 		compare();
 		const completed = history.capture(memory, partialRam);
 		history.restore(memory, completed, partialRam);
@@ -143,7 +131,7 @@ for (const optLevel of [0, 3] as const) {
 		compare();
 		restoreCpuCheckpoint(cpu, values);
 		assert.ok(finish() > spent);
-		assert.equal(cpu.heapServiceResult(), address - RAM_BASE);
+		assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
 		compare();
 	});
 
@@ -165,7 +153,7 @@ for (const optLevel of [0, 3] as const) {
 			TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(1, 8), TableRecords.hashStorageBytes(8), TableHeader.HashStorage), 0);
 		begin(1, 8);
 		finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(firmwareProbeResult(cpu), 0);
 		assert.equal(arena.occupiedBytes(), occupied);
 		assert.equal(cpu.luaHeap.usedBytes(), charged);
 		assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), head);

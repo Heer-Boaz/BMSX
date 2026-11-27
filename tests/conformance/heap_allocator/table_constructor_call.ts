@@ -95,11 +95,10 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
 
-				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return used;
 			}
 			assert.ok(grant(1) >= BASE_CYCLES[OpCode.SVC]);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(cpu.readCauseWord() & CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_SYSCALL);
 			for (let i = 0; i < 4096 && gc.phase() !== GcPhase.Strings; ++i) {
 				assert.ok(cpu.fixedInterruptActive());
@@ -114,7 +113,6 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 				assert.ok(cpu.fixedInterruptActive());
 				for (let i = 0; i < 4096 && cpu.fixedInterruptActive(); ++i) grant(127);
 				assert.equal(cpu.fixedInterruptActive(), false);
-				assert.equal(cpu.heapServiceActive(), false);
 				for (let i = 0; i < 16 && cpu.getFrameDepth() !== 0; ++i) grant(4096);
 				const values = runtime.readCompletionValues();
 				if (scenario === 'oom') {
@@ -193,7 +191,7 @@ end
 		for (let i = 0; i < 128 && result !== RunResult.Halted; ++i) {
 			result = scheduler.runCpuSlice(0, 8192, undefined, CpuRunKind.Direct);
 			commands.push('J 8192 0');
-			rows.push(`${result} ${8192 - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			rows.push(`${result} ${8192 - cpu.instructionBudgetRemaining} ${+cpu.fixedInterruptActive()} ${cpu.heapAllocator.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);

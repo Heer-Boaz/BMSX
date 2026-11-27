@@ -6,7 +6,7 @@ import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { ValueTag, valueBool, valueClosure, valueFloatBits, valueInteger, valueNil, valueString, valueTable } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_MASK, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
-import { HeapServiceRemarkHeadField, HEAP_SERVICE_REMARK_HEAD_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
+import { GcDiagnosticField, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
 import { LUA_FAULT_REASON_ASSIGN_NON_TABLE, LUA_FAULT_REASON_INDEX_NAN, LUA_FAULT_REASON_INDEX_NIL,
 	LUA_FAULT_REASON_INDEX_NON_TABLE, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
@@ -133,9 +133,9 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const tables = cpu.gc.tables;
 		frame.registers.setTable(0, record);
 		frame.registers.set(1, field);
-		const remark = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_REMARK_HEAD_OFFSET;
-		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexTag, ValueTag.Table);
-		cpu.memory.writeRamRecordWord(remark + HeapServiceRemarkHeadField.StringIndexWord, stringIndex);
+		const remark = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
+		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexTag, ValueTag.Table);
+		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexWord, stringIndex);
 		tables.set(record, field, valueBool(false));
 		cpu.runUntilDepth(0, (cycles + BASE_CYCLES[OpCode.JMP]) * 68);
 		if (backend === CpuExecutionBackend.JavaScript)

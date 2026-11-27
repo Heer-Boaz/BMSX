@@ -70,7 +70,6 @@ try {
 			const atCopy = () => systemVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10020);
 			for (let i = 0; i < 200_000 && !atCopy(); ++i) run(23);
 			assert.ok(atCopy(), 'public Table copy entered the ordinary System vector');
-			assert.equal(cpu.heapServiceActive(), false);
 			const source = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_source')!));
 			const member = cpu.stringPool.find('__newindex')!;
 			const tables = cpu.gc.tables;
@@ -100,7 +99,7 @@ try {
 				const result = run(cycles);
 				const used = cycles - cpu.instructionBudgetRemaining;
 
-				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+				observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 				return result;
 			}
 			for (let i = 0; i < 8192 && gc.phase() !== GcPhase.Strings; ++i) {

@@ -4,7 +4,7 @@ import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { Memory } from '../../machine/ts/machine/memory/memory';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -29,7 +29,7 @@ export function createGcWeakModeFixture(optLevel: 0 | 3, carts: boolean) {
 		return i;
 	});
 	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, entries);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	assert.ok(frames <= CPU_FIXED_FRAME_COUNT && valueSlots <= CPU_FIXED_VALUE_COUNT);
 	const addresses = entries.map(i => linked.image.functions[i].address);
 
 	if (!carts) return { ...createTestHeapServiceCpu(linked), addresses, rom: linked.romBytes, carts: null };

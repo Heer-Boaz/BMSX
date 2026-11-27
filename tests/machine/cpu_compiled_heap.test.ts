@@ -10,7 +10,6 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_RECORD_SIZE } from '../../ma
 import { CLOSURE_ADDRESS_REGISTER_WIDE_C, INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { DYNAMIC_RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../machine/ts/spec/bmsx/heap_service';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestMappedStaticClosure, seedTestRomClosure } from '../helpers/blua32';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { createTestHeapServiceCpu, compileHeapServiceSystem } from '../helpers/heap_service_system';
@@ -23,66 +22,6 @@ function assertParity(js: CPU, ref: CPU): void {
 	assert.equal(js.readCurrentInstructionPc(), ref.readCurrentInstructionPc());
 	assert.equal(js.lastPc, ref.lastPc);
 }
-
-test('a warm JavaScript CALL to the resident constructor yields to the bound BIOS before its compiled continuation', t => {
-	const image = linkTestSystemBlua32(compileHeapServiceSystem('local t = {40, answer = 2}\nreturn t[1] + t.answer', 0));
-	const functionAddress = image.vectors.entryFunctionAddress;
-	const pc = image.image.functions[image.symbols.functionAddresses.indexOf(functionAddress)].codeAddress;
-	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript);
-	const frame = cpu.rootThread.frameAtDepth(0);
-	const enter = () => cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, functionAddress, pc);
-	const grant = () => cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled);
-	function retireService() {
-		for (let grantIndex = 0; grantIndex < 16 && cpu.heapServiceActive(); ++grantIndex)
-			assert.equal(grant(), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), false);
-	}
-	for (let visit = 0; visit <= COMPILED_BLOCK_THRESHOLD; ++visit) {
-		enter();
-		assert.equal(grant(), RunResult.Yielded);
-		assert.equal(cpu.heapServiceActive(), true);
-		retireService();
-	}
-	const { textBytes, header: { textAddress } } = image.image;
-	let callPc = pc;
-	let call = decodeBlua32InstructionAtPc(textBytes, textAddress, callPc);
-	while (call.op !== OpCode.CALL) {
-		callPc = call.pc + INSTRUCTION_BYTES;
-		call = decodeBlua32InstructionAtPc(textBytes, textAddress, callPc);
-	}
-	const entry = (callPc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const block = frame.decodedPage!.compiledBlocks!.entries[entry]!;
-	const { terminal, region } = block;
-	assert.equal(terminal.exit, CompiledBlockExit.Call);
-	assert.deepEqual([terminal.exitB, terminal.exitC], [3, 2], 'two provided Values and one requested result');
-	const execute = region.execute;
-	let callExits = 0;
-	const compiled = t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
-		const exitIndex = execute(...args);
-		if (region.exits[exitIndex].exit === CompiledBlockExit.Call) ++callExits;
-		return exitIndex;
-	});
-	enter();
-	assert.equal(grant(), RunResult.Yielded);
-	assert.equal(callExits, 1);
-	assert.equal(cpu.heapServiceActive(), true);
-	const state = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
-	assert.equal(cpu.memory.readRamRecordWord(state + HeapServiceResidentField.IssuePc), terminal.currentPc);
-	assert.equal(frame.pc, terminal.nextPc, 'the successor is published but fenced until BIOS RET');
-	assert.deepEqual([frame.registers.get(terminal.exitA + 1), frame.registers.get(terminal.exitA + 2)],
-		[valueInteger(1), valueInteger(1)], 'the actual compiled exit publishes its argument window');
-	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.ResidentFunction, 'no result before the return');
-	const callsBefore = compiled.mock.callCount();
-	retireService();
-	assert.equal(compiled.mock.callCount(), callsBefore, 'allocator grants ran only the pinned BIOS lane');
-	assert.equal(frame.pc, terminal.nextPc);
-	assert.equal(frame.registers.getTag(terminal.exitA), ValueTag.Table);
-	assert.equal(frame.top, terminal.exitA + 1, 'normal fixed CALL result placement');
-	assert.equal(grant(), RunResult.Halted);
-	const values: Value[] = [];
-	cpu.readCompletionValues(values);
-	assert.deepEqual(values, [valueInteger(42)]);
-});
 
 test('compiled captured CLOSURE publishes the live moved reference to BIOS collection', () => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
@@ -114,7 +53,7 @@ return factory
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
 	const caller = cpu.rootThread.currentFrame!;
 	assert.equal(cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
-	assert.ok(cpu.heapServiceActive(), 'the compiled caller handed off rather than allocating in JavaScript');
+	assert.ok(cpu.fixedInterruptActive(), 'the compiled caller entered the architectural System vector');
 	const block = caller.decodedPage!.compiledBlocks!.entries[(start & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 	assert.equal(block.terminal.exit, CompiledBlockExit.CreateClosure);
 	assert.equal(caller.registers.get(0), valueNil(), 'the source register no longer holds the Table');

@@ -126,7 +126,7 @@ void equalityUsesValueKindsInsteadOfUnusedPayloads() {
 void nativeFieldGuardsAndRawSlotAccess() {
 	NativeBlockRunState nativeRunState;
 	CpuMachine machine(returnImage());
-	const auto* indexKeyWord = machine.memory.ramData() + machine.cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index);
+	const auto* indexKeyWord = machine.memory.ramData() + machine.cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index);
 	const StringId key = machine.cpu.stringPool().intern("native-field");
 	const StringId other = machine.cpu.stringPool().intern("other-field");
 	TableRecord table = bmsx::test::allocateTableReference(machine.cpu, 0, 2);
@@ -256,7 +256,7 @@ void nativeFieldExitsPublishCyclesAndFaultPc() {
 		frame.registers.set(4, valueInteger(0));
 	}
 	require(loop->run(nativeFrame.registers, nativeRunState = {.constants = nativeFrame.executionImage->constPool, .heap = &native.cpu.gcHeap(),
-			.tableIndexKeyWord = native.memory.ramData() + native.cpu.gcHeap().diagnosticOffset(HeapServiceRemarkHeadField::Index),
+			.tableIndexKeyWord = native.memory.ramData() + native.cpu.gcHeap().diagnosticOffset(GcDiagnosticField::Index),
 			.remainingCycles = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[static_cast<u8>(OpCode::GETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::ADD)] + BASE_CYCLES[static_cast<u8>(OpCode::SETFIELD)]
 			+ BASE_CYCLES[static_cast<u8>(OpCode::JMP)]})->nextPc == native.rom.textAddress,

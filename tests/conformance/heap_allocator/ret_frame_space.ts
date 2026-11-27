@@ -41,12 +41,11 @@ try {
 		function record(command: string, row: string) { commands.push(command); observations.push(row); }
 		function grant(cycles: number) {
 			const result = f.grant(cycles);
-			record(`E ${cycles}`, `${result.result} ${result.used} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
+			record(`E ${cycles}`, `${result.result} ${result.used} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 			return result;
 		}
 		assert.deepEqual(grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.RET] });
 		assert.ok(cpu.fixedInterruptActive());
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readEpcWord(), f.issue);
 		assert.equal(frame.pc, f.issue);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), thread.address);
@@ -94,7 +93,6 @@ try {
 		commands = []; observations = [];
 		assert.deepEqual(grant(1), { result: RunResult.Yielded, used: BASE_CYCLES[OpCode.RET] });
 		for (let i = 0; i < 4096 && memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0; ++i) grant(243);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readEpcWord(), f.issue);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
 		assert.equal(memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 1);

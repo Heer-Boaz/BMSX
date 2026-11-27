@@ -1,20 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GC_MODE_META, GC_MODE_NODE } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_MODE_META, GC_MODE_NODE, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { ValueTag, hashCanonicalTableKey, valuePayload, valueString, valueTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceRemarkHeadField } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
-const path = 'kernel/gc_table_mode', probe = 'test/gc_table_mode', entrySource = 'halt_until_irq';
+const path = 'kernel/gc_table_mode', probe = 'test/gc_table_mode';
 const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
 const probeSource = `module<const>
 local mode<const> = require('${path}')
@@ -33,20 +30,14 @@ const modules = [{ path, source }, { path: probe, source: probeSource }]
 const MODE_REMAINING = GC_MODE_NODE + 4;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === probe && entry.exportPathKey === 'invoke')!;
-	const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-	assert.ok(index >= 0);
-	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [index]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{ path: probe, member: 'invoke', arity: 5 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
-	const output = management + HEAP_SERVICE_THREAD_OFFSET - 12, floor = memory.ramBusEnd() - RAM_BASE;
-	const modeKey = cpu.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode);
-	assert.equal(modeKey, oracle.gc.diagnosticWord(HeapServiceRemarkHeadField.Mode));
+	const output = management + GC_WORKSPACE_END - 12, floor = memory.ramBusEnd() - RAM_BASE;
+	const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode);
+	assert.equal(modeKey, oracle.gc.diagnosticWord(GcDiagnosticField.Mode));
 	function compare(label: string) {
 		const actual = memory.ramData().subarray(floor, output), expected = oracle.memory.ramData().subarray(floor, output);
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -99,19 +90,18 @@ function fixture(optLevel: 0 | 3) {
 		const mode = oracle.gc['probeTableMode'](receiver, limit), pending = +(mode < 0);
 		const { value, work } = oracle.gc['modeProbe'];
 		const result = pending || !address ? [pending, ValueTag.Nil, 0, work] : [pending, valueTag(value), valuePayload(value), work];
-		assert.ok(cpu.beginHeapService(linked.image.functions[index].address, [control, address, modeKey, limit, output]));
+		issueFirmwareProbe(cpu, [control, address, modeKey, limit, output]);
 		return { result, mode };
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		assert.ok(cpu.instructionBudgetRemaining < cycles);
-		return cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
+		assert.ok(spent > 0);
+		return spent;
 	}
 	function finish(cycles = 64) {
 		let elapsed = 0;
-		for (let i = 0; i < 2048 && cpu.heapServiceActive(); ++i) elapsed += grant(cycles);
-		assert.equal(cpu.heapServiceActive(), false);
-		return { result: [cpu.heapServiceResult(), memory.readRamRecordWord(output),
+		for (let i = 0; i < 2048 && !cpu.isHaltedUntilIrq(); ++i) elapsed += grant(cycles);
+		return { result: [firmwareProbeResult(cpu), memory.readRamRecordWord(output),
 			memory.readRamRecordWord(output + 4), memory.readRamRecordWord(output + 8)], elapsed };
 	}
 	function check(receiver: number, limit: number, mode: number, expected: number[]) {
@@ -200,7 +190,7 @@ for (const optLevel of [0, 3] as const) {
 		setCursor(0, 0x33333333, 0x77777777);
 		const native = begin(receiver, 1);
 		for (let i = 0; i < 1024 && cursor()[0] === 0; ++i) grant(1);
-		assert.equal(cpu.heapServiceActive(), true);
+		assert.equal(!cpu.isHaltedUntilIrq(), true);
 		assert.deepEqual(cursor(), [address, 0x33333333, 0x77777777]);
 		const checkpoint = captureCpuCheckpoint(cpu);
 		const finished = finish(1);

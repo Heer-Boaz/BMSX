@@ -44,7 +44,7 @@ try {
 			const before = scheduler.nowCycles;
 			const result = runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread.address);
 			const elapsed = scheduler.nowCycles - before;
-			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return result;
 		};
 		assert.equal(scheduler.nowCycles, 0);
@@ -60,7 +60,6 @@ try {
 			const result = grant(4093);
 			assert.equal(result, cpu.rootThread.address === CPU_RESET_BANK_ADDRESS
 				? CpuSuspendedRunResult.Yielded : CpuSuspendedRunResult.Completed);
-			assert.equal(cpu.heapServiceActive(), false);
 			assert.equal(work(), 0);
 		}
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -71,7 +70,6 @@ try {
 		}
 		assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the authored managed reset stage reached the collector in paid guest instructions');
 		assert.ok(cpu.fixedInterruptActive() && scheduler.nowCycles > 0 && work() === 0);
-		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), cpu.rootThread.address);
 		observeControl();

@@ -8,7 +8,8 @@ import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
-import { HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_THREAD_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_RESULT_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
+import { GC_WORKSPACE_END } from '../../helpers/firmware_heap_layout';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
@@ -44,7 +45,7 @@ try {
 		const management = cpu.heapAllocator.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const arena = cpu.heapAllocator.allocatorStateOffset(), occupied = cpu.luaHeap.occupiedOffset;
 		const result = management + HEAP_SERVICE_RESULT_OFFSET;
-		const hashRange = `H ${memory.ramBusEnd() - RAM_BASE} ${management + HEAP_SERVICE_THREAD_OFFSET}`;
+		const hashRange = `H ${memory.ramBusEnd() - RAM_BASE} ${management + GC_WORKSPACE_END}`;
 		const reference = ['E 1024'], firmware = ['E 1024'];
 		for (const [index, [array, requested]] of layouts.entries()) {
 			const hash = TableRecords.hashCapacity(requested);

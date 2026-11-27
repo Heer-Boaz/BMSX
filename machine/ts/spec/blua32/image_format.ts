@@ -39,7 +39,6 @@ export const BLUA32_FUNCTION_RESERVED_OFFSET = 28;
 
 export const BLUA32_FUNCTION_VARARG = 1 << 0;
 export const BLUA32_FUNCTION_STATIC = 1 << 1;
-export const BLUA32_FUNCTION_RESIDENT = 1 << 2;
 export const BLUA32_FUNCTION_CODE = 1 << 3;
 
 export const BLUA32_UPVALUE_RECORD_SIZE = 4;

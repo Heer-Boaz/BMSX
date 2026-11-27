@@ -14,8 +14,7 @@ import {
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkRawTestBlua32Pair, linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -51,7 +50,7 @@ try {
 			linked.symbols.metadata.functionIds.findIndex(id => id.startsWith(`module:${path}/`) && id.endsWith(`|constant|${name}`)));
 		assert.ok(entries.every(id => id >= 0));
 		const fixed = deriveBlua32FixedStack(linked.image, entries);
-		assert.ok(fixed.valueSlots <= HEAP_SERVICE_VALUE_COUNT && fixed.frames <= HEAP_SERVICE_FRAME_COUNT);
+		assert.ok(fixed.valueSlots <= CPU_FIXED_VALUE_COUNT && fixed.frames <= CPU_FIXED_FRAME_COUNT);
 		const [retireNamespaces, retireImages] = entries.map(id => linked.image.functions[id].address);
 		const rom = join(dir, `O${opt}.rom`), script = join(dir, 'trace'), initial = join(dir, 'initial');
 		const tsPartial = join(dir, 'typescript-pause'), cppPartial = join(dir, 'native-pause');
@@ -133,7 +132,7 @@ try {
 			assert.equal(result, RunResult.Yielded);
 			assert.ok(paid > 0);
 			paidTotal += paid;
-			note(`J ${cycles} 1`, `${result} ${paid} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+			note(`J ${cycles} 1`, `${result} ${paid} ${+cpu.fixedInterruptActive()} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 		}
 		function start(fn: number, args: readonly number[]) {
 			assert.ok(cpu.beginHeapService(fn, args));

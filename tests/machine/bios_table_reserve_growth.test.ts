@@ -3,21 +3,19 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const MODULE = 'kernel/table_reserve_growth', port = `machine/bios/${MODULE}.lua`, entrySource = 'halt_until_irq';
+const MODULE = 'kernel/table_reserve_growth', port = `machine/bios/${MODULE}.lua`;
 const basis = '9d878caf4ee677bdff65b798b51f97b253e9740b';
 const source = readFileSync(port, 'utf8').replaceAll('\r\n', '\n');
 const modules = ['kernel/dlmalloc', MODULE].map(path => {
@@ -28,18 +26,11 @@ const sentinels = [0xe7100061, 0xb60000a8] as const;
 const hashBytes = TableRecords.hashStorageBytes;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const { slotName } = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'reserve_table_growth')!;
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-	assert.ok(root >= 0);
-	const entry = linked.image.functions[root].address;
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${valueSlots} values, ${frames} frames`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: 'reserve_table_growth', arity: 8 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 	const floor = memory.ramBusEnd() - RAM_BASE;
-	const last = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_THREAD_OFFSET;
+	const last = cpu.heapAllocator.managementOffset() + GC_WORKSPACE_END;
 	function same<T>(action: (target: CPU) => T): T {
 		const actual = action(cpu);
 		assert.deepEqual(action(oracle), actual);
@@ -58,25 +49,23 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function begin(record: number, array: number, hash: number, keepHash: boolean, staged: boolean) {
 		same(target => target.memory.writeRamRecordPair(output, ...sentinels));
-		assert.ok(cpu.beginHeapService(entry, [
+		issueFirmwareProbe(cpu, [
 			cpu.heapAllocator.allocatorStateOffset(), record, array, hash, hashBytes(hash), +keepHash, +staged, output - RAM_BASE,
-		]));
+		]);
 	}
-	function grant(budget: number) {
-		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Yielded);
-		const spent = budget - cpu.instructionBudgetRemaining;
+	function grant(cycles: number) {
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish() {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(256);
-		assert.equal(cpu.heapServiceActive(), false);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(256);
 		return spent;
 	}
 	const result = () => [memory.readRamRecordWord(output), memory.readRamRecordWord(output + 4)];
 	function verify(record: number, before: Uint8Array, occupied: number, expected?: readonly [number, number]) {
-		assert.equal(cpu.heapServiceResult(), +(expected !== undefined));
+		assert.equal(firmwareProbeResult(cpu), +(expected !== undefined));
 		assert.deepEqual(result(), expected === undefined ? sentinels : expected);
 		if (expected !== undefined) oracle.memory.writeRamRecordPair(output, ...expected);
 		assert.deepEqual(header(record), before, 'the semantic Table descriptor is still unpublished');
@@ -98,7 +87,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(storage && base && hashOnly > physical);
 		f.begin(record, array, hash, false, false);
 		for (let i = 0; i < 4096 && f.cpu.heapAllocator.occupiedBytes() === physical; ++i) f.grant(1);
-		assert.ok(f.cpu.heapServiceActive());
+		assert.ok(!f.cpu.isHaltedUntilIrq());
 		assert.equal(f.cpu.heapAllocator.occupiedBytes(), hashOnly, 'first allocation is the hash');
 		assert.deepEqual(f.result(), sentinels);
 		assert.deepEqual(f.header(record), before);

@@ -8,8 +8,8 @@ import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METAD
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -36,13 +36,13 @@ function fixture(optLevel: 0 | 3) {
 		entries.set(phase ? 'phase' : exportPathKey, index);
 	}
 	const { valueSlots, frames } = deriveBlua32FixedStack(linked.image, [...entries.values()]);
-	assert.ok(valueSlots <= HEAP_SERVICE_VALUE_COUNT && frames <= HEAP_SERVICE_FRAME_COUNT);
+	assert.ok(valueSlots <= CPU_FIXED_VALUE_COUNT && frames <= CPU_FIXED_FRAME_COUNT);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
-	const floor = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
+	const floor = memory.ramBusEnd() - RAM_BASE, end = management + GC_WORKSPACE_END;
 	const actual = memory.ramData().subarray(floor, end), expected = oracle.memory.ramData().subarray(floor, end);
 	function compare(label: string) {
 		if (Buffer.compare(actual, expected) === 0) return;
@@ -72,7 +72,6 @@ function fixture(optLevel: 0 | 3) {
 	function finish(cycles = 128) {
 		let elapsed = 0;
 		for (let i = 0; i < 1024 && cpu.heapServiceActive(); ++i) elapsed += grant(cycles);
-		assert.equal(cpu.heapServiceActive(), false);
 		return [cpu.heapServiceResult(), elapsed];
 	}
 	function invoke(name: string, ...args: number[]) {

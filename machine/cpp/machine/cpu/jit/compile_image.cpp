@@ -24,7 +24,7 @@ u32 functionPageCount(const Blua32RomFunctionVersion& version) {
 } // namespace
 
 bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunctionVersion& version,
-	u32 rootPc, MappedBusSignals busSignals, NativeWarmupAdmission* warmup, bool privateFirmware) {
+	u32 rootPc, MappedBusSignals busSignals, NativeWarmupAdmission* warmup) {
 	// Only a bound function in immutable ROM may unite physical pages.
 	// Page indexes are entry directories and dependencies, not IR boundaries.
 	using Clock = std::chrono::steady_clock;
@@ -62,7 +62,7 @@ bool CPU::prepareNativeFunction(Blua32ExecutionImage& image, const Blua32RomFunc
 			m_memory.bindMappedPage(address, busSignals | MAPPED_BUS_INSTRUCTION_FETCH, binding);
 			if (!binding.cacheable || binding.writeWatch.groups || (!verified && !binding.readBytes)) return nullptr;
 			if (requested && !requested->include(address)) return nullptr;
-			auto& page = image.decodedDirectory(privateFirmware).bind(binding);
+			auto& page = image.decodedPages.bind(binding);
 			source.emplace(page, address, busSignals, slot, verified);
 			source->firstPc = firstPc;
 			source->lastPc = endPc - INSTRUCTION_BYTES;

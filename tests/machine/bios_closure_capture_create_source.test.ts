@@ -7,7 +7,8 @@ import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/ca
 import { CLOSURE_CAPTURE_WORDS, CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
 import { UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_OWNER, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
-import { HEAP_SERVICE_FIRMWARE_DATA_OFFSET, HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
+import { HeapServiceCaptureBindingField } from '../../machine/ts/spec/bmsx/heap_service';
+import { FIRMWARE_DATA_OFFSET } from '../helpers/firmware_heap_layout';
 import { RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { StructTypes } from '../../toolchain/ts/lua/static/struct_types';
@@ -65,7 +66,7 @@ test('captured Closure storage layout and source mapping cover both native mirro
 	}
 
 	const scratch = types.resolve(file, { name: 'closure_work', arrayLengths: [], span });
-	assert.ok(HEAP_SERVICE_FIRMWARE_DATA_OFFSET + scratch.size <= RUNTIME_MANAGEMENT_SIZE);
+	assert.ok(FIRMWARE_DATA_OFFSET + scratch.size <= RUNTIME_MANAGEMENT_SIZE);
 	const planes = [['resolved', 0, 4096], ['new_cells', 4096, 4096], ['missing', 8192, 128]] as const;
 	for (const [name, offset, size] of planes) {
 		const field = scratch.struct!.fields.get(name)!;

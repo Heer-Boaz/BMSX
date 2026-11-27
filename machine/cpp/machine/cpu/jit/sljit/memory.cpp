@@ -144,8 +144,8 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	auto& slow = *sideExit(instruction.slow);
 	const auto kind = access.format;
 	const bool tagged = kind == MemoryAccessKind::Value;
-	if (tagged && (m_bindings.privateFirmware || !m_bindings.cpu || instruction.pc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE)) {
-		// The old private port and non-System execution keep the CPU exit.
+	if (tagged && (!m_bindings.cpu || instruction.pc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE)) {
+		// Non-System execution keeps the CPU exit.
 		emitLeave(slow, Charge::Pending);
 		return;
 	}
@@ -246,43 +246,6 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 				sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
 			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
 			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R2), VALUE_MEMORY_TAG_OFFSET, SLJIT_R1, 0);
-		}
-		return;
-	}
-	if (m_bindings.privateFirmware) {
-		if (!load) {
-			// Only the allocator aperture is writable, not the pinned stack.
-			// Projection writes issue a notification; no RAM store occurs.
-			fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R0, 0,
-				SLJIT_MEM0(), reinterpret_cast<sljit_sw>(m_bindings.ramBusEnd)), slow, m_cache.state());
-			fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_R0, 0,
-				SLJIT_IMM, m_bindings.privateStoreEnd), slow, m_cache.state());
-			sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, m_bindings.privateProjection);
-			fault(sljit_emit_cmp(m_compiler, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0,
-				SLJIT_IMM, sizeof(u32)), slow, m_cache.state());
-		}
-		sljit_emit_op2(m_compiler, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
-		if (load) {
-			// Synthetic root planes and socket-encoded ROM use the typed port.
-			fault(sljit_emit_cmp(m_compiler, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0,
-				SLJIT_IMM, m_bindings.ramBytes - width), slow, m_cache.state());
-		} else {
-			// A watched physical byte or first history write retires at the RAM owner.
-			emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, std::nullopt);
-			if (access.store == NativeWordSource::Dynamic)
-				fault(guardTag(access.slot, ValueTag::Integer, SLJIT_R2), slow, m_cache.state());
-		}
-		sljit_emit_op1(m_compiler, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
-		NativeBlockAbi::emitRamAddress(m_compiler, SLJIT_R2, SLJIT_R1);
-		if (load) {
-			emitBackingLoad(kind, false);
-			const auto target = m_cache.write(access.slot, ValueTag::Integer);
-			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_R0, 0);
-		} else {
-			emitPayload(access.slot, SLJIT_R0);
-			if constexpr (std::endian::native == std::endian::big)
-				if (width != 1u) sljit_emit_op1(m_compiler, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
-			sljit_emit_op1(m_compiler, width == 1u ? SLJIT_MOV_U8 : SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
 		}
 		return;
 	}

@@ -3,21 +3,19 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase, GC_LAST_EPOCH_WORK } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { GC_STEP_WORDS } from '../../machine/ts/machine/cpu/lua_heap';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT } from '../../machine/ts/spec/bmsx/memory_map';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 import { assistPhysicalPressureAtTickReference } from '../helpers/gc_vblank_reference';
 
-const MODULE = 'kernel/gc_vblank', entrySource = 'halt_until_irq';
+const MODULE = 'kernel/gc_vblank';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
 const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/word_arithmetic', 'kernel/gc_pace', 'kernel/heap_admission', MODULE].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8').replaceAll('\r\n', '\n');
@@ -26,14 +24,7 @@ const modules = ['kernel/dlmalloc', 'kernel/gc_control', 'kernel/word_arithmetic
 const epochWork = GC_LAST_EPOCH_WORK - 4, sample = GC_LAST_EPOCH_WORK + 4, assist = GC_LAST_EPOCH_WORK + 8, fullEpochs = 0x8c;
 
 function fixture(optLevel: 0 | 3) {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === MODULE && entry.exportPathKey === 'admit_vblank_collection');
-	assert.ok(symbol);
-	const root = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-	assert.ok(root >= 0);
-	const { frames, valueSlots } = deriveBlua32FixedStack(linked.image, [root]);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT, `pinned stack: ${frames} frames, ${valueSlots} values`);
+	const linked = linkFirmwareProbe(optLevel, modules, [{ path: MODULE, member: 'admit_vblank_collection', arity: 3 }]);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
@@ -52,19 +43,17 @@ function fixture(optLevel: 0 | 3) {
 		}
 	}
 	function begin(waiting: boolean, rebuilding: number) {
-		assert.ok(cpu.beginHeapService(linked.image.functions[root].address, [arena.allocatorStateOffset(), +waiting, rebuilding]));
+		issueFirmwareProbe(cpu, [arena.allocatorStateOffset(), +waiting, rebuilding]);
 	}
 	function grant(cycles: number) {
-		assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
-		const spent = cycles - cpu.instructionBudgetRemaining;
+		const spent = grantFirmwareProbe(cpu, cycles);
 		assert.ok(spent > 0);
 		return spent;
 	}
 	function finish(expected: number) {
 		let spent = 0;
-		for (let i = 0; i < 128 && cpu.heapServiceActive(); ++i) spent += grant(256);
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), expected);
+		for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) spent += grant(256);
+		assert.equal(firmwareProbeResult(cpu), expected);
 		assert.equal(arena.occupiedBytes(), occupied);
 		return spent;
 	}
@@ -120,7 +109,7 @@ for (const opt of [0, 3] as const) {
 		f.seed(GcPhase.Mark, previous, 0, 0, 0xffffffff, 0);
 		f.begin(true, 0);
 		for (let n = 0; n < 4096 && f.lanes(cpu)[0] === previous; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.deepEqual(f.lanes(cpu), [occupied, 0]);
 		const checkpoint = captureCpuCheckpoint(cpu), elapsed = f.finish(4 * GC_STEP_WORDS);
 		assert.deepEqual(f.lanes(cpu), [occupied, 1]);

@@ -75,7 +75,7 @@ export class FrameSchedulerState {
 		if (runtime.history.executionPaused || runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
 		if (runtime.machine.scheduler.acceptedCpuCycles !== 0) return true;
 		const cpu = runtime.machine.cpu;
-	if (!cpu.heapServiceActive() && runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
+		if (runtime.machine.systemController.hasResetRequest() && !cpu.systemResetInhibited()) return true;
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
 			|| this.carriedCycleBudget > 0
 			|| this.accumulatedHostTimeMs > 0;

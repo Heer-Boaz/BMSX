@@ -1,6 +1,6 @@
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
-import { compileHeapServiceSystem, residentFunctionAddress } from '../helpers/heap_service_system';
+import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { TABLE_CONSTRUCTOR_BINDING, tableConstructorHints } from '../helpers/table_constructor';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -202,29 +202,23 @@ return ok, n, released, captured_ok, doubled, weak[1] ~= nil
 		}
 		const expected = [valueBool(true), valueInteger(37), valueBool(opt === 3), valueBool(true), valueInteger(74), valueBool(true)];
 		const budget = 1_000_000;
-		let remaining = 0, fullGcCycles = 0;
-		const functionAddress = residentFunctionAddress(image, 'kernel/gc_full', 'collect_full');
+		let remaining = 0;
 		for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 			const { cpu } = createTestSystemCpu(image, backend);
-			const profile = { functionAddress, fullGcCycles: 0 };
-			assert.equal(runCpuWithinBudget(cpu, budget, 0, profile), RunResult.Halted);
+			assert.equal(runCpuWithinBudget(cpu, budget), RunResult.Halted);
 			assert.equal(cpu.readLuaFaultReasonWord(), 0);
 			assert.deepEqual(materializeCpuCompletionValues(cpu), expected, `O${opt}, backend ${backend}`);
-			assert.ok(profile.fullGcCycles > 0, 'the fixture actually runs explicit collection');
 			if (backend === CpuExecutionBackend.Interpreter) {
 				remaining = cpu.instructionBudgetRemaining;
-				fullGcCycles = profile.fullGcCycles;
-			} else assert.deepEqual([cpu.instructionBudgetRemaining, profile.fullGcCycles], [remaining, fullGcCycles]);
+			} else assert.equal(cpu.instructionBudgetRemaining, remaining);
 		}
 		const nativeRunner = process.env.BMSX_CPU32_RUNNER;
 		if (nativeRunner) {
-			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget), '--profile-full-gc', String(functionAddress)],
+			const output = execFileSync(nativeRunner, ['--execute-rom', String(budget)],
 				{ input: image.romBytes, encoding: 'utf8' });
-			const cost = /^budget (\d+) fault 0\nfull-gc ([1-9]\d*)\n/.exec(output);
-			assert.ok(cost, 'native execution completes without a fault and bills its explicit GC');
-			// Native and TS explicit collection currently preserve their own source mirror order.
-			// The compiler and its resident calls must still use exactly the same guest cycles.
-			assert.equal(Number(cost[1]) + Number(cost[2]), remaining + fullGcCycles);
+			const cost = /^budget (\d+) fault 0\n/.exec(output);
+			assert.ok(cost, 'native execution completes without a fault under the same guest budget');
+			assert.equal(Number(cost[1]), remaining);
 			assert.equal(output.slice(cost[0].length),
 				[...expected.map(value => `${valueTag(value).toString(16)} ${valuePayload(value).toString(16)}`), ''].join('\n'));
 		}

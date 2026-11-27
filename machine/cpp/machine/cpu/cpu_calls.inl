@@ -20,11 +20,6 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 			frame.extendTop(destination + 1);
 			return;
 		}
-		if ((record.flags & BLUA32_FUNCTION_RESIDENT) != 0u) {
-			frame.registers.set(destination, valueResidentFunction(functionAddress));
-			frame.extendTop(destination + 1);
-			return;
-		}
 	}
 	const std::array arguments{
 		valueInteger(destination), valueInteger(static_cast<i32>(record.address)), valueInteger(domain),
@@ -52,15 +47,6 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 	if (valueTag(callee) == ValueTag::CodeFunction) {
 		return pushFrame(frame, 0u, a + 1, argCount, result,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES, valuePayload(callee)) != nullptr;
-	}
-	if (valueTag(callee) == ValueTag::ResidentFunction) {
-		// The source is an existing Value window, not a request to grow it.
-		if (!frame.registers.containsRange(a + 1, argCount)
-			&& !frame.thread->stack.containsRange(frame.stackBase() + a + 1, argCount))
-			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		beginResidentCall(valuePayload(callee),
-			BuiltinArgsView(frame.thread->stack.subspan(frame.stackBase() + a + 1, argCount)), result);
-		return false;
 	}
 	if (valueIsBuiltinFunction(callee)) {
 		// Closures reserve their shared argument window before entry. A

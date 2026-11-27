@@ -21,8 +21,7 @@ using Value = uint64_t;
 enum class ValueTag : uint8_t {
 	Nil, False, True, Integer, Float, String, Table, Closure, BuiltinFunction, Thread,
 	DeadKey, // Table retirement metadata; never a language-level value.
-	ResidentFunction, // Resident System ROM entry; not a managed record.
-	CodeFunction, // Immutable System Function with no environment.
+	CodeFunction = 12, // Immutable System Function with no environment.
 	UnboundStringLiteral = 0xff, // Only in a decoded operand bank, never a guest Value.
 };
 inline constexpr unsigned VALUE_HEADER_SHIFT = 32;
@@ -45,7 +44,6 @@ inline constexpr Value valueString(StringId id) { return valueFromTag(ValueTag::
 inline constexpr Value valueTable(uint32_t address) { return valueFromTag(ValueTag::Table, address); }
 inline constexpr Value valueClosure(uint32_t reference) { return valueFromTag(ValueTag::Closure, reference); }
 inline constexpr Value valueThread(uint32_t reference) { return valueFromTag(ValueTag::Thread, reference); }
-inline constexpr Value valueResidentFunction(uint32_t address) { return valueFromTag(ValueTag::ResidentFunction, address); }
 inline constexpr Value valueBuiltinFunction(BuiltinFunctionId id) {
 	return valueFromTag(ValueTag::BuiltinFunction, static_cast<uint32_t>(id));
 }
@@ -116,7 +114,7 @@ inline uint32_t hashCanonicalTableKey(Value value) {
 	switch (valueTag(value)) {
 		case ValueTag::Integer:
 		case ValueTag::Float:
-		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: case ValueTag::ResidentFunction: case ValueTag::CodeFunction: {
+		case ValueTag::Table: case ValueTag::Closure: case ValueTag::Thread: case ValueTag::CodeFunction: {
 			uint32_t bits = valuePayload(value);
 			bits ^= std::rotl(bits, TABLE_HASH_ROTATE); bits *= TABLE_HASH_MULTIPLIER; bits ^= bits >> TABLE_HASH_SHIFT;
 			return bits;

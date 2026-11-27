@@ -28,22 +28,21 @@ bool settleRetiredCpuGrant(Runtime& runtime, FrameState& state, int cycles) {
 
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
-	const bool service = cpu.heapServiceActive();
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (gxGpu.backendServiceBlocksMachine()) {
 		return tickCompleted;
 	}
-	if ((service || !cpu.isHaltedUntilIrq()) && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
+	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 		return tickCompleted;
 	}
 	auto& scheduler = runtime.machine.scheduler;
 	while (true) {
-		if (!service && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
+		if (!system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld() && cpu.enterPendingInterrupt()) {
 			return tickCompleted;
 		}
-		if ((service || !cpu.isHaltedUntilIrq()) && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
+		if (!cpu.isHaltedUntilIrq() && !system.cpuHeld() && !runtime.machine.dmaController.cpuBusHeld()) {
 			return tickCompleted;
 		}
 		if (tickCompleted) {
@@ -147,15 +146,13 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	if (scheduler.acceptedCpuCycles() != 0) return CpuSuspendedRunResult::Yielded;
 	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	runDueRuntimeTimers(runtime);
-	// A fixed service can own the next grant without a deeper guest frame.
-	while (cpu.heapServiceActive()
-		|| cpu.hasFramesAbove(targetThread, targetDepth)) {
+	while (cpu.hasFramesAbove(targetThread, targetDepth)) {
 		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
 		}
-		if ((!cpu.heapServiceActive() && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
+		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				return CpuSuspendedRunResult::Halted;
@@ -193,7 +190,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 		}
-		if (!cpu.heapServiceActive() && !cpu.hasFramesAbove(targetThread, targetDepth))
+		if (!cpu.hasFramesAbove(targetThread, targetDepth))
 			return CpuSuspendedRunResult::Completed;
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSuspendedRunResult::ExecutionStopped;
@@ -206,7 +203,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				return CpuSuspendedRunResult::Halted;
 			}
 			bool advancedDeadline = false;
-			while (cpu.isHaltedUntilIrq() && !cpu.heapServiceActive()) {
+			while (cpu.isHaltedUntilIrq()) {
 				if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 				if (machine.gxGpu.backendServiceBlocksMachine()) {
 					return CpuSuspendedRunResult::Halted;
@@ -224,7 +221,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				}
 				const i64 cyclesToDeadline = std::min(haltedDeadline, endCycle) - scheduler.nowCycles();
 				if (cyclesToDeadline <= 0) {
-					if (runDueRuntimeTimers(runtime) && !cpu.heapServiceActive()) {
+					if (runDueRuntimeTimers(runtime)) {
 						return CpuSuspendedRunResult::Halted;
 					}
 					continue;
@@ -254,14 +251,13 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
-	const bool service = cpu.heapServiceActive();
 	bool advanced = scheduler.hasDueTimer();
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (frameState.cycleBudgetRemaining > 0
 		&& !tickCompleted
 		&& !machine.gxGpu.backendServiceBlocksMachine()
 		&& !machine.systemController.cpuHeld()) {
-		if ((!service && cpu.isMemoryWriteBlocked()) || machine.dmaController.cpuBusHeld()) {
+		if (cpu.isMemoryWriteBlocked() || machine.dmaController.cpuBusHeld()) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
 			if (deadlineBudget <= 0) {
@@ -311,8 +307,6 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		if (result == RunResult::ExecutionStopped) {
 			return CpuSliceResult::ExecutionStopped;
 		}
-		// A fixed activation runs machine work, not the next caller instruction.
-		if (service && (consumed == 0 || result == RunResult::Yielded)) return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Blocked;
 		if (cpu.isMemoryWriteBlocked()) {
 			if (consumed > 0) {
 				return result == RunResult::Halted

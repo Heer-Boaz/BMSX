@@ -3,22 +3,25 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { type CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GC_ROOT_CURSOR, GC_TRACE_RECORD, GC_WEAK_VISITS, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import {
-	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-} from '../../machine/ts/spec/bmsx/heap_service';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { parseLuaChunk } from '../helpers/cpu_test_harness';
-import { compileTestSystemWithHeap, createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
+import { firmwareProbeResult, grantFirmwareProbe, issueFirmwareProbe, linkFirmwareProbe } from '../helpers/ordinary_firmware_probe';
 
-const EPOCH = 'kernel/gc_epoch', entrySource = 'halt_until_irq';
+const EPOCH = 'kernel/gc_epoch';
 const basis = '04c10f896545d453bd50fe27ccb619b269966607';
-const names = ['begin_mark', 'begin_initial_banks', 'finish_step', 'finish_atomic_collection', 'begin_strings', 'finish_strings'] as const;
+const leaves = [
+	{ path: EPOCH, member: 'begin_mark', arity: 2 },
+	{ path: EPOCH, member: 'begin_initial_banks', arity: 3, result: false },
+	{ path: EPOCH, member: 'finish_step', arity: 4 },
+	{ path: EPOCH, member: 'finish_atomic_collection', arity: 5 },
+	{ path: EPOCH, member: 'begin_strings', arity: 2, result: false },
+	{ path: EPOCH, member: 'finish_strings', arity: 3, result: false },
+] as const;
 const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control', 'kernel/gc_strings', 'kernel/word_arithmetic',
 	'kernel/gc_pace', 'kernel/heap_admission', EPOCH].map(path => {
 	const source = readFileSync(`machine/bios/${path}.lua`, 'utf8');
@@ -26,16 +29,7 @@ const modules = ['kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_control
 });
 
 for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve collector cursors and native pacing at O${optLevel}`, () => {
-	const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource), modules, { entrySource, optLevel, programDomain: 'system' });
-	const image = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-	const indices = names.map(name => {
-		const symbol = object.sections.rodata.moduleExports.find(entry => entry.path === EPOCH && entry.exportPathKey === name)!;
-		const index = image.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[symbol.slotName]);
-		assert.ok(index >= 0, name);
-		return index;
-	});
-	const { frames, valueSlots } = deriveBlua32FixedStack(image.image, indices);
-	assert.ok(frames <= HEAP_SERVICE_FRAME_COUNT && valueSlots <= HEAP_SERVICE_VALUE_COUNT);
+	const image = linkFirmwareProbe(optLevel, modules, leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(image);
 	const oracle = createTestHeapServiceCpu(image).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
@@ -48,26 +42,24 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 		return value;
 	}
 	function compare() {
-		const end = management + HEAP_SERVICE_THREAD_OFFSET;
+		const end = management + GC_WORKSPACE_END;
 		assert.deepEqual(memory.ramData().subarray(management, end), oracle.memory.ramData().subarray(management, end));
 	}
-	function begin(name: typeof names[number], args: number[]) {
-		assert.ok(cpu.beginHeapService(image.image.functions[indices[names.indexOf(name)]].address, args));
+	function begin(name: typeof leaves[number]['member'], args: number[]) {
+		issueFirmwareProbe(cpu, args, leaves.findIndex(leaf => leaf.member === name));
 	}
 	function finish(expected: number) {
 		let spent = 0;
-		for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) {
-			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
-			const paid = 1 - cpu.instructionBudgetRemaining;
+		for (let i = 0; i < 4096 && !cpu.isHaltedUntilIrq(); ++i) {
+			const paid = grantFirmwareProbe(cpu, 1);
 			assert.ok(paid > 0);
 			spent += paid;
 		}
-		assert.equal(cpu.heapServiceActive(), false);
-		assert.equal(cpu.heapServiceResult(), expected);
+		assert.equal(firmwareProbeResult(cpu), expected);
 		compare();
 		return spent;
 	}
-	function invoke(name: typeof names[number], args: number[], expected = 0) {
+	function invoke(name: typeof leaves[number]['member'], args: number[], expected = 0) {
 		begin(name, args);
 		finish(expected);
 	}
@@ -80,10 +72,10 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	oracle.gc['beginInitialBanks']();
 	begin('begin_initial_banks', [control, state, capacity]);
 	for (let i = 0; i < 128 && memory.readRamRecordWord(control + GC_ROOT_CURSOR) === 0; ++i) {
-		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+		grantFirmwareProbe(cpu, 1);
 	}
 	assert.notEqual(memory.readRamRecordWord(control + GC_ROOT_CURSOR), 0);
-	assert.equal(cpu.heapServiceActive(), true);
+	assert.ok(cpu.fixedInterruptActive());
 	const checkpoint = captureCpuCheckpoint(cpu);
 	const cycles = finish(0);
 	restoreCpuCheckpoint(cpu, checkpoint);
