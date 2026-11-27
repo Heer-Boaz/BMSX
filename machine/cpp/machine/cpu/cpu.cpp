@@ -2663,7 +2663,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 						} else {
 							finishExecutionFloor();
 							finishClosureReservation();
-							finishTableGrowthReservation();
 						}
 						break;
 				}

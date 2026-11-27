@@ -756,8 +756,9 @@ export class TableRecords {
 		plan.keepHash = arraySize > oldArray && added < arraySize && plan.hash === oldHash && firstHashArrayKey > arraySize;
 	}
 	private insertHashWithAdmission(record: number, key: Value, value: Value, policy: HashStore, extraHashSlots: number, cycleBudget?: CPU,
-		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh, growthStage = HeapServiceTableGrowthStage.Idle,
-		parkExtraSlots = extraHashSlots, sourceCycles?: number): number {
+		counted?: ArrayDensity, recovery = LuaAllocationRecovery.CurrentOrFresh, growthStage = HeapServiceTableGrowthStage.Idle): number {
+		if (policy === HashStore.Scheduled && cycleBudget!.beginTableGrowth(record, key, value, extraHashSlots))
+			return HASH_STORE_PENDING;
 		const budget = this.heap.budget, owner = valueTable(record), plan = this.resizePlan;
 		const array = this.arrayCapacity(record), hash = this.hashSize(record);
 		const previous = TableRecords.allocationCharge(array, hash);
@@ -782,17 +783,15 @@ export class TableRecords {
 			this.planRehash(record, key, extraHashSlots, counted);
 			counted = undefined;
 			const requested = TableRecords.allocationCharge(plan.array, plan.hash);
-			const grantBeforeAssist = sourceCycles === undefined ? 0 : cycleBudget!.instructionBudgetRemaining;
 			const admitted = requested <= previous || (policy === HashStore.Resume || recovery !== LuaAllocationRecovery.CurrentOrFresh
 				? budget.usedBytes() + requested - previous <= budget.capacity()
-				: budget.prepareAllocation(requested - previous, owner, key, value, 0, sourceCycles));
+				: budget.prepareAllocation(requested - previous, owner, key, value));
 			if (admitted) {
 				const bytes = TableRecords.storageBytes(plan.array > array ? plan.array : 0, plan.keepHash ? 0 : plan.hash);
 				if (policy !== HashStore.Resume && gcPacedPhase(this.heap.phase())) {
-					const remaining = sourceCycles === undefined ? undefined : sourceCycles - (grantBeforeAssist - cycleBudget!.instructionBudgetRemaining);
-					this.heap.assistBeforeReservation(bytes, owner, key, value, 0, remaining);
+					this.heap.assistBeforeReservation(bytes, owner, key, value);
 				}
-				const slot = this.resize(record, key, value, previous, requested, cycleBudget, growthStage, extraHashSlots, parkExtraSlots);
+				const slot = this.resize(record, key, value, previous, requested, cycleBudget);
 				if (slot !== HASH_STORE_DECLINED) return slot;
 			}
 			if (extraHashSlots) {
@@ -810,22 +809,6 @@ export class TableRecords {
 			}
 		}
 	}
-	// Resume the loop after a refused preferred plan, not the table lookup or
-	// the __newindex dispatch that selected this receiver.
-	public retryTableGrowth(record: number, key: Value, value: Value, budget: CPU,
-		stage: HeapServiceTableGrowthStage, parkExtraSlots: number, sourceCycles: number): number {
-		const policy = stage === HeapServiceTableGrowthStage.Scheduled ? HashStore.Scheduled : HashStore.Resume;
-		const slot = this.insertHashWithAdmission(record, key, value, policy, 0, budget, undefined,
-			LuaAllocationRecovery.CurrentOrFresh, stage, parkExtraSlots, sourceCycles);
-		if (slot === HASH_STORE_DECLINED || slot === HASH_STORE_PENDING) return slot;
-		this.finishResizedAssignment(record, key, value);
-		return slot;
-	}
-	private finishResizedAssignment(record: number, key: Value, value: Value): void {
-		this.publishHashInsertion(record, key, valueTag(value), valuePayload(value));
-		const index = this.getArrayIndex(key);
-		if (index >= 0) this.updateLengthHint(record, index, true);
-	}
 	public installTableRebuild(j: TableRebuild, record: number, key: Value, value: Value,
 		array: number, hash: number, keepHash: boolean, storage: number, base: number): void {
 		const oldArray = this.arrayCapacity(record);
@@ -837,18 +820,13 @@ export class TableRecords {
 		j.cleared = j.homes = j.cursor = j.collisions = 0; j.free = (j.capacity - 1) >>> 0; j.key = key; j.value = value;
 		j.result = TableStoreReturn.None; j.destination = j.wanted = j.instructionPc = 0;
 	}
-	private resize(record: number, key: Value, value: Value, previous: number, requested: number, budget?: CPU,
-		growthStage = HeapServiceTableGrowthStage.Idle, extraHashSlots = 0, parkExtraSlots = extraHashSlots): number {
+	private resize(record: number, key: Value, value: Value, previous: number, requested: number, budget?: CPU): number {
 		const { array, hash, keepHash } = this.resizePlan;
 		const oldArray = this.arrayCapacity(record), oldHash = this.hashSize(record);
 		const oldWords = this.hashAddress(record), oldTags = oldWords + oldHash * 8;
 		const memory = this.heap.memory, arena = this.heap.arena;
 		const oldBase = this.arrayAddress(record), stagedGrowth = oldArray >= 1024 && array > oldArray;
 		const staged = stagedGrowth || (oldArray >= 1024 && array < oldArray) || (oldHash > 64 && (oldArray === array || !oldArray) && !keepHash);
-		if (budget && growthStage !== HeapServiceTableGrowthStage.Idle
-			&& budget.beginTableGrowthReservation(record, key, value, array, hash, keepHash, staged, stagedGrowth,
-				previous, requested, extraHashSlots, parkExtraSlots, growthStage))
-			return HASH_STORE_PENDING;
 		const storage = keepHash ? oldWords : hash ? arena.allocate(TableRecords.hashStorageBytes(hash), true) : 0;
 		if (hash && !storage) return HASH_STORE_DECLINED;
 		let base = oldBase;

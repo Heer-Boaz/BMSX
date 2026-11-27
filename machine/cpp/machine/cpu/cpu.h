@@ -483,9 +483,7 @@ private:
 	void advanceConcat(CallFrame& frame);
 	void advanceTableStore(CallFrame& frame);
 	friend class TableRecord;
-	bool beginTableGrowthReservation(u32 receiver, Value key, Value value, const TableRecord::ResizePlan&, u32 previous,
-		u32 requested, bool staged, bool stagedGrowth, u8 extraSlots, u8 parkExtraSlots, HeapServiceTableGrowthStage stage);
-	void finishTableGrowthReservation();
+	bool beginTableGrowth(u32 receiver, Value key, Value value, u8 extra);
 	void executeConcat(CallFrame& frame, int destination, int left, int right);
 	void executeConcatRange(CallFrame& frame, int destination, int base, int count);
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);

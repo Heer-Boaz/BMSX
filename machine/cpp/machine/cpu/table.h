@@ -222,8 +222,6 @@ private:
 	struct ResizePlan { size_t array, hash; bool keepHash; };
 	friend class CPU;
 	void installStagedGrowth(CPU&, const ResizePlan&, u32 base, u32 storage, Value key, Value value);
-	int retryGrowth(CPU&, HeapServiceTableGrowthStage, Value key, Value value, u8 parkExtraSlots, int sourceBudget);
-	void finishHashInsertion(Value key, Value value);
 	void countArrayRange(ArrayDensity&, u32 end) const;
 	void spendCensusGrant(ArrayDensity&, u32 capacity, int& cycles) const;
 	ResizePlan planRehash(Value key, u8 extraHashSlots, const ArrayDensity* counted) const;
@@ -231,14 +229,13 @@ private:
 	template <HashStore Policy>
 	int insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu = nullptr,
 		const ArrayDensity* counted = nullptr, LuaAllocationRecovery recovery = LuaAllocationRecovery::CurrentOrFresh,
-		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled, u8 parkExtraSlots = 0, int* sourceBudget = nullptr)
+		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	template <HashStore Policy>
 	int setOwn(Value key, Value value, int slot = TABLE_HASH_UNPROBED, u8 extraHashSlots = 0, CPU* cpu = nullptr,
 		HeapServiceTableGrowthStage stage = HeapServiceTableGrowthStage::Scheduled);
 	template <HashStore Policy>
-	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu,
-		HeapServiceTableGrowthStage, u8 extraHashSlots, u8 parkExtraSlots, const int* sourceBudget)
+	int commitHashPlan(const ResizePlan&, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
 		noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField);
 	int resize(const ResizePlan&, u32 base, u32 storage, Value key, Value value, u32 previous, u32 requested);
 	void bindHash(size_t hashSize, u32 address);

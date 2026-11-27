@@ -4,19 +4,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { readLE32 } from '../../../machine/ts/common/endian';
 import { hashBytes } from '../../../machine/ts/common/hash';
-import { AllocationRecovery, CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { TableHeader, TableRecords } from '../../../machine/ts/machine/cpu/table';
-import { asInteger, ValueTag, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, valuePayload, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { advanceRuntimeTime } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET,
-	HeapServiceGcStage, HeapServiceTableGrowthField, HeapServiceTableGrowthStage, HeapServiceTableResizeContextField,
+	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
+	HeapServiceGcStage, HeapServiceRemarkHeadField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -81,12 +82,16 @@ try {
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) { /* exhaust pages */ }
 			while (arena.allocate(hashExtent, true)) { /* exhaust small fits */ }
 			arena.free(hashFit);
+			// Enter the store just before a real device deadline so the
+			// existing physical assist does not remove the blocker first.
+			advanceRuntimeTime(runtime, scheduler.nextDeadline() - scheduler.nowCycles - 1);
 		}
 		const seed = captureRuntimeSaveState(runtime), physical = arena.occupiedBytes(), logical = budget.usedBytes();
 		const before = reference.machine.cpu, oldTables = before.gc.tables;
 		const management = arena.managementOffset();
-		const growth = management + HEAP_SERVICE_TABLE_GROWTH_OFFSET, context = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
-		const stage = () => memory.readRamRecordWord(growth + HeapServiceTableGrowthField.Stage);
+		const gate = management + HEAP_SERVICE_BIOS_CALL_OFFSET, head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+		const operation = () => memory.readRamRecordWord(gate + HeapServiceBiosCallField.Kind);
+		const parked = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment) !== 0;
 		const state = arena.allocatorStateOffset(), stateEnd = state + 0x200;
 		const header = owner - RAM_BASE, headerEnd = header + TableRecords.HEADER_BYTES;
 		const rows: { command: string; expected: string }[] = [];
@@ -110,30 +115,29 @@ try {
 		history.start(memory);
 		const baseline = history.capture(memory, null);
 		for (let i = 0; i < 128 && !cpu.heapServiceActive(); ++i) grant(1);
-		assert.equal(stage(), HeapServiceTableGrowthStage.Scheduled);
-		assert.equal(memory.readRamRecordWord(growth + HeapServiceTableGrowthField.Receiver), owner);
-		const firmware = cpu['heapService'].thread.firstFrame!.registers;
-		assert.equal(asInteger(firmware.get(2)), arraySlots);
-		assert.equal(asInteger(firmware.get(3)), hashSlots);
-		const issue = memory.readRamRecordWord(growth + HeapServiceTableGrowthField.InstructionPc);
-		const nextPc = memory.readRamRecordWord(growth + HeapServiceTableGrowthField.NextPc);
+		assert.equal(operation(), HeapServiceBiosCallKind.Discard);
+		assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.Receiver), owner);
+		const issue = memory.readRamRecordWord(gate + HeapServiceBiosCallField.InstructionPc);
+		const nextPc = cpu.readFramePc(caller);
+		assert.ok(nextPc > issue);
 		const opcodeAtIssue = instructionOpcode(readLE32(system.romBytes, issue));
 		assert.equal(opcodeAtIssue === OpCode.WIDE ? instructionOpcode(readLE32(system.romBytes, issue + INSTRUCTION_BYTES)) : opcodeAtIssue, opcode);
-		let resumeStage = HeapServiceTableGrowthStage.Scheduled, resumeLogical = logical;
+		let resumeLogical = logical;
 		function held() {
 			assert.ok(cpu.heapServiceActive());
-			assert.equal(stage(), resumeStage);
-			assert.equal(cpu.readFramePc(caller), issue);
+			assert.equal(operation(), HeapServiceBiosCallKind.Discard);
+			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, "no host collector continuation is active");
+			assert.equal(cpu.readFramePc(caller), nextPc);
 			assert.equal(budget.usedBytes(), resumeLogical);
 			assert.equal(cpu.tableRebuild.record, 0, 'immediate resize has no staged rebuild');
 			assert.equal(cpu.allocationParked(), false);
-			observe('P', `${caller + 1} ${issue}`);
+			observe('P', `${caller + 1} ${nextPc}`);
 		}
 		held();
 		assert.equal(arena.occupiedBytes(), physical, 'admission has not allocated');
 		assert.deepEqual(memory.ramData().subarray(header, headerEnd), seed.ram.subarray(header, headerEnd));
-		observeRam(growth, growth + HeapServiceTableGrowthField.Budget + 4);
-		observeRam(context, context + HeapServiceTableResizeContextField.HashBytes + 4);
+		observeRam(gate, gate + HeapServiceBiosCallField.LastPc + 4);
+		observeRam(head + HeapServiceRemarkHeadField.Receiver, head + HeapServiceRemarkHeadField.ValueWord + 4);
 		assert.ok(step() > 0, 'a resident instruction advances the ordinary machine clock');
 		let referenceSeed = seed;
 		if (recovering) {
@@ -142,34 +146,24 @@ try {
 			assert.equal(before.heapAllocator.resizeBacking(oldArray, 5 * arraySlots), 0);
 			before.heapAllocator.free(hashFit);
 			let reservedHash = false;
-			for (let i = 0; i < 4096 && cpu.heapServiceActive(); ++i) {
+			for (let i = 0; i < 32768 && !parked() && cpu.heapServiceActive(); ++i) {
 				grant(1);
 				reservedHash ||= arena.occupiedBytes() > physical;
 			}
-			assert.ok(reservedHash, 'the hash is reserved before the array relocation refuses');
+			assert.ok(reservedHash, 'the hash reservation preceded the array refusal');
+			assert.equal(parked(), true, 'firmware entered collection in the original activation');
 			assert.equal(arena.occupiedBytes(), physical);
-			assert.equal(budget.usedBytes(), logical);
-			assert.equal(cpu.readFramePc(caller), issue);
-			assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.Current);
+			held();
 			assert.deepEqual(memory.ramData().subarray(header, headerEnd), seed.ram.subarray(header, headerEnd));
 			assert.deepEqual(memory.ramData().subarray(state, stateEnd), reference.machine.memory.ramData().subarray(state, stateEnd));
 			observeRam(state, stateEnd);
 			observeRam(header, headerEnd);
-			step();
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.AllocationRecoveryStringSweep);
-			for (let i = 0; i < 32768 && !cpu.allocationReady(); ++i) {
-				assert.equal(cpu.readFramePc(caller), issue);
-				step();
-			}
-			assert.ok(cpu.allocationReady());
-			assert.equal(cpu.captureRuntimeState().pendingAllocation?.recovery, AllocationRecovery.RetryCurrent);
+			for (let i = 0; i < 32768 && parked() && cpu.heapServiceActive(); ++i) grant(1);
+			assert.equal(parked(), false);
 			assert.equal(cpu.stringPool.find(dead), undefined);
 			referenceSeed = captureRuntimeSaveState(runtime);
-			resumeStage = HeapServiceTableGrowthStage.RetryCurrent;
 			resumeLogical = budget.usedBytes();
-			step();
 			held();
-			observeRam(growth, growth + HeapServiceTableGrowthField.Budget + 4);
 		}
 
 		// Use the existing synchronous owner from the same successful
@@ -220,13 +214,13 @@ try {
 			for (let i = 0; i < 8192 && !publication() && cpu.heapServiceActive(); ++i) timed += grant(1);
 			assert.equal(publication(), true);
 			assert.ok(cpu.heapServiceActive(), 'the assignment tail runs before the BIOS returns');
-			assert.equal(cpu.readFramePc(caller), issue);
-			observe('P', `${caller + 1} ${issue}`);
+			assert.equal(cpu.readFramePc(caller), nextPc);
+			observe('P', `${caller + 1} ${nextPc}`);
 			observeRam(header, headerEnd);
 			for (let i = 0; i < 8192 && cpu.heapServiceActive(); ++i) timed += grant(1);
 			assert.ok(timed > 0);
 			assert.equal(cpu.heapServiceActive(), false);
-			assert.equal(stage(), HeapServiceTableGrowthStage.Idle);
+			assert.equal(operation(), HeapServiceBiosCallKind.Idle);
 			assert.equal(cpu.readFramePc(caller), nextPc);
 			assert.equal(cpu.tableRebuild.record, 0);
 			assert.equal(arena.occupiedBytes(), before.heapAllocator.occupiedBytes());

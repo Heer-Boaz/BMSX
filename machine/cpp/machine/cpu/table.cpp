@@ -246,23 +246,17 @@ TableRecord::ResizePlan TableRecord::planRehash(Value key, u8 extraHashSlots, co
 }
 
 template <TableRecord::HashStore Policy>
-int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested, CPU* cpu,
-	HeapServiceTableGrowthStage stage, u8 extraHashSlots, u8 parkExtraSlots, const int* sourceBudget)
+int TableRecord::commitHashPlan(const ResizePlan& plan, Value key, Value value, u32 previous, u32 requested, CPU* cpu)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	const u32 bytes = storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash);
 	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::General) {
 		if (GcHeap::pacedPhase(m_heap->phase()))
-			m_heap->assistBeforeReservation(bytes, valueTable(m_address), key, value, 0u, sourceBudget);
+			m_heap->assistBeforeReservation(bytes, valueTable(m_address), key, value);
 	}
 	const u32 oldArray = arrayCapacity(), oldBase = arrayAddress(), oldHash = hashSlots();
 	const bool stagedGrowth = cpu && oldArray >= 1024 && plan.array > oldArray;
 	const bool staged = stagedGrowth || (cpu && oldArray >= 1024 && plan.array < oldArray)
 		|| (cpu && oldHash > 64 && (plan.array == oldArray || !oldArray) && !plan.keepHash);
-	if constexpr (Policy == HashStore::Scheduled || Policy == HashStore::Resume) {
-		if (cpu && cpu->beginTableGrowthReservation(m_address, key, value, plan, previous, requested,
-			staged, stagedGrowth, extraHashSlots, parkExtraSlots, stage))
-			return HASH_STORE_PENDING;
-	}
 	const u32 storage = plan.keepHash ? hashAddress() : plan.hash ? m_heap->arena.allocate(hashStorageBytes(plan.hash), true) : 0u;
 	if (plan.hash && !storage) return HASH_STORE_DECLINED;
 	u32 base = oldBase;
@@ -295,15 +289,18 @@ void TableRecord::installStagedGrowth(CPU& cpu, const ResizePlan& plan, u32 base
 
 template <TableRecord::HashStore Policy>
 int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlots, CPU* cpu,
-	const ArrayDensity* counted, LuaAllocationRecovery recovery, HeapServiceTableGrowthStage stage, u8 parkExtraSlots, int* sourceBudget)
+	const ArrayDensity* counted, LuaAllocationRecovery recovery, HeapServiceTableGrowthStage stage)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 	if constexpr (Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
 		// In-place updates and insertions already returned. The scheduled
 		// instruction must own growth before the returning leaf plans it.
 		const auto& owner = m_heap->m_cpu;
 		if (owner.m_runKind == CpuRunKind::Scheduled
-			&& owner.m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ResizeTable)] != 0u)
+			&& owner.m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::TableGrow)] != 0u)
 			return HASH_STORE_DECLINED;
+	}
+	if constexpr (Policy == HashStore::Scheduled) {
+		if (cpu->beginTableGrowth(m_address, key, value, extraHashSlots)) return HASH_STORE_PENDING;
 	}
 	auto& budget = m_heap->budget;
 	const u32 array = arrayCapacity(), hash = hashSlots();
@@ -347,14 +344,12 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 			if (admitted && m_heap->reservationAssistDue(storageBytes(plan.array > arrayCapacity() ? plan.array : 0u, plan.keepHash ? 0u : plan.hash)))
 				return HASH_STORE_DECLINED;
 		} else if (requested > previous) {
-			const int before = sourceBudget ? cpu->instructionBudgetRemaining : 0;
 			admitted = Policy == HashStore::Resume || recovery != LuaAllocationRecovery::CurrentOrFresh
 				? budget.usedBytes() + requested - previous <= budget.capacity()
-				: budget.prepareAllocation(requested - previous, owner, key, value, 0u, sourceBudget);
-			if (sourceBudget) *sourceBudget -= before - cpu->instructionBudgetRemaining;
+				: budget.prepareAllocation(requested - previous, owner, key, value);
 		}
 		if (admitted) {
-			const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested, cpu, stage, extraHashSlots, parkExtraSlots, sourceBudget);
+			const int slot = commitHashPlan<Policy>(plan, key, value, previous, requested, cpu);
 			if (slot != HASH_STORE_DECLINED) return slot;
 		}
 		if (extraHashSlots) {
@@ -374,16 +369,6 @@ int TableRecord::insertHashWithAdmission(Value key, Value value, u8 extraHashSlo
 			}
 		}
 	}
-}
-
-int TableRecord::retryGrowth(CPU& cpu, HeapServiceTableGrowthStage stage, Value key, Value value, u8 parkExtraSlots, int sourceBudget) {
-	// This is the next iteration of the failed preference, not another
-	// assignment probe or another attempt at the original extra slots.
-	const int slot = stage == HeapServiceTableGrowthStage::Scheduled
-		? insertHashWithAdmission<HashStore::Scheduled>(key, value, 0, &cpu, nullptr, LuaAllocationRecovery::CurrentOrFresh, stage, parkExtraSlots, &sourceBudget)
-		: insertHashWithAdmission<HashStore::Resume>(key, value, 0, &cpu, nullptr, LuaAllocationRecovery::CurrentOrFresh, stage, parkExtraSlots, &sourceBudget);
-	if (slot != HASH_STORE_PENDING && slot != HASH_STORE_DECLINED) finishHashInsertion(key, value);
-	return slot;
 }
 
 bool TableRecord::advanceCensus(CPU& cpu) {
@@ -777,12 +762,6 @@ void TableRecord::publishHashInsertion(Value key, Value value) {
 	m_heap->writeTableEntry(m_address, key, value);
 }
 
-void TableRecord::finishHashInsertion(Value key, Value value) {
-	publishHashInsertion(key, value);
-	const u32 index = arraySlot(key);
-	if (index != NO_ARRAY_SLOT) updateLengthHint(index, true);
-}
-
 template <TableRecord::HashStore Policy>
 int TableRecord::assignHash(Value key, Value value, int nodeIndex, u8 extraHashSlots, CPU* cpu, HeapServiceTableGrowthStage stage)
 	noexcept(Policy == HashStore::ReturningIndex || Policy == HashStore::ReturningField) {
@@ -840,7 +819,7 @@ int TableRecord::assignProbedHash(const HashBody& body, u32 home, int nodeIndex,
 			return nodeIndex;
 		}
 	}
-	nodeIndex = insertHashWithAdmission<Policy>(key, value, extraHashSlots, cpu, nullptr, LuaAllocationRecovery::CurrentOrFresh, stage, extraHashSlots);
+	nodeIndex = insertHashWithAdmission<Policy>(key, value, extraHashSlots, cpu, nullptr, LuaAllocationRecovery::CurrentOrFresh, stage);
 	if (nodeIndex == HASH_STORE_DECLINED || nodeIndex == HASH_STORE_PENDING) return nodeIndex;
 	// Relocation invalidates a suspended collector cursor in resize().
 	// Already visited edges retain their colors; only the insertion is new.

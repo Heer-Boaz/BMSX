@@ -16,7 +16,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, RebuildTable, ResizeTable, InterruptPrelude, FullCollection, StoppedFinalMark, Count,
+	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count) + static_cast<uint32_t>(BiosCall::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -57,11 +57,6 @@ enum class HeapServiceClosureField : uint32_t {
 enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
-constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50u;
-enum class HeapServiceTableGrowthField : uint32_t {
-	Stage = 0, Receiver = 4, ExtraSlots = 8, ParkExtraSlots = 12,
-	InstructionPc = 16, LastPc = 20, NextPc = 24, Budget = 28,
-};
 enum class HeapServiceTableGrowthStage : uint32_t { Idle, Scheduled, RetryCurrent, RetryFresh };
 
 constexpr uint32_t HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
@@ -125,13 +120,6 @@ enum class HeapServiceObjectSweepAction : uint32_t { None, RebindRelocatedThread
 
 constexpr uint32_t HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 };
-
-constexpr uint32_t HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET = 0x760;
-enum class HeapServiceTableGrowthResultField : uint32_t { HashStorage = 0, ArrayStorage = 4 };
-constexpr uint32_t HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
-enum class HeapServiceTableResizeContextField : uint32_t {
-	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
-};
 
 // A private STORE selector, not a RAM latch or a mapped bus register.
 // The low three bits select a projection; record notifications include the

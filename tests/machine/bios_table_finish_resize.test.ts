@@ -94,7 +94,11 @@ function fixture(optLevel: 0 | 3) {
 		plan.array = array; plan.hash = hash; plan.keepHash = keepHash;
 		const expected = tables['resize'](record, key, value, previous, requested);
 		if (cppMirror) {
-			if (expected !== HASH_STORE_DECLINED) tables['finishResizedAssignment'](record, key, value);
+			if (expected !== HASH_STORE_DECLINED) {
+				tables['publishHashInsertion'](record, key, valueTag(value), valuePayload(value));
+				const index = tables['getArrayIndex'](key);
+				if (index >= 0) tables['updateLengthHint'](record, index, true);
+			}
 			assert.ok(cpu.beginHeapService(entry, [management, record, array, hash, scratch]));
 		} else {
 			// Exercise the original TS cursor order through the same port

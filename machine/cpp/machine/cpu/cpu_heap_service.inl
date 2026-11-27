@@ -16,15 +16,10 @@ static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRema
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
 static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
-static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Budget) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
+static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
 static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32) <= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
-static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET + static_cast<u32>(HeapServiceTableGrowthResultField::ArrayStorage) + sizeof(u32)
-	== HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET);
-static_assert(HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET + static_cast<u32>(HeapServiceTableResizeContextField::HashBytes) + sizeof(u32)
-	== HEAP_SERVICE_GC_PROJECTION_OFFSET);
+static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_GC_ARGUMENTS_OFFSET);
 static_assert(HEAP_SERVICE_GC_ARGUMENTS_OFFSET + static_cast<u32>(HeapServiceGcArgumentField::PendingTop) + sizeof(u32)
 	<= HEAP_SERVICE_THREAD_OFFSET);

@@ -6,6 +6,7 @@ module<const>
 return {
 	ram_base = 0x08000000,
 	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
+	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request
 	metadata_offset = 0x300,
 	control_offset = 0x344,
 	occupied_offset = 0x3f0,
@@ -14,8 +15,11 @@ return {
 	root_banks_offset = 0x600,
 	remark_head_offset = 0x680,
 	remark_new_index_offset = 12,
+	remark_parked_assignment_offset = 48,
+	remark_receiver_offset = 52,
 	object_context_offset = 0x700,
 	trace_context_offset = 0x740,
+	trace_string_work_offset = 12,
 	effect_offset = 0x788,
 	arguments_offset = 0x790,
 	remaining_device_cycles_address = 0x02c00000,

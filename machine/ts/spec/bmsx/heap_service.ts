@@ -9,7 +9,7 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
 	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, RebuildTable, ResizeTable, InterruptPrelude, FullCollection, StoppedFinalMark, Count,
+	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, FullCollection, StoppedFinalMark, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -48,11 +48,6 @@ export const enum HeapServiceClosureField {
 export const enum HeapServiceRecordKind { Table, CanonicalClosure, DynamicClosure }
 export const enum HeapServiceRecordMode { Direct = 1, Scheduled, RetryCurrent, RetryFresh }
 
-export const HEAP_SERVICE_TABLE_GROWTH_OFFSET = 0xf50;
-export const enum HeapServiceTableGrowthField {
-	Stage = 0, Receiver = 4, ExtraSlots = 8, ParkExtraSlots = 12,
-	InstructionPc = 16, LastPc = 20, NextPc = 24, Budget = 28,
-}
 export const enum HeapServiceTableGrowthStage { Idle, Scheduled, RetryCurrent, RetryFresh }
 
 export const HEAP_SERVICE_BIOS_CALL_OFFSET = 0xf80;
@@ -116,13 +111,6 @@ export const enum HeapServiceObjectSweepAction { None, RebindRelocatedThread, Re
 
 export const HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 }
-
-export const HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET = 0x760;
-export const enum HeapServiceTableGrowthResultField { HashStorage = 0, ArrayStorage = 4 }
-export const HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET = 0x768;
-export const enum HeapServiceTableResizeContextField {
-	KeyTag = 0, KeyWord = 4, ValueTag = 8, ValueWord = 12, Previous = 16, Requested = 20, KeepHash = 24, HashBytes = 28,
-}
 
 // A private STORE selector, not a RAM latch or a mapped bus register.
 // The low three bits select a projection; record notifications include the

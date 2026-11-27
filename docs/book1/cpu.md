@@ -1533,11 +1533,12 @@ execute on ordinary CPU grants while devices continue to advance.
 The instruction's base charge is not repeated on retry. The BIOS uses the
 same admission and recovery procedure for a new captureless closure from
 a ROM prototype. Collection during a suspended table insertion
-can also run on ordinary CPU grants. A table insertion
-can pause both when its proposed capacity exceeds the remaining logical
-budget and when its backing storage does not fit. After collection, the CPU
-replans the insertion using the surviving mappings. No table or new mapping
-is visible until its reservation succeeds. Interrupt entry and the following
+uses the same time contract. A table-write instruction can pause both when
+its proposed capacity exceeds the remaining logical budget and when backing
+storage does not fit. The BIOS completes the required collection, checks
+whether the existing storage can now hold the entry, then replans with the
+surviving mappings if necessary. No new capacity or mapping is published
+until it can complete the write. Interrupt entry and the following
 instruction wait until the request completes or raises its error.
 
 When a table-write instruction needs replacement storage, the resident memory
@@ -1675,23 +1676,22 @@ An insertion may reserve more storage. Its base charge does not depend on
 whether the current storage can hold the mapping, or on how entries are
 arranged or moved. A `SETFIELD` prefix request does not change this charge.
 When an indexed store must repartition a table to insert a positive Integer
-key, it scans the existing array slots to choose the new array size. The first
-64 slots of each such scan are included; each further group of four slots,
-including a partial group, costs one cycle. A scan of 65,536 slots adds
-16,368 cycles. For arrays of at least 1,024 slots, a grant that cannot pay
-for the whole scan counts only the slots it covers. The next grant resumes
-at the next tag. This is execution of the same store, not an allocation
-park: no replacement is reserved until the scan finishes. A reservation
-refusal after that point enters ordinary allocation recovery. Collection at
-tick boundaries and stopped final remark wait while the scan is in progress.
+key, the resident routine scans the current array and hash to choose the
+new sizes. For the array, the first 64 slots are included before the
+allowance is drawn down by one unit per further group of four slots,
+including a partial final group. For arrays of at least 1,024 slots, a
+partly completed census resumes at its next tag.
 
-For a positive Integer key, a hash smaller than 1,024 slots is also scanned: the first 64 slots are included, then each pair costs one
-cycle. The largest such scan (512 slots) adds 224 cycles. From 1,024 slots
-onward, the processor reads the Integer range counts instead. A hash-only
-addition uses the live count above 64 slots. An overwrite or an insertion that fits an
-existing slot performs neither scan. A store through `rawset` pays the same
-scan charges. A failed reservation does not refund a completed
-scan; a recovery attempt that scans again pays for its own work.
+For an existing hash smaller than 1,024 slots, the first 64 slots are
+included and each further pair uses one unit. At 1,024 slots and above
+the routine reads the Integer range counts instead. A hash-only addition
+uses the live-entry count above 64 slots. An overwrite or an insertion
+that fits an existing slot performs neither scan. An unfinished census
+does not reserve replacement storage. These units govern the work
+allowance, not additional CPU charges; the resident instructions set
+the cycle charge. A raw store through `rawset` charges the
+census units directly as cycles.
+
 When an insertion replaces a hash with more than 64 **old** slots and
 either leaves array capacity unchanged or creates the first array backing,
 the resident memory routine prepares the new hash and visits the sources
@@ -1726,7 +1726,7 @@ raw shrink that has started moving retained tags. Before that tag move, the
 reset can discard the pending raw shrink.
 
 Storage growth counts separately against the language-allocation budget. A metamethod invocation pays its ordinary call charge separately.
-An incremental allocation assist adds its work charge as specified above. An insertion that
+An allocation assist inside the resident table write pays its ordinary instruction cycles. An insertion that
 fails to reserve storage leaves the requested mapping unmodified.
 
 ### Builtin call charges {#sec-cpu-builtin-call-charges}

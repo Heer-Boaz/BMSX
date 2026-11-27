@@ -13,6 +13,7 @@
 #include "spec/bmsx/heap_service.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "spec/bmsx/rom_header.h"
 
 namespace {
 using namespace bmsx;
@@ -251,10 +252,9 @@ int main(int argc, char** argv) {
 					for (int grant = 0; grant < 512 && allocation.entries == before.entries && result == RunResult::Yielded; ++grant)
 						result = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
 					const u32 management = cpu.heapAllocator().managementOffset();
-					const auto stage = memory.readRamRecordWord(management + (growField
-						? HEAP_SERVICE_TABLE_GROWTH_OFFSET + static_cast<u32>(HeapServiceTableGrowthField::Stage)
-						: HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::Destination)));
-					const bool issued = memory.readRamRecordWord(management + HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::Kind)) == static_cast<u32>(HeapServiceBiosCallKind::Opcode);
+					const u32 frontier = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
+					const auto completion = static_cast<HeapServiceBiosCallKind>(memory.readRamRecordWord(
+						frontier + static_cast<u32>(HeapServiceBiosCallField::Kind)));
 					if (allocation.entries != before.entries + 1 || allocation.returns != before.returns + 1
 						|| allocation.resumes != before.resumes || allocation.exceptions != before.exceptions)
 						throw std::runtime_error("The generated allocation exit did not hand off exactly once: "
@@ -262,14 +262,28 @@ int main(int argc, char** argv) {
 							+ std::to_string(allocation.returns - before.returns) + " returns at PC "
 							+ std::to_string(cpu.readCurrentInstructionPc()) + ", run result " + std::to_string(static_cast<int>(result)));
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
-					const bool parked = growField
-						? stage == static_cast<u32>(HeapServiceTableGrowthStage::Scheduled)
-						: stage != 0u;
-					if (result != RunResult::Yielded || !cpu.heapServiceActive()
-						|| (biosCall ? (!issued || caller != cpu.lastPc + 4) : (!parked || caller != cpu.readCurrentInstructionPc())))
+					if (result != RunResult::Yielded || !cpu.heapServiceActive())
+						throw std::runtime_error("The generated allocation did not suspend");
+					if (growField) {
+						const u32 imageAddress = SYSTEM_ROM_BASE
+							+ memory.readMappedU32LE(SYSTEM_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
+						const u32 descriptor = memory.readMappedU32LE(imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
+						const u32 root = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
+							+ static_cast<u32>(HeapServiceOperation::TableGrow) * sizeof(u32));
+						const u32 activeRoot = memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Function));
+						const u32 origin = memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
+						if (completion != HeapServiceBiosCallKind::Discard || cpu.allocationParked() || activeRoot != root
+							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
+							throw std::runtime_error("The generated SETFIELD did not hand off to the bound TableGrow completion frontier");
+					} else if (biosCall
+						? completion != HeapServiceBiosCallKind::Opcode || caller != cpu.lastPc + INSTRUCTION_BYTES
+						: memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET
+							+ static_cast<u32>(HeapServiceClosureField::Destination)) == 0u || caller != cpu.readCurrentInstructionPc()) {
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
+					}
 					std::cout << allocation.entries - before.entries;
-					if (growField) std::cout << ' ' << stage << " 1 " << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
+					if (growField) std::cout << ' ' << static_cast<u32>(completion)
+						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else
 					throw std::runtime_error("Generated allocation proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");

@@ -1,8 +1,6 @@
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_GC_PROJECTION_OFFSET, HEAP_SERVICE_IRQ_FORWARD_OFFSET,
 	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET,
-	HEAP_SERVICE_TABLE_GROWTH_OFFSET, HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET,
-	HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET,
 	HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT, HEAP_SERVICE_VALUE_OFFSET,
 } from '../../spec/bmsx/heap_service';
 import { RAM_BASE } from '../../spec/bmsx/memory_map';
@@ -18,9 +16,6 @@ export class HeapService {
 	public readonly biosCallAddress: number;
 	public readonly irqForwardAddress: number;
 	public readonly closureContinuationAddress: number;
-	public readonly tableGrowthAddress: number;
-	public readonly tableGrowthResultAddress: number;
-	public readonly tableResizeContextAddress: number;
 
 	public constructor(heap: GcHeap) {
 		const memory = heap.memory;
@@ -31,9 +26,6 @@ export class HeapService {
 		this.biosCallAddress = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		this.irqForwardAddress = management + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
 		this.closureContinuationAddress = management + HEAP_SERVICE_CLOSURE_OFFSET;
-		this.tableGrowthAddress = management + HEAP_SERVICE_TABLE_GROWTH_OFFSET;
-		this.tableGrowthResultAddress = management + HEAP_SERVICE_TABLE_GROWTH_RESULT_OFFSET;
-		this.tableResizeContextAddress = management + HEAP_SERVICE_TABLE_RESIZE_CONTEXT_OFFSET;
 		this.thread = new Thread(heap);
 		memory.writeRamRecordWord(thread + ThreadField.StackBlock, management + HEAP_SERVICE_VALUE_OFFSET);
 		memory.writeRamRecordWord(thread + ThreadField.StackCapacity, HEAP_SERVICE_VALUE_COUNT);

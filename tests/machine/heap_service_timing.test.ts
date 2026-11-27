@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AllocationRecovery, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -13,7 +13,8 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
-	HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage,
+	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
+	HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage, HeapServiceRemarkHeadField,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -201,7 +202,7 @@ test('the resident full collection crosses VBlank during String reclamation', ()
 	assert.equal(finish(), finishedAt);
 });
 
-test('a parked SETT retains its roots across a timed recovery VBlank and restore', () => {
+test('a suspended SETT retains only its published roots across a timed recovery VBlank and restore', () => {
 	const system = linkTestSystemBlua32(compileHeapServiceSystem('return function(owner, key, value)\nowner[key] = value\nreturn 42\nend', 0));
 	assert.ok(system.image.header.flags & HEAP_SERVICE_IMAGE_FLAG);
 	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
@@ -230,49 +231,34 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
 	assert.ok(budget.usedBytes() + 5 * slots > budget.capacity());
 
-	assert.equal(frames.runCyclesToNextLogicalTick(4096), false);
-	assert.equal(cpu.allocationParked(), true);
-	const pending = cpu.captureRuntimeState().pendingAllocation;
-	assert.ok(pending);
-	assert.equal(pending.recovery, AllocationRecovery.Fresh);
-	assert.equal(pending.receiver, owner);
-	assert.equal(pending.value, payload);
-	const caller = cpu.getFrameDepth() - 1;
-	const issuePc = cpu.readFramePc(caller);
-	assert.equal(issuePc, pending.instructionPc);
-	const deferred = runtime.frameLoop.frameState.deferredAllocationCycles;
-	assert.ok(deferred > 0);
+	const management = cpu.heapAllocator.managementOffset();
+	const gate = management + HEAP_SERVICE_BIOS_CALL_OFFSET, head = management + HEAP_SERVICE_REMARK_HEAD_OFFSET;
+	const parked = () => memory.readRamRecordWord(head + HeapServiceRemarkHeadField.HasPendingAssignment);
+	assert.equal(frames.runCyclesToNextLogicalTick(512), false);
+	for (let i = 0; i < 131072 && !parked() && cpu.heapServiceActive(); ++i) frames.stepInstruction(1);
+	assert.equal(parked(), 1, 'the activation has declared its parked operand roots before collecting');
 	assert.equal(gc.phase(), GcPhase.Pause);
-	// The successor returns a constant, so clear the dead argument slots.
-	// Only the pending store now keeps the receiver and its String value alive.
+	assert.equal(memory.readRamRecordWord(gate + HeapServiceBiosCallField.Kind), HeapServiceBiosCallKind.Discard);
+	assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.Receiver), owner);
+	assert.equal(memory.readRamRecordWord(head + HeapServiceRemarkHeadField.ValueWord), valuePayload(payload));
+	assert.equal(cpu.allocationParked(), false, 'the CPU has no native allocation retry state');
+	const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
+	assert.ok(successor > memory.readRamRecordWord(gate + HeapServiceBiosCallField.InstructionPc));
+	// Only the published operand roots now retain the reached Table and its String.
 	const frame = cpu.activeThread.currentFrame!;
 	frame.registers.clear(frame.top);
 	frame.top = 0;
-	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - deferred - 32);
+	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
 	const before = scheduler.nowCycles;
-	const service = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_GC_OFFSET;
-	for (let i = 0; i < 64 && !cpu.heapServiceActive(); ++i) {
-		const outcome = frames.stepInstruction(0);
-		assert.equal(outcome, cpu.heapServiceActive() ? InstructionStepResult.Advanced : InstructionStepResult.Blocked);
-		assert.equal(cpu.allocationReady(), false);
-		assert.equal(cpu.readFramePc(caller), issuePc);
-		if (!cpu.heapServiceActive()) assert.equal(scheduler.nowCycles, before, 'native recovery before firmware admission remains stopped');
-	}
-	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceRootHead);
-	assert.equal(scheduler.nowCycles - before, deferred, 'the accepted issuing prefix settles once before BIOS instructions');
-	assert.equal(runtime.frameLoop.frameState.deferredAllocationCycles, 0);
 	assert.equal(frames.runCyclesToNextLogicalTick(128), true);
-	assert.ok(scheduler.nowCycles >= edge);
-	assert.ok(frames.lastTickCpuUsedCycles > deferred, 'the VBlank accounts for both the issuing prefix and the BIOS grant');
+	assert.ok(scheduler.nowCycles >= edge && scheduler.nowCycles > before);
+	assert.ok(frames.lastTickCpuUsedCycles > 0, 'the recovery pays ordinary CPU time');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(memory.readRamRecordWord(service + HeapServiceGcField.Stage), HeapServiceGcStage.MaintenanceRootHead);
-	assert.equal(cpu.allocationReady(), false);
+	assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the collector phase is not serialized by the host');
 	assert.equal(cpu.enterPendingInterrupt(), false);
-	assert.equal(cpu.readFramePc(caller), issuePc);
-	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
-	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
+	assert.equal(cpu.readFramePc(caller), successor);
+	assert.equal(parked(), 1);
 	const checkpoint = captureRuntimeSaveState(runtime);
 
 	function finish() {
@@ -283,7 +269,7 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 		// than relying on the old native loop's low grant count.
 		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) {
 			frames.runCyclesToNextLogicalTick(100_000);
-			grants.push([scheduler.nowCycles, gc.phase(), gc.serviceStage(), +cpu.allocationParked(), +cpu.allocationReady()]);
+			grants.push([scheduler.nowCycles, gc.phase(), gc.serviceStage(), parked(), +cpu.heapServiceActive()]);
 		}
 		assert.equal(cpu.allocationParked(), false);
 		assert.equal(cpu.heapServiceActive(), false);
@@ -298,8 +284,8 @@ test('a parked SETT retains its roots across a timed recovery VBlank and restore
 	}
 	const completed = finish();
 	applyRuntimeSaveState(runtime, checkpoint);
-	assert.deepEqual(cpu.captureRuntimeState().pendingAllocation, pending);
-	assert.equal(cpu.allocationReady(), false);
+	assert.equal(parked(), 1);
+	assert.equal(cpu.allocationParked(), false);
 	assert.deepEqual(finish(), completed);
 });
 
