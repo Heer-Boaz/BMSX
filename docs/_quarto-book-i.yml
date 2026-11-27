@@ -3,7 +3,7 @@ project:
 
 book:
   title: "Book I — System and Hardware Reference"
-  subtitle: "BMSX-DR-001 · Publication revision 1"
+  subtitle: "BMSX-DR-001"
   output-file: bmsx-book-i
   chapters:
     - index.md
@@ -20,4 +20,4 @@ book:
     - book1/input.md
     - book1/system.md
 
-subject: "BMSX-DR-001 — System and Hardware Reference — Publication revision 1"
+subject: "BMSX-DR-001 — System and Hardware Reference"

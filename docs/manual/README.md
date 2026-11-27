@@ -134,8 +134,7 @@ book index covers the chapters included in that volume.
 
 ## Publishing and retention
 
-Shared metadata and book profiles carry document identifiers, publication
-revisions and dates.
+Shared metadata and book profiles carry document identifiers and dates.
 `index.md` supplies a short reader's guide for each profile; the HTML profile
 retains the series overview. Standard KOMA-Script title-page controls in
 `typography.tex` supply the series heading, notation and the existing MIT notice.

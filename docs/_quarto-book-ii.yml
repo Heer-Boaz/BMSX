@@ -3,7 +3,7 @@ project:
 
 book:
   title: "Book II — BLua32 and BIOS Reference"
-  subtitle: "BMSX-DR-002 · Publication revision 1"
+  subtitle: "BMSX-DR-002"
   output-file: bmsx-book-ii
   chapters:
     - index.md
@@ -20,4 +20,4 @@ book:
     - book1/program-images.md
     - book1/cpu.md
 
-subject: "BMSX-DR-002 — BLua32 and BIOS Reference — Publication revision 1"
+subject: "BMSX-DR-002 — BLua32 and BIOS Reference"
