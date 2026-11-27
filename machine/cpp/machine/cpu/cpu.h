@@ -364,8 +364,6 @@ private:
 	bool decodeBackedInstruction(Blua32ExecutionImage& image, DecodedInstructionPage& page, u32 pageOffset,
 		u32 pc, MappedBusSignals busSignals, NativeWarmupPages* requested = nullptr);
 #endif
-	u32 staticClosureForRecord(const FunctionPrototype& record);
-	FunctionPrototype decodePrototype(const Blua32FunctionRecordLatch& record) const;
 	bool readFunctionRecord(
 		Blua32ExecutionImage& image,
 		u32 address,
@@ -387,7 +385,6 @@ private:
 	void enterResidentFrame(CallFrame&);
 	void enterReferenceStore(CallFrame& issuer, u32 payloadAddress, Value value, u32 tagAddress = 0u);
 	void enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u32 slot, Value value);
-	u32 allocateClosure(const FunctionPrototype&, u32 count);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
@@ -399,7 +396,6 @@ private:
 	int admitRegisterWindow(CallFrame& issuer, const CallFrame& receiver, int end, OpCode opcode, int a);
 	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
 	void writeReturnValues(CallFrame& frame, CallResultPlacement, BuiltinArgsView values);
-	ValueSpan& ensureRegisterCapacity(CallFrame& frame, int index);
 	bool executeWordStores(CallFrame& frame, u32 address, int source, int count);
 	bool continueWordStores(CallFrame& frame, u32 address, int source, int count);
 	void executeMemoryLoad(CallFrame& frame, int destination, MemoryAccessKind kind, u32 address);

@@ -1,5 +1,5 @@
-import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
-import { FrameField, type FrameExecutionTarget } from '../../machine/ts/machine/cpu/call_state';
+import { CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL, CLOSURE_PROTOTYPE_ADDRESS, executionDomain as closureExecutionDomain, type FunctionPrototype } from '../../machine/ts/machine/cpu/closure';
+import { FRAME_WINDOW_MASK, FrameField, registerWindowBucket, type FrameExecutionTarget } from '../../machine/ts/machine/cpu/call_state';
 import type { ExecutionImageRelocation } from '../../machine/ts/machine/cpu/execution_image';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import {
@@ -27,6 +27,7 @@ export type HotResumeRevisions = readonly [
 
 export type HotResumeRelocation = ExecutionImageRelocation & {
 	readonly observations: Uint32Array;
+	readonly valueEnd: number;
 };
 
 const FRAME_CALL_SITE_WORDS = 2;
@@ -56,7 +57,7 @@ export function buildHotResumeRelocation(
 		const header = memory.readRamRecordWord(closure);
 		const flags = header >>> (8 * CLOSURE_BINDING_FLAGS);
 		if ((header & 0xff) !== ValueTag.Closure || (flags & CLOSURE_CANONICAL) === 0 || owner.gc.sweepGarbage(closure)) return;
-		const target = revisions[executionDomain(flags) + 1];
+		const target = revisions[closureExecutionDomain(flags) + 1];
 		if (target === null) return;
 		const record = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
 		const index = blua32FunctionIndexAtAddress(target.previousImage, record);
@@ -89,7 +90,18 @@ export function buildHotResumeRelocation(
 		}
 	});
 
+	const thread = cpu.activeThread;
+	// Per live frame: earliest argument slot, existing end, admitted end.
+	const windows = new Uint32Array(3 * frameCount);
+	let valueEnd = 0;
 	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+		const base = cpu.readThreadFrameWord(thread.address, frameIndex, FrameField.StackBase) & FRAME_WINDOW_MASK;
+		const firstArg = cpu.readThreadFrameWord(thread.address, frameIndex, FrameField.VarargBase) & FRAME_WINDOW_MASK;
+		const capacity = cpu.readThreadFrameWord(thread.address, frameIndex, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
+		const index = frameIndex * 3;
+		windows[index] = Math.min(base, firstArg);
+		windows[index + 1] = windows[index + 2] = base + capacity;
+		valueEnd = Math.max(valueEnd, base + capacity);
 		const executionDomain = cpu.readFrameExecutionDomain(frameIndex);
 		const target = revisions[executionDomain + 1];
 		if (target === null) {
@@ -112,7 +124,43 @@ export function buildHotResumeRelocation(
 			unmappedWords.push(`frame ${frameIndex} continuation 0x${cpu.readFramePc(frameIndex).toString(16)}`);
 			continue;
 		}
+		const previous = target.previousImage.functions[functionIndex];
+		const next = target.nextImage.functions[blua32FunctionIndexAtAddress(target.nextImage, functionAddress)];
+		const captures = cpu.getFrameUpvalueCount(frameIndex);
+		if (next.numParams !== previous.numParams || next.isVararg !== previous.isVararg || next.upvalues.length !== captures) {
+			unmappedWords.push(`frame ${frameIndex} argument or capture layout`);
+			continue;
+		}
+		if (captures !== 0) {
+			const closure = cpu.readThreadFrameWord(thread.address, frameIndex, FrameField.Closure);
+			const bindingFlags = cpu.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS);
+			const prototype = closures.get(closure) ?? cpu.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
+			if (closureExecutionDomain(bindingFlags) !== executionDomain || prototype !== functionAddress) {
+				unmappedWords.push(`frame ${frameIndex} capture binding`);
+				continue;
+			}
+		}
+		const needed = Math.max(next.numParams, next.maxStack);
+		if (needed > capacity) {
+			const end = base + registerWindowBucket(needed);
+			windows[index + 2] = end;
+			valueEnd = Math.max(valueEnd, end);
+		}
 		frames[frameIndex] = { domain: executionDomain, functionAddress, pc };
+	}
+	for (let index = 0; index < windows.length; index += 3) {
+		const oldEnd = windows[index + 1], newEnd = windows[index + 2];
+		if (oldEnd === newEnd) continue;
+		if (newEnd > thread.stackRegisters.capacity()) {
+			unmappedWords.push(`frame ${index / 3} register backing`);
+			continue;
+		}
+		for (let other = 0; other < windows.length; other += 3) {
+			if (index !== other && oldEnd < windows[other + 2] && windows[other] < newEnd) {
+				unmappedWords.push(`frame ${index / 3} overlaps live frame ${other / 3}`);
+				break;
+			}
+		}
 	}
 
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
@@ -186,7 +234,7 @@ export function buildHotResumeRelocation(
 			`Hot Resume could not map: ${unmappedWords.join('; ')}.`,
 		);
 	}
-	return { closures, frames, observations };
+	return { closures, frames, observations, valueEnd };
 }
 
 export function applyHotResumeObservations(cpu: CPU, relocation: HotResumeRelocation): void {

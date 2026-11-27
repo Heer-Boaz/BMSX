@@ -4,9 +4,10 @@ import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { asClosure, asThread, type Value, valueBool, valueClosure, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
 import { ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
+import { writeLE32 } from '../../machine/ts/common/endian';
 import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
 import { compileCoroutineTest } from '../helpers/coroutine';
@@ -15,7 +16,28 @@ import { createTestRuntime } from '../helpers/runtime_sources';
 import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { BLUA32_FUNCTION_MAX_STACK_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { admitTestHeapServiceCpu } from '../helpers/heap_service_system';
+
+test('Hot Resume rejects a widened retained frame before replacing its ROM', () => {
+	const text = new Uint8Array(4);
+	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
+	const system = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1 }] });
+	const runtime = createTestRuntime(system.romBytes);
+	runtime.boot();
+	const { cpu, executionAddressSpace } = runtime.machine;
+	admitTestHeapServiceCpu(cpu, executionAddressSpace);
+	const frameIndex = cpu.getFrameDepth() - 1;
+	const fn = cpu.readFrameFunctionAddress(frameIndex);
+	const image = system.image;
+	const nextBytes = image.bytes.slice();
+	writeLE32(nextBytes, fn - image.address + BLUA32_FUNCTION_MAX_STACK_OFFSET, cpu.activeThread.stackRegisters.capacity() + 1);
+	const revision = { ...identityHotResumeRevision(image), nextImage: decodeBlua32Image(nextBytes, image.address) };
+	const before = cpu.captureRuntimeState();
+	assert.throws(() => buildHotResumeRelocation(cpu, [revision, null, null], cpu.getFrameDepth()), /register backing/);
+	assert.deepEqual(cpu.captureRuntimeState(), before);
+});
 
 for (const optLevel of [3] as const) for (const stop of ['ram', 'nmi', 'irq-nmi'] as const) test(`O${optLevel}: ROM relocation preserves RAM calls and ${stop} return words`, () => {
 	const image = compileFrameEvaluationTest(`

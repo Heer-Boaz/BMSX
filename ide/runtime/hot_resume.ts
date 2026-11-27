@@ -2,7 +2,7 @@ import { retireRuntimeFrameScopes } from './frame_scopes';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Blua32ExecutionBoot } from '../../machine/ts/machine/execution_address_space';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, registerWindowBucket } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	buildBlua32ExecutionRevision,
@@ -409,17 +409,10 @@ export function admitHotResume(
 			if (prepared.initCalls.length !== 0) {
 				// Install the revision only if the complete nested init batch has backing.
 				const thread = cpu.activeThread;
-				let end = 0;
-				for (let index = 0; index < retainedFrameCount; ++index) {
+				let end = relocation?.valueEnd ?? 0;
+				for (let index = 0; relocation === null && index < retainedFrameCount; ++index) {
 					const base = cpu.readThreadFrameWord(thread.address, index, FrameField.StackBase) & FRAME_WINDOW_MASK;
-					let width = cpu.readThreadFrameWord(thread.address, index, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
-					const target = relocation?.frames[index];
-					if (target != null) {
-						const image = blua32ToolingImageForDomain(freshMedia, target.domain)!.layout;
-						const fn = image.functions[blua32FunctionIndexAtAddress(image, target.functionAddress)];
-						const required = Math.max(fn.maxStack, fn.numParams);
-						if (required > width) width = registerWindowBucket(required);
-					}
+					const width = cpu.readThreadFrameWord(thread.address, index, FrameField.StackCapacity) & FRAME_WINDOW_MASK;
 					end = Math.max(end, base + width);
 				}
 				for (const call of prepared.initCalls) {

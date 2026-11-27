@@ -151,6 +151,7 @@ import {
 	admitsFunctionPc,
 	isRomInstructionHead,
 	readPublishedPrototype,
+	readRomEntry,
 	romFunctionVersionLane,
 	RomCallBindings,
 	RomFunctionLane,
@@ -444,12 +445,6 @@ export class CPU implements MappedPageInvalidator {
 		this.localRoots.length = base;
 		this.localRootScopeDepth -= 1;
 		this.stringPool.endLocalRoots();
-	}
-
-	private ensureStackCapacity(size: number, root: Value): void {
-		const thread = this.activeThread, current = thread.stackRegisters.capacity();
-		const next = size <= current ? current : Math.max(8, 1 << (32 - Math.clz32(size - 1)));
-		if (next !== current) thread.resizeStack(next, root);
 	}
 
 	private clearCompletionValues(): void {
@@ -2615,21 +2610,61 @@ export class CPU implements MappedPageInvalidator {
 		pc: number,
 	): void {
 		if (this.fixedInterruptActive() || this.stringComparison.remaining !== 0) throw new Error('Pending CPU work must retire before replacing code execution.');
-		const image = this.executionImageForDomain(executionDomainId);
-		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc)
-			|| !this.readFunctionRecord(image, functionAddress, CPU.executionBusSignalsForDomain(executionDomainId)))
+		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
+		const image = this.executionImagesByDomain[executionDomainId + 1];
+		if (image === null || !admitsFunctionPc(image.romFunctions, functionAddress, pc))
 			throw new Error('Frame execution must enter an instruction of its published function.');
-		const frame = this.activeThread.frameAtDepth(frameIndex);
-		if (frame === this.activeThread.currentFrame) this.abortStalledMemoryWrite();
-		const registerCount = Math.max(this.functionRecordLatch.maxStack, this.functionRecordLatch.numParams);
-		if (registerCount > MAX_THREAD_VALUE_SLOTS) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		if (registerCount > frame.stackCapacity) {
-			this.ensureRegisterCapacity(frame, registerCount - 1);
+
+		const thread = this.activeThread, frame = thread.frameAtDepth(frameIndex), closure = frame.closureAddress;
+		const flags = closure === 0 ? 0 : this.memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS);
+		const boundTarget = closure !== 0 && Closure.executionDomain(flags) === executionDomainId
+			&& this.memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) === functionAddress;
+		const count = frame.captureCount;
+		if (count !== 0 && !boundTarget) throw new Error('Frame execution does not preserve its capture binding.');
+
+		const directory = image.romFunctions, record = this.functionRecordLatch;
+		const lane = romFunctionVersionLane(directory, functionAddress);
+		if (boundTarget && (flags & Closure.CLOSURE_LATCHED_PROTOTYPE) !== 0) {
+			Closure.readBinding(this.memory, closure, flags, directory, this.executionReadView, record);
+		} else if (!directory.mappedCode && lane >= 0) {
+			readPublishedPrototype(directory.versions, lane, record);
+		} else {
+			const view = this.executionReadView;
+			const busSignals = CPU.executionBusSignalsForDomain(executionDomainId);
+			if ((!directory.mappedCode && (((functionAddress - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE
+				|| ((functionAddress - CART_ROM_BASE) >>> 0) < CART_ROM_SIZE))
+				|| !this.memory.bindMappedReadView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, busSignals, view))
+				throw new Error('Frame execution must enter an instruction of its published function.');
+			readRomEntry(view.bytes, view.byteOffset, record);
+			record.recordUpvalueCount = readLE32(view.bytes, view.byteOffset + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
+			if (!admitsFunctionPc(directory, functionAddress, record.codeAddress))
+				throw new Error('Frame execution must enter an instruction of its published function.');
 		}
+
+		if (record.recordUpvalueCount !== count) throw new Error('Frame execution does not preserve its capture binding.');
+
+		const registerCount = Math.max(1, record.maxStack, record.numParams), currentWidth = frame.stackCapacity;
+		if (registerCount > MAX_THREAD_VALUE_SLOTS) throw new Error('Frame execution exceeds the admitted register window.');
+		let width = currentWidth;
+		if (registerCount > currentWidth) {
+			width = registerWindowBucket(registerCount);
+			const base = frame.stackBase, oldEnd = base + currentWidth, end = base + width;
+			if (end > thread.stackRegisters.capacity()) throw new Error('Frame execution exceeds the admitted register window.');
+			// Ordinary CALLs can already share physical slots. Replace only
+			// if none of the newly claimed slots belongs to another frame.
+			for (let other = thread.currentFrame; other !== null; other = other.previous) {
+				if (other === frame) continue;
+				const otherBase = other.stackBase;
+				if (oldEnd < otherBase + other.stackCapacity && end > Math.min(otherBase, other.varargBase))
+					throw new Error('Frame execution exceeds the admitted register window.');
+			}
+		}
+		if (frame === thread.currentFrame) this.abortStalledMemoryWrite();
+		if (width !== currentWidth) frame.growRegisterWindow(width);
 		frame.functionAddress = functionAddress;
 		frame.executionImage = image;
 		frame.savedExecutionBank = executionDomainId;
-		if (frame === this.activeThread.currentFrame) this.latchActiveExecutionImage(executionDomainId, image);
+		if (frame === thread.currentFrame) this.latchActiveExecutionImage(executionDomainId, image);
 		frame.decodedPage = null;
 		frame.compilationEntry = true;
 		frame.pc = pc;
@@ -3854,16 +3889,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 		frame.setCallResultTop(end, count);
 		this.charge(targetCount);
-	}
-
-	private ensureRegisterCapacity(frame: CallFrame, index: number): ValueSlots {
-		const registers = frame.registers;
-		if (index >= frame.stackCapacity) {
-			const capacity = registerWindowBucket(index + 1);
-			this.ensureStackCapacity(frame.stackBase + capacity, valueClosure(frame.closureAddress));
-			frame.growRegisterWindow(capacity);
-		}
-		return registers;
 	}
 
 	private bumpRegisterTop(frame: CallFrame, index: number): void {

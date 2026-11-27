@@ -228,6 +228,25 @@ int main(int argc, char** argv) {
 						<< ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
+				case 'G': {
+					int frame, domain;
+					u32 function, pc;
+					trace >> frame >> domain >> function >> pc;
+					const auto budget = cpu.instructionBudgetRemaining;
+					const auto cycle = scheduler.nowCycles();
+					int admission = 1;
+					try {
+						cpu.writeFrameExecution(frame, static_cast<ExecutionDomainId>(domain), function, pc);
+					} catch (const std::runtime_error& error) {
+						const std::string_view message(error.what());
+						if (message == "Frame execution exceeds the admitted register window.") admission = 0;
+						else if (message == "Frame execution does not preserve its capture binding.") admission = 2;
+						else throw;
+					}
+					std::cout << admission << ' ' << budget - cpu.instructionBudgetRemaining << ' ' << scheduler.nowCycles() - cycle
+						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
+					break;
+				}
 				case 'D': {
 					int cycles;
 					trace >> cycles;

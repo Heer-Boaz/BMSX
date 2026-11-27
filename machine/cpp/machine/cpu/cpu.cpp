@@ -160,14 +160,6 @@ Value CPU::createBuiltinFunction(BuiltinFunctionId id) {
 	return valueBuiltinFunction(id);
 }
 
-u32 CPU::allocateClosure(const FunctionPrototype& prototype, u32 count) {
-	const bool latched = !m_functionRecordLatch.romBacked;
-	const u32 address = m_luaHeap.allocateClosureRecord(count, latched);
-	ClosureRecord::initialize(m_memory, address, prototype, m_heap.white(), count, false, latched);
-	m_heap.publishObject(address);
-	return address;
-}
-
 void CPU::reset() {
 	if (fixedInterruptDefersReset()) throw BMSX_RUNTIME_ERROR("System IRQ must retire before reset.");
 	const u32 previousRoot = m_rootView.address;
@@ -547,39 +539,9 @@ bool CPU::isExecutionDomainResident(ExecutionDomainId executionDomainId) const {
 	] != nullptr;
 }
 
-FunctionPrototype CPU::decodePrototype(const Blua32FunctionRecordLatch& record) const {
-	FunctionPrototype result;
-	result.functionAddress = record.address;
-	result.entry = {record.codeAddress, record.numParams, record.maxStack, record.flags};
-	result.upvalueTableAddress = record.upvalueTableAddress;
-	result.recordUpvalueCount = record.upvalueCount;
-	result.executionDomainId = record.image->executionDomainId;
-	return result;
-}
-
 FunctionPrototype CPU::readClosureBinding(u32 closure) {
 	const ClosureRecord::BindingFlags binding{m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS)};
 	return ClosureRecord::readBinding(m_memory, closure, binding, executionImageForDomain(binding.domain())->romFunctions);
-}
-
-// Tool-driven entry and frame editing can borrow a live canonical record.
-// Only firmware publishes new canonical bindings.
-u32 CPU::staticClosureForRecord(const FunctionPrototype& record) {
-	struct Lookup {
-		CPU& cpu;
-		const FunctionPrototype& prototype;
-		u32 first = 0u;
-	} lookup{*this, record};
-	m_heap.visitObjectRecords(&lookup, [](void* context, u32 address) {
-		auto& [cpu, prototype, first] = *static_cast<Lookup*>(context);
-		if ((first == 0u || address < first)
-			&& cpu.m_memory.readRamRecordByte(address) == static_cast<u8>(ValueTag::Closure)
-			&& (cpu.m_memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) != 0u
-			&& cpu.m_memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS) == prototype.functionAddress
-			&& !cpu.m_heap.sweepGarbage(address) && cpu.readClosureBinding(address) == prototype)
-			first = address;
-	});
-	return lookup.first != 0u ? lookup.first : allocateClosure(record, 0);
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
@@ -2484,37 +2446,70 @@ void CPU::writeFrameExecution(
 	u32 pc
 ) {
 	if (fixedInterruptActive() || m_stringComparison.remaining) throw BMSX_RUNTIME_ERROR("Pending CPU work must retire before replacing code execution.");
-	auto* publishedImage = executionImageForDomain(executionDomainId);
-	if (!publishedImage || !publishedImage->admitsFunctionPc(functionAddress, pc)
-		|| !readFunctionRecord(*publishedImage, functionAddress, executionBusSignalsForDomain(executionDomainId)))
+	if (m_unpublishedRomMask != 0u) throw BMSX_RUNTIME_ERROR("Installed ROM must be published before CPU execution.");
+	auto* image = m_executionImagesByDomain[static_cast<size_t>(executionDomainId + 1)].get();
+	if (!image || !image->admitsFunctionPc(functionAddress, pc))
 		throw BMSX_RUNTIME_ERROR("Frame execution must enter an instruction of its published function.");
-	auto& image = *publishedImage;
-	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	const auto prototype = decodePrototype(functionRecord);
-	const u32 registerCount = prototype.entry.registerCapacity();
-	if (registerCount > MAX_THREAD_VALUE_SLOTS) throw LuaOutOfMemorySignal{};
-	CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	if (&frame == m_activeThread->currentFrame) abortStalledMemoryWrite();
-	if (registerCount > static_cast<u32>(frame.stackCapacity())) {
-		ensureRegisterCapacity(frame, static_cast<int>(registerCount) - 1);
+	auto& thread = *m_activeThread;
+	auto& frame = *thread.frameAtDepth(static_cast<size_t>(frameIndex));
+	const u32 closure = frame.closureAddress(), captures = frame.captureCount();
+	const ClosureRecord::BindingFlags binding{
+		closure != 0u ? m_memory.readRamRecordByte(closure + CLOSURE_BINDING_FLAGS) : u8{0},
+	};
+	const bool sameBinding = closure != 0u && binding.domain() == executionDomainId
+		&& m_memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS) == functionAddress;
+	if (captures != 0u && !sameBinding)
+		throw BMSX_RUNTIME_ERROR("Frame execution does not preserve its capture binding.");
+
+	const auto& directory = image->romFunctions;
+	const auto* published = directory.mappedCode ? nullptr : directory.find(functionAddress);
+	FunctionEntry entry;
+	u32 upvalueCount;
+	if (sameBinding && binding.latched()) {
+		const auto sampled = ClosureRecord::readBinding(m_memory, closure, binding, directory);
+		entry = sampled.entry;
+		upvalueCount = sampled.recordUpvalueCount;
+	} else if (published) {
+		entry = published->entry;
+		upvalueCount = published->upvalueCount;
+	} else {
+		Span<const u8> bytes;
+		if ((!directory.mappedCode && (functionAddress - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE || functionAddress - CART_ROM_BASE < CART_ROM_SIZE))
+			|| !m_memory.bindMappedReadView(functionAddress, BLUA32_FUNCTION_RECORD_SIZE, executionBusSignalsForDomain(executionDomainId), bytes))
+			throw BMSX_RUNTIME_ERROR("Frame execution must enter an instruction of its published function.");
+		entry = FunctionEntry::fromRom(bytes.data());
+		if (!image->admitsFunctionPc(functionAddress, entry.codeAddress))
+			throw BMSX_RUNTIME_ERROR("Frame execution must enter an instruction of its published function.");
+		upvalueCount = readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET);
 	}
-	// Publishing replacement code does not introduce a capture binding on a vector frame.
-	if (frame.closureAddress() != 0u) {
-		if ((functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u
-			&& functionRecord.upvalueCount == 0u) {
-			frame.writeControl(FrameField::Closure, staticClosureForRecord(prototype));
-		} else {
-			const u32 count = frame.captureCount();
-			u32 replacement = allocateClosure(prototype, count);
-			for (u32 index = 0; index < count; ++index)
-				ClosureRecord::setCaptureAddress(m_memory, replacement, index, frame.captureAddress(index));
-			frame.writeControl(FrameField::Closure, replacement);
+	if (captures != upvalueCount) throw BMSX_RUNTIME_ERROR("Frame execution does not preserve its capture binding.");
+
+	const u32 width = entry.registerCapacity();
+	const size_t current = frame.stackCapacity();
+	if (width > MAX_THREAD_VALUE_SLOTS) throw BMSX_RUNTIME_ERROR("Frame execution exceeds the admitted register window.");
+	int capacity = 0;
+	if (width > current) {
+		const size_t base = frame.stackBase();
+		const size_t first = base + current;
+		const size_t bucket = registerWindowBucket(width), end = base + bucket;
+		if (end > thread.stackCapacity) throw BMSX_RUNTIME_ERROR("Frame execution exceeds the admitted register window.");
+		// Existing CALL windows can overlap; only the newly claimed tail
+		// must be disjoint from every other live window.
+		for (auto* live = thread.currentFrame; live; live = live->previous) {
+			if (live == &frame) continue;
+			const size_t liveBase = live->stackBase();
+			const size_t liveFirst = std::min(liveBase, static_cast<size_t>(live->readWindow(FrameField::VarargBase)));
+			const size_t liveEnd = liveBase + live->stackCapacity();
+			if (first < liveEnd && liveFirst < end) throw BMSX_RUNTIME_ERROR("Frame execution exceeds the admitted register window.");
 		}
+		capacity = static_cast<int>(bucket);
 	}
-	frame.writeControl(FrameField::Function, functionRecord.address);
-	frame.executionImage = functionRecord.image;
+	if (&frame == thread.currentFrame) abortStalledMemoryWrite();
+	if (capacity != 0) frame.growRegisterWindow(capacity);
+	frame.writeControl(FrameField::Function, functionAddress);
+	frame.executionImage = image;
 	frame.saveExecutionBank(executionDomainId);
-	if (&frame == m_activeThread->currentFrame) latchActiveExecutionImage(executionDomainId, frame.executionImage);
+	if (&frame == thread.currentFrame) latchActiveExecutionImage(executionDomainId, image);
 	frame.decodedPage = nullptr;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	frame.nativeContinuationCells = {};
@@ -2696,17 +2691,6 @@ void CPU::writeReturnValues(CallFrame& frame, CallResultPlacement result, Builti
 	}
 	frame.placeResultTop(result, count);
 	instructionBudgetRemaining -= count;
-}
-
-ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
-	if (index < frame.stackCapacity()) {
-		return frame.registers;
-	}
-	const size_t bucket = registerWindowBucket(static_cast<size_t>(index) + 1);
-	const size_t end = static_cast<size_t>(frame.stackBase()) + bucket;
-	if (end > m_activeThread->stackCapacity) m_activeThread->resizeStack(nextPowerOfTwo(end));
-	frame.growRegisterWindow(static_cast<int>(bucket));
-	return frame.registers;
 }
 
 BuiltinResultsScratchScope CPU::acquireBuiltinResultScratch() {
