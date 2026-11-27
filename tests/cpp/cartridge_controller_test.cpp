@@ -107,6 +107,76 @@ void testSelectedSocketStorageByteCounts() {
 		&& empty.memory.readMappedWord(IO_CART_RAM_BYTE_COUNT) == 0u, "no storage is reported in the empty socket");
 }
 
+void testFittedRomGeometryReadout() {
+	using namespace bmsx;
+	static_assert(IO_SYS_ROM_BYTE_COUNT == 0x080101f4u && IO_CART0_ROM_BYTE_COUNT == 0x080101f8u
+		&& IO_CART1_ROM_BYTE_COUNT == 0x080101fcu && IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE == 0x08010448u);
+	const std::array<u8, 7> cart0{{ 0x11u }}, system{{ 1u, 2u, 3u, 4u, 5u, 6u, 0xa7u }};
+	const std::array<u8, 9> cart1{{ 0x22u }};
+	const std::array<u8, 11> replacementCart{};
+	const std::array<u8, 13> replacementSystem{};
+	CartridgeSocketMediaPair slots{};
+	slots[0] = CartridgeCardMedia{cart0, std::nullopt, false};
+	slots[1] = CartridgeCardMedia{cart1, std::nullopt, false};
+	CartridgeHarness harness(slots);
+	auto& memory = harness.memory;
+	auto& cart = memory.cartridgeController();
+	constexpr std::array registers{IO_SYS_ROM_BYTE_COUNT, IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT};
+	const auto fitted = [&] { return std::array{memory.readMappedWord(registers[0]),
+		memory.readMappedWord(registers[1]), memory.readMappedWord(registers[2])}; };
+	require(fitted() == std::array{0u, 7u, 9u}, "fitted byte counts use exact lengths, even without a System boot image");
+	memory.installSystemRom(system);
+	require(memory.readMappedU8(6u) == 0xa7u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+		"the reported System extent includes its final fitted byte");
+	memory.readMappedU8(7u);
+	require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_UNMAPPED
+		&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == 7u, "one byte past System ROM still faults");
+	memory.clearBusFault();
+	memory.writeMappedWord(IO_CART_SELECT, 0xa5a50001u);
+	require(fitted() == std::array{7u, 7u, 9u}, "fixed words report both sockets with either SELECT");
+	require(memory.readMappedWord(IO_CART_SELECT) == 0xa5a50001u && memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == 9u
+		&& memory.readMappedU8(CART_ROM_BASE) == 0x22u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+		"readout does not switch, read or fault the cartridge data aperture");
+
+	const auto saved = cart.captureState();
+	cart.reset();
+	require(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT) == 7u && fitted() == std::array{7u, 7u, 9u},
+		"reset changes SELECT but not installed ROM bytes");
+	cart.installRom(0u, replacementCart);
+	memory.installSystemRom(replacementSystem);
+	cart.restoreState(saved);
+	require(fitted() == std::array{13u, 11u, 9u} && memory.readMappedWord(IO_CART_SELECT) == 0xa5a50001u
+		&& memory.readMappedU8(CART_ROM_BASE) == 0x22u,
+		"restore changes the selected aperture but does not restore mounted ROM geometry");
+
+	for (const auto address : registers) {
+		memory.clearBusFault();
+		memory.writeMappedWord(address, 42u);
+		require(memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_READ_ONLY
+			&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == address, "geometry has the normal Read Only bus fault");
+	}
+	require(fitted() == std::array{13u, 11u, 9u}, "writes do not mutate fitted media");
+	for (const u32 address : {0x080101f0u, 0x08010200u, 0x08010448u}) {
+		memory.clearBusFault();
+		memory.writeMappedWord(address, 0x11223344u);
+		require(memory.readMappedWord(address) == 0x11223344u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_NONE,
+			"neighboring retained words and the first RAM word after I/O keep their decode");
+	}
+
+	// The retained first beat commits, then the geometry word rejects the second.
+	memory.writeMappedF64LE(0x080101f0u, 1.0);
+	require(memory.readMappedWord(0x080101f0u) == 0u && memory.readIoU32(IO_SYS_BUS_FAULT_CODE) == BUS_FAULT_READ_ONLY
+		&& memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == IO_SYS_ROM_BYTE_COUNT && memory.readMappedWord(IO_SYS_ROM_BYTE_COUNT) == 13u,
+		"an eight-byte write into the bank faults only after retiring its retained first beat");
+
+	CartridgeSocketMediaPair noRom{};
+	noRom[1] = CartridgeCardMedia{std::nullopt, 3u, false};
+	CartridgeHarness withoutRom(noRom);
+	require(withoutRom.memory.readMappedWord(IO_CART_STATUS) == CARTRIDGE_STATUS_SLOT1_PRESENT,
+		"zero fitted length does not conflate an absent socket and a RAM-only card");
+	for (const auto address : registers) require(withoutRom.memory.readMappedWord(address) == 0u, "unfitted ROM extent is zero");
+}
+
 void testAbsentSocketFaultsAndHasNoState() {
 	const std::array<bmsx::u8, 4> slot0Rom{{ 0x44u, 0x33u, 0x22u, 0x11u }};
 	bmsx::CartridgeSocketMediaPair slots{};
@@ -263,6 +333,7 @@ void testDmaSocketBitsOverrideCpuChipSelect() {
 int main() {
 	testPhysicalSocketSelectionAndRawLatch();
 	testSelectedSocketStorageByteCounts();
+	testFittedRomGeometryReadout();
 	testAbsentSocketFaultsAndHasNoState();
 	testSocketLocalRamMailboxResetAndRestore();
 	testMailboxIrqRaisesOncePerSourceLatchEdge();

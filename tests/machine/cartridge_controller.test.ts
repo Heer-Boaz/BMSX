@@ -9,6 +9,8 @@ import {
 	DMA_ROUTE_COPY,
 	DMA_TRIGGER_START,
 	IO_CART_RAM_BYTE_COUNT,
+	IO_CART0_ROM_BYTE_COUNT,
+	IO_CART1_ROM_BYTE_COUNT,
 	IO_CART_ROM_BYTE_COUNT,
 	IO_CART_SELECT,
 	IO_CART_STATUS,
@@ -19,9 +21,13 @@ import {
 	IO_DMA0_WRITE_ADDR,
 	IO_IRQ_ACK,
 	IO_IRQ_FLAGS,
+	BUS_FAULT_NONE,
+	BUS_FAULT_READ_ONLY,
 	BUS_FAULT_UNMAPPED,
 	IO_SYS_BUS_FAULT_CODE,
 	IO_SYS_BUS_FAULT_ADDR,
+	IO_SYS_ROM_BYTE_COUNT,
+	IO_SLOT_COUNT,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../machine/ts/spec/bmsx/io';
@@ -49,6 +55,8 @@ import {
 	CART_MMIO_BASE,
 	CART_RAM_BASE,
 	CART_ROM_BASE,
+	IO_BASE,
+	IO_WORD_SIZE,
 } from '../../machine/ts/spec/bmsx/memory_map';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
@@ -149,6 +157,68 @@ test('the byte-count registers expose only the selected socket’s fitted storag
 	const empty = createHarness([null, null]).memory;
 	assert.equal(empty.readMappedWord(IO_CART_ROM_BYTE_COUNT), 0);
 	assert.equal(empty.readMappedWord(IO_CART_RAM_BYTE_COUNT), 0);
+});
+
+test('fitted ROM geometry reads current physical backing without changing the selected socket', () => {
+	const { memory } = createHarness([
+		{ rom: Uint8Array.of(0x11, 2, 3, 4, 5, 6, 7), ramByteCount: null, mailboxPresent: false },
+		{ rom: Uint8Array.of(0x22, 2, 3, 4, 5, 6, 7, 8, 9), ramByteCount: null, mailboxPresent: false },
+	]);
+	const cart = memory.cartridgeController;
+	const registers = [IO_SYS_ROM_BYTE_COUNT, IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT];
+	const fitted = () => registers.map(address => memory.readMappedWord(address));
+	assert.deepEqual(registers, [0x080101f4, 0x080101f8, 0x080101fc]);
+	assert.equal(IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE, 0x08010448);
+	assert.deepEqual(fitted(), [0, 7, 9]);
+	memory.installSystemRom(Uint8Array.of(1, 2, 3, 4, 5, 6, 0xa7));
+	assert.equal(memory.readMappedU8(6), 0xa7);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+	memory.readMappedU8(7);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), 7);
+	memory.clearBusFault();
+	memory.writeMappedWord(IO_CART_SELECT, 0xa5a50001);
+	assert.deepEqual(fitted(), [7, 7, 9]);
+	assert.equal(memory.readMappedWord(IO_CART_SELECT), 0xa5a50001);
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), 9);
+	assert.equal(memory.readMappedU8(CART_ROM_BASE), 0x22);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+
+	const saved = cart.captureState();
+	cart.reset();
+	assert.equal(memory.readMappedWord(IO_CART_ROM_BYTE_COUNT), 7);
+	assert.deepEqual(fitted(), [7, 7, 9]);
+	cart.installRom(0, new Uint8Array(11));
+	memory.installSystemRom(new Uint8Array(13));
+	cart.restoreState(saved);
+	assert.deepEqual(fitted(), [13, 11, 9], 'selection restores independently of installed media');
+	assert.equal(memory.readMappedWord(IO_CART_SELECT), 0xa5a50001);
+	assert.equal(memory.readMappedU8(CART_ROM_BASE), 0x22);
+
+	for (const address of registers) {
+		memory.clearBusFault();
+		memory.writeMappedWord(address, 42);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_READ_ONLY);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), address);
+	}
+	assert.deepEqual(fitted(), [13, 11, 9]);
+	for (const address of [0x080101f0, 0x08010200, 0x08010448]) {
+		memory.clearBusFault();
+		memory.writeMappedWord(address, 0x11223344);
+		assert.equal(memory.readMappedWord(address), 0x11223344);
+		assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_NONE);
+	}
+
+	// The retained first beat commits, then the geometry word rejects the second.
+	memory.writeMappedF64LE(0x080101f0, 1);
+	assert.equal(memory.readMappedWord(0x080101f0), 0);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_READ_ONLY);
+	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), IO_SYS_ROM_BYTE_COUNT);
+	assert.equal(memory.readMappedWord(IO_SYS_ROM_BYTE_COUNT), 13);
+
+	const noRom = createHarness([null, { rom: null, ramByteCount: 3, mailboxPresent: false }]).memory;
+	assert.equal(noRom.readMappedWord(IO_CART_STATUS), CARTRIDGE_STATUS_SLOT1_PRESENT);
+	assert.deepEqual(registers.map(address => noRom.readMappedWord(address)), [0, 0, 0]);
 });
 
 test('an empty physical socket remains absent state and faults on the shared aperture', () => {

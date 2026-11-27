@@ -232,7 +232,9 @@ The following directory covers the complete I/O aperture in address order. Each 
 | `080001F4H` | `08000200H` | 3 | [APU](apu.md#sec-apu-register-reference) — command-queue occupancy, free space and capacity |
 | `08000200H` | `08000204H` | 1 | [APU](apu.md#sec-apu-register-reference) — sample sequence |
 | `08000204H` | `08000208H` | 1 | Reserved retained word |
-| `08000208H` | `08010208H` | 16384 | Reserved retained-slot range |
+| `08000208H` | `080101F4H` | 16379 | Reserved retained-slot range |
+| `080101F4H` | `08010200H` | 3 | [Fitted ROM byte counts](#sec-memory-fitted-rom-byte-counts) |
+| `08010200H` | `08010208H` | 2 | Reserved retained words |
 
 ### Upper register banks {#sec-memory-upper-register-banks}
 
@@ -260,10 +262,33 @@ The following directory covers the complete I/O aperture in address order. Each 
 
 These ranges partition all 16658 word positions without gaps or overlaps. A unit need not occupy one contiguous bank: DMA channel 1 is separate from channel 0; GEO and APU have separate upper fault-acknowledgement banks; GTE PLUS separates PCRTC's composition and timing banks; and SYSTEM has timing, diagnostic, control and fault-report banks. The reserved retained slots are part of the decoded aperture, not an additional device or a payload-transfer protocol.
 
+### Fitted ROM byte counts {#sec-memory-fitted-rom-byte-counts}
+
+Before reading a span from ROM, read the count for the fitted storage that
+will supply it. For a nonempty span, check that its byte offset is below
+the count and that its length does not exceed the count minus that offset.
+The offset begins at the base of the ROM window. A fitted length is not the
+size of the address window or a length written in the program header.
+
+| Word address | Register | Read result (bits 31:0) |
+|---|---|---|
+| `080101F4H` | SYS_ROM_BYTE_COUNT | Fitted System ROM bytes. |
+| `080101F8H` | CART0_ROM_BYTE_COUNT | Fitted ROM bytes in cartridge socket 0. |
+| `080101FCH` | CART1_ROM_BYTE_COUNT | Fitted ROM bytes in cartridge socket 1. |
+
+Each word is read-only and reports an exact unsigned byte count, including
+any final partial word. Zero means no ROM is fitted at that location.
+The counts describe the fitted media and do not change at reset.
+Reading either socket count leaves cartridge selection unchanged. It
+does not select that card for subsequent ROM data accesses. Use the
+cartridge controller's presence bits to distinguish an empty socket from a
+cartridge without ROM.
+
 ### Reserved retained words and decoder boundary {#sec-memory-reserved-retained-words-and-decoder-boundary}
 
-Of the 16658 positions, **16385 are reserved retained words** in
-`[08000204H, 08010208H)`. An aligned word read returns the stored raw word;
+Of the 16658 positions, **16382 are reserved retained words** in
+`[08000204H, 080101F4H)` and `[08010200H, 08010208H)`. An aligned word
+read returns the stored raw word;
 an accepted aligned word write replaces it. These words reset to zero and have
 no command, FIFO, automatic address increment or transfer-completion behavior.
 They remain reserved: retention does not make them cartridge RAM or grant a

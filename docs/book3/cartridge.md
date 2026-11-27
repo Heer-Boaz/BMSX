@@ -78,6 +78,8 @@ SELECT chooses the socket for ordinary data accesses. STATUS reports socket
 occupancy and selection. The two byte-count registers report the fitted storage
 on the selected card, without reading that card's storage. These controller
 registers are always accessible, even when the selected socket is empty.
+To read a particular socket's ROM size without changing selection, use
+[[Fitted ROM byte counts](../book1/memory.md#sec-memory-fitted-rom-byte-counts)]{.content-visible when-format="html"}[Book I, Memory — Fitted ROM byte counts]{.content-visible when-format="pdf"}.
 
 ### Controller registers {#sec-cartridge-controller-registers}
 

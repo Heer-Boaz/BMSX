@@ -45,6 +45,8 @@ void CartridgeController::connect(Memory& memory, IrqController& irq, DmaControl
 	memory.mapIoWrite(IO_CART_SELECT, this, &CartridgeController::writeSelectionThunk);
 	memory.mapIoRead(IO_CART_STATUS, this, &CartridgeController::readStatusThunk);
 	memory.mapIoRead(IO_CART_ROM_BYTE_COUNT, this, &CartridgeController::readRomByteCountThunk);
+	memory.mapIoRead(IO_CART0_ROM_BYTE_COUNT, this, &CartridgeController::readRomByteCountThunk);
+	memory.mapIoRead(IO_CART1_ROM_BYTE_COUNT, this, &CartridgeController::readRomByteCountThunk);
 	memory.mapIoRead(IO_CART_RAM_BYTE_COUNT, this, &CartridgeController::readRamByteCountThunk);
 }
 
@@ -186,9 +188,10 @@ void CartridgeController::selectCpuSlot(u32 selection) {
 		: Span<const u8>{};
 }
 
-u32 CartridgeController::readRomByteCountThunk(void* context, u32, MappedBusSignals) {
+u32 CartridgeController::readRomByteCountThunk(void* context, u32 address, MappedBusSignals) {
 	const auto& controller = *static_cast<const CartridgeController*>(context);
-	const auto* rom = controller.romStorage(controller.selectedSlot());
+	const u32 slot = address == IO_CART_ROM_BYTE_COUNT ? controller.selectedSlot() : (address - IO_CART0_ROM_BYTE_COUNT) / IO_WORD_SIZE;
+	const auto* rom = controller.romStorage(slot);
 	return rom ? static_cast<u32>(rom->size()) : 0u;
 }
 

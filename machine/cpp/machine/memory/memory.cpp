@@ -25,6 +25,7 @@ constexpr auto kReadOnlyIoSlots = [] {
 		IO_SYS_FRAME_MS_Q16,
 		IO_SYS_CYCLES_PER_FRAME,
 		IO_SYS_STATUS,
+		IO_SYS_ROM_BYTE_COUNT,
 		IO_IRQ_FLAGS,
 		IO_DMA0_STATUS,
 		IO_DMA1_STATUS,
@@ -46,6 +47,8 @@ constexpr auto kReadOnlyIoSlots = [] {
 		IO_APU_SELECTED_SOURCE_ADDR,
 		IO_APU_ACTIVE_MASK,
 		IO_CART_STATUS,
+		IO_CART0_ROM_BYTE_COUNT,
+		IO_CART1_ROM_BYTE_COUNT,
 		IO_CART_ROM_BYTE_COUNT,
 		IO_CART_RAM_BYTE_COUNT,
 		IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
@@ -104,6 +107,9 @@ Memory::Memory(const MemoryInit& init, u32 ramByteCount)
 	, m_ioSlots(IO_SLOT_COUNT, 0u)
 	, m_ioReadHandlers(IO_SLOT_COUNT)
 	, m_ioWriteHandlers(IO_SLOT_COUNT) {
+	mapIoRead(IO_SYS_ROM_BYTE_COUNT, this, [](void* context, u32, MappedBusSignals) -> u32 {
+		return static_cast<u32>(static_cast<Memory*>(context)->m_systemRom.size());
+	});
 	m_ioWriteHandlers[IO_SYS_BUS_FAULT_ACK_SLOT] = { this, &Memory::onBusFaultAckWriteThunk };
 	clearBusFault();
 }

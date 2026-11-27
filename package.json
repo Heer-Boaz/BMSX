@@ -144,6 +144,7 @@
 		"test:rompacker": "bash scripts/test.sh bash scripts/test_node_areas.sh rompacker",
 		"test:render-parity": "npm run build:product:node-headless-tooling && npm run build:product:libretro-wsl && npm run build:libretro-host && npm run build:toolchain:cart -- renderhwtest && npm run build:toolchain:cart -- bare_metal_cart && bash scripts/test.sh node scripts/render/pixel_parity.mjs renderhwtest && bash scripts/test.sh node scripts/render/pixel_parity.mjs bare_metal_cart --timeline tests/carts/bare_metal_cart/parity.json",
 		"test:cartridge-conformance": "bash scripts/test.sh node tests/conformance/cartridge/run.mjs",
+		"test:rom-geometry": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/cartridge/rom_geometry.ts",
 		"test:coroutines": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/coroutine/run.ts",
 		"test:gc-stress": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/run.ts",
 		"test:gc-pressure": "bash scripts/test.sh node scripts/run_node_conformance.mjs tests/conformance/gc_stress/pressure.ts",

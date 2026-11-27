@@ -19,7 +19,7 @@ import { BLUA32_FUNCTION_ALIGNMENT, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import { HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET } from '../../../machine/ts/spec/bmsx/heap_service';
-import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_PAYLOAD_BUFFER_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
+import { BUS_FAULT_ACCESS_READ, BUS_FAULT_ACCESS_U32, BUS_FAULT_UNMAPPED, IO_RETAINED_WORD_BASE, IO_SYS_BUS_FAULT_ACCESS, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_CPU } from '../../../machine/ts/machine/memory/bus_signals';
 import { CART_ROM_BASE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
@@ -200,7 +200,7 @@ return make(7, 8)()
 			const mmio = test === 'mmio-sampled-once', sampled = mmio || test === 'ram-sampled-once';
 			const invalidSecond = test === 'invalid-second-stack' || test === 'invalid-second-parent';
 			const descriptor = invalidSecond ? target.upvalueTableAddress
-				: mmio ? IO_PAYLOAD_BUFFER_BASE : sampled ? image.header.bssAddress : rom.length - 4;
+				: mmio ? IO_RETAINED_WORD_BASE : sampled ? image.header.bssAddress : rom.length - 4;
 			writeLE32(rom, target.address + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET, descriptor);
 			if (invalidSecond)
 				writeLE32(rom, descriptor + 4, test === 'invalid-second-stack' ? 0xffffffff : BLUA32_UPVALUE_INDEX_MASK);

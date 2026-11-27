@@ -3,6 +3,8 @@ import {
 	IO_CART_SELECT,
 	IO_CART_STATUS,
 	IO_CART_ROM_BYTE_COUNT,
+	IO_CART0_ROM_BYTE_COUNT,
+	IO_CART1_ROM_BYTE_COUNT,
 	IO_CART_RAM_BYTE_COUNT,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
@@ -35,6 +37,7 @@ import {
 import { CartridgeCard } from './card';
 import { mappedPageDomainKey } from '../../memory/mapped_page';
 import type { RomStorage } from '../../memory/rom_storage';
+import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
 import {
 	CARTRIDGE_CARD_DREQ_READ,
 	CARTRIDGE_CARD_DREQ_WRITE,
@@ -69,6 +72,8 @@ export class CartridgeController {
 		memory.mapIoWrite(IO_CART_SELECT, this, CartridgeController.writeSelectionThunk);
 		memory.mapIoRead(IO_CART_STATUS, this, CartridgeController.readStatusThunk);
 		memory.mapIoRead(IO_CART_ROM_BYTE_COUNT, this, CartridgeController.readRomByteCountThunk);
+		memory.mapIoRead(IO_CART0_ROM_BYTE_COUNT, this, CartridgeController.readRomByteCountThunk);
+		memory.mapIoRead(IO_CART1_ROM_BYTE_COUNT, this, CartridgeController.readRomByteCountThunk);
 		memory.mapIoRead(IO_CART_RAM_BYTE_COUNT, this, CartridgeController.readRamByteCountThunk);
 	}
 
@@ -222,8 +227,9 @@ export class CartridgeController {
 		context.selectionWord = value;
 	}
 
-	private static readRomByteCountThunk(context: CartridgeController): number {
-		const rom = context.romStorage(context.selectedSlot());
+	private static readRomByteCountThunk(context: CartridgeController, address: number): number {
+		const slot = address === IO_CART_ROM_BYTE_COUNT ? context.selectedSlot() : (address - IO_CART0_ROM_BYTE_COUNT) / IO_WORD_SIZE;
+		const rom = context.romStorage(slot);
 		return rom === null ? 0 : rom.bytes.byteLength;
 	}
 

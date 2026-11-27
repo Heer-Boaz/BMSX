@@ -43,6 +43,8 @@ import {
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
 	IO_CART_STATUS,
+	IO_CART0_ROM_BYTE_COUNT,
+	IO_CART1_ROM_BYTE_COUNT,
 	IO_CART_ROM_BYTE_COUNT,
 	IO_CART_RAM_BYTE_COUNT,
 	IO_DMA0_STATUS,
@@ -66,6 +68,7 @@ import {
 	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_SYS_STATUS,
+	IO_SYS_ROM_BYTE_COUNT,
 	IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS,
 	IO_SYS_SUPERVISOR_FAULT_CAUSE,
 	IO_SYS_SUPERVISOR_FAULT_DOMAIN,
@@ -119,6 +122,7 @@ for (const address of [
 	IO_SYS_FRAME_MS_Q16,
 	IO_SYS_CYCLES_PER_FRAME,
 	IO_SYS_STATUS,
+	IO_SYS_ROM_BYTE_COUNT,
 	IO_IRQ_FLAGS,
 	IO_DMA0_STATUS,
 	IO_DMA1_STATUS,
@@ -140,6 +144,8 @@ for (const address of [
 	IO_APU_SELECTED_SOURCE_ADDR,
 	IO_APU_ACTIVE_MASK,
 	IO_CART_STATUS,
+	IO_CART0_ROM_BYTE_COUNT,
+	IO_CART1_ROM_BYTE_COUNT,
 	IO_CART_ROM_BYTE_COUNT,
 	IO_CART_RAM_BYTE_COUNT,
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
@@ -266,6 +272,7 @@ export class Memory {
 			this.ioWriteHandlers[index] = null;
 			this.ioWriteReadyHandlers[index] = null;
 		}
+		this.mapIoRead(IO_SYS_ROM_BYTE_COUNT, this, Memory.readSystemRomByteCountThunk);
 		this.ioWriteContexts[this.busFaultAckSlot] = this;
 		this.ioWriteHandlers[this.busFaultAckSlot] = Memory.onBusFaultAckWriteThunk;
 		this.clearBusFault();
@@ -346,6 +353,10 @@ export class Memory {
 	}
 
 	public systemRomStorage(): RomStorage { return this.systemRom; }
+
+	private static readSystemRomByteCountThunk(memory: Memory): number {
+		return memory.systemRom.bytes.byteLength;
+	}
 
 	public installSystemRom(rom: Uint8Array): void {
 		this.systemRom.install(rom);
