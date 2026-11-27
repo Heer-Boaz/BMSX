@@ -15,7 +15,7 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_ADDRESS_OFFSET = 92u;
 constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
-	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
+	AllocateRecord, TableGrow, StoppedFinalMark, ReserveFrameSpace, StoreClosedUpvalue, CapturedClosure, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -33,10 +33,6 @@ constexpr uint32_t HEAP_SERVICE_DESCRIPTOR_SIZE = HEAP_SERVICE_DESCRIPTOR_FUNCTI
 constexpr uint32_t HEAP_SERVICE_FIXED_WORK_OFFSET = 0x7f0;
 constexpr uint32_t HEAP_SERVICE_THREAD_OFFSET = 0x800;
 constexpr uint32_t HEAP_SERVICE_RESULT_OFFSET = 0x850;
-constexpr uint32_t HEAP_SERVICE_IRQ_FORWARD_OFFSET = 0x870;
-// Cart lane (socket + 1) is the presence word. The vector word itself can
-// fault and is not a sentinel.
-enum class HeapServiceIrqForwardField : uint32_t { CartLane = 0, Vector = 4 };
 constexpr uint32_t HEAP_SERVICE_FRAME_OFFSET = CPU_FIXED_FRAME_OFFSET;
 constexpr uint32_t HEAP_SERVICE_VALUE_OFFSET = CPU_FIXED_VALUE_OFFSET;
 constexpr uint32_t HEAP_SERVICE_FRAME_COUNT = CPU_FIXED_FRAME_COUNT;

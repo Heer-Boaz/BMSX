@@ -27,4 +27,25 @@ local publish<const> = function(management) -- T:4146-4157 C:325-338
 	borrow_string_work(management) -- T:4152 C:332; after CPU root inputs, before collector entry
 end
 
-return { publish = publish, borrow_string_work = borrow_string_work, release_string_work = release_string_work }
+-- A fixed IRQ can only enter between operations. At entry the suspended
+-- Thread (including any injected call still on its stack) is latched by the
+-- CPU. The BIOS has already installed the root Thread. A completed tool
+-- result is an observation at the old frontier, not a guest RAM root.
+local publish_interrupt<const> = function(management)
+	local state<const> = layout.ram_base + management
+	local interrupted<const>: *addr = layout.interrupted_context_address
+	local roots<const>: *root_descriptors = state + layout.root_banks_offset
+	roots.active = *interrupted
+	roots.completion_thread = 0
+	roots.halted = 0
+	roots.banks[0].count = 0 -- no completed host observations
+	roots.banks[1].count = 0 -- no in-flight concatenation
+	local head<const>: *root_head_input = state + layout.remark_head_offset
+	head.comparison_remaining = 0
+	head.has_pending_assignment = 0
+	local pending_top<const>: *u32 = state + layout.pending_top_offset
+	*pending_top = 0
+	borrow_string_work(management)
+end
+
+return { publish = publish, publish_interrupt = publish_interrupt, borrow_string_work = borrow_string_work, release_string_work = release_string_work }

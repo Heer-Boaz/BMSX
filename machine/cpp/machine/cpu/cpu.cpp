@@ -1829,18 +1829,7 @@ bool CPU::enterPendingInterrupt() {
 		auto& image = *executionImageForDomain(domain);
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
 		const u32 epc = m_activeThread->currentFrame->readControl(FrameField::Pc);
-		const u32 prelude = domain == SYSTEM_EXECUTION_DOMAIN_ID ? 0u
-			: m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::InterruptPrelude)];
-		if (prelude == 0u) {
-			enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
-		} else {
-			const u32 management = m_heapAllocator.managementOffset();
-			const std::array args{management, enabledFlags, static_cast<u32>(isHaltedUntilIrq())};
-			latchExceptionEntry(CPU_CAUSE_IRQ, epc);
-			m_memory.writeRamRecordPair(management + HEAP_SERVICE_IRQ_FORWARD_OFFSET + static_cast<u32>(HeapServiceIrqForwardField::CartLane),
-				static_cast<u32>(domain) + 1u, image.irqFunctionAddress);
-			beginHeapService(prelude, args);
-		}
+		enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -2676,8 +2665,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 	m_deviceClock = deviceClock;
 	ScopeExit endClock([this] { m_deviceClock = nullptr; });
 	if (heapServiceActive()) {
-		const u32 irq = m_heapAllocator.managementOffset() + HEAP_SERVICE_IRQ_FORWARD_OFFSET;
-		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
 		const u32 flags = m_heapServiceView.firstFrame->readControl(FrameField::Flags);
@@ -2703,12 +2690,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 				if (&view != m_activeThread && view.address != 0u) view.select(0u);
 			try {
 				if (resident) finishResidentCall(flags);
-				else if (cartLane != 0u) {
-					const u32 vector = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::Vector));
-					m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
-					placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
-						vector, false, m_cop0Words[COP0_EPC]);
-				} else if (completion != HeapServiceBiosCallKind::Idle) {
+				else if (completion != HeapServiceBiosCallKind::Idle) {
 					finishBiosCall(completion);
 				} else {
 					finishClosureReservation();
@@ -2724,7 +2706,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return ((flags & FRAME_FIXED_WORK) != 0u || cartLane != 0u) && kind == CpuRunKind::Scheduled
+		return (flags & FRAME_FIXED_WORK) != 0u && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

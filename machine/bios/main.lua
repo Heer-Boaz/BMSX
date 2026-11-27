@@ -36,6 +36,7 @@ local cart_rom_magic_index<const> = 0
 local cart_rom_header_size_index<const> = 1
 local cart_blua32_image_index<const> = 8
 local cart_blua32_startup_index<const> = 10
+local cart_blua32_irq_index<const> = 11
 local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
 local cart_rom_byte_count<const>: *word = 0x08010440
@@ -44,6 +45,7 @@ local cart0_rom_bytes<const>: *u32 = 0x080101f8
 local cart1_rom_bytes<const>: *u32 = 0x080101fc
 local cart_rom_base<const> = 0x10000000
 local cart_rom<const>: *word = cart_rom_base
+local cart_irq_target<const>: *word = vblank_irq.cartridge_target
 local image_header_size<const> = 92
 local sys_control<const>: *u32 = 0x0801034c
 local inhibit_reset<const> = 0x100
@@ -149,6 +151,7 @@ local update_boot_screen<const> = function()
 			*sys_control = 8
 			while true do halt_until_irq end
 		end
+		*cart_irq_target = cart_rom[cart_blua32_irq_index] | (slot << 31)
 		cop0.status = cop0.status & ~inhibit_reset
 		cop0.exec = startup
 		return
@@ -176,6 +179,7 @@ end
 
 init()
 cop0.system_vector = vectors.managed_exception
+cop0.irq_vector = vectors.user_irq
 *irq_mask = irq_dma_done | irq_vblank
 *input_control = input_arm
 while true do

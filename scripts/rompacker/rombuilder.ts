@@ -59,6 +59,7 @@ import {
 	buildBlua32Image,
 	parseBlua32SourceModules,
 	type Blua32PreparedEntry,
+	type Blua32StaticExport,
 	type GeneratedLuaModule,
 } from '../../toolchain/ts/rompack/blua32_image_builder';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
@@ -901,6 +902,7 @@ type BuildRomBlua32TailOptions = {
 		irqModule?: string;
 		exceptionModule?: string;
 		preparedEntry?: Blua32PreparedEntry;
+		userIrqEntry?: Blua32StaticExport;
 		includeSources: boolean;
 		biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 	}
@@ -968,6 +970,7 @@ export function buildRomBlua32Tail(
 			irqModule: options.irqModule,
 			exceptionModule: options.exceptionModule,
 			preparedEntry: options.preparedEntry,
+			userIrqEntry: options.userIrqEntry,
 			biosExports: options.biosExports,
 		});
 		const linked = built.linked;

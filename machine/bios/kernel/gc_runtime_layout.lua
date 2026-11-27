@@ -6,6 +6,8 @@ module<const>
 return {
 	firmware_data_offset = 0x1c00,
 	ram_base = 0x08000000,
+	management_offset = 0x003fc000,
+	interrupted_context_address = 0x083fd8d0,
 	table_rebuild_offset = 0x000, -- 64-byte staged job, before String metadata
 	table_plan_offset = 0x100, -- 144-byte census, then admitted reservation request
 	installed_image_bindings_offset = 0x200,
@@ -28,7 +30,7 @@ return {
 	value_cell_offset = 0x7a0, -- firmware scratch; only this module owns the placement
 	value_cell_tag_offset = 4,
 	fixed_work_offset = 0x7f0,
-	stopped_final_mark_work = 4, -- fixed System descriptor ordinal plus one
+	stopped_final_mark_work = 3, -- fixed System descriptor ordinal plus one
 	remaining_device_cycles_address = 0x02c00000,
 	management_address = 0x02c00004,
 	call_cycles_address = 0x02c00008,

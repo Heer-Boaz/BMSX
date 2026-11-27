@@ -66,10 +66,8 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 	})));
 
 	const entryBindings = [
-		['kernel/heap_floor', 'reserve_floor'],
 		['kernel/allocate_record', 'allocate_record'],
 		['kernel/table_grow', 'grow_table'],
-		['kernel/vblank_irq', 'before_cart_irq'],
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/thread_frame_storage', 'reserve_frame_space'],
 		['kernel/gc_barrier', 'store_closed_upvalue'],

@@ -15,7 +15,7 @@ local layout<const> = require('kernel/gc_runtime_layout')
 
 local ram_base<const> = 0x08000000
 local static_base<const> = 0x08040000
-local management<const> = 0x003fc000
+local management<const> = layout.management_offset
 local installed<const> = ram_base + management + layout.installed_image_bindings_offset
 local system_bank<const> = ram_base + management + layout.system_global_bank_offset
 local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
@@ -90,4 +90,6 @@ cop0.ram_end = ram_base + floor
 heap.publish_system_directory(management, image.buckets, image.bucket_count)
 if image_bind.bind_initial_image(management, header, ordinary_bank, system_bank, installed, *system_fit, *cart0_fit, address) ~= 0 then stop_reset() end
 root.publish_system_root(address, start.prepared_entry)
+local roots<const>: *root_descriptors = ram_base + management + layout.root_banks_offset
+roots.root = address
 cop0.context = address

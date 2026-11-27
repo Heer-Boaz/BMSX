@@ -187,7 +187,6 @@ import {
 	HeapServiceProjection, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
-	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
 	HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceRemarkHeadField,
@@ -316,7 +315,6 @@ export class CPU implements MappedPageInvalidator {
 	public readonly gc: GcHeap;
 	private readonly heapService: HeapService;
 	private readonly fixedWorkArgs: [number, CpuRunKind];
-	private readonly irqPreludeArgs: [number, number, number];
 	private readonly closureArgs: number[];
 	private readonly tableGrowthArgs: number[];
 	public readonly stringPool: StringPool;
@@ -443,7 +441,6 @@ export class CPU implements MappedPageInvalidator {
 		const management = this.heapAllocator.managementOffset();
 		this.systemGlobalBank = new GlobalBank(memory, this.gc, management + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, this.gc, management + GLOBAL_BANK_OFFSET);
-		this.irqPreludeArgs = [management, 0, 0];
 		this.rootThread = new Thread(this.gc);
 		this.threadBanks = [this.rootThread, new Thread(this.gc), new Thread(this.gc)];
 		this.irqThread = new Thread(this.gc);
@@ -2262,19 +2259,7 @@ export class CPU implements MappedPageInvalidator {
 			const image = this.executionImageForDomain(domain)!;
 			const hadHaltLatch = this.haltedUntilIrqFrameDepth >= 0;
 			const epc = this.activeThread.currentFrame!.pc;
-			const prelude = domain === SYSTEM_EXECUTION_DOMAIN_ID ? undefined
-				: this.systemImage.heapServiceFunctions?.[HeapServiceOperation.InterruptPrelude];
-			if (prelude === undefined) {
-				this.enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
-			} else {
-				const args = this.irqPreludeArgs;
-				args[1] = enabledFlags;
-				args[2] = +this.isHaltedUntilIrq();
-				this.latchExceptionEntry(CPU_CAUSE_IRQ, epc);
-				this.memory.writeRamRecordPair(this.heapService.irqForwardAddress + HeapServiceIrqForwardField.CartLane,
-					domain + 1, image.irqFunctionAddress);
-				this.beginHeapService(prelude, args);
-			}
+			this.enterException(image, image.irqFunctionAddress, CPU_CAUSE_IRQ, epc);
 			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
 		}
@@ -2487,8 +2472,6 @@ export class CPU implements MappedPageInvalidator {
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address,
 		kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
 		if (this.heapServiceActive()) {
-			const irq = this.heapService.irqForwardAddress;
-			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
 			const completion = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Kind) as HeapServiceBiosCallKind;
 			const flags = this.memory.readRamRecordWord(this.heapService.thread.firstFrame!.controlOffset + FrameField.Flags);
 			const resident = (flags & FRAME_RESIDENT_ACTIVATION) !== 0;
@@ -2509,12 +2492,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 					try {
 						if (resident) this.finishResidentCall(flags);
-						else if (cartLane !== 0) {
-							const vector = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.Vector);
-							this.memory.writeRamRecordWord(irq + HeapServiceIrqForwardField.CartLane, 0);
-							this.placeExceptionVector(this.executionImageForDomain((cartLane - 1) as ExecutionDomainId)!,
-								vector, false, this.cop0Words[COP0_EPC]);
-						} else if (completion !== HeapServiceBiosCallKind.Idle) {
+						else if (completion !== HeapServiceBiosCallKind.Idle) {
 							this.finishBiosCall(completion);
 						} else {
 							this.finishClosureReservation();
@@ -2524,7 +2502,7 @@ export class CPU implements MappedPageInvalidator {
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return ((flags & FRAME_FIXED_WORK) !== 0 || cartLane !== 0) && kind === CpuRunKind.Scheduled
+				return (flags & FRAME_FIXED_WORK) !== 0 && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;

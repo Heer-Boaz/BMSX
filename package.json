@@ -123,7 +123,7 @@
 		"test:bios-thread-retire": "bash scripts/test.sh node --import tsx --test tests/conformance/heap_allocator/thread_retire.test.ts",
 		"test:bios-gc-remark-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_remark_service.ts",
 		"test:bios-gc-root-banks-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_root_banks_service.ts",
-		"test:bios-gc-pressure-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_pressure_service.ts",
+		"test:bios-gc-pressure-service": "bash scripts/test.sh bash scripts/test_node_areas.sh selected tests/conformance/heap_allocator/stock_vblank_gc.test.ts",
 		"test:bios-pinned-native-aperture": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_lane_aperture.ts",
 		"test:bios-pinned-native-transfers": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_lane_transfers.ts",
 		"test:bios-pinned-floor-divide": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/pinned_floor_divide.ts",
