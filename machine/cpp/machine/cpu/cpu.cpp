@@ -1494,7 +1494,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallResultPlacement result,
 	Value handler = valueNil();
 	if (id == BuiltinFunctionId::XPCall) {
 		handler = arguments.values()[1];
-		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler)) {
+		if (!valueIsClosure(handler) && !valueIsBuiltinFunction(handler) && valueTag(handler) != ValueTag::ResidentFunction) {
 			throw LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 		}
 	}
@@ -1514,6 +1514,10 @@ void CPU::invokeProtectedTarget(u32 continuationIndex, Value target, const CallV
 			? pushFrame(*arguments.frame, closure, arguments.base, arguments.count, {}, caller.readControl(FrameField::Pc) - INSTRUCTION_BYTES)
 			: pushFrame(closure, arguments.values(), {}, 0u, m_currentInstructionPc);
 		if (frame) frame->writeControl(FrameField::Protected, continuationIndex);
+		return;
+	}
+	if (valueTag(target) == ValueTag::ResidentFunction) {
+		beginResidentCall(valuePayload(target), arguments.values(), {}, static_cast<i32>(continuationIndex));
 		return;
 	}
 	if (valueIsBuiltinFunction(target)) {
@@ -2612,10 +2616,12 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 cartLane = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane));
 		const u32 biosCall = m_heapAllocator.managementOffset() + HEAP_SERVICE_BIOS_CALL_OFFSET;
 		const auto completion = static_cast<HeapServiceBiosCallKind>(m_memory.readRamRecordWord(biosCall + static_cast<u32>(HeapServiceBiosCallField::Kind)));
-		const auto gcStage = cartLane == 0u && completion == HeapServiceBiosCallKind::Idle ? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		// Debugger stepping accounts a pinned full collector as machine progress,
 		// not as a second cartridge instruction. The activation owns all phases.
 		const u32 root = m_heapServiceView.firstFrame->readControl(FrameField::Function);
+		const bool resident = (m_systemImage->romFunctions.find(root)->entry.flags & BLUA32_FUNCTION_RESIDENT) != 0u;
+		const auto gcStage = !resident && cartLane == 0u && completion == HeapServiceBiosCallKind::Idle
+			? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		const auto& functions = m_systemImage->heapServiceFunctions;
 		const bool collection = root == functions[static_cast<size_t>(HeapServiceOperation::FullCollection)]
 			|| root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
@@ -2631,7 +2637,8 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
 			try {
-				switch (gcStage) {
+				if (resident) finishResidentCall();
+				else switch (gcStage) {
 					case HeapServiceGcStage::FullTrace:
 					case HeapServiceGcStage::MaintenanceTrace: {
 						const auto work = m_heap.finishTraceQuantum(m_systemImage->heapServiceFunctions, gcStage);

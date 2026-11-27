@@ -70,7 +70,7 @@ import type {
 	Proto,
 	UpvalueDesc,
 } from './compiler/program';
-import { buildInitParticipantSlotName, programModuleExportKey } from './compiler/program';
+import { buildInitParticipantSlotName, programModuleExportKey, SYSTEM_RESIDENT_EXPORTS } from './compiler/program';
 import { ROOT_INLINE_CALL_SITES } from './compiler/inline_debug';
 import { OPCODE_NAMES } from './opcode_metadata';
 import { optimizeInstructions, type Instruction, type InstructionSet, type OptimizationLevel } from './compiler/optimizer';
@@ -5806,7 +5806,10 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.ensureMaxStack(callBase + resultSlots);
 		this.emitABC(OpCode.CALL, callBase, hasVarArg ? 0 : encodeFixedValueCount(callArgs), resultOperand);
 		if (callProtoIndex !== null) {
-			this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
+			const symbol = moduleCallTarget ?? ownStaticFunctionExportTarget;
+			const resident = this.program.programDomain === 'system' && symbol?.kind === 'export_proto'
+				&& SYSTEM_RESIDENT_EXPORTS.some(entry => entry.path === symbol.path && entry.exportPathKey === symbol.exportPathKey);
+			if (!resident) this.code[this.code.length - 1].callProtoIndex = callProtoIndex;
 		}
 		if (!useTarget) {
 			for (let i = 0; i < resultCount; i += 1) {
@@ -5840,13 +5843,6 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		}
 		if (callee.member.name === 'trace' || callee.member.name === 'trace_sink') {
 			throw new Error(`blua32.${callee.member.name} is a statement-only compiler intrinsic.`);
-		}
-		if (callee.member.name === 'collect_step') {
-			if (this.program.programDomain !== 'system') throw new Error('blua32.collect_step is a System ROM intrinsic.');
-			if (expression.arguments.length !== 0) throw new Error('blua32.collect_step expects no arguments.');
-			this.emitABC(OpCode.BIOSCALL, target, BiosCall.CollectStep, 0);
-			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
-			return true;
 		}
 		if (callee.member.name === 'float_bits' || callee.member.name === 'float_from_bits') {
 			if (expression.arguments.length !== 1) throw new Error(`blua32.${callee.member.name} expects one argument.`);

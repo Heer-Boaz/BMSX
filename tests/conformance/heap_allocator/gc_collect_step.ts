@@ -3,20 +3,21 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
+import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { GC_ASSIST_BYTES, GC_STEP_WORDS } from '../../../machine/ts/machine/cpu/lua_heap';
-import { valueInteger, valueNil, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
+import { valueBool, valueInteger, valueNil, valuePayload, valueString, valueTable, valueTag, ValueTag } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { instructionLowB, instructionOpcode } from '../../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { BiosCall } from '../../../machine/ts/spec/bmsx/bios';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { compileHeapServiceSystem } from '../../helpers/heap_service_system';
@@ -43,7 +44,12 @@ const directory = mkdtempSync(join('tmp', 'bmsx-gc-collect-step-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const image = linkTestSystemBlua32(compileHeapServiceSystem(source, opt, modules));
+		const compiled = compileHeapServiceSystem(source, opt, modules);
+		const image = linkTestSystemBlua32(compiled);
+		const binding = compiled.program.moduleExports.find(entry =>
+			entry.path === 'kernel/gc_collect_step' && entry.exportPathKey === 'collect_step')!;
+		const stepIndex = image.symbols.metadata.functionIds.indexOf(compiled.metadata.exportProtoIdBySlot[binding.slotName]);
+		const stepAddress = image.symbols.functionAddresses[stepIndex];
 		const rom = join(directory, `system-O${opt}.rom`);
 		writeFileSync(rom, image.romBytes);
 		for (const entry of [GcPhase.Pause, GcPhase.Atomic, GcPhase.Strings]) {
@@ -58,17 +64,19 @@ try {
 			const completion = () => memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind);
 			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+			const instruction = () => decodeBlua32InstructionAtPc(image.image.textBytes, image.image.header.textAddress, pc());
 			function atStep() {
-				if (cpu.heapServiceActive()) return false;
-				const head = memory.readMappedU32LE(pc());
-				const body = instructionOpcode(head) === OpCode.WIDE ? memory.readMappedU32LE(pc() + 4) : head;
-				return instructionOpcode(body) === OpCode.BIOSCALL && instructionLowB(body) === BiosCall.CollectStep;
+				if (!cpu.getFrameDepth() || cpu.heapServiceActive()) return false;
+				const { op, a, b } = instruction();
+				if (op !== OpCode.CALL || b !== 1) return false;
+				const callee = cpu.readFrameRegister(cpu.getFrameDepth() - 1, a);
+				return valueTag(callee) === ValueTag.ResidentFunction && valuePayload(callee) === stepAddress;
 			}
 			for (let i = 0; i < 16384 && !atStep(); ++i) assert.notEqual(slice(1), RunResult.Halted);
-			assert.ok(atStep(), 'the public Step branch lowered to the generic gate');
-			const caller = cpu.getFrameDepth() - 1, origin = pc();
+			assert.ok(atStep(), 'the public Step branch reached its exact resident function via ordinary CALL');
+			const caller = cpu.getFrameDepth() - 1, call = instruction(), resultTop = call.a + 1;
 			const originalTop = cpu.getFrameRegisterCount(caller);
-			const next = origin + (instructionOpcode(memory.readMappedU32LE(origin)) === OpCode.WIDE ? 8 : 4);
+			const next = call.pc + INSTRUCTION_BYTES;
 			budget.setCollectionTarget(budget.capacity());
 			const slots = entry === GcPhase.Atomic ? 2 * GC_STEP_WORDS : 16;
 			const weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1), dead = cpu.createTable();
@@ -98,15 +106,16 @@ try {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(spent > 0);
 				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
+				assert.equal(completion(), HeapServiceBiosCallKind.Idle, 'ordinary CALL never uses the selector mailbox');
 				record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
 				return { result, spent };
 			}
-			assert.deepEqual(grant(1), { result: RunResult.Yielded, spent: BASE_CYCLES[OpCode.BIOSCALL] });
+			assert.deepEqual(grant(1), { result: RunResult.Yielded, spent: BASE_CYCLES[OpCode.CALL] });
 			assert.ok(cpu.heapServiceActive());
 			assert.equal(cpu.readFramePc(caller), next);
-			assert.equal(memory.readRamRecordWord(state + HeapServiceBiosCallField.InstructionPc), origin);
-			assert.equal(completion(), HeapServiceBiosCallKind.Opcode);
-			const resultTop = memory.readRamRecordWord(state + HeapServiceBiosCallField.ResultBaseOrProtectedIndex) + 1;
+			const residentFrame = management + HEAP_SERVICE_FRAME_OFFSET;
+			assert.equal(memory.readRamRecordWord(residentFrame + FrameField.Function), stepAddress);
+			assert.equal(memory.readRamRecordWord(residentFrame + FrameField.Closure), 0);
 			assert.equal(cpu.getFrameRegisterCount(caller), originalTop, 'zero operands leave the caller root window unchanged');
 			const oldTarget = budget.collectionTarget();
 			for (let n = 0; n < 32768 && budget.collectionTarget() === oldTarget; ++n) {
@@ -118,7 +127,7 @@ try {
 			assert.equal(gc.phase(), ref.gc.phase());
 			if (finished) assert.equal(gc.epochWork(), before, 'String completion reprices before the epoch-accounting epilogue');
 			else assert.equal(gc.epochWork(), ref.gc.epochWork());
-			assert.ok(cpu.heapServiceActive() && completion() === HeapServiceBiosCallKind.Opcode, 'target publication precedes the Boolean return');
+			assert.ok(cpu.heapServiceActive(), 'target publication precedes the Boolean return');
 			assert.equal(cpu.readFramePc(caller), next);
 			const partial = captureRuntimeSaveState(runtime), partialFile = join(directory, `${id}.partial`);
 			const fromCpp = join(directory, `${id}.cpp`);
@@ -128,7 +137,8 @@ try {
 				for (let n = 0; n < 4096 && cpu.heapServiceActive(); ++n) grant(1);
 				assert.equal(cpu.heapServiceActive(), false);
 				assert.equal(completion(), HeapServiceBiosCallKind.Idle);
-				assert.equal(cpu.getFrameRegisterCount(caller), Math.max(originalTop, resultTop));
+				assert.equal(cpu.getFrameRegisterCount(caller), resultTop);
+				assert.equal(cpu.readFrameRegister(caller, call.a), valueBool(finished));
 				assert.equal(gc.epochWork(), ref.gc.epochWork());
 				assert.equal(memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK), ref.memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK));
 				assert.equal(cpu.readFramePc(caller), next);

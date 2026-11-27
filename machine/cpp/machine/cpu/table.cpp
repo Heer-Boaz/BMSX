@@ -985,7 +985,7 @@ void TableRecord::resolveIndexChain(int slot, TableLookupResult& result, Lookup&
 			parent = current.getStringKey(m_heap->newIndexKey);
 		} else parent = current.getStringKey(m_heap->indexKey, linkCycles);
 		if (!valueIsTable(parent)) {
-			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent))
+			if (valueIsClosure(parent) || valueIsBuiltinFunction(parent) || valueTag(parent) == ValueTag::ResidentFunction)
 				result = {parent, -1, depth, TableLookupStatus::Invoke, receiver};
 			else if (!isNil(parent)) result = {parent, -1, depth, TableLookupStatus::Forward};
 			else if constexpr (Assignment) result = {valueNil(), slot, depth, TableLookupStatus::Store, receiver};

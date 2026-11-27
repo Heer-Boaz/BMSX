@@ -12,6 +12,7 @@ local vm_collect_garbage<const> = __bmsx_collect_garbage
 local console<const> = require('tty/console')
 
 local numeric_parse<const> = require('number/parse')
+local collector<const> = require('kernel/gc_collect_step')
 
 next = vm_next
 type = vm_type
@@ -118,7 +119,7 @@ collectgarbage = function(option)
 		local _<const>, bytes<const> = vm_collect_garbage(1)
 		return bytes / 1024
 	elseif option == 'step' then
-		return blua32.collect_step()
+		return collector.collect_step()
 	end
 	vm_error('invalid collectgarbage option')
 end

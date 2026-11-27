@@ -1096,9 +1096,14 @@ continue to advance. The new function becomes visible only when its record
 is ready. If the reservation still cannot be made, `CLOSURE` reports
 `OUT_OF_MEMORY` at the issuing instruction. Interrupt entry and the next
 instruction wait for that result.
-An ordinary call uses the closure value; a numeric
-function-record address is supplied to CLOSURE or EXEC under their separate
-operand rules.
+An ordinary call uses a function value, not a numeric address. For a
+resident function record in System ROM, `CLOSURE` supplies the immutable
+function value without allocating a closure. `CALL` copies the arguments
+to the reserved system stack and receives values through the ordinary
+result window. The callee can use private memory; the caller does not gain
+that access. Devices advance while the call runs, but interrupt entry and
+the caller wait for the call to finish. A cartridge function record cannot
+grant this access.
 
 ### Two global namespaces {#sec-cpu-two-global-namespaces}
 
@@ -1624,11 +1629,11 @@ The following tables describe the decoded operands. `A`, `B`, `C`, and `Bx` name
 
 | Instruction | Opcode | Operands | Result or effect | Base cycles |
 |---|---:|---|---|---:|
-| `CALL` | `2FH` | `A, B, C` | Call the closure or builtin in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 32 |
+| `CALL` | `2FH` | `A, B, C` | Call the function in `R(A)` with arguments beginning at `R(A+1)`. `B=0`: use the open argument range; otherwise supply `B-1` arguments. `C=0`: accept all results; otherwise accept exactly `C-1`, truncating or nil-padding. Results begin at `R(A)`. | 32 |
 | `BIOSCALL` | `10H` | `A, B, C` | Invoke BIOS service `B` with exactly `C` values starting at `R(A+1)`; put its single result in `R(A)`. | 32 |
 | `RET` | `30H` | `A, B` | Close the frame's open upvalues and return values beginning at `R(A)`. `B=0`: produce the open range; otherwise produce exactly `B-1` values. | 16 |
 | `VARARG` | `2EH` | `A, B` | Copy saved varargs beginning at `R(A)`. `B=0`: copy all; otherwise copy exactly `B-1`, padding with nil. | 3 |
-| `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
+| `CLOSURE` | `2BH` | `A, Bx`, register-address flag | Load a resident function value or construct a closure in `R(A)`. Flag clear: function record at `Bx × 16`. Flag set: address supplied by `R(Bx)`. Capture according to the record's upvalue descriptors. | 8 |
 | `GETUP` | `2CH` | `A, B` | `R(A) = upvalue(B)` of the current closure. | 3 |
 | `SETUP` | `2DH` | `A, B` | `upvalue(B) = R(A)` in the current closure. | 4 |
 
@@ -1637,9 +1642,7 @@ service, or a count different from that service's fixed argument count, raises
 a reserved-instruction exception. A service reports any language error at
 the call instruction without publishing a result. The
 [BIOS reference](bios-table.md#sec-bios-table-construction) specifies the
-selector and accepted values for Table construction. Selector `01H` takes no
-arguments and performs the [incremental collection step](bios-base.md#sec-bios-base-collectgarbage),
-returning a Boolean.
+selector and accepted values for Table construction.
 
 A BIOS call uses a separate reserved execution context. Its code consumes
 ordinary CPU cycles and may continue across grants while devices advance.

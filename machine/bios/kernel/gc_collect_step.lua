@@ -7,9 +7,10 @@ local gc<const> = require('kernel/gc_control') -- C:288-289 T:285-286
 local collector<const> = require('kernel/gc_step') -- G:1005-1008
 local admission<const> = require('kernel/heap_admission') -- C:288-289 T:285-286
 local atomic_phase<const> = 3 -- H:20
-local false_tag<const>, true_tag<const> = 1, 2 -- C:289 T:286; BIOSCALL encodes the guest Boolean tag
 
-local collect_step<const> = function(management, _source_cycles, _run_kind) -- C:286-289 T:283-286
+local collect_step<const> = function() -- C:286-289 T:283-286
+	local management_port<const>: *word = layout.management_address -- C:286 T:283 G:1270; generic private read of the owning RAM offset
+	local management<const> = *management_port -- C:286 T:283 G:1270; ordinary CALL passes no hidden parameters
 	local control<const> = management + layout.control_offset -- G:1270
 	local phase<const> = gc.internal.phase(control) -- G:1007
 	local effects<const>: *word = layout.ram_base + management + layout.effect_offset -- G:1122-1124,1274-1276
@@ -22,7 +23,7 @@ local collect_step<const> = function(management, _source_cycles, _run_kind) -- C
 	end
 	if borrows_roots then *effects = layout.release_string_work end -- G:1284,1312-1314
 	local finished<const> = admission.finish_explicit_step(management + layout.arena_offset) -- C:288-289 T:285-286
-	return 0, finished and true_tag or false_tag, 0 -- C:289 T:286; existing tagged BIOSCALL return
+	return finished -- C:289 T:286; ordinary Boolean result
 end
 
 return { collect_step = collect_step }

@@ -1058,8 +1058,11 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	};
 	const layout = decodeBlua32Image(bytes, input.loadAddress);
 	if (input.domain === 'system') {
+		const fixedEntries = input.biosExports.flatMap((entry, index) => entry.fixedStack ? [index] : []);
 		if (heapService)
-			linkBlua32HeapService(layout, heapServiceOffset, rodata.moduleExports, localFunctionAddressBySymbol, object.link.constValueRelocs);
+			linkBlua32HeapService(layout, heapServiceOffset, rodata.moduleExports, localFunctionAddressBySymbol, object.link.constValueRelocs, fixedEntries);
+		else if (fixedEntries.length !== 0)
+			throw new Error('Resident firmware entries require the fixed system stack.');
 		return {
 			domain: 'system',
 			bytes,

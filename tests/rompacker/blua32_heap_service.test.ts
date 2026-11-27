@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { readLE32 } from '../../machine/ts/common/endian';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
-	BLUA32_FUNCTION_RECORD_SIZE, Blua32ConstantTag,
+	BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_RESIDENT, Blua32ConstantTag,
 } from '../../machine/ts/spec/blua32/image_format';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
@@ -84,7 +84,6 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		['kernel/gc_stopped_final_mark', 'stopped_final_mark'],
 		['kernel/thread_create', 'create_coroutine'],
 		['kernel/bios_create_table', 'create_table'],
-		['kernel/gc_collect_step', 'collect_step'],
 	];
 	const functions = new Set<number>();
 	for (let operation = 0; operation < HEAP_SERVICE_ENTRY_COUNT; ++operation) {
@@ -97,10 +96,19 @@ for (const optLevel of [0, 3] as const) test(`linked system heap-service descrip
 		functions.add(index);
 	}
 	assert.equal(functions.size, HEAP_SERVICE_ENTRY_COUNT);
+	const step = object.sections.rodata.moduleExports.find(entry =>
+		entry.path === 'kernel/gc_collect_step' && entry.exportPathKey === 'collect_step')!;
+	const stepIndex = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[step.slotName]);
+	assert.ok(stepIndex >= BIOS_FUNCTION_EXPORTS.length && !functions.has(stepIndex));
+	assert.equal(layout.functions[stepIndex].numParams, 0);
+	const stepFlags = layout.functions[stepIndex].address - loadAddress + BLUA32_FUNCTION_FLAGS_OFFSET;
+	assert.equal(readLE32(bytes, stepFlags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
+	assert.equal(linked.biosImports.functions.some(entry => entry.path === step.path), false);
 
 	const revised = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS,
 		{ image: layout, symbols: linked.symbols });
 	assert.equal(readLE32(revised.bytes, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET), descriptor);
+	assert.equal(readLE32(revised.bytes, stepFlags) & BLUA32_FUNCTION_RESIDENT, BLUA32_FUNCTION_RESIDENT);
 	assert.deepEqual(revised.bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE),
 		bytes.subarray(offset, offset + HEAP_SERVICE_DESCRIPTOR_SIZE));
 });

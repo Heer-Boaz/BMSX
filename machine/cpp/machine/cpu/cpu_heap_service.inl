@@ -9,7 +9,7 @@ static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STAC
 static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
-static_assert(HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + sizeof(u32) <= RAM_BASE);
+static_assert(HEAP_SERVICE_MANAGEMENT_ADDRESS + sizeof(u32) <= RAM_BASE);
 static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STRIDE);
 static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
@@ -17,7 +17,10 @@ static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 
 static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
-static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32) <= HEAP_SERVICE_VALUE_OFFSET);
+static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32)
+	<= HEAP_SERVICE_RESIDENT_OFFSET);
+static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::SourceCount) + sizeof(u32)
+	<= HEAP_SERVICE_VALUE_OFFSET);
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_GC_ARGUMENTS_OFFSET);
@@ -85,6 +88,21 @@ CallFrame& CPU::prepareHeapServiceFrame(u32 functionAddress, int base, int suppl
 	return frame;
 }
 
+void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result, i32 protectedIndex) {
+	const auto* record = m_systemImage->romFunctions.find(address);
+	if (!record || (record->entry.flags & BLUA32_FUNCTION_RESIDENT) == 0u)
+		throw LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+	const int copied = std::min(static_cast<int>(supplied.size()), static_cast<int>(record->entry.numParams));
+	auto& callee = prepareHeapServiceFrame(address, 0, static_cast<int>(supplied.size()), result, m_currentInstructionPc);
+	supplied.placeInto(callee.registers, 0, copied, 0);
+	callee.writeControl(FrameField::Protected, static_cast<u32>(protectedIndex));
+	m_memory.writeRamRecordPair(m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET,
+		m_currentInstructionPc, lastPc);
+	instructionBudgetRemaining -= callee.readWindow(FrameField::Top);
+	callee.thread->enterFrame(&callee);
+	requestYield();
+}
+
 void CPU::executeHeapServiceCall(CallFrame& caller, int base, int supplied, int requested) {
 	const auto record = static_cast<u32>(asInteger(caller.registers.get(base)));
 	const auto result = CallResultPlacement::call(base, requested);
@@ -103,6 +121,9 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 		caller.registers.copyFrom(frame.registers, result.base, base, placement.copied, placement.padded);
 		caller.placeResultTop(result, placement.count());
 		instructionBudgetRemaining -= placement.count();
+	} else if ((m_systemImage->romFunctions.find(frame.readControl(FrameField::Function))->entry.flags & BLUA32_FUNCTION_RESIDENT) != 0u) {
+		const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
+		m_memory.writeRamRecordPair(context + static_cast<u32>(HeapServiceResidentField::SourceBase), base, produced);
 	} else {
 		const u32 management = m_heapAllocator.managementOffset();
 		const u32 biosCall = management + HEAP_SERVICE_BIOS_CALL_OFFSET;
@@ -117,6 +138,36 @@ void CPU::executeHeapServiceReturn(CallFrame& frame, int base, int produced) {
 		instructionBudgetRemaining -= produced;
 	}
 	m_heapServiceView.leaveFrame();
+}
+
+void CPU::finishResidentCall() {
+	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
+	using Field = HeapServiceResidentField;
+	m_currentInstructionPc = m_memory.readRamRecordWord(context + static_cast<u32>(Field::IssuePc));
+	lastPc = m_memory.readRamRecordWord(context + static_cast<u32>(Field::LastPc));
+	m_lastExecutionDomainId = m_activeExecutionDomainId;
+	const int base = m_memory.readRamRecordWord(context + static_cast<u32>(Field::SourceBase));
+	const int count = m_memory.readRamRecordWord(context + static_cast<u32>(Field::SourceCount));
+	const auto& frame = *m_heapServiceView.firstFrame;
+	const i32 protectedIndex = static_cast<i32>(frame.readControl(FrameField::Protected));
+	const auto result = CallResultPlacement::frame(frame.readWindow(FrameField::ReturnBase),
+		frame.readWindow(FrameField::ReturnCount), frame.readControl(FrameField::Flags));
+	auto& caller = *m_activeThread->currentFrame;
+	const auto placement = ValuePlacement::fit(count, result.selected(count));
+	if (protectedIndex < 0 && caller.registers.containsRange(result.base, placement.count())) {
+		caller.registers.copyFrom(m_heapServiceView.stack, result.base, base, placement.copied, placement.padded);
+		caller.placeResultTop(result, placement.count());
+		instructionBudgetRemaining -= placement.count();
+		return;
+	}
+	// The fixed activation has retired. Keep results rooted if ordinary
+	// placement needs to grow the receiving thread or invoke a continuation.
+	auto scratch = acquireBuiltinResultScratch();
+	auto& values = scratch.get();
+	const int copied = protectedIndex < 0 ? placement.copied : count;
+	for (int slot = 0; slot < copied; ++slot) values.push_back(m_heapServiceView.stack.get(base + slot));
+	if (protectedIndex >= 0) finishProtectedCall(protectedIndex, {nullptr, values.data(), 0, count});
+	else writeReturnValues(caller, result, {values.data(), values.size()});
 }
 
 void CPU::admitHeapServiceAccess(MemoryAccessKind kind, u32 address) const {
@@ -135,6 +186,8 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 		word = readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
 	} else if (address == HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS && kind != MemoryAccessKind::U8) {
 		word = static_cast<u32>(remainingDeviceCycles());
+	} else if (address == HEAP_SERVICE_MANAGEMENT_ADDRESS && kind != MemoryAccessKind::U8) {
+		word = m_heapAllocator.managementOffset();
 	} else {
 		const u32 slot = address >> BLUA32_STRING_ROM_SOCKET_SHIFT;
 		const u32 busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;

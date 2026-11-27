@@ -45,6 +45,7 @@ constexpr uint32_t BLUA32_FUNCTION_RESERVED_OFFSET = 28u;
 
 constexpr uint32_t BLUA32_FUNCTION_VARARG = 1u << 0u;
 constexpr uint32_t BLUA32_FUNCTION_STATIC = 1u << 1u;
+constexpr uint32_t BLUA32_FUNCTION_RESIDENT = 1u << 2u;
 
 constexpr uint32_t BLUA32_UPVALUE_RECORD_SIZE = 4u;
 constexpr uint32_t BLUA32_UPVALUE_IN_STACK_MASK = 0x80000000u;

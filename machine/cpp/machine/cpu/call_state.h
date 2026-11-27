@@ -30,6 +30,8 @@ constexpr u32 PROTECTED_CALL_BYTES = 20;
 constexpr u32 PROTECTED_CALL_KIND_MASK = 0xffu;
 constexpr u32 PROTECTED_CALL_PARENT = 1u << 8;
 constexpr u32 PROTECTED_CALL_HANDLER_BUILTIN = 1u << 9;
+constexpr u32 PROTECTED_CALL_HANDLER_RESIDENT = 1u << 10;
+constexpr u32 PROTECTED_CALL_HANDLER_IMMUTABLE = PROTECTED_CALL_HANDLER_BUILTIN | PROTECTED_CALL_HANDLER_RESIDENT;
 
 enum class FrameField : u32 { Function = 0, CallSite = 4, OpenHead = 8, Protected = 12, Flags = 16, Pc = 20, VarargBase = 24, VarargCount = 28, ReturnBase = 32, ReturnCount = 36, Top = 40, Closure = 44, StackBase = 48, StackCapacity = 52 };
 constexpr u32 FRAME_CONTROL_BYTES = 56;

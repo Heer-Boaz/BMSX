@@ -63,7 +63,7 @@ export class GuestValueSnapshot {
 				for (let offset = 0; offset < length; offset++) units[offset] = text.charCodeAt(offset);
 				return { kind: 'string', value: String.fromCharCode(...units), omitted: length < text.length };
 			}
-			case ValueTag.Closure: return { kind: 'function', id: values.getPayload(index) };
+			case ValueTag.Closure: case ValueTag.ResidentFunction: return { kind: 'function', id: values.getPayload(index) };
 			case ValueTag.Thread: return { kind: 'thread', id: values.getPayload(index) };
 			case ValueTag.BuiltinFunction: return { kind: 'builtin', id: values.getBuiltinFunctionId(index) };
 		}

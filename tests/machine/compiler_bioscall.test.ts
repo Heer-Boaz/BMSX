@@ -132,7 +132,6 @@ test('only the table selector is removable; BIOSCALL uses just the implicit inpu
 	assert.equal(computeMaxRegister([instruction]), 11);
 	assert.equal(isPureInstruction(instruction), true);
 	assert.equal(isPureInstruction({ ...instruction, b: BiosCall.Count }), false);
-	assert.equal(isPureInstruction({ ...instruction, b: BiosCall.CollectStep, c: 0 }), false);
 	assert.equal(isPureInstruction({ ...instruction, c: 1 }), false);
 	const zeroArgs = { ...instruction, c: 0 };
 	assert.deepEqual(collectInstructionUses(zeroArgs, 15, () => []), []);
@@ -147,21 +146,28 @@ test('only the table selector is removable; BIOSCALL uses just the implicit inpu
 	assert.ok(allocated.maxStack < 16, 'unrelated registers can still move');
 });
 
-test('the System collection intrinsic emits an ordered zero-argument Boolean service', () => {
+test('resident Step is an ordinary linked call even when its body would inline', () => {
 	const entrySource = `
+local step<const> = require('kernel/gc_collect_step')
 local function collect()
-	local ignored = blua32.collect_step()
-	return blua32.collect_step()
+	local ignored = step.collect_step()
+	return step.collect_step()
 end
 return collect`;
+	const module = {
+		path: 'kernel/gc_collect_step',
+		source: 'module<const>\nlocal f<const> = function() return true end\nreturn {collect_step=f}',
+	};
+	const modules = [{ ...module, chunk: parseLuaChunk(module.source, module.path) }];
 	const chunk = parseLuaChunk(entrySource);
-	assert.throws(() => compileLuaChunkToProgram(chunk, [], { entrySource, programDomain: 'cart' }),
-		/blua32.collect_step is a System ROM intrinsic/);
+	assert.throws(() => compileLuaChunkToProgram(parseLuaChunk('return blua32.collect_step()'), [],
+		{ entrySource: 'return blua32.collect_step()', programDomain: 'system' }), /Unknown blua32 operation 'collect_step'/);
 	for (const optLevel of [0, 3] as const) {
-		const calls = body(compileLuaChunkToProgram(chunk, [], { entrySource, programDomain: 'system', optLevel }), 'collect')
-			.filter(instruction => instruction.op === OpCode.BIOSCALL);
-		assert.deepEqual(calls.map(call => [call.b, call.c]), [[BiosCall.CollectStep, 0], [BiosCall.CollectStep, 0]],
-			'discarding the first result does not erase its collector work');
+		const lowered = body(compileLuaChunkToProgram(chunk, modules, { entrySource, programDomain: 'system', optLevel }), 'collect');
+		assert.equal(lowered.some(instruction => instruction.op === OpCode.BIOSCALL), false);
+		const calls = lowered.filter(instruction => instruction.op === OpCode.CALL);
+		assert.deepEqual(calls.map(call => call.b), [1, 1], 'no arguments, and the discarded step may not be erased');
+		assert.equal(lowered.filter(instruction => instruction.op === OpCode.LOADK).length, 2, 'both callees are link-time symbols');
 	}
 });
 

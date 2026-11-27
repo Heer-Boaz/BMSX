@@ -60,6 +60,9 @@ export const enum HeapServiceBiosCallField {
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 }
 
+export const HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
+export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12 }
+
 export const HEAP_SERVICE_GC_OFFSET = 0xf20;
 export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
 export const enum HeapServiceGcStage {
@@ -86,6 +89,7 @@ export const enum HeapServiceRootPlane {
 export const HEAP_SERVICE_ROOT_PORT_BYTES = HeapServiceRootPlane.Count << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.
 export const HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
+export const HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4;
 
 // CPU-published head roots borrowed by a single remark quantum. Static
 // fault identifiers are a separate pinned word plane, populated at boot.

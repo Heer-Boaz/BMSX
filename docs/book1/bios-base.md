@@ -103,8 +103,8 @@ local cycle_finished = collectgarbage('step')
 ```
 
 A step does not wait for a display frame and does not guarantee a maximum
-pause. It uses the incremental collection selector of
-[`BIOSCALL`](cpu.md#sec-cpu-calls-and-captured-values) and consumes ordinary CPU cycles.
+pause. It calls a resident BIOS routine with ordinary result placement and
+consumes ordinary CPU cycles.
 If the step starts during final marking, it finishes that pass before
 returning, which does not necessarily finish the cycle.
 A full collection does not return until the fresh cycle finishes. Both

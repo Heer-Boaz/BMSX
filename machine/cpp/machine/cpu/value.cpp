@@ -12,7 +12,7 @@ void appendValueString(std::string& out, Value value, const StringPool& strings)
 		case ValueTag::String: strings.appendBytes(out, asStringId(value)); break;
 		case ValueTag::Table: out.append("table"); break;
 		case ValueTag::Thread: out.append("thread"); break;
-		case ValueTag::Closure: case ValueTag::BuiltinFunction: out.append("function"); break;
+		case ValueTag::Closure: case ValueTag::BuiltinFunction: case ValueTag::ResidentFunction: out.append("function"); break;
 		default: BMSX_UNREACHABLE();
 	}
 }
@@ -30,13 +30,14 @@ const char* valueTypeName(Value value) {
 		case ValueTag::Table: return "table";
 		case ValueTag::Closure: return "closure";
 		case ValueTag::BuiltinFunction: return "builtin_function";
+		case ValueTag::ResidentFunction: return "resident_function";
 		default: BMSX_UNREACHABLE();
 	}
 }
 const char* valueTypeNameForLua(Value value) {
 	switch (valueTag(value)) {
 		case ValueTag::Integer: case ValueTag::Float: return "number";
-		case ValueTag::Closure: case ValueTag::BuiltinFunction: return "function";
+		case ValueTag::Closure: case ValueTag::BuiltinFunction: case ValueTag::ResidentFunction: return "function";
 		default: return valueTypeName(value);
 	}
 }

@@ -15,7 +15,7 @@ import * as Upvalue from './upvalue';
 import { TableRecords, type TableStringProbe } from './table';
 import type { StringId } from './string_pool';
 import { THREAD_HEAP_BYTES, THREAD_RECORD_KIND, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadLayout, ThreadRecords } from './thread_record';
-import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
+import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FrameField, PROTECTED_CALL_BYTES, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_KIND_MASK, ProtectedCallKind, ProtectedField } from './call_state';
 import { ValueTag, valueTag, valueTagHasGcEdge, valuePayload, valueNil, valueFromTag, type Value } from './value';
 import type { ValueSlots } from './value_slots';
 import { GC_STEP_WORDS, LuaAllocationRecovery, type LuaHeap } from './lua_heap';
@@ -463,7 +463,7 @@ export class GcHeap {
 			while (next < layout.protectedDepth && work < limit) {
 				const continuation = layout.protectedOffset + next++ * PROTECTED_CALL_BYTES;
 				const flags = memory.readRamRecordWord(continuation + ProtectedField.Flags);
-				if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
+				if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) === 0)
 					this.markClosure(memory.readRamRecordWord(continuation + ProtectedField.Handler));
 				work += PROTECTED_CALL_BYTES >>> 2;
 			}

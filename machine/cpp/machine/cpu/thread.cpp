@@ -92,8 +92,10 @@ CallResultPlacement Thread::protectedResult(u32 index) const {
 }
 Value Thread::protectedHandler(u32 index) const {
 	const u32 payload = protectedWord(index, ProtectedField::Handler);
-	return (protectedWord(index, ProtectedField::Flags) & PROTECTED_CALL_HANDLER_BUILTIN) != 0u
-		? valueBuiltinFunction(static_cast<BuiltinFunctionId>(payload)) : valueClosure(payload);
+	const auto flags = protectedWord(index, ProtectedField::Flags);
+	if ((flags & PROTECTED_CALL_HANDLER_RESIDENT) != 0u) return valueResidentFunction(payload);
+	if ((flags & PROTECTED_CALL_HANDLER_BUILTIN) != 0u) return valueBuiltinFunction(static_cast<BuiltinFunctionId>(payload));
+	return valueClosure(payload);
 }
 u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPlacement result, Value handler) {
 	const u32 index = protectedDepth();
@@ -108,7 +110,8 @@ u32 Thread::pushProtectedCall(ProtectedCallKind kind, bool parent, CallResultPla
 	auto* ram = memory.ramData();
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Flags)) & RAM_RECORD_WORD_MASK),
 		static_cast<u32>(kind) | (parent ? PROTECTED_CALL_PARENT : 0u)
-		| (valueIsBuiltinFunction(handler) ? PROTECTED_CALL_HANDLER_BUILTIN : 0u));
+		| (valueIsBuiltinFunction(handler) ? PROTECTED_CALL_HANDLER_BUILTIN
+			: (valueTag(handler) == ValueTag::ResidentFunction ? PROTECTED_CALL_HANDLER_RESIDENT : 0u)));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Caller)) & RAM_RECORD_WORD_MASK), static_cast<u32>(frameDepth() - 1));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Base)) & RAM_RECORD_WORD_MASK), static_cast<u32>(result.base));
 	writeLE32(ram + ((addr + static_cast<u32>(ProtectedField::Wanted)) & RAM_RECORD_WORD_MASK), result.word);

@@ -452,7 +452,7 @@ size_t GcHeap::traceThread(u32 address, bool atomic, size_t limit, u32 cursor, u
 			const u32 continuation = layout.protectedAddress(next++);
 			const u32 flags = memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Flags));
 			if ((flags & PROTECTED_CALL_KIND_MASK) != static_cast<u32>(ProtectedCallKind::PCall)
-				&& (flags & PROTECTED_CALL_HANDLER_BUILTIN) == 0u) {
+				&& (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) == 0u) {
 				markClosure(memory.readRamRecordWord(continuation + static_cast<u32>(ProtectedField::Handler)));
 			}
 			work += PROTECTED_CALL_BYTES / sizeof(u32);

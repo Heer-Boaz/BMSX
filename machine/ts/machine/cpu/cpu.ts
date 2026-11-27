@@ -74,7 +74,7 @@ import {
 	BLUA32_FUNCTION_MAX_STACK_OFFSET,
 	BLUA32_FUNCTION_NUM_PARAMS_OFFSET,
 	BLUA32_FUNCTION_RECORD_SIZE,
-	BLUA32_FUNCTION_STATIC,
+	BLUA32_FUNCTION_STATIC, BLUA32_FUNCTION_RESIDENT,
 	BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET,
 	BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET,
 	BLUA32_FUNCTION_VARARG,
@@ -168,7 +168,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -184,7 +184,8 @@ import {
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
-	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField,
+	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
 	HeapServiceTableGrowthMode, HeapServiceTableGrowthStage,
@@ -641,6 +642,9 @@ export class CPU implements MappedPageInvalidator {
 					this.pushFrame(closure, args.registers, destination, result, false, false, this.currentInstructionPc, 0, args.length);
 					break;
 				}
+				case ValueTag.ResidentFunction:
+					this.beginResidentCall(valuePayload(method), args.registers, args.base, args.length, destination, result);
+					break;
 				case ValueTag.BuiltinFunction:
 					this.runBuiltinFunction(valuePayload(method), frame, destination, result, args.length, args.registers, 0);
 					break;
@@ -2312,10 +2316,12 @@ export class CPU implements MappedPageInvalidator {
 			const irq = this.heapService.irqForwardAddress;
 			const cartLane = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.CartLane);
 			const completion = this.memory.readRamRecordWord(this.heapService.biosCallAddress + HeapServiceBiosCallField.Kind) as HeapServiceBiosCallKind;
-			const gcStage = cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			// Debugger stepping reports paid machine progress, not a second
 			// cartridge instruction. The activation owns all collector phases.
 			const root = this.heapService.thread.firstFrame!.functionAddress, services = this.systemImage.heapServiceFunctions;
+			const directory = this.systemImage.romFunctions;
+			const resident = (directory.versions[romFunctionVersionLane(directory, root) + RomFunctionLane.Flags] & BLUA32_FUNCTION_RESIDENT) !== 0;
+			const gcStage = !resident && cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			const collection = root === services?.[HeapServiceOperation.FullCollection]
 				|| root === services?.[HeapServiceOperation.StoppedFinalMark];
 			this.runKind = kind;
@@ -2324,7 +2330,8 @@ export class CPU implements MappedPageInvalidator {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
 					try {
-						switch (gcStage) {
+						if (resident) this.finishResidentCall();
+						else switch (gcStage) {
 							case HeapServiceGcStage.FullTrace:
 							case HeapServiceGcStage.MaintenanceTrace: {
 								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
@@ -2983,6 +2990,12 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const record = this.functionRecordLatch;
+		if (record.romBacked && record.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+			&& (record.flags & BLUA32_FUNCTION_RESIDENT) !== 0) {
+			registers.setEncoded(a, ValueTag.ResidentFunction, functionAddress);
+			this.bumpRegisterTop(frame, a);
+			return;
+		}
 		const captureless = record.recordUpvalueCount === 0;
 		const canonical = captureless && (record.flags & BLUA32_FUNCTION_STATIC) !== 0;
 		if (canonical) {
@@ -3012,6 +3025,9 @@ export class CPU implements MappedPageInvalidator {
 		const capacity = registers.capacity();
 		if (a >= capacity) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		switch (registers.getTag(a)) {
+			case ValueTag.ResidentFunction:
+				this.beginResidentCall(registers.getPayload(a), frame.thread.stackRegisters, frame.stackBase + a + 1, argCount, a, c);
+				return false;
 			case ValueTag.BuiltinFunction: {
 				// Unlike closure placement, a primitive does not reserve a new
 				// argument window. Its shared source must already be backed.
@@ -3895,7 +3911,11 @@ export class CPU implements MappedPageInvalidator {
 						const count = page.b[pageOffset] - 1;
 						const caller = frame.previous;
 						if (caller !== null) this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, count, true);
-						else {
+						else if ((frame.executionImage.romFunctions.versions[
+							romFunctionVersionLane(frame.executionImage.romFunctions, frame.functionAddress) + RomFunctionLane.Flags
+						] & BLUA32_FUNCTION_RESIDENT) !== 0) {
+							this.memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.SourceBase, a, count);
+						} else {
 							const state = this.heapService.biosCallAddress;
 							if (this.memory.readRamRecordWord(state + HeapServiceBiosCallField.Kind) !== HeapServiceBiosCallKind.Idle) {
 								this.memory.writeRamRecordWord(state + HeapServiceBiosCallField.Status, registers.getPayload(a));
@@ -3931,6 +3951,48 @@ export class CPU implements MappedPageInvalidator {
 					this.executeWordStores(frame, address, a, page.c[pageOffset]);
 					return;
 				}
+		}
+	}
+
+	private beginResidentCall(address: number, source: ValueSlots, first: number, supplied: number, base: number, result: number, protectedIndex = -1): void {
+		const directory = this.systemImage.romFunctions, lane = romFunctionVersionLane(directory, address);
+		if (lane < 0 || (directory.versions[lane + RomFunctionLane.Flags] & BLUA32_FUNCTION_RESIDENT) === 0)
+			throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
+		const copied = Math.min(supplied, directory.versions[lane + RomFunctionLane.NumParams]);
+		if (supplied !== 0 && first + supplied > source.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		const callee = this.prepareHeapServiceFrame(address, 0, base, result, this.currentInstructionPc);
+		callee.registers.copyRangeFrom(source, 0, first, copied, callee.top - copied);
+		callee.protectedContinuationIndex = protectedIndex;
+		this.memory.writeRamRecordPair(this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET,
+			this.currentInstructionPc, this.lastPc);
+		this.charge(callee.top);
+		callee.thread.enterFrame(callee);
+		this.requestYield();
+	}
+
+	private finishResidentCall(): void {
+		const context = this.heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET, memory = this.memory;
+		this.currentInstructionPc = memory.readRamRecordWord(context + HeapServiceResidentField.IssuePc);
+		this.lastPc = memory.readRamRecordWord(context + HeapServiceResidentField.LastPc);
+		this.lastExecutionDomainId = this.activeExecutionDomainId;
+		const sourceBase = memory.readRamRecordWord(context + HeapServiceResidentField.SourceBase);
+		const count = memory.readRamRecordWord(context + HeapServiceResidentField.SourceCount);
+		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
+		const index = frame.protectedContinuationIndex;
+		const caller = this.activeThread.currentFrame!;
+		const base = frame.returnBase, result = frame.returnCount, selected = selectedCallResultCount(result, count);
+		if (index < 0 && base + selected <= caller.stackCapacity) {
+			this.writeReturnValuesFromRegisters(caller, base, result, source, sourceBase, count, true);
+			return;
+		}
+		const values = this.acquireBuiltinResults();
+		try {
+			const copied = index < 0 ? Math.min(count, selected) : count;
+			for (let slot = 0; slot < copied; ++slot) values.push(source.get(sourceBase + slot));
+			if (index >= 0) this.finishProtectedCall(index, values.slots, 0, count);
+			else this.writeReturnValuesFromRegisters(caller, base, result, values.slots, 0, values.length);
+		} finally {
+			this.releaseBuiltinResults(values);
 		}
 	}
 
@@ -3971,6 +4033,8 @@ export class CPU implements MappedPageInvalidator {
 				word = this.readHeapServiceRoot(address - HEAP_SERVICE_ROOT_PORT_BASE, kind);
 			} else if (address === HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS && kind !== MemoryAccessKind.U8) {
 				word = this.remainingDeviceCycles();
+			} else if (address === HEAP_SERVICE_MANAGEMENT_ADDRESS && kind !== MemoryAccessKind.U8) {
+				word = this.heapAllocator.managementOffset();
 			} else {
 				const slot = address >>> BLUA32_STRING_ROM_SOCKET_SHIFT;
 				const busAddress = address & BLUA32_STRING_ROM_ADDRESS_MASK;
@@ -4603,7 +4667,7 @@ export class CPU implements MappedPageInvalidator {
 			if (argumentCount > 1) handler = (detached ?? caller.registers).get(argumentBase + 1);
 			const handlerTag = valueTag(handler);
 			if (handlerTag !== ValueTag.Closure
-				&& handlerTag !== ValueTag.BuiltinFunction) {
+				&& handlerTag !== ValueTag.BuiltinFunction && handlerTag !== ValueTag.ResidentFunction) {
 				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
@@ -4636,6 +4700,12 @@ export class CPU implements MappedPageInvalidator {
 				const frame = this.pushFrame(closure, detached ?? caller, 0, 0, false, false,
 					detached === undefined ? caller.pc - INSTRUCTION_BYTES : this.currentInstructionPc, argumentBase, argumentCount);
 				frame.protectedContinuationIndex = continuationIndex;
+				return;
+			}
+			case ValueTag.ResidentFunction: {
+				const source = detached ?? caller.thread.stackRegisters;
+				const first = detached === undefined ? caller.stackBase + argumentBase : argumentBase;
+				this.beginResidentCall(valuePayload(target), source, first, argumentCount, 0, 0, continuationIndex);
 				return;
 			}
 			case ValueTag.BuiltinFunction: {
@@ -5173,7 +5243,7 @@ export class CPU implements MappedPageInvalidator {
 					for (let index = 0; index < layout.protectedDepth; ++index) {
 						const continuation = layout.protectedOffset + index * PROTECTED_CALL_BYTES;
 						const flags = this.memory.readRamRecordWord(continuation + ProtectedField.Flags);
-						if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_BUILTIN) === 0)
+						if ((flags & PROTECTED_CALL_KIND_MASK) !== ProtectedCallKind.PCall && (flags & PROTECTED_CALL_HANDLER_IMMUTABLE) === 0)
 							objects.push(this.memory.readRamRecordWord(continuation + ProtectedField.Handler));
 					}
 					this.inspectionThreadValues.bindRam(this.memory, layout.offset, layout.capacity, false, true);

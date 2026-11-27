@@ -9,6 +9,12 @@ import type { ProgramStaticScopes } from './static_debug';
 
 export type ProgramConstant = null | boolean | NumberConstant | string;
 
+// Linked System exports entering the resident stack through ordinary CALL.
+// The compiler must preserve the boundary; the System linker proves it.
+export const SYSTEM_RESIDENT_EXPORTS = [
+	{ path: 'kernel/gc_collect_step', exportPathKey: 'collect_step', numParams: 0 },
+] as const;
+
 export type ProgramInitParticipant = {
 	functionId: string;
 	slotName: string;

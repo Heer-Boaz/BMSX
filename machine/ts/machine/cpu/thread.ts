@@ -1,6 +1,6 @@
 import { ThreadField, ThreadStatus, THREAD_INITIAL_FRAMES, THREAD_CONTROL_COUNT_MASK } from './thread_record';
 export { ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, THREAD_INITIAL_VALUES, THREAD_INITIAL_FRAMES, THREAD_RECORD_KIND } from './thread_record';
-import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, ProtectedField, type ProtectedCallKind } from './call_state';
+import { CallFrame, FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, PROTECTED_CALL_BYTES, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_PARENT, PROTECTED_CALL_HANDLER_BUILTIN, PROTECTED_CALL_HANDLER_RESIDENT, ProtectedField, type ProtectedCallKind } from './call_state';
 import type { GcHeap } from './gc_heap';
 import { ValueTag, valueFromTag, valueNil, valuePayload, valueTag, type Value } from './value';
 import { writeLE32 } from '../../common/endian';
@@ -88,7 +88,8 @@ export class Thread {
 	}
 	public protectedHandler(index: number): Value {
 		const flags = this.protectedWord(index, ProtectedField.Flags);
-		const tag = (flags & PROTECTED_CALL_HANDLER_BUILTIN) !== 0 ? ValueTag.BuiltinFunction : ValueTag.Closure;
+		const tag = (flags & PROTECTED_CALL_HANDLER_RESIDENT) !== 0 ? ValueTag.ResidentFunction
+			: (flags & PROTECTED_CALL_HANDLER_BUILTIN) !== 0 ? ValueTag.BuiltinFunction : ValueTag.Closure;
 		return valueFromTag(tag, this.protectedWord(index, ProtectedField.Handler));
 	}
 	public pushProtectedCall(kind: ProtectedCallKind, parent: boolean, base: number, wanted: number, handler: Value): number {
@@ -101,7 +102,9 @@ export class Thread {
 		}
 		const address = this.protectedAddress(index) & RAM_RECORD_WORD_MASK;
 		const memory = this.heap.memory, ram = memory.ramData();
-		const handlerFlag = valueTag(handler) === ValueTag.BuiltinFunction ? PROTECTED_CALL_HANDLER_BUILTIN : 0;
+		const tag = valueTag(handler);
+		const handlerFlag = tag === ValueTag.BuiltinFunction ? PROTECTED_CALL_HANDLER_BUILTIN
+			: tag === ValueTag.ResidentFunction ? PROTECTED_CALL_HANDLER_RESIDENT : 0;
 		writeLE32(ram, (address + ProtectedField.Flags) & RAM_RECORD_WORD_MASK, kind | (parent ? PROTECTED_CALL_PARENT : 0) | handlerFlag);
 		writeLE32(ram, (address + ProtectedField.Caller) & RAM_RECORD_WORD_MASK, this.frameDepth - 1);
 		writeLE32(ram, (address + ProtectedField.Base) & RAM_RECORD_WORD_MASK, base);

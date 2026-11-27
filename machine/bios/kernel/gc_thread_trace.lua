@@ -34,7 +34,7 @@ local frame_bytes<const> = 56 -- F:21 G:34
 local protected_bytes<const> = 20 -- F:152 G:28
 local pcall_kind<const> = 0 -- F:13-17 G:21-25
 local protected_kind_mask<const> = 0xff -- F:153 G:29
-local protected_handler_builtin<const> = 1 << 9 -- F:155 G:31
+local protected_handler_immutable<const> = (1 << 9) | (1 << 10) -- F:155 G:31; built-in and resident code are not managed
 local frame_window_mask<const> = word_count - 1 -- F:22 G:36
 local control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
 local upvalue_flags<const> = 2 -- U:12 V:14
@@ -168,7 +168,7 @@ local trace_thread<const> = function(control, arena, metadata, address, atomic, 
 			local continuation<const>: *protected_record = ram_base + ((protected_block + next_index * protected_bytes) & word_mask) -- T:450 C:452 J:42
 			next_index = next_index + 1 -- T:450 C:452
 			local flags<const> = continuation.flags -- T:451 C:453
-			if (flags & protected_kind_mask) ~= pcall_kind and (flags & protected_handler_builtin) == 0 then -- T:452 C:454-455
+			if (flags & protected_kind_mask) ~= pcall_kind and (flags & protected_handler_immutable) == 0 then -- T:452 C:454-455
 				mark.mark_record(control, arena, continuation.handler, closure_kind, trace_head, replace_color_byte) -- T:453 C:456
 			end
 			work = work + (protected_bytes >> 2) -- T:454 C:458

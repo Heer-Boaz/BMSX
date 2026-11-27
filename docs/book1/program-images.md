@@ -450,12 +450,14 @@ A function address identifies a **32-byte function record**, not its first instr
 | `04H` | Code byte count | Extent of this function in TEXT for a published function directory. |
 | `08H` | Parameter count | Number of fixed parameter slots. |
 | `0CH` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
-| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC. |
+| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC; bit 2 RESIDENT (System ROM only). |
 | `14H` | Upvalue-table address | Absolute machine byte address. |
 | `18H` | Upvalue count | Number of four-byte descriptors. |
 | `1CH` | Reserved | Not read. |
 
-VARARG retains arguments beyond the fixed parameters. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. In a mapped-code image the declared byte count is descriptive, not an instruction-fetch limit.
+VARARG retains arguments beyond the fixed parameters. A RESIDENT record in System ROM is STATIC, has no varargs or upvalues, and
+uses the reserved system stack when called. The same bit on a cartridge
+record grants no special entry or access. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. In a mapped-code image the declared byte count is descriptive, not an instruction-fetch limit.
 
 In an image with a published function directory, a ROM function address must
 name a record in that directory. The addressed record's entry, frame layout and

@@ -430,7 +430,7 @@ export class TableRecords {
 			const tag = valueTag(next);
 			if (tag !== ValueTag.Table) {
 				result.extraVisits = depth;
-				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction) {
+				if (tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction) {
 					result.receiver = current; result.status = TableLookupStatus.Invoke;
 				} else result.status = tag === ValueTag.Nil ? TableLookupStatus.Resolved : TableLookupStatus.Forward;
 				return links;
@@ -493,7 +493,7 @@ export class TableRecords {
 			result.receiver = record;
 			result.value = next;
 			result.status = tag === ValueTag.Nil ? TableLookupStatus.Store
-				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction ? TableLookupStatus.Invoke
+				: tag === ValueTag.Closure || tag === ValueTag.BuiltinFunction || tag === ValueTag.ResidentFunction ? TableLookupStatus.Invoke
 				: TableLookupStatus.Forward;
 			result.slot = tag === ValueTag.Nil ? slot : -1;
 			return;

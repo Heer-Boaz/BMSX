@@ -380,6 +380,8 @@ private:
 	void enterBiosCall(CallFrame&, int destination, u32 selector, int supplied);
 	void armBiosCall(HeapServiceBiosCallKind kind, u32 target, u32 resultWord);
 	void finishBiosCall(HeapServiceBiosCallKind kind);
+	void beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPlacement result, i32 protectedIndex = -1);
+	void finishResidentCall();
 	void executeHeapServiceCall(CallFrame&, int base, int supplied, int requested);
 	void executeHeapServiceReturn(CallFrame&, int base, int produced);
 	void executeHeapServiceLoad(CallFrame&, int destination, MemoryAccessKind, u32 address);

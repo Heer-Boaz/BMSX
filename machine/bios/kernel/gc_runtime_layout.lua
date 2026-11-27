@@ -23,6 +23,7 @@ return {
 	effect_offset = 0x788,
 	arguments_offset = 0x790,
 	remaining_device_cycles_address = 0x02c00000,
+	management_address = 0x02c00004,
 	publish_roots = 0,
 	release_string_work = 5,
 }

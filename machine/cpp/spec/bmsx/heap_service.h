@@ -70,6 +70,9 @@ enum class HeapServiceBiosCallField : uint32_t {
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 };
 
+constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
+enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12 };
+
 constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
 enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
 enum class HeapServiceGcStage : uint32_t {
@@ -96,6 +99,7 @@ enum class HeapServiceRootPlane : uint32_t {
 constexpr uint32_t HEAP_SERVICE_ROOT_PORT_BYTES = static_cast<uint32_t>(HeapServiceRootPlane::Count) << HEAP_SERVICE_ROOT_PORT_SHIFT;
 // A word load samples time to the next device deadline after paying the load.
 constexpr uint32_t HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS = HEAP_SERVICE_ROOT_PORT_BASE + HEAP_SERVICE_ROOT_PORT_BYTES;
+constexpr uint32_t HEAP_SERVICE_MANAGEMENT_ADDRESS = HEAP_SERVICE_REMAINING_DEVICE_CYCLES_ADDRESS + 4u;
 
 // CPU-published head roots and the pinned static fault-ID word plane.
 constexpr uint32_t HEAP_SERVICE_REMARK_HEAD_OFFSET = 0x680;

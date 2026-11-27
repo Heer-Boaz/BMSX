@@ -1,11 +1,12 @@
+import { BLUA32_FUNCTION_FLAGS_OFFSET, BLUA32_FUNCTION_RESIDENT } from '../../../machine/ts/spec/blua32/image_format';
 import { BIOS_CALL_ARITY, BIOS_CALL_CONTEXT_WORDS, BiosCall } from '../../../machine/ts/spec/bmsx/bios';
-import { writeLE32 } from '../../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../../machine/ts/common/endian';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_VALUE_COUNT, HeapServiceOperation,
 } from '../../../machine/ts/spec/bmsx/heap_service';
-import { programModuleExportKey, type ProgramModuleExport } from '../lua/compiler/program';
+import { programModuleExportKey, SYSTEM_RESIDENT_EXPORTS, type ProgramModuleExport } from '../lua/compiler/program';
 import type { ProgramConstValueReloc } from '../lua/compiler/program_object';
 import { deriveBlua32FixedStack } from './blua32_fixed_stack';
 import { blua32FunctionIndexAtAddress, type Blua32ImageLayout } from './blua32_image';
@@ -26,10 +27,9 @@ const FULL_COLLECTION_MODULE = 'kernel/gc_full';
 const STOPPED_FINAL_MARK_MODULE = 'kernel/gc_stopped_final_mark';
 const THREAD_CREATE_MODULE = 'kernel/thread_create';
 const BIOS_CREATE_TABLE_MODULE = 'kernel/bios_create_table';
-const BIOS_COLLECT_STEP_MODULE = 'kernel/gc_collect_step';
 const ALLOCATE_RECORD_MODULE = 'kernel/allocate_record';
 export const HEAP_SERVICE_MODULES = [
-	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE, BIOS_COLLECT_STEP_MODULE,
+	ALLOCATE_RECORD_MODULE, BIOS_CREATE_TABLE_MODULE, ...SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path),
 	HEAP_SERVICE_MODULE_PATH, 'kernel/dlmalloc_record', HEAP_SERVICE_STRINGS_MODULE_PATH,
 	'kernel/gc_control', 'kernel/gc_thread_compact', HEAP_SERVICE_OBJECTS_MODULE_PATH, HEAP_SERVICE_TABLE_MODULE_PATH,
 	'kernel/gc_mark', 'kernel/gc_operand_roots', 'kernel/gc_capture_trace', 'kernel/gc_thread_trace', 'kernel/gc_table_head', 'kernel/gc_table_trace',
@@ -73,7 +73,6 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 
 const guestCalls: Record<Exclude<BiosCall, BiosCall.Count>, readonly [string, string]> = {
 	[BiosCall.CreateTable]: ['create_table', BIOS_CREATE_TABLE_MODULE],
-	[BiosCall.CollectStep]: ['collect_step', BIOS_COLLECT_STEP_MODULE],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */
@@ -83,8 +82,18 @@ export function linkBlua32HeapService(
 	moduleExports: readonly ProgramModuleExport[],
 	functionAddressBySymbol: ReadonlyMap<string, number>,
 	constValueRelocs: readonly ProgramConstValueReloc[],
+	publicFixedRoots: readonly number[],
 ): void {
-	const localFunctions = new Set<number>();
+	const residentRoots = [...publicFixedRoots];
+	for (const { path, exportPathKey, numParams } of SYSTEM_RESIDENT_EXPORTS) {
+		const address = functionAddressBySymbol.get(programModuleExportKey(path, exportPathKey));
+		if (address === undefined) throw new Error(`Resident export '${path}:${exportPathKey}' is not a linked static function.`);
+		const index = blua32FunctionIndexAtAddress(image, address);
+		if (image.functions[index].numParams !== numParams)
+			throw new Error(`Resident export '${path}:${exportPathKey}' must take ${numParams} arguments.`);
+		residentRoots.push(index);
+	}
+	const localFunctions = new Set(residentRoots);
 	for (const { path, exportPathKey } of moduleExports) {
 		if (!serviceModules.has(path)) continue;
 		const address = functionAddressBySymbol.get(programModuleExportKey(path, exportPathKey));
@@ -107,13 +116,17 @@ export function linkBlua32HeapService(
 	for (const reloc of constValueRelocs) {
 		if (reloc.kind === 'link_value') lateConstants.add(reloc.constIndex);
 	}
-	const { valueSlots, frames } = deriveBlua32FixedStack(image, roots, { functions: localFunctions, lateConstants });
+	const { valueSlots, frames } = deriveBlua32FixedStack(image, [...roots, ...residentRoots], { functions: localFunctions, lateConstants });
 	if (valueSlots > HEAP_SERVICE_VALUE_COUNT || frames > HEAP_SERVICE_FRAME_COUNT)
 		throw new Error(`Heap service requires ${valueSlots} Value slots and ${frames} frames, beyond its fixed stack.`);
 
 	const { bytes } = image;
 	writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET, valueSlots);
 	writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, frames);
+	for (const index of residentRoots) {
+		const offset = image.functions[index].address - image.address + BLUA32_FUNCTION_FLAGS_OFFSET;
+		writeLE32(bytes, offset, readLE32(bytes, offset) | BLUA32_FUNCTION_RESIDENT);
+	}
 	for (let op = 0; op < roots.length; ++op)
 		writeLE32(bytes, descriptorOffset + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * op, image.functions[roots[op]].address);
 }

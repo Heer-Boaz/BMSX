@@ -130,7 +130,7 @@ export class SuspendedGuestSession {
 			case ValueTag.Integer: return asInteger(value);
 			case ValueTag.Float: case ValueTag.BuiltinFunction: return valuePayload(value);
 			case ValueTag.String: return this.stringPool.bytes(asStringId(value));
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return valuePayload(value);
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.ResidentFunction: case ValueTag.Thread: return valuePayload(value);
 			default: throw new Error('Internal table metadata is not a language value.');
 		}
 	}
@@ -140,7 +140,7 @@ export class SuspendedGuestSession {
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string;
 	public observedIdentityScalar(value: Value, tag: ValueTag): number | string {
 		switch (tag) {
-			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.ResidentFunction: case ValueTag.Thread: return observedRecordLifetime(this.cpu.gc, valuePayload(value));
 			default: return this.identityScalar(value, tag);
 		}
 	}
@@ -172,6 +172,7 @@ export class SuspendedGuestSession {
 			case ValueTag.Table:
 				return SuspendedGuestValueKind.Table;
 			case ValueTag.Closure:
+			case ValueTag.ResidentFunction:
 			case ValueTag.BuiltinFunction:
 				return SuspendedGuestValueKind.Function;
 			default: throw new Error('Internal table metadata is not a language value.');

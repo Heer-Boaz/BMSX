@@ -11,6 +11,12 @@ inline void CPU::executeClosure(CallFrame& frame, int destination, u32 operand, 
 		hardHalt();
 		return;
 	}
+	if (m_functionRecordLatch.romBacked && m_functionRecordLatch.image->executionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+		&& (m_functionRecordLatch.flags & BLUA32_FUNCTION_RESIDENT) != 0u) {
+		frame.registers.set(destination, valueResidentFunction(functionAddress));
+		frame.extendTop(destination + 1);
+		return;
+	}
 	const u32 closure = createClosure(frame, destination);
 	if (!closure) return;
 	frame.registers.set(destination, valueClosure(closure));
@@ -28,6 +34,15 @@ inline bool CPU::executeCall(CallFrame& frame, int a, int supplied, int requeste
 		CallFrame* pushed = pushFrame(frame, closure, a + 1, argCount, result,
 			frame.readControl(FrameField::Pc) - INSTRUCTION_BYTES);
 		return pushed != nullptr;
+	}
+	if (valueTag(callee) == ValueTag::ResidentFunction) {
+		const CallValueSource arguments{&frame, nullptr, a + 1, argCount};
+		// The source is an existing Value window, not a request to grow it.
+		if (!frame.registers.containsRange(a + 1, argCount)
+			&& !frame.thread->stack.containsRange(frame.stackBase() + a + 1, argCount))
+			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		beginResidentCall(valuePayload(callee), arguments.values(), result);
+		return false;
 	}
 	if (valueIsBuiltinFunction(callee)) {
 		// Closures reserve their shared argument window before entry. A
