@@ -75,6 +75,36 @@ int main(int argc, char** argv) {
 					break;
 				}
 
+				// Reference only: feed the raw retirement fixture into the existing owners.
+				case '%': {
+					char operation;
+					u32 address;
+					trace >> operation >> address;
+					if (operation == 'g') {
+						u32 globals;
+						trace >> globals;
+						for (const u32 bankAddress : {address, globals}) {
+							GlobalBank bank(memory, cpu.gcHeap());
+							bank.bind({memory.readRamRecordWord(bankAddress), memory.readRamRecordWord(bankAddress + 4),
+								memory.readRamRecordWord(bankAddress + 8)});
+							bank.clear();
+							const auto [base, capacity, count] = bank.captureState();
+							memory.writeRamRecordWord(bankAddress, base);
+							memory.writeRamRecordWord(bankAddress + 4, capacity);
+							memory.writeRamRecordWord(bankAddress + 8, count);
+						}
+					} else if (operation == 'i') {
+						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
+							const u32 base = memory.readRamRecordWord(address);
+							if (base == 0) continue;
+							memory.writeRamRecordWord(address, 0); // Native releaseImageData exchanges this before the free.
+							cpu.luaHeap().releaseRecord(base, memory.readRamRecordWord(address + 4));
+						}
+						cpu.stringPool().clearRomTables();
+					} else throw std::runtime_error("Expected native namespace or image retirement");
+					break;
+				}
+
 				case 'B': {
 					u32 function, count, args[8];
 					trace >> function >> count;
