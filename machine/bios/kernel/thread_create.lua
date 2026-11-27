@@ -3,7 +3,7 @@ module<const>
 -- Source basis: da65fb039c6daeee3f08f4cec4ff232c0fe8d550.
 -- T/C: TS/C++ LuaHeap; I/J/H: raw Thread layouts and constructors;
 -- F/G: frame extent; A/B: allocator adapters; U/V: collector inventory;
--- P/Q: object prefix; Y: C++ GC layout; S: ValueSlots; M: RAM.
+-- P/Q: object prefix; N: C++ GC layout; S: ValueSlots; M: RAM.
 -- Full operation follows T/C logical and physical admission, then one
 -- scoped Closure throughout current/fresh recovery. X/Z are CPU assist
 -- gates; Y is C++ projection; D the original fault; E/W Value tags.
@@ -65,9 +65,9 @@ local create_thread<const> = function(management, entry) -- T:170,178 C:182,190;
 				local words<const>: *u32 = address -- I:101,103 J:73-76 M:9; allocator returns aligned in-bank offsets
 				for index = 0, (record_bytes >> 2) - 1 do words[index] = 0 end -- I:103,112 J:76,87; ordinary stores track the original cleared extent
 				local record<const>: *new_thread_record = address -- T:186 C:196 I:100-101,104-109 J:72,74-82
-				local control<const> = management + layout.control_offset -- T:186 C:195-196 U:102 Y:94
-				local white<const>: *u8 = layout.ram_base + control + collector.internal.white_offset -- T:186 U:102 C:196 J:77 Y:94
-				record.header = thread_kind | ((*white & 1) << 8) -- I:104 J:77 U:102 Y:94
+				local control<const> = management + layout.control_offset -- T:186 C:195-196 U:102 N:94
+				local white<const>: *u8 = layout.ram_base + control + collector.internal.white_offset -- T:186 U:102 C:196 J:77 N:94
+				record.header = thread_kind | ((*white & 1) << 8) -- I:104 J:77 U:102 N:94
 				record.entry = entry -- I:105 J:78
 				record.stack_block = layout.ram_base + values -- I:106 A:59 J:79 B:56
 				record.frame_block = layout.ram_base + frames -- I:107 A:59 J:80 B:56

@@ -300,7 +300,7 @@ test('Thread creation maps and pins the original mutations and raw layout', () =
 	const files = {
 		T: 'machine/ts/machine/cpu/lua_heap.ts', C: 'machine/cpp/machine/cpu/lua_heap.cpp',
 		I: 'machine/ts/machine/cpu/thread_record.ts', J: 'machine/cpp/machine/cpu/thread_record.cpp',
-		H: 'machine/cpp/machine/cpu/thread_record.h', Y: 'machine/cpp/machine/cpu/gc_heap.h',
+		H: 'machine/cpp/machine/cpu/thread_record.h', N: 'machine/cpp/machine/cpu/gc_heap.h',
 		A: 'machine/ts/machine/cpu/heap_allocator.ts', B: 'machine/cpp/machine/cpu/heap_allocator.cpp',
 		U: 'machine/ts/machine/cpu/gc_heap.ts', V: 'machine/cpp/machine/cpu/gc_heap.cpp',
 		F: 'machine/ts/machine/cpu/call_state.ts', G: 'machine/cpp/machine/cpu/call_state.h',
@@ -332,7 +332,7 @@ test('Thread creation maps and pins the original mutations and raw layout', () =
 			}
 		}
 	}
-	for (const [label, start, end] of [['T', 177, 195], ['C', 189, 205], ['I', 100, 116], ['J', 72, 88]] as const) {
+	for (const [label, start, end] of [['T', 177, 195], ['C', 189, 205], ['I', 100, 116], ['J', 72, 88], ['N', 94, 94], ['Y', 169, 184]] as const) {
 		const ref = refs.get(label)!;
 		for (let row = start; row <= end; ++row) {
 			if (/^\s*(?:$|\/\/|[{}]$)/.test(ref.lines[row - 1])) continue;
