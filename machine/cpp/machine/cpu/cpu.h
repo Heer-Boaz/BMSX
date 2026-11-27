@@ -488,7 +488,8 @@ private:
 #endif
 	void clearHaltAfterAcceptedInterrupt();
 	void executeSupervisorCall(CallFrame& frame, int source, int width);
-	void enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a);
+	void enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a,
+		std::optional<u32> continuation = {});
 	CallFrame* enterSynchronousException(CallFrame& interruptedFrame, u32 causeWord);
 	void returnFromException(CallFrame& frame);
 	void enterSynchronousAddressException(CallFrame& interruptedFrame, u32 causeWord, u32 address);

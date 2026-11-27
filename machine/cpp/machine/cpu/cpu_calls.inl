@@ -79,23 +79,13 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 	const auto admitSource = [&](int copied) {
 		if (!fromArguments && !frame.registers.containsRange(a, copied)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	};
-	const auto admitAndClose = [&](int copied) {
-		admitSource(copied);
-		instructionBudgetRemaining -= closeUpvalues(frame);
-	};
-	if (frame.hasControlFlag(FRAME_COMPLETION)) {
-		admitAndClose(count);
-		m_completionValues.reserveCapacity(count);
-		if (count != 0) m_completionValues.view().copyFrom(frame.thread->stack, 0, stackBase + first, count);
-		m_completionValueCount = count;
-		instructionBudgetRemaining -= count;
-		m_activeThread->leaveFrame();
-		resumeFrameBank();
-		return false;
-	}
-	const bool root = m_activeThread->frameDepth() == 1;
-	if (root) {
-		admitAndClose(count);
+	const bool completes = frame.hasControlFlag(FRAME_COMPLETION);
+	if (completes || m_activeThread->frameDepth() == 1) {
+		admitSource(count);
+		if (frame.readControl(FrameField::OpenHead) != 0u) {
+			enterRegisterWindowException(frame, 0u, 0u, OpCode::RET, a);
+			return false;
+		}
 		m_completionValues.reserveCapacity(count);
 		if (count != 0) m_completionValues.view().copyFrom(frame.thread->stack, 0, stackBase + first, count);
 		m_completionValueCount = count;
@@ -112,7 +102,10 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 			capacity = admitRegisterWindow(frame, caller, end, OpCode::RET, a);
 			if (capacity == 0) return false;
 		}
-		instructionBudgetRemaining -= closeUpvalues(frame);
+		if (frame.readControl(FrameField::OpenHead) != 0u) {
+			enterRegisterWindowException(frame, 0u, 0u, OpCode::RET, a);
+			return false;
+		}
 		if (capacity != 0) caller.growRegisterWindow(capacity);
 		const int source = stackBase + first;
 		const int top = !result.extendsTop() || end > caller.readWindow(FrameField::Top) ? end : -1;
@@ -120,7 +113,7 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced, bool fromA
 	}
 	m_activeThread->leaveFrame();
 	resumeFrameBank();
-	return true;
+	return !completes;
 }
 
 inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {

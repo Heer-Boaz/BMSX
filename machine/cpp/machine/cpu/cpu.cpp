@@ -1509,13 +1509,14 @@ void CPU::enterGlobalReferenceStore(CallFrame& issuer, const ValueSpan& bank, u3
 	enterReferenceStore(issuer, RAM_BASE + word, value, RAM_BASE + tag);
 }
 
-void CPU::enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a) {
+void CPU::enterRegisterWindowException(CallFrame& issuer, u32 valueEnd, u32 frameEnd, OpCode opcode, int a,
+	std::optional<u32> continuation) {
 	const u32 instruction = static_cast<u32>(opcode) | (static_cast<u32>(a) << 8u);
 	const std::array arguments{
 		valueInteger(static_cast<i32>(valueEnd)), valueInteger(static_cast<i32>(frameEnd)),
 		valueInteger(static_cast<i32>(instruction)), valueInteger(remainingDeviceCycles()),
 	};
-	issuer.writeControl(FrameField::Pc, m_currentInstructionPc);
+	issuer.writeControl(FrameField::Pc, continuation.value_or(m_currentInstructionPc));
 	enterException(*m_systemImage, m_cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
 		m_currentInstructionPc, arguments);
 }

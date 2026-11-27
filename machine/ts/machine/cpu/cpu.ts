@@ -2051,9 +2051,12 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	private enterRegisterWindowException(issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number): void {
+	private enterRegisterWindowException(
+		issuer: CallFrame, valueEnd: number, frameEnd: number, op: OpCode, operand: number,
+		resumePc = this.currentInstructionPc,
+	): void {
 		const deadline = this.remainingDeviceCycles();
-		issuer.pc = this.currentInstructionPc;
+		issuer.pc = resumePc;
 		this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_REGISTER_WINDOW,
 			this.currentInstructionPc, valueInteger(valueEnd), valueInteger(frameEnd), valueInteger(op | (operand << 8)), valueInteger(deadline));
 	}
@@ -2815,7 +2818,10 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const caller = frame.previous;
 		if (frame.returnToCompletionLatch || caller === null) {
-			this.charge(this.closeUpvalues(frame));
+			if (frame.openUpvalueHead !== 0) {
+				this.enterRegisterWindowException(frame, 0, 0, OpCode.RET, a);
+				return false;
+			}
 			const completes = frame.returnToCompletionLatch;
 			this.latchCompletionValues(source, first, total);
 			this.charge(total);
@@ -2833,7 +2839,10 @@ export class CPU implements MappedPageInvalidator {
 			capacity = this.admitRegisterWindow(frame, caller, end, OpCode.RET, a);
 			if (capacity === 0) return false;
 		}
-		this.charge(this.closeUpvalues(frame));
+		if (frame.openUpvalueHead !== 0) {
+			this.enterRegisterWindowException(frame, 0, 0, OpCode.RET, a);
+			return false;
+		}
 		if (capacity !== 0) caller.growRegisterWindow(capacity);
 		this.placeRegisterWindow(caller, destination, sourceSlot, copied, padded, top);
 		frame.thread.leaveFrame();
@@ -3632,8 +3641,10 @@ export class CPU implements MappedPageInvalidator {
 				}
 
 				case OpCode.JMP: {
-					if (a !== 0) this.charge(this.closeUpvalues(frame, frame.stackBase + a - 1));
-					frame.pc = page.bx[pageOffset];
+					const successor = page.bx[pageOffset];
+					if (a !== 0 && frame.openUpvalueHead !== 0)
+						this.enterRegisterWindowException(frame, 0, 0, OpCode.JMP, a, successor);
+					else frame.pc = successor;
 					return;
 				}
 				case OpCode.JMPIF: {

@@ -16,6 +16,8 @@ local frame_window_mask<const> = (1 << 20) - 1
 -- cpu_calls.inl:137-143,173-181; cpu.cpp:3051,3105-3108.
 -- The issuing CPU frame remains intact and is the only source of live
 -- operands. Reserve backing, then let the same instruction place its Values.
+-- A zero extent carries no reservation. It retires aliases before the
+-- existing window can be reused or discarded.
 local recover<const> = function(values, depth, instruction, deadline)
 	local interrupted_port<const>: *addr = layout.interrupted_context_address
 	local interrupted<const> = *interrupted_port
@@ -26,11 +28,20 @@ local recover<const> = function(values, depth, instruction, deadline)
 	local management<const> = layout.management_offset
 	local op<const> = instruction & 0xff
 	local root = 0
-	if op == isa.op_ret then
+	if op == isa.op_ret or op == isa.op_jmp then
+		local frame<const>: *stopped_frame = address
+		local first<const> = op == isa.op_jmp and (frame.stack_base & frame_window_mask) + (instruction >> 8) - 1 or 0
 		-- The old RET closed cells before assisting. Its per-cell charge
 		-- is now guest work; only debit the already sampled policy horizon.
 		local closed<const> = retire.retire_open_cells(management + layout.control_offset,
-			management + layout.arena_offset, address, 0)
+			management + layout.arena_offset, address, first)
+		if op == isa.op_jmp then
+			-- The branch already selected its next PC. A lower alias can
+			-- remain open, so do not retry the scope exit.
+			cop0.epc = frame.pc
+			return true
+		end
+		if values == 0 and depth == 0 then return true end
 		source_cycles = source_cycles > closed and source_cycles - closed or 0
 	elseif op == isa.op_call then
 		local frame<const>: *frame_record = address

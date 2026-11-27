@@ -11,7 +11,7 @@ import { valueBool, valueFloatBits, valueInteger, valueNil, valuePayload, valueS
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_CAUSE_CODE_FUNCTION_BINDING, CPU_CAUSE_CODE_REGISTER_WINDOW, CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_CALL_NON_FUNCTION, LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../../machine/ts/spec/blua32/cop0';
 import { CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
@@ -90,7 +90,7 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(75)],
 		[CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_EXPLICIT_ERROR, 1, valueInteger(51)],
 	] as const;
-	let next = 0, cut = 0, rowsAtCut = 0;
+	let next = 0, bindings = 0, cut = 0, rowsAtCut = 0;
 	let outcome = RunResult.Yielded;
 	for (let i = 0; i < 8192 && outcome !== RunResult.Halted; ++i) {
 		outcome = grant(rt, 1);
@@ -103,12 +103,20 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 		}
 		if (!cpu.fixedInterruptActive() || frame?.pc !== vector.codeAddress) continue;
 		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), root);
-		if (cpu.readCauseWord() === CPU_CAUSE_CODE_REGISTER_WINDOW) {
+		const observedCause = cpu.readCauseWord();
+		if (observedCause === CPU_CAUSE_CODE_REGISTER_WINDOW) {
 			assert.equal(frame.argumentCount, 4, 'the ordinary handler CALL may need backing');
 			continue;
 		}
+		if (observedCause === CPU_CAUSE_CODE_FUNCTION_BINDING) {
+			assert.equal(next, 5, 'the variadic pcall argument is bound before its call');
+			assert.equal(frame.argumentCount, 11);
+			observe('Z', `${observedCause} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
+			bindings++;
+			continue;
+		}
 		const [cause, reason, argc, value] = expectedEntries[next++];
-		assert.equal(cpu.readCauseWord(), cause);
+		assert.equal(observedCause, cause);
 		assert.equal(cpu.readLuaFaultReasonWord(), reason);
 		assert.equal(frame.argumentCount, argc);
 		assert.equal(frame.registers.get(0), value);
@@ -120,6 +128,7 @@ return nil_ok, nil_value, invalid_ok, invalid_message, handled_ok, exact, unused
 
 	}
 	assert.ok(cut !== 0);
+	assert.equal(bindings, 1);
 	assert.equal(next, expectedEntries.length);
 	function completed(machine: Runtime, state: RunResult) {
 		const { cpu } = machine.machine;

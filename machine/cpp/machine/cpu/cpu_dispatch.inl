@@ -452,8 +452,12 @@ DISPATCH_LABEL(MTC0) {
 }
 
 DISPATCH_LABEL(JMP) {
-	if (decoded->a != 0) instructionBudgetRemaining -= closeUpvalues(FRAME, static_cast<u32>(FRAME.stackBase()) + decoded->a - 1u);
 	const uint32_t bx = decoded->bx();
+	if (decoded->a != 0 && FRAME.readControl(FrameField::OpenHead) != 0u) {
+		PUBLISH_SCALAR_FRONTIER();
+		enterRegisterWindowException(FRAME, 0u, 0u, OpCode::JMP, decoded->a, bx);
+		DISPATCH_CONTINUE();
+	}
 	SET_NEXT_PC(bx);
 	DISPATCH_NEXT();
 }
