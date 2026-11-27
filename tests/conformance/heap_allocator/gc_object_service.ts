@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -98,7 +99,7 @@ try {
 			const key = cpu.stringPool.intern(name), value = cpu.getGlobalByKey(key);
 			assert.equal(valueTag(value), tag);
 			const address = valuePayload(value);
-			cpu.setGlobalByKey(key, valueNil());
+			setReferenceGlobal(cpu, key, valueNil());
 			driver.observe(`f ${name}`, `${tag} ${address}`);
 			return address;
 		};

@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -55,7 +56,7 @@ function fixture(optLevel: 0 | 3) {
 		for (let n = 0; n < 8 && result === RunResult.Yielded; ++n) result = target.runUntilDepth(0, 4096);
 		assert.equal(result, RunResult.Halted);
 		const live = target.createTable(4, 0), garbage = target.createTable(0, 16);
-		target.setGlobalByKey(target.stringPool.intern(root), valueTable(live));
+		setReferenceGlobal(target, target.stringPool.intern(root), valueTable(live));
 		target.gc.tables.set(live, valueInteger(4), valueString(target.stringPool.intern('retained by live table')));
 		target.stringPool.intern(dead);
 		return [live, garbage] as const;
@@ -232,7 +233,7 @@ for (const opt of [0, 3] as const) {
 			target.gc.tables.setMetatableAddress(weak, mode);
 			target.gc.tables.set(weak, valueInteger(1), valueTable(f.garbage));
 			target.gc.tables.set(weak, valueInteger(2), valueTable(removed));
-			target.setGlobalByKey(target.stringPool.intern('scoped weak roots'), valueTable(weak));
+			setReferenceGlobal(target, target.stringPool.intern('scoped weak roots'), valueTable(weak));
 			for (let i = 0; i < 64 && target.gc.phase() !== GcPhase.Atomic; ++i) target.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 4096);
 			assert.equal(target.gc.phase(), GcPhase.Atomic);
 			return [weak, target.gc.tables.arrayAddress(weak), removed];

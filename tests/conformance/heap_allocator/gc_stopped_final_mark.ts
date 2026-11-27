@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -93,7 +94,7 @@ try {
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(1), valueTable(cpu.createTable()));
 			gc.tables.set(weak, valueInteger(slots), valueTable(cpu.createTable()));
-			cpu.setGlobalByKey(cpu.stringPool.find('final_mark_weak_root')!, valueTable(weak));
+			setReferenceGlobal(cpu, cpu.stringPool.find('final_mark_weak_root')!, valueTable(weak));
 			if (irq) assert.notEqual(arena.allocate(arena.capacityBytes() >>> 1, true), 0);
 			if (gc.phase() === GcPhase.Pause) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 			for (let i = 0; i < 65536 && gc.phase() === GcPhase.Mark; ++i)

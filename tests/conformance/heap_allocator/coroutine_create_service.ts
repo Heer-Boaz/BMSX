@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -66,7 +67,7 @@ try {
 			// accidentally make room by reclaiming one of its test function values.
 			const anchor = cpu.createTable(entries.length, 0);
 			for (let i = 0; i < entries.length; ++i) gc.tables.set(anchor, valueInteger(i + 1), entries[i]);
-			cpu.setGlobalByKey(cpu.stringPool.intern('coroutine-create-test-anchor'), valueTable(anchor));
+			setReferenceGlobal(cpu, cpu.stringPool.intern('coroutine-create-test-anchor'), valueTable(anchor));
 			if (failure) {
 				gc.collect(closure, valueTable(anchor));
 				heap.setCollectionTarget(heap.capacity());

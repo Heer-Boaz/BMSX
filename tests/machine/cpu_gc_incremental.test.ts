@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
@@ -215,7 +216,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	const weakRoot = cpu.stringPool.intern(globalNames[1]), finalRoot = cpu.stringPool.intern(globalNames[2]);
 	const appendedName = 'name registered after the global scan', appendedKey = cpu.stringPool.intern(appendedName);
 	const lastTarget = cpu.createTable(GC_STEP_WORDS, 0);
-	cpu.setGlobalByKey(last, valueTable(lastTarget));
+	setReferenceGlobal(cpu, last, valueTable(lastTarget));
 	const weak = cpu.createTable(1, 0), mode = cpu.createTable();
 	const weakTarget = cpu.createTable(1, 0), descendant = cpu.createTable(1, 0);
 	gc.tables.setInteger(weakTarget, 1, valueTable(descendant));
@@ -223,7 +224,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	gc.tables.setMetatableAddress(weak, mode);
 	gc.tables.setInteger(weak, 1, valueTable(weakTarget));
-	cpu.setGlobalByKey(weakRoot, valueTable(weak));
+	setReferenceGlobal(cpu, weakRoot, valueTable(weak));
 	const control = cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const work = gc.step();
 	assert.ok(work >= GC_STEP_WORDS && work <= GC_STEP_WORDS + 4);
@@ -233,7 +234,7 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 	const state = cpu.captureRuntimeState(), ram = memory.captureSaveState();
 	const finish = () => {
 		const late = cpu.createTable();
-		cpu.setGlobalByKey(first, valueTable(late));
+		setReferenceGlobal(cpu, first, valueTable(late));
 		gc.step();
 		assert.equal(gc.phase(), GcPhase.Mark, 'the final global starts a large first-pass trace, not a remark');
 		assert.equal(gc.isAlive(lastTarget), true);
@@ -242,8 +243,8 @@ test('initial root marking resumes a large global bank from a RAM snapshot', () 
 		assert.equal(gc.phase(), GcPhase.Atomic);
 		assert.equal(gc.isAlive(weakTarget), false);
 		assert.equal(gc.isAlive(descendant), false);
-		cpu.setGlobalByKey(finalRoot, valueTable(weakTarget));
-		cpu.setGlobalByKey(appendedKey, valueInteger(41));
+		setReferenceGlobal(cpu, finalRoot, valueTable(weakTarget));
+		setReferenceGlobal(cpu, appendedKey, valueInteger(41));
 		assert.equal(gc.isAlive(weakTarget), true);
 		assert.equal(gc.isAlive(descendant), false, 'publishing a root does not synchronously trace its graph');
 		const stoppedState = cpu.captureRuntimeState(), stoppedRam = memory.captureSaveState();
@@ -726,7 +727,7 @@ for (const reuseHome of [false, true]) test(`weak Table admission uses the survi
 test('weak-table remark resumes without consuming list order or losing writes to Changed', () => {
 	const cpu = machine(), { gc, memory } = cpu;
 	const globalKey = cpu.stringPool.intern('late remark global');
-	cpu.setGlobalByKey(globalKey, valueNil());
+	setReferenceGlobal(cpu, globalKey, valueNil());
 	const count = GC_STEP_WORDS + 256;
 	const roots = cpu.createTable(count, 0), changed = cpu.createTable();
 	const frame = cpu.rootThread.currentFrame!;
@@ -764,7 +765,7 @@ test('weak-table remark resumes without consuming list order or losing writes to
 		assert.equal(gc.isAlive(late), false);
 		const global = cpu.createTable(1, 0), descendant = cpu.createTable();
 		gc.tables.setInteger(global, 1, valueTable(descendant));
-		cpu.setGlobalByKey(globalKey, valueTable(global));
+		setReferenceGlobal(cpu, globalKey, valueTable(global));
 		assert.equal(gc.isAlive(global), true);
 		assert.equal(gc.isAlive(descendant), false);
 		for (let step = 0; gc.active() && step < 100; ++step) gc.step();

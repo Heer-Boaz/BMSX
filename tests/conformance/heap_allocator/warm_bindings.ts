@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { GlobalBank } from '../../../machine/ts/machine/cpu/global_bank';
+import { clearReferenceGlobalBank, registerReferenceGlobalName } from '../../helpers/global_bank_reference';
 import { HEAP_STRING_METADATA_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_history';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
@@ -77,8 +78,8 @@ try {
 		// runtime itself: the idle System code remains attached and checkpointable.
 		const banks = ['prior-system', 'prior-global'].map((name, lane) => {
 			const descriptor = systemDesc + 12 * lane;
-			const bank = new GlobalBank(memory, cpu.gc, descriptor);
-			for (let i = 0; i < lane + 2; ++i) bank.registerName(cpu.stringPool.intern(`${name}-${i}`));
+			const bank = new GlobalBank(memory, descriptor);
+			for (let i = 0; i < lane + 2; ++i) registerReferenceGlobalName(cpu.gc, bank, cpu.stringPool.intern(`${name}-${i}`));
 			return readNamespaceBank(memory, descriptor);
 		});
 		const spans = [16, opt === 0 ? 28 : 0, 44];
@@ -159,7 +160,7 @@ try {
 		assert.ok(arena.occupiedBytes() < initialPhysical);
 		hashes(rawRam, note);
 		finish();
-		for (const [i] of banks.entries()) new GlobalBank(oldMemory, old.gc, systemDesc + 12 * i).clear();
+		for (const [i] of banks.entries()) clearReferenceGlobalBank(old.gc, new GlobalBank(oldMemory, systemDesc + 12 * i));
 		assert.equal(heap.usedBytes(), initialUsed - nameCharge * (banks[0].count + banks[1].count));
 		assert.deepEqual(readWords(systemDesc, 6), [0, 0, 0, 0, 0, 0]);
 		assert.deepEqual(readWords(metadata + directory, directoryWords), oldDirectory, 'namespace phase must not retire String directories');

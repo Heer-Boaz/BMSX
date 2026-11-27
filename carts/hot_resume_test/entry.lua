@@ -12,6 +12,9 @@ local framebuffer_size<const> = 320 | (240 << 16)
 local vblank_count = 0
 hot_resume_init_count = 0
 hot_resume_new_game_count = 0
+__hot_resume_live_state_probe = math
+__hot_resume_typed_0, __hot_resume_typed_1, __hot_resume_typed_2 = false, false, false
+__hot_resume_typed_3, __hot_resume_typed_4, __hot_resume_typed_5 = false, false, false
 
 local function init<init>()
 	hot_resume_init_count = hot_resume_init_count + 1

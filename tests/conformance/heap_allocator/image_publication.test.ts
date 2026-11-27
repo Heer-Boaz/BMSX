@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -61,7 +62,7 @@ test('replacement ROM execution reads the same firmware-installed operands witho
 	const probeClosure = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('publication_probe')!), cpu.gc);
 	assert.equal(cpu.captureClosureBinding(probeClosure).functionAddress, probe);
 	// Exercise the real published Global slot, not a constant-folded initializer.
-	cpu.setGlobalByKey(cpu.stringPool.find('publication_amount')!, valueInteger(59));
+	setReferenceGlobal(cpu, cpu.stringPool.find('publication_amount')!, valueInteger(59));
 	const seed = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const commands = ['X'], rows: string[] = [];
 	function observe(command: string, result: string | number) {

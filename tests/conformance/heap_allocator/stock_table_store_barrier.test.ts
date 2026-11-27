@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -89,8 +90,8 @@ test('stock table stores leave marked reference writes and displaced-node collis
 			receiver = cpu.createTable(0, count);
 			gc.tables.set(receiver, anchor, valueInteger(11));
 			gc.tables.set(receiver, displaced, valueInteger(22));
-			cpu.setGlobalByKey(name('store_subject'), valueTable(receiver));
-			cpu.setGlobalByKey(name('store_key'), key);
+			setReferenceGlobal(cpu, name('store_subject'), valueTable(receiver));
+			setReferenceGlobal(cpu, name('store_key'), key);
 			assert.equal(memory.readRamRecordWord(gc.tables.hashAddress(receiver) + 3 * 4), valuePayload(displaced));
 		}
 		const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;

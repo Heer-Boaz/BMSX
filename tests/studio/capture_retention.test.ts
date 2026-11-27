@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
@@ -114,7 +115,7 @@ return read, library`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [read, library] = materializeCpuCompletionValues(cpu);
-	cpu.setGlobalByKey(cpu.stringPool.intern('__test_read'), read);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_read'), read);
 	let previous = initial;
 	for (const body of ['alias', 'library', '7', 'alias']) {
 		const fresh = compile(before.replace('return 7 end', `return ${body} end`), previous, optLevel, modules);
@@ -282,8 +283,8 @@ return object:make()`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [read, write] = materializeCpuCompletionValues(cpu);
-	cpu.setGlobalByKey(cpu.stringPool.intern('__test_read'), read);
-	cpu.setGlobalByKey(cpu.stringPool.intern('__test_write'), write);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_read'), read);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_write'), write);
 	assert.deepEqual(names(initial, '/local:read'), ['self']);
 	assert.deepEqual(names(initial, '/local:write'), ['self']);
 	const receiver = initial.compiled.metadata.lexicalDeclarations.find(local => local.name === 'self')!;
@@ -329,7 +330,7 @@ test('unused retained capture initializers survive O3 for newly created closures
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(fresh.compiled));
 	runGuestToHalt(cpu, 100000);
 	const closure = materializeCpuCompletionValues(cpu)[0];
-	cpu.setGlobalByKey(cpu.stringPool.intern('__test_closure'), closure);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_closure'), closure);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, asClosure(closure, cpu.gc)), 2);
 	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
 	runGuestToHalt(cpu, 100000);
@@ -382,7 +383,7 @@ test('anonymous identities use installed definitions through repeated shifts, no
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(previous.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [held] = materializeCpuCompletionValues(cpu);
-	cpu.setGlobalByKey(cpu.stringPool.intern('__test_held'), held);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_held'), held);
 	for (let index = 1; index <= 4; index += 1) {
 		const source = '\n'.repeat(index) + before.replace('return state', `return state + ${index}`);
 		const fresh = compile(source, previous);

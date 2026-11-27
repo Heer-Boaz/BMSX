@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { TEST_CARTRIDGE_CONTEXT_IDS, createLoadedTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { beforeEach, afterEach } from 'node:test';
@@ -124,7 +125,7 @@ for i = 1, 512 do retained = calculate(retained) end`);
 	assert.equal(f.cpu.runUntilDepth(depth, 10000), RunResult.Halted);
 	assert.deepEqual(f.runtime.readCompletionValues(), [valueInteger(5)]);
 	const parked = f.cpu.activeThread.frameAtDepth(depth - 1);
-	f.cpu.setGlobalByKey(f.cpu.stringPool.intern('retained'), valueInteger(9876));
+	setReferenceGlobal(f.cpu, f.cpu.stringPool.intern('retained'), valueInteger(9876));
 	const source = f.model.buffer.getText(), offset = source.indexOf('x + 3');
 	assert.ok(offset >= 0);
 	f.model.pushEditOperations([{ offset, deleteLength: 'x + 3'.length, text: 'x + 7' }]);

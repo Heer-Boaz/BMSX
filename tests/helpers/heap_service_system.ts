@@ -12,6 +12,7 @@ import { ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_r
 import { LUA_FAULT_REASON_EXPLICIT_ERROR } from '../../machine/ts/spec/blua32/cop0';
 import { GC_DIAGNOSTIC_OFFSET, GcDiagnosticField } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_DIAGNOSTIC_FAULTS_OFFSET, storeImageStringBinding } from './firmware_heap_layout';
+import { registerReferenceGlobalName } from './global_bank_reference';
 import { EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import {
 	BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE, BLUA32_CONSTANT_TAG_OFFSET,
@@ -171,7 +172,7 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 			executionAddressSpace.bindReadOnlyView(domain, readLE32(header, h + tableOffset), count * BLUA32_GLOBAL_NAME_RECORD_SIZE, view);
 			for (let slot = 0; slot < count; ++slot) {
 				const name = stringPool.resolveImageRecord(domain, readLE32(view.bytes, view.byteOffset + slot * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
-				memory.writeRamRecordWord(output, bank.registerName(name));
+				memory.writeRamRecordWord(output, registerReferenceGlobalName(cpu.gc, bank, name));
 				output += 4;
 			}
 		}

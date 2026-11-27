@@ -1,9 +1,10 @@
+import { setReferenceGlobal } from '../../tests/helpers/global_bank_reference';
 // Exercise the actual CPU's logical accounting for recursive stack slots and
 // image globals. This is not an ASIC size estimate or a large-name test.
 import { linkRawTestSystemBlua32, createTestSystemCpu } from '../../tests/helpers/blua32';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { ValueTag } from '../../machine/ts/machine/cpu/value';
+import { valueClosure } from '../../machine/ts/machine/cpu/value';
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 
 const text = new Uint8Array(3 * INSTRUCTION_BYTES);
@@ -16,8 +17,7 @@ const image = linkRawTestSystemBlua32({
 	globalNames: ['rec'],
 });
 const { cpu } = createTestSystemCpu(image);
-cpu.setGlobalByKey(cpu.stringPool.intern('rec', false), ValueTag.Closure, NaN,
-	cpu.activeThread.frameAtDepth(0)!.closure);
+setReferenceGlobal(cpu, cpu.stringPool.intern('rec'), valueClosure(cpu.activeThread.frameAtDepth(0)!.closure));
 const before = cpu.collectTrackedHeapBytes();
 const initialCapacity = cpu.activeThread.stackRegisters.capacity();
 cpu.runUntilDepth(0, 20000);

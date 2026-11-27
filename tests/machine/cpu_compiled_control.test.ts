@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
@@ -182,8 +183,8 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 	const image = linkRawTestSystemBlua32(source), js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(8)); cpu.runUntilDepth(0, 900);
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0)); assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
+		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(8)); cpu.runUntilDepth(0, 900);
+		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0)); assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	}
 	assertParity(js, ref); assert.equal(js.readCurrentInstructionPc(), image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES);
 	assert.equal(js.readFrameRegister(0, 6), valueInteger(image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES));
@@ -197,7 +198,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		const registers = js.rootThread.frameAtDepth(0).registers;
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET));
+			setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET));
 		}
 		const original = registers.get(12);
 		runCpuParity(js, ref, 900);
@@ -209,7 +210,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		assert.ok(blocks.some(block => block.terminal.exit === CompiledBlockExit.ExceptionReturn && block.sourceWords === 2));
 		for (const cpu of [js, ref]) {
 			if (op === OpCode.MTC0) cpu.rootThread.frameAtDepth(0).registers.setInteger(12, -1);
-			cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0));
+			setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0));
 			assert.equal(cpu.runUntilDepth(0, 20), RunResult.Yielded, 'clearing reset inhibit retires before WIDE RFE');
 			assert.equal(cpu.rootThread.frameDepth, 2);
 			assert.equal(cpu.isExceptionFrame(1), true);
@@ -229,11 +230,11 @@ test('a warmed WIDE RFE rejects an ordinary frame after returning to the active 
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET)); cpu.runUntilDepth(0, 900);
+		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET)); cpu.runUntilDepth(0, 900);
 		for (let step = 0; step < 8 && cpu.rootThread.frameDepth > 1; ++step) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.rootThread.frameDepth, 1); cpu.runUntilDepth(0, 1);
 		cpu.writeEpcWord(image.image.functions[1].codeAddress + 2 * INSTRUCTION_BYTES);
-		cpu.setGlobalByKey(cpu.stringPool.find('returnStatus')!, valueInteger(0));
+		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0));
 		assert.equal(cpu.runUntilDepth(0, 20), RunResult.Yielded, 'clearing reset inhibit retires before WIDE RFE');
 		assert.equal(cpu.rootThread.frameDepth, 2);
 		assert.equal(cpu.isExceptionFrame(1), true);
@@ -257,8 +258,8 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 		{ firstWord: 32, wordCount: 1, staticClosure: false }], globalNames: ['next', 'start'] });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.setGlobalByKey(cpu.stringPool.find('next')!, valueInteger(image.symbols.functionAddresses[1]));
-		cpu.setGlobalByKey(cpu.stringPool.find('start')!, valueInteger(image.symbols.functionAddresses[0])); cpu.runUntilDepth(0, 800);
+		setReferenceGlobal(cpu, cpu.stringPool.find('next')!, valueInteger(image.symbols.functionAddresses[1]));
+		setReferenceGlobal(cpu, cpu.stringPool.find('start')!, valueInteger(image.symbols.functionAddresses[0])); cpu.runUntilDepth(0, 800);
 	}
 	assertParity(js, ref);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) >>> 2;
@@ -269,7 +270,7 @@ test('compiled EXEC replaces frames after returning and rejects a non-static tar
 	}
 	assert.equal(generated, true, 'the context-replacing EXEC has a real generated body even before the next frame fetch');
 	for (const cpu of [js, ref]) {
-		for (const key of ['next', 'start']) cpu.setGlobalByKey(cpu.stringPool.find(key)!, valueInteger(image.symbols.functionAddresses[2]));
+		for (const key of ['next', 'start']) setReferenceGlobal(cpu, cpu.stringPool.find(key)!, valueInteger(image.symbols.functionAddresses[2]));
 		assert.equal(cpu.runUntilDepth(0, 4), RunResult.Halted);
 	}
 	assertParity(js, ref);

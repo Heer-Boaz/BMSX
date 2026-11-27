@@ -1,4 +1,5 @@
 #include "machine/cpu/global_bank.h"
+#include "machine/cpu/gc_heap.h"
 
 #include <cstring>
 
@@ -9,9 +10,14 @@ constexpr u32 GLOBAL_NAME_BUDGET_BYTES = 9u;
 using Bank = GlobalBankField;
 }
 
-void GlobalBank::clear() {
+void GlobalBank::writeSlot(GcHeap& heap, u32 slot, Value value) {
+	m_values.set(slot, value);
+	if (valueTagHasGcEdge(valueTag(value))) heap.markGlobalWrite(value);
+}
+
+void GlobalBank::clear(GcHeap& heap) {
 	if (const u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base)))
-		m_heap.budget.releaseRecord(base, GLOBAL_NAME_BUDGET_BYTES * count());
+		heap.budget.releaseRecord(base, GLOBAL_NAME_BUDGET_BYTES * count());
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base), 0u);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity), 0u);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Count), 0u);
@@ -37,7 +43,7 @@ void GlobalBank::grow(u32 oldBase, u32 base, u32 capacity, u32 count) {
 	}
 }
 
-u32 GlobalBank::registerName(StringId key, Value pending) {
+u32 GlobalBank::registerName(GcHeap& heap, StringId key, Value pending) {
 	u32 base = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Base));
 	u32 capacity = m_memory.readRamRecordWord(m_descriptor + static_cast<u32>(Bank::Capacity));
 	if (const auto slot = findSlot(base, capacity, key)) return *slot;
@@ -45,20 +51,20 @@ u32 GlobalBank::registerName(StringId key, Value pending) {
 	u32 oldBase = 0u;
 	if (slot == capacity) {
 		capacity = capacity == 0u ? 8u : 2u * capacity;
-		const u32 backing = m_heap.budget.reserveBacking(17u * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		const u32 backing = heap.budget.reserveBacking(17u * capacity, GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 		oldBase = base;
 		grow(oldBase, backing, capacity, slot);
 		base = backing;
 	} else {
-		m_heap.budget.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
+		heap.budget.admit(GLOBAL_NAME_BUDGET_BYTES, valueString(key), pending);
 	}
 	const u32 bucket = bucketFor(base, capacity, key);
 	m_memory.writeRamRecordWord(base + 4u * slot, key);
 	m_values.set(slot, valueNil());
 	m_memory.writeRamRecordWord(base + 4u * (capacity + bucket), slot + 1u);
 	m_memory.writeRamRecordWord(m_descriptor + static_cast<u32>(Bank::Count), slot + 1u);
-	m_heap.markGlobalWrite(valueString(key));
-	m_heap.budget.replaceRecord(oldBase, 0u, GLOBAL_NAME_BUDGET_BYTES);
+	heap.markGlobalWrite(valueString(key));
+	heap.budget.replaceRecord(oldBase, 0u, GLOBAL_NAME_BUDGET_BYTES);
 	return slot;
 }
 

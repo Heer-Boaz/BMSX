@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -49,7 +50,7 @@ try {
 		const epochWork = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK - 4);
 		const marked = (id: number) => (memory.readRamRecordByte(id + 1) & 1) === (memory.readRamRecordWord(metadata + 12) & 1);
 		const name = cpu.stringPool.intern(nameText), value = cpu.stringPool.intern(valueText);
-		cpu.setGlobalByKey(name, valueString(value));
+		setReferenceGlobal(cpu, name, valueString(value));
 		const constants = constantTexts.map(text => cpu.stringPool.intern(text));
 		for (const id of [name, value, ...constants]) assert.ok(id >= RAM_BASE);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 0);

@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -62,8 +63,8 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	const object = cpu.createTable();
 	const string = cpu.stringPool.intern('RAM string only in this conformance setup');
 	const references = [valueTable(object), valueString(string)];
-	cpu.setGlobalByKey(name('source_object'), references[0]);
-	cpu.setGlobalByKey(name('source_text'), references[1]);
+	setReferenceGlobal(cpu, name('source_object'), references[0]);
+	setReferenceGlobal(cpu, name('source_text'), references[1]);
 
 	const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 	const markWork = management + HEAP_STRING_MARK_WORK_OFFSET;

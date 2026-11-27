@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -82,7 +83,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 		const key = cpu.stringPool.intern(`dynamic${index}`);
 		const logical = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 		const previous = cpu.memory.readRamRecordWord(capacity);
-		cpu.setGlobalByKey(key, valueInteger(index));
+		setReferenceGlobal(cpu, key, valueInteger(index));
 		assert.equal(cpu.luaHeap.usedBytes(), logical + 9, 'every newly registered name costs nine bytes');
 		if (cpu.memory.readRamRecordWord(capacity) !== previous) {
 			grewBank = true;
@@ -93,9 +94,9 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	const objectKey = cpu.stringPool.intern('object');
 	const object = cpu.createTable(1);
 	cpu.gc.tables.setInteger(object, 1, valueInteger(42));
-	cpu.setGlobalByKey(objectKey, valueTable(object));
+	setReferenceGlobal(cpu, objectKey, valueTable(object));
 	const nilKey = cpu.stringPool.intern('nil-name');
-	cpu.setGlobalByKey(nilKey, valueNil());
+	setReferenceGlobal(cpu, nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);
 	cpu.collectTrackedHeapBytes();
 
@@ -103,8 +104,8 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	const anchor = cpu.captureRuntimeState();
 	const usage = cpu.luaHeap.usedBytes();
 	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
-	cpu.setGlobalByKey(objectKey, valueNil());
-	cpu.setGlobalByKey(cpu.stringPool.intern('future'), valueInteger(100));
+	setReferenceGlobal(cpu, objectKey, valueNil());
+	setReferenceGlobal(cpu, cpu.stringPool.intern('future'), valueInteger(100));
 	cpu.collectTrackedHeapBytes();
 
 	cpu.memory.restoreSaveState(memory);
@@ -119,10 +120,10 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 test('registered writes allocate no guest heap and missing reads create no registers', () => {
 	const cpu = run('return 0', 3);
 	const key = cpu.stringPool.intern('value'), absent = cpu.stringPool.intern('absent');
-	cpu.setGlobalByKey(key, valueInteger(0));
+	setReferenceGlobal(cpu, key, valueInteger(0));
 	const count = cpu.globalSlotCount, heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()];
 	for (let index = 0; index < 10000; index++) {
-		cpu.setGlobalByKey(key, valueInteger(index));
+		setReferenceGlobal(cpu, key, valueInteger(index));
 		assert.equal(cpu.getGlobalByKey(key), valueInteger(index));
 		assert.equal(cpu.getGlobalByKey(absent), valueNil());
 	}

@@ -1,3 +1,4 @@
+import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import { OPCODE_NAMES } from '../../toolchain/ts/lua/opcode_metadata';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -161,13 +162,13 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	const memory=new Memory({systemRom:rom,cartridgeSlots:cartridgeSlots()},PSX_MACHINE_SPEC.ramBytes);
 	const cpu=new CPU(memory,new IrqController(memory),new ExecutionAddressSpace(memory),backend);cpu.reset();
 	const saved=cpu.stringPool.find('saved')!, system=cpu.stringPool.find('system')!, graphKey=cpu.stringPool.find('graph')!;
-	cpu.setGlobalByKey(saved,v.valueFloatBits(0xffa54321));cpu.setSystemGlobalByKey(system,v.valueInteger(-2147483648));
+	setReferenceGlobal(cpu, saved,v.valueFloatBits(0xffa54321));setReferenceSystemGlobal(cpu, system,v.valueInteger(-2147483648));
 	const table=cpu.createTable(), child=cpu.createTable();const self=cpu.stringPool.intern('self'),childKey=cpu.stringPool.intern('child');
 	cpu.gc.tables.setStringKey(table, self,v.valueTable(table));cpu.gc.tables.setStringKey(table, childKey,v.valueTable(child));
-	cpu.gc.tables.setMetatableAddress(child, table);cpu.setGlobalByKey(graphKey,v.valueTable(table));
+	cpu.gc.tables.setMetatableAddress(child, table);setReferenceGlobal(cpu, graphKey,v.valueTable(table));
 	cpu.runUntilDepth(0,1);assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
 	const ram=memory.captureSaveState(), state=cpu.captureRuntimeState();const hash=table, childHash=child;
-	cpu.activeThread.currentFrame!.registers.setInteger(2,8);cpu.setGlobalByKey(saved,v.valueInteger(7));
+	cpu.activeThread.currentFrame!.registers.setInteger(2,8);setReferenceGlobal(cpu, saved,v.valueInteger(7));
 	for(let i=0;i<10;++i)cpu.createTable();
 	memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);

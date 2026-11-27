@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { asClosure, valueInteger, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -26,7 +27,7 @@ probe[1], probe[2] = owner, owner.events
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	cpu.collectTrackedHeapBytes();
 	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
-	cpu.setGlobalByKey(cpu.stringPool.find('owner')!, valueNil());
+	setReferenceGlobal(cpu, cpu.stringPool.find('owner')!, valueNil());
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
 	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());

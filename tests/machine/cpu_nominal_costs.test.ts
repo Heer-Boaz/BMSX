@@ -1,3 +1,4 @@
+import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -48,7 +49,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		for (let grant = 0; grant <= total; ++grant) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			r.clear(13, 9); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
-			cpu.setSystemGlobalByKey(global, valueInteger(31)); cpu.setGlobalByKey(global, valueInteger(37));
+			setReferenceSystemGlobal(cpu, global, valueInteger(31)); setReferenceGlobal(cpu, global, valueInteger(37));
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 			let remaining = grant, completed = 0;
 			while (remaining > 0) remaining -= charges[completed++];

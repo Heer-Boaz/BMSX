@@ -1,3 +1,4 @@
+import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
@@ -48,14 +49,14 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 8);
 	for (const cpu of [js, ref]) for (let i = 0; i < 257; ++i) {
-		cpu.setGlobalByKey(cpu.stringPool.intern(`grown-${i}`), valueInteger(i));
+		setReferenceGlobal(cpu, cpu.stringPool.intern(`grown-${i}`), valueInteger(i));
 	}
 	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(-1), valueFloat(-0), valueFloatBits(0xffa12345), valueFloat(Infinity)]) {
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers;
 			r.set(12, value);
-			cpu.setGlobalByKey(cpu.stringPool.intern('shared'), r.get(12));
-			cpu.setSystemGlobalByKey(cpu.stringPool.intern('shared'), valueInteger(73));
+			setReferenceGlobal(cpu, cpu.stringPool.intern('shared'), r.get(12));
+			setReferenceSystemGlobal(cpu, cpu.stringPool.intern('shared'), valueInteger(73));
 		}
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -212,8 +213,8 @@ test('fixed selectors must name an entry of the expected kind in their own image
 				const { cpu } = createTestHeapServiceCpu(image, backend);
 				const frame = cpu.rootThread.frameAtDepth(0);
 				const g = cpu.stringPool.find('g')!, s = cpu.stringPool.find('s')!;
-				cpu.setGlobalByKey(g, valueInteger(81));
-				cpu.setSystemGlobalByKey(s, valueInteger(91));
+				setReferenceGlobal(cpu, g, valueInteger(81));
+				setReferenceSystemGlobal(cpu, s, valueInteger(91));
 				frame.registers.setInteger(0, 73);
 				frame.registers.setInteger(1, 75);
 				let observations = 0;

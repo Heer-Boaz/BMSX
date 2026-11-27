@@ -72,8 +72,8 @@ CPU::CPU(
 	, m_rootView(memory)
 	, m_irqView(memory)
 	, m_transferViews{Thread{memory}, Thread{memory}}
-	, m_systemGlobalBank(memory, m_heap, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
-	, m_globalBank(memory, m_heap, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
+	, m_systemGlobalBank(memory, m_heapAllocator.managementOffset() + SYSTEM_GLOBAL_BANK_OFFSET)
+	, m_globalBank(memory, m_heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET) {
 	m_memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 	m_cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 	m_builtinResultScratch.reserve(1);

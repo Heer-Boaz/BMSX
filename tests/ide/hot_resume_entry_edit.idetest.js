@@ -43,6 +43,11 @@ const systemRevisionSource = (record, revision) => record.base_src.replace(
 const runtime = t.runtime();
 const sourceState = t.sourceState();
 const cpu = runtime.machine.cpu;
+const writeBoundGlobal = (owner, key, word) => {
+	const bank = owner.globalBank, slot = bank.find(key);
+	t.assert(slot !== undefined, 'the cartridge has published the probe global');
+	bank.slots.set(slot, word);
+};
 const systemAssetConsumerFunctionId = 'module:main/entry/local:init';
 const initialSystemImage = sourceState.currentBlua32Media.system;
 const initialSystemAssetConsumerIndex = initialSystemImage.symbols.metadata.functionIds.indexOf(
@@ -50,16 +55,14 @@ const initialSystemAssetConsumerIndex = initialSystemImage.symbols.metadata.func
 );
 t.assert(initialSystemAssetConsumerIndex >= 0, 'system asset consumer function is missing');
 const initialSystemAssetConsumer = initialSystemImage.layout.functions[initialSystemAssetConsumerIndex];
-const liveMathTable = cpu.getGlobalByKey(cpu.stringPool.intern('math'));
-t.assert(value.valueIsTable(liveMathTable), 'the retained live-state probe must start with the actual BIOS math table');
-const liveStateProbeKey = cpu.stringPool.intern('__hot_resume_live_state_probe');
-const loopCountKey = cpu.stringPool.intern('hot_resume_loop_count');
-cpu.setGlobalByKey(liveStateProbeKey, liveMathTable);
+const liveStateProbeKey = cpu.stringPool.find('__hot_resume_live_state_probe');
+const liveMathTable = cpu.getGlobalByKey(liveStateProbeKey);
+t.assert(value.valueIsTable(liveMathTable), 'the cartridge published its BIOS math table as a live-state probe');
 const typedProbeValues = [value.valueInteger(16777217), value.valueInteger(-2147483648),
 	value.valueInteger(0), value.valueFloatBits(0x80000000), value.valueFloatBits(0x7fa12345), value.valueBool(false)];
 const typedProbeKeys = typedProbeValues.map((probe, index) => {
-	const key = cpu.stringPool.intern(`__hot_resume_typed_${index}`);
-	cpu.setGlobalByKey(key, probe);
+	const key = cpu.stringPool.find(`__hot_resume_typed_${index}`);
+	writeBoundGlobal(cpu, key, probe);
 	return key;
 });
 const cartridge = sourceState.cartridgeSlots[cpu.activeCartridgeSlot()];
@@ -145,8 +148,8 @@ const installRevision = async (revision) => {
 
 const firstRevisionLogStart = t.logMessageCount();
 await installRevision(1);
-cpu.setGlobalByKey(loopCountKey, value.valueInteger(0));
 await t.frames(60);
+const loopCountKey = cpu.stringPool.find('hot_resume_loop_count');
 
 t.assert(t.runtime() === runtime, 'first Hot Resume replaced the live runtime');
 t.assert(runtime.machine.cpu === cpu, 'first Hot Resume replaced the live CPU');
@@ -192,8 +195,8 @@ t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_in
 t.assert(value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_new_game_count'))) === 1, 'second Hot Resume reran new_game');
 
 const initCountBeforeSystemOnlyEdit = value.asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')));
-cpu.setGlobalByKey(
-	cpu.stringPool.intern('hot_resume_print_revision'),
+writeBoundGlobal(cpu,
+	cpu.stringPool.find('hot_resume_print_revision'),
 	value.valueInteger(-1),
 );
 t.openLuaSource('base.lua', sourceState.systemContextId);
@@ -339,8 +342,8 @@ t.assert(value.valueIsInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.
 // A reboot replaces the heap and string pool. Reacquire global-name IDs rather
 // than reusing the IDs retained for the previous machine instance.
 const rebootedTypedProbeKeys = typedProbeValues.map((probe, index) => {
-	const key = rebootedCpu.stringPool.intern(`__hot_resume_typed_${index}`);
-	rebootedCpu.setGlobalByKey(key, probe);
+	const key = rebootedCpu.stringPool.find(`__hot_resume_typed_${index}`);
+	writeBoundGlobal(rebootedCpu, key, probe);
 	return key;
 });
 t.assert(value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_entry_edit_probe'))) === 2, 'cold boot did not execute the second cartridge-ROM revision');
@@ -395,9 +398,8 @@ t.capture('hot-resume-init-fault-ide');
 const faultedMedia = sourceState.currentBlua32Media;
 const initCountAtFault = value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_init_count')));
 const printCountAtFault = value.asInteger(rebootedCpu.getGlobalByKey(rebootedCpu.stringPool.intern('hot_resume_print_call_count')));
-const rebootedLoopCountKey = rebootedCpu.stringPool.intern('hot_resume_loop_count');
-rebootedCpu.setGlobalByKey(rebootedLoopCountKey, value.valueInteger(0));
-const loopCountAtFault = 0;
+const rebootedLoopCountKey = rebootedCpu.stringPool.find('hot_resume_loop_count');
+const loopCountAtFault = value.asInteger(rebootedCpu.getGlobalByKey(rebootedLoopCountKey));
 t.assert(rebootedRuntime.completionCallPending(), 'faulted init completion root is not physically pending');
 t.openLuaSource('entry.lua', cartridge.contextId);
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2));

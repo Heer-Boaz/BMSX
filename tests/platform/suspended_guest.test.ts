@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SuspendedGuestSession, SuspendedGuestValueKind } from '../../ide/runtime/suspended_guest';
@@ -23,8 +24,8 @@ test('suspended member reads consume lookup results without executing or chargin
 	const loop = cpu.createTable(0, 1), loopMeta = cpu.createTable(0, 1);
 	const loopValue = v.valueTable(loop);
 	cpu.gc.tables.setStringKey(loopMeta, index, loopValue); cpu.gc.tables.setMetatableAddress(loop, loopMeta);
-	cpu.setGlobalByKey(cpu.stringPool.intern('child'), childValue);
-	cpu.setGlobalByKey(cpu.stringPool.intern('loop'), loopValue);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('child'), childValue);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('loop'), loopValue);
 	cpu.instructionBudgetRemaining = 123;
 	const before = cpu.captureRuntimeState(), cycle = runtime.machine.scheduler.nowCycles;
 	for (let repeat = 0; repeat < 3; ++repeat) {

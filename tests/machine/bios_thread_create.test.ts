@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -175,7 +176,7 @@ function detachEntry(f: ReturnType<typeof fixture>): number {
 	return f.same(cpu => {
 		const key = cpu.stringPool.intern('detached_entry'), operand = cpu.getGlobalByKey(key);
 		assert.equal(valueTag(operand), ValueTag.Closure);
-		cpu.setGlobalByKey(key, valueNil());
+		setReferenceGlobal(cpu, key, valueNil());
 		// O3 can retain a now-dead physical temporary. Explicitly remove it
 		// to prove the scope, independently of the compiler's slot lifetime.
 		const slots = cpu.rootThread.currentFrame!.registers;

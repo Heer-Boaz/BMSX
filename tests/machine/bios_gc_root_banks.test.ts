@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { registerReferenceGlobalName, writeReferenceGlobalSlot } from '../helpers/global_bank_reference';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding } from '../../machine/ts/machine/cpu/execution_image';
@@ -124,8 +125,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	] as const) {
 		equal(target => {
 			const bank = kind === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
-			const slot = bank.registerName(key);
-			bank.writeSlot(slot, value);
+			const slot = registerReferenceGlobalName(target.gc, bank, key);
+			writeReferenceGlobalSlot(target.gc, bank, slot, value);
 			return slot;
 		});
 	}
@@ -157,8 +158,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 			const bank = moved === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
 			const previous = ram.readRamRecordWord(namespace + GlobalBankField.Base);
 			const capacity = ram.readRamRecordWord(namespace + GlobalBankField.Capacity);
-			for (let i = bank.count; i < capacity; ++i) bank.registerName(target.stringPool.intern(`namespace filler ${i}`));
-			bank.writeSlot(bank.registerName(lateName), valueString(lateValue));
+			for (let i = bank.count; i < capacity; ++i) registerReferenceGlobalName(target.gc, bank, target.stringPool.intern(`namespace filler ${i}`));
+			writeReferenceGlobalSlot(target.gc, bank, registerReferenceGlobalName(target.gc, bank, lateName), valueString(lateValue));
 			assert.notEqual(ram.readRamRecordWord(namespace + GlobalBankField.Base), previous);
 		}
 		target.stringPool.takeMarkWork();

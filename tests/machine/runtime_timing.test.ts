@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -351,7 +352,7 @@ return 1
 	assert.ok(cpu.isHaltedUntilIrq());
 	cpu.clearHaltUntilIrq();
 	const live = cpu.createTable(8, 0);
-	cpu.setGlobalByKey(cpu.stringPool.intern('retained across both epochs'), valueTable(live));
+	setReferenceGlobal(cpu, cpu.stringPool.intern('retained across both epochs'), valueTable(live));
 	const floating = cpu.createTable();
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 	runtime.frameLoop.beginFrameState(16_000_000, 0);

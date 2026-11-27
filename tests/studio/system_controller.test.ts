@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { CART_EXEC, MANAGED_CART_LAUNCH, MANAGED_CART_PREPARE } from '../helpers/managed_cart_launch';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
@@ -594,8 +595,8 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const closureTableName = cpu.stringPool.intern('closure_table');
 	const closureTable = cpu.createTable();
 	cpu.gc.tables.set(closureTable, slot0Closure, valueInteger(77));
-	cpu.setGlobalByKey(savedClosureName, slot0Closure);
-	cpu.setGlobalByKey(closureTableName, valueTable(closureTable));
+	setReferenceGlobal(cpu, savedClosureName, slot0Closure);
+	setReferenceGlobal(cpu, closureTableName, valueTable(closureTable));
 
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'data selection is not the current instruction bus');
@@ -688,9 +689,9 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const closureTable = cpu.createTable(0, 2);
 	cpu.gc.tables.set(closureTable, firstClosure, valueInteger(11));
 	cpu.gc.tables.set(closureTable, secondClosure, valueInteger(22));
-	cpu.setGlobalByKey(firstName, firstClosure);
-	cpu.setGlobalByKey(secondName, secondClosure);
-	cpu.setGlobalByKey(tableName, valueTable(closureTable));
+	setReferenceGlobal(cpu, firstName, firstClosure);
+	setReferenceGlobal(cpu, secondName, secondClosure);
+	setReferenceGlobal(cpu, tableName, valueTable(closureTable));
 
 	const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	applyRuntimeSaveState(
@@ -746,9 +747,9 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const closureTable = cpu.createTable(0, 2);
 	cpu.gc.tables.set(closureTable, dynamicClosure, valueInteger(11));
 	cpu.gc.tables.set(closureTable, canonicalClosure, valueInteger(22));
-	cpu.setGlobalByKey(dynamicName, dynamicClosure);
-	cpu.setGlobalByKey(canonicalName, canonicalClosure);
-	cpu.setGlobalByKey(tableName, valueTable(closureTable));
+	setReferenceGlobal(cpu, dynamicName, dynamicClosure);
+	setReferenceGlobal(cpu, canonicalName, canonicalClosure);
+	setReferenceGlobal(cpu, tableName, valueTable(closureTable));
 
 	applyRuntimeSaveState(
 		runtime,

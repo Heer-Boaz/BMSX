@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { hashText } from '../../machine/ts/common/hash';
@@ -146,7 +147,7 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 8192;
 	const roots = cpu.createTable(capacity, 0), key = pool.intern('String growth root');
-	cpu.setGlobalByKey(key, valueTable(roots));
+	setReferenceGlobal(cpu, key, valueTable(roots));
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4) & 0x7fffffff;
 	const count = capacity - memory.readRamRecordWord(metadata + 8);
@@ -180,7 +181,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 4096;
 	const roots = cpu.createTable(4, 0);
-	cpu.setGlobalByKey(pool.intern('collision rehash root'), valueTable(roots));
+	setReferenceGlobal(cpu, pool.intern('collision rehash root'), valueTable(roots));
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(metadata + field);
 	let candidate = 0;
@@ -379,7 +380,7 @@ test('RAM restore replays string allocation after partial reuse', () => {
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
 	const root = pool.intern('table root'), table = cpu.createTable(0, 8);
-	cpu.setGlobalByKey(root, valueTable(table));
+	setReferenceGlobal(cpu, root, valueTable(table));
 	const removed = pool.intern('removed key');
 	cpu.gc.tables.setStringKey(table, removed, valueInteger(19));
 	cpu.gc.tables.setStringKey(table, removed, valueNil());

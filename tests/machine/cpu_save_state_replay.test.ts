@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
@@ -43,7 +44,7 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 		cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 		cpu.gc.tables.setMetatableAddress(weak, mode);
 		cpu.gc.tables.setInteger(weak, 1, cpu.readFrameRegister(0, 0));
-		cpu.setGlobalByKey(cpu.stringPool.intern('weak'), valueTable(weak));
+		setReferenceGlobal(cpu, cpu.stringPool.intern('weak'), valueTable(weak));
 		cpu.collectTrackedHeapBytes();
 		assert.ok(cpu.gc.tables.getInteger(weak, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
 	}
@@ -134,7 +135,7 @@ test('restore retains weak referents until the original allocation-triggered col
 	cpu.gc.tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	cpu.gc.tables.setMetatableAddress(weak, metatable);
 	cpu.gc.tables.setInteger(weak, 1, valueTable(cpu.createTable()));
-	cpu.setGlobalByKey(weakKey, valueTable(weak));
+	setReferenceGlobal(cpu, weakKey, valueTable(weak));
 	// These allocations have left guest accounting debt but are unreachable.
 	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
 	const ram = cpu.memory.captureSaveState();
@@ -252,12 +253,12 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('return 19, 21', 0, [], 'snapshot-physical-records.lua'));
 	const { cpu } = createTestSystemCpu(image);
 	const key = cpu.stringPool.intern('graph');
-	cpu.setGlobalByKey(key, valueNil());
+	setReferenceGlobal(cpu, key, valueNil());
 	runGuestToHalt(cpu, 10_000);
 	const before = cpu.captureRuntimeState();
 	const root = cpu.createTable(1024, 0);
 	const rootValue = valueTable(root);
-	cpu.setGlobalByKey(key, rootValue);
+	setReferenceGlobal(cpu, key, rootValue);
 	for (let index = 1; index <= 1024; ++index) {
 		const child = cpu.createTable(1, 0);
 		cpu.gc.tables.setInteger(child, 1, rootValue);
@@ -293,7 +294,7 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 		valueBuiltinFunction(BuiltinFunctionId.Next), valueNil(),
 	];
 	const table = cpu.createTable(values.length, 0);
-	cpu.setGlobalByKey(key, valueTable(table));
+	setReferenceGlobal(cpu, key, valueTable(table));
 	for (let index = 0; index < values.length; index += 1) cpu.gc.tables.setInteger(table, index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
@@ -306,7 +307,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-depth.lua')));
 	const key = cpu.stringPool.intern('deep');
 	const root = cpu.createTable(1, 0);
-	cpu.setGlobalByKey(key, valueTable(root));
+	setReferenceGlobal(cpu, key, valueTable(root));
 	let tail = root;
 	for (let index = 1; index < 4096; index += 1) {
 		const child = cpu.createTable(1, 0);
@@ -330,7 +331,7 @@ test('table boundary hints and mixed numeric hash layout survive restore without
 	const table = cpu.createTable(64, 128);
 	for (let n = 64; n > 0; n--) cpu.gc.tables.setInteger(table, n, valueBool(false));
 	for (let n = -1; n >= -64; n--) cpu.gc.tables.setInteger(table, n, valueInteger(n));
-	cpu.setGlobalByKey(key, valueTable(table));
+	setReferenceGlobal(cpu, key, valueTable(table));
 	const ram = cpu.memory.captureSaveState();
 	const state = cpu.captureRuntimeState();
 	assert.equal(cpu.gc.tables.length(table), 64);

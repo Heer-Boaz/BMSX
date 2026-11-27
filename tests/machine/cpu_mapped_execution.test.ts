@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
@@ -246,7 +247,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`canonical RAM clo
 	cpu.gc.tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	cpu.gc.tables.setMetatableAddress(weak, metatable);
 	cpu.gc.tables.setInteger(weak, 1, latest);
-	cpu.setGlobalByKey(cpu.stringPool.intern('weak_closure'), valueTable(weak));
+	setReferenceGlobal(cpu, cpu.stringPool.intern('weak_closure'), valueTable(weak));
 	cpu.collectTrackedHeapBytes();
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), latest, 'a strong guest root preserves the weak referent identity');
 	assert.equal(instantiate(4), retained, 'overwriting the result drops the last strong reference to the tail');

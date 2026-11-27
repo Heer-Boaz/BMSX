@@ -2,21 +2,19 @@
 
 #include <optional>
 
-#include "machine/cpu/gc_heap.h"
+#include "machine/cpu/string_pool.h"
+#include "machine/cpu/value_slots.h"
 #include "spec/blua32/execution_domain.h"
 
 namespace bmsx {
+
+class GcHeap;
 
 // The triples are owned by RAM. Ordinals are stable even when the backing moves:
 // name words, two hash buckets per slot, payloads, then tags.
 class GlobalBank {
 public:
-	GlobalBank(Memory& memory, GcHeap& heap, u32 descriptor) : m_memory(memory), m_heap(heap), m_descriptor(descriptor) {}
-
-	void writeSlot(u32 slot, Value value) {
-		m_values.set(slot, value);
-		if (valueTagHasGcEdge(valueTag(value))) m_heap.markGlobalWrite(value);
-	}
+	GlobalBank(Memory& memory, u32 descriptor) : m_memory(memory), m_descriptor(descriptor) {}
 	bool tryWriteSlot(u32 slot, Value value) {
 		if (valueTagHasGcEdge(valueTag(value))) return false;
 		m_values.set(slot, value);
@@ -31,10 +29,13 @@ public:
 	ConstValueSpan values() const { return m_values; }
 	const ValueSpan& values() { return m_values; }
 	std::optional<u32> find(StringId key) const;
-	u32 registerName(StringId key, Value pending = valueNil());
 	void bind();
 	void detach() { m_values = {}; }
-	void clear();
+
+	// Definitions live in the native fixture reference target.
+	void writeSlot(GcHeap&, u32 slot, Value value);
+	u32 registerName(GcHeap&, StringId key, Value pending = valueNil());
+	void clear(GcHeap&);
 
 private:
 	u32 bucketFor(u32 base, u32 capacity, StringId key) const;
@@ -42,7 +43,6 @@ private:
 	void grow(u32 oldBase, u32 base, u32 capacity, u32 count);
 
 	Memory& m_memory;
-	GcHeap& m_heap;
 	u32 m_descriptor;
 	ValueSpan m_values;
 };

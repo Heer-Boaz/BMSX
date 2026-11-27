@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -45,7 +46,7 @@ function fixture(optLevel: 0 | 3) {
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
 		const live = target.createTable(16, 0), child = target.createTable(8, 0);
-		target.setGlobalByKey(target.stringPool.intern('mark-quantum live root'), valueTable(live));
+		setReferenceGlobal(target, target.stringPool.intern('mark-quantum live root'), valueTable(live));
 		target.gc.tables.set(live, valueInteger(1), valueTable(child));
 		target.gc.tables.set(child, valueInteger(8), valueString(target.stringPool.intern('mark-quantum nested String')));
 		target.publishHeapRemarkHead();

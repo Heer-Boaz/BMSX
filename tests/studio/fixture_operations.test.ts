@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -40,7 +41,7 @@ test('fixture publication follows the current receipt key after string collectio
 	const receipt = cpu.createTable(0, 2);
 	cpu.gc.tables.setStringKey(receipt, unrelatedKey, valueBool(true));
 	cpu.gc.tables.setStringKey(receipt, reachedKey, valueBool(false));
-	cpu.setGlobalByKey(pool.intern('receipt'), valueTable(receipt));
+	setReferenceGlobal(cpu, pool.intern('receipt'), valueTable(receipt));
 
 	operations.accept([valueNil(), valueString(pool.intern('boundary')), valueTable(receipt), valueInteger(100)]);
 	assert.equal(operations.observesPublication, true);

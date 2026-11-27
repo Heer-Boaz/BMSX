@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -111,7 +112,7 @@ try {
 				assert.notEqual(backing, 0);
 				observe(`A ${backingBytes * nextCapacity}`, backing);
 			}
-			old.setGlobalByKey(key, valueNil());
+			setReferenceGlobal(old, key, valueNil());
 			oracleObserve(`f ${candidates[i]}`, '0 0');
 			const expect = readNamespaceBank(oldMem, management + GLOBAL_BANK_OFFSET);
 			if (nextCapacity !== 0) assert.equal(backing, expect.base);
@@ -187,7 +188,7 @@ try {
 		const markPath = join(dir, 'mark');
 		writeFileSync(markPath, encodeRuntimeSaveState(markStart));
 		applyRuntimeSaveState(runtime, markStart);
-		old.setGlobalByKey(barrierKey, valueNil());
+		setReferenceGlobal(old, barrierKey, valueNil());
 		assert.notEqual(oldMem.readRamRecordByte(barrierKey + 1), markByte);
 		assert.equal(oldMem.readRamRecordWord(management + HEAP_STRING_MARK_WORK_OFFSET), 0);
 
@@ -272,7 +273,7 @@ end`, 0);
 		note('X'); note('l'); note('s');
 		for (let i = 0; i < 16; ++i) {
 			const name = `physical_global_${i}`;
-			cpu.setGlobalByKey(cpu.stringPool.intern(name), valueNil());
+			setReferenceGlobal(cpu, cpu.stringPool.intern(name), valueNil());
 			note(`f ${name}`, '0 0');
 		}
 		const grown = readNamespaceBank(memory, execution);

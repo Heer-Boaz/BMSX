@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
 						u32 globals;
 						trace >> globals;
 						for (const u32 bankAddress : {address, globals})
-							GlobalBank(memory, cpu.gcHeap(), bankAddress).clear();
+							GlobalBank(memory, bankAddress).clear(cpu.gcHeap());
 					} else if (operation == 'i') {
 						for (u32 lane = 0; lane < EXECUTION_DOMAIN_COUNT; ++lane, address += 8) {
 							const u32 base = memory.readRamRecordWord(address);

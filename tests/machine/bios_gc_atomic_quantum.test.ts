@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -54,8 +55,8 @@ function fixture(optLevel: 0 | 3) {
 		gc.tables.set(weak, valueInteger(1), valueTable(firstDead));
 		gc.tables.set(weak, valueInteger(2), valueTable(secondDead));
 		gc.tables.set(weak, valueInteger(3), valueTable(retained));
-		target.setGlobalByKey(stringPool.intern('atomic weak table'), valueTable(weak));
-		target.setGlobalByKey(stringPool.intern('atomic strong value'), valueTable(retained));
+		setReferenceGlobal(target, stringPool.intern('atomic weak table'), valueTable(weak));
+		setReferenceGlobal(target, stringPool.intern('atomic strong value'), valueTable(retained));
 		for (let i = 0; i < 64 && gc.phase() !== GcPhase.Atomic; ++i) gc.step();
 		assert.equal(gc.phase(), GcPhase.Atomic);
 		target.publishHeapRemarkHead();

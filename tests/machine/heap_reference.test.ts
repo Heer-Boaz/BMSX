@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { DYNAMIC_RAM_BASE, MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -163,7 +164,7 @@ test('builtin functions retain their own ids outside the GC heap', () => {
 test('a closed capture is read from RAM, rewound with RAM and released by collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, memory = cpu.memory;
 	const key = cpu.stringPool.intern('saved_capture');
-	cpu.setGlobalByKey(key, frame.registers.get(1));
+	setReferenceGlobal(cpu, key, frame.registers.get(1));
 	const closure = frame.registers.getClosure(1, cpu.gc);
 	const address = ClosureRecord.captureAddress(cpu.memory, closure, 0);
 	assert.equal(cpu.gc.cellRecordAddress(address), address);
@@ -210,7 +211,7 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	cpu.collectTrackedHeapBytes();
 	const arena = cpu.heapAllocator, occupied = arena.occupiedBytes();
 	const retiredBytes = arena.allocationBytes(closure - GC_OBJECT_PREFIX) + arena.allocationBytes(address - GC_OBJECT_PREFIX);
-	cpu.setGlobalByKey(key, valueNil());
+	setReferenceGlobal(cpu, key, valueNil());
 	cpu.collectTrackedHeapBytes();
 	assert.equal(arena.occupiedBytes(), occupied - retiredBytes);
 	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');

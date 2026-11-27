@@ -110,11 +110,11 @@ inline void installFixtureOperands(CPU& cpu, const ExecutionAddressSpace& addres
 		if (count == 0u) return;
 		Span<const u8> records;
 		addresses.bindReadOnlyView(domain, table, count * BLUA32_GLOBAL_NAME_RECORD_SIZE, records);
-		GlobalBank bank(memory, cpu.gcHeap(), management + namespaceOffset);
+		GlobalBank bank(memory, management + namespaceOffset);
 		bank.bind();
 		for (u32 i = 0u; i < count; ++i) {
 			const u32 address = readLE32(records.data() + i * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET);
-			memory.writeRamRecordWord(destination + 4u * i, bank.registerName(strings.resolveImageRecord(domain, address)));
+			memory.writeRamRecordWord(destination + 4u * i, bank.registerName(cpu.gcHeap(), strings.resolveImageRecord(domain, address)));
 		}
 	};
 	bindNames(field(BLUA32_IMAGE_GLOBAL_NAME_TABLE_ADDRESS_OFFSET), names, GLOBAL_BANK_OFFSET, base);

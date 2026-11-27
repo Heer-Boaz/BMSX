@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -80,7 +81,7 @@ try {
 			gc.tables.set(meta, valueString(gc['modeKey']), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(slots), valueTable(dead));
-			cpu.setGlobalByKey(cpu.stringPool.intern('explicit-step-weak-root'), valueTable(weak));
+			setReferenceGlobal(cpu, cpu.stringPool.intern('explicit-step-weak-root'), valueTable(weak));
 			for (let n = 0; n < 64 && entry === GcPhase.Atomic && gc.phase() !== entry; ++n) gc.step();
 			for (let n = 0; n < 4096 && entry === GcPhase.Strings && gc.phase() !== entry; ++n)
 				gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);

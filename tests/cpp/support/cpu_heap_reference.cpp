@@ -21,8 +21,8 @@ CPU::LocalRootsScope::~LocalRootsScope() {
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
-	const u32 slot = m_globalBank.registerName(key, value);
-	m_globalBank.writeSlot(slot, value);
+	const u32 slot = m_globalBank.registerName(m_heap, key, value);
+	m_globalBank.writeSlot(m_heap, slot, value);
 }
 
 void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
@@ -30,7 +30,7 @@ void CPU::setSystemGlobalByKey(StringId key, const Value& value) {
 	if (!slot) {
 		throw BMSX_RUNTIME_ERROR("System global '" + m_stringPool.toString(key) + "' has no register slot.");
 	}
-	m_systemGlobalBank.writeSlot(*slot, value);
+	m_systemGlobalBank.writeSlot(m_heap, *slot, value);
 }
 
 void CPU::abortCompletionCall(int frameIndex) {

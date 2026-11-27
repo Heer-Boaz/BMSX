@@ -60,7 +60,7 @@ const TRACE_CURSOR_BITS = GC_GRAY_INDEX_BITS + 1;
 const TRACE_CURSOR_MASK = (1 << TRACE_CURSOR_BITS) - 1;
 const TABLE_MODE_PENDING = 4 << TRACE_CURSOR_BITS;
 const enum ThreadTraceStage { Frames, Values, Clear }
-const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }
+export const enum RemarkStage { None, Threads, Weak, Roots, Trace, ClearWeak }
 const THREAD_TRACE_OPEN_HEAD = 1; // An open cell's address is aligned.
 export const GC_VISIT_HEADER_BYTE = 3;
 export const GC_VISIT_MEMBER = 0x40;
@@ -190,22 +190,6 @@ export class GcHeap {
 		// Account for mutator string marks before save or rewind can observe the heap.
 		const work = this.cpu.stringPool.takeMarkWork();
 		if (work !== 0) this.accountEpochWork(work);
-	}
-	// A GlobalBank has no weak lanes. Admission already classified this
-	// pair as a collector edge; only a marking epoch needs the insertion.
-	public writeGlobalRoot(tag: ValueTag, word: number): void {
-		const phase = this.phase();
-		if (phase < GcPhase.Mark || phase > GcPhase.Atomic) return;
-		if (tag === ValueTag.String) {
-			this.markString(word);
-			this.creditBarrierMarks();
-			return;
-		}
-		// Before the remark detaches Changed, it replaces (not merges) Trace.
-		const stage = phase === GcPhase.MarkAgain ? RemarkStage.Roots : this.remarkStage();
-		const beforeDetach = stage <= RemarkStage.Weak && (stage !== RemarkStage.None || phase === GcPhase.Atomic);
-		this.markRecord(word, tag === ValueTag.Thread ? THREAD_RECORD_KIND : tag,
-			beforeDetach ? GC_CHANGED_HEAD : GC_TRACE_HEAD);
 	}
 	// During the second pass, trace new strong edges without rescanning their
 	// owner. Metatabled tables still need the collector to resolve weak lanes.

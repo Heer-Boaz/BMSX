@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -80,7 +81,7 @@ try {
 			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));
-			cpu.setGlobalByKey(cpu.stringPool.find('full_collection_root')!, valueTable(weak));
+			setReferenceGlobal(cpu, cpu.stringPool.find('full_collection_root')!, valueTable(weak));
 			const dropped = cpu.stringPool.intern(deadText);
 			assert.equal(gc.phase(), GcPhase.Pause);
 			if (alreadyActive) {

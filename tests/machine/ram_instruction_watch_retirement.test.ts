@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -107,8 +108,8 @@ test('ordinary writes cannot mutate private image maps or embedded constants', (
 		constants: [integerConstant(7)], globalNames: ['first', 'second'] });
 	const { cpu, memory } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
 	const frame = cpu.rootThread.frameAtDepth(0);
-	cpu.setGlobalByKey(cpu.stringPool.find('first')!, valueInteger(10));
-	cpu.setGlobalByKey(cpu.stringPool.find('second')!, valueInteger(20));
+	setReferenceGlobal(cpu, cpu.stringPool.find('first')!, valueInteger(10));
+	setReferenceGlobal(cpu, cpu.stringPool.find('second')!, valueInteger(20));
 	assert.equal(cpu.runUntilDepth(0, 4096), RunResult.Yielded);
 	assert.equal(frame.registers.getInteger(2), 17);
 	assert.ok(frame.decodedPage!.compiledBlocks!.entries[(image.image.functions[0].codeAddress & MAPPED_PAGE_BYTE_MASK) >>> 2], 'the fixture exercises a real compiled region');

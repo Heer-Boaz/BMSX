@@ -373,8 +373,8 @@ export class CPU implements MappedPageInvalidator {
 		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
 		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator);
 		const management = this.heapAllocator.managementOffset();
-		this.systemGlobalBank = new GlobalBank(memory, this.gc, management + SYSTEM_GLOBAL_BANK_OFFSET);
-		this.globalBank = new GlobalBank(memory, this.gc, management + GLOBAL_BANK_OFFSET);
+		this.systemGlobalBank = new GlobalBank(memory, management + SYSTEM_GLOBAL_BANK_OFFSET);
+		this.globalBank = new GlobalBank(memory, management + GLOBAL_BANK_OFFSET);
 		this.rootThread = new Thread(memory);
 		this.threadBanks = [this.rootThread, new Thread(memory), new Thread(memory)];
 		this.irqThread = new Thread(memory);
@@ -2530,23 +2530,6 @@ export class CPU implements MappedPageInvalidator {
 
 	public writeFrameCallSitePc(childFrameIndex: number, pc: number): void {
 		this.activeThread.frameAtDepth(childFrameIndex).callSitePc = pc;
-	}
-
-	public setGlobalByKey(
-		key: StringId, value: Value,
-	): void {
-		const slot = this.globalBank.registerName(key, value);
-		this.globalBank.writeSlot(slot, value);
-	}
-
-	public setSystemGlobalByKey(
-		key: StringId, value: Value,
-	): void {
-		const slot = this.systemGlobalBank.find(key);
-		if (slot === undefined) {
-			throw new Error(`System global '${this.stringPool.toString(key)}' has no register slot.`);
-		}
-		this.systemGlobalBank.writeSlot(slot, value);
 	}
 
 	public getSystemGlobalByKey(key: StringId): Value {

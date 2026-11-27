@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -40,7 +41,7 @@ return factory
 	const factory = valuePayload(values[0]), start = cpu.captureClosureBinding(factory).codeAddress;
 	// Keep the already issued factory bound while repeatedly warming its
 	// ordinary CLOSURE exit and retiring the verified firmware.
-	cpu.setGlobalByKey(cpu.stringPool.intern('factory'), values[0]);
+	setReferenceGlobal(cpu, cpu.stringPool.intern('factory'), values[0]);
 	for (let i = 0; i < COMPILED_BLOCK_THRESHOLD + 2; ++i) {
 		cpu.beginCompletionCall(factory, [valueInteger(i)]);
 		runGuestToHalt(cpu, 100_000);
@@ -104,14 +105,14 @@ test('hot register CLOSURE preserves its prefix and destination on a prototype b
 	const target = image.symbols.functionAddresses[1], bad = 0xdead0000;
 	for (const { cpu } of [left, right]) {
 		seedTestRomClosure(cpu, target);
-		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(target));
+		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(target));
 		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.GETGL] + BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const js = left.cpu, ref = right.cpu, frame = js.rootThread.frameAtDepth(0);
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.terminal.exit, CompiledBlockExit.CreateClosure);
 	for (const { cpu } of [left, right]) {
-		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(bad));
+		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(bad));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		cpu.rootThread.frameAtDepth(0).registers.setInteger(256, 73); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
@@ -137,7 +138,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.memory.writeBytes(DYNAMIC_RAM_BASE, image.romBytes.subarray(template, template + BLUA32_FUNCTION_RECORD_SIZE));
 		seedTestMappedStaticClosure(cpu, DYNAMIC_RAM_BASE);
-		cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
+		setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(image.symbols.functionAddresses[1]));
 		cpu.runUntilDepth(0, 400);
 	}
 	const frame = js.rootThread.frameAtDepth(0), pc = image.image.functions[0].codeAddress;
@@ -146,7 +147,7 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 	for (const address of [DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1], DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE, image.symbols.functionAddresses[1]]) {
 		for (const cpu of [js, ref]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-			cpu.setGlobalByKey(cpu.stringPool.find('target')!, valueInteger(address));
+			setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(address));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
 		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, address);

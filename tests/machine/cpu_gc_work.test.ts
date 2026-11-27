@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -428,7 +429,7 @@ test('absolute ROM String references resolve even when backing and directory own
 	const cpu = new CPU(memory, new IrqController(memory), addresses);
 	cpu.reset();
 	admitTestHeapServiceCpu(cpu, addresses);
-	cpu.setGlobalByKey(shared, valueInteger(19));
+	setReferenceGlobal(cpu, shared, valueInteger(19));
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	const bank0 = cpu.rootThread.currentFrame!.executionImage!;
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
@@ -606,7 +607,7 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 	assert.notEqual(before, 0);
 	assert.equal(memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_SPAN_OFFSET), 8);
 	const key = cpu.stringPool.intern('__index');
-	cpu.setGlobalByKey(key, valueInteger(73));
+	setReferenceGlobal(cpu, key, valueInteger(73));
 	const used = cpu.luaHeap.usedBytes();
 
 	memory.installSystemRom(next.romBytes);

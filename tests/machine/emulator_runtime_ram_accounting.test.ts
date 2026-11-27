@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { ValueTag, valueBuiltinFunction, valueInteger, valueNil, valueTable } from '../../machine/ts/machine/cpu/value';
 import { test } from 'node:test';
@@ -35,26 +36,26 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 	const cpu = createCpuWithProgram(source);
 	runGuestToHalt(cpu, 100000);
 	const after = cpu.collectTrackedHeapBytes();
-	cpu.setGlobalByKey(cpu.stringPool.find('saved')!, valueNil());
+	setReferenceGlobal(cpu, cpu.stringPool.find('saved')!, valueNil());
 	return { before: cpu.collectTrackedHeapBytes(), after };
 }
 
 test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
 	const key = cpu.stringPool.intern('state');
-	cpu.setGlobalByKey(key, valueNil());
+	setReferenceGlobal(cpu, key, valueNil());
 
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
 	cpu.gc.tables.setInteger(table, 1, valueInteger(11));
 	cpu.gc.tables.setStringKey(table, key, valueInteger(7));
-	cpu.setGlobalByKey(key, valueTable(table));
+	setReferenceGlobal(cpu, key, valueTable(table));
 
 	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
-	cpu.setGlobalByKey(key, valueNil());
+	setReferenceGlobal(cpu, key, valueNil());
 
 	const afterCleanup = cpu.collectTrackedHeapBytes();
 	assert.ok(afterCleanup < afterTable, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterTable})`);
@@ -72,7 +73,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
+	setReferenceGlobal(cpu, cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
 	const bank = readNamespaceBank(cpu.memory, cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET);

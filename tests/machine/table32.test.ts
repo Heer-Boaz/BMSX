@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
@@ -363,7 +364,7 @@ test('machine snapshots restore table records and their references to a differen
 	source.gc.tables.setInteger(table, 3, v.valueTable(child));
 	source.gc.tables.set(table, v.valueFloat(1.5), v.valueFloatBits(0xffc00000));
 	const name = source.stringPool.intern('saved_table');
-	source.setGlobalByKey(name, v.valueTable(table));
+	setReferenceGlobal(source, name, v.valueTable(table));
 	const { cpu: target } = bootManagedTestSystem(tableRom);
 	for (let i = 0; i < 5; ++i) target.createTable();
 	target.memory.restoreSaveState(source.memory.captureSaveState());

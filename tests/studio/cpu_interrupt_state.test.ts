@@ -1,3 +1,4 @@
+import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { abortFixtureCompletionCall, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { Input } from '../../hosts/common/input/manager';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -897,7 +898,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	const closureKey = cpu.stringPool.intern('completion_call');
-	cpu.setGlobalByKey(closureKey, valueClosure(closure));
+	setReferenceGlobal(cpu, closureKey, valueClosure(closure));
 
 	cpu.beginCompletionCall(closure, [valueTable(cpu.createTable())]);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -1848,7 +1849,7 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	cpu.gc.tables.setStringKey(root, childKey, valueTable(child));
 	cpu.gc.tables.setStringKey(root, objectKeyName, valueTable(objectKey));
 	cpu.gc.tables.set(root, valueTable(objectKey), valueTable(child));
-	cpu.setGlobalByKey(rootName, valueTable(root));
+	setReferenceGlobal(cpu, rootName, valueTable(root));
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);
 
