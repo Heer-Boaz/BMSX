@@ -7,13 +7,7 @@ local dma0_control<const>: *word = 0x08000018
 local dma0_trigger<const>: *word = 0x08000020
 local route_to_gpu<const> = 0x00000001
 local trigger_start<const> = 0x00000001
-local irq_dma_done<const> = 0x0001
-
-bss bios_dma_completion_sequence: word
-
-interrupts.on(irq_dma_done, function()
-	*bios_dma_completion_sequence = *bios_dma_completion_sequence + 1
-end)
+local bios_dma_completion_sequence<const>: *word = interrupts.dma_completion_sequence
 
 local wait_for_completion<const> = function(sequence)
 	while *bios_dma_completion_sequence == sequence do

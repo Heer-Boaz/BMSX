@@ -284,6 +284,8 @@ export type SystemCompileOptions = CompileOptionsBase & {
 	programDomain: 'system';
 	/** Authored cold reset vector; never a module initializer. */
 	resetModule?: string;
+	/** Authored maskable interrupt vector. Top-level return exits the exception. */
+	irqModule?: string;
 	biosFunctions?: never;
 };
 
@@ -1267,6 +1269,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	private readonly moduleCompileContext?: ModuleCompileContext;
 	private readonly moduleCompileInfo?: ModuleCompileInfo;
 	private readonly staticCallTargetScope: boolean;
+	private readonly exceptionEntry: boolean;
 	private readonly code: Instruction[] = [];
 	private readonly ranges: Array<SourceRange | null> = [];
 	private finalizedCode: Uint8Array | null = null;
@@ -1332,6 +1335,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			moduleCompileContext?: ModuleCompileContext;
 			moduleCompileInfo?: ModuleCompileInfo;
 			staticCallTargetScope?: boolean;
+			exceptionEntry?: boolean;
 		},
 	) {
 		this.program = program;
@@ -1343,6 +1347,7 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 		this.functionDisplayName = params.functionDisplayName;
 		this.moduleCompileContext = params.moduleCompileContext;
 		this.staticCallTargetScope = !!params.staticCallTargetScope;
+		this.exceptionEntry = params.exceptionEntry === true;
 		// Nested functions inherit the module's export info so that references to the
 		// module's own exported namespace (e.g. `room.fn` inside another `room.*`
 		// function) resolve to the export symbol/slot instead of the namespace table.
@@ -4359,6 +4364,11 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private compileReturn(expressions: ReadonlyArray<LuaExpression>): void {
+		if (this.exceptionEntry) {
+			if (expressions.length !== 0) throw new Error('An interrupt vector cannot return values.');
+			this.emitDefaultReturn();
+			return;
+		}
 		if (expressions.length === 0) {
 			this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
 			return;
@@ -5930,7 +5940,8 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 	}
 
 	private emitDefaultReturn(): void {
-		this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
+		if (this.exceptionEntry) this.emitABC(OpCode.RFE, 0, 0, 0);
+		else this.emitABC(OpCode.RET, 0, encodeFixedValueCount(0), 0);
 	}
 
 	private createLocalFunctionHint(name: string): string {
@@ -6347,6 +6358,10 @@ export function compileLuaChunkToProgram(
 		: 'cart';
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
 	const resetPath = options.programDomain === 'system' ? options.resetModule : undefined;
+	const irqPath = options.programDomain === 'system' ? options.irqModule : undefined;
+	if (irqPath !== undefined && irqPath === resetPath) {
+		throw new Error('System reset and interrupt vectors must name separate source bodies.');
+	}
 	const compiledModulePaths = new Array<string>(canonicalModules.length + 1);
 	compiledModulePaths[0] = toLuaModulePath(chunk.locations.path);
 	const sourceMaps = new Map<string, LuaSourceMap>();
@@ -6527,15 +6542,18 @@ export function compileLuaChunkToProgram(
 			continue;
 		}
 		const reset = module.path === resetPath;
-		const moduleProtoId = reset ? buildResetProtoId(module.path) : buildModuleProtoId(module.path);
+		const irq = module.path === irqPath;
+		const moduleProtoId = reset ? buildResetProtoId(module.path) : irq ? buildInterruptProtoId(module.path) : buildModuleProtoId(module.path);
+		const name = reset ? 'reset' : irq ? 'irq' : 'module';
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
 			protoId: moduleProtoId,
-			functionDisplayName: reset ? 'reset' : 'module',
+			functionDisplayName: name,
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
 			moduleCompileInfo: moduleCompileContext.modulesByPath.get(module.path),
+			exceptionEntry: irq,
 		});
 		try {
 			builder.compileChunk(module.chunk);
@@ -6551,9 +6569,10 @@ export function compileLuaChunkToProgram(
 				isVararg: false,
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
-				staticClosure: reset,
-			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, reset ? 'reset' : 'module', instructionSet, frontend.getFile(module.path));
+				staticClosure: reset || irq,
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, name, instructionSet, frontend.getFile(module.path));
 			if (reset) resetProtoIndex = protoIndex;
+			else if (irq) irqProtoIndex = protoIndex;
 			else programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
@@ -6564,12 +6583,18 @@ export function compileLuaChunkToProgram(
 	}
 	const entrySemantics = frontend.getFile(chunk.locations.path);
 	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
-	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	if (irqPath === undefined) {
+		irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	} else {
+		if (irqProtoIndex < 0) throw new Error(`System interrupt module '${irqPath}' must be an authored executable source.`);
+		if (programBuilder.staticModulePaths.includes(irqPath))
+			throw new Error(`System interrupt module '${irqPath}' cannot be initialized as an ordinary module.`);
+	}
 	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
 	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
 			const path = canonicalModules[index].path;
-			if (path !== resetPath) entryBuilder.markStaticModulePath(path);
+			if (path !== resetPath && path !== irqPath) entryBuilder.markStaticModulePath(path);
 		}
 	}
 	if (resetPath !== undefined) {

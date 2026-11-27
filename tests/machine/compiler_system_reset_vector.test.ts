@@ -95,3 +95,15 @@ test('a source selected as reset cannot also be initialized as an ordinary modul
 	const ordinary = compileLuaChunkToProgram(authored[0].chunk, [], { programDomain: 'system', entrySource: managedSource });
 	assert.equal(encodeCompiledProgramObject(ordinary).vectors.resetProtoIndex, ordinary.startupProtoIndex);
 });
+
+test('an authored interrupt vector is not callable as a module initializer and has no result tuple', () => {
+	const path = 'fixture/irq', source = 'return';
+	const module = { path, source, chunk: parseLuaChunk(source, path) };
+	assert.throws(() => compileLuaChunkToProgram(authored[0].chunk, [module], {
+		programDomain: 'system', entrySource: managedSource, irqModule: path, preloadModules: [path],
+	}), /interrupt module .* cannot be initialized as an ordinary module/);
+	const returning = { path, source: 'return 7', chunk: parseLuaChunk('return 7', path) };
+	assert.throws(() => compileLuaChunkToProgram(authored[0].chunk, [returning], {
+		programDomain: 'system', entrySource: managedSource, irqModule: path,
+	}), /interrupt vector cannot return values/);
+});

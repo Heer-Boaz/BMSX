@@ -1,13 +1,8 @@
 local interrupts<const> = require('kernel/interrupts')
-local irq<const> = require('kernel/vblank_irq')
 
 local vblank<const> = {}
 
-bss bios_vblank_count: word
-
-interrupts.on(irq.source, function()
-	*bios_vblank_count = *bios_vblank_count + 1
-end)
+local bios_vblank_count<const>: *word = interrupts.vblank_count
 
 function vblank.clear()
 	*bios_vblank_count = 0

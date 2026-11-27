@@ -38,7 +38,7 @@ local cart_status<const>: *word = 0x08010424
 local cart_rom_byte_count<const>: *word = 0x08010440
 local cart_rom<const>: *word = 0x10000000
 local irq_vblank<const> = vblank_irq.source
-local irq_dma_done<const> = 0x0001
+local irq_dma_done<const> = interrupts.dma_done
 local input_arm<const> = 0x00000001
 local cart_state_missing<const> = 1
 local cart_state_invalid<const> = 2
@@ -49,10 +49,6 @@ local ascii_zero<const> = 0x30
 
 bss boot_cart_state: word
 bss boot_frame: word
-
-function irq(flags)
-	interrupts.dispatch(flags)
-end
 
 function exception(error_value)
 	monitor.enter(error_value)

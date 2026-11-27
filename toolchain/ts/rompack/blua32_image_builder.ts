@@ -70,6 +70,7 @@ type Blua32ImageBuildOptionsBase = {
 type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
 	domain: 'system';
 	resetModule?: string;
+	irqModule?: string;
 	biosExports: ReadonlyArray<Blua32BiosFunctionExport>;
 };
 
@@ -202,6 +203,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	const moduleRoots = [...(options.preloadModules ?? []), ...generatedModules.map(module => module.path)];
 	if (options.domain === 'system') {
 		if (options.resetModule !== undefined) moduleRoots.push(options.resetModule);
+		if (options.irqModule !== undefined) moduleRoots.push(options.irqModule);
 		for (const exported of options.biosExports) moduleRoots.push(exported.path);
 	}
 	const programModules = selectLuaProgramModules(entry.chunk, modules, moduleRoots);
@@ -255,6 +257,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		entrySourceMap: entry.sourceMap,
 		programDomain: 'system',
 		resetModule: options.resetModule,
+		irqModule: options.irqModule,
 		traceStatements: options.traceStatements,
 		preloadModules: options.preloadModules,
 	});
