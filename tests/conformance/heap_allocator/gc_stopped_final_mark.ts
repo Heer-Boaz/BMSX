@@ -12,6 +12,7 @@ import { asInteger, valueInteger, valueNil, valuePayload, valueString, valueTabl
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -126,11 +127,12 @@ try {
 				assert.ok(used > 0, `${opt}/${name}: result=${result} phase=${gc.phase()} depth=${cpu.getFrameDepth()} cause=${cpu.readCauseWord()} reason=${cpu.readLuaFaultReasonWord()} pc=${cpu.lastPc}`);
 				return result;
 			};
-			const active = () => irq ? cpu.fixedInterruptActive() : cpu.heapServiceActive();
+			const active = () => allocation ? cpu.heapServiceActive() : cpu.fixedInterruptActive();
 			for (let i = 0; i < 8192 && gc.tables.getInteger(weak, 1) !== valueNil(); ++i) grant(137);
 			assert.equal(gc.phase(), GcPhase.Atomic);
 			assert.ok(active());
-			if (irq) assert.equal(cpu.heapServiceActive(), false, 'the installed System IRQ owns the work');
+			if (!allocation) assert.equal(cpu.heapServiceActive(), false, 'the installed System vector owns the work');
+			if (!irq && !allocation) assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
 			assert.equal(word(1), 0, 'the cartridge has not acknowledged its pending IRQ');
 			assert.equal(word(2), 0, 'the mutator cannot pass the collection boundary');
 			assert.equal(gc.tables.getInteger(weak, 1), valueNil());

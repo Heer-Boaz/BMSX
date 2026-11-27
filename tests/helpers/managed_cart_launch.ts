@@ -13,20 +13,18 @@ import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUN
 // The mounted cartridge has already been selected by the fixture. Exercise
 // the same guest floor and operand preparation as the stock BIOS launcher.
 export const MANAGED_CART_PREPARE = `
-local heap_floor<const> = require('kernel/heap_floor')
-local image_bind<const> = require('kernel/system_image_bind')
-local running<const> = __bmsx_coroutine_running
+local heap_control<const> = require('kernel/heap_control_ids')
 local image<const> = ${CART_ROM_BASE} + mem32le[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
 local data_end<const> = mem32le[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem32le[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
 local bss_end<const> = mem32le[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem32le[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
 cop0.status = cop0.status | ${CPU_STATUS_INHIBIT_RESET}
-local end_address<const> = heap_floor.admit_static_end(data_end > bss_end and data_end or bss_end)
+local end_address<const> = blua32.svc_value(heap_control.admit_floor, data_end > bss_end and data_end or bss_end)
 local admitted = false
 if end_address ~= 0 then
 	cop0.ram_end = end_address
-	admitted = image_bind.bind_cartridge(mem[${IO_CART_SELECT}], image, mem[${IO_SYS_ROM_BYTE_COUNT}],
+	admitted = blua32.svc_value(heap_control.bind_cartridge, mem[${IO_CART_SELECT}], image, mem[${IO_SYS_ROM_BYTE_COUNT}],
 		mem[${IO_CART0_ROM_BYTE_COUNT}], mem[${IO_CART1_ROM_BYTE_COUNT}],
-		mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}], (running())) == 0
+		mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]) == 0
 end
 cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
 if not admitted then

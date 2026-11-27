@@ -6,8 +6,7 @@ local raise_error<const> = __bmsx_error
 local console<const> = require('tty/console')
 
 local numeric_parse<const> = require('number/parse')
-local collector<const> = require('kernel/gc_collect_step')
-local heap<const> = require('kernel/gc_full')
+local heap_calls<const> = require('kernel/heap_control_ids')
 local types<const> = require('kernel/value_type')
 
 local select_arguments<const> = function(selector, ...)
@@ -129,16 +128,17 @@ end
 
 collectgarbage = function(option)
 	if option == nil or option == 'collect' then
-		heap.collect_full()
+		blua32.svc(heap_calls.collect_full)
 		return 0
 	elseif option == 'count' then
-		local bytes<const> = heap.heap_bytes()
+		local bytes<const> = blua32.svc_value(heap_calls.heap_count)
 		return bytes / 1024
 	elseif option == 'capacity' then
-		local _<const>, bytes<const> = heap.heap_bytes()
+		local bytes<const> = blua32.svc_value(heap_calls.heap_capacity)
 		return bytes / 1024
 	elseif option == 'step' then
-		return collector.collect_step()
+		local finished<const> = blua32.svc_value(heap_calls.collect_step)
+		return finished
 	end
 	raise_error('invalid collectgarbage option')
 end

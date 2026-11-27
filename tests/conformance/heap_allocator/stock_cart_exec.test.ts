@@ -104,7 +104,7 @@ halt_until_irq
 			const finishReset = (running: ReturnType<typeof boot>) => {
 				const { cpu, memory } = running.runtime.machine;
 				assert.equal(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'the RESET request has entered immutable System code');
-				for (let grant = 0; grant < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++grant) running.pulse(2048);
+				for (let grant = 0; grant < 2048 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++grant) running.pulse(2048);
 				assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS, 'firmware admitted its replacement context');
 				assert.equal(memory.ramBusEnd(), running.systemEnd, 'firmware restored the System aperture');
 			};

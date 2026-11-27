@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
@@ -10,7 +11,8 @@ import { valueInteger } from '../../../machine/ts/machine/cpu/value';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { CPU_INTERRUPTED_CONTEXT_ADDRESS, CPU_RESET_BANK_ADDRESS } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
@@ -19,8 +21,7 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 
-mkdirSync('tmp', { recursive: true });
-const dir = mkdtempSync(join('tmp', 'boot-collection-'));
+const dir = mkdtempSync(join(tmpdir(), 'boot-collection-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const optLevel of [0, 3] as const) {
@@ -41,7 +42,7 @@ try {
 			hashBytes(memory.ramData(), control, heap.allocatorStateOffset() - control));
 		const grant = (cycles: number) => {
 			const before = scheduler.nowCycles;
-			const result = runtime.cpuExecution.runSuspendedUntilDepth(0, cycles);
+			const result = runtime.cpuExecution.runSuspendedUntilDepth(0, cycles, cpu.rootThread.address);
 			const elapsed = scheduler.nowCycles - before;
 			observe(`D ${cycles}`, `${result} ${elapsed} ${+cpu.heapServiceActive()} ${+cpu.fixedInterruptActive()} ${heap.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 			return result;
@@ -54,7 +55,7 @@ try {
 		observeControl();
 
 		// The raw reset program retires at CONTEXT; its original depth is
-		// complete before the receiving System stage can run its first CALL.
+		// complete before the receiving System stage can issue its first SVC.
 		for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i) {
 			const result = grant(4093);
 			assert.equal(result, cpu.rootThread.address === CPU_RESET_BANK_ADDRESS
@@ -69,7 +70,10 @@ try {
 			assert.equal(grant(3), CpuSuspendedRunResult.Yielded);
 		}
 		assert.equal(cpu.gc.phase(), GcPhase.Mark, 'the authored managed reset stage reached the collector in paid guest instructions');
-		assert.ok(cpu.heapServiceActive() && scheduler.nowCycles > 0 && work() === 0);
+		assert.ok(cpu.fixedInterruptActive() && scheduler.nowCycles > 0 && work() === 0);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+		assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), cpu.rootThread.address);
 		observeControl();
 
 		const state = captureRuntimeSaveState(runtime);

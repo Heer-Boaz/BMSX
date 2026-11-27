@@ -41,6 +41,8 @@ export const BIOS_MANAGED_ENTRIES: readonly ManagedEntry[] = [
 ];
 
 export const SYSTEM_KERNEL_MODULES = [
+	'kernel/heap_control_ids', 'kernel/heap_control_call', 'kernel/gc_collect_step', 'kernel/gc_full',
+	'kernel/heap_floor', 'kernel/system_image_bind', 'kernel/thread_frame_storage',
 	'kernel/allocate_record', ...new Set(SYSTEM_RESIDENT_EXPORTS.map(entry => entry.path)),
 	'kernel/dlmalloc', 'kernel/dlmalloc_record', 'kernel/gc_strings',
 	'kernel/gc_control', 'kernel/gc_thread_compact', 'kernel/thread_retire', 'kernel/gc_objects', 'kernel/table_create',

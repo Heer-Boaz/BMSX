@@ -64,6 +64,10 @@ export function allocateFrameSlots(
 				if (b === 1 && c === 1) discardCalls[a] = 1;
 				else fixed.fill(1, a, a + Math.max(1 + decodeValueCount(b, 0), decodeValueCount(c, 0)));
 				break;
+			case OpCode.SVC:
+				// The saved context exposes the contiguous operand window.
+				if (b > 1) fixed.fill(1, a, a + b);
+				break;
 			case OpCode.VARARG:
 				bands[a] = 1;
 				if (b === 0) openBase = Math.min(openBase, a);

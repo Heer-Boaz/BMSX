@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashBytes } from '../../../machine/ts/common/hash';
 import { CpuRunKind, RunResult } from '../../../machine/ts/machine/cpu/cpu';
-import { GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
+import { GC_ROOT_CURSOR, GC_TRACE_CURSOR, GC_TRACE_RECORD, GcPhase } from '../../../machine/ts/machine/cpu/gc_heap';
 import { FrameField } from '../../../machine/ts/machine/cpu/call_state';
 import { HEAP_GC_CONTROL_OFFSET } from '../../../machine/ts/machine/cpu/heap_allocator';
 import { asInteger, valueInteger, valueNil, valueString, valueTable } from '../../../machine/ts/machine/cpu/value';
@@ -13,51 +13,84 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_CAUSE_CODE_SYSCALL } from '../../../machine/ts/spec/blua32/cop0';
+import { HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { IO_IRQ_MASK } from '../../../machine/ts/spec/bmsx/io';
+import { CART_ROM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
+import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../../toolchain/ts/lua/compiler';
+import { readBlua32BiosImports } from '../../../toolchain/ts/rompack/blua32_bios_imports';
+import { linkCartBlua32Image } from '../../../toolchain/ts/rompack/blua32_linker';
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
-import { residentFunctionAddress } from '../../helpers/heap_service_system';
-import { linkManagedTestSystem } from '../../helpers/managed_system';
+import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
-const source = "require('fixture_collect_boot')\nhalt_until_irq\nfixture_collect()\nreturn 73";
-const boot = { path: 'fixture_collect_boot', source: "local heap<const> = require('kernel/gc_full'); fixture_collect = function() heap.collect_full() end" };
+const source = `bss report: word[5]
+full_collection_root = false
+mem[${IO_IRQ_MASK}] = 0
+report[1] = -1
+while report[0] == 0 do halt_until_irq end
+report[1] = collectgarbage('collect')
+while report[0] == 1 do halt_until_irq end
+report[2] = (collectgarbage('count') * 1024) & -1
+report[3] = (collectgarbage('capacity') * 1024) & -1
+report[4] = collectgarbage('step') and 1 or 2
+return 73`;
 const deadText = 'full collection must reclaim an unrooted Text value'.repeat(256);
 
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-gc-full-'));
 try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const opt of [0, 3] as const) {
-		const linked = linkManagedTestSystem(source, opt, [boot]);
-		const romBytes = writeTestBlua32Rom(linked);
-		const rom = join(directory, `O${opt}.rom`);
-		writeFileSync(rom, romBytes);
+		const out = join(directory, `O${opt}`);
+		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/rompacker/rompacker.ts',
+			'--mode', 'bios', '-respath', 'machine/bios/res', '--debug', `-O${opt}`, '--output-dir', out,
+			'--store-dir', join(directory, 'store')], { encoding: 'utf8' });
+		const rom = join(out, 'system', 'bmsx-bios.debug.rom'), system = readFileSync(rom);
+		const program = compileLuaChunkToProgram(parseLuaChunk(source, 'explicit-collection.lua'), [], { entrySource: source, optLevel: opt });
+		const linked = linkCartBlua32Image(readBlua32BiosImports(system), encodeCompiledProgramObject(program), program.metadata,
+			CART_ROM_BASE + 0x100, PSX_MACHINE_SPEC.ramBytes);
+		const cart = writeTestBlua32Rom(linked), cartPath = join(out, 'cart.rom');
+		writeFileSync(cartPath, cart);
+		const report = linked.layout.header.bssAddress;
 		for (const alreadyActive of [false, true]) {
-			const name = `O${opt}-${alreadyActive ? 'active' : 'paused'}`;
-			const configuration = { systemRomBytes: romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
+			const name = `O${opt}-${alreadyActive ? 'active' : 'exhausted'}`;
+			const configuration = { systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC };
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena } = cpu;
-			for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i)
-				scheduler.runCpuSlice(0, 4096, 0, CpuRunKind.Scheduled);
+			const { cpu, memory, scheduler, gxGpu } = runtime.machine, { gc, heapAllocator: arena, luaHeap } = cpu;
+			for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
+				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
+				runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
+			}
+			assert.equal(cpu.activeCartridgeSlot(), 0,
+				`${name}: stock BIOS did not enter the cartridge (cause=${cpu.readCauseWord()} reason=${cpu.readLuaFaultReasonWord()} pc=${cpu.lastPc} epc=${cpu.readEpcWord()} fixed=${cpu.fixedInterruptActive()})`);
 			assert.ok(cpu.isHaltedUntilIrq());
+			memory.writeMappedWord(report, 1);
 			cpu.clearHaltUntilIrq();
 			const management = arena.managementOffset(), traceLimit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
 			const control = management + HEAP_GC_CONTROL_OFFSET;
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			luaHeap.setCollectionTarget(luaHeap.capacity());
+			const owner = cpu.activeThread.address;
 			cpu.activeThread.resizeStack(512);
 			const weak = cpu.createTable(4, 0), metatable = cpu.createTable(0, 1), hidden = cpu.createTable(), floating = cpu.createTable();
 			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));
-			cpu.setGlobalByKey(cpu.stringPool.intern('full-collection-root'), valueTable(weak));
+			cpu.setGlobalByKey(cpu.stringPool.find('full_collection_root')!, valueTable(weak));
 			const dropped = cpu.stringPool.intern(deadText);
+			assert.equal(gc.phase(), GcPhase.Pause);
 			if (alreadyActive) {
 				gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 				assert.notEqual(gc.phase(), GcPhase.Pause);
+			} else {
+				// Fill the physical arena without allocating any guest object.
+				// CALL/SVC and the collector must not need a heap frame to start.
+				for (let bytes = 1 << 20; bytes >= 8; bytes >>= 1)
+					while (arena.allocate(bytes, true) !== 0) { /* fixture reservation */ }
+				assert.equal(arena.allocate(8, true), 0);
 			}
 			const seed = join(directory, `${name}.seed`), partial = join(directory, `${name}.partial`);
 			const nativePartial = join(directory, `${name}.native`);
@@ -71,22 +104,23 @@ try {
 				expected.push(String(output));
 			}
 			function grant(cycles: number) {
-				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
+				const result = scheduler.runCpuSlice(0, cycles, 0, CpuRunKind.Scheduled);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				observe(`L ${cycles}`, `${result} ${used} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+				observe(`L ${cycles}`, `${result} ${used} 0 ${gc.fullEpochs()} ${gc.phase()} ${luaHeap.usedBytes()}`);
+				assert.equal(cpu.heapServiceActive(), false);
 				if (cycles > 0) assert.ok(used > 0, `an admitted quantum pays ordinary instruction cycles (result=${result}, phase=${gc.phase()}, depth=${cpu.getFrameDepth()}, cause=${cpu.readCauseWord()}, reason=${cpu.readLuaFaultReasonWord()}, pc=${cpu.lastPc})`);
 				return result;
 			}
-			const entry = residentFunctionAddress({ image: linked.layout, symbols: linked.symbols }, 'kernel/gc_full', 'collect_full');
-			const root = management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
-			const explicitCollection = () => cpu.heapServiceActive() && memory.readRamRecordWord(root) === entry;
-			for (let i = 0; i < 4096 && !explicitCollection(); ++i) grant(1);
-			assert.equal(explicitCollection(), true, 'the ordinary CALL enters the linked fixed ROM function');
-			assert.equal(gc.fullEpochs(), 0, 'the CPU did not write the epoch policy during the CALL');
-			const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller), epochs = alreadyActive ? 2 : 1;
+			for (let i = 0; i < 4096 && !cpu.fixedInterruptActive(); ++i) grant(1);
+			assert.ok(cpu.fixedInterruptActive(), 'the cartridge CALL reaches the installed System vector');
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_SYSCALL);
+			observe('Z', `${cpu.readCauseWord()} ${cpu.readLuaFaultReasonWord()} ${cpu.readEpcWord()}`);
+			assert.equal(gc.fullEpochs(), 0, 'exception entry did not write the collector policy');
+			const caller = cpu.readThreadFrameDepth(owner) - 1, successor = cpu.readEpcWord(), epochs = alreadyActive ? 2 : 1;
 			function held() {
-				assert.equal(cpu.readFramePc(caller), successor);
-				observe('P', `${caller + 1} ${successor}`);
+				assert.equal(memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS), owner);
+				assert.equal(cpu.readThreadFrameWord(owner, caller, FrameField.Pc), successor);
+				assert.equal(memory.readRamRecordWord(report + 4), 0xffffffff, 'the cartridge did not retire the collect call');
 			}
 			for (let i = 0; i < 256 && !gc.fullEpochs(); ++i) assert.equal(grant(1), RunResult.Yielded);
 			assert.equal(gc.fullEpochs(), epochs);
@@ -94,10 +128,11 @@ try {
 			for (let i = 0; i < 1024 && memory.readRamRecordWord(traceLimit) === 0; ++i) grant(1);
 			assert.ok(memory.readRamRecordWord(traceLimit) > 1, 'one-cycle host fragments must not shorten the allowance to the next hardware event');
 			observe(`H ${traceLimit} ${traceLimit + 4}`, hashBytes(memory.ramData(), traceLimit, 4));
-			for (let i = 0; i < 8192 && gc.tables.get(weak, valueInteger(1)) !== valueNil(); ++i) grant(113);
-			assert.equal(gc.tables.get(weak, valueInteger(1)), valueNil(), 'the real weak entry is cleared in firmware');
+			for (let i = 0; i < 8192 && cpu.fixedInterruptActive() && gc.tables.get(weak, valueInteger(1)) !== valueNil(); ++i) grant(509);
+			assert.equal(gc.tables.get(weak, valueInteger(1)), valueNil(),
+				`${name}: weak entry was not cleared (fixed=${cpu.fixedInterruptActive()}, phase=${gc.phase()}, epochs=${gc.fullEpochs()}, cause=${cpu.readCauseWord()}, reason=${cpu.readLuaFaultReasonWord()}, pc=${cpu.lastPc}, root=${memory.readRamRecordWord(control + GC_ROOT_CURSOR)}, trace=${memory.readRamRecordWord(control + GC_TRACE_RECORD)}/${memory.readRamRecordWord(control + GC_TRACE_CURSOR)})`);
 			assert.equal(gc.fullEpochs(), epochs);
-			assert.equal(cpu.heapServiceActive(), true);
+			assert.equal(cpu.fixedInterruptActive(), true);
 			held();
 			cpu.requestNonMaskableInterrupt();
 			assert.equal(cpu.enterPendingInterrupt(), false, 'NMI cannot take over the collector activation');
@@ -108,16 +143,17 @@ try {
 			const prefix = commands.length;
 			function finish() {
 				let remaining = gc.fullEpochs(), reductions = 0;
-				while (cpu.heapServiceActive()) {
+				while (cpu.fixedInterruptActive()) {
 					assert.ok(commands.length < prefix + 8192);
-					assert.equal(grant(71), RunResult.Yielded);
+					const result = grant(509);
+					if (cpu.fixedInterruptActive()) assert.equal(result, RunResult.Yielded);
 					if (gc.fullEpochs() < remaining) {
 						assert.equal(gc.fullEpochs(), remaining - 1);
 						if (remaining === 2) assert.equal(gc.tableRecordAddress(floating), floating, 'the current epoch retains its earlier mark');
 						remaining = gc.fullEpochs();
 						++reductions;
 					}
-					assert.equal(cpu.readFramePc(caller), successor);
+					if (cpu.fixedInterruptActive()) held();
 				}
 				assert.equal(reductions, epochs);
 				assert.equal(gc.fullEpochs(), 0);
@@ -127,13 +163,23 @@ try {
 				assert.equal(cpu.stringPool.find(deadText), undefined);
 				assert.ok(dropped >= RAM_BASE);
 				assert.equal(cpu.activeThread.stackRegisters.capacity(), 512 >> epochs, 'the guest preserves full-only compaction at each epoch');
+				const collectedBytes = luaHeap.usedBytes(), capacity = luaHeap.capacity();
 				let result = RunResult.Yielded;
-				for (let i = 0; i < 32 && result !== RunResult.Halted; ++i) result = grant(37);
-				assert.equal(result, RunResult.Halted);
+				for (let i = 0; i < 128 && !cpu.isHaltedUntilIrq(); ++i) grant(31);
+				assert.ok(cpu.isHaltedUntilIrq());
+				assert.equal(memory.readRamRecordWord(report + 4), 0, 'collectgarbage collect returns zero');
+				memory.writeMappedWord(report, 2);
+				cpu.clearHaltUntilIrq();
+				commands.push(`O ${report} 2`, 'h');
+				for (let i = 0; i < 4096 && result !== RunResult.Halted; ++i) result = grant(509);
+				assert.equal(result, RunResult.Halted, `${name}: count, capacity and step all return to the cartridge`);
 				assert.equal(cpu.readLuaFaultReasonWord(), 0);
 				assert.equal(asInteger(runtime.readCompletionValues()[0]), 73);
 				observe('C', 73);
-				for (const [first, last] of [[control, traceLimit + 4], [memory.ramBusEnd() - RAM_BASE, memory.ramData().length]]) {
+				assert.equal(memory.readRamRecordWord(report + 8), collectedBytes);
+				assert.equal(memory.readRamRecordWord(report + 12), capacity);
+				assert.equal(memory.readRamRecordWord(report + 16), gc.phase() === GcPhase.Pause ? 1 : 2, 'step reports whether the epoch ended');
+				for (const [first, last] of [[control, traceLimit + 4], [report - RAM_BASE, report - RAM_BASE + 20], [memory.ramBusEnd() - RAM_BASE, memory.ramData().length]]) {
 					observe(`H ${first} ${last}`, hashBytes(memory.ramData(), first, last - first));
 				}
 			}
@@ -142,7 +188,7 @@ try {
 			function check(suffix: string, snapshot: string, trace: string[], rows: string[]) {
 				const path = join(directory, `${name}-${suffix}.trace`);
 				writeFileSync(path, trace.join('\n'));
-				const nativeRows = execFileSync(native, [rom, path, snapshot], { encoding: 'utf8' }).trimEnd().split('\n');
+				const nativeRows = execFileSync(native, [rom, path, snapshot, cartPath], { encoding: 'utf8' }).trimEnd().split('\n');
 				const mismatch = nativeRows.findIndex((row, index) => row !== rows[index]);
 				assert.equal(mismatch, -1, `${suffix} line ${mismatch}: TS ${rows[mismatch]}, C++ ${nativeRows[mismatch]}`);
 				assert.equal(nativeRows.length, rows.length);

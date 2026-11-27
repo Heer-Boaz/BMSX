@@ -10,12 +10,11 @@ local admission<const> = require('kernel/heap_admission') -- C:288-289 T:285-286
 local atomic_phase<const> = 3 -- H:20
 
 local collect_step<const> = function() -- C:286-289 T:283-286
-	local management_port<const>: *word = layout.management_address -- C:286 T:283 G:1270; generic private read of the owning RAM offset
-	local management<const> = *management_port -- C:286 T:283 G:1270; ordinary CALL passes no hidden parameters
+	local management<const> = layout.management_offset -- C:286 T:283 G:1270; the BIOS owns this RAM
 	local control<const> = management + layout.control_offset -- G:1270
 	local phase<const> = gc.internal.phase(control) -- G:1007
 	local borrows_roots<const> = phase <= atomic_phase -- G:1122-1124,697-703
-	if borrows_roots then root_inputs.publish(management) end -- G:1122-1124,1274-1276
+	if borrows_roots then root_inputs.publish_interrupt(management) end -- G:1122-1124,1274-1276; read the stopped context
 	if phase == atomic_phase then -- G:1007
 		collector.finish_atomic(management, 0, false) -- G:696-702; public Step supplies no scoped roots
 	else -- G:1008; the normal step owns one quantum

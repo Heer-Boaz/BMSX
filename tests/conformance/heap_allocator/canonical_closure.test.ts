@@ -33,7 +33,7 @@ local function use()
 end
 halt_until_irq
 local first = use()
-require('kernel/gc_full').collect_full()
+blua32.svc(require('kernel/heap_control_ids').collect_full)
 halt_until_irq
 return first, use()
 `;

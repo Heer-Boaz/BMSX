@@ -147,29 +147,52 @@ test('only a constructor recognized by the compiler is removable; it uses the or
 	assert.ok(allocated.maxStack < 16, 'unrelated registers can still move');
 });
 
-test('resident Step is an ordinary linked call even when its body would inline', () => {
+test('step through the software vector keeps an effect even when its result is discarded', () => {
 	const entrySource = `
-local step<const> = require('kernel/gc_collect_step')
 local function collect()
-	local ignored = step.collect_step()
-	return step.collect_step()
+	local ignored = blua32.svc_value(65553)
+	local finished = blua32.svc_value(65553)
+	return finished
 end
 return collect`;
-	const module = {
-		path: 'kernel/gc_collect_step',
-		source: 'module<const>\nlocal f<const> = function() return true end\nreturn {collect_step=f}',
-	};
-	const modules = [{ ...module, chunk: parseLuaChunk(module.source, module.path) }];
-	const chunk = parseLuaChunk(entrySource);
-	assert.throws(() => compileLuaChunkToProgram(parseLuaChunk('return blua32.collect_step()'), [],
-		{ entrySource: 'return blua32.collect_step()', programDomain: 'system' }), /Unknown blua32 operation 'collect_step'/);
 	for (const optLevel of [0, 3] as const) {
-		const lowered = body(compileLuaChunkToProgram(chunk, modules, { entrySource, programDomain: 'system', optLevel }), 'collect');
+		const lowered = body(compileLuaChunkToProgram(parseLuaChunk(entrySource), [],
+			{ entrySource, programDomain: 'system', optLevel }), 'collect');
 		assert.equal(tableCall(lowered), -1);
-		const calls = lowered.filter(instruction => instruction.op === OpCode.CALL);
-		assert.deepEqual(calls.map(call => call.b), [1, 1], 'no arguments, and the discarded step may not be erased');
-		assert.equal(lowered.filter(instruction => instruction.op === OpCode.CLOSURE).length, 2, 'both callees are link-time symbols');
+		assert.deepEqual(lowered.filter(instruction => instruction.op === OpCode.SVC).map(op => op.b), [1, 1]);
+		assert.equal(lowered.some(instruction => instruction.op === OpCode.CALL), false);
 	}
+});
+
+test('a zero SVC result can differ from its nonzero operation operand', () => {
+	const entrySource = `
+local function bind(address)
+	if blua32.svc_value(65542, address) ~= 0 then
+		return 17
+	end
+	return 29
+end
+return bind`;
+	for (const optLevel of [0, 3] as const) {
+		const lowered = body(compileLuaChunkToProgram(parseLuaChunk(entrySource), [],
+			{ entrySource, programDomain: 'system', optLevel }), 'bind');
+		const issue = lowered.findIndex(instruction => instruction.op === OpCode.SVC);
+		assert.ok(issue >= 0);
+		assert.equal(lowered[issue].b, 2);
+		assert.ok(lowered.slice(issue + 1).some(instruction => instruction.op === OpCode.EQ));
+	}
+});
+
+test('slot compaction keeps the complete saved SVC argument window', () => {
+	const svc: Instruction = { op: OpCode.SVC, format: 'ABC', a: 9, b: 7, c: 0, rkMask: 0, target: null };
+	const setup = Array.from({ length: svc.b }, (_, index) =>
+		({ ...svc, op: OpCode.K1, a: svc.a + index, b: 0 }));
+	const use = { ...svc, op: OpCode.MOV, a: 17, b: svc.a, c: ValueMoveKind.Copy };
+	const allocated = allocateFrameSlots([...setup, svc, use], 18, 0, () => []);
+	assert.ok(allocated);
+	assert.deepEqual([...allocated.slots.slice(9, 16)], [9, 10, 11, 12, 13, 14, 15]);
+	assert.equal(allocated.instructions[7].a, 9);
+	assert.ok(allocated.maxStack < 18);
 });
 
 test('linked disassembly shows a real constructor binding and an ordinary CALL', () => {

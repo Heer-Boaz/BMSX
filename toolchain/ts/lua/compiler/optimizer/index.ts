@@ -972,6 +972,7 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				}
 				case OpCode.SVC:
 					if (instruction.b === 0) rewriteCopyInstructionOperand(instruction, 'a', copies);
+					else killRegister(constants, copies, instruction.a);
 					break;
 				case OpCode.LOADK: {
 					const value = loadKConstValueForOptimization(instruction, context);
@@ -1054,9 +1055,6 @@ const propagateValues = (set: InstructionSet, context: OptimizationContext): Ins
 				case OpCode.SELF:
 					killRegister(constants, copies, instruction.a);
 					killRegister(constants, copies, instruction.a + 1);
-					break;
-				case OpCode.SVC:
-					if (instruction.b !== 0) killRegister(constants, copies, instruction.a);
 					break;
 				case OpCode.VARARG: {
 					const countValue = instruction.b === 0 ? null : decodeValueCount(instruction.b, 0);

@@ -23,8 +23,7 @@ local console<const> = require('tty/console')
 local terminal_layout<const> = require('tty/layout')
 local vblank<const> = require('kernel/vblank')
 local vblank_irq<const> = require('kernel/vblank_irq')
-local heap_floor<const> = require('kernel/heap_floor')
-local image_bind<const> = require('kernel/system_image_bind')
+local heap_control<const> = require('kernel/heap_control_ids')
 local exception_bridge<const> = require('kernel/exception_bridge')
 local vectors<const> = require('bmsx/startup')
 
@@ -140,15 +139,15 @@ local update_boot_screen<const> = function()
 		local bss_end<const> = sections.bss_target + sections.bss_size
 		local static_end<const> = data_end > bss_end and data_end or bss_end
 		cop0.status = cop0.status | inhibit_reset
-		local end_address<const> = heap_floor.admit_static_end(static_end)
+		local end_address<const> = blua32.svc_value(heap_control.admit_floor, static_end)
 		if end_address == 0 then
 			cop0.status = cop0.status & ~inhibit_reset
 			*sys_control = 8
 			while true do halt_until_irq end
 		end
 		cop0.ram_end = end_address
-		local root<const> = coroutine.running()
-		if image_bind.bind_cartridge(slot, image, *system_rom_bytes, *cart0_rom_bytes, *cart1_rom_bytes, startup, root) ~= 0 then
+		if blua32.svc_value(heap_control.bind_cartridge, slot, image, *system_rom_bytes, *cart0_rom_bytes,
+			*cart1_rom_bytes, startup) ~= 0 then
 			cop0.status = cop0.status & ~inhibit_reset
 			*sys_control = 8
 			while true do halt_until_irq end

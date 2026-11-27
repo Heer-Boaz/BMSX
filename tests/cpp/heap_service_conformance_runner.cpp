@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
 					int cycles;
 					trace >> cycles;
 					const auto before = scheduler.nowCycles();
-					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles);
+					const auto result = runtime.cpuExecution.runSuspendedUntilDepth(runtime, 0, cycles, cpu.rootThread()->address);
 					std::cout << static_cast<int>(result) << ' ' << scheduler.nowCycles() - before
 						<< ' ' << cpu.heapServiceActive() << ' ' << cpu.fixedInterruptActive() << ' '
 						<< cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';

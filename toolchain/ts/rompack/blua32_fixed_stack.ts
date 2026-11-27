@@ -186,8 +186,10 @@ export function deriveBlua32FixedStack(
 					}
 					break;
 				case OpCode.MOV:
-					if (a >= width || c !== ValueMoveKind.Copy) reject('not a scalar register copy');
-					registers[a] = registers[b];
+					if (a >= width) reject('destination exceeds the function record');
+					if (c === ValueMoveKind.Copy) registers[a] = registers[b];
+					else if (c === ValueMoveKind.Tag && boundary?.ordinaryCode !== undefined) registers[a] = 0;
+					else reject('not a scalar register copy');
 					break;
 				case OpCode.LOADNIL:
 					if (a + b > width) reject('nil window exceeds the function record');

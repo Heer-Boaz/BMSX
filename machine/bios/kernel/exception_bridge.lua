@@ -13,6 +13,7 @@ local globals<const> = require('kernel/global_bank')
 local table_growth<const> = require('kernel/table_grow')
 local binding<const> = require('kernel/function_binding')
 local byte_strings<const> = require('kernel/byte_string_input')
+local heap_control<const> = require('kernel/heap_control_call')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
@@ -135,7 +136,11 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 		blua32.rfe()
 	end
 	if cause == syscall and *interrupted ~= 0 then
-		if depth ~= nil and values == byte_strings.syscall_id then
+		local handled<const>, fault<const> = heap_control.receive(*interrupted, values, depth, instruction)
+		if handled then
+			if fault == nil then blua32.rfe() end
+			transfer_fault = fault
+		elseif depth ~= nil and values == byte_strings.syscall_id then
 			local admitted<const>, reason<const> = byte_strings.receive(*interrupted, depth, instruction)
 			if admitted then blua32.rfe() end
 			transfer_fault = reason

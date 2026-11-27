@@ -254,13 +254,10 @@ end
 
 -- The firmware owns the root bank's next zero-based EXEC window.
 local reserve_system_entry<const> = function(value_end) -- W:181-189; firmware admits the entry before EXEC
-	local port<const>: *u32 = layout.management_address -- T:227 A:25 C:234 B:20
-	local management<const> = *port
+	local management<const> = layout.management_offset
 	local roots<const>: *root_descriptors = layout.ram_base + management + layout.root_banks_offset -- X:5274; the root is already firmware-published
-	local cycles<const>: *u32 = layout.call_cycles_address
-	local fault<const>: *u32 = layout.call_fault_address
-	local status<const> = prepare_frame_space(management, roots.root, value_end, 2, 0, *cycles) -- W:182-189 V:159-166
-	if status ~= 0 then *fault = status - 1 end -- L:1111 N:1214; same Lua exception after recovery
+	local status<const> = prepare_frame_space(management, roots.root, value_end, 2, 0, cop0.event_cycles, true) -- W:182-189 V:159-166
+	if status ~= 0 then return status - 1 end -- L:1111 N:1214; same Lua exception after recovery
 end
 
 return {

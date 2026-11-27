@@ -20,53 +20,25 @@ import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheck
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../machine/ts/spec/blua32/execution_domain';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
+import { COP0_EXEC, COP0_RAM_END, COP0_STATUS, CPU_CAUSE_CODE_SYSCALL, CPU_STATUS_INHIBIT_RESET } from '../../../machine/ts/spec/blua32/cop0';
 import {
-	HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField,
+	HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import {
-	IO_CART0_ROM_BYTE_COUNT, IO_CART1_ROM_BYTE_COUNT, IO_CART_SELECT, IO_SYS_CONTROL,
-	IO_SYS_ROM_BYTE_COUNT, SYS_CONTROL_RESET,
+	IO_CART_SELECT, IO_SYS_CONTROL, SYS_CONTROL_RESET,
 } from '../../../machine/ts/spec/bmsx/io';
-import { CART_ROM_BASE, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { CPU_FIXED_FRAME_ADDRESS, CPU_INTERRUPTED_CONTEXT_ADDRESS, DYNAMIC_RAM_BASE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import {
-	BLUA32_IMAGE_DATA_ADDRESS_OFFSET, BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET,
-	BLUA32_IMAGE_BSS_ADDRESS_OFFSET, BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET,
-} from '../../../machine/ts/spec/blua32/image_format';
-import { BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET, BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../../toolchain/ts/lua/compiler';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
-import { linkRawTestSystemBlua32, linkTestBlua32Pair } from '../../helpers/blua32';
+import { linkRawTestSystemBlua32, linkTestCartBlua32, writeTestBlua32Rom } from '../../helpers/blua32';
 import { cartridgeSlots } from '../../helpers/cartridge';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
-import { admitTestHeapServiceCpu, compileHeapServiceSystem, residentFunctionAddress } from '../../helpers/heap_service_system';
+import { admitTestHeapServiceCpu } from '../../helpers/heap_service_system';
+import { MANAGED_CART_LAUNCH } from '../../helpers/managed_cart_launch';
+import { linkManagedTestSystem } from '../../helpers/managed_system';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
-const biosSource = `
-local floor<const> = require('kernel/heap_floor')
-local bind<const> = require('kernel/system_image_bind')
-local running<const> = __bmsx_coroutine_running
-cop0.status = cop0.status | ${CPU_STATUS_INHIBIT_RESET}
-local image<const> = ${CART_ROM_BASE} + mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET}]
-local data_end<const> = mem[image + ${BLUA32_IMAGE_DATA_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_DATA_BYTE_COUNT_OFFSET}]
-local bss_end<const> = mem[image + ${BLUA32_IMAGE_BSS_ADDRESS_OFFSET}] + mem[image + ${BLUA32_IMAGE_BSS_BYTE_COUNT_OFFSET}]
-local end_address<const> = floor.admit_static_end(data_end > bss_end and data_end or bss_end)
-if end_address == 0 then
-	mem[${IO_SYS_CONTROL}] = 8
-	while true do halt_until_irq end
-end
-cop0.ram_end = end_address
-if bind.bind_cartridge(mem[${IO_CART_SELECT}], image, mem[${IO_SYS_ROM_BYTE_COUNT}],
-	mem[${IO_CART0_ROM_BYTE_COUNT}], mem[${IO_CART1_ROM_BYTE_COUNT}],
-	mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}], (running())) ~= 0 then
-	cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
-	mem[${IO_SYS_CONTROL}] = 8
-	while true do halt_until_irq end
-end
-cop0.status = cop0.status & ~${CPU_STATUS_INHIBIT_RESET}
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
-`;
 const cartSource = 'bss records: word[0x10000]\nrecords[0] = 37\nreturn records[0]';
 const sentinel = 0x5eedaa55;
 const maxInstructionCycles = Math.max(...BASE_CYCLES);
@@ -207,38 +179,44 @@ try {
 	verifyFullArenaTransfer(native, directory);
 	verifyMaskedReset(native, directory);
 	for (const optLevel of [0, 3] as const) {
-		const bios = compileHeapServiceSystem(biosSource, optLevel);
+		const bios = linkManagedTestSystem(MANAGED_CART_LAUNCH, optLevel);
+		const systemRomBytes = writeTestBlua32Rom(bios);
+		const entry = bios.symbols.functionAddresses[bios.symbols.metadata.functionIds.indexOf('module:main/entry')];
+		assert.ok(entry, 'the linked launcher has a main entry');
 		const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource), [], { entrySource: cartSource, optLevel });
-		const pair = linkTestBlua32Pair(bios, cart);
+		const pair = linkTestCartBlua32(bios.biosImports, cart);
 		const otherSource = cartSource.replace('0x10000', '0x8000');
 		const other = compileLuaChunkToProgram(parseLuaChunk(otherSource), [], { entrySource: otherSource, optLevel });
-		const otherPair = linkTestBlua32Pair(bios, other);
-		const floorEntry = residentFunctionAddress({ image: pair.systemImage, symbols: pair.systemSymbols }, 'kernel/heap_floor', 'admit_static_end');
+		const otherPair = linkTestCartBlua32(bios.biosImports, other);
 		const biosPath = join(directory, `system-O${optLevel}.rom`), cartPath = join(directory, `cart-O${optLevel}.rom`);
 		const otherPath = join(directory, `nonselected-O${optLevel}.rom`);
-		writeFileSync(biosPath, pair.systemRomBytes);
+		writeFileSync(biosPath, systemRomBytes);
 		writeFileSync(cartPath, pair.cartRomBytes);
 		writeFileSync(otherPath, otherPair.cartRomBytes);
 		for (const scenario of ['admission', 'refused', 'reclaimed'] as const) {
 			const runtime = new Runtime({
-				systemRomBytes: pair.systemRomBytes, cartridgeSlots: cartridgeSlots(otherPair.cartRomBytes, pair.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
+				systemRomBytes: systemRomBytes, cartridgeSlots: cartridgeSlots(otherPair.cartRomBytes, pair.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
 			}, {
 				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 			});
 			runtime.boot();
-			const { cpu, memory, scheduler, executionAddressSpace } = runtime.machine, { gc, heapAllocator } = cpu;
-			admitTestHeapServiceCpu(cpu, executionAddressSpace);
+			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator } = cpu;
 			memory.writeMappedWord(IO_CART_SELECT, 1);
-			const management = heapAllocator.managementOffset(), oldFloor = memory.ramBusEnd();
+			const management = heapAllocator.managementOffset();
 			const allocatorState = heapAllocator.allocatorStateOffset(), arena = memory.bindDlmalloc(allocatorState);
-			const pin = management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Function;
 			const control = management + HEAP_GC_CONTROL_OFFSET;
 			const traceLimit = management + HEAP_SERVICE_TRACE_QUANTUM_OFFSET + HeapServiceTraceField.Limit;
-			for (let i = 0; i < 8192 && !(cpu.heapServiceActive() && memory.readRamRecordWord(pin) === floorEntry); ++i) {
+			const parked = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
+				&& cpu.readThreadFrameWord(cpu.rootThread.address, cpu.rootThread.frameDepth - 1, FrameField.Function) === entry;
+			for (let i = 0; i < 262144 && !parked(); ++i) {
 				assert.equal(scheduler.runCpuSlice(0, 1, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 			}
-			assert.equal(cpu.heapServiceActive(), true, 'ordinary CALL enters the linked floor policy');
-			assert.equal(memory.readRamRecordWord(pin), floorEntry);
+			assert.ok(parked(), `launcher did not issue the floor request: cause ${cpu.readCauseWord()} EPC ${cpu.readEpcWord()} root ${cpu.rootThread.address}, entry ${entry}`);
+			const oldFloor = memory.ramBusEnd(), owner = memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS);
+			const caller = cpu.rootThread.frameDepth - 1;
+			const successor = cpu.readThreadFrameWord(owner, caller, FrameField.Pc);
+			assert.equal(cpu.readEpcWord(), successor);
+			assert.equal(decodeBlua32InstructionAtPc(bios.layout.textBytes, bios.layout.header.textAddress, successor - INSTRUCTION_BYTES).op, OpCode.SVC);
 			const bss = pair.cartImage.header.bssAddress;
 			const floor = RAM_BASE + heapAllocator.floorOffset(bss + pair.cartImage.header.bssByteCount);
 			assert.ok(floor > oldFloor);
@@ -282,7 +260,7 @@ try {
 				observe(`H ${first} ${end}`, hashBytes(memory.ramData(), first, end - first));
 			}
 			function step(cycles: number) {
-				const held = cpu.heapServiceActive();
+				const held = cpu.fixedInterruptActive();
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 				const consumed = cycles - cpu.instructionBudgetRemaining;
 				// One admitted instruction can cross the grant, not a host GC cycle charge.
@@ -290,12 +268,11 @@ try {
 				observe(`E ${cycles}`, `${result} ${consumed} ${+cpu.heapServiceActive()} ${memory.ramBusEnd()} ${cpu.activeCartridgeSlot()}`);
 				return result;
 			}
-			assert.equal(gc.phase(), scenario === 'reclaimed' ? GcPhase.Mark : GcPhase.Pause, 'issuing ordinary CALL does not run the collector');
-			const caller = cpu.getFrameDepth() - 1, successor = cpu.readFramePc(caller);
+			assert.equal(gc.phase(), scenario === 'reclaimed' ? GcPhase.Mark : GcPhase.Pause, 'SVC entry does not run the collector');
 			function assertHeld() {
-				assert.equal(cpu.heapServiceActive(), true);
-				assert.equal(memory.readRamRecordWord(pin), floorEntry, 'floor recovery remains within its one linked activation');
-				assert.equal(cpu.readFramePc(caller), successor);
+				assert.ok(parked(), 'floor recovery remains within the architectural exception');
+				assert.equal(cpu.heapServiceActive(), false);
+				assert.equal(cpu.readThreadFrameWord(owner, caller, FrameField.Pc), successor);
 				assert.equal(memory.ramBusEnd(), oldFloor, 'do not publish the floor before the activation returns');
 				assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
 				assert.equal(memory.readRamRecordWord(bss), sentinel, 'target BSS is untouched during floor service');
@@ -320,17 +297,18 @@ try {
 			assertHeld();
 			const checkpoint = captureRuntimeCheckpointState(runtime), partial = history.capture(memory, baseline);
 			writeFileSync(partialPath, encodeRuntimeSaveState(captureRuntimeSaveState(runtime)));
-			observeRam(control, management + HEAP_SERVICE_FRAME_OFFSET + FRAME_CONTROL_BYTES);
-			observe('P', `${caller + 1} ${successor}`);
+			observeRam(control, CPU_FIXED_FRAME_ADDRESS - RAM_BASE + FRAME_CONTROL_BYTES);
+			observeRam(CPU_INTERRUPTED_CONTEXT_ADDRESS - RAM_BASE, CPU_INTERRUPTED_CONTEXT_ADDRESS - RAM_BASE + 4);
+			observe('Z', `${CPU_CAUSE_CODE_SYSCALL} 0 ${successor}`);
 			const traceStart = trace.length, expectedStart = expected.length;
 
 			function finishTransfer() {
 				let epochs = 0, phase = gc.phase();
-				for (let i = 0; i < 32768 && cpu.heapServiceActive(); ++i) {
+				for (let i = 0; i < 32768 && cpu.fixedInterruptActive(); ++i) {
 					assertHeld();
 					// Observe Pause at the end of each real String sweep before
 					// the next step can start the next epoch of the same call.
-					step(phase === GcPhase.Strings ? 1 : 11);
+					step(phase === GcPhase.Strings || phase === GcPhase.Pause ? 1 : 11);
 					const next = gc.phase();
 					if (phase === GcPhase.Strings && next === GcPhase.Pause) {
 						++epochs;
@@ -340,7 +318,7 @@ try {
 					}
 					phase = next;
 				}
-				assert.equal(cpu.heapServiceActive(), false);
+				assert.equal(cpu.fixedInterruptActive(), false);
 				assert.equal(gc.phase(), GcPhase.Pause);
 				assert.equal(epochs, scenario === 'admission' ? 0 : scenario === 'reclaimed' ? 2 : 1);
 				assert.equal(memory.readRamRecordWord(bss), sentinel, 'even successful commit has not executed target instructions');
@@ -352,11 +330,11 @@ try {
 					assert.equal(arena.floor(), oldFloor - RAM_BASE);
 					assert.equal(cpu.activeCartridgeSlot(), SYSTEM_EXECUTION_DOMAIN_ID);
 				} else {
-					assert.equal(memory.ramBusEnd(), oldFloor, 'ordinary CALL does not change the machine aperture');
+					assert.equal(memory.ramBusEnd(), oldFloor, 'the floor operation does not change the machine aperture');
 					let atExec = false;
 					for (let i = 0; i < 32768 && !atExec; ++i) {
-						if (!cpu.heapServiceActive()) {
-							const instruction = decodeBlua32InstructionAtPc(pair.systemImage.textBytes, pair.systemImage.header.textAddress,
+						if (!cpu.fixedInterruptActive()) {
+							const instruction = decodeBlua32InstructionAtPc(bios.layout.textBytes, bios.layout.header.textAddress,
 								cpu.readFramePc(cpu.getFrameDepth() - 1));
 							atExec = instruction.op === OpCode.MTC0 && instruction.b === COP0_EXEC;
 						}

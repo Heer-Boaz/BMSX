@@ -48,24 +48,29 @@ for (const optLevel of [0, 3] as const) test(`System resident targets use the or
 	assert.deepEqual(linked.biosImports.functions, BIOS_FUNCTION_EXPORTS.map(({ path, exportPathKey }, index) => ({
 		path, exportPathKey, functionAddress: header.functionTableAddress + index * BLUA32_FUNCTION_RECORD_SIZE,
 	})));
-	const resident = ['collect_step', 'collect_full', 'heap_bytes'].map(binding => {
+	const collector = ['collect_step', 'collect_full', 'heap_bytes'].map(binding => {
 		const entry = object.sections.rodata.moduleExports.find(entry => entry.exportPathKey === binding)!;
 		const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[entry.slotName]);
 		assert.ok(index >= BIOS_FUNCTION_EXPORTS.length);
-		assert.equal(layout.functions[index].numParams, 0);
-		assert.ok(layout.functions[index].flags & BLUA32_FUNCTION_RESIDENT);
+		assert.equal(layout.functions[index].flags & BLUA32_FUNCTION_RESIDENT, 0);
 		return index;
 	});
+	for (const [index, entry] of BIOS_FUNCTION_EXPORTS.entries()) {
+		if (entry.fixedStack) assert.ok(layout.functions[index].flags & BLUA32_FUNCTION_RESIDENT);
+	}
 	const revised = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS,
 		{ image: layout, symbols: linked.symbols });
-	for (const index of resident) assert.ok(revised.layout.functions[index].flags & BLUA32_FUNCTION_RESIDENT);
+	for (const index of collector) assert.equal(revised.layout.functions[index].flags & BLUA32_FUNCTION_RESIDENT, 0);
 	assert.deepEqual(revised.bytes, bytes);
 });
 
 test('the ROM linker excludes constants that the final asset layout can repatch', () => {
 	const word = 0x87654321;
-	const source = allocator.replace('return 1 -- C:548', `return 0x${word.toString(16)}`);
-	const { program, object } = compile(0, source);
+	const { program, object } = compile(0, allocator, [{
+		path: 'kernel/bios_copy_table', source: `module<const>
+local copy_table<const> = function(source) return 0x${word.toString(16)} end
+return { copy_table = copy_table }`,
+	}]);
 	const { bytes, layout } = linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS);
 	const table = layout.header.constantTableAddress - layout.address;
 	const constIndex = layout.constants.findIndex((_, index) => {
@@ -82,11 +87,10 @@ test('the ROM linker excludes constants that the final asset layout can repatch'
 });
 
 test('linked resident returns fit after the architectural result-fault header', () => {
-	const path = 'kernel/gc_full';
+	const path = 'kernel/bios_copy_table';
 	const { object, program } = compile(0, allocator, [{ path, source: `module<const>
-local collect_full<const> = function() end
-local heap_bytes<const> = function() return 0,1,2,3,4,5,6,7,8,9 end
-return { collect_full = collect_full, heap_bytes = heap_bytes }`,
+local copy_table<const> = function(source) return 0,1,2,3,4,5,6,7,8,9 end
+return { copy_table = copy_table }`,
 	}]);
 	assert.throws(() => linkSystemBlua32Image(object, program.metadata, loadAddress, MAIN_RAM_SIZE, BIOS_FUNCTION_EXPORTS),
 		/return values exceed the BIOS result-fault arguments/);

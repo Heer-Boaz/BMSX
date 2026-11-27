@@ -60,7 +60,7 @@ try {
 	const native = nativeConformanceRunner('bmsx_heap_service_conformance_runner');
 	for (const level of [0, 3] as const) for (const domain of ['system', 'cart'] as const) {
 		const checkWeak = level === 3 && domain === 'system';
-		const program = checkWeak ? `local collect<const> = require('kernel/gc_full').collect_full
+		const program = checkWeak ? `local heap_calls<const> = require('kernel/heap_control_ids')
 ` + source.replace('local first =', 'local function create_versions()\nlocal first =')
 			.replace('return 10 *', 'local sum = 10 *') + `
 return sum, third
@@ -68,7 +68,7 @@ end
 fixture_versions = create_versions
 local sum, third = fixture_versions()
 halt_until_irq
-collect()
+blua32.svc(heap_calls.collect_full)
 halt_until_irq
 local fifth, sixth = test_factory(), test_factory()
 return sum + (fifth == sixth and 8 or 0) + (third(7, 0, 0, 0, 0, 0, 701) == 708 and 16 or 0)

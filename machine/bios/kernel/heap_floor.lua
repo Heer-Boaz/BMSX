@@ -27,7 +27,7 @@ local reserve_floor<const> = function(management, floor) -- T:1865-1868 C:913-92
 
 	local control<const> = management + layout.control_offset -- G:906,908-911 H:981-984; fixed guest state
 	local epochs<const> = gc.internal.active(control) and 2 or 1 -- G:1038-1039 H:1137-1138
-	root_inputs.publish(management) -- G:958-970 H:1023-1039
+	root_inputs.publish_interrupt(management) -- G:958-970 H:1023-1039
 	collect_for_floor(management, control, epochs)
 	root_inputs.release_string_work(management) -- G:971-978 H:1042-1049; return outstanding mark credit
 	return (allocator.bmsx_dlmalloc_set_floor(arena, floor)) -- T:1886-1891 C:946-950; exactly one retry
@@ -36,8 +36,7 @@ end
 -- The caller reads its image header on the mapped bus. Only the
 -- allocator's existing private state is accessed in this activation.
 local admit_static_end<const> = function(static_end)
-	local management_port<const>: *u32 = layout.management_address
-	local management<const> = *management_port
+	local management<const> = layout.management_offset
 	if static_end < 0x08040000 then static_end = 0x08040000 end
 	local offset = static_end - layout.ram_base
 	if offset > management then offset = management end

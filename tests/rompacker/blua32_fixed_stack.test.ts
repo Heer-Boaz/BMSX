@@ -75,7 +75,7 @@ test('fixed stack admits only the service port memory formats', () => {
 		for (const kind of [MemoryAccessKind.Word, MemoryAccessKind.U32LE, MemoryAccessKind.U8])
 			assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(op, 0, kind), [0]), { valueSlots: 2, frames: 1 });
 		for (const kind of [MemoryAccessKind.U16LE, MemoryAccessKind.F32LE, MemoryAccessKind.F64LE])
-			assert.throws(() => deriveBlua32FixedStack(scalarInstruction(op, 0, kind), [0]), /not a heap-service memory format/);
+			assert.throws(() => deriveBlua32FixedStack(scalarInstruction(op, 0, kind), [0]), /not a resident memory format/);
 	}
 });
 
@@ -83,6 +83,15 @@ test('fixed stack admits register copies but not Float reinterpretation', () => 
 	assert.deepEqual(deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, ValueMoveKind.Copy), [0]), { valueSlots: 2, frames: 1 });
 	for (const kind of [ValueMoveKind.FloatBits, ValueMoveKind.FloatFromBits])
 		assert.throws(() => deriveBlua32FixedStack(scalarInstruction(OpCode.MOV, 0, kind), [0]), /not a scalar register copy/);
+});
+
+test('an ordinary vector may inspect an operand tag without inferring a call target', () => {
+	const tag = scalarInstruction(OpCode.MOV, 0, ValueMoveKind.Tag);
+	assert.throws(() => deriveBlua32FixedStack(tag, [0]), /not a scalar register copy/);
+	assert.deepEqual(deriveBlua32FixedStack(tag, [0], {
+		functions: new Set([0]), lateConstants: new Set(),
+		ordinaryCode: { exceptionVectors: new Set(), interruptible: false, codeTargets: new Set() },
+	}), { valueSlots: 2, frames: 1 });
 });
 
 test('fixed stack checks the linked constant kind for LOADK and both signed RK lanes', () => {

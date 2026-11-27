@@ -7,6 +7,7 @@ module<const>
 local layout<const> = require('kernel/gc_runtime_layout') -- L:27-30 N:22-25
 local admission<const> = require('kernel/boot_image_admission') -- L:75-98,132-168 N:85-109,147-179
 local slices<const> = require('kernel/string_slice') -- S:161-230 R:176-235
+local string_record<const> = require('kernel/string_record')
 local strings<const> = require('kernel/gc_strings') -- S:244-254,438-442 R:247-253,427-430
 local string_bindings<const> = require('kernel/image_string_bindings') -- T:997-1010 C:290-305; compact physical root prefix
 local records<const> = require('kernel/dlmalloc_record') -- L:148-152 N:156-166
@@ -74,10 +75,11 @@ local resolve_initial_string<const> = function(management, address, socket, syst
 	if (address & align_mask) ~= 0 or address < 0 then return 0, invalid_header end -- S:144-146 R:157-161
 	local source<const>, available<const> = rom_source(address, socket, system_bytes, socket == 0 and cart0_bytes or cart1_bytes)
 	if available < sizeof(rom_string) then return 0, invalid_header end -- S:144-146 R:157-161
-	local record<const>: *rom_string = source -- S:145,248-250 R:158,249-251
+	local mapped<const> = string_record.rom_read_address(source)
+	local record<const>: *rom_string = mapped -- S:145,248-250 R:158,249-251
 	if record.header ~= immutable_string_kind then return 0, invalid_header end -- S:145-146 R:160-161
 	local hash<const>, size<const> = record.hash, record.length -- S:249-250 R:250-251
-	local payload<const> = source + sizeof(rom_string) -- S:152,251 R:167,251
+	local payload<const> = mapped + sizeof(rom_string) -- S:152,251 R:167,251
 	if size < 0 or size > available - sizeof(rom_string) then return 0, invalid_payload end -- S:153-154 R:169-171
 	local metadata<const> = management + layout.metadata_offset -- S:65
 	local id = slices.lookup_ram(metadata, payload, size, size, hash, nil, nil, nil) -- S:233-234,252 R:239,252
@@ -97,7 +99,7 @@ end
 
 local bind_name_table<const> = function(management, root, source, count, bank, destination, socket, system_bytes, cart0_bytes, cart1_bytes, source_cycles) -- T:1026-1035 C:304-312
 	if count == 0 then return 0, source_cycles end -- T:1027 C:305
-	local source_names<const>: *u32 = source -- T:1027-1033 C:305-310 F:52-53
+	local source_names<const>: *u32 = string_record.rom_read_address(source) -- T:1027-1033 C:305-310 F:52-53
 	local mapped<const>: *u32 = destination -- T:1034 C:311
 	for index = 0, count - 1 do -- T:1031 C:308
 		local key<const>, fault<const> = resolve_initial_string(management, source_names[index], socket, system_bytes, cart0_bytes, cart1_bytes) -- T:1033 C:310
@@ -120,7 +122,7 @@ end
 -- The newly allocated block stays allocator-owned until the complete
 -- name/literal binding has succeeded, just as in native image activation.
 local bind_image<const> = function(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, cart1_bytes, root, slot, source_cycles)
-	local image<const>: *immutable_image_operands = header -- T:1054-1061 C:330-355 F:10-15
+	local image<const>: *immutable_image_operands = string_record.rom_read_address(header) -- T:1054-1061 C:330-355 F:10-15
 	if image.magic ~= image_magic then return invalid_header end -- T:1047 C:335
 	local socket<const> = slot < 0 and 0 or slot
 	local cart_bytes<const> = socket == 0 and cart0_bytes or cart1_bytes
@@ -135,7 +137,7 @@ local bind_image<const> = function(management, header, ordinary_bank, system_ban
 		or ordinary_bytes < 0 or global_count > ordinary_bytes // 4) then return invalid_header end
 	if system_count ~= 0 and (system_count < 0 or system_address < 0 or (system_address & 3) ~= 0
 		or system_names_bytes < 0 or system_count > system_names_bytes // 4) then return invalid_header end
-	local constants<const>: *constant_record = constant_base -- T:1059,1062 C:327-348 F:10
+	local constants<const>: *constant_record = string_record.rom_read_address(constant_base) -- T:1059,1062 C:327-348 F:10
 	local strings_count = 0 -- T:1066,1069 C:361,365
 	for index = 0, count - 1 do -- T:1070 C:366-367
 		if constants[index].tag == string_constant_tag then strings_count = strings_count + 1 end -- T:1072-1073 C:367-368
@@ -201,23 +203,21 @@ local bind_initial_image<const> = function(management, header, ordinary_bank, sy
 	return (bind_image(management, header, ordinary_bank, system_bank, installed, system_bytes, cart0_bytes, 0, root, -1, 0))
 end
 
-local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes, startup, root_thread)
-	local management_port<const>: *u32 = layout.management_address
-	local source_cycles<const>: *u32 = layout.call_cycles_address
-	local management<const> = *management_port
+local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, cart1_bytes, startup, owner)
+	local management<const> = layout.management_offset
 	local state<const> = layout.ram_base + management
 	local system_bank<const> = state + layout.system_global_bank_offset
 	local ordinary_bank<const> = system_bank + sizeof(namespace_bank)
 	local installed<const> = state + layout.installed_image_bindings_offset + (slot + 1) * sizeof(installed_image_binding)
 	local status<const>, remaining<const> = bind_image(management, header | (slot << 31), ordinary_bank, system_bank, installed,
-		system_bytes, cart0_bytes, cart1_bytes, 0, slot, *source_cycles)
+		system_bytes, cart0_bytes, cart1_bytes, 0, slot, cop0.event_cycles)
 	if status ~= 0 then return status end
 	-- EXEC still owns Function fetch and execution admission. Only a
 	-- readable cartridge Function contributes a backing reservation.
 	local cart_bytes<const> = slot == 0 and cart0_bytes or cart1_bytes
 	if startup < cart_base or startup - cart_base > cart_bytes - sizeof(launch_function_record)
 		or (startup & function_align_mask) ~= 0 then return 0 end
-	local entry<const>: *launch_function_record = startup | (slot << 31)
+	local entry<const>: *launch_function_record = string_record.rom_read_address(startup | (slot << 31))
 	if (entry.flags & static_function) == 0 then return 0 end
 	local formals<const>, maximum<const> = entry.formals, entry.maximum
 	if formals < 0 or maximum < 0 then return 0 end
@@ -225,10 +225,7 @@ local bind_cartridge<const> = function(slot, header, system_bytes, cart0_bytes, 
 	if slots == 0 then slots = 1 end
 	if slots > ram_bytes // 5 then return 0 end
 
-	local owner_cell<const>: *value = state + layout.value_cell_offset
-	local owner_word<const>: *u32 = state + layout.value_cell_offset
-	*owner_cell = root_thread
-	return (frame_storage.prepare_frame_space(management, *owner_word, slots, 2, 0, remaining))
+	return (frame_storage.prepare_frame_space(management, owner, slots, 2, 0, remaining, true))
 end
 
 return {

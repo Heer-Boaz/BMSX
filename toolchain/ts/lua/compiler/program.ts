@@ -14,19 +14,13 @@ export type ProgramConstant = null | boolean | NumberConstant | string | { reado
 // Linked System exports entering the resident stack through ordinary CALL.
 // The compiler must preserve the boundary; the System linker proves it.
 export const SYSTEM_RESIDENT_EXPORTS = [
-	{ path: 'kernel/gc_collect_step', exportPathKey: 'collect_step', numParams: 0 },
 	{ path: 'kernel/bios_copy_table', exportPathKey: 'copy_table', numParams: 1 },
 	{ path: 'kernel/bios_string_slice', exportPathKey: 'intern_slice', numParams: 6 },
 	{ path: 'kernel/bios_string_char', exportPathKey: 'intern_chars', numParams: 0 },
-	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
-	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
 	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
 	{ path: 'kernel/table_grow', exportPathKey: 'raw_set', numParams: 4 },
 	{ path: 'kernel/set_global', exportPathKey: 'set_global', numParams: 2 },
 	{ path: 'kernel/frame_upvalue', exportPathKey: 'set_frame_upvalue', numParams: 4 },
-	{ path: 'kernel/heap_floor', exportPathKey: 'admit_static_end', numParams: 1 },
-	{ path: 'kernel/thread_frame_storage', exportPathKey: 'reserve_system_entry', numParams: 1 },
-	{ path: 'kernel/system_image_bind', exportPathKey: 'bind_cartridge', numParams: 7 },
 	{ path: 'kernel/string_index', exportPathKey: 'install', numParams: 1 },
 	{ path: 'kernel/coroutine_close', exportPathKey: 'close_thread', numParams: 1 },
 	{ path: 'kernel/thread_create', exportPathKey: 'create_coroutine', numParams: 1 },
