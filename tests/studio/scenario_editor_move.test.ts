@@ -55,7 +55,7 @@ test.describe('Scenario editor movement', () => {
 } }` }, ...Array.from({ length: 16 }, (_, index) => ({ path: `tests/extra_${index}_assert.lua`,
 			source: 'return { kind = "unit", tests = { extra = function() end } }' }))], {
 			systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
-			systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
+			systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable' }, ...COROUTINE_FIRMWARE_MODULES],
 			cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 		});
 	});

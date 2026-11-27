@@ -33,6 +33,8 @@ local phase_atomic<const> = 3 -- T:68 H:19
 local remark_none<const> = 0 -- T:62 H:144
 local remark_weak<const> = 2 -- T:62 H:144
 local remark_roots<const> = 3 -- T:62 H:144
+local nil_tag<const> = 0 -- V:9 W:21
+local table_tag<const> = 6 -- V:9-11 W:21-22
 local string_tag<const> = 5 -- V:9-11 W:21-22
 local builtin_tag<const> = 8 -- V:9-11 W:21-22
 local thread_tag<const> = 9 -- V:9-11 W:21-22
@@ -160,9 +162,44 @@ local table_entries_moved<const> = function(control, address, cpp_mirror) -- T:2
 	if mark_color(table) == black then mark.enqueue(control, table, record_link, changed_head, cpp_mirror) end -- T:246 C:163
 end
 
+-- SetMetatable basis: f597677159b0029376458a12c1bd762da46b2361.
+-- C/T: builtin entry; B/D: Table owner; E: fault reasons.
+-- The C++ color-byte store is the existing common BIOS barrier policy.
+local invalid_argument<const> = 10 -- E:44 C:1209 T:4970,4980
+
+local set_metatable<const> = function(target, metatable) -- C:1206-1212 T:4967-4985
+	local port<const>: *u32 = layout.management_address -- C:1207 T:4968; existing resident call context
+	local fault<const>: *u32 = layout.call_fault_address -- C:1209 T:4970,4980; generic CALL faults
+	local management<const> = *port -- C:1207 T:4968; same context
+	local cell<const> = ram_base + management + layout.value_cell_offset -- C:1207-1209 T:4968-4979; existing typed exchange
+	local value<const>: *value = cell -- C:1207-1208 T:4968-4979
+	local word<const>: *u32 = cell -- C:1210 T:4972,4978
+	local tag<const>: *u8 = cell + layout.value_cell_tag_offset -- C:1209 T:4969,4976
+	*value = target -- C:1207 T:4968
+	if *tag ~= table_tag then -- C:1208-1209 T:4969
+		*fault = invalid_argument -- C:1209 T:4970
+		return nil -- C:1209 T:4970; no mutation on invalid argument
+	end
+	local address<const> = *word -- C:1210 T:4972
+	*value = metatable -- C:1208 T:4974-4976; an absent argument is Nil
+	local kind<const> = *tag -- C:1209-1210 T:4976
+	local replacement = 0 -- C:1210 T:4973
+	if kind == table_tag then -- C:1209-1210 T:4977
+		replacement = *word -- C:1210 T:4978
+	elseif kind ~= nil_tag then -- C:1209 T:4979
+		*fault = invalid_argument -- C:1209 T:4980
+		return nil -- C:1209 T:4980; neither queue nor record has changed
+	end
+	write_barrier(management + layout.control_offset, address, record_link, 1) -- B:33-34 D:105-106 T:4983
+	local field<const>: *u32 = address + table_metatable -- B:35 D:107
+	*field = replacement -- B:35 D:107
+	return target -- C:1211-1212 T:4983-4984
+end
+
 return {
 	internal = { has_edge = has_edge, mark_color = mark_color, credit_barrier_marks = credit_barrier_marks },
 	write_barrier = write_barrier,
+	set_metatable = set_metatable,
 	mark_global_write = mark_global_write,
 	write_black_table_assignment = write_black_table_assignment,
 	write_table_assignment = write_table_assignment,

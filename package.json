@@ -105,6 +105,7 @@
 		"test:bios-table-growth-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_growth_service.ts",
 		"test:bios-table-resize-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_resize_service.ts",
 		"test:bios-table-copy-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/table_copy_service.ts",
+		"test:bios-setmetatable-service": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/set_metatable_service.ts",
 		"test:bios-call-native-gate": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/native_bios_call.ts",
 		"test:bios-full-gc-strings": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_strings.ts",
 		"test:bios-gc-objects": "bash scripts/test.sh tsx --tsconfig tsconfig.base.json tests/conformance/heap_allocator/gc_objects.ts",

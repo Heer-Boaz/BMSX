@@ -2,7 +2,7 @@ import { valueInteger, valueBool, valueNil } from '../../machine/ts/machine/cpu/
 import { createPathModuleProjectFixture, createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { FunctionSummaryStore, TermKind } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
@@ -155,12 +155,11 @@ return original:change(), original:read()`;
 			.map(id => snapshot.symbolResolver.getDeclaration(id)!.namePath.join('.')).sort();
 		assert.deepEqual(targets, index === 0 ? ['first.read', 'second.read', 'third.read'] : ['first.read']);
 	}
-	// A system module, like BIOS base.lua, publishes the primitive before startup
-	// clears the private boot bindings. No replacement metatable implementation.
-	const bootSource = 'setmetatable = __bmsx_setmetatable';
+	// Publish the same resident Value as BIOS base.lua, not a fixture implementation.
+	const bootSource = 'setmetatable = require([[kernel/gc_barrier]]).set_metatable';
 	const entrySource = `require('test_boot')\n${source}`;
 	for (const level of [3] as const) {
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, PATH), [
+		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, PATH), [
 			{ path: 'test_boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test_boot.lua') },
 		], { entrySource, optLevel: level, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));

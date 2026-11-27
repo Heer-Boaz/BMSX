@@ -1,7 +1,8 @@
 -- Compiler scopes borrow physical activations. These records and their registry
 -- are ordinary saved guest state, never CPU frame metadata.
 -- The registry must not keep an otherwise unreachable suspended thread alive.
-local active<const> = __bmsx_setmetatable({}, { __mode = 'k' })
+local metatables<const> = require('kernel/gc_barrier')
+local active<const> = metatables.set_metatable({}, { __mode = 'k' })
 local scopes<const> = { active = active }
 local next<const> = __bmsx_next
 

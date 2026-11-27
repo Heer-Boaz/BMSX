@@ -28,9 +28,8 @@ export const enum BuiltinFunctionId {
 	SetFrameUpvalue = 26,
 	FrameHeader = 27,
 	NumberType = 28,
-	SetMetatable = 29,
-	StringSlice = 30,
-	StringFromBytes = 31,
+	StringSlice = 29,
+	StringFromBytes = 30,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 32;
+export const BUILTIN_FUNCTION_COUNT = 31;

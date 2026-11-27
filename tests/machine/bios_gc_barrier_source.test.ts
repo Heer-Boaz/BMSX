@@ -37,9 +37,9 @@ test('the BIOS GC barrier map covers pinned gates, credit and cursor stores', ()
 	}
 	const lines = readFileSync(port, 'utf8').replaceAll('\r\n', '\n').split('\n');
 	assert.ok(lines.includes(`-- Source basis: ${basis}.`));
-	const exports = lines.indexOf('return {');
-	assert.ok(exports > 0);
-	for (const [index, line] of lines.slice(0, exports).entries()) {
+	const metatable = lines.findIndex(line => line.startsWith('-- SetMetatable basis:'));
+	assert.ok(metatable > 0);
+	for (const [index, line] of lines.slice(0, metatable).entries()) {
 		if (/^\s*(?:$|--|module<const>$|end$)/.test(line)) continue;
 		const origin = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
 		assert.ok(origin, `${port}:${index + 1}: missing native origin for ${line.trim()}`);
@@ -71,6 +71,50 @@ test('the BIOS GC barrier map covers pinned gates, credit and cursor stores', ()
 			const statement = native.lines[n - 1];
 			if (/^\s*(?:$|\/\/|[{}]$)/.test(statement)) continue;
 			assert.ok(native.covered.has(n), `${key}:${n}: no firmware mapping for ${statement.trim()}`);
+		}
+	}
+});
+
+const setMetaBasis = 'f597677159b0029376458a12c1bd762da46b2361';
+const setMetaPins = [
+	['C', 'machine/cpp/machine/cpu/cpu.cpp', 'f055822ecfda584c53cc4fd77c8ed59935b9d6cc44d6460c995986b0d43140a5', 1206, 1212],
+	['T', 'machine/ts/machine/cpu/cpu.ts', '67699dfb16cf07950a5239cac8769a01c7cd765db2f691f2fdc855c2df39d6a5', 4967, 4984],
+	['B', 'machine/cpp/machine/cpu/table.cpp', '2bfeae4f43c1df83586fc46e20cc6274f85f98c893649e1d87b134c0502d2e59', 33, 35],
+	['D', 'machine/ts/machine/cpu/table.ts', '99184104c12c85739075139d56c2759504bca6de530c195047d230400857f4ab', 105, 107],
+	['E', 'machine/ts/spec/blua32/cop0.ts', '87510e6e2325f1923a2d37d6d8b6ae0e45e36589d5615506f098fefb3513c4f1', 44, 44],
+] as const;
+
+test('setmetatable maps both native argument gates, backward barrier and header store to the ordinary BIOS function', () => {
+	const sources = new Map<string, { lines: string[]; covered: Set<number> }>();
+	for (const [key, file, digest] of setMetaPins) {
+		const source = execFileSync('git', ['show', `${setMetaBasis}:${file}`], { encoding: 'utf8' }).replaceAll('\r\n', '\n');
+		assert.equal(createHash('sha256').update(source).digest('hex'), digest, file);
+		sources.set(key, { lines: source.split('\n'), covered: new Set() });
+	}
+	const lines = readFileSync(port, 'utf8').split('\n');
+	const begin = lines.indexOf(`-- SetMetatable basis: ${setMetaBasis}.`);
+	const end = lines.indexOf('return {');
+	assert.ok(begin > 0 && end > begin);
+	for (const [at, line] of lines.slice(begin, end).entries()) {
+		if (/^\s*(?:$|--|end$)/.test(line)) continue;
+		const origin = /\s--\s+((?:[A-Z]:[0-9,-]+\s*)+)(?:;.*)?$/.exec(line);
+		assert.ok(origin, `${port}:${begin + at + 1}: missing native origin for ${line.trim()}`);
+		for (const entry of origin[1].trim().split(/\s+/)) {
+			const [key, ranges] = entry.split(':');
+			const source = sources.get(key);
+			assert.ok(source, entry);
+			for (const range of ranges.split(',')) {
+				const [first, last = first] = range.split('-').map(Number);
+				assert.ok(first >= 1 && first <= last && last <= source.lines.length, entry);
+				for (let number = first; number <= last; ++number) source.covered.add(number);
+			}
+		}
+	}
+	for (const [key, , , first, last] of setMetaPins) {
+		const native = sources.get(key)!;
+		for (let number = first; number <= last; ++number) {
+			if (/^\s*[{}]/.test(native.lines[number - 1])) continue;
+			assert.ok(native.covered.has(number), `${key}:${number}: ${native.lines[number - 1]}`);
 		}
 	}
 });

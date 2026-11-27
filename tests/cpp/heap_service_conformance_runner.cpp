@@ -474,6 +474,37 @@ int main(int argc, char** argv) {
 						<< runtime.frameLoop.frameState.activeCpuUsedCycles << '\n';
 					break;
 				}
+				case '&': {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+					int grant, generated;
+					trace >> grant >> generated;
+					if (generated) {
+						auto& frame = *cpu.activeThread()->currentFrame;
+						const u32 closure = frame.readControl(FrameField::Closure);
+						const std::array original{frame.registers.get(0), frame.registers.get(1), frame.registers.get(2)};
+						const std::array warm{valueBuiltinFunction(BuiltinFunctionId::RawGet), original[1], original[2]};
+						frame.registers.set(0, warm[0]);
+						for (int visit = 0; visit < 128; ++visit) {
+							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
+							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted || cpu.heapServiceActive())
+								throw std::runtime_error("Read-only CALL warm-up did not reach its ordinary return.");
+						}
+						cpu.prepareSystemNativeCode();
+						cpu.beginCompletionCall(closure, {original.data(), original.size()});
+					} else cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+					const auto gate = static_cast<size_t>(NativeBlockExit::Call);
+					const auto before = cpu.nativeGateProfile().exits[gate];
+					const auto outcome = scheduler.runCpuSlice(0, grant, 0u, CpuRunKind::Scheduled);
+					const auto after = cpu.nativeGateProfile().exits[gate];
+					std::cout << static_cast<int>(outcome) << ' ' << grant - cpu.instructionBudgetRemaining
+						<< ' ' << cpu.heapServiceActive() << ' ' << after.entries - before.entries << ' ' << after.returns - before.returns << ' '
+						<< after.resumes - before.resumes << ' ' << after.exceptions - before.exceptions << '\n';
+#else
+					throw std::runtime_error("Ordinary CALL gate proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
+#endif
+					break;
+				}
+
 				case '!': {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					int grant, native, mode;

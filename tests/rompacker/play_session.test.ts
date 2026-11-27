@@ -61,7 +61,7 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	afterTest(t, () => rm(directory, { recursive: true, force: true }));
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: scene }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine=require('coroutine')\ncop0.exec=mem[0x10000028]",
-		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=__bmsx_setmetatable' }, ...COROUTINE_FIRMWARE_MODULES],
+		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert=function(value,message) if not value then raise(message) end return value end\nerror=raise\nsetmetatable=require([[kernel/gc_barrier]]).set_metatable' }, ...COROUTINE_FIRMWARE_MODULES],
 		cartSource: gameSource, cartModules: [{ path: 'game', source: 'return {updates=0,down_samples=0}' }, ...modules],
 	});
 	const program = await buildFixtureProgram({ systemRom: media.systemRom, cartridgeSlots: [media.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[sourceDomain], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: PATH, source: scene });

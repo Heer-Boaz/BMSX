@@ -112,8 +112,6 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	// A real observed successor is not an internal native entry. This retains
 	// the shared materialized gate contract, independently of inline leaf calls.
 	Machine machine(rom, false, true); machine.seed(id, mode);
-	if (id == BuiltinFunctionId::SetMetatable)
-		machine.memory.writeRamRecordByte(machine.target->address() + GC_COLOR_OFFSET, 3u);
 	auto* frame = machine.cpu.rootThread()->currentFrame;
 	require(frame->next == nullptr, "the first builtin has no spare activation node");
 	auto* owner = frame->executionImage; auto* page = owner->nativeCodeLookup->find(frame->readControl(bmsx::FrameField::Pc), 0);
@@ -137,20 +135,6 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 	require(run.state.diagnosticOpcodes.call == 1, "the admitted native CALL is counted once");
 #endif
 	const int receiving = results == 1 ? 0 : 1;
-	if (id == BuiltinFunctionId::SetMetatable) {
-		const u32 address = machine.target->address();
-		require(machine.marker() == 0 && machine.target->metatableAddress() == 0u
-			&& (machine.memory.readRamRecordByte(address + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 2u
-			&& machine.memory.readRamRecordWord(machine.cpu.gcHeap().changedHeadOffset())
-				== (address & GC_RECORD_MASK) >> GC_RECORD_SHIFT,
-			"SetMetatable uses ordinary CALL to mutate the header and enqueue the black owner without taking a native leaf continuation");
-		require(machine.cpu.instructionBudgetRemaining == grant - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving
-			&& frame->readControl(bmsx::FrameField::Pc) == rom.textAddress + 2 * INSTRUCTION_BYTES
-			&& frame->readWindow(bmsx::FrameField::Top) == receiving
-			&& (!receiving || frame->registers.get(0) == machine.expected),
-			"ordinary CALL publishes the complete metatable mutation and result at its original successor");
-		return;
-	}
 	if (!cold && !interrupt && grant == 64 && id != BuiltinFunctionId::Type) {
 		require(machine.marker() == 99, "one real native gate follows the builtin raw continuation, not C++ CALL redispatch");
 		require(machine.cpu.instructionBudgetRemaining == 64 - 2 - 32 - BUILTIN_FUNCTION_COSTS[static_cast<size_t>(id)].base - receiving - 3 - 2,
@@ -177,7 +161,7 @@ void directGate(BuiltinFunctionId id, int results, int grant, bool cold = false,
 #endif
 
 void ordinaryCases() {
-	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::RawGet, BuiltinFunctionId::SetMetatable})
+	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::RawGet})
 	for (const int results : {0, 1, 2, 3}) for (const bool wide : {false, true}) {
 		const auto rom = image(results, id == BuiltinFunctionId::GetMetatable ? 2 : 3, wide);
 		Machine native(rom, false), scalar(rom, true); native.seed(id); scalar.seed(id);
@@ -186,10 +170,6 @@ void ordinaryCases() {
 		const int receiving = results == 0 ? 1 : results - 1;
 		require(static_cast<bmsx::i32>(native.cpu.rootThread()->currentFrame->readControl(bmsx::FrameField::Top)) == receiving, "open, discard, fixed and padded receiving counts retain exact top");
 		if (receiving) require(native.cpu.readFrameRegister(0, 0) == native.expected, "ordinary raw builtin result is exact");
-		if (id == BuiltinFunctionId::SetMetatable) {
-			native.target->setStringKey(native.cpu.stringPool().intern("local"), valueInteger(9));
-			scalar.target->setStringKey(scalar.cpu.stringPool().intern("local"), valueInteger(9)); parity(native, scalar);
-		}
 		if (receiving > 1) require(isNil(native.cpu.readFrameRegister(0, 1)), "unsupported result counts keep ordinary nil padding");
 		native.cpu.collectHeap(); scalar.cpu.collectHeap(); parity(native, scalar);
 		native.cpu.restoreRuntimeState(native.cpu.captureRuntimeState()); scalar.cpu.restoreRuntimeState(scalar.cpu.captureRuntimeState()); parity(native, scalar);
@@ -212,15 +192,14 @@ void ordinaryCases() {
 			require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT,
 				"nonfinite Float positions fault through the ordinary builtin");
 	}
-	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable, BuiltinFunctionId::SetMetatable}) for (const bool wide : {false, true}) {
+	for (const auto id : {BuiltinFunctionId::StringByte, BuiltinFunctionId::GetMetatable}) for (const bool wide : {false, true}) {
 		const auto rom = image(2, 3, wide); Machine native(rom, false), scalar(rom, true);
-		const int bad = id == BuiltinFunctionId::StringByte ? 3 : id == BuiltinFunctionId::GetMetatable ? 3 : 2;
+		const int bad = 3;
 		native.seed(id, bad); scalar.seed(id, bad);
 		test::runCpuParity(native.cpu, scalar.cpu, 3); parity(native, scalar);
 		require(native.cpu.readLuaFaultReasonWord() == LUA_FAULT_REASON_INVALID_ARGUMENT && native.cpu.readEpcWord() == rom.textAddress + INSTRUCTION_BYTES,
 			"unsupported argument shapes use the existing error owner at the original WIDE instruction PC");
 		require(native.cpu.instructionBudgetRemaining == -33, "argument errors pay prefix2+CALL32+primitive2 but no receiving-slot fee");
-		if (id == BuiltinFunctionId::SetMetatable) require(native.target->metatableAddress() == native.meta->address(), "invalid metatable validation has no partial mutation");
 	}
 }
 } // namespace
@@ -236,7 +215,6 @@ int main() {
 		directGate(BuiltinFunctionId::Type, 2, 64);
 #endif
 		#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		for (int results : {0, 1, 2}) directGate(BuiltinFunctionId::SetMetatable, results, 64, false, 1);
 		directGate(BuiltinFunctionId::StringByte, 2, 64, false, 1);
 		directGate(BuiltinFunctionId::StringByte, 2, 64, false, 0, true);
 #endif

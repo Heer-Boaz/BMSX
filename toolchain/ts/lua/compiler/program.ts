@@ -18,6 +18,7 @@ export const SYSTEM_RESIDENT_EXPORTS = [
 	{ path: 'kernel/bios_copy_table', exportPathKey: 'copy_table', numParams: 1 },
 	{ path: 'kernel/gc_full', exportPathKey: 'collect_full', numParams: 0 },
 	{ path: 'kernel/gc_full', exportPathKey: 'heap_bytes', numParams: 0 },
+	{ path: 'kernel/gc_barrier', exportPathKey: 'set_metatable', numParams: 2 },
 	{ ...BIOS_FUNCTION_SLOTS[BiosFunction.CreateTable], numParams: 2 },
 ] as const;
 

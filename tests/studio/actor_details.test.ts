@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { asClosure, asStringId, valueInteger, valueString, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
@@ -14,12 +14,14 @@ import { inspectActorNode } from '../../ide/workbench/contrib/actor_lab/inspecti
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld, type ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
 import { captureActorTarget, resolveActorPath } from '../../ide/workbench/contrib/actor_lab/target';
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, type RuntimeInspectionProperty } from '../../ide/workbench/contrib/behavior_lens/runtime_properties';
-import { parseLuaChunk, runCompletionClosure } from '../helpers/cpu_test_harness';
+import { parseLuaChunk, runCompletionClosure, runGuestToHalt } from '../helpers/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { afterTest } from '../helpers/test_cleanup';
 
-const WORLD = `setmetatable = __bmsx_setmetatable
+// The fixture now boots linked Table allocation and mutator firmware, not a rosterless image.
+const WORLD_BOOT_CYCLE_LIMIT = 500_000;
+const WORLD = `setmetatable = require([[kernel/gc_barrier]]).set_metatable
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local answer<const> = blackboard.key('answer', 0)
 local board<const> = blackboard.new()
@@ -91,7 +93,7 @@ function fixture(worldSource = WORLD) {
 			.map(path => ({ path, source: 'return {}' }))]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
 	const chunk = parseLuaChunk(entry, 'entry.lua');
-	const compiled = compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: entry, programDomain: 'system', optLevel: 0 });
+	const compiled = compileTestSystemWithHeap(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: entry, programDomain: 'system', optLevel: 0 });
 	const image = linkTestSystemBlua32(compiled), runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
 	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: '', projectRootPath: '', can_boot_from_source: false, revision: 0 };
 	for (const module of modules) registerLuaSourceRecord(registry, {
@@ -101,7 +103,7 @@ function fixture(worldSource = WORLD) {
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports, captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
-	cpu.reset(); const beforeBirth = captureCpuCheckpoint(cpu); cpu.runUntilDepth(0, 100_000);
+	cpu.reset(); const beforeBirth = captureCpuCheckpoint(cpu); runGuestToHalt(cpu, WORLD_BOOT_CYCLE_LIMIT);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
 	const objects = valuePayload(guest.readStringMember(world, '_objects'));
@@ -219,7 +221,7 @@ test('historical subject absence retains the path, but hidden live-branch admiss
 	f.details.resumeHistory(f.tree, -1, undefined);
 	assert.equal(f.details.retired, true); assert.equal(f.details.available, false);
 	const title = f.details.title;
-	f.cpu.runUntilDepth(0, 100_000); f.update();
+	runGuestToHalt(f.cpu, WORLD_BOOT_CYCLE_LIMIT); f.update();
 	assert.equal(f.tree.roots[0].hashId, f.actorHashId, 'the new live branch actually reuses the old allocation identity');
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.retired, true); assert.equal(f.details.available, false); assert.equal(f.details.title, title);
@@ -554,7 +556,7 @@ test('live branch admission retires an absent actor before discarded-future allo
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	f.details.watches.resumeHistory(f.tree, -1);
 	assert.equal(pin.retired, true);
-	f.invalidate(); f.cpu.runUntilDepth(0, 100_000); f.update();
+	f.invalidate(); runGuestToHalt(f.cpu, WORLD_BOOT_CYCLE_LIMIT); f.update();
 	assert.equal(f.tree.roots[0].hashId, f.target.actorHashId);
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.available, false);

@@ -1,6 +1,6 @@
 local vm_next<const> = __bmsx_next
 local vm_type<const> = __bmsx_type
-local vm_setmetatable<const> = __bmsx_setmetatable
+local metatables<const> = require('kernel/gc_barrier')
 local vm_getmetatable<const> = __bmsx_getmetatable
 local vm_rawget<const> = __bmsx_rawget
 local vm_rawset<const> = __bmsx_rawset
@@ -16,7 +16,7 @@ local heap<const> = require('kernel/gc_full')
 
 next = vm_next
 type = vm_type
-setmetatable = vm_setmetatable
+setmetatable = metatables.set_metatable
 getmetatable = vm_getmetatable
 rawget = vm_rawget
 rawset = vm_rawset

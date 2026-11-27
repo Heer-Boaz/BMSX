@@ -146,7 +146,7 @@ return a ~= b, b.source == input, a.left, b.left, b.right, b.enabled, b.item_id 
 });
 
 test('a call result can release its last table reference before the next collection', () => {
-	const boot = "local heap<const> = require('kernel/gc_full'); collect = function() heap.collect_full() end; setmeta = __bmsx_setmetatable; protect = __bmsx_pcall";
+	const boot = "local heap<const> = require('kernel/gc_full'); collect = function() heap.collect_full() end; setmeta = require([[kernel/gc_barrier]]).set_metatable; protect = __bmsx_pcall";
 	const source = `
 require('boot')
 local function probe(make, churn)

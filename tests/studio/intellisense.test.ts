@@ -33,6 +33,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { createRuntimeFaultState, recordSupervisorFault } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import {
@@ -124,10 +125,11 @@ function parseLuaChunk(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules: Record<string, string> = {}) {
+function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules: Record<string, string> = {},
+	compile = compileLuaChunkToProgram) {
 	const sourcePath = 'cart.lua';
 	const modulePath = 'cart';
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), Object.entries(modules).map(([path, text]) => ({
+	const compiled = compile(parseLuaChunk(source, modulePath), Object.entries(modules).map(([path, text]) => ({
 		path, source: text, chunk: parseLuaChunk(text, path),
 	})), {
 		entrySource: source,
@@ -720,7 +722,7 @@ function subject:own() return self.value end
 index_calls = 0
 dynamic = setmetatable({}, { __index = function() index_calls = index_calls + 1; return ancestor.inherited end })
 halt_until_irq`;
-		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = __bmsx_setmetatable' });
+		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = require([[kernel/gc_barrier]]).set_metatable' }, compileTestSystemWithHeap);
 		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 		cpu.reset();
 		runGuestToHalt(cpu, 100000);

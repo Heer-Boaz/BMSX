@@ -52,7 +52,6 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // SetFrameUpvalue
 	{ 1, 0, 0 }, // FrameHeader
 	{ 1, 0, 0 }, // NumberType
-	{ 2, 0, 0 }, // SetMetatable
 	{ 2, 0, 0 }, // StringSlice
 	{ 2, 0, 0 }, // StringFromBytes
 }};

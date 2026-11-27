@@ -11,7 +11,7 @@ xpcall = __bmsx_xpcall
 local heap<const> = require('kernel/gc_full'); collectgarbage = function() heap.collect_full() end
 select = __bmsx_select
 type = __bmsx_type
-setmetatable = __bmsx_setmetatable
+setmetatable = require([[kernel/gc_barrier]]).set_metatable
 error = raise
 next = __bmsx_next`;
 

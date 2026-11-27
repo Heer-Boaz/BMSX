@@ -4446,9 +4446,6 @@ export class CPU implements MappedPageInvalidator {
 				out.push(integer === null ? valueNil() : valueInteger(integer));
 				break;
 			}
-			case BuiltinFunctionId.SetMetatable:
-				this.runBuiltinSetMetatable(args, out);
-				break;
 			case BuiltinFunctionId.GetMetatable:
 				this.runBuiltinGetMetatable(args, out);
 				break;
@@ -4992,26 +4989,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private runBuiltinType(tag: ValueTag, out: BuiltinResults): void {
 		out.push(valueString(this.stringPool.intern(valueTypeNameForLuaTag(tag))));
-	}
-
-	private runBuiltinSetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {
-		const registers = args.registers;
-		if (args.length === 0 || registers.getTag(args.base) !== ValueTag.Table) {
-			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-		}
-		const address = registers.getPayload(args.base);
-		let metatable = 0;
-		if (args.length > 1) {
-			const metatableIndex = args.base + 1;
-			const metatableTag = registers.getTag(metatableIndex);
-			if (metatableTag === ValueTag.Table) {
-				metatable = registers.getPayload(metatableIndex);
-			} else if (metatableTag !== ValueTag.Nil) {
-				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-			}
-		}
-		this.gc.tables.setMetatableAddress(address, metatable);
-		out.push(valueTable(address));
 	}
 
 	private runBuiltinGetMetatable(args: BuiltinArgsView, out: BuiltinResults): void {

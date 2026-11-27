@@ -2,7 +2,7 @@ import { valueInteger, valueBool } from '../../machine/ts/machine/cpu/value';
 import { createPathModuleBindingsFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 import { SemanticDemandIndex } from '../../toolchain/ts/lua/semantic/demand_index';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
@@ -255,12 +255,11 @@ test('scalar alternatives cannot join unrelated prototype owners', () => {
 	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['prototypes.lua']));
 	workspace.updateFile('prototypes.lua', source);
 	assert.deepEqual(semanticSymbolsAt(workspace.getSnapshot(), 'prototypes.lua', 5, 15), []);
-	// Publish the real boot primitive from a system module, before startup clears
-	// its private bindings. This is the same owner route as BIOS base.lua.
-	const bootSource = 'setmetatable = __bmsx_setmetatable';
+	// Publish the same resident Value as BIOS base.lua.
+	const bootSource = 'setmetatable = require([[kernel/gc_barrier]]).set_metatable';
 	const entrySource = "require('test_boot')\n" + source.replace('return right.left_only', 'return right.left_only == nil');
 	for (const optimization of [3] as const) {
-		const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'prototypes.lua'), [
+		const compiled = compileTestSystemWithHeap(parseLuaChunk(entrySource, 'prototypes.lua'), [
 			{ path: 'test_boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'test_boot.lua') },
 		], { entrySource, optLevel: optimization, programDomain: 'system' });
 		const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));

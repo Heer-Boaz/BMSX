@@ -45,7 +45,7 @@ return boot.pcall(function()
 end)
 `;
 
-export const RECORDER32_BOOT_SOURCE = `setmetatable=__bmsx_setmetatable
+export const RECORDER32_BOOT_SOURCE = `setmetatable=require([[kernel/gc_barrier]]).set_metatable
 return {pcall=__bmsx_pcall,error=__bmsx_error,ipairs=function(t)
  local i=0; return function() i=i+1; if i<=#t then return i,t[i] end end
 end}`;

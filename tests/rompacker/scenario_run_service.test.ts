@@ -46,7 +46,7 @@ return { kind = 'unit', tests = {
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }, other], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable\ngetglobal = __bmsx_getglobal` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable\ngetglobal = __bmsx_getglobal` },
 				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,
@@ -172,7 +172,7 @@ return { kind = 'unit', tests = { saved = function() assert(helper == 37) end } 
 	const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
 		systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 		systemModules: [
-			{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value) if not value then raise('old library source') end return value end\nsetmetatable = __bmsx_setmetatable` },
+			{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value) if not value then raise('old library source') end return value end\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 			...COROUTINE_FIRMWARE_MODULES,
 		],
 		cartSource: 'module<entry>\nreturn',
@@ -220,7 +220,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
-				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = require([[kernel/gc_barrier]]).set_metatable` },
 				...COROUTINE_FIRMWARE_MODULES,
 			], cartSource: `module<entry>\nwhile true do halt_until_irq end`,
 		});
