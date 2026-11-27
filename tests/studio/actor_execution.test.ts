@@ -11,12 +11,14 @@ import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 import { afterTest } from '../helpers/test_cleanup';
 
 /** Operation lifecycle against the real plan manager; real World admission is covered by the live Studio tool test. */
-function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'invoked' = 'invoked') {
+function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'preparing' | 'invoked' = 'invoked') {
 	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
 	const operation = new ActorExecutionOperation(1, f.execution.revision), service = f.actorExecution;
 	service.active = operation;
 	if (phase !== 'queued') {
-		operation.status = 'running'; operation.invoked = phase === 'invoked';
+		operation.status = 'running';
+		operation.admitted = phase !== 'boundary';
+		operation.invoked = phase === 'invoked';
 		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, 'completion', true, () => {}), 'workbench');
 	}
 	afterTest(t, () => { service.didReplaceMachine(); f.presenter.dispose(); });
@@ -72,12 +74,12 @@ test('a newer pre-invocation control waiter retains cancellation authority after
 	assert.equal(f.operation.revoked, true, 'a later Continue only drains the revoked admission');
 });
 
-for (const phase of ['queued', 'boundary', 'invoked'] as const) test(`Stop during ${phase} respects Actor admission and never discards physical plans`, async t => {
+for (const phase of ['queued', 'boundary', 'preparing', 'invoked'] as const) test(`Stop during ${phase} respects Actor admission and never discards physical plans`, async t => {
 	const f = fixture(t, phase), controller = new AbortController();
 	const waiting = f.service.waitForStop(f.operation, controller.signal);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
 	assert.equal(f.operation.listeners.size, 0);
-	assert.equal(f.operation.revoked, phase !== 'invoked');
+	assert.equal(f.operation.revoked, phase === 'queued' || phase === 'boundary');
 	if (phase === 'queued') {
 		assert.equal(f.service.active, undefined); assert.equal(f.operation.result!.status, 'interrupted');
 	} else {

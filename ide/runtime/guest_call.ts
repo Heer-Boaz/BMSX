@@ -16,8 +16,10 @@ export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
 	readonly closure: number;
 	readonly argumentCount: number;
-	/** Materialize new guest values only after the mutation has been admitted. */
+	/** Borrow existing Values for immediate insertion, or supply immediate operands. Never allocate guest storage here. */
 	readonly args: () => readonly Value[];
+	/** Report when an ordinary call within the admitted activation first reaches this closure. */
+	readonly observeEntry?: { readonly closure: number; readonly entered: () => void };
 };
 
 export type RuntimeGuestCallBoundary = {
@@ -31,8 +33,8 @@ export type RuntimeGuestCallRequest = {
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
 	readonly prepare: () => RuntimeGuestCall | undefined;
-	/** Final requested closure entered the CPU; admission/exception calls do not count. */
-	readonly didEnter?: () => void;
+	/** The final activation was inserted; a rendezvous or exception entry does not count. */
+	readonly didEnter?: (call: RuntimeGuestCall) => void;
 } & ({
 	readonly admission: 'quiescent';
 	/** The guest lifecycle, rather than debugger function names, admits this edit. */
@@ -47,8 +49,8 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
 	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
 
-	private readonly thread: number;
-	private readonly cpu: CPU;
+	protected readonly thread: number;
+	protected readonly cpu: CPU;
 	public constructor(
 		runtime: Runtime,
 		private readonly returnDepth: number,
@@ -77,6 +79,34 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 		return RuntimeDebuggerPlanResult.Active;
 	}
 	public discard(): void { this.finish(false); }
+}
+
+/** Observe a nested target before the source debugger can stop at its first instruction. */
+class RuntimeGuestTargetPlan extends RuntimeGuestCallPlan {
+	private readonly domain: ExecutionDomainId;
+	private readonly pc: number;
+	private readonly closure: number;
+	private entered: (() => void) | undefined;
+
+	public constructor(runtime: Runtime, depth: number, honorUserStops: boolean, finish: (completed: boolean) => void,
+		entry: NonNullable<RuntimeGuestCall['observeEntry']>) {
+		super(runtime, depth, 'completion', honorUserStops, finish);
+		const binding = this.cpu.captureClosureBinding(entry.closure);
+		this.domain = binding.executionDomainId;
+		this.pc = binding.codeAddress;
+		this.closure = entry.closure;
+		this.entered = entry.entered;
+	}
+
+	public override shouldStop(domain?: ExecutionDomainId, pc?: number): boolean {
+		if (this.entered !== undefined && domain === this.domain && pc === this.pc && this.cpu.activeThread.address === this.thread
+			&& this.cpu.activeThread.currentFrame!.closureAddress === this.closure) {
+			const entered = this.entered;
+			this.entered = undefined;
+			entered();
+		}
+		return super.shouldStop();
+	}
 }
 
 /** A guest-owned rendezvous. Only an explicit evaluation installs this hook. */
@@ -115,98 +145,96 @@ export function scheduleRuntimeGuestCall(
 		const depth = cpu.getFrameDepth();
 		cpu.beginCompletionCall(call.closure, call.args());
 		let retained: RuntimeDebuggerSourceStop | undefined;
-		const plan = new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, request.admission === 'at-stop' ? completed => {
+		const onReturn = request.admission === 'at-stop' ? (completed: boolean) => {
 			if (completed && retained !== undefined && debuggerState.source.returnToStop(retained)) {
 				debuggerState.stopPresentationPending = true;
 			}
 			finish(completed);
-		} : finish);
+		} : finish;
+		const plan = call.observeEntry === undefined
+			? new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, onReturn)
+			: new RuntimeGuestTargetPlan(runtime, depth, honorUserStops, onReturn, call.observeEntry);
 		retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', request.admission === 'at-stop' ? 'retain' : 'resume');
 	};
 	const admitCall = (checkBoundary: boolean, windowRequested = false): boolean => {
 		if (!request.isCurrent() || !runtime.admitExternalCpuMutation()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
-		const roots = cpu.acquireLocalRoots();
-		try {
-			if (request.admission === 'quiescent') {
-				const exceptionDepth = cpu.readExceptionReturnFrameDepth();
-				if (exceptionDepth !== -1) {
-					guest.invalidate();
-					runtime.history.stop();
-					pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
-						if (!completed) { finished(false); return; }
-						// The handler may have submitted GPU work or replaced inspected values.
-						void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
-					}), 'workbench');
-					return true;
-				}
-			}
-			const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
-			const call = boundary === undefined ? request.prepare() : boundary.request;
-			if (call === undefined) { finished(false); return false; }
-			const thread = cpu.activeThread;
-			const { maxStack, numParams, flags } = cpu.captureClosureBinding(call.closure);
-			// An external call owns only the tail above every retained window.
-			let base = thread.stackTop;
-			for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
-				base = Math.max(base, frame.stackBase + frame.stackCapacity);
-			const valueEnd = base + Math.max(1, numParams, maxStack)
-				+ ((flags & BLUA32_FUNCTION_VARARG) !== 0 ? call.argumentCount : 0);
-			if (call.argumentCount > MAX_THREAD_VALUE_SLOTS || valueEnd > MAX_THREAD_VALUE_SLOTS) {
-				failed(new Error('The call exceeds the machine register window.'));
-				return false;
-			}
-			if (!thread.frameSpaceFits(valueEnd)) {
-				if (windowRequested) {
-					failed(new Error('Not enough guest memory for the call register window.'));
-					return false;
-				}
-				const depth = thread.frameDepth;
-				if (depth === 0 || thread.address === CPU_RESET_BANK_ADDRESS
-					|| (request.admission === 'at-stop' && cpu.readExceptionReturnFrameDepth() !== -1)) {
-					failed(new Error('A register window cannot be requested without a stopped ordinary frame.'));
-					return false;
-				}
-				let retained: RuntimeDebuggerSourceStop | undefined;
-				const plan = new RuntimeGuestCallPlan(runtime, depth, 'exception', false, completed => {
-					if (!completed) { finished(false); return; }
-					if (retained !== undefined && debuggerState.source.returnToStop(retained))
-						debuggerState.stopPresentationPending = true;
-					// No closure or argument borrow crosses the firmware allocation.
-					void tasks.schedule(() => { admitCall(checkBoundary, true); }, failed);
-				});
+		if (request.admission === 'quiescent') {
+			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
+			if (exceptionDepth !== -1) {
 				guest.invalidate();
 				runtime.history.stop();
-				cpu.requestRegisterWindow(valueEnd, depth + 2, runtime.machine.scheduler.cyclesUntilDeadline());
-				retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', 'retain');
-				return true;
-			}
-			if (boundary !== undefined) {
-				beginCall(call, false, completed => {
+				pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
 					if (!completed) { finished(false); return; }
-					const values: Value[] = [];
-					cpu.readCompletionValues(values);
-					const reached = boundary.condition(values);
-					// Leave the completion plan before installing the rendezvous. The
-					// receipt is owned by this control operation, never a pane borrower.
-					void tasks.schedule(() => {
-						if (!request.isCurrent()) { finished(false); return; }
-						guest.invalidate();
-						pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestBoundaryPlan(request, reached, ready => {
-							if (!ready) { finished(false); return; }
-							// A boundary can submit GPU work and replace the inspected graph.
-							void tasks.schedule(() => { admitCall(false); }, failed);
-						}), 'workbench');
-					}, failed);
-				});
+					// The handler may have submitted GPU work or replaced inspected values.
+					void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
+				}), 'workbench');
 				return true;
 			}
-			beginCall(call, request.honorUserStops, finished);
-			request.didEnter?.();
-			return true;
-		} finally {
-			cpu.releaseLocalRoots(roots);
 		}
+		const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
+		const call = boundary === undefined ? request.prepare() : boundary.request;
+		if (call === undefined) { finished(false); return false; }
+		const thread = cpu.activeThread;
+		const { maxStack, numParams, flags } = cpu.captureClosureBinding(call.closure);
+		// An external call owns only the tail above every retained window.
+		let base = thread.stackTop;
+		for (let frame = thread.currentFrame; frame !== null; frame = frame.previous)
+			base = Math.max(base, frame.stackBase + frame.stackCapacity);
+		const valueEnd = base + Math.max(1, numParams, maxStack)
+			+ ((flags & BLUA32_FUNCTION_VARARG) !== 0 ? call.argumentCount : 0);
+		if (call.argumentCount > MAX_THREAD_VALUE_SLOTS || valueEnd > MAX_THREAD_VALUE_SLOTS) {
+			failed(new Error('The call exceeds the machine register window.'));
+			return false;
+		}
+		if (!thread.frameSpaceFits(valueEnd)) {
+			if (windowRequested) {
+				failed(new Error('Not enough guest memory for the call register window.'));
+				return false;
+			}
+			const depth = thread.frameDepth;
+			if (depth === 0 || thread.address === CPU_RESET_BANK_ADDRESS
+				|| (request.admission === 'at-stop' && cpu.readExceptionReturnFrameDepth() !== -1)) {
+				failed(new Error('A register window cannot be requested without a stopped ordinary frame.'));
+				return false;
+			}
+			let retained: RuntimeDebuggerSourceStop | undefined;
+			const plan = new RuntimeGuestCallPlan(runtime, depth, 'exception', false, completed => {
+				if (!completed) { finished(false); return; }
+				if (retained !== undefined && debuggerState.source.returnToStop(retained))
+					debuggerState.stopPresentationPending = true;
+				// No closure or argument borrow crosses the firmware allocation.
+				void tasks.schedule(() => { admitCall(checkBoundary, true); }, failed);
+			});
+			guest.invalidate();
+			runtime.history.stop();
+			cpu.requestRegisterWindow(valueEnd, depth + 2, runtime.machine.scheduler.cyclesUntilDeadline());
+			retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', 'retain');
+			return true;
+		}
+		if (boundary !== undefined) {
+			beginCall(call, false, completed => {
+				if (!completed) { finished(false); return; }
+				const values: Value[] = [];
+				cpu.readCompletionValues(values);
+				const reached = boundary.condition(values);
+				// Leave the completion plan before installing the rendezvous. The
+				// receipt is owned by this control operation, never a pane borrower.
+				void tasks.schedule(() => {
+					if (!request.isCurrent()) { finished(false); return; }
+					guest.invalidate();
+					pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestBoundaryPlan(request, reached, ready => {
+						if (!ready) { finished(false); return; }
+						// A boundary can submit GPU work and replace the inspected graph.
+						void tasks.schedule(() => { admitCall(false); }, failed);
+					}), 'workbench');
+				}, failed);
+			});
+			return true;
+		}
+		beginCall(call, request.honorUserStops, finished);
+		request.didEnter?.(call);
+		return true;
 	};
 	return tasks.schedule(() => {
 		if (admitCall(true)) started();

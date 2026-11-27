@@ -25,8 +25,7 @@ import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { asClosure, asInteger, asStringId, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { prepareLuaLiteral } from '../../ide/runtime/lua_literal';
+import { asClosure, asInteger, valueBool, valueInteger, valueNil, valueString, type Value, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -193,7 +192,7 @@ test('at-stop evaluation cannot publish a new frame before accepted CPU time set
 	assert.strictEqual(state.source.stop, retainedStop);
 });
 
-test('at-stop evaluation prepares physical variadic backing before materializing arguments', async () => {
+test('at-stop evaluation prepares physical variadic backing before inserting arguments', async t => {
 	const source = `module<entry>
 operation = function(...) return blua32.argument_count() end
 retired = 1
@@ -210,6 +209,7 @@ return retired`;
 	assert.equal(blua32SourceRangeAtPc(linked.symbols, linked.layout.header.textAddress, stop.pc)!.start.line, 3);
 	assert.equal(cpu.getFrameDepth(), stop.depth);
 	const count = thread.stackRegisters.capacity() + 1, guest = new SuspendedGuestSession(runtime);
+	t.mock.method(cpu, 'acquireLocalRoots', () => assert.fail('Debugger admission does not acquire native allocator roots'));
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	let prepared = 0, constructed = 0, entered = 0, completed = false;
@@ -873,57 +873,4 @@ for (const level of [3] as const) for (const transition of ['source-install', 'h
 	assert.equal(completed, true);
 	assert.notEqual(state.source.stop, retained);
 	assert.equal(state.source.stop, undefined, 'the replacement ended that source suspension even if the guest call returned normally');
-});
-
-for (const optLevel of [3] as const) for (const admission of ['quiescent', 'at-stop'] as const)
-test(`guest call admission roots prepare and recursive arguments across GC (O${optLevel}, ${admission})`, async t => {
-	const { runtime, state } = createDebuggerHarness('return function(...) return ... end', optLevel);
-	const cpu = runtime.machine.cpu;
-	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
-	const values: Value[] = []; cpu.readCompletionValues(values);
-	const closure = asClosure(values[0], cpu.gc), guest = new SuspendedGuestSession(runtime);
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
-		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
-	const intern = cpu.stringPool.intern.bind(cpu.stringPool);
-	t.mock.method(cpu.stringPool, 'intern', (text: string) => {
-		const id = intern(text);
-		cpu.collectTrackedHeapBytes();
-		return id;
-	});
-	let finished = false;
-	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
-		admission, honorUserStops: false, isCurrent: () => true,
-		prepare: () => {
-			const leading = valueString(cpu.stringPool.intern('prepare-owned-string'));
-			return { domain: -1, closure, argumentCount: 3, args: () => [leading,
-				prepareLuaLiteral('{ argument_owned_key = { "nested-owned-string" } }')(cpu),
-				valueString(cpu.stringPool.intern('last-owned-string'))] };
-		},
-	}, () => {}, completed => { finished = completed; }, assert.fail);
-	runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
-	didExecuteRuntimeDebuggerPlan(state);
-	assert.equal(finished, true);
-	cpu.readCompletionValues(values);
-	assert.equal(cpu.stringPool.toString(asStringId(values[0])), 'prepare-owned-string');
-	const table = valuePayload(values[1]);
-	const child = valuePayload(cpu.gc.tables.getStringKey(table, cpu.stringPool.find('argument_owned_key')!));
-	assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getInteger(child, 1))), 'nested-owned-string');
-	assert.equal(cpu.stringPool.toString(asStringId(values[2])), 'last-owned-string');
-});
-
-test('failed guest-call preparation releases its temporary allocation roots', async () => {
-	const { runtime, state } = createDebuggerHarness('return 0', 0), cpu = runtime.machine.cpu;
-	cpu.reset(); runGuestToHalt(cpu, DEBUG_RUN_CYCLE_BUDGET);
-	const guest = new SuspendedGuestSession(runtime);
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
-		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
-	const expected = new Error('preparation rejected');
-	let failure: unknown;
-	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
-		admission: 'quiescent', honorUserStops: false, isCurrent: () => true,
-		prepare: () => { cpu.stringPool.intern('rejected-preparation-string'); throw expected; },
-	}, () => assert.fail('failed preparation cannot enter the CPU'), () => assert.fail('failed preparation cannot complete a call'), error => { failure = error; });
-	assert.equal(failure, expected);
-	cpu.collectTrackedHeapBytes();
-	assert.equal(cpu.stringPool.find('rejected-preparation-string'), undefined);
 });

@@ -5,6 +5,7 @@ local frame_bindings<const> = require('debug/frame')
 local frame_count<const> = __bmsx_frame_count
 local running<const> = __bmsx_coroutine_running
 local char<const> = require('string/char')
+local suffix<const> = select
 
 -- A firmware-owned Lua session. Its environment is ordinary saved guest state,
 -- not a copy of the CPU's global registerfile or of a stopped stack frame.
@@ -88,6 +89,16 @@ function repl.evaluate_bytes(sequence, session, frame_index, inline_depth, ...)
 		return repl.evaluate_frame(source, chunk_name, frame_index, inline_depth)
 	end
 	return repl.evaluate(source, chunk_name, session and 'session' or 'cart')
+end
+
+-- Compile a Function-producing chunk and call its result. The input Values
+-- stay in the caller's window through compilation and execution; the source
+-- bytes follow them and a fixed-parameter Function ignores that tail.
+function repl.invoke_bytes(first_byte, ...)
+	local source<const> = char(suffix(first_byte, ...))
+	local chunk<const> = assert(load_chunk(source, '=(call)', 't'))
+	local invoke<const> = chunk()
+	return invoke(...)
 end
 
 return repl

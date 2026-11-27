@@ -1,5 +1,8 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { asClosure, isNil, numberToHost, valueFloat, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { textToByteString } from '../../../../machine/ts/common/byte_string';
+import { isRamStringId, type StringPool } from '../../../../machine/ts/machine/cpu/string_pool';
+import { asClosure, isNil, numberToHost, valueClosure, valueFloat, valueInteger, valueNil, valueString, valueTag, ValueTag, type Value } from '../../../../machine/ts/machine/cpu/value';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../../../machine/ts/spec/blua32/execution_domain';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
@@ -10,7 +13,7 @@ import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { pushRuntimeDebuggerControlPlan, resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type SourceExecutionState } from '../../../runtime/debugger_state';
 import { RuntimeDeviceSettlementPlan } from '../../../runtime/device_settlement';
 import { scheduleRuntimeGuestCall, type RuntimeGuestCall } from '../../../runtime/guest_call';
-import type { PreparedLuaLiteral } from '../../../runtime/lua_literal';
+import { luaLiteralSource, type PreparedLuaLiteral } from '../../../runtime/lua_literal';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorRuntimeTree, findRuntimeActor, runtimeWorld } from './runtime';
@@ -42,6 +45,7 @@ export class ActorExecutionOperation {
 	public result: ActorExecutionResult | undefined;
 	public outcome: ActorExecutionResult | undefined;
 	public status: 'queued' | 'running' | 'paused' = 'queued';
+	public admitted = false;
 	public invoked = false;
 	public revoked = false;
 	public controlVersion = 0;
@@ -94,7 +98,7 @@ export class ActorExecutionService {
 		// still owns the uninvoked request, unless a newer controller took over.
 		if (lifetime?.signal !== undefined) {
 			const signal = lifetime.signal, version = operation.controlVersion;
-			const abort = () => { if (!operation.invoked) this.cancel(operation, version); };
+			const abort = () => { if (!operation.admitted) this.cancel(operation, version); };
 			signal.addEventListener('abort', abort, { once: true });
 			void operation.completion.then(() => signal.removeEventListener('abort', abort));
 		}
@@ -117,19 +121,23 @@ export class ActorExecutionService {
 				if (lifetime?.canInvoke?.() === false) return;
 				const world = this.world(domain, worldHashId);
 				let call: RuntimeGuestCall | undefined;
-				try { if (world !== undefined) call = this.prepare(request, world); }
+				try { if (world !== undefined) call = this.prepare(request, world, operation); }
 				finally { this.tree.release(); }
 				if (call === undefined) { this.finish(operation, { status: 'rejected', values: [], tags: [], reason: 'Actor target or operation changed before invocation.' }); return; }
 				return call;
 			},
-			didEnter: () => { operation.invoked = true; },
+			didEnter: call => {
+				operation.admitted = true;
+				if (call.observeEntry === undefined) operation.invoked = true;
+			},
 		}, () => {
 			this.execution.requestExecution(false);
 			operation.executionRevision = this.execution.revision; operation.status = 'running';
 		}, completed => {
 			if (operation.result !== undefined || operation.outcome !== undefined) return;
 			if (!completed) { this.finish(operation, { status: 'interrupted', values: [], tags: [], reason: operation.invoked
-				? 'Lua call interrupted; performed mutations are retained.' : 'Actor invocation cancelled before entry.' }); return; }
+				? 'Lua call interrupted; performed mutations are retained.' : operation.admitted
+					? 'Lua argument preparation interrupted.' : 'Actor invocation cancelled before entry.' }); return; }
 			if (request.kind === 'position' || request.kind === 'scrub') {
 				this.redraw(operation, domain, worldHashId, generation, lifetime); return;
 			}
@@ -172,7 +180,7 @@ export class ActorExecutionService {
 		const world = runtimeWorld(this.sources, this.guest, domain);
 		return world !== undefined && this.guest.identityScalar(world, ValueTag.Table) === hashId ? world : undefined;
 	}
-	private prepare(request: ActorInvocation, world: Value): RuntimeGuestCall | undefined {
+	private prepare(request: ActorInvocation, world: Value, operation: ActorExecutionOperation): RuntimeGuestCall | undefined {
 		const cpu = this.runtime.machine.cpu, guest = this.guest;
 		if (request.kind === 'position') {
 			const actor = findRuntimeActor(this.sources, guest, request.target.domain, request.target.actorHashId);
@@ -195,13 +203,8 @@ export class ActorExecutionService {
 				if (guest.matchesIdentity(key, request.definitionId) && guest.matchesIdentity(definition, request.definition)) id = key;
 			});
 			if (isNil(id)) return;
-			return { domain: request.domain, closure: asClosure(guest.readStringMember(world, 'spawn'), cpu.gc),
-				argumentCount: 2 + request.args.length,
-				args: () => {
-					const args: Value[] = [world, id];
-					for (const literal of request.args) args.push(literal(cpu));
-					return args;
-				} };
+			return this.prepareArguments(request.domain, asClosure(guest.readStringMember(world, 'spawn'), cpu.gc),
+				[world, id], request.args, operation);
 		}
 		const { target } = request, tree = this.tree;
 		tree.update(this.sources, guest, target.domain, findRuntimeActor(this.sources, guest, target.domain, target.actorHashId));
@@ -226,15 +229,46 @@ export class ActorExecutionService {
 		} else method = request.method;
 		const closure = guest.readStringMember(receiver, method);
 		if (valueTag(closure) !== ValueTag.Closure || request.kind === 'method' && !guest.matchesIdentity(closure, request.identity)) return;
-		const argumentCount = 1 + leading.length + +(leadingString !== undefined)
-			+ (request.kind === 'action' || request.kind === 'method' ? request.args.length : request.kind === 'event' ? 1 : 0);
-		return { domain: target.domain, closure: asClosure(closure, cpu.gc), argumentCount, args: () => {
-			const args: Value[] = [receiver, ...leading];
-			if (leadingString !== undefined) args.push(valueString(cpu.stringPool.intern(leadingString)));
-			if (request.kind === 'action' || request.kind === 'method') for (const literal of request.args) args.push(literal(cpu));
-			else if (request.kind === 'event') args.push(request.payload(cpu));
-			return args;
-		} };
+		let literals: readonly PreparedLuaLiteral[] = request.kind === 'action' || request.kind === 'method'
+			? request.args : request.kind === 'event' ? [request.payload] : [];
+		if (leadingString !== undefined) literals = [{ kind: 'string', bytes: textToByteString(leadingString) }, ...literals];
+		return this.prepareArguments(target.domain, asClosure(closure, cpu.gc), [receiver, ...leading], literals, operation);
+	}
+	private prepareArguments(domain: ResourceDomain, closure: number, direct: Value[],
+		literals: readonly PreparedLuaLiteral[], operation: ActorExecutionOperation): RuntimeGuestCall {
+		const { cpu } = this.runtime.machine, pool = cpu.stringPool;
+		let index = 0;
+		for (; index < literals.length; index++) {
+			const value = borrowedLiteral(literals[index], pool);
+			if (value === undefined) break;
+			direct.push(value);
+		}
+		if (index === literals.length) return { domain, closure, argumentCount: direct.length, args: () => direct };
+
+		const repl = readRuntimeLuaModuleExport(this.sources, this.guest, SYSTEM_EXECUTION_DOMAIN_ID, 'shell/repl');
+		if (repl.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
+		const parameters = ['target'], operands: string[] = [];
+		const args: Value[] = [valueNil(), valueClosure(closure), ...direct];
+		for (let ordinal = 0; ordinal < direct.length; ordinal++) {
+			const name = 'p' + ordinal;
+			parameters.push(name);
+			operands.push(name);
+		}
+		for (; index < literals.length; index++) {
+			const literal = literals[index], value = borrowedLiteral(literal, pool);
+			if (value === undefined) operands.push(luaLiteralSource(literal));
+			else {
+				const name = 'p' + (parameters.length - 1);
+				parameters.push(name);
+				operands.push(name);
+				args.push(value);
+			}
+		}
+		const source = `return function(${parameters.join(',')}) return target(${operands.join(',')}) end`;
+		args[0] = valueInteger(args.length); // First source byte in the variadic suffix.
+		for (let byte = 0; byte < source.length; byte++) args.push(valueInteger(source.charCodeAt(byte)));
+		return { domain: SYSTEM_EXECUTION_DOMAIN_ID, closure: asClosure(this.guest.readStringMember(repl.value, 'invoke_bytes'), cpu.gc),
+			argumentCount: args.length, args: () => args, observeEntry: { closure, entered: () => { operation.invoked = true; } } };
 	}
 	public setPaused(operation: ActorExecutionOperation, paused: boolean): void {
 		if (this.active !== operation) throw new Error('Actor operation is no longer active.');
@@ -280,7 +314,7 @@ export class ActorExecutionService {
 				if (signal.aborted) { abort(); return; }
 				if (operation.result === undefined && (operation.outcome !== undefined || operation.status !== 'paused')) return;
 				operation.listeners.delete(changed);
-				if (operation.invoked || operation.result !== undefined) signal.removeEventListener('abort', abort);
+				if (operation.admitted || operation.result !== undefined) signal.removeEventListener('abort', abort);
 				else {
 					// A control request can acquire a still-uninvoked admission from
 					// an earlier controller. Paused observation does not abandon it.
@@ -299,7 +333,7 @@ export class ActorExecutionService {
 	}
 	private cancel(operation: ActorExecutionOperation, version: number): void {
 		if (this.active !== operation || operation.outcome !== undefined || operation.controlVersion !== version || operation.executionRevision !== this.execution.revision) return;
-		if (!operation.invoked) operation.revoked = true;
+		if (!operation.admitted && !operation.invoked) operation.revoked = true;
 		this.setPaused(operation, true);
 	}
 	private finish(operation: ActorExecutionOperation, result: ActorExecutionResult): void {
@@ -312,4 +346,14 @@ export class ActorExecutionService {
 		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: [], tags: [], reason: 'Machine state replaced.' });
 	}
 	public shutdown(): Promise<void> { this.closing = true; this.didReplaceMachine(); return this.tasks.join(); }
+}
+
+function borrowedLiteral(literal: PreparedLuaLiteral, strings: StringPool): Value | undefined {
+	if (literal.kind === 'scalar') return literal.value;
+	if (literal.kind === 'string') {
+		const id = strings.find(literal.bytes);
+		// A hit in the mutable pool can be unmarked in StringSweep. Only
+		// installed immutable values bypass the ordinary guest interner.
+		if (id !== undefined && !isRamStringId(id)) return valueString(id);
+	}
 }
