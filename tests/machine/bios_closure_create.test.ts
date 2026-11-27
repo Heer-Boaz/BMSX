@@ -107,7 +107,7 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 				cpu.memory.writeRamRecordWord(f.control + SWEEP_LINK, sweep);
 				cpu.memory.writeRamRecordByte(f.control + 1, 0xa0 | (step & 1));
 			}
-			const occupied = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
+			const occupied = f.cpu.luaHeap.usedBytes();
 			const address = f.native(proto, canonical);
 			const kind = ValueTag.Closure | ((step & 1) << 8) | (((proto.executionDomainId + 1) | (canonical ? CLOSURE_CANONICAL : 0)) << 16);
 			f.begin(proto, canonical);
@@ -127,7 +127,8 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 			const spent = f.finish();
 			assert.equal(f.cpu.heapServiceResult(), address - RAM_BASE);
 			assert.equal(f.cpu.luaHeap.usedBytes(), occupied + CLOSURE_CAPTURE_WORDS);
-			assert.equal(f.cpu.heapAllocator.occupiedBytes(), physical + 24);
+			// An unsplittable remainder is charged as part of the actual chunk.
+			assert.equal(f.cpu.heapAllocator.occupiedBytes(), f.oracle.heapAllocator.occupiedBytes());
 			assert.ok(f.cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX));
 			assert.equal(f.memory.readRamRecordWord(address), kind);
 			assert.equal(f.memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), proto.functionAddress);

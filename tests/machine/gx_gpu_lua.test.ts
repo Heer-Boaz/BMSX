@@ -1,4 +1,4 @@
-import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
+import { compileTestSystemWithHeap, loadTestBiosUtilityModules } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -159,7 +159,7 @@ const biosModules = [
 ];
 const systemCompiled = compileTestSystemWithHeap(
 	parseLuaChunk(SYSTEM_BOOT_SOURCE, 'boot.lua'),
-	systemModules,
+	[...systemModules, ...loadTestBiosUtilityModules().filter(module => !systemModules.some(input => input.path === module.path))],
 	{ entrySource: SYSTEM_BOOT_SOURCE, optLevel: 3, programDomain: 'system' },
 );
 const biosCompiled = compileTestSystemWithHeap(

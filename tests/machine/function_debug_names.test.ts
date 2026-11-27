@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { compileLuaSource } from '../helpers/cpu_test_harness';
+import { parseLuaChunk } from '../helpers/cpu_test_harness';
+import { compileTestSystemWithHeap } from '../helpers/heap_service_system';
 
 test('compiler retains authored and inferred function display names separately from function ids', () => {
 	const source = `
@@ -28,7 +29,8 @@ local function container()
 end
 	return callbacks, local_callback, container
 `;
-	const compiled = compileLuaSource(source, 'function_debug_names.lua');
+	const path = 'function_debug_names.lua';
+	const compiled = compileTestSystemWithHeap(parseLuaChunk(source, path), [], { entrySource: source, programDomain: 'system' });
 	const displayNames = compiled.metadata.protoDisplayNames;
 	const namesById = new Map<string, string>();
 	for (let index = 0; index < compiled.metadata.protoIds.length; index += 1) {
@@ -42,11 +44,12 @@ end
 	assert.equal(namesById.get('module:function_debug_names.lua/entry/local:local_callback'), 'local_callback');
 	assert.equal(namesById.get('module:function_debug_names.lua/entry/decl:callbacks.method'), 'callbacks.method');
 	assert.equal(namesById.get('module:function_debug_names.lua/entry/assign:callbacks.assigned'), 'callbacks.assigned');
-	assert.equal(displayNames.includes('go'), true);
-	assert.equal(displayNames.includes('finish'), true);
-	assert.equal(displayNames.includes('tick'), true);
+	const authoredNames = compiled.metadata.protoIds.flatMap((id, index) => id.startsWith(`module:${path}/`) ? [displayNames[index]] : []);
+	assert.equal(authoredNames.includes('go'), true);
+	assert.equal(authoredNames.includes('finish'), true);
+	assert.equal(authoredNames.includes('tick'), true);
 	assert.equal(
-		displayNames.includes('container.<anonymous>'),
+		authoredNames.includes('container.<anonymous>'),
 		true,
 	);
 
