@@ -1,100 +1,81 @@
 # BIOS base services {#sec-bios-base}
 
-The BIOS supplies functions for value checks, numeric and text conversion,
-Table traversal, argument selection, global-name access and console output.
-Use the installed global names directly after normal BIOS startup.
+The BIOS provides the basic functions for checking and converting values,
+traversing tables, selecting arguments, accessing globals by name and printing.
+They are available as globals when the program starts. `error`, `pcall` and
+`xpcall` are described under [protected calls and coroutines](coroutines.md#sec-coroutines).
 
-This chapter covers the base functions, including direct Table access,
-metatable selection and allocation-pool management. [Protected calls and coroutines](coroutines.md#sec-coroutines)
-specifies `error`, `pcall` and `xpcall`. Device registers and retained fault
-words are described in [[System control](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"}.
+| Task | Function |
+| --- | --- |
+| Convert text to a number | `tonumber(value [, base])` |
+| Convert a value to text; print | `tostring(value)`, `print(...)` |
+| Traverse all entries of a table | `next(t [, key])`, `pairs(t)` |
+| Traverse a sequence | `ipairs(t)` |
+| Count or select arguments | `select(n, ...)` |
+| Access a global by name | `getglobal(name)`, `setglobal(name, value)` |
+| Access a table's own entries | `rawget`, `rawset` |
+| Get or set a metatable | `getmetatable`, `setmetatable` |
+| BLua storage | `collectgarbage(option)` |
 
-Choose the operation according to the representation being used:
+Arithmetic does not convert strings: use `tonumber`. The number 0 is true in
+conditions.
 
-| Task | Interface | Important distinction |
-| --- | --- | --- |
-| Convert numeric text | `tonumber(value [, base])` | Conversion can return nil. Arithmetic does not implicitly parse a numeric String. |
-| Produce diagnostic text | `tostring(value)`, `print(...)` | `tostring` returns text; `print` sends a line to the BIOS console. |
-| Traverse own Table entries | `next(target [, key])`, `pairs(target)` | Entry traversal is different from a numeric sequence ending at its first missing value. |
-| Traverse a numeric sequence | `ipairs(target)` | Starts at key 1 and stops at nil; use an explicit count when nil is part of a tuple. |
-| Count or select call arguments | `select(selector, ...)` | Supplied nil positions still count. [Table packing](bios-table.md#sec-bios-table-tablepack) preserves that count in a Table. |
-| Access a global by a computed name | `getglobal(name)`, `setglobal(name, value)` | These select ordinary global bindings, not keys in a global-environment Table. |
-| Read or write a Table's own mapping | `rawget`, `rawset` | Bypasses inherited reads; see [Table and metatable access](#sec-bios-base-table-and-metatable-access). |
-| Inspect or set a Table's metatable | `getmetatable`, `setmetatable` | The supported inherited-read and weak-reference rules are in the [CPU reference](cpu.md#sec-cpu-metatables-and-indexed-reads). |
-| Inspect or advance collection | `collectgarbage(option)` | Counts the language-allocation budget, not addressable RAM or video memory. A step is not a guaranteed maximum pause. |
+## Program environment {#sec-bios-base-installed-program-environment}
 
-## Installed program environment {#sec-bios-base-installed-program-environment}
+Before the program starts, the BIOS installs the base functions and the
+libraries `table`, `string`, `coroutine`, `lua_compiler`, `load`, `os` and
+`math`. These are ordinary globals, which the program may change. There is no
+`_G` or `_ENV` table; use `getglobal` and `setglobal`. Environments for
+[runtime compilation](bios-loader.md#sec-bios-loader-name-binding-and-retained-dependencies)
+are a separate matter.
 
-Before normal cartridge entry, the BIOS installs the base functions and publishes the library names `table`, `string`, `coroutine`, `lua_compiler`, `load`, `os`, and `math`. A cartridge entering through this path can use those installed bindings without installing the libraries itself.
+### Names {#sec-bios-base-installed-names-and-library-tables}
 
-These are ordinary public bindings. A program can change them; their initial presence does not make their values immutable. Nor does installation provide a private copy of the global environment for each cartridge.
-
-The BIOS does not install `_G` or `_ENV` as global-environment Tables. Use
-`getglobal` and `setglobal` for name-based access to the ordinary global bank;
-this is separate from the environments accepted by
-[runtime compilation](bios-loader.md#sec-bios-loader-name-binding-and-retained-dependencies).
-
-### Installed names and library Tables {#sec-bios-base-installed-names-and-library-tables}
-
-The base installation provides these public names:
+Base functions:
 
 - `next`, `type`, `setmetatable`, `getmetatable`, `rawget`, `rawset`;
 - `getglobal`, `setglobal`, `select`;
 - `error`, `pcall`, `xpcall`, `assert`;
 - `rawequal`, `tostring`, `tonumber`, `print`, `ipairs`, `pairs`, `collectgarbage`.
 
-This is the base installation inventory, not a restriction on names that a program or module may introduce. The entries below give the base-function contracts; [name-based global access](#sec-bios-base-getglobalname-and-setglobalname-value) selects bindings during execution.
+Libraries:
 
-
-Several other installed globals hold ordinary library Tables. The distinction matters: `string` is a global binding, while the library Table initially held by that binding is a separate value.
-
-| Installed name | Interface navigation |
+| Name | Contents |
 | --- | --- |
-| `table` | The Table library. See the [Table reference](bios-table.md#sec-bios-table) for its operations. |
-| `string` | The completed String library Table, also registered for String indexing. See the [String reference](bios-string.md#sec-bios-string) for indexing and library behavior. |
-| `coroutine` | The coroutine library Table. See [Protected calls and coroutines](coroutines.md#sec-coroutines). |
-| `math` | The [mathematics library](bios-math.md#sec-bios-math), including numeric domains, radian trigonometry and random-number state. |
-| `os` | The [time and date library](bios-os.md#sec-bios-os): cycle-derived elapsed time and deterministic civil-time conversion, not filesystem or process services. |
-| `lua_compiler` | A Table containing `compile_syntax`, `syntax_factory`, and `load`, for the BIOS runtime-compilation interface. |
-| `load` | Initially the same function value as `lua_compiler.load`; see [runtime compilation](bios-loader.md#sec-bios-loader). |
+| `table` | [Table library](bios-table.md#sec-bios-table) |
+| `string` | [String library](bios-string.md#sec-bios-string); also used for string indexing |
+| `coroutine` | [Coroutines](coroutines.md#sec-coroutines) |
+| `math` | [Mathematics library](bios-math.md#sec-bios-math) |
+| `os` | [Time and date](bios-os.md#sec-bios-os) |
+| `lua_compiler` | `compile_syntax`, `syntax_factory` and `load`; see [runtime compilation](bios-loader.md#sec-bios-loader) |
+| `load` | The same function as `lua_compiler.load` |
 
+### Replacing globals {#sec-bios-base-public-bindings-and-library-references}
 
-Use those routine chapters for argument domains, precision, errors, random-number behavior and timing conventions.
+A global can be given a new value; references saved earlier keep the old one.
+Some functions use the current value of other globals: `pairs` uses `next`,
+`print` uses `select` and `tostring`, and `tonumber` uses `type` and `error`.
+`assert` and the string functions keep the functions they had at
+installation. String methods are found through the string table installed by
+the BIOS, also if the global `string` is changed.
 
-### Public bindings and library references {#sec-bios-base-public-bindings-and-library-references}
+## collectgarbage {#sec-bios-base-collectgarbage}
 
-Public library bindings can be reassigned. A saved Table or function reference
-continues to refer to its original value after the global name changes.
-The BIOS also retains some dependencies at installation: `assert` keeps its
-selection and error operations, `print` keeps its console destination, and
-String operations retain their listed helper functions. `pairs` instead
-reads the current global `next`; `print` reads current `select` and `tostring`;
-`tonumber` reads current `type` and `error`.
+```text
+collectgarbage([option]) -> result
+```
 
-String method lookup uses the installed String-index Table. Reassigning the
-`string` global leaves that method Table in place. The routine references
-describe any further dependency relevant to replacing an installed binding.
+[BLua storage](blua-system.md#sec-blua-system-blua-storage) is reclaimed automatically; `collectgarbage` reports its use
+or reclaims storage at a convenient moment, such as a loading screen.
 
-## Allocation-pool management {#sec-bios-base-collectgarbage}
+| Option | Function | Result |
+| --- | --- | --- |
+| None, nil or `'collect'` | Reclaim all unused storage | 0 |
+| `'count'` | Storage in use (unused storage not yet reclaimed included) | KiB |
+| `'capacity'` | Total size of BLua storage | KiB |
+| `'step'` | One step of reclamation | true if a cycle has been completed |
 
-Use `collectgarbage(option)` to observe the shared language-allocation pool or
-advance reclamation at a convenient point, such as a loading screen. Automatic
-collection continues without these calls.
-
-| Option | Operation and single result |
-| --- | --- |
-| Omitted, nil or `'collect'` | Finish an active cycle, then complete one fresh cycle; return `0`. |
-| `'count'` | Return occupied budget in KiB, including unreachable allocations not yet reclaimed. |
-| `'capacity'` | Return the active image’s language-allocation capacity in KiB, not its remaining capacity. VRAM is separate. |
-| `'step'` | Perform one incremental step, starting a cycle if idle. Return true if that step finishes the cycle, false otherwise. |
-
-One KiB is 1,024 bytes; fractional KiB are retained. Counts use the canonical
-logical allocation charges in the [CPU reference](cpu.md#sec-cpu-language-allocation-and-collection).
-They include charged reservations such as Thread slots, but not registry
-indexes, space for unregistered global names, padding or free fragments of RAM.
-Reading a count does not collect.
-An unlisted option raises an error. The service captures its collection and
-error primitives when installed; replacing public bindings does not alter them.
+Other options raise an error.
 
 ```lua
 local occupied_kib = collectgarbage('count')
@@ -102,464 +83,316 @@ local capacity_kib = collectgarbage('capacity')
 local cycle_finished = collectgarbage('step')
 ```
 
-A step does not wait for a display frame and does not guarantee a maximum
-pause. It calls a resident BIOS routine with ordinary result placement and
-consumes ordinary CPU cycles.
-If the step starts during final marking, it finishes that pass before
-returning, which does not necessarily finish the cycle.
-A full collection does not return until the fresh cycle finishes. Both
-operations can continue across CPU grants while display and timer events
-advance; neither can be interrupted by an interrupt handler. Use a full
-collection at a suitable point, such as a loading screen.
+The time of a step is not limited. During `collectgarbage` the devices continue,
+but no interrupt handler is entered.
 
-Full collection and both budget queries also use ordinary resident calls.
-The queries read the current logical usage and capacity; they do not run
-the collector. Work words do not add a second charge to the ordinary cycles
-of either collection routine.
+## Values {#sec-bios-base-value-checks-and-conversion}
 
-## Value checks and conversion {#sec-bios-base-value-checks-and-conversion}
+Missing arguments are nil.
 
-Use a conversion when a different value kind is required. A String of
-digits remains text until conversion succeeds; numeric zero remains truthy.
+### assert {#sec-bios-base-assertcondition}
 
-A missing fixed argument arrives as nil. Variadic interfaces count the
-supplied positions, including explicit nils. A fixed receiving list discards
-excess results and fills missing positions with nil; an expanding result
-position carries the returned count. These rules matter for assertions and
-argument tuples as well as for ordinary function calls.
+```text
+assert(condition, ...) -> condition, ...
+```
 
-### `assert(condition, ...)` {#sec-bios-base-assertcondition}
-
-`assert` tests the condition using BMSX truth: only `nil` and `false` are falsey. Every other value is truthy, including numeric zero and an empty String. An omitted condition is `nil` and therefore fails.
-
-It uses captured error and argument-selection primitives. Replacing the public `error` or `select` binding does not replace those operations inside `assert`.
-
-On success, `assert` returns the condition followed by every remaining argument, unchanged and in order. Its result count is exactly one plus the number of tail arguments. Explicit `nil` positions are retained, including trailing ones; this is not a function that returns only a Boolean or a single checked value.
+If `condition` is true (not nil or false), assert returns all its arguments
+unchanged, nil included:
 
 ```lua
 local condition, message, absent, code = assert(0, 'kept', nil, 7)
+-- 0, 'kept', nil, 7
 ```
 
-This call succeeds and returns exactly four values: `0`, `'kept'`, `nil`, and `7`. For counting or selecting a multiple-result sequence, see [Traversal, argument selection, globals, and output](#sec-bios-base-traversal-argument-selection-globals-and-output).
+Otherwise it raises the second argument, or `'assertion failed!'` if there is
+none. So `assert(false, nil)` raises nil and `assert(false)` raises
+`'assertion failed!'`.
 
+### rawequal {#sec-bios-base-rawequalleft-right}
 
-On failure, the presence of a tail argument determines the error value:
+```text
+rawequal(a, b) -> boolean
+```
 
-| Arguments after the condition | Raised value |
+Compares without `__eq`, as in the [EQ instruction](cpu.md#sec-cpu-comparisons-and-conditional-execution):
+different kinds are unequal; numbers by value (NaN unequal, +0 = −0); strings
+by contents; tables, closures and threads by identity; built-in functions by
+which function they are.
+
+### type {#sec-bios-base-typevalue}
+
+```text
+type(value) -> name
+```
+
+| Value | Result |
 | --- | --- |
-| None | The String `assertion failed!` |
-| One or more | The first tail value, unchanged |
-
-
-Consequently, `assert(false, nil)` raises `nil`, whereas `assert(false)` raises `assertion failed!`. A supplied `false`, Number, Table, or other non-String value is also raised as that value, not converted to a message. Later tail arguments are not additional error values. Error interception and propagation are described in [Protected calls and coroutines](coroutines.md#sec-coroutines).
-
-### `rawequal(left, right)` {#sec-bios-base-rawequalleft-right}
-
-Returns one Boolean using BMSX equality. Missing operands are nil and
-surplus operands are ignored. Values are compared in their existing kinds;
-`__eq` is not called.
-
-| Operand categories | Equality rule |
-| --- | --- |
-| Different categories | Unequal |
-| `nil` and `nil` | Equal |
-| Booleans | Equal when they have the same Boolean value |
-| Numbers | Numeric equality; NaN is unequal, and positive and negative zero are equal |
-| Strings | Equal String values |
-| Built-in functions | Equal when they designate the same built-in routine |
-| Tables, closures, and Threads | Compare reference identity within the same category |
-
-Closures and built-in routines both have type name `function`, but remain
-distinct value categories for equality. A Number and its textual spelling
-compare unequal. Two Table references compare equal only when they refer to
-the same Table, even if separate Tables have matching entries.
-
-
-### `type(value)` {#sec-bios-base-typevalue}
-
-`type` returns exactly one String naming the value's category. Omitting the argument is equivalent to passing `nil`; further arguments are ignored. The complete set of returned labels is:
-
-| Value category | Result |
-| --- | --- |
-| Nil | `'nil'` |
-| False or True | `'boolean'` |
+| nil | `'nil'` |
+| false, true | `'boolean'` |
 | Number | `'number'` |
 | String | `'string'` |
 | Thread | `'thread'` |
 | Table | `'table'` |
-| Closure or built-in function | `'function'` |
+| Closure, built-in function | `'function'` |
 
+### tostring {#sec-bios-base-tostringvalue}
 
-These are exact, lowercase labels. In particular, Boolean values do not have separate `'true'` and `'false'` type labels, and the result does not distinguish the two callable categories. The function classifies the value itself rather than attempting to parse or convert it.
+```text
+tostring(value) -> string
+```
 
-### `tostring(value)` {#sec-bios-base-tostringvalue}
+Converts as `'' .. value` does; `__tostring` is not used.
 
-Returns one String using the same value conversion as `'' .. value`.
-An omitted argument converts as nil; surplus arguments are ignored.
-`__tostring` does not participate in this conversion.
-
-| Value | String contents |
+| Value | Text |
 | --- | --- |
-| `nil` | `nil` |
-| `false` | `false` |
-| `true` | `true` |
-| String | Its contents, unchanged |
+| nil, false, true | `nil`, `false`, `true` |
+| String | Unchanged |
 | Thread | `thread` |
 | Table | `table` |
-| Closure or built-in function | `function` |
-| Number NaN | `nan` |
-| Negative infinity | `-inf` |
-| Positive infinity | `inf` |
+| Function | `function` |
+| NaN, −infinity, +infinity | `nan`, `-inf`, `inf` |
+| Number | See [number to text](cpu.md#sec-cpu-default-number-to-text-conversion) |
 
-The category words are literal text, not addresses, names, or structural dumps. Number conversion uses the CPU chapter's **default Number-to-String formatter**. An Integer is written exactly in signed decimal. Float positive and negative zero are `0.0` and `-0.0`; finite nonzero Floats use the formatter's seven-significant-digit rule. `tostring` has no formatting argument and does not offer a precision or notation selector.
+### tonumber {#sec-bios-base-tonumbervalue-base}
 
-### `tonumber(value [, base])` {#sec-bios-base-tonumbervalue-base}
+```text
+tonumber(value [, base]) -> number or nil
+```
 
-`tonumber` returns exactly one Number on a successful conversion, or exactly one `nil` when a supported parse fails. Some explicit-base argument errors raise a value instead of returning normally. The omitted-base and explicit-`nil`-base forms follow the same rules:
+Without base (or with base nil): a number is returned unchanged, a string is
+converted (nil if it is not a number), and other values give nil. With a base,
+value must be a string.
 
-| `value` category, with no nonnil base | Result |
-| --- | --- |
-| Number | The original Number, unchanged |
-| String | The parsed Number, or `nil` if parsing fails |
-| Any other category, including an omitted value | `nil` |
+#### Characters {#sec-bios-base-character-and-token-rules}
 
-An explicit nonnil base selects a different contract: the value must be a String, and the base must pass the checks below. A Number value is not accepted by this form even when it could be returned unchanged without a base. Arguments after `base` are not parameters.
+Spaces (code 32 and 9–13) are allowed before and after the number, not inside
+it. One sign (`+` or `-`) is allowed after the leading spaces. Digits are `0`–`9`
+and the letters `A`–`Z` or `a`–`z` (values 10–35), as far as they are below the
+base. The whole string must be used; otherwise the result is nil.
 
-#### Character and token rules {#sec-bios-base-character-and-token-rules}
+#### Without base {#sec-bios-base-default-string-form}
 
-Both parsing forms recognize whitespace only as character code `32` or codes `9` through `13`, inclusive. Leading and trailing whitespace are permitted. Whitespace inside the numeral is not skipped. A sign, when allowed, is one leading `+` or `-` after leading whitespace.
-
-The digit alphabet is ASCII `0` through `9`, then `A` through `Z` or `a` through `z`. Decimal digits have values zero through nine; either letter case maps to values ten through thirty-five. A digit is usable only when its value is less than the selected base. Other characters are not digits.
-
-A successful parse must consume the entire String apart from the permitted leading and trailing whitespace. A missing required digit, an invalid digit, or any remaining non-whitespace character makes parsing return `nil`. There is no successful-prefix result that silently discards the rest of a String.
-
-#### Default String form {#sec-bios-base-default-string-form}
-
-After leading whitespace and an optional sign, an initial `0x` or `0X` selects an integer hexadecimal form. It requires at least one hexadecimal digit, accumulates those digits in base sixteen, and then accepts only trailing whitespace and the end of the String. This form has no hexadecimal fractional part or hexadecimal exponent.
-
-Without that prefix, the form is decimal. It contains decimal integer digits, an optional decimal point and decimal fractional digits, or a decimal point followed by fractional digits. At least one digit must occur across the integer and fractional parts: `.25`, `12.`, and `12.25` are accepted forms, but a bare decimal point is not. A leading zero without the hexadecimal prefix does not select another base.
-
-The decimal form may end with an exponent introduced by `e` or `E`. The exponent may have one `+` or `-` sign and must have at least one decimal digit. Only trailing whitespace may follow it. Thus neither an exponent marker alone nor an exponent sign without digits completes a numeral.
-
-| Part | Default decimal | Default prefixed hexadecimal |
+| Part | Decimal | Hexadecimal |
 | --- | --- | --- |
-| Leading whitespace | Permitted | Permitted |
-| Leading sign | Optional | Optional, before the prefix |
-| Prefix | None | `0x` or `0X` |
-| Required digits | At least one across integer and fractional parts | At least one hexadecimal digit |
-| Fraction | Optional decimal point and decimal digits | Not supported |
-| Exponent | Optional `e` or `E`, optional sign, required decimal digits | Not supported |
-| End | Trailing whitespace, then end of String | Trailing whitespace, then end of String |
+| Prefix | — | `0x` or `0X` (after the sign) |
+| Digits | At least one, before or after the point | At least one |
+| Fraction | `.` and digits | — |
+| Exponent | `e` or `E`, sign, at least one digit | — |
 
-#### Explicit-base String form {#sec-bios-base-explicit-base-string-form}
+Examples: `.25`, `12.` and `12.25` are numbers; `.` is not. A leading 0 does not
+select octal.
 
-The supported bases are Numbers with exact integral values from `2` through `36`, inclusive. After leading whitespace and an optional sign, this form reads one or more digits valid for that base, then permits only trailing whitespace and the end of the String. It does not accept a fractional point or provide a separate exponent syntax.
+#### With base {#sec-bios-base-explicit-base-string-form}
 
-No prefix is stripped in the explicit-base form. In particular, selecting base sixteen does not give `0x` or `0X` special treatment: their characters are processed by the same digit rules as every other character. Letters such as `e` are digits when their values fit the chosen base, not exponent markers. Use the default form, rather than an explicit base, when requesting decimal fractions or decimal exponents.
+The base is an integer from 2 to 36. The string holds digits of that base only:
+no point, no exponent, and no `0x` prefix (with base 16, `0x` is not a valid
+digit sequence).
 
+#### Errors {#sec-bios-base-argument-check-order-and-errors}
 
-#### Argument-check order and errors {#sec-bios-base-argument-check-order-and-errors}
+With a base, these are checked in order:
 
-For a nonnil base, the installed function performs these operations in order:
+1. value is a string, otherwise `bad argument #1 to tonumber (string expected)`;
+2. base is an integer, otherwise `bad argument #2 to tonumber (integer expected)`;
+3. base is from 2 to 36, otherwise `bad argument #2 to tonumber (base out of range)`.
 
-1. Check that `value` is a String. Otherwise, raise the exact String `bad argument #1 to tonumber (string expected)`.
-2. Compute `integer_base = base // 1`. If `integer_base` differs from `base`, raise the exact String `bad argument #2 to tonumber (integer expected)`.
-3. Require `integer_base` to be between `2` and `36`, inclusive. Otherwise, raise the exact String `bad argument #2 to tonumber (base out of range)`.
-4. Parse the String using that base, returning a Number or `nil`.
+A base that is not a number raises `INVALID_ARGUMENT`.
 
-Supply the base as a Number. The String-value check precedes its arithmetic
-and range checks; floor division of a non-Number base raises
-`INVALID_ARGUMENT`, including for a numeric String. Error reporting uses the
-current global `error`, and kind checks use current `type`.
-[Protected calls](coroutines.md#sec-coroutines) receive a raised value.
+#### Results {#sec-bios-base-arithmetic-and-execution-cost}
 
+A decimal number without point or exponent that fits in 32 bits gives an
+Integer; otherwise a Float, rounded to nearest. `tonumber('-2147483648')` is the
+smallest Integer, `tonumber('2147483648')` a Float, and `tonumber('-0.0')` is −0.0.
+Hexadecimal and base forms give an Integer of the low 32 bits:
+`tonumber('0xffffffff')` and `tonumber('ffffffff', 16)` are both −1.
 
-#### Arithmetic and execution cost {#sec-bios-base-arithmetic-and-execution-cost}
+## Tables and metatables {#sec-bios-base-table-and-metatable-access}
 
-The default decimal form returns an Integer when its spelling has neither a
-decimal point nor an exponent and its signed value fits the Integer range.
-Otherwise it returns a Float: round the signed mathematical decimal value
-directly to binary32, to nearest with ties to even. A magnitude beyond the
-Float range rounds to infinity, and underflow retains the sign of zero. For
-example, `tonumber('-2147483648')` is the minimum Integer,
-`tonumber('2147483648')` is a Float, and `tonumber('-0.0')` is Float negative
-zero. The sign belongs to this String conversion; it is not a separate source
-unary operator.
-
-The default prefixed hexadecimal form and the explicit-base form return an
-Integer formed from the low 32 bits of the signed mathematical result. For
-example, `tonumber('0xffffffff')` and `tonumber('ffffffff', 16)` both return
-Integer −1. The conversion and its result subtype do not depend on how many
-digits were needed to spell that word.
-
-There is no fixed total cycle count for `assert`, `rawequal`, `tostring`, or
-`tonumber`: their executed operations, result handling, conversions and parsing
-work contribute to the cost. The String-codepoint primitive adds two cycles;
-Float word transfers use the two-cycle numeric word moves. Primitive charges
-are separate from ordinary call and return costs. `type` adds one cycle with no additional
-per-argument or per-result charge.
-
-## Table and metatable access {#sec-bios-base-table-and-metatable-access}
-
-Use raw access to inspect or change a Table's own mapping, or metatable access
-to inspect or replace its associated metatable. The [CPU Table rules](cpu.md#sec-cpu-metatables-and-indexed-reads)
-define inherited reads, direct writes and [weak references](cpu.md#sec-cpu-weak-references-and-collection).
-
-All four functions below require a Table as their first argument; otherwise they raise `INVALID_ARGUMENT` (10). Ordinary BLua source must supply every listed argument. Pass explicit nil to delete a mapping or clear a metatable.
-
-| Signature | Operation and result |
+| Function | Function |
 | --- | --- |
-| `setmetatable(t, mt)` | Sets the metatable to Table `mt`; nil clears it. Returns `t`. Any other `mt` raises `INVALID_ARGUMENT` (10). |
-| `getmetatable(t)` | Returns the actual metatable Table, or nil. No protected-metatable substitution is performed. |
-| `rawget(t, key)` | Returns only the own mapping, or nil when missing. Ignores the metatable. |
-| `rawset(t, key, value)` | Writes only the own mapping and returns `t`. Nil `value` deletes it. |
+| `setmetatable(t, mt)` | Sets the metatable to `mt` (nil removes it); returns t |
+| `getmetatable(t)` | Returns the metatable, or nil |
+| `rawget(t, key)` | Returns t's own entry, without `__index` |
+| `rawset(t, key, value)` | Sets t's own entry, without `__newindex`; nil removes it; returns t |
 
+The first argument must be a table, and mt a table or nil; otherwise
+`INVALID_ARGUMENT` (10). In BLua, give all arguments; pass nil explicitly to
+remove. `rawget` with a nil or NaN key returns nil; `rawset` with such a key
+raises `INDEX_NIL` (4) or `INDEX_NAN` (12). `rawset` enlarges the table if
+needed, or raises `OUT_OF_MEMORY`. See the [CPU](cpu.md#sec-cpu-metatables-and-indexed-reads)
+for `__index` and `__newindex`.
 
-`rawget` requires a key argument and returns nil for a nil or NaN key.
-`rawset` requires both the key and value arguments. It rejects nil or NaN
-keys with `INDEX_NIL` (4) or `INDEX_NAN` (12), respectively, and uses the
-ordinary [Table-length boundary rules](cpu.md#sec-cpu-table-length). If the
-write requires replacement storage, the caller waits until the resident
-routine completes the insertion or raises out-of-memory. The routine uses
-ordinary CPU cycles in addition to the builtin call charge.
+## Traversal, arguments, globals and printing {#sec-bios-base-traversal-argument-selection-globals-and-output}
 
+### next {#sec-bios-base-nexttable-key}
 
-## Traversal, argument selection, globals, and output {#sec-bios-base-traversal-argument-selection-globals-and-output}
+```text
+next(t [, key]) -> key, value
+```
 
-Choose entry traversal for all own Table mappings, or indexed iteration for
-a sequence ending at nil. Use `select` when the supplied argument count,
-including nil positions, must be preserved. Name-based global access and
-console output use the same ordinary call and result-adjustment rules.
+Returns the entry of t that follows key (the first entry if key is nil), or
+one nil at the end. The order is not defined. A value other than a table raises
+`Attempted to iterate a non-table value.`; an unknown key raises
+`INVALID_NEXT_KEY` (11), `invalid key to 'next'`.
 
+During a traversal, existing entries may be changed or removed; a removed key
+can still be used to continue. **Do not add new entries during a traversal.**
+`next` visits the table's own entries only. The end is marked by a nil key; a
+false value is an ordinary value.
 
-### `next(table [, key])` {#sec-bios-base-nexttable-key}
+### pairs {#sec-bios-base-pairstarget}
 
-`next` traverses entries stored in a Table. Its first argument must be a Table; an omitted argument, nil, or another value faults with `Attempted to iterate a non-table value.` The optional second argument is the continuation key. Omitting it is the same as supplying nil. The key is used in its existing value representation, without a conversion by this function. Arguments after the second are unused.
+```text
+pairs(t) -> next, t, nil
+```
 
+For use in `for k, v in pairs(t)`. `pairs` returns the current global `next`;
+`__pairs` is not used. The loop ends when the first result is nil.
 
-A successful step returns exactly two results, `(key, value)`. The returned value retains its stored representation. Exhaustion returns exactly **one nil**, not zero results and not a pair of nils. Start with a nil key to visit every live mapping. The order is unspecified, even for numeric keys.
+### ipairs {#sec-bios-base-ipairstarget}
 
-Use the returned key to continue traversal of the same Table. An
-unrecognized continuation key raises `INVALID_NEXT_KEY`
-(11), with the message `invalid key to 'next'`.
-Existing fields may be changed or set to nil during traversal. A returned key
-remains a valid continuation after its mapping is removed, and removing an
-entry does not cause unrelated entries to be skipped. Do not add previously
-absent fields during a traversal: insertion may reorganize the Table's storage
-and changes which entries subsequent steps visit.
+```text
+ipairs(t) -> iterator, t, 0
+```
 
-`next` visits stored entries, not values supplied by inherited ordinary indexing. Its returned key is also the continuation control for a subsequent step. Test that key for nil when detecting exhaustion: false is not an exhaustion marker.
+The iterator returns (1, t[1]), (2, t[2]), … and stops at the first nil value; a
+false value does not stop it. It reads with ordinary indexing, so `__index`
+applies; `__ipairs` is not used. It does not use the length of the table.
 
-The primitive adds one cycle to the base `CALL` charge. Ordinary result
-placement is charged separately. Neither the Table's reserved capacity nor
-the traversal position changes the primitive charge. An invalid continuation
-faults without producing a result tuple.
+### select {#sec-bios-base-selectselector}
 
-### `pairs(target)` {#sec-bios-base-pairstarget}
+```text
+select('#', ...) -> count
+select(n, ...) -> ...
+```
 
-Returns the three values `next, target, nil`, selecting the current global
-`next`. The first iterator call checks the target through that function.
-`__pairs` is ignored. Replacing `next` therefore changes the iterator returned
-by subsequent `pairs` calls.
+`select('#', ...)` returns the number of arguments, nil included. `select(n, ...)`
+returns the arguments from position n on; a negative n counts from the end:
 
-A generic `for` obtains three values from its iterator expression: iterator, state, and initial control. Each step calls the iterator with `(state, control)`. The loop ends only when the first result is nil; false does not end it. Otherwise that first result becomes the next control. With the installed `next`, this mechanism traverses the stored entries described above, including the permission to change or remove existing fields. `pairs` adds no separate ordering guarantee.
-
-### `ipairs(target)` {#sec-bios-base-ipairstarget}
-
-Returns `ipairs_iterator, target, 0`. The iterator begins at key 1 and uses
-ordinary indexed reads. It is the BIOS sequence iterator, independent of the
-current global `next`; `__ipairs` is ignored. The target is first accessed
-when the iterator runs.
-
-Each iterator step computes `next_index = index + 1` and reads `target[next_index]` using ordinary indexing. If the read produces nil, the step returns exactly one nil. Otherwise it returns exactly two results, `(next_index, value)`. A false value is therefore an ordinary sequence element and is returned, not treated as a stopping condition. A nil encountered at an index stops this traversal even when later indexes contain values.
-
-Ordinary indexing is important here: the step is not a raw Table-entry lookup. A Table can supply a value through its ordinary metatable index resolution, and such a value can keep `ipairs` running where a stored entry alone would not. By contrast, `next` traverses actual storage. Ordinary indexing also accepts a String through its String-index table; that acceptance is not a promise that numeric String indexes return characters or substrings. A value that cannot be indexed faults when the iterator step reaches the read, rather than during construction of the `ipairs` triple.
-
-`ipairs` never reads Table length. Its limit is the first nil returned by successive ordinary reads, not a length captured before iteration or recomputed at each step. Changes affecting those reads can affect subsequent steps; this is not a separate mutation-safe sequence traversal contract.
-
-
-### `select(selector, ...)` {#sec-bios-base-selectselector}
-
-`select` operates on the arguments after its selector. The exact String selector `'#'` returns exactly one Number: the number of those arguments, including every nil position. An omitted selector, nil, any other String, or any other non-Number selector faults with `Invalid argument.` Numeric selectors take a different path; they are not required to be integer-valued before conversion.
-
-A numeric selector is converted to a signed 32-bit register word: discard its fractional part toward zero, reduce the resulting integer modulo 2^32, then interpret bit 31 as the sign bit. NaN and either infinity convert to zero. Let `s` be that converted value and `count` the number of remaining arguments. If `s` is negative, its starting position is `count + s + 1`; otherwise its starting position is `s`. The selected suffix is then restricted to argument positions `1` through `count`. Conversion precedes both the negative-offset calculation and the bounds filtering.
-
-| Converted selector | Results |
+| n | Results |
 | --- | --- |
-| `1` through `count` | That argument and every following argument |
-| `-1` | The final argument, when one exists |
-| `-count`, for a nonempty argument list | All arguments |
-| `0`, or a value more negative than `-count` | All arguments |
-| A positive value greater than `count` | Zero results |
+| 1 to count | Argument n and the following |
+| −1 | The last argument |
+| 0, or below −count | All arguments |
+| Above count | None |
 
+n is rounded towards 0 and taken as a 32-bit number (NaN and infinity become 0).
+Other selectors raise `Invalid argument.`
 
-Results keep their original values and nil positions. With an empty tail,
-a numeric selector returns zero results while `'#'` returns the Number zero.
-A zero or overly negative selector returns the complete tail. An overly large
-positive selector returns zero results; a fixed receiving list then fills its
-variables with nil through ordinary result adjustment.
+### getglobal and setglobal {#sec-bios-base-getglobalname-and-setglobalname-value}
 
-### `getglobal(name)` and `setglobal(name, value)` {#sec-bios-base-getglobalname-and-setglobalname-value}
+```text
+getglobal(name) -> value
+setglobal(name, value)
+```
 
-`getglobal` requires a String name without coercion. An omitted name or a non-String name faults with `Invalid argument.` It returns exactly one value: the current value of the named ordinary global, or nil if the name is unknown. Arguments after the name are unused. This is a live read, not a captured copy of a global's value from an earlier point in execution.
+`getglobal` returns the current value of the ordinary global `name`, or nil.
+`setglobal` sets it (and creates it if needed). name must be a string,
+otherwise `Invalid argument.` `setglobal` returns no results.
+Local variables and [system globals](cpu.md#sec-cpu-two-global-namespaces) of the
+same name are separate.
 
-`setglobal` requires the same uncoerced String name and uses the same argument fault for an omitted or non-String name. It writes its second argument unchanged to that ordinary global. Omitting the second argument writes nil; later arguments are unused. A previously unknown name receives an ordinary global slot, including when the value written is nil. The function itself returns **zero results**. A caller requesting one result nevertheless receives nil through normal result padding.
+### print {#sec-bios-base-print}
 
-Use an explicit nil as the second argument to `setglobal` in BLua source to
-meet the [known-call minimum](blua-programs.md#sec-blua-programs-known-call-argument-diagnostics).
-Writing nil changes that one binding; it does not clear the global bank.
+```text
+print(...)
+```
 
-These calls select the ordinary global bank. Lexical locals and captured
-variables with the same spelling remain separate, as does the
-[system-global namespace](cpu.md#sec-cpu-two-global-namespaces). Values retain their
-identity, so storing a Table stores a reference to that Table. `setglobal`
-writes when called, and that write remains visible after a later error.
+Prints the arguments converted with `tostring`, separated by tabs, and ends the
+line. nil arguments are printed as `nil`. `print()` prints an empty line.
+`print` returns one nil.
 
-### `print(...)` {#sec-bios-base-print}
+#### Console {#sec-system-bios-console-integration}
 
-`print` writes one console field for every argument position, with one tab between adjacent positions and no leading or trailing separator. Nil arguments are counted and converted rather than omitted; a list consisting entirely of nils still has one field per argument. After the fields it ends the line. Calling `print` with no arguments also ends a line.
+The console sends each character to PRINT_CHAR of the
+[diagnostic output](system.md#sec-system-diagnostic-text-output) and keeps it in
+its history: characters up to 255 unchanged, others as `?`. At the end of the
+line it adds a line feed to the history and writes 1 to PRINT_FLUSH. The
+history holds 8192 characters; when it is full, the oldest are replaced. The
+console draws its history separately; `print` does not draw. Writing the SYSTEM
+ports directly does not add to the history. See the
+[example](bios-monitor.md#sec-system-send-a-diagnostic-line).
 
-Argument selection uses current `select`; conversion uses current
-`tostring`. The destination remains the BIOS console when either of those
-global bindings is replaced. The conversion rules appear under
-[Value checks and conversion](#sec-bios-base-value-checks-and-conversion).
+### Errors and time {#sec-bios-base-faults-and-incremental-cycle-charges}
 
-Successful `print` returns **one nil**. In contrast, `setglobal` returns
-zero results. A single-result assignment receives nil in either case.
+`pairs` and `ipairs` do not check their argument; an unsuitable value causes an
+error when the loop starts. `next`, `select`, `getglobal` and `setglobal` take
+1 cycle plus the call; `type` 1 cycle. The other functions are BLua code.
 
-#### Console history and display {#sec-system-bios-console-integration}
+## Examples {#sec-bios-base-programming-examples}
 
-The BIOS console sends each codepoint to SYSTEM's PRINT_CHAR port and retains
-a separate one-byte history entry. Codes through 255 are retained unchanged;
-larger codes are recorded as 63 (`?`). The original codepoint still goes to
-PRINT_CHAR. Ending the line appends code 10 to the history and writes 1 to
-PRINT_FLUSH. The history holds 8192 entries; once full, each new entry replaces
-the oldest unread entry.
-
-The console draws its retained entries separately. `print` appends text and
-ends the diagnostic line, but does not itself update the console display.
-Direct PRINT_CHAR and PRINT_FLUSH writes use only the diagnostic channel:
-they neither add BIOS history nor draw glyphs. The channel has its own
-8192-byte queue and overflow rules, specified in
-[[Book I, System control and timing — Diagnostic text output](system.md#sec-system-diagnostic-text-output)]{.content-visible when-format="html"}[Book I, §12.4]{.content-visible when-format="pdf"}.
-
-For a comparison of the resulting text and monitor display, see
-[BIOS diagnostics — Diagnostic text and the BIOS console](bios-monitor.md#sec-system-send-a-diagnostic-line).
-
-### Faults and incremental cycle charges {#sec-bios-base-faults-and-incremental-cycle-charges}
-
-Keep iterator construction separate from iterator execution when handling errors. `next` checks its Table argument and continuation key when called. `pairs` and `ipairs` construct their triples without checking the target; faults arise when their iterators attempt their respective traversal or indexing operations. The primitive argument faults used here have the messages `Attempted to iterate a non-table value.`, `invalid key to 'next'`, and `Invalid argument.` as specified above. Ordinary indexing and calls retain their own failure behavior. See [Protected calls and coroutines](coroutines.md#sec-coroutines) for receiving failures.
-
-Each invocation of `next`, `select`, `getglobal`, or `setglobal` adds **one base cycle**, with no additional per-argument or per-result charge from these primitives. `next` also pays for the positions examined as specified under [Table traversal](#sec-bios-base-nexttable-key). These increments are separate from call and return instructions and their value-placement charges. `pairs`, `ipairs`, and `print` execute ordinary instructions, including their calls, branches, indexing, conversion, and console work. The one-cycle increment is not their total call cost. See [[System control and timing](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} for the execution and timing model.
-
-## Programming examples {#sec-bios-base-programming-examples}
-
-The following sequences use the installed globals directly. They illustrate
-conversion, traversal, argument tuples and console output.
-
-### Assertions and numeric text {#sec-bios-base-assertions-and-numeric-text}
-
-A successful assertion preserves its full argument tuple. A failed assertion
-with an explicit nil message is still a failure: use the protected-call flag,
-not the error value, to distinguish it from success.
+### assert and tonumber {#sec-bios-base-assertions-and-numeric-text}
 
 ```lua
 local first, label, gap, last = assert(0, 'kept', nil, 7)
--- first = 0, label = 'kept', gap = nil, last = 7.
+-- 0, 'kept', nil, 7
 local count = select('#', assert(0, 'kept', nil, 7)) -- 4
-local ok, value = pcall(assert, false, nil)         -- false, nil
+local ok, value = pcall(assert, false, nil)          -- false, nil
 local default_ok, message = pcall(assert, false)
--- default_ok = false; message = 'assertion failed!'.
-```
+-- false, 'assertion failed!'
 
-Numeric text is accepted only when the entire numeral and permitted trailing
-whitespace are consumed. A malformed numeral returns nil; an invalid explicit
-base raises an error instead.
-
-```lua
 local unchanged = tonumber(12.5)      -- 12.5
 local decimal = tonumber(' -12.5e1 ') -- -125
-local fraction = tonumber('.25')     -- 0.25
+local fraction = tonumber('.25')      -- 0.25
 local hex = tonumber('0x10')          -- 16
 local binary = tonumber('-101', 2)    -- -5
 local base36 = tonumber('z', 36)      -- 35
-local rejected = tonumber('12x')     -- nil
+local rejected = tonumber('12x')      -- nil
 local ok, message = pcall(tonumber, '10', 37)
--- false, 'bad argument #2 to tonumber (base out of range)'.
+-- false, 'bad argument #2 to tonumber (base out of range)'
 ```
 
 ### Identity and traversal {#sec-bios-base-identity-and-traversal}
-
-Equal-looking Tables remain distinct objects. Their text labels describe the
-category, not their contents or identity.
 
 ```lua
 local inventory = {apples = 11, pears = 22, plums = 33}
 local same = inventory
 local other = {apples = 11, pears = 22, plums = 33}
-local shared = rawequal(inventory, same)   -- true
+local shared = rawequal(inventory, same)    -- true
 local distinct = rawequal(inventory, other) -- false
-local category = type(inventory)          -- 'table'
-local label = tostring(inventory)         -- 'table'
+local category = type(inventory)            -- 'table'
+local label = tostring(inventory)           -- 'table'
 local total = 0
 for name, quantity in pairs(inventory) do
     total = total + quantity
 end
--- total is 66, independently of the order of named keys.
-```
+-- total = 66
 
-`ipairs` stops at the first nil read; it does not search ahead for another
-populated key. `next` instead visits stored mappings and returns one nil when
-exhausted.
-
-```lua
 local sequence = {10, 20, nil, 90}
 local total = 0
 for index, quantity in ipairs(sequence) do
     total = total + quantity
 end
--- total is 30; sequence[4] remains 90.
+-- total = 30: ipairs stops at sequence[3]
 local singleton = {[4] = 41}
 local key, value = next(singleton)       -- 4, 41
 local finished = next(singleton, key)    -- nil
 local result_count = select('#', next(singleton, key)) -- 1
 ```
 
-### Tuples and globals {#sec-bios-base-tuples-and-globals}
-
-Count tuple positions with `select`, not Table length. An empty selected suffix
-has no results; a suffix beginning with nil still contains that position.
+### Arguments and globals {#sec-bios-base-tuples-and-globals}
 
 ```lua
-local count = select('#', 'skip', nil, 9)             -- 3
-local first, last = select(2, 'skip', nil, 9)           -- nil, 9
+local count = select('#', 'skip', nil, 9)                   -- 3
+local first, last = select(2, 'skip', nil, 9)               -- nil, 9
 local suffix_count = select('#', select(2, 'skip', nil, 9)) -- 2
 local empty_count = select('#', select(4, 'skip', nil, 9))  -- 0
-```
 
-
-For a global owned by the cartridge, both a global-name expression and
-`getglobal` see writes made with `setglobal`. Protection does not reverse an
-earlier write.
-
-```lua
 setglobal('score_counter', 11)
 local before = score_counter -- 11
 local ok, message = pcall(function()
     score_counter = 22
     error('counter changed')
 end)
-local after = getglobal('score_counter') -- 22, despite the error
+local after = getglobal('score_counter') -- 22: the error does not undo it
 setglobal('score_counter', nil)
 ```
 
-
-### Console output {#sec-bios-base-console-output}
+### print {#sec-bios-base-console-output}
 
 ```lua
 print('Score', nil, 7)
 ```
 
-This produces three fields, `Score`, `nil` and `7`, separated by tabs, then ends
-the line. `select('#', print())` ends an empty line and returns 1: the successful
-`print` result is one nil, not an empty tuple.
+prints `Score`, `nil` and `7` separated by tabs. `select('#', print())` prints an
+empty line and returns 1.

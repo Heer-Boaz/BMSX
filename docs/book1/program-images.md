@@ -2,163 +2,107 @@
 
 > WARNING! The behavior of program images and startup in BLua32 may not fully conform to the Lua standard due to implementation-specific details. Any deviations from the Lua standard should actually be regarded as bugs and not as intended features. Therefore, treat any non-standard behavior in this document as bugs and not as contracts, except for the extensions!
 
-The ROM boot header identifies the console's entry functions and the BLua32
-program header. The program header locates the constants, names and sections
-used by the program. Each function has a separate record describing its code,
-parameters, frame capacity and captured variables.
+A ROM holding a program begins with a **ROM header**. It gives the address of
+the **program header** and of the startup, interrupt and exception functions.
+The program header gives the addresses of the program's tables and sections:
+functions, constants, names, code and data. Each function is described by a
+**function record**.
 
-Startup establishes writable static contents before calling the application.
-An ordinary function call, an EXEC transfer and a fresh startup therefore have
-different effects. This chapter follows those effects from reset to cartridge
-entry, then specifies the ROM records and BIOS call-target lookup.
-[[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} supplies the physical
-address map and the storage reservations that every placement must respect.
+This chapter describes the startup of the console from reset to the cartridge
+program, then the formats of the headers and records. The address map is given
+in [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"}.
 
-## Addresses used to enter a program {#sec-program-images-entry-addresses}
+## Entry addresses {#sec-program-images-entry-addresses}
 
-The boot header connects three kinds of information. The **program header**
-describes the image shared by its functions. A **function record** describes
-one callable function. That record's **code address** selects the instruction
-bytes at which the function begins. Selecting the image establishes its
-constant and name tables; entering a function establishes a frame and begins
-fetching its instructions.
+A function is entered through its function record, not through its first
+instruction. Example:
 
-For example, consider these address fields in a cartridge's ROM. The chosen
-record and code locations are illustrative; the field offsets are those
-specified in the reference below.
-
-| Read or calculation | Example value | Meaning |
+| Read | Value | Meaning |
 |---|---|---|
-| ROM base | `10000000H` | Start of the selected socket's ROM window |
-| Word at ROM base + `20H` | `00000100H` | Program-header offset relative to ROM base |
-| ROM base + program-header offset | `10000100H` | Absolute program-header address |
-| Word at ROM base + `28H` | `10001230H` | Absolute startup-function-record address |
-| Word at function record + `00H` | `10002000H` | Absolute initial instruction address |
-| Word at program header + `14H` | `10000300H` | Absolute constant-table address |
+| ROM base | `10000000H` | Cartridge ROM |
+| Word at ROM base + `20H` | `00000100H` | Program-header offset |
+| ROM base + offset | `10000100H` | Program-header address |
+| Word at ROM base + `28H` | `10001230H` | Startup function record |
+| Word at record + `00H` | `10002000H` | First instruction of the function |
+| Word at program header + `14H` | `10000300H` | Constant table |
 
-For a startup record with STATIC set, EXEC receives `10001230H`, reads the
-record and starts its code at `10002000H`. It does not add the program-header
-address to either value. The constant table belongs to the selected image and
-is located independently of the function's code. Its entries are selected by
-constant indices in the instructions.
+EXEC is given `10001230H`; it reads the record and starts the code at
+`10002000H`. All these addresses are absolute. CLOSURE also takes a
+function-record address; see the
+[CPU linkage examples](cpu.md#sec-cpu-linkage-operands-and-encoding-examples).
 
-The same distinction applies to ordinary calls. CLOSURE constructs a callable
-value from a function-record address, and CALL invokes that value with
-arguments. EXEC instead replaces the active call chain. The
-[CPU linkage examples](cpu.md#sec-cpu-linkage-operands-and-encoding-examples)
-use the same `10001230H` record address to show the instruction encoding.
+## Sections {#sec-memory-rom-contents-ram-sections-and-startup}
 
-## ROM contents, RAM sections, and startup {#sec-memory-rom-contents-ram-sections-and-startup}
-
-The ROM layout described here stores program instructions, read-only data
-and the initial contents of writable data. Mutable static objects have
-separately assigned run addresses in main RAM. The section names distinguish
-their storage and initialization rules:
-
-| Section | Contents in the ROM image | Address used during execution |
+| Section | In ROM | During execution |
 |---|---|---|
-| TEXT | Executable code | Instruction byte address in ROM |
-| RODATA | Read-only data bytes | Read-only byte address in ROM |
-| DATA | Initializer bytes | DATA run address in main RAM, after startup copies the initializers |
-| BSS | No section byte payload | BSS address in main RAM, after startup clears the section |
+| TEXT | Code | Executed from ROM |
+| RODATA | Read-only data | Read from ROM |
+| DATA | Initial values | Used in main RAM, after the startup routine has copied them |
+| BSS | — | Used in main RAM, after the startup routine has cleared it |
 
-DATA consequently has two distinct addresses:
+DATA has a **load address** in ROM (the initial values) and a **run address**
+in main RAM (the variables). Code uses the run address.
 
-- Its **load address** identifies the initializer bytes in the ROM image.
-- Its **run address** identifies the writable storage in main RAM.
-
-Instructions access a DATA object's RAM run address. Startup reads the
-initializer at its ROM load address and copies it to that run address.
-RODATA is used in place in ROM. BSS reserves a RAM address range, whose initial
-zero contents are written by startup; the ROM needs only its address and size.
-
-### Follow the records, counter and output storage {#sec-memory-follow-the-records-counter-and-output-storage}
+### Example {#sec-memory-follow-the-records-counter-and-output-storage}
 
 The [record-copy example](blua-programs.md#sec-memory-worked-example-prepare-and-copy-two-records)
-uses three addressed objects: two read-only input records, an initialized
-counter, and space for two output records. Each record occupies twelve bytes.
-Their storage requirements are:
+uses three objects of 12-byte records:
 
-| Object | Bytes in ROM | Bytes in main RAM | Preparation |
-|---|---|---|---|
-| `inputs`: two read-only records | 24 record bytes | None | Use the ROM bytes in place |
-| `counter`: one initialized word | 4 initializer bytes | 4 working bytes | Copy `12345678H` into the working word |
-| `output`: two zero-initialized records | No BSS payload | 24 working bytes | Clear all 24 bytes |
+| Object | Section | ROM | RAM | Startup |
+|---|---|---|---|---|
+| `inputs`, two records | RODATA | 24 bytes | — | — |
+| `counter`, one word | DATA | 4 bytes `78 56 34 12` | 4 bytes | Copies `12345678H` |
+| `output`, two records | BSS | — | 24 bytes | Clears 24 bytes |
 
-The counter's initializer occupies bytes `78 56 34 12` in increasing ROM
-addresses. Startup copies those bytes to the counter's RAM run address. The
-program subsequently reads and changes the RAM word; its ROM initializer stays
-unchanged. Likewise, filling `output` changes its RAM bytes, not `inputs`.
+The program changes the RAM word; the initial value in ROM stays as it is.
+Place the RAM sections outside the
+[[reserved areas](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
 
-The object extents above do not choose their addresses. Place the RAM objects
-outside the reserved and firmware-owned spans specified in
-[[reserved and firmware-owned spans](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}, and describe the
-chosen section addresses consistently in startup and the program image. A local
-pointer view selects an existing object's bytes; it does not allocate another
-copy of that object.
+### Startup routine {#sec-memory-when-initialization-occurs}
 
-### When initialization occurs {#sec-memory-when-initialization-occurs}
+The startup routine of a BLua program:
 
-A program's startup routine establishes its static storage before entering
-application code. The standard BLua startup sequence is:
-
-| Order | Operation |
+| Step | Operation |
 |---|---|
-| 1 | Copy the complete DATA section from its ROM load address to its RAM run address. |
-| 2 | Write zero throughout the BSS section in RAM. |
-| 3 | Run static module initialization. |
-| 4 | Call the program's entry function with no arguments. |
+| 1 | Copy DATA from its load address to its run address |
+| 2 | Clear BSS |
+| 3 | Initialize the modules |
+| 4 | Call the entry function, without arguments |
 
-The DATA copy and BSS clear use four-byte word accesses over their complete
-padded byte counts. System startup initializes the firmware sections; cartridge
-startup initializes the cartridge program's sections.
+DATA and BSS are copied and cleared in words, over their full padded size.
+These are instructions of the program: EXEC of the startup function performs
+them; EXEC of another function does not. Calling startup again restores the
+initial values of DATA and BSS.
 
-EXEC starts the addressed function. DATA initialization and BSS clearing occur
-only when the instructions performing them execute. Therefore the ROM startup
-address must select the initialization routine when that initialization is
-required. Entering another function leaves the sections as they stand.
-Re-entering startup repeats the copy and clear, replacing the program's
-writable static contents with their initial values.
+## Reset and startup {#sec-memory-reset-and-cartridge-startup}
 
-## Reset and cartridge startup {#sec-memory-reset-and-cartridge-startup}
+### Reset {#sec-memory-from-reset-to-the-system-program}
 
-### From reset to the system program {#sec-memory-from-reset-to-the-system-program}
+At reset the CPU starts the function named by the System ROM header
+in the [fixed reset bank](cpu.md#sec-cpu-cpu-reset-and-program-replacement).
+The BIOS makes its DATA and BSS range available, prepares the System
+program's global names and String operands, and selects the receiving
+context with [`CONTEXT`](cpu.md#sec-cpu-context). The ordinary System
+startup then initializes DATA and BSS, runs the modules and starts the
+boot program. None of those section writes is an effect of reset itself.
 
-Reset does not enter the ordinary BLua program startup directly. It starts
-the System ROM function named by the [ROM startup field](#sec-memory-rom-header-fields)
-using the [fixed reset bank](cpu.md#sec-cpu-cpu-reset-and-program-replacement),
-with no arguments and Status = `00000001H` (supervisor mode, interrupts
-enabled). RAM is not cleared by reset apart from this bank's backing.
+### Cartridge selection {#sec-memory-bios-cartridge-selection}
 
-The installed BIOS uses this entry to make its DATA and BSS address range
-available and prepare the System program's names and String operands. It
-builds the receiving execution context in private RAM and writes
-[`CONTEXT`](cpu.md#sec-cpu-context). The prepared System code continues
-booting on that context, then starts the ordinary System startup
-routine. That routine initializes DATA and BSS, runs the module
-initializers and enters the boot program. None of the section copy or
-clear is an effect of entering the reset vector.
+The BIOS examines slot 0, then slot 1, if a cartridge is present. Its ROM must
+contain at least 60 bytes. It is accepted if:
 
-### BIOS cartridge selection {#sec-memory-bios-cartridge-selection}
+| Field | Required |
+|---|---|
+| Magic (`00H`) | `58534D42H` |
+| Header size (`04H`) | At least 60 |
+| Program offset (`20H`) | At least 60, word-aligned, and all 92 bytes of the program header fit in ROM |
+| Startup function (`28H`) | Not 0 |
 
-The BIOS scans cartridge slot 0 before slot 1, considering slots whose presence bits are set in the sampled cartridge-status word. For each candidate it selects that slot and checks:
-
-- the fitted ROM contains at least 60 bytes;
-- ROM magic is `58534D42H`;
-- the header-size word is at least 60;
-- the executable-image offset is at least 60 and word-aligned, and its 92-byte header fits in the fitted ROM;
-- the startup-function word is nonzero.
-
-The first candidate that passes these checks supplies the startup-function
-address. The CPU then applies the function-record and program rules specified
-in the record reference below.
-
-The boot screen updates at VBlank. BIOS hands over when an executable cartridge
-is ready and its boot-frame counter has reached at least 50. A change between
-the missing, invalid and ready cartridge states resets that counter; changing
-the selected card while its classification remains ready does not by itself
-reset it. At handoff the BIOS clears and flushes terminal status and masks
-central IRQ delivery.
+The boot screen is updated at each VBlank. The BIOS starts the cartridge when
+one has been accepted and at least 50 frames of the boot screen have been
+shown; the count restarts when the cartridge state changes (none, invalid,
+ready). Before starting it, the BIOS clears the terminal status and masks all
+interrupt sources.
 
 At handoff the BIOS reads the selected cartridge's DATA run address and byte
 count, and its BSS address and byte count. For sections that fit in RAM, it
@@ -174,358 +118,223 @@ operands; it does not prepare them.
 The section contents are copied or cleared by the cartridge's own startup
 instructions, not by either CP0 write.
 
-### EXEC and cartridge entry {#sec-memory-exec-and-cartridge-entry}
+### EXEC {#sec-memory-exec-and-cartridge-entry}
 
-A startup function address identifies a **function record**, not the address of its first instruction. EXEC reads the target record and requires its STATIC flag. An unreadable record or one without that flag causes a hard halt.
+EXEC reads the function record; it must have the STATIC flag, otherwise the CPU
+halts. EXEC clears the call stack, selects the program of the cartridge and
+starts the function without arguments, in user mode with interrupts enabled
+(Status bits 0 and 1).
 
-Successful EXEC replaces the active call chain, selects the target image and
-execution domain, and starts the selected static function with no arguments.
-For a cartridge image, CPU Status has interrupt enable and user mode set
-(bits 0 and 1) from that function's first instruction. This privilege change
-occurs before the later application-entry call. The BIOS's zero IRQ-mask write
-masks source delivery without clearing CPU interrupt enable. The full
-[EXEC reference](cpu.md#sec-cpu-exec) specifies execution-state changes.
+The cartridge's startup routine then copies DATA, clears BSS, initializes the
+modules and calls the entry function.
 
-The selected cartridge startup routine performs the DATA copy, BSS clear,
-module initialization and entry call described under
-[When initialization occurs](#sec-memory-when-initialization-occurs). Those
-instructions establish the cartridge's writable sections. Selecting another
-static function enters that function directly, leaving DATA and BSS as they
-stand; selecting startup again repeats initialization.
+### Globals {#sec-blua-programs-fresh-system-boot-and-execution-transfer}
 
-### Fresh system boot and execution transfer {#sec-blua-programs-fresh-system-boot-and-execution-transfer}
+During startup the BIOS clears the global-name banks and installs its globals.
+EXEC keeps the globals: a program started with EXEC finds the globals of the
+previous program and should set its own.
 
-Fresh system boot clears both global-name banks, then installs the BIOS
-environment before normal program entry. `EXEC` keeps the existing banks
-and BIOS bindings while replacing execution. Initialize program-owned globals
-explicitly when transferring between programs. See [CPU execution
-control](cpu.md#sec-cpu-exec) for the complete transfer behavior.
+### State at cartridge start {#sec-memory-taking-ownership-after-the-bios}
 
-### State at cartridge entry {#sec-memory-taking-ownership-after-the-bios}
+| Unit | State |
+|---|---|
+| Video | Running; the display shows the BIOS screen |
+| IRQ | All sources masked; pending flags kept; CPU interrupts enabled |
+| VRAM | The BIOS area stays reserved; see [[reservations](memory.md#sec-memory-handoff-is-not-release)]{.content-visible when-format="html"}[Book I, §2.4.1]{.content-visible when-format="pdf"} |
+| INPUT | BIOS sampling state; see [[BIOS handoff](input.md#sec-input-bios-handoff-and-supervisor-sampling)]{.content-visible when-format="html"}[Book I, §11.9.1]{.content-visible when-format="pdf"} |
 
-At normal BIOS handoff, video timing is running and the display contains BIOS
-drawing. Cartridge code may retain that display or establish its own drawing
-and display configuration. Program each unit before use; its reset-value table
-applies to reset, while its inherited boot state follows the rules here.
-[[System timing](system.md#sec-system-system-time-and-frame-timing)]{.content-visible when-format="html"}[Book I, §12.3]{.content-visible when-format="pdf"} describes the live
-readouts, and [CPU control](cpu.md#sec-cpu-cp0-and-execution-control) describes entry
-privilege and interrupt enable.
+Set up each unit before use. Before unmasking an interrupt source, install the
+handler and prepare the device: a flag that is already pending is delivered at
+once. See [[Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"}
+and [[Supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)]{.content-visible when-format="html"}[Book I, §12.7]{.content-visible when-format="pdf"}.
+Frame timing: [[System timing](system.md#sec-system-system-time-and-frame-timing)]{.content-visible when-format="html"}[Book I, §12.3]{.content-visible when-format="pdf"}.
 
-The BIOS masks central IRQ delivery before handoff. Pending flags remain, and
-CPU interrupt enable is set at cartridge entry. Before enabling a source,
-install its handler and prepare the device: a previously pending source can
-become deliverable immediately. Service the device's local condition and the
-controller's pending bit separately. The complete dispatch and acknowledgement
-sequence is given in
-[[Book I, Interrupt controller](irq.md#sec-irq)]{.content-visible when-format="html"}[Book I, Chapter 3]{.content-visible when-format="pdf"}.
+#### Device state {#sec-memory-firmware-work-at-normal-boot-handoff}
 
-The firmware's VRAM region remains reserved after cartridge entry; see [[Reservation lifetime](memory.md#sec-memory-handoff-is-not-release)]{.content-visible when-format="html"}[Book I, §2.4.1]{.content-visible when-format="pdf"}. Later supervisor service preserves selected device context; overwritten VRAM pixels remain overwritten. Its boundaries are described in [[System control and timing — Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service)]{.content-visible when-format="html"}[Book I, §12.7]{.content-visible when-format="pdf"}.
+After the normal boot:
 
-INPUT likewise retains its BIOS sampling state at cartridge entry. Follow
-[[BIOS handoff and supervisor sampling](input.md#sec-input-bios-handoff-and-supervisor-sampling)]{.content-visible when-format="html"}[Book I, §11.9.1]{.content-visible when-format="pdf"}
-to establish a fresh cartridge sample, including after supervisor return.
+| Unit | State |
+|---|---|
+| DMA0, DMA1 | Idle |
+| GPU | No BIOS command in progress; drawing may still be finishing |
+| GEO | Idle |
+| IMGDEC | Idle |
+| APU | No BIOS sound playing; the APU clock runs |
 
-#### Firmware work at normal boot handoff {#sec-memory-firmware-work-at-normal-boot-handoff}
+Wait for the GPU to finish before changing what the BIOS screen uses. EXEC
+does not change device registers.
 
-On the normal reset-to-cartridge boot path, BIOS has supplied its final GPU
-command batch and reached that batch's completion marker. Firmware DMA and
-VBlank handlers have stopped submitting work. The following unit state is then
-available to the cartridge. Entry through another EXEC route must establish its
-own device state.
+## ROM header {#sec-memory-rom-header-fields}
 
-| Surface | Firmware work at cartridge entry |
-| --- | --- |
-| DMA0 and DMA1 | No outstanding firmware transfer or admitted transfer block. DMA0's final transfer has finished; this boot path never starts DMA1. |
-| GP0 input and readback | No active firmware writer, unfinished firmware packet, or outstanding firmware VRAM-to-CPU readback. |
-| GEO | No outstanding firmware geometry job. |
-| IMGDEC | No outstanding firmware decode, input, or output job. |
-| APU | No queued firmware command, active playback slot, or outstanding sample-transfer batch. This does not imply that the APU clock or output activity has stopped. |
+At the ROM base, at least 60 bytes; 32-bit little-endian words:
 
-Submitted BIOS drawing may still be pending after its final marker, although
-the firmware has stopped producing commands. Before changing resources used by
-that work, use the GPU completion protocol. Display publication remains a
-separate PCRTC event. EXEC leaves the device registers and submitted work in
-place.
+| Offset | Field | Contents |
+|---|---|---|
+| `00H` | Magic | `58534D42H` (bytes `42 4D 53 58`, "BMSX") |
+| `04H` | Header size | At least 60 |
+| `08H`–`1FH` | — | Not used |
+| `20H` | Program offset | Program-header address − ROM base; 0: no program |
+| `24H` | Program size | Bytes |
+| `28H` | Startup function | Function-record address |
+| `2CH` | Interrupt function | Function-record address |
+| `30H` | Exception function | Function-record address |
+| `34H`, `38H` | — | Not used |
+| `3CH` | Diagnostic records | Offset from ROM base; 0: none. See [BIOS diagnostics](bios-monitor.md#sec-memory-optional-bios-diagnostic-directory) |
 
-## ROM header fields {#sec-memory-rom-header-fields}
+| ROM | Base |
+|---|---|
+| System ROM | `00000000H` |
+| Cartridge, either slot | `10000000H` |
 
-The ROM header begins at the ROM base. Provide at least its first **60 bytes**,
-through offset `3BH`, for CPU program selection. All offsets in the following
-table are byte offsets from that base. Header words are unsigned 32-bit
-little-endian. The CPU uses the program and vector fields; BIOS also checks the
-identification and startup fields when selecting a cartridge.
+The program-header address (base + offset, 32 bits) must lie in ROM. The
+function addresses are absolute. The CPU uses `20H`–`30H`; the BIOS also checks
+`00H`, `04H`, `20H` and `28H` before starting a cartridge.
 
-| Byte offset | Field | CPU program selection | BIOS cartridge selection |
-| --- | --- | --- | --- |
-| `00H` | Magic | Not read. | Requires `58534D42H`; bytes `42 4D 53 58` spell `BMSX`. |
-| `04H` | Header size | Not read. | Requires at least 60 bytes. |
-| `08H`–`1FH` | Other prefix words | Not read. | Not read. |
-| `20H` | BLua32 image offset | Byte offset relative to the ROM base; zero means no executable image. | Requires a nonzero word. |
-| `24H` | Declared image byte count | Not read. | Not read. |
-| `28H` | Startup function | Absolute function-record address. | Requires a nonzero word; supplies the EXEC target unchanged. |
-| `2CH` | IRQ function | Absolute function-record address. | Not read. |
-| `30H` | Exception function | Absolute function-record address. | Not read. |
-| `34H`, `38H` | Unused by the boot interface | Not read. | Not read. |
+## Program header {#sec-memory-blua32-executable-image}
 
-System ROM begins at `00000000H` and has execution-domain ID −1. Either
-cartridge socket uses ROM base `10000000H`, with domain ID 0 or 1 selecting the
-socket. Add the program-offset word to this base and retain the low 32 bits to
-obtain the BLua32 program-header address. The result must address installed ROM.
-The startup and vector fields are already absolute function-record addresses.
+92 bytes; 32-bit little-endian words; all addresses absolute.
 
-All 60 prefix bytes must be present in ROM. A zero program offset marks a ROM
-without a CPU program; an absent prefix likewise provides no program. System ROM
-must supply the reset program. CPU selection uses the fields shown in its
-column; identification checks belong to BIOS cartridge selection. The exception
-address's use follows the exception-routing rules, including the system route
-for synchronous cartridge faults.
+| Offset | Field |
+|---|---|
+| `00H` | Magic `32334C42H` |
+| `04H` | Program size |
+| `08H` | Flags: bit 0 mapped code; bit 1 heap descriptor (System ROM) |
+| `0CH`, `10H` | Function table: address, count |
+| `14H`, `18H` | Constant table: address, count (12-byte records) |
+| `1CH`, `20H` | Global names: address, count (4-byte records) |
+| `24H`, `28H` | System global names: address, count (4-byte records) |
+| `2CH`, `30H` | String hash table: address, number of buckets |
+| `34H`, `38H` | RODATA: address, size |
+| `3CH`, `40H`, `44H` | DATA: load address, size, run address |
+| `48H`, `4CH` | BSS: address, size |
+| `50H`, `54H` | TEXT: address, size |
+| `58H` | Preparation function record; 0: none |
+| `5CH` | Heap descriptor (System ROM, flag bit 1); header then 96 bytes |
 
-The boot interface assigns no interpretation to the unused prefix words.
-Their contents do not select a program, change startup initialization or
-establish a memory reservation.
+Cartridge programs have flag bit 1 clear. The section fields tell the BIOS
+which RAM range it must make available before cartridge startup. They do not
+change the memory map when a function is entered.
 
-The next ROM-header word, at byte offset `3CH`, is a ROM-relative offset to
-optional BIOS diagnostic records; zero means absent. It is outside the CPU's
-60-byte selection prefix. [BIOS diagnostics](bios-monitor.md#sec-memory-optional-bios-diagnostic-directory)
-defines its source-location and frame-scope tables separately from executable
-selection and instruction operation.
+**Function table.** With flag bit 0 clear, the program has a function table:
+32-byte records, starting on a 16-byte boundary. TEXT address and size are
+multiples of 4. Each record gives a code area in TEXT, word-aligned, holding
+complete instructions; two functions may share the same area but may not
+partly overlap. Every branch and every continuation must reach an instruction
+of the same function; the last instruction is RET, RFE, an unconditional
+branch or a trap (a HALT that can resume needs a following instruction). A
+program that does not meet these rules is not started.
 
-## BLua32 executable image {#sec-memory-blua32-executable-image}
+**Mapped code.** With flag bit 0 set, instructions are fetched by address
+anywhere in executable memory. The function table may be empty; its code
+sizes do not limit fetching.
 
-The base BLua32 program header occupies **92 bytes** in ROM. Its offsets are
-relative to the program-header address obtained above. These six unsigned
-32-bit little-endian fields locate the program's constants and names:
+**Preparation function.** An ordinary function that completes module
+initialization and runs the `<init>` functions, without touching DATA or BSS
+or calling the entry function. See
+[`<init>`](blua-programs.md#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup).
 
-| Image byte offset | Field | Unit and interpretation |
-| --- | --- | --- |
-| `14H` | Constant-table address | Absolute machine byte address in installed ROM. |
-| `18H` | Constant count | Number of 12-byte constant records. |
-| `1CH` | Global-name-table address | Absolute machine byte address in installed ROM. |
-| `20H` | Global-name count | Number of 4-byte name records. |
-| `24H` | System-global-name-table address | Absolute machine byte address in installed ROM. |
-| `28H` | System-global-name count | Number of 4-byte name records. |
+Tables and their Strings lie in ROM. A table with count 0 has no address. When
+the program starts, its String constants and names are bound in main RAM; a
+program for which there is no room is not started.
 
-The remaining header slots identify the program's format, sections and linkage:
+### Constants and names {#sec-memory-constant-and-name-records}
 
-| Image byte offset | Field |
-| --- | --- |
-| `00H` | Magic; declared constant `32334C42H`. |
-| `04H`, `08H` | Image byte count; flags. |
-| `0CH`, `10H` | Function-table address; function count. |
-| `2CH`, `30H` | ROM String bucket-table address; bucket count. |
-| `34H`, `38H` | RODATA address; RODATA byte count. |
-| `3CH`, `40H`, `44H` | DATA load address; DATA byte count; DATA run address. |
-| `48H`, `4CH` | BSS address; BSS byte count. |
-| `50H`, `54H` | TEXT address; TEXT byte count. |
-| `58H` | Preparation-sequence function-record address; zero when no sequence is present. |
-| `5CH` | System ROM only, when flag bit 1 is set: absolute address of the private heap-service descriptor in RODATA. |
+Constant i is the 12-byte record at table address + 12i:
 
-Provide the complete 92-byte header. A system image with flag bit 1 set
-has a 96-byte header. Cartridge images leave bit 1 clear. The private system
-descriptor is not part of the cartridge BIOS call table and does not
-publish additional BIOS calls.
+| Tag (`00H`) | Value | `04H` | `08H` |
+|---|---|---|---|
+| 0 | nil | — | — |
+| 1 | false | — | — |
+| 2 | true | — | — |
+| 3 | Integer | 32-bit value | — |
+| 4 | String | String-record address | — |
+| 5 | Float | 32-bit value | — |
+| 6 | Built-in function (System ROM only) | Function number | — |
 
-The DATA byte count and run address (`40H`, `44H`) and the BSS address and
-byte count (`48H`, `4CH`) locate the memory needed by startup. These fields
-do not change the memory map when a function is entered. DATA and BSS are
-initialized by the startup instructions.
+Integer 2 and Float 2.0 are different constants, although equal in value.
+Float constants keep all their bits. An unknown tag or function number
+prevents the program from starting.
 
-With flag bit 0 clear, the image publishes a nonempty function directory.
-The directory begins on a 16-byte boundary and its records are
-32 bytes each. Both the directory and TEXT must fit in the installed ROM
-of the same execution image. The TEXT address and size must be multiples
-of four. Every record names a nonempty, word-aligned extent inside TEXT.
-Different bodies cannot overlap; more than one record can name the same
-complete body.
+Name i is the 4-byte word at table address + 4i: the address of a String
+record. Names in the two tables are separate. A new name starts as nil; a name
+that already exists keeps its value.
 
-A body must contain complete instructions. In the function directory, a
-WIDE prefix is part of its following instruction and the second word is
-not a possible branch target. Each branch, sequential continuation and
-comparison skip must reach an instruction in that body. A final RET,
-RFE, unconditional branch or reserved-instruction trap does not require
-a sequential continuation. A HALT that can resume upon an interrupt
-does. The console rejects an image that violates these requirements
-before entering it.
+#### Strings {#sec-program-images-rom-string-records}
 
-Set flag bit 0 for **mapped code**, when instruction flow is defined by
-addresses in the executable bus regions rather than by function bodies.
-A mapped-code image may omit its directory; a zero function count then
-leaves the table address unused. If a directory is supplied it must fit
-in ROM and its extents must fit in TEXT, but the extents do not limit
-mapped instruction fetches.
+A String record starts on an 8-byte boundary:
 
+| Offset | Field |
+|---|---|
+| `00H` | `00010005H` |
+| `04H` | FNV-1a hash of the bytes |
+| `08H` | Number of bytes |
+| `0CH` | Next record in the same bucket; 0: last |
+| `10H` | The bytes (no terminator) |
 
-The preparation address selects a separate ordinary function, not another
-startup vector. Calling it completes pending module initialization and runs
-the registered `<init>` participants without
-recopying DATA, clearing BSS or restarting the entry function. See
-[BLua participant sequences](blua-programs.md#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup)
-for declaration order and invocation.
+The hash table is a power-of-two number of record addresses (0: empty
+bucket):
 
-Table addresses are **absolute machine byte addresses**. Tables and their text
-must occupy installed ROM; their placement is independent of table order and
-of the declared image extent. Cartridge ROM reads select the program's
-execution socket, while system-ROM addresses select system ROM. A zero table
-count leaves its address unused.
+```text
+hash = 811C9DC5H
+for each byte: hash = (hash XOR byte) × 01000193H, low 32 bits
+bucket = hash AND (number of buckets − 1)
+```
 
-Numeric, Boolean, nil and built-in function constants are immutable ROM
-operands and need no writable backing. A String constant binds to its
-canonical String when the image is activated. The String bindings and name
-maps occupy main RAM; the console rejects an image whose bindings cannot
-fit.
+Each String occurs once per program. Equal Strings in different programs are
+the same String: a cartridge String finds a table field stored under the same
+String by the BIOS. The whole record must lie in ROM.
 
-### Constant and name records {#sec-memory-constant-and-name-records}
+### Function records {#sec-memory-function-and-upvalue-records}
 
-Constant record `i` begins at `constantTableAddress + 12i`, with zero-based `i`. The tag is a four-byte unsigned little-endian word at record offset `00H`:
+32 bytes; 32-bit little-endian words:
 
-| Tag | Value | Payload consumed |
-| --- | --- | --- |
-| 0 | Nil | None. |
-| 1 | False | None. |
-| 2 | True | None. |
-| 3 | Integer Number | Four-byte two's-complement integer, little-endian, at `04H`–`07H`. |
-| 4 | String | Absolute ROM String record address at `04H`; `08H` is reserved. |
-| 5 | Floating Number | Four-byte IEEE-754 binary32, little-endian, at `04H`–`07H`. |
-| 6 | BuiltinFunction | System ROM only. A four-byte builtin identifier at `04H`–`07H`; `08H` is reserved. |
+| Offset | Field |
+|---|---|
+| `00H` | Code address (absolute) |
+| `04H` | Code size in bytes |
+| `08H` | Number of parameters |
+| `0CH` | Number of registers |
+| `10H` | Flags: bit 0 VARARG; bit 1 STATIC; bit 2 RESIDENT; bit 3 CODE (both System ROM) |
+| `14H` | Capture table address |
+| `18H` | Number of captures |
+| `1CH` | Reserved |
 
-Each constant record occupies 12 bytes. An Integer record preserves its signed
-32-bit value. A Floating record preserves all 32 bits, including signed zero,
-infinity and any NaN payload or sign. Loading either kind preserves its Number
-subtype. For example, Integer `2` and Floating `2.0`
-compare equal but have different subtypes.
+| Flag | Meaning |
+|---|---|
+| VARARG | Extra arguments are kept |
+| STATIC | The function can be started with EXEC |
+| RESIDENT | System function on the system stack; STATIC, no varargs, no captures |
+| CODE | STATIC System ROM function-table entry without captures; `CLOSURE` returns a code reference without allocating a closure, and `CALL` uses the ordinary stack |
 
-Constant indices select records in table order. Tags 0–2 encode their value
-without a payload. The word at `08H` is unused in Integer and Floating
-records. String records use all three words. A builtin record supplies an
-immutable callable value, not an address or an entry in a global name table.
-A cartridge image may use a builtin value supplied by the BIOS but may not
-encode a builtin constant. An invalid builtin identifier or constant tag
-prevents image activation. An activated image's constant values
-and kinds do not change while that image is resident. A replacement image
-establishes its own constants. Arithmetic and the comparison of the
-two Number subtypes are defined by the
-[[CPU reference](cpu.md#sec-cpu-values-and-numeric-instructions)]{.content-visible when-format="html"}[CPU reference, Book II, Chapter 1]{.content-visible when-format="pdf"}.
+Capture i is the word at capture-table address + 4i:
 
-Both name tables use the same layout. Name record `i` begins at
-`tableAddress + 4i` and contains one absolute ROM String record address.
-A constant and a name can both refer to the same record.
+| Bit | Meaning |
+|---|---|
+| 31 = 1 | Register of the enclosing function |
+| 31 = 0 | Capture of the enclosing closure |
+| 30–0 | Number |
 
-#### ROM String records {#sec-program-images-rom-string-records}
+The code address must lie in executable ROM or RAM. Function and capture
+records may lie in any memory; constant, name and String records must lie in
+ROM. With a function table, a function address must be one of its records.
+In CLOSURE with an immediate address, the address is given in 16-byte units.
+See [closures](cpu.md#sec-cpu-closures-and-captured-variables) and the
+[instruction format](cpu.md#sec-cpu-instruction-words-and-execution-resources).
 
-Each record begins at an eight-byte-aligned ROM address. Its bytes follow
-the four little-endian words shown below.
+## BIOS functions {#sec-blua-programs-locating-bios-call-targets}
 
-| Record byte offset | Field |
-| --- | --- |
-| `00H` | Kind and ROM flag: `00010005H`. |
-| `04H` | 32-bit FNV-1a hash of the payload bytes. |
-| `08H` | Payload byte count, excluding the header and any following padding. |
-| `0CH` | Absolute address of the next record in the same bucket, or zero. |
-| `10H` | First payload byte. No terminator is required. |
+The [BIOS functions](blua-programs.md#sec-blua-programs-named-bios-function-imports)
+are records at fixed positions in the function table of System ROM. Record s is
+at:
 
-String constants carry their bytes unchanged, including NUL and sequences that
-are not valid UTF-8. Source text and spelled names normally use UTF-8. An empty
-String still has a record: its payload byte count is zero.
+```text
+function table = word at (word at 00000020H) + 10H
+record s       = function table + 32 × s
+```
 
-The bucket table contains a power-of-two number of 32-bit record addresses.
-An empty bucket contains zero. To compute a hash, start at `811C9DC5H`. For
-each unsigned payload byte, XOR it into the hash and multiply by
-`01000193H`, keeping the low 32 bits. The bucket index is the hash AND
-the bucket count minus one. The chain contains each distinct byte sequence
-in that bucket once.
-
-A String value refers to one canonical record for its bytes. When constructing
-a String or resolving a String constant or name during activation, the CPU
-first looks for the same bytes in RAM, then in the system ROM index, then in
-the indices of activated cartridge images in activation order. It allocates a
-RAM record only if none matches. Consequently a cartridge can use one of its
-own String constants to read a Table field originally stored under a String
-with the same bytes in the system program.
-
-The record reference retains the source socket. A record in cartridge
-socket 1 uses bit 31 of the reference to identify that socket; the addresses
-written in a cartridge image itself do not set this bit. The entire header
-and the declared payload must be present in ROM before the CPU can resolve a
-record to a String value. An incomplete record is invalid; absent bytes do
-not extend the String. String record access uses ROM or language RAM directly,
-not I/O or cartridge RAM.
-
-The two name tables establish separate ordinary-global and system-global
-namespaces. Within each namespace an existing name retains its value and a new
-name begins nil. Activation installs the name-to-slot mapping in language RAM.
-A name-table index selects that name's slot; initial values are established by
-executed instructions.
-
-### Function and upvalue records {#sec-memory-function-and-upvalue-records}
-
-A function address identifies a **32-byte function record**, not its first instruction. Record fields consumed below are unsigned 32-bit little-endian words:
-
-| Record byte offset | Field | Interpretation |
-| --- | --- | --- |
-| `00H` | Code address | Absolute machine byte address of the initial instruction. |
-| `04H` | Code byte count | Extent of this function in TEXT for a published function directory. |
-| `08H` | Parameter count | Number of fixed parameter slots. |
-| `0CH` | Maximum stack | Number of register-value slots, not bytes or a RAM address. |
-| `10H` | Flags | Bit 0 VARARG; bit 1 STATIC; bit 2 RESIDENT; bit 3 CODE (both System ROM only). |
-| `14H` | Upvalue-table address | Absolute machine byte address. |
-| `18H` | Upvalue count | Number of four-byte descriptors. |
-| `1CH` | Reserved | Not read. |
-
-VARARG retains arguments beyond the fixed parameters. A RESIDENT record in System ROM is STATIC, has no varargs or upvalues, and
-uses the reserved system stack when called. The same bit on a cartridge
-record grants no special entry or access. STATIC permits direct entry through EXEC; the closure-construction rules are described in [CPU — Closures and captured variables](cpu.md#sec-cpu-closures-and-captured-variables). The immediate-address form of `CLOSURE` encodes a function-record address in **16-byte units**; its register-address form supplies the full address. Function-record reads themselves do not impose a 16-byte alignment check. In a mapped-code image the declared byte count is descriptive, not an instruction-fetch limit.
-
-In an image with a published function directory, a ROM function address must
-name a record in that directory. The addressed record's entry, frame layout and
-upvalue information are fixed for the installed image. To change them, publish
-the replacement image before continuing execution. A separately constructed
-mapped function record can enter mapped code outside the ROM windows.
-
-The code address names an instruction in an executable ROM or RAM window.
-Instruction fetch does not access system I/O or cartridge MMIO; the CPU
-[fetch rules](cpu.md#sec-memory-instruction-alignment-and-read-faults) define
-the fault and its timing. This restriction does not apply to the mapped-bus
-reads used to construct a closure from its function record.
-
-The record is a prototype shared by closures of that function in the same
-execution context. Each closure binds its own captures. A record must remain
-stable while a closure uses it; give a coexisting definition a separate
-record. Instructions remain in addressed memory and are fetched there when
-the closure executes.
-
-A static System ROM record with CODE and no captures denotes a code
-function. `CLOSURE` on that record returns a function value with no allocated
-closure environment. `CALL` uses the ordinary call stack, including the fixed
-stack while executing in the reset bank.
-
-Upvalue descriptor `i` is a four-byte unsigned little-endian word at
-`upvalueTableAddress + 4i`. Bit 31 set captures a parent-frame register; bit 31
-clear captures a parent-closure upvalue. Bits 0–30 contain the zero-based index.
-Function and upvalue records use ordinary mapped-bus reads and may therefore
-occupy mapped memory. Constant and name-table records and their text require ROM.
-
-Function-record and [instruction words are little-endian](cpu.md#sec-cpu-instruction-words-and-execution-resources). Neither a function-record address nor a record's code address is relative to the image header.
-
-## Locating BIOS call targets {#sec-blua-programs-locating-bios-call-targets}
-
-The [published BIOS import names](blua-programs.md#sec-blua-programs-named-bios-function-imports)
-bind to fixed, zero-based slots in the system
-executable's function table. The ROM header at system address zero supplies
-the executable's offset at `20H`. Its executable header supplies the absolute
-function-table address at offset `10H`. Each function record occupies
-32 bytes, so slot `s` has function-record address `table_address + 32*s`.
-These addresses select function records, not their instruction bytes.
-
-An independent linker resolves the published names through these fields and
-slots. It uses that function-record address for a CLOSURE operand, with the
-address divided by sixteen as specified in the
-[instruction reference](cpu.md#sec-cpu-calls-closures-globals-and-tables).
-Only the published slots bind these named imports. Startup, vector and
-preparation entry points are identified separately by their header fields;
-other table positions do not themselves define additional BIOS interfaces.
-
-The same lookup is available to a running program. This sequence calls slot
-zero without a named import:
+A linker places this address, divided by 16, in a CLOSURE instruction; see the
+[instruction reference](cpu.md#sec-cpu-calls-closures-globals-and-tables). A
+program can also find it while running:
 
 ```lua
 local image<const> = mem32le[0x20]
@@ -534,9 +343,5 @@ local sin_turn32<const> = blua32.closure(function_table)
 local sine = sin_turn32(0x40000000) -- 65536
 ```
 
-Use the installed system ROM's own fields, rather than assuming a fixed
-instruction address or substituting a record from the cartridge image.
-For static RAM placement, the system executable's BSS address at `4CH`
-plus its padded byte count at `50H` gives the first byte after firmware
-static storage. The [executable-image reference](#sec-memory-blua32-executable-image) above
-defines these section and record fields.
+The end of the BIOS's static storage is the BSS address (`48H`) plus the BSS
+size (`4CH`) of the System ROM program header.

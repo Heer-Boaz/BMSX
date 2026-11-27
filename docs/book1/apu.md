@@ -1,207 +1,110 @@
 # Audio processing unit {#sec-apu}
 
-The BMSX has sixteen independently programmed playback slots feeding one stereo
-mixer. Each slot holds one PCM voice, BADP compressed voice or square generator,
-with its own source, cursor, rate, gain, filter history and playback state.
-A stereo source still occupies one slot; PLAY on an occupied slot replaces its
-voice. All playing slots contribute at the common 44,100-frame-per-second output
-cadence, even when their source rates differ. The mixer sums their left and
-right contributions separately, then saturates each final output to signed
-sixteen-bit range.
+The audio processing unit (APU) plays up to sixteen voices at once and mixes
+them into one stereo output at 44,100 frames per second. Each voice plays
+8-bit or 16-bit PCM, BADP compressed sound or a square wave, with its own
+pitch, volume, loop, filter and fade.
 
-Sampled voices read installed system ROM, cartridge ROM or the shared 512 KiB
-sample RAM. Several slots can read the same bytes with independent playback
-positions. Main RAM is not a direct playback source, and the square generator
-needs no sample payload.
+Voices play directly from system ROM, cartridge ROM or the APU's 512 KiB
+sample RAM. Several voices may play the same sample data, each at its own
+position. Sample RAM is loaded through a transfer port, by the CPU or by DMA,
+while the voices keep playing.
 
-Use the sample-transfer port to load private sample RAM. For a CPU upload,
-MANUAL_WRITE stores each word directly. For DMA, a sixteen-word FIFO buffers the
-transfer while the APU moves words to or from sample RAM. This path operates
-alongside playback.
+To start a voice, write its settings to the parameter registers and then the
+PLAY command to CMD. Commands pass through a sixteen-entry command queue.
 
-To start a voice, write its source and playback parameters to the shared staging
-bank, then issue PLAY. The command FIFO holds that configuration until execution.
-Later gain, pause and stop commands use the same path; a selected-slot register
-window also permits live parameter changes. The programming sequence below
-separates sample loading, command execution and playback.
+## Specifications {#sec-apu-apu-specifications}
 
-## APU specifications {#sec-apu-apu-specifications}
-
-| Resource | Specification |
+| Item | Specification |
 |---|---|
-| Playback slots | 16, numbered 0–15 |
-| Slot parameter banks | 21 retained 32-bit words per slot |
-| Command staging bank | One separate set of 21 parameter words |
-| Command FIFO | 16 commands, each retaining its command and 21 parameter words |
-| Selected-slot window | 21 word ports addressing one of the sixteen slot banks |
-| Private sample RAM | 512 KiB; sample-source addresses `40000000H`–`4007FFFFH` |
-| Sample-transfer FIFO | 16 words, 64 bytes |
-| Output cadence | 44,100 stereo frames per second |
-| Output components | Signed sixteen-bit left and right values |
-| System-cycle timebase | 33,868,800 cycles per second; 768 cycles per output frame |
-| Sample-RAM transfer budget | 1,058,400 words per second; 32 cycles per transferred word |
+| Voices | 16 (slots 0–15) |
+| Sample formats | PCM8, PCM16, BADP (4-bit compressed), square wave; mono or stereo |
+| Output | Stereo, 16-bit, 44,100 frames per second |
+| Sample RAM | 512 KiB; voice address `40000000H`–`4007FFFFH` |
+| Command queue | 16 commands |
+| Transfer FIFO | 16 words |
+| Transfer speed | 1,058,400 words per second (32 cycles per word) |
+| Interrupt | IRQ_APU (voice ended) |
 
-The `40000000H` source range addresses private RAM for voice playback.
-CPU and DMA transfers use TRANSFER_DATA instead of accessing that range directly.
+The address range `40000000H` is used only in the voice settings. The CPU and
+DMA reach sample RAM through the transfer port.
 
-![Command capture, live parameters and the per-slot sample path](figures/apu-paths.svg){#fig-apu-paths}
+![Commands, voice settings and the sample path](figures/apu-paths.svg){#fig-apu-paths}
 
-The command path installs a voice's parameters. At each output frame, the
-voice path reads or generates samples, applies interpolation, filtering and
-gain, and contributes to the stereo mixer. The separate transfer path supplies
-sample RAM.
+## Terms {#sec-apu-from-sample-data-to-a-playing-voice}
 
-## From sample data to a playing voice {#sec-apu-from-sample-data-to-a-playing-voice}
+A **sample** is one amplitude value of one channel. A **source frame** holds
+the samples of all channels at one moment: one sample for mono, two for
+stereo. A mono PCM16 frame occupies 2 bytes, a stereo PCM16 frame 4 bytes.
+Frame counts, start positions and loop points are counted in source frames.
 
-A **source** supplies the waveform; a **voice** is one playback of it. The
-source description identifies its bytes, format and source-time scale. The
-voice adds a current position, playback-rate multiplier, gain and optional
-filter. A slot holds that voice. Two slots can use the same source while
-playing different positions, pitches or gains.
+An **output frame** is one stereo value of the mixer; there are 44,100 per
+second. Each voice moves through its source frames at its own rate. Between
+two source frames the APU interpolates. A mono voice is heard on both
+channels.
 
-A channel **sample** is one amplitude value at one instant. A **source frame**
-contains the channel samples for that instant: one for mono, or a left/right
-pair for stereo. A mono PCM16 frame therefore occupies two bytes; a stereo
-PCM16 frame occupies four. Frame counts, start positions and loop bounds count
-these source-time positions, not individual channel samples or bytes.
+### Example: a 440 Hz tone {#sec-apu-make-the-pcm-example-repeat-at-440-hz}
 
-An **output frame** is the stereo result produced by the mixer at 44,100
-frames/s. Its cadence is common to all voices. A voice's source rate says how
-quickly its cursor travels through source frames. When a cursor lies between
-stored frames, the APU interpolates their samples for the current output
-frame. A mono source supplies the same sample to both output channels.
+The [PCM example](#sec-apu-start-a-pcm-loop-or-square-voice) holds a sine
+wave of 16 frames per cycle, stored twice (32 frames, 64 bytes). To play a
+steady tone, loop frames 0 to 15 (loop start 0, loop end 16). A source rate of
+7040 frames per second plays 7040 ÷ 16 = 440 cycles per second.
 
-### Make the PCM example repeat at 440 Hz {#sec-apu-make-the-pcm-example-repeat-at-440-hz}
+RATE_STEP_Q16 multiplies the source rate: 2 doubles the pitch. GAIN_Q12 sets
+the volume: ½ halves the amplitude.
 
-The [PCM example below](#sec-apu-start-a-pcm-loop-or-square-voice) stores a
-waveform whose first sixteen mono frames form one cycle. Its source sample
-values begin at zero, reach +8192 at frame 4, return to zero at frame 8, and
-reach −8192 at frame 12. The declaration contains that cycle twice: 32 frames
-and 64 bytes in total.
-
-To sustain a tone, repeat the first cycle. Choose a loop beginning at frame 0
-and ending just before frame 16, with playback starting at frame 0. At unity
-rate, a source rate of 7040 frames/s carries the cursor through this sixteen-frame
-cycle 440 times per second:
-
-```text
-waveform cycle rate = 7040 source frames/s ÷ 16 source frames/cycle
-                    = 440 cycles/s
-```
-
-The loop repeats frames 0–15; the end bound 16 is excluded. The complete source
-still contains 32 frames. Its byte extent, declared frame count and loop length
-describe different things, even though all are needed for this one voice.
-
-RATE_STEP_Q16 multiplies the source-time rate. Unity uses the 7040-frame/s
-rate as programmed; a multiplier of two traverses the loop twice as quickly.
-This changes the tone's pitch, not the 44,100-frame/s output clock. For a
-nonlooped sound, faster traversal also shortens playback. The exact cursor and
-remainder arithmetic is given under
-[Source phase, rate and duration](#sec-apu-source-phase-rate-and-duration).
-
-GAIN_Q12 multiplies the voice's sample amplitudes before mixing. Choose a gain
-of one half for this voice. This halves its contribution to the mix without
-changing pitch or duration; it is an amplitude ratio, not a statement about
-perceived loudness. Leave the filter disabled for the first example.
-
-The choices for the PCM voice are therefore:
-
-| Choice | Meaning for this sound |
+| Setting | Value |
 |---|---|
-| Mono PCM16, 32 source frames | 32 signed channel samples, occupying 64 bytes |
-| Source rate 7040 frames/s; rate multiplier 1 | Traverse source time at 7040 frames/s |
-| Start 0, loop [0,16) | Repeat the first sixteen-frame waveform cycle |
-| Gain 1/2; filter disabled | Half-amplitude contribution without filtering |
-| Slot 2 | Keep this voice and its cursor separate from the other slots |
+| Format | Mono PCM16, 32 frames, 64 bytes |
+| Source rate; rate step | 7040; 1 |
+| Start; loop | 0; frames 0–15 |
+| Gain; filter | ½; off |
+| Slot | 2 |
 
-### Turn the choices into a PLAY command {#sec-apu-turn-the-choices-into-a-play-command}
+### The PLAY command {#sec-apu-turn-the-choices-into-a-play-command}
 
-Source and playback settings share a 21-word **staging bank**. Writing it
-prepares a command; it does not start or change a voice by itself. Describe
-the source, choose slot 2 and prepare the loop, rate and gain, then write PLAY
-to CMD. That final write captures the complete description into the command
-FIFO. At execution, PLAY binds the source and installs the captured settings
-in slot 2. The slot then supplies samples at the output-frame cadence.
+The settings are written to the 21 parameter registers; writing PLAY to CMD
+then puts them, with the command, into the command queue. When the command is
+executed the voice starts in the given slot.
 
-The stored rate and gain have different scales. Unity rate is 65536
-(`00010000H`) in RATE_STEP_Q16. Unity gain is 4096 (`00001000H`) in GAIN_Q12,
-so the chosen half gain is 2048 (`00000800H`). Loop bounds and START_SAMPLE
-remain ordinary source-frame indices. These are the values carried into the
-complete staging sequence below.
+RATE_STEP_Q16 is a 16.16 number: 1 is `00010000H`. GAIN_Q12 is a 4.12 number:
+1 is `00001000H`, so ½ is `00000800H`.
 
-The square alternative generates its sample instead of reading PCM bytes.
-One phase cycle spans one source frame, so it uses source rate 440 and loop
-[0,1) for the same 440-cycle/s phase rate. Its duty setting chooses the positive
-part of that phase cycle. The square column below uses one-half duty and
-one-quarter gain; it needs no sample-memory transfer.
+A square wave needs no sample data. One cycle of the square wave takes one
+source frame, so source rate 440 with loop 0–1 gives 440 Hz. The duty setting
+gives the part of each cycle that is positive.
 
-## Programming sequence {#sec-apu-programming-sequence}
+## Programming {#sec-apu-programming-sequence}
 
-First choose where the samples will reside and how they will be decoded.
-ROM samples can play in place. Samples prepared in main RAM or card RAM must
-be loaded into private sample RAM before playback.
-
-| Starting material | Hardware route to playback |
+| Sample data in | Use |
 |---|---|
-| PCM or BADP in installed system ROM or the selected cartridge ROM | Bind the complete region with SOURCE_ADDR and SOURCE_BYTES, and program its source metadata. PCM metadata is not read from a container header. |
-| PCM or BADP in private sample RAM | Bind the source at `40000000H + byte_offset`, after the sample bytes have committed to RAM. This range is not a CPU load/store window. |
-| Samples in main RAM, cartridge RAM or cartridge mailbox space | Transfer the bytes into private sample RAM first; these are not direct playback sources. |
-| Square generator | Program GENERATOR_KIND=1, rate, loop and duty. No sample upload or source-buffer binding is needed. |
+| System ROM or cartridge ROM | Play directly: set SOURCE_ADDR to its address |
+| Sample RAM | Play from `40000000H` + offset, after it has been loaded |
+| Main RAM or cartridge RAM | Load it into sample RAM first |
+| (Square wave) | GENERATOR_KIND = 1; no sample data |
 
-For source decoding, SOURCE_BITS_PER_SAMPLE values 4 and 16 select BADP and
-PCM16 respectively; other values select PCM8. SOURCE_DATA_OFFSET counts bytes
-within the bound region, whereas START_SAMPLE and loop bounds count source
-frames.
+SOURCE_BITS_PER_SAMPLE selects the format: 4 = BADP, 16 = PCM16, any other
+value = PCM8.
 
-### Submit the prepared voice {#sec-apu-submit-the-prepared-voice}
+### Starting a voice {#sec-apu-submit-the-prepared-voice}
 
-1. **Choose the slot and source.** Select an idle slot when another voice must
-   be preserved. PLAY on an occupied slot replaces it. Make the sample bytes
-   available in ROM or finish loading them into sample RAM; the
-   [sample-transfer procedure](#sec-apu-load-changing-sample-data-before-play)
-   distinguishes DMA delivery from the final RAM write. A square generator
-   needs neither operation.
-2. **Prepare one complete command.** Write its source and playback settings to
-   staging, with SLOT identifying the target. Finish those writes before CMD.
-   Another routine must not interleave a different description: both routines
-   would be writing the same staging bank. Check CMD_FREE before a burst that
-   must preserve every command; a full sixteen-entry FIFO replaces its oldest
-   entry rather than waiting.
-3. **Issue PLAY and allow execution.** A recognized nonzero CMD captures all
-   21 words, restores staging defaults and selects live bank zero. PLAY binds
-   at execution, not capture, so keep the intended cartridge socket selected
-   until it executes. The starting example below shows its active-bit result;
-   inspect the fault words as well.
-4. **Keep later changes distinct.** Staging writes prepare the next command.
-   Selected-slot writes instead change a live bank: reselect through staging
-   SLOT after capture before using that window. They are not queued behind a
-   pending PLAY. Use another captured PLAY when a replacement source description
-   must take effect together.
-5. **Retain the source until the voice has stopped.** PLAY does not copy the
-   payload, and pause retains its source requirement. Natural ends and completed
-   nonzero fades publish SLOT_ENDED; an immediate zero-fade STOP_SLOT does not.
-   The latest-event registers and APU interrupt are distinct from DMA completion.
-   [End events and interrupts](#sec-apu-end-events-and-interrupts) gives the
-   overwrite and acknowledgement rules.
+1. Choose a free slot. PLAY on a slot that is in use replaces its voice.
+2. Write the 21 parameter registers, SLOT included.
+3. Write PLAY (`00000001H`) to CMD. The parameter registers return to their
+   default values and the command waits in the queue.
+4. When the command executes, the slot's bit in ACTIVE_MASK is set. Check
+   STATUS.FAULT.
+5. Keep the sample data unchanged until the voice has ended.
 
-The [source](#sec-apu-voice-sources-and-their-lifetime),
-[command](#sec-apu-commands-and-slot-ownership) and
-[transfer](#sec-apu-sample-ram-transfer) sections specify the full formats and
-write effects used by this sequence.
+When the command queue is full, a new command **replaces the oldest command
+in the queue**. Check CMD_FREE before writing several commands in a row.
 
-### Start a PCM loop or square voice {#sec-apu-start-a-pcm-loop-or-square-voice}
+PLAY uses the cartridge slot selected when the command executes. Keep the
+cartridge selected until the voice has started.
 
-These two configurations encode the PCM and square choices explained above.
-They show the complete staging bank. Start with the selected slot idle, no
-queued commands and no outstanding APU fault; keep this staging sequence
-separate from other command preparation. No DMA or transfer-port operation is
-needed: PCM is read from cartridge ROM, while the square generator has no sample
-buffer.
+### Example: PCM loop and square wave {#sec-apu-start-a-pcm-loop-or-square-voice}
 
-For the PCM case, place the following mono PCM16 samples in cartridge ROM.
-Let **A** be their mapped byte address; the declaration occupies 64 bytes.
-Keep the cartridge containing these bytes selected until PLAY executes.
+PCM data in cartridge ROM, at address A:
 
 ```lua
 rodata pcm: i16[32] = {
@@ -212,11 +115,9 @@ rodata pcm: i16[32] = {
 }
 ```
 
-Choose one column and write **all 21 words** with aligned CPU stores. Do not
-interleave another producer's staging writes. Parameter order below follows
-increasing address; CMD is separate and must be written last.
+Write all 21 registers, then CMD:
 
-| Staging address | Parameter | PCM loop | Square |
+| Address | Parameter | PCM loop | Square |
 |---|---|---|---|
 | `08000120H` | SOURCE_ADDR | A | `00000000H` |
 | `08000124H` | SOURCE_BYTES | 64 | 0 |
@@ -239,491 +140,292 @@ increasing address; CMD is separate and must be written last.
 | `08000168H` | FADE_SAMPLES | 0 | 0 |
 | `0800016CH` | GENERATOR_KIND | 0 | 1 |
 | `08000170H` | GENERATOR_DUTY_Q12 | `00000800H` | `00000800H` |
+| `08000174H` | CMD | `00000001H` | `00000001H` |
 
-Write `00000001H` to CMD at `08000174H` to submit PLAY. Capture restores
-staging defaults and the visible selector to zero; it does not mean that the
-voice has started. For these idle-slot starting conditions, ACTIVE_MASK at
-`08000190H` gains bit 2 (`00000004H`) for PCM or bit 4 (`00000010H`) for the
-square when PLAY executes. Check the fault words as well as the active bit.
+When PLAY executes, ACTIVE_MASK bit 2 (PCM) or bit 4 (square) is set. The
+square wave at gain ¼ alone gives output levels of +8191 and −8192.
 
-The PCM loop repeats sixteen source frames at 7040 frames/s, giving a 440 Hz
-waveform at one-half gain. The square uses 440 as its source rate, a one-frame
-loop and one-half duty; it is a continuous 440 Hz generator, not a sound lasting
-one output frame. Its quarter-gain contribution is mixed at Q12 precision;
-with no other contributing voices, the final channel levels are +8191 and
-−8192. Leave the PCM ROM bytes intact for the voice's complete lifetime,
-including pauses.
+To change the PCM voice to gain ¼ without restarting it, write 2 to SLOT,
+`00000400H` to GAIN_Q12 and SET_SLOT_GAIN (`00000003H`) to CMD.
 
-To reduce the PCM voice's contribution from one-half to one-quarter without
-restarting its waveform, write slot 2 to staging SLOT at `08000148H`, gain
-`00000400H` to staging GAIN_Q12 at `08000150H`, then SET_SLOT_GAIN
-(`00000003H`) to CMD. When this command executes, the existing playback cursor
-continues; a new PLAY would instead start from its captured START_SAMPLE.
+To stop it at once, write 2 to SLOT, 0 to FADE_SAMPLES and STOP_SLOT
+(`00000002H`) to CMD.
 
-To stop either voice without a fade, write its slot number to `08000148H`,
-zero to FADE_SAMPLES at `08000168H`, then `00000002H` to CMD. These are new
-staging writes, not edits to the selected live bank. The slot's active bit
-clears when STOP_SLOT executes; submitting it does not release the source
-immediately. This zero-fade stop does not publish SLOT_ENDED.
+## Sample data {#sec-apu-voice-sources-and-their-lifetime}
 
-## Voice sources and their lifetime {#sec-apu-voice-sources-and-their-lifetime}
-
-Program a source description for each sampled voice. The description identifies
-the byte region, decoder, channel layout, frame count and loop. PCM uses these
-register values directly, so a PCM source needs only sample bytes rather than
-a file header.
-
-| Source field | Meaning |
+| Parameter | Meaning |
 |---|---|
-| SOURCE_ADDR | Base address of the complete bound source region |
-| SOURCE_BYTES | Byte extent of that region |
-| SOURCE_SAMPLE_RATE_HZ | Source rate in Hz, used with RATE_STEP_Q16 |
-| SOURCE_CHANNELS | Channel count used by the decoder |
-| SOURCE_BITS_PER_SAMPLE | Decoder selection: 4 for BADP, 16 for PCM16, otherwise PCM8 |
-| SOURCE_FRAME_COUNT | Number of source frames used for playback duration |
-| SOURCE_DATA_OFFSET | Byte displacement from SOURCE_ADDR to sample or compressed-block data |
-| SOURCE_DATA_BYTES | Retained data-byte metadata; not a decoder read bound |
-| SOURCE_LOOP_START_SAMPLE / SOURCE_LOOP_END_SAMPLE | Source-frame loop bounds |
-| GENERATOR_KIND | Zero for source-buffer playback; one for the square generator |
-| GENERATOR_DUTY_Q12 | Square-generator duty threshold |
+| SOURCE_ADDR | Address of the sample data area |
+| SOURCE_BYTES | Size of the area in bytes |
+| SOURCE_SAMPLE_RATE_HZ | Source frames per second at rate step 1 |
+| SOURCE_CHANNELS | 1 = mono, 2 = stereo |
+| SOURCE_BITS_PER_SAMPLE | 4 = BADP, 16 = PCM16, other = PCM8 |
+| SOURCE_FRAME_COUNT | Number of source frames |
+| SOURCE_DATA_OFFSET | Offset of the samples from SOURCE_ADDR, in bytes |
+| SOURCE_DATA_BYTES | Size of the samples in bytes (for information; not checked) |
+| SOURCE_LOOP_START_SAMPLE, SOURCE_LOOP_END_SAMPLE | Loop start and end frame |
+| GENERATOR_KIND | 0 = sample data, 1 = square wave |
+| GENERATOR_DUTY_Q12 | Square wave duty |
 
-A frame contains the channel samples at one source-time position. Thus a stereo frame is two samples, not two frames. START_SAMPLE and loop bounds count frames; byte offsets count bytes.
+The area SOURCE_ADDR to SOURCE_ADDR + SOURCE_BYTES must lie within:
 
-For source-buffer playback, PLAY binds the entire region identified by SOURCE_ADDR and SOURCE_BYTES when the command executes. Every accepted binding requires a nonzero byte count and the complete requested extent within the applicable storage.
-
-| Source region | Admitted storage |
+| Memory | Addresses |
 |---|---|
-| System ROM | Actual installed firmware-image bytes, starting at 00000000H |
-| Selected cartridge ROM | Entire extent within 10000000H–2FFFFFFFH, with a ROM device present and the extent within that card's actual ROM bytes |
-| Private sample RAM | 512 KiB at 40000000H–4007FFFFH |
+| System ROM | The fitted system ROM, from `00000000H` |
+| Cartridge ROM | The fitted ROM of the selected cartridge |
+| Sample RAM | `40000000H`–`4007FFFFH` |
 
-For samples held in main RAM, card RAM or other storage, transfer the bytes
-into private sample RAM first. A bound source must fit within actual installed
-storage, including the end of private RAM or a ROM. The zero-filled tail of a
-CPU ROM read is outside the bindable source extent.
+Otherwise PLAY fails with fault SOURCE_RANGE and the slot keeps its previous
+voice. The APU reads the samples while the voice plays; do not change them.
+The APU uses SOURCE_FRAME_COUNT and the format to find the samples; make sure
+they lie within the area.
 
-PLAY binds the cartridge ROM selected at execution. Keep that socket selected
-until the command executes; later SELECT writes leave the voice on its bound
-ROM. Live source-field writes bind again using the selection at that access.
-See [Source fields are individually live](#sec-apu-source-fields-are-individually-live)
-and [[Cartridge controller](../book3/cartridge.md#sec-cartridge-cartridge-controller)]{.content-visible when-format="html"}[Book III, §1.3]{.content-visible when-format="pdf"}.
+## PCM formats {#sec-apu-pcm-byte-layouts-and-interpolation}
 
-The voice reads the bound storage while playing; PLAY does not copy the sample payload. Keep that storage available for the voice's lifetime. PCM reads use the current bytes. BADP retains its current and previous decoded
-frames; edits to compressed bytes take effect when those bytes are decoded again.
+The samples start at SOURCE_ADDR + SOURCE_DATA_OFFSET. Channel 0 is left,
+channel 1 right.
 
-A failed binding raises SOURCE_RANGE (`00000102H`) with SOURCE_ADDR as detail;
-a failed PLAY leaves the old voice and slot bank intact. Binding checks the
-source region. The decoder then uses the programmed rate, channels, frame count,
-data offset and bit depth directly.
-
-**SOURCE_DATA_BYTES does not limit decoding.** SOURCE_BYTES sets the bound
-region, while decode addresses follow the format and frame metadata. Keep the
-sample payload and, for BADP, its header and seek table consistent with those
-values.
-
-GENERATOR_KIND=1 selects the square generator and bypasses source binding.
-Other nonzero values also bypass binding but have no defined waveform; use one
-for square output and zero for sampled output.
-
-## PCM byte layouts and interpolation {#sec-apu-pcm-byte-layouts-and-interpolation}
-
-PCM data starts at SOURCE_ADDR + SOURCE_DATA_OFFSET. For frame n, the first sample index is n multiplied by SOURCE_CHANNELS. Channel zero supplies left; channel one supplies right. Mono repeats its one decoded sample on both output channels.
-
-| Format | Bytes in frame n, relative to the data start |
+| Format | Bytes of frame n |
 |---|---|
-| PCM8 mono | n: mono byte |
-| PCM8 stereo | 2n: left byte; 2n+1: right byte |
-| PCM16 mono | 2n: low byte; 2n+1: high byte |
-| PCM16 stereo | 4n, 4n+1: left low/high; 4n+2, 4n+3: right low/high |
+| PCM8 mono | n |
+| PCM8 stereo | 2n left, 2n + 1 right |
+| PCM16 mono | 2n low, 2n + 1 high |
+| PCM16 stereo | 4n, 4n + 1 left; 4n + 2, 4n + 3 right |
 
-PCM8 is unsigned offset-binary. Its decoded value is (byte minus 128) multiplied by 256. Bytes 00H, 80H, FFH and 40H therefore decode to −32768, 0, 32512 and −16384. In particular, FFH is not +32767 and 00H is not silence.
+PCM8 is unsigned: the value is (byte − 128) × 256, so `80H` is silence, `00H`
+is −32768 and `FFH` is +32512. PCM16 is signed, low byte first.
 
-PCM16 is signed little-endian. Bytes 00H 80H mean −32768; FFH 7FH mean +32767; 00H C0H mean −16384. A stereo data sequence `00H 80H FFH 7FH 00H 00H 00H C0H` contains two frames: (−32768, +32767), then (0, −16384).
-
-Playback uses linear interpolation for PCM and for decoded BADP samples. Let n be the current integer source-frame position and f its 16-bit fractional part. For either channel:
+Between two frames the APU interpolates linearly. With n the current frame
+and f the fraction (0–65535):
 
 ```text
-sample = first + ASR16((second − first) × f)
+sample = first + ((second − first) × f) >> 16
 ```
 
-Here first is frame n, second is its interpolation neighbor, and ASR16 divides by 65536 with rounding toward negative infinity. Interpolate left and right independently. With first=−10000, second=10000 and f=16384, the result is −5000. With first=1000, second=−1001 and f=32768, the difference contributes −1001, giving −1; truncation toward zero would give the wrong result.
+where `>>` rounds towards −∞. Without a loop, the last frame is interpolated
+with itself. In a loop, the frame after the last loop frame is the loop start: with
+loop start 4 and loop end 8, position 7.5 lies between frames 7 and 4.
 
-Without a loop, the last source frame is also its own interpolation neighbor. Interpolation does not read frame SOURCE_FRAME_COUNT beyond that last frame. With a loop, a neighbor reaching or passing the loop end is replaced by the loop-start frame. For loop [4,8), position 7.5 interpolates frame 7 with frame 4, not frame 8.
+Example: mono PCM16 frames 0, 10000, −10000, 0 at 22,050 Hz give the output
+0, 5000, 10000, 0, −10000, −5000, 0, 0.
 
-For example, mono PCM16 frames [0,10000,−10000,0], a source rate of 22050 Hz and unity RATE_STEP_Q16 produce eight output samples:
+### Sample memory size {#sec-apu-size-a-pcm-source}
 
-```text
-0, 5000, 10000, 0, −10000, −5000, 0, 0
-```
-
-The final pair is zero because the last source frame is held for interpolation until the cursor reaches the nonloop end.
-
-### Size a PCM source {#sec-apu-size-a-pcm-source}
-
-For mono or stereo PCM, count storage from source frames, not output frames:
-
-```text
-bytes per source frame = channels × bytes per channel sample
-PCM payload bytes      = SOURCE_FRAME_COUNT × bytes per source frame
-```
-
-SOURCE_DATA_OFFSET locates that payload within the bound SOURCE_BYTES region.
-Keep the complete payload inside the region. The descriptor words are programmed
-separately; no PCM file header is required in the sample bytes.
-
-At a source rate of 44,100 Hz, the following sizes hold one second of source
-material. With unity RATE_STEP_Q16, no loop and START_SAMPLE=0, each produces
-44,100 output frames:
-
-| PCM format | Bytes per source frame | One second of payload | Frames in all 512 KiB of sample RAM |
+| Format | Bytes per frame | One second at 44.1 kHz | Frames in 512 KiB |
 |---|---:|---:|---:|
 | 8-bit mono | 1 | 44,100 | 524,288 |
 | 8-bit stereo | 2 | 88,200 | 262,144 |
 | 16-bit mono | 2 | 88,200 | 262,144 |
 | 16-bit stereo | 4 | 176,400 | 131,072 |
 
-The last column assumes one payload starting at RAM offset zero, with no other
-sample storage allocated. For example, 131,072 stereo PCM16 frames last about
-2.972 seconds at 44,100 Hz and unity rate. Slots share this RAM: sixteen slots
-do not provide sixteen private 512-KiB banks. Several slots can instead bind
-the same stored sample and retain independent cursors and playback settings.
+Sample RAM is shared by all voices.
 
-## Source phase, rate and duration {#sec-apu-source-phase-rate-and-duration}
+## Pitch, loops and duration {#sec-apu-source-phase-rate-and-duration}
 
-The playback cursor locates a position in source time. For a sampled voice, its
-integer part selects a source frame, and its fractional part supplies the
-interpolation weight.
-Rate controls the cursor's advance; loop bounds control where it wraps.
+Each voice has a play position in source frames, with a 16-bit fraction.
+PLAY sets it to START_SAMPLE. RATE_STEP_Q16 is a signed 16.16 number: 1 plays
+forward at the source rate, −1 plays backward, 0 holds the position.
 
-PLAY copies the captured parameters into the target slot, makes it PLAYING, clears fade progress and filter histories, and sets the cursor to START_SAMPLE multiplied by 65536. START_SAMPLE is an unsigned frame index, not a signed word. Its initial fractional position and accumulated rate remainder are zero.
-
-RATE_STEP_Q16 is a complete signed 32-bit Q16 word. 00010000H is +1, FFFF0000H is −1, and zero freezes phase. SOURCE_SAMPLE_RATE_HZ is an unsigned word. Convert the source-rate/rate combination as follows:
+Per output frame the position advances by
 
 ```text
-P = signed(RATE_STEP_Q16) × SOURCE_SAMPLE_RATE_HZ
-P = q × 44100 + r
+SOURCE_SAMPLE_RATE_HZ × RATE_STEP_Q16 / 44100   (in 1/65536 frames)
 ```
 
-Choose q by division truncated toward zero; r is signed and has magnitude less than 44100. q is a cursor increment in Q16 units, not an integer source-frame count. Retain r rather than rounding it away on every output frame.
+The APU keeps the remainder of this division, so the average rate is exact.
+At 8000 Hz and rate step 1 the position advances by 11888 or 11889 units per
+output frame.
 
-For each output frame, render the current cursor, filter if enabled, and contribute the current-gain product to the mix. Then add r to the accumulated rate remainder. At +44100 or above, subtract 44100 and add a +1 cursor-unit carry. At −44100 or below, add 44100 and use a −1 carry. Advance the cursor by q plus that carry. A cursor unit is 1/65536 of a source frame.
+### Loops {#sec-apu-loops-apply-before-the-first-sample}
 
-For 8000-Hz source data at unity rate, P=524288000, q=11888 and r=27200. Starting with remainder zero, the first two advances are 11888 and 11889 cursor units: the remainders become 27200 and 10300. The second advance includes the carry. Negative unity rate gives q=−11888 and r=−27200, with correspondingly negative carries. Zero rate, or zero source rate, causes no phase advancement; neither is rejected or clamped by this conversion.
+The loop is on when SOURCE_LOOP_END_SAMPLE is greater than
+SOURCE_LOOP_START_SAMPLE. The loop includes its start frame and excludes its
+end frame. Whenever the position leaves the loop, in either direction, it is
+brought back into it by the loop length. This also applies to the start
+position: with loop start 4 and loop end 8, START_SAMPLE 1 starts at frame 5.
 
-### Loops apply before the first sample {#sec-apu-loops-apply-before-the-first-sample}
+### End of a voice {#sec-apu-nonloop-completion}
 
-Looping exists exactly when SOURCE_LOOP_END_SAMPLE is greater than SOURCE_LOOP_START_SAMPLE as unsigned words. Otherwise it is disabled. Bounds are converted directly to Q16 and are not restricted to SOURCE_FRAME_COUNT.
+Without a loop the voice ends when the position leaves frames 0 to
+SOURCE_FRAME_COUNT − 1. Played forward from 0, a voice of N frames plays
+frames 0 to N − 1; played backward, start at N − 1.
 
-An enabled loop wraps the cursor **before the first output sample**, and again after every phase advance. It is not an introduction followed by a loop. The exact wrap is:
+## Square wave {#sec-apu-square-generator}
+
+With GENERATOR_KIND = 1 the voice produces a square wave instead of reading
+samples. For each output frame:
 
 ```text
-loopStart + positiveModulo(cursor − loopStart, loopEnd − loopStart)
+fraction of the position × 4096 < GENERATOR_DUTY_Q12 × 65536:  +32767
+otherwise:                                                     −32768
 ```
 
-The loop interval includes its start and excludes its end. Positive modulo produces a nonnegative result even for negative input. This also handles an advance longer than the entire loop.
-
-For loop [4,8), START_SAMPLE=1 wraps to frame 5 before playback, not to frame 1 or necessarily frame 4. A forward advance from 7.75 by 0.5 wraps to 4.25; a reverse advance from 4.25 by −1 wraps to 7.25. The interpolation neighbor wraps at the same loop boundary.
-
-### Nonloop completion {#sec-apu-nonloop-completion}
-
-Before an output sample, an unlooped cursor outside [0, SOURCE_FRAME_COUNT×65536) ends without contributing a sample. Otherwise the current frame is rendered before phase advancement. Crossing either boundary then ends the voice after that rendered sample, including while a fade is active.
-
-At source rate 44100 Hz and unity rate, a nonloop source of N frames played from zero emits frames 0 through N−1. At negative unity rate, start at N−1 to emit N−1 down through zero. Starting at N is already outside the interval. An in-range zero-rate voice does not naturally end by phase motion alone.
-
-Natural source completion and fade completion use the same output-sample edge.
-The earlier condition ends the voice; coincident completion produces one end
-notification. A fade does not extend an unlooped source.
-
-## Square generator {#sec-apu-square-generator}
-
-GENERATOR_KIND=1 selects the square generator. It reads no sample bytes and supplies the same sample to left and right. Let f be the cursor's fractional position modulo 65536:
-
-```text
-if f × 4096 < GENERATOR_DUTY_Q12 × 65536: sample = +32767
-otherwise:                                      sample = −32768
-```
-
-Duty is an unsigned Q12 threshold, unlike signed GAIN_Q12.
-
-| Duty word | Result for an in-range fractional cursor |
+| Duty | Wave |
 |---|---|
-| 00000000H | Always −32768 |
-| 00000800H | Positive for the first half of the phase cycle |
-| 00001000H or greater | Always +32767 |
+| `00000000H` | Always −32768 |
+| `00000800H` | Half positive, half negative |
+| `00001000H` or more | Always +32767 |
 
-The phase uses the same signed rate conversion as source playback. One integer source-frame advance corresponds to one complete square phase cycle. The unwrapped phase rate in cycles per second is SOURCE_SAMPLE_RATE_HZ multiplied by signed(RATE_STEP_Q16)/65536; the actual 44,100-Hz output sequence is determined by the comparison above.
+The frequency is SOURCE_SAMPLE_RATE_HZ × rate step. Set a loop of 0–1 for a
+continuous tone; FRAME_COUNT and the loop work as for sample data. Example:
+441 Hz, duty ½ gives 50 output frames positive and 50 negative.
 
-For example, source rate 441 Hz, unity rate, half duty and loop [0,1) give a 100-output-frame pattern: 50 positive samples followed by 50 negative samples. FRAME_COUNT and loop bounds still govern duration and wrapping; selecting a generator does not remove those controls.
+## Volume and mixing {#sec-apu-gain-stereo-mixing-and-clipping}
 
-## Gain, stereo mixing and clipping {#sec-apu-gain-stereo-mixing-and-clipping}
+GAIN_Q12 is a signed 4.12 number:
 
-Gain controls a voice's amplitude contribution without changing its playback
-cursor. All slots share the final left and right outputs, so their sum can clip
-even when each source sample is within signed sixteen-bit range.
-
-GAIN_Q12 is the signed value of the entire word. It is not an unsigned volume percentage.
-
-| Gain word | Multiplier |
+| Gain | Factor |
 |---|---:|
-| 00000000H | 0 |
-| 00000800H | +0.5 |
-| 00001000H | +1 |
-| 00002000H | +2 |
-| FFFFF000H | −1 |
+| `00000000H` | 0 |
+| `00000800H` | ½ |
+| `00001000H` | 1 |
+| `00002000H` | 2 |
+| `FFFFF000H` | −1 (inverted) |
 
-Negative gain inverts polarity. Gain values above unity are not clipped when written. During a fade the retained current gain changes without rewriting the programmed slot GAIN_Q12 word.
-
-For each channel separately, sum the products of every running voice's filtered sample and current Q12 gain. Only then shift and saturate:
-
-```text
-mix = sum(sample × currentGainQ12)
-output = signed16Saturate(ASR12(mix))
-```
-
-ASR12 rounds negative results toward negative infinity. There is no per-voice gain-product saturation. Two samples of +20000 at unity therefore yield a pre-clipped result of +40000 and final output +32767. One +20000 sample at unity plus one at half gain yields +30000 without clipping. Two samples of +1 at half gain combine to +1 because their fractional contributions are summed before shifting.
-
-Minus-unity gain applied to −32768 produces +32768 before final clipping and thus +32767 at the output. This is the signed-16 asymmetry, not a gain-write restriction. An enabled filter has a separate signed-16 saturation before gain and mixing.
-
-## Per-voice Q14 filter {#sec-apu-per-voice-q14-filter}
-
-The biquad shapes each voice's sample stream after interpolation or generation
-and before gain. Its histories carry earlier input into later output frames;
-changing a coefficient can therefore affect more than the current sample.
-
-FILTER_CONTROL bit 0 enables the stereo biquad. Other bits have no decoded filter effect. The two channels share five coefficients but have independent two-word histories.
-
-| Register halfword | Coefficient |
-|---|---|
-| FILTER_B0_B1 bits 15:0 | b0 |
-| FILTER_B0_B1 bits 31:16 | b1 |
-| FILTER_B2_A1 bits 15:0 | b2 |
-| FILTER_B2_A1 bits 31:16 | a1 |
-| FILTER_A2 bits 15:0 | a2 |
-| FILTER_A2 bits 31:16 | Not decoded |
-
-Each coefficient is signed 16-bit Q14: 4000H is +1, 2000H is +0.5, C000H is −1 and 8000H is −2. Decode each halfword independently; the sign of the whole packed register is not the sign of both coefficients.
-
-For one channel, x is the interpolated source or generator sample and z1,z2 are retained signed 32-bit history words. Use the old histories for the right-hand sides:
+For each channel the mixer adds sample × gain of all voices and then limits
+the sum:
 
 ```text
-y      = ASR14(b0 × x + z1)
-nextZ1 = WRAP32(b1 × x − a1 × y + z2)
-nextZ2 = WRAP32(b2 × x − a2 × y)
-output = signed16Saturate(y)
+output = limit16((sum of sample × gain) >> 12)
 ```
 
-ASR14 rounds toward negative infinity. WRAP32 retains the low 32 bits and interprets them as signed: 2147483648 wraps to −2147483648. History overflow wraps; it does not saturate. Crucially, history updates use the unsaturated y, not the clipped filter output. Left and right execute this recurrence with separate histories.
+Two voices of +20000 at gain 1 give +40000, which is limited to +32767.
 
-For a two-sample average, program FILTER_B0_B1=20002000H, FILTER_B2_A1=0 and FILTER_A2=0, then enable bit 0. Starting from zero histories, input [8192,0,−8192,0] yields [4096,4096,−4096,−4096]. On the first sample, y=(8192×8192)/16384=4096 and nextZ1=67108864. On the next zero input, that history alone gives 4096; the new history becomes zero. The negative pair follows the same recurrence.
+## Filter {#sec-apu-per-voice-q14-filter}
 
-PLAY clears histories and filter output before installing its programmed coefficients. The filter datapath's reset setting is disabled, with b0=4000H and the other coefficients zero. Live control or coefficient writes install all five coefficients from the slot words without clearing histories. Disabling bypasses processing entirely: histories remain frozen, and re-enabling resumes them. Live source replacement, live START_SAMPLE seeks and pause also retain histories.
+Each voice has a second-order (biquad) filter, enabled by bit 0 of
+FILTER_CONTROL. The coefficients are signed 2.14 numbers (`4000H` = 1):
 
-## Stop and fade {#sec-apu-stop-and-fade}
-
-Use a fade to reduce a voice's contribution over a chosen interval before
-releasing its slot. FADE_SAMPLES counts **output frames**, not source frames:
-441 rendered frames span 10 ms at the fixed output cadence, regardless of
-source rate or pitch. Pause suspends this progress.
-
-STOP_SLOT with FADE_SAMPLES=0 stops immediately and clears all 21 slot words. Stopping an idle slot also clears its bank. With a non-idle slot and a positive duration, STOP_SLOT instead enters FADING for at most that many rendered output frames: an unlooped source can end sooner. A paused voice remains paused, so its fade waits for resume. Writing FADE_SAMPLES alone does not begin a fade.
-
-For initial retained signed gain G0 and duration N, configure:
-
-```text
-Q = truncTowardZero(G0 / N)
-R = G0 − Q × N
-error = N − 1
-remaining = N
-```
-
-Each frame uses the current gain before any fade adjustment. After phase advancement, first apply the loop wrap or nonloop source-end check. If the source has ended, stop. Otherwise decrement remaining. If it becomes zero, end immediately without another gain update. Otherwise add the magnitude of R to error. If error is at least N, subtract N and use carry=sign(R); otherwise carry=0. The new current gain is WRAP32(currentGain−Q−carry).
-
-At G0=4096 and N=4, with sufficient remaining source data or an enabled loop, the four frame gains are 4096,3072,2048,1024, then the voice stops. There is no fifth frame at zero gain. A live GAIN_Q12 write sets current gain immediately and replans this arithmetic over the remaining frame count, not the original duration.
-
-An unlooped source stops when its cursor first leaves its declared frame
-interval, even with fade frames remaining. No sample is fetched beyond that
-interval to finish the fade. For example, three remaining source frames at
-44100 Hz and unity rate permit only three output frames of an eight-frame
-fade. With G0=4096 their gains are 4096,3584,3072, then playback ends. Provide
-enough remaining data or a valid loop when the complete fade is required.
-
-Natural completion and fade completion end and clear the slot and produce the slot-ended notification described in the event section. An immediate explicit stop does not emit that notification.
-
-## Pause, resume and live programming {#sec-apu-pause-resume-and-live-programming}
-
-PAUSE_SLOT changes a non-idle, unpaused voice to paused without discarding it. RESUME_SLOT acts on a paused voice without replaying it. The active-mask bit remains set while paused.
-
-A paused voice contributes no samples and consumes no phase, fade frames or filter history. Resume continues the retained cursor, gain, fade and histories. Selected-slot writes can nevertheless modify a paused voice, because it remains non-idle.
-
-Selected-slot reads observe the voice after all output-frame edges through the access cycle. A write takes effect for subsequent output frames; it cannot change samples already due through that cycle. These accesses are distinct from writing command staging words.
-
-### Source fields are individually live {#sec-apu-source-fields-are-individually-live}
-
-The following active-slot stores each replace the source description:
-
-- SOURCE_ADDR and SOURCE_BYTES;
-- SOURCE_SAMPLE_RATE_HZ, SOURCE_CHANNELS and SOURCE_BITS_PER_SAMPLE;
-- SOURCE_FRAME_COUNT, SOURCE_DATA_OFFSET and SOURCE_DATA_BYTES;
-- GENERATOR_KIND.
-
-Each store first changes its raw slot word, then reloads all source metadata
-and rebinds using the cartridge selection at that access. Consecutive stores
-are **not an atomic source update**.
-
-A successful replacement preserves cursor, accumulated phase remainder, current gain, fade progress and filter histories. It reconfigures the rate conversion, loop bounds and filter coefficients. BADP state is reset and sought to the retained source position. Thus even a change to a rate or extent word in this group takes the full source-replacement route.
-
-If a live replacement cannot bind, it stops and deactivates the slot and raises SOURCE_RANGE with the newly programmed SOURCE_ADDR. Unlike a failed PLAY, this failure occurs after the raw bank write. The bank words are retained rather than cleared.
-
-| Field written | Active or paused voice effect |
-|---|---|
-| Loop start or end | Recompute loop bounds |
-| RATE_STEP_Q16 | Recompute q and r; retain accumulated phase remainder |
-| GAIN_Q12 | Replace signed current gain; replan any remaining fade |
-| START_SAMPLE | Seek immediately; clear accumulated phase remainder; retain filter histories |
-| GENERATOR_DUTY_Q12 | Change the square duty threshold |
-| FILTER_CONTROL or a coefficient word | Reload all five coefficients; retain histories |
-| FADE_SAMPLES | Store the word only; do not start a fade |
-
-Writing a raw bank word does not activate an idle slot. Use the command programming route when a new voice, reset histories or a coherent replacement of all captured parameters is required.
-
-## Commands and slot ownership {#sec-apu-commands-and-slot-ownership}
-
-### Stage, capture, execute {#sec-apu-stage-capture-execute}
-
-Write the parameters to the shared staging bank, then write CMD last. CMD
-decodes the entire word; the command table defines values zero through five.
-Serialize access to staging so another routine cannot alter a partly prepared
-command.
-
-A valid nonzero command captures **all 21 staging words** into one FIFO entry.
-Subsequent staging writes cannot change that entry. Capture resets the visible
-staging words to their defaults, returns CMD readback to zero and selects slot
-0 for the selected-slot window. The queued command still targets its captured
-slot; clearing the visible selector does not retarget it.
-
-NONE captures nothing and leaves the staged parameters intact. An unrecognized
-word records BAD_CMD and clears staging to defaults. A latched APU fault does
-not itself block later valid commands.
-
-Queued commands execute in FIFO order, after the output-frame edges due
-through their execution cycle. Consecutive commands can execute without an
-output frame between them. Use SAMPLE_SEQUENCE when an
-operation requires an elapsed number of output frames.
-
-### Preserve FIFO entries when every command matters {#sec-apu-preserve-fifo-entries-when-every-command-matters}
-
-The FIFO retains sixteen entries. CMD_QUEUED reports its count, CMD_FREE reports
-sixteen minus that count, and CMD_CAPACITY reports sixteen. With a full FIFO,
-another accepted command replaces the oldest entry. It neither waits for free
-space nor reports a FIFO-full fault. Use the reported space before submitting a
-burst that must preserve every command.
-
-Queue-counter reads return the current queue state. They leave commands
-queued; STATUS and selected-slot reads observe output-frame progress through
-their access cycle as described below.
-
-### Command words {#sec-apu-command-words}
-
-| CMD word | Name | Captured inputs and operation |
+| Register | Bits 15–0 | Bits 31–16 |
 |---|---|---|
-| `00000000H` | NONE | No FIFO entry; staging parameters remain |
-| `00000001H` | PLAY | Bind captured source, replace the target voice and copy all parameters into its bank on successful binding |
-| `00000002H` | STOP_SLOT | Target SLOT and FADE_SAMPLES choose immediate stop or a sample-based fade |
-| `00000003H` | SET_SLOT_GAIN | Target SLOT and GAIN_Q12 update the raw gain through the live-parameter path |
-| `00000004H` | PAUSE_SLOT | Pause a non-idle slot without clearing its parameter bank |
-| `00000005H` | RESUME_SLOT | Resume a paused slot without reloading its source |
+| FILTER_B0_B1 | b0 | b1 |
+| FILTER_B2_A1 | b2 | a1 |
+| FILTER_A2 | a2 | — |
 
-PLAY and the other slot commands use bits 3:0 of captured SLOT. The complete
-word remains retained data. PLAY binds at execution, not capture. A failed
-source bind does not replace the old slot's parameters, phase or output; it
-records SOURCE_RANGE with the source address as detail.
+For each channel, with input x:
 
-STOP_SLOT with zero fade, or with an inactive target, clears the target bank and
-stops it immediately. This immediate explicit stop does **not** produce a
-slot-ended event. A nonzero fade of an active slot instead retains its bank
-while fading. Pause and resume do not clear it. SET_SLOT_GAIN can also retain a
-gain word in an inactive bank; that write does not start playback.
+```text
+y  = (b0 × x + z1) >> 14
+z1 ← b1 × x − a1 × y + z2
+z2 ← b2 × x − a2 × y
+output = limit16(y)
+```
 
-### Live slot parameters {#sec-apu-live-slot-parameters}
+z1 and z2 are 32-bit values that wrap on overflow. Both channels use the same
+coefficients and their own z1, z2. PLAY clears z1 and z2. When the filter is
+switched off, z1 and z2 keep their values.
 
-Write staging SLOT to select one bank through its low four bits. Only that
-staging write immediately changes selection; the other staging parameter
-writes merely prepare a later command. The selected window reads and writes
-the bank itself, with output-frame progress observed through the access cycle.
-A live write does not enqueue CMD, reset staging or activate an idle slot.
+Example: b0 = b1 = ½ (`FILTER_B0_B1` = `20002000H`) averages two successive
+samples: input 8192, 0, −8192, 0 gives 4096, 4096, −4096, −4096.
 
-Select a bank through staging SLOT at `08000148H`. The selected-window SLOT
-word at `080001BCH` is ordinary bank data and leaves the selection unchanged.
+## Stopping and fading {#sec-apu-stop-and-fade}
 
-ACTIVE_MASK bit n means slot n is non-idle. Paused and fading slots still have
-active bits. STATUS.BUSY is any active slot or queued command, so it can remain
-set while paused sound produces no samples. It is not TRANSFER_BUSY.
-SELECTED_SOURCE_ADDR is the selected bank's original source address while that
-slot is active, otherwise zero. It is not the moving playback cursor.
+STOP_SLOT with FADE_SAMPLES = 0 stops the voice at once and clears its slot.
+With FADE_SAMPLES = N, the volume falls in a straight line over N output
+frames, after which the voice ends. Starting from gain 4096 with N = 4, the
+four frames have gain 4096, 3072, 2048 and 1024. A voice without a loop that
+reaches its end during the fade ends there. A paused voice fades only after it
+is resumed.
 
-Every active source-field write can rebind that voice independently, using the
-other words currently in its bank. Several source writes are not an atomic
-source replacement. [Source fields are individually live](#sec-apu-source-fields-are-individually-live)
-specifies the resulting cursor, filter and binding effects. Use captured PLAY
-when a new source description must be supplied together rather than assembled
-through intermediate live states.
+## Pause and live changes {#sec-apu-pause-resume-and-live-programming}
 
-## BADP compressed source format {#sec-apu-badp-compressed-source-format}
+PAUSE_SLOT holds a voice at its position; RESUME_SLOT continues it. A paused
+voice keeps its ACTIVE_MASK bit.
 
-BADP reconstructs signed sample values from compressed blocks. Those decoded
-frames use the same playback cursor, interpolation, loop, filter and gain path
-as PCM. The block state and seek table described here determine how the decoder
-reaches a requested source frame; they do not set the voice's playback rate.
+The selected-slot registers at `08000194H`–`080001E4H` show the settings of
+the slot chosen by the SLOT parameter register at `08000148H`. Writing them
+changes the playing voice at once, without a command:
 
-BADP is selected by SOURCE_BITS_PER_SAMPLE=4. Its source metadata still comes from the slot fields. The decoder consumes the following header words relative to SOURCE_ADDR, not relative to SOURCE_DATA_OFFSET:
-
-| Source byte offset | Consumed field |
-|---:|---|
-| 28 | Little-endian 32-bit seek-entry count |
-| 32 | Little-endian 32-bit seek-table byte offset, relative to SOURCE_ADDR |
-
-Each seek entry occupies eight bytes.
-
-| Entry byte offset | Field |
-|---:|---|
-| +0 | Little-endian 32-bit source-frame number |
-| +4 | Little-endian 32-bit compressed-block byte offset, relative to the data start |
-
-The data start is SOURCE_ADDR + SOURCE_DATA_OFFSET. Header and seek-table
-addresses use the source base; compressed-block offsets use the data base.
-Only the header fields listed above are consumed.
-
-Seeking chooses the last entry whose frame number is no greater than the
-requested frame. An empty table starts at frame zero and compressed offset
-zero. If every entry frame exceeds the request, entry zero is selected.
-
-### Blocks and channel state {#sec-apu-blocks-and-channel-state}
-
-At a block offset relative to the data start, the block has this layout:
-
-| Block byte offset | Field |
-|---:|---|
-| +0 | Little-endian 16-bit BLOCK_FRAMES |
-| +2 | Little-endian 16-bit total BLOCK_BYTES |
-| +4 + 4c | Channel c signed little-endian 16-bit predictor |
-| +6 + 4c | Channel c unsigned byte step-table index |
-| +7 + 4c | One byte not read by the decoder |
-| +4 + 4×SOURCE_CHANNELS | Nibble payload begins |
-
-Channel records are stored in increasing channel order. BLOCK_BYTES includes the block header and payload and locates the next block: next block offset equals current block offset plus BLOCK_BYTES. Loading a block replaces each channel's predictor and index and resets the block frame index and nibble cursor to zero.
-
-Payload bytes are consumed **high nibble first, then low nibble**. Within a frame, channel zero is decoded before the next channel. The nibble cursor continues across frames.
-
-| Layout | Payload byte consumption |
+| Register written | Effect |
 |---|---|
-| Mono | Byte 0 high: frame 0; byte 0 low: frame 1; byte 1 high: frame 2; and so on |
-| Stereo | Byte 0 high: frame 0 left; byte 0 low: frame 0 right; byte 1 high/low: frame 1 left/right |
+| Loop start or end | New loop |
+| RATE_STEP_Q16 | New pitch |
+| GAIN_Q12 | New volume (a fade in progress continues from it) |
+| START_SAMPLE | Jump to this position |
+| GENERATOR_DUTY_Q12 | New duty |
+| Filter registers | New coefficients |
+| FADE_SAMPLES | No effect until STOP_SLOT |
 
-The header predictor is a starting accumulator, **not an extra first output frame**. Every emitted frame first applies a nibble to its channel predictor. Mono duplicates the decoded result to right. After BLOCK_FRAMES decoded frames, the next frame loads the next block using BLOCK_BYTES.
+### Changing the sample data of a playing voice {#sec-apu-source-fields-are-individually-live}
 
-### Exact nibble recurrence {#sec-apu-exact-nibble-recurrence}
+A write to SOURCE_ADDR, SOURCE_BYTES, SOURCE_SAMPLE_RATE_HZ, SOURCE_CHANNELS,
+SOURCE_BITS_PER_SAMPLE, SOURCE_FRAME_COUNT, SOURCE_DATA_OFFSET,
+SOURCE_DATA_BYTES or GENERATOR_KIND takes effect immediately with the other
+current settings. The voice continues at its position. If the new settings are
+not valid, the voice stops with fault SOURCE_RANGE. Each write takes effect on
+its own; to change several of these settings together, use PLAY.
 
-The step table has 89 entries, indexed 0 through 88. Header bytes 89 through 255 select initial index 88. The first nibble therefore uses step 32767 and updates the index starting from 88.
+## Commands {#sec-apu-commands-and-slot-ownership}
+
+### Command queue {#sec-apu-stage-capture-execute}
+
+Writing a command to CMD puts the command and all 21 parameter registers into
+the queue. The parameter registers then return to their default values, and
+the selected-slot registers show slot 0. Commands execute in order.
+
+### Queue size {#sec-apu-preserve-fifo-entries-when-every-command-matters}
+
+CMD_QUEUED gives the number of waiting commands, CMD_FREE the free places and
+CMD_CAPACITY the size (16). A command written when the queue is full replaces
+the oldest waiting command.
+
+### Command codes {#sec-apu-command-words}
+
+| CMD | Name | Parameters used | Function |
+|---|---|---|---|
+| `00000000H` | NONE | — | No command |
+| `00000001H` | PLAY | All | Start a voice in SLOT |
+| `00000002H` | STOP_SLOT | SLOT, FADE_SAMPLES | Stop or fade out |
+| `00000003H` | SET_SLOT_GAIN | SLOT, GAIN_Q12 | Set the volume |
+| `00000004H` | PAUSE_SLOT | SLOT | Pause |
+| `00000005H` | RESUME_SLOT | SLOT | Resume |
+
+SLOT bits 3–0 select the slot. Other CMD values give fault BAD_CMD. STOP_SLOT
+without fade clears the slot's registers.
+
+### Slot status {#sec-apu-live-slot-parameters}
+
+Bit n of ACTIVE_MASK is 1 while slot n plays, is paused or fades.
+STATUS.BUSY is 1 while any slot is active or a command waits.
+SELECTED_SOURCE_ADDR gives the SOURCE_ADDR of the selected slot.
+
+## BADP format {#sec-apu-badp-compressed-source-format}
+
+BADP stores each sample in 4 bits (adaptive delta coding). It is selected by
+SOURCE_BITS_PER_SAMPLE = 4. Pitch, loops, interpolation, filter and volume
+work as for PCM.
+
+A BADP area starts with a header. The APU uses two of its words:
+
+| Offset from SOURCE_ADDR | Contents |
+|---:|---|
+| 28 | Number of seek table entries |
+| 32 | Offset of the seek table, from SOURCE_ADDR |
+
+| Seek table entry (8 bytes) | |
+|---:|---|
+| +0 | Frame number |
+| +4 | Offset of the block that contains it, from SOURCE_ADDR + SOURCE_DATA_OFFSET |
+
+To start at a frame, the APU uses the last entry whose frame number is not
+greater than the frame wanted, and decodes forward from there.
+
+### Blocks {#sec-apu-blocks-and-channel-state}
+
+| Offset in the block | Contents |
+|---:|---|
+| +0 | Number of frames (16 bits) |
+| +2 | Size of the block in bytes, header included (16 bits) |
+| +4 + 4c | Channel c: start value (signed 16 bits) |
+| +6 + 4c | Channel c: step index (8 bits) |
+| +7 + 4c | Unused |
+| +4 + 4 × channels | Data |
+
+Each data byte holds two codes, high nibble first. For stereo, the left and
+right codes alternate. The start value is not itself output: each frame is the
+start value changed by its code.
+
+### Decoding {#sec-apu-exact-nibble-recurrence}
 
 | Index | Step | Index | Step | Index | Step | Index | Step |
 |---:|---:|---:|---:|---:|---:|---:|---:|
@@ -751,291 +453,168 @@ The step table has 89 entries, indexed 0 through 88. Header bytes 89 through 255
 | 21 | 55 | 44 | 494 | 67 | 4428 | — | — |
 | 22 | 60 | 45 | 544 | 68 | 4871 | — | — |
 
-For code c, read step s from the current index. Start difference at s shifted right by three. Add s when bit 2 is set, s shifted right by one when bit 1 is set, and s shifted right by two when bit 0 is set. These shifts discard low bits. If bit 3 is set, subtract the difference from the predictor; otherwise add it. Saturate the new predictor to −32768 through +32767.
+For each code c, with step s from the table (an index above 88 counts as 88):
 
-Then change the index using the low three code bits, independently of bit 3:
+```text
+d = s >> 3
+if c & 4: d += s
+if c & 2: d += s >> 1
+if c & 1: d += s >> 2
+value = limit16(value − d)  if c & 8
+value = limit16(value + d)  otherwise
+```
 
-| Code bits 2:0 | Index change |
-|---:|---:|
-| 0 | −1 |
-| 1 | −1 |
-| 2 | −1 |
-| 3 | −1 |
-| 4 | +2 |
-| 5 | +4 |
-| 6 | +6 |
-| 7 | +8 |
+Then the index changes by −1 for codes 0–3 (ignoring bit 3), and by +2, +4,
++6, +8 for 4–7, limited to 0–88.
 
-Saturate the updated index to 0 through 88. The header's index byte is used for the initial lookup before that update saturation; it is not checked or clipped first.
-
-As a byte-level example, this complete mono block has two frames:
+Example, a mono block of two frames:
 
 ```text
 02 00 09 00 E8 03 00 00 17
 ```
 
-BLOCK_FRAMES=2, BLOCK_BYTES=9, initial predictor=1000 and index=0. Code 1 comes first: step 7 gives difference 1, so the first output is 1001 and the index remains 0 after saturation. Code 7 gives difference 11, so the second output is 1012 and the index becomes 8. The initial value 1000 is never emitted by itself.
+Start value 1000, index 0. Code 1: d = 1, output 1001, index 0. Code 7:
+d = 11, output 1012, index 8.
 
-### Seeking and reverse playback {#sec-apu-seeking-and-reverse-playback}
+### Seeking and playing backward {#sec-apu-seeking-and-reverse-playback}
 
-A seek discards both retained decoded frames. Starting from the seek-table choice, decoding advances through block headers to the block containing the requested frame, then applies the forward nibble recurrence through that frame. A request for the current or previous retained frame reuses that decoded pair. An earlier request seeks again and decodes forward.
-
-With negative RATE_STEP_Q16, the cursor requests earlier frames. A frame not
-already retained is obtained by seeking to an earlier entry and decoding
-forward through it. Closely spaced seek entries reduce the amount of
-compressed data needed for these backward requests.
+Playing backward and jumping to an earlier frame make the APU decode forward
+again from a seek table entry. Closely spaced entries shorten this.
 
 ## Sample RAM transfer {#sec-apu-sample-ram-transfer}
 
-The transfer ports and FIFO form one shared path to sample RAM. Finish the
-previous transfer before reprogramming them for another operation. Either
-system-DMA channel can supply or drain this FIFO with the same capability;
-reserve the chosen channel while it uses the port. Keep sample-RAM ranges in
-use by existing voices separate from data being replaced for a new sound.
+Sample RAM is loaded and read back through the transfer port. Do not change
+sample RAM that a voice is playing.
 
-![Three transfer modes share the private sample RAM and one FIFO](figures/apu-transfer.svg){#fig-apu-transfer}
+![Three transfer modes share sample RAM and one FIFO](figures/apu-transfer.svg){#fig-apu-transfer}
 
-The rows are alternative mode paths through the same RAM. They are not three
-separate memories. All DATA writes update the latch; CPU DATA reads return only
-that latch and do not dequeue the FIFO.
+### Loading sample RAM {#sec-apu-load-changing-sample-data-before-play}
 
-### Load changing sample data before PLAY {#sec-apu-load-changing-sample-data-before-play}
+To play a sound prepared in main RAM, copy it into sample RAM and give PLAY
+the address `40000000H` + offset.
 
-Suppose a program has assembled a new sound in main RAM and wants a voice to
-read it. SOURCE_ADDR cannot name that main-RAM buffer: first copy its bytes
-through TRANSFER_DATA into private sample RAM, then give PLAY the corresponding
-`40000000H + byte_offset` source address. CPU stores in MANUAL_WRITE mode write
-sample RAM directly. DMA uploads instead fill the transfer FIFO, from which
-the APU transfers words into sample RAM.
+- **By the CPU:** select MANUAL_WRITE and write the words to TRANSFER_DATA.
+  Each word is stored at once.
+- **By DMA:** select DMA_WRITE and transfer the words with route TO_APU. The
+  words pass through the FIFO into sample RAM. When the DMA transfer is DONE,
+  the last words may still be in the FIFO: **wait until TRANSFER_BUSY in
+  STATUS is 0** before starting the voice or changing the transfer mode.
 
-At DMA DONE, the final words can still be in that FIFO. Starting playback then
-can make the voice read old sample-RAM bytes where the new sound's tail belongs.
-Changing transfer mode then can cancel the tail's pending write entirely. Keep
-the upload buffer unchanged until DMA DONE, then wait for
-STATUS.TRANSFER_BUSY to clear before issuing PLAY or changing mode. This second
-wait establishes that the final sample-RAM batch has committed. The
-[20-word upload timeline](#sec-apu-dma-transport-and-ram-commit-are-separate)
-shows the two completion points numerically.
+To read sample RAM back, select DMA_READ and transfer with route FROM_APU. The
+APU fills the FIFO in advance, and may still be reading ahead when the DMA
+transfer is DONE: select STOP after the transfer.
 
-Downloads use the opposite direction. DMA DONE means the requested words have
-arrived in the destination, but the APU can have started another prefetch.
-Select transfer STOP after receipt to discard that surplus; waiting for a
-transfer-completion IRQ would not work because the transfer unit has none.
-The [worked download](#sec-apu-worked-download-requested-data-and-surplus-prefetch)
-shows the requested data and the surplus separately.
+### Addresses {#sec-apu-private-ram-and-the-two-address-forms}
 
-### Private RAM and the two address forms {#sec-apu-private-ram-and-the-two-address-forms}
-
-The APU contains 512 KiB of private sample RAM: 524,288 bytes or 131,072 four-byte words. Reset clears it to zero. A sample-source descriptor addresses these bytes at 40000000H–4007FFFFH inclusive. A nonempty descriptor must fit entirely within this range; descriptor binding neither wraps an overlong range nor requires word alignment.
-
-This source-address range is **not a CPU load/store aperture**. An aligned CPU word read or write there raises system bus fault UNMAPPED = 1 without accessing sample RAM. An ordinary CPU load takes the resulting exception rather than returning sample data. Use the transfer port to write or read back the private RAM.
+Sample RAM is 524,288 bytes and is cleared at reset. The CPU cannot address
+it directly: an access to `40000000H` causes a bus fault (UNMAPPED).
 
 | Address | Register | Function |
 |---|---|---|
-| 080001E8H | TRANSFER_ADDRESS | Program transfer offset; read raw programmed word |
-| 080001ECH | TRANSFER_DATA | CPU data latch or DMA FIFO port |
-| 080001F0H | TRANSFER_CONTROL | Program transfer mode; read raw programmed word |
-| 08000178H | STATUS | Read transfer requests and transfer-in-progress state |
+| `080001E8H` | TRANSFER_ADDRESS | Start offset in sample RAM |
+| `080001ECH` | TRANSFER_DATA | Data |
+| `080001F0H` | TRANSFER_CONTROL | Mode |
 
-Writing TRANSFER_ADDRESS retains the entire word for readback and loads a separate moving byte offset:
+Bits 18–2 of TRANSFER_ADDRESS give the start offset (a multiple of 4). The
+offset increases by 4 per word and wraps from the end of sample RAM to 0.
+TRANSFER_ADDRESS reads back the value written.
 
-**moving offset = programmed word AND 0007FFFCH**
+### Modes {#sec-apu-modes-latch-and-fifo}
 
-Upper bits and bits 1:0 do not enter that offset. For example, programming 40000003H selects offset zero but still reads back as 40000003H. Offset zero corresponds to descriptor address 40000000H. Each actual RAM transfer reads or writes a little-endian four-byte word, then advances the offset:
-
-**next offset = (current offset + 4) AND 0007FFFFH**
-
-Transfers therefore wrap from the last RAM word to the first. TRANSFER_ADDRESS readback does not follow this progress.
-
-### Modes, latch and FIFO {#sec-apu-modes-latch-and-fifo}
-
-TRANSFER_CONTROL retains the entire programmed word. Only bits 1:0 select the mode; upper bits have no transfer function.
-
-| Bits 1:0 | Mode | Sample-RAM operation |
+| TRANSFER_CONTROL bits 1–0 | Mode | Function |
 |---:|---|---|
-| 0 | STOP | No transfer batches |
-| 1 | MANUAL_WRITE | CPU DATA writes store directly into RAM |
-| 2 | DMA_WRITE | FIFO-to-RAM batches |
-| 3 | DMA_READ | RAM-to-FIFO batches |
+| 0 | STOP | No transfer |
+| 1 | MANUAL_WRITE | CPU writes to DATA go to sample RAM |
+| 2 | DMA_WRITE | DMA writes to DATA go through the FIFO to sample RAM |
+| 3 | DMA_READ | Sample RAM is read through the FIFO for DMA |
 
-Changing the decoded mode cancels the pending batch and empties the FIFO.
-It preserves sample RAM, the data latch, TRANSFER_ADDRESS readback and the moving
-offset. Rewriting the same mode, even with different upper bits, preserves the
-FIFO and pending batch. Either write updates the request levels and starts an
-eligible batch when none is pending.
+Changing the mode empties the FIFO and cancels a transfer between FIFO and
+sample RAM in progress; sample RAM is not changed. A CPU read of DATA returns
+the last word written or read and does not take a word from the FIFO.
 
-CPU DATA reads always return the existing data latch. They never fetch RAM, dequeue FIFO data or advance the offset. CPU DATA writes always replace the latch. In MANUAL_WRITE only, they also write RAM immediately and advance the offset. In every other mode a CPU DATA write changes only the latch; it cannot feed the DMA FIFO.
+### DMA {#sec-apu-requests-and-admitted-blocks}
 
-DMA DATA writes also replace the latch. In DMA_WRITE they append to the FIFO if space exists; a full FIFO discards the new word while retaining its value in the latch. Outside DMA_WRITE they neither enqueue nor write RAM. DMA DATA reads in DMA_READ dequeue the oldest available word into the latch and return it. An empty FIFO, or any other mode, returns the existing latch without dequeue or address movement. These full, empty and wrong-mode cases do not themselves raise an APU fault.
-
-### Requests and admitted blocks {#sec-apu-requests-and-admitted-blocks}
-
-| DMA route | Admission capacity |
+| Route | Burst |
 |---|---|
-| 6 TO_APU | 16 words in DMA_WRITE mode with an empty FIFO |
-| 7 FROM_APU | 16 words in DMA_READ mode with a full FIFO |
+| 6 TO_APU | 16 words, when the FIFO is empty (DMA_WRITE) |
+| 7 FROM_APU | 16 words, when the FIFO is full (DMA_READ) |
 
-Program only the memory-side address. TRANSFER_DATA is wired by the route,
-not supplied as an address or independent request selector. The remaining
-count can shorten a burst below sixteen words. Once admitted, every word in
-that burst transfers even when its request drops; availability governs the
-next admission. No forced or arbitrary-MMIO DMA route bypasses these modes.
+After each burst the APU moves the FIFO contents to sample RAM (DMA_WRITE) or
+refills the FIFO from sample RAM (DMA_READ). TRANSFER_BUSY is 1 during this.
 
-At the end of each DMA block, DMA_WRITE starts an eligible FIFO-to-RAM transfer
-and DMA_READ starts an eligible RAM-to-FIFO refill. This applies to intermediate
-blocks as well as the block that finishes a channel. It is not synonymous with
-channel DONE.
+### STATUS bits for transfers {#sec-apu-status-and-cpu-port-ownership}
 
-With no batch in progress, DMA_WRITE starts a batch containing the FIFO count then present. DMA_READ starts a batch filling the free capacity, 16 minus that count. Zero words start no transfer. A batch's word count and completion cycle are fixed when it starts; later FIFO activity does not change either. The batch transfers words in FIFO order and advances the offset per word. At completion, requests update and another eligible batch can start.
-
-The offset is **not captured with the batch**. Writing TRANSFER_ADDRESS while a batch is in progress retargets that batch to the new offset, unless the batch is already due at the access cycle. Changing mode instead cancels it.
-
-### Status and CPU port ownership {#sec-apu-status-and-cpu-port-ownership}
-
-| STATUS bit | Mask | Meaning |
+| Bit | Value | Meaning |
 |---:|---|---|
-| 7 | 00000080H | DMA_REQUEST: read request OR write request |
-| 8 | 00000100H | DMA_READ_REQUEST |
-| 9 | 00000200H | DMA_WRITE_REQUEST |
-| 10 | 00000400H | TRANSFER_BUSY: a RAM batch is in progress |
+| 7 | `00000080H` | DMA_REQUEST: bit 8 or bit 9 |
+| 8 | `00000100H` | DMA_READ_REQUEST |
+| 9 | `00000200H` | DMA_WRITE_REQUEST |
+| 10 | `00000400H` | TRANSFER_BUSY: words moving between FIFO and sample RAM |
 
-TRANSFER_BUSY is not a mode indicator. DMA_WRITE with an empty FIFO can request a block while TRANSFER_BUSY is clear. DMA_READ with a full FIFO can likewise request a block without pending RAM service. STATUS BUSY, bit 2, concerns active voices or queued commands; it is not transfer completion.
+While a DMA channel is transferring on an APU route, CPU writes to DATA wait
+until it has finished.
 
-A CPU DATA write waits while a BUSY TO_APU or FROM_APU channel owns DATA,
-even when that channel is waiting for requests. Port ownership follows the
-fixed route, not an address register. The write proceeds only after neither direction owns that port. This is not FIFO-full backpressure. CPU DATA reads are not blocked by this ownership rule. DMA DATA writes are always accepted by the port without an occupancy stall; their actual effect follows the FIFO rules above.
+### Completing a transfer {#sec-apu-completing-uploads-and-downloads}
 
-### Completing uploads and downloads {#sec-apu-completing-uploads-and-downloads}
+- **Upload:** wait for DMA DONE, then for TRANSFER_BUSY = 0.
+- **Download:** wait for DMA DONE, then select STOP.
 
-For upload, program the offset, select DMA_WRITE, and DMA to the fixed DATA port using TO_APU. DMA channel DONE reports completion of the controller's final mapped accesses and count/address updates; its DMA IRQ does not report sample-RAM commit. Wait for the final batch to finish before changing mode or using the new bytes. In particular, a mode change immediately after DONE can discard the final upload batch.
+The transfer unit has no interrupt of its own. Reset clears the transfer
+registers, the FIFO and sample RAM, and selects STOP.
 
-For download, program the offset before selecting DMA_READ. Filling the FIFO costs sample-RAM transfer time; APU_READ asserts only when all 16 words are available. DMA reads dequeue those prefetched words. The final DMA block can start further prefetch even when the channel reaches DONE. After receiving the desired words, select STOP to cancel unwanted prefetch. CPU DATA reads cannot drain the FIFO. The transfer unit has no separate START/DONE register or transfer-completion IRQ.
+## Timing {#sec-apu-clocks-and-transfer-timing}
 
-A nonzero DMA count sets channel BUSY at START. Zero count reaches DONE at START without accessing DATA. Neither DONE nor TRANSFER_BUSY = 0 proves that the intended RAM bytes received valid data. An admitted DMA block is not aborted by a system bus fault and can still finish with DONE and its IRQ after accesses to an unmapped or read-only destination.
+### Rates {#sec-apu-installed-rates}
 
-Use aligned word accesses for these ports. The
-[CPU alignment check](memory.md#sec-memory-width-and-alignment) precedes mapped
-I/O access. After that check, I/O byte writes, halfword accesses and accesses
-to a non-word-aligned I/O slot raise system bus fault UNALIGNED_IO = 2 without
-performing the intended port operation. An aligned byte read invokes the word
-read and returns its low eight bits; it does not select a byte lane. STATUS
-rejects word writes with READ_ONLY = 3. These system bus faults are distinct
-from the APU fault latch.
-
-Reset clears the programmed transfer words, offset, latch, FIFO contents/count and timing state, selects STOP, cancels the transfer and deasserts both request lines. Reset clears sample RAM as well; ordinary STOP and mode changes preserve it.
-
-## Clocks and transfer timing {#sec-apu-clocks-and-transfer-timing}
-
-### Installed rates {#sec-apu-installed-rates}
-
-The installed system clock is 33,868,800 Hz. The APU sample clock runs at 44,100 output frames per second. Sample-RAM transfer service has a separate budget of 1,058,400 words per second: 24 four-byte words per output frame.
-
-| Quantity | Installed value |
+| Item | Cycles |
 |---|---:|
-| System cycles per output frame | 33,868,800 / 44,100 = 768 |
-| System cycles per sample-RAM transfer word | 33,868,800 / 1,058,400 = 32 |
-| Sample-RAM service for 16 words | 16 × 32 = 512 cycles |
-| Sample-RAM service for 4 words | 4 × 32 = 128 cycles |
+| One output frame | 768 |
+| One word between FIFO and sample RAM | 32 |
+| 16 words | 512 |
+| 4 words | 128 |
 
-These costs cover the sample-RAM side of a DMA transfer. Add CPU setup and
-system-DMA transport separately. MANUAL_WRITE stores take effect at the CPU
-port-write edge, bypassing the FIFO and its timed batches.
+All sixteen voices keep playing during transfers.
 
-All transfers share the RAM/FIFO path. Playback reads its bound sources
-independently of that path, so all sixteen slots retain the 44,100-Hz output
-cadence during sample transfers. Transfer-mode changes leave the output-frame
-clock running.
+### Sample counter {#sec-apu-sample-sequence-and-edge-order}
 
-For a batch of N words:
+SAMPLE_SEQUENCE at `08000200H` counts output frames (modulo 2^32^), also when
+no voice plays. It can be used to wait a number of output frames.
 
-**batch completion cycle = batch start cycle + 32 × N**
+### Example: uploading 20 words {#sec-apu-dma-transport-and-ram-commit-are-separate}
 
-Rewriting the same mode preserves a pending batch; changing mode cancels it.
-
-### Sample sequence and edge order {#sec-apu-sample-sequence-and-edge-order}
-
-SAMPLE_SEQUENCE at `08000200H` is the low 32 bits of the output-frame count.
-Reset establishes its phase and clears the count. It advances once per 768
-system cycles even when every slot is idle. A read includes all frames due
-through that access cycle. Writes leave the running count unchanged and cause
-no read-only-port fault.
-
-A transfer completing at an output-sample edge is visible to voice processing for that sample. For an access to TRANSFER_ADDRESS, TRANSFER_DATA or TRANSFER_CONTROL at cycle t, the order is:
-
-1. Complete earlier transfer deadlines, with intervening voice progress.
-2. Advance voice processing through cycle t − 1.
-3. Complete a transfer batch due exactly at t.
-4. Perform the register access.
-5. Advance voice processing through t.
-
-Thus a control write at the batch's exact deadline cannot cancel that already-due batch. An address write at that deadline affects subsequent transfers, not the batch just completed. The same transfer-before-sample rule applies when no register access occurs.
-
-### DMA transport and RAM commit are separate {#sec-apu-dma-transport-and-ram-commit-are-separate}
-
-DMA transports words between its source and the APU DATA port. The APU then transfers those words between its FIFO and private sample RAM. Each stage has its own timing and completion condition; adding only the sample-RAM cost does not give the complete upload time.
-
-For a contiguous cartridge-ROM source and a fixed I/O destination, an admitted DMA block of N words costs **9 × N + 4 cycles**. The setup cost applies afresh to each admitted block. This cost and the APU's **32 × N** service cost describe separate stages.
-
-The following controlled upload transfers 20 words. Before cycle 0, the address and DMA registers are programmed, DMA_WRITE is selected, and the FIFO is empty. The DMA source increments through readable cartridge ROM without a region crossing; its destination remains TRANSFER_DATA. Its blocks contain at most 16 words, using the TO_APU route. There are no intervening mode/address writes or competing work. Cycle 0 is the first DMA block admission, not the start of CPU setup.
+A DMA transfer of 20 words from cartridge ROM (9N + 4 cycles per burst) in
+DMA_WRITE mode:
 
 | Cycle | Event |
 |---:|---|
-| 0 | Admit the first 16-word DMA block. Its cost is 9 × 16 + 4 = 148 cycles. |
-| 148 | DMA supplies 16 FIFO words. The end of the block starts a 16-word RAM transfer: 512 cycles. |
-| 660 | The first 16-word sample-RAM transfer completes. The empty FIFO requests the remaining four DMA words; their block costs 9 × 4 + 4 = 40 cycles. |
-| 700 | DMA supplies the four-word tail, starts 128 cycles of RAM transfer, and reaches channel DONE. The tail is not yet in sample RAM. |
-| 828 | The four-word tail commits; TRANSFER_BUSY clears. All 20 words are now in sample RAM. |
+| 0 | DMA burst of 16 words (148 cycles) |
+| 148 | FIFO full; moving 16 words to sample RAM (512 cycles) |
+| 660 | DMA burst of 4 words (40 cycles) |
+| 700 | DMA DONE; moving 4 words to sample RAM (128 cycles) |
+| 828 | TRANSFER_BUSY = 0: all 20 words are in sample RAM |
 
-Here, DMA DONE occurs at cycle 700, while final RAM commit occurs at cycle **148 + 512 + 40 + 128 = 828**. Switching to STOP at DMA DONE would cancel the tail's pending commit.
+Selecting STOP at cycle 700 would lose the last four words.
 
-## Worked download: requested data and surplus prefetch {#sec-apu-worked-download-requested-data-and-surplus-prefetch}
+## Example: reading back sample RAM {#sec-apu-worked-download-requested-data-and-surplus-prefetch}
 
-The following examples download twenty words and four words from sample RAM.
-Let **O** be the word-aligned starting byte offset and **Wi** the word at
-**O + 4i**. The tables show the moving offset; TRANSFER_ADDRESS continues to
-read O. Both examples stay within sample RAM without wrapping.
+A DMA transfer of 20 words from sample RAM to main RAM (2N + 1 cycles per
+burst), starting at offset O:
 
-With the transfer unit stopped and FIFO empty, program TRANSFER_ADDRESS and
-arm DMA0 for a fixed TRANSFER_DATA source, an aligned incrementing RAM destination,
-count 20 or 4 and the FROM_APU route (`CONTROL=00000007H`). The channel waits for prefill. Cycle 0 is the write changing
-TRANSFER_CONTROL from STOP to DMA_READ. The timelines use the installed
-33,868,800-Hz clock, with no intervening CPU accesses, other DMA activity, system
-pause or destination-region crossing.
+| Cycle | Event |
+|---:|---|
+| 0 | DMA_READ selected; FIFO being filled (512 cycles) |
+| 512 | DMA burst of 16 words (33 cycles) |
+| 545 | FIFO being filled (512 cycles) |
+| 1057 | DMA burst of 4 words (9 cycles) |
+| 1066 | DMA DONE; the FIFO still holds 12 words, and 4 more are being read |
 
-Sample transfer costs 32 cycles per word. The initial prefill always contains 16 words and therefore takes 512 cycles, even for a four-word DMA request. APU_READ is asserted by a full FIFO, not by the requested count. Once admitted, a DMA block completes without rechecking that request between words. Fixed-port-to-RAM transport costs **2N + 1** cycles per burst: 33 for sixteen words, then nine for four. Prefill and transport are separate stages; the tables show states after each completed operation, not individual word-access edges.
+For a 4-word transfer, DMA is DONE at cycle 521. Select STOP after DONE: this
+empties the FIFO.
 
-**Twenty-word request: 16 + 4 DMA words**
+### Programming example {#sec-apu-download-words-in-blua}
 
-| Cycle | Completed work | FIFO contents | Moving offset | Next work |
-|---:|---|---|---|---|
-| 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
-| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 16, 33 cycles |
-| 545 | DMA writes W0–W15 | Empty | O + 64 | Prefill 16, 512 cycles |
-| 1057 | Prefill 16 | W16–W31 | O + 128 | DMA 4, 9 cycles |
-| 1066 | DMA writes W16–W19; DONE | W20–W31: 12 words | O + 128 | Surplus prefill 4, 128 cycles |
-| 1194 | Surplus prefill 4 | W20–W35: 16 words | O + 144 | None |
-
-**Four-word request**
-
-| Cycle | Completed work | FIFO contents | Moving offset | Next work |
-|---:|---|---|---|---|
-| 0 | DMA_READ selected; DMA waits | Empty | O | Prefill 16 |
-| 512 | Prefill 16 | W0–W15 | O + 64 | DMA 4, 9 cycles |
-| 521 | DMA writes W0–W3; DONE | W4–W15: 12 words | O + 64 | Surplus prefill 4, 128 cycles |
-| 649 | Surplus prefill 4 | W4–W19: 16 words | O + 80 | None |
-
-DMA DONE marks receipt of all requested destination words and raises the DMA interrupt. It does not mean sample transfer is idle: the final block starts prefill into four free FIFO slots, leaving `TRANSFER_BUSY` set. Twenty requested words therefore require two 16-word prefills before DONE; the subsequent surplus is four words, not sixteen. Do not wait for `TRANSFER_BUSY` to recognize requested receipt. The low APU BUSY bit concerns voices and commands instead.
-
-After DMA DONE, STOP strictly before the surplus deadline cancels those four pending words and discards the 12 FIFO leftovers. STOP exactly at 1194, or 649 for the short request, first completes the due prefill, then clears the FIFO. The moving offset consequently remains O + 128 or O + 64 before the deadline, versus O + 144 or O + 80 at it. STOP preserves sample RAM, copied destination words and the DATA latch; DONE remains set. STOP does not rewind the moving offset or change the programmed O. `TRANSFER_ADDRESS` still reads the programmed O, while CPU DATA reads return the latch rather than draining the FIFO. The STOP cycles refer to register-write edges. A polling loop adds its own
-instruction time before that write.
-
-### Download words in BLua {#sec-apu-download-words-in-blua}
-
-Own DMA0, the interrupt mask, the sample-transfer ports and sample-RAM bytes
-0–159. Start with no voices using those bytes and no transfer in flight. This
-sequence writes recognizable raw words manually, downloads twenty words,
-then downloads four overlapping words from offset `40H`. It does not require
-an audio source format or start a voice.
+This example writes 40 words to sample RAM with the CPU, reads 20 words back
+from offset 0 and then 4 words from offset `40H`.
 
 ```lua
 bss received: word[24]
@@ -1049,224 +628,154 @@ local data<const>: *word = 0x080001ec
 local control<const>: *word = 0x080001f0
 
 *irq_mask = 0
-*control = 0
+*control = 0                -- STOP
 *address = 0
-*control = 1                -- MANUAL_WRITE: each CPU DATA write commits RAM.
+*control = 1                -- MANUAL_WRITE
 for index = 0, 39 do
     *data = 0x5a000000 | index
 end
 for phase = 0, 1 do
-    *control = 0
+    *control = 0            -- STOP
     *address = offsets[phase]
     *irq_ack = 1
     dma0[1] = &received[phase * 20]
     dma0[2] = counts[phase]
-    dma0[3] = 7             -- FROM_APU; memory destination increments.
-    dma0[5] = 1
-    *control = 3            -- DMA_READ: prefill before the first DMA block.
-    while (dma0[4] & 1) ~= 0 do
-    end
-    *control = 0            -- Requested receipt is complete; discard surplus.
+    dma0[3] = 7             -- FROM_APU
+    dma0[5] = 1             -- START
+    *control = 3            -- DMA_READ
+    while (dma0[4] & 1) ~= 0 do end
+    *control = 0            -- STOP: discard the words read ahead.
 end
 *irq_ack = 1
 ```
 
-After successful bus accesses, the results are:
-
-| Destination | Words |
+| Words | Contents |
 |---|---|
-| `received[0..19]` | `5A000000H OR 0..19` |
-| `received[20..23]`, from byte offset `40H` | `5A000010H`–`5A000013H` |
+| `received[0..19]` | `5A000000H`–`5A000013H` |
+| `received[20..23]` | `5A000010H`–`5A000013H` |
 
-The second receipt shows that STOP preserves the overlapping sample-RAM bytes.
-Both channel completions have count zero and STATUS=DONE, even with their
-interrupts masked. STOP clears the transfer FIFO and any not-yet-due prefetch;
-it does not clear the DMA status or copied destination. The timing tables above show how the moving offset differs when STOP occurs
-before or exactly at the prefetch deadline.
+## Voice end and interrupt {#sec-apu-end-events-and-interrupts}
 
-## End events and interrupts {#sec-apu-end-events-and-interrupts}
+When a voice ends by itself or at the end of a fade, the APU sets the event
+registers and requests IRQ_APU (bit 5, `00000020H`):
 
-An output-reported natural or faded end clears the ended slot, then publishes
-one SLOT_ENDED event. EVENT_KIND becomes `00000001H`, EVENT_SLOT identifies the
-slot, and EVENT_SOURCE_ADDR records that slot's source address from before its
-bank was cleared. EVENT_SEQ advances modulo 2³². All event words are published
-before the central APU interrupt request, bit 5 (`00000020H`), is raised.
+| Register | Contents |
+|---|---|
+| EVENT_KIND | 1 (voice ended) |
+| EVENT_SLOT | Slot number |
+| EVENT_SOURCE_ADDR | SOURCE_ADDR of the voice |
+| EVENT_SEQ | Increased by 1 for each event |
 
-The event registers hold the latest end. If slots 0 and 1 end in that order
-before software reads the registers, EVENT_SEQ advances twice and EVENT_SLOT
-becomes 1. The central pending bit can combine both requests. Compare the sequence to detect
-new ends and inspect ACTIVE_MASK to determine which slots remain occupied;
-intermediate event addresses are overwritten.
+The registers hold the last event only. If two voices end before the program
+reads them, EVENT_SEQ increases by 2 and EVENT_SLOT shows the second. Use
+ACTIVE_MASK to see which slots are still playing.
 
-Reading event words does not clear them. There is no separate APU event-ACK
-port. Acknowledge central bit 5 through the [interrupt controller](irq.md#sec-irq);
-that does not erase the latest event payload. FAULT_ACK is not an event or
-central interrupt acknowledgement.
+STOP_SLOT without fade, pause and faults produce no event. Clear IRQ_APU
+through the interrupt controller; the event registers keep their values.
 
-Immediate explicit STOP, pause, resume, gain changes and command/source faults
-do not emit SLOT_ENDED. In particular, a program waiting for an end IRQ after
-STOP with zero fade will wait for an event that command does not produce.
-A nonzero fade needs output progress to reach its end; pausing suspends it.
-[Stop and fade](#sec-apu-stop-and-fade) specifies the frame-by-frame progression.
+## Faults {#sec-apu-faults-and-reset}
 
-When waiting for an end interrupt, have the handler record the event sequence
-and service the central APU source. Retain a baseline before starting the voice
-or fade, then recheck the completion predicate after every `halt_until_irq`.
-An unrelated interrupt can also wake the CPU. When several voices may end,
-account for the latest-event overwrite rule rather than assigning one handler
-call to each voice.
+The APU records its first fault in FAULT_CODE and FAULT_DETAIL and sets
+STATUS.FAULT. Writing a value other than 0 to FAULT_ACK clears the fault. A
+fault causes no interrupt.
 
-## Faults and reset {#sec-apu-faults-and-reset}
-
-APU faults are retained separately from system memory bus faults and central
-interrupt pending. An APU fault does not raise an interrupt request. The first
-unacknowledged APU fault sets STATUS.FAULT and
-retains FAULT_CODE/FAULT_DETAIL. Later raises preserve that first report.
-A nonzero FAULT_ACK clears code, detail and the fault bit; zero changes nothing.
-Neither operation clears an event, acknowledges central IRQ, flushes commands
-or stops all other voices. FAULT_ACK reads zero.
-
-| Code | Name | Condition and detail |
+| Code | Name | Cause; FAULT_DETAIL |
 |---|---|---|
-| `00000000H` | NONE | No latched fault |
-| `00000001H` | BAD_CMD | Unrecognized complete CMD word; detail is that word |
-| `00000102H` | SOURCE_RANGE | Source binding failed; detail is SOURCE_ADDR |
+| `00000000H` | NONE | No fault |
+| `00000001H` | BAD_CMD | Unknown command; the CMD value |
+| `00000102H` | SOURCE_RANGE | Sample area outside valid memory; SOURCE_ADDR |
 
-A failed PLAY leaves the previous slot unchanged. A failed live source-field
-write retains the newly written parameter but stops and deactivates the voice;
-its bank remains readable. Use a staged PLAY for a coherent replacement.
+Reset clears sample RAM, the transfer unit, the command queue, all voices, the
+faults, the events and SAMPLE_SEQUENCE.
 
-Source metadata controls decode addresses directly. Match it to the supplied
-format and payload. Command-queue overflow is separate from these faults: a
-full queue replaces its oldest entry, so check CMD_FREE before a required burst.
+## Registers {#sec-apu-register-reference}
 
-Ordinary CPU access to `40000000H` does not reach sample RAM; it raises the
-system UNMAPPED fault. The CPU checks ordinary load/store alignment first;
-misalignment takes an address-error exception before mapped I/O is reached.
-After that check, invalid I/O widths or slot alignment use system UNALIGNED_IO,
-as described under [Completing uploads and downloads](#sec-apu-completing-uploads-and-downloads).
-Mapped writes to the read-only APU ports use system
-READ_ONLY and do not change those ports. These accesses report through the system bus-fault registers, separately from
-the APU BAD_CMD/SOURCE_RANGE latch.
+Use 32-bit word accesses. Writing a read-only register causes a READ_ONLY
+bus fault.
 
-An APU reset clears sample RAM, transfer FIFO/state, commands, slots, output
-voices, faults, events and sample-clock sequence. It restores the staging
-parameter defaults and clears all slot-bank words. No global-reset command is
-encoded among CMD zero through five. STOP_SLOT affects its target; transfer
-STOP changes transfer mode. Neither is a private-sample-RAM clear operation.
+### Parameter registers {#sec-apu-staging-and-selected-window-parameters}
 
-## Register reference {#sec-apu-register-reference}
+The parameter registers (at `08000120H`) prepare the next command. The
+selected-slot registers (at `08000194H`) are the settings of the slot selected
+by the SLOT parameter register.
 
-The APU exposes sixty distinct word ports: 21 staging words, 21 selected-window
-words and eighteen command/status/event/transfer/fault ports. Fault ports are
-not adjacent to the main bank. All addresses below are byte addresses.
+#### Sample data {#sec-apu-source-description-words}
 
-Use word accesses. STATUS, fault code/detail, event words, selected-source and
-ACTIVE_MASK writes raise system READ_ONLY without mutation. Queue-counter and
-SAMPLE_SEQUENCE writes are accepted but do not change their device-produced values.
+| No. | Parameter | Parameter register | Selected slot | Default |
+|---:|---|---|---|---|
+| 0 | SOURCE_ADDR | `08000120H` | `08000194H` | 0 |
+| 1 | SOURCE_BYTES | `08000124H` | `08000198H` | 0 |
+| 2 | SOURCE_SAMPLE_RATE_HZ | `08000128H` | `0800019CH` | 0 |
+| 3 | SOURCE_CHANNELS | `0800012CH` | `080001A0H` | 0 |
+| 4 | SOURCE_BITS_PER_SAMPLE | `08000130H` | `080001A4H` | 0 |
+| 5 | SOURCE_FRAME_COUNT | `08000134H` | `080001A8H` | 0 |
+| 6 | SOURCE_DATA_OFFSET | `08000138H` | `080001ACH` | 0 |
+| 7 | SOURCE_DATA_BYTES | `0800013CH` | `080001B0H` | 0 |
+| 8 | SOURCE_LOOP_START_SAMPLE | `08000140H` | `080001B4H` | 0 |
+| 9 | SOURCE_LOOP_END_SAMPLE | `08000144H` | `080001B8H` | 0 |
 
-### Staging and selected-window parameters {#sec-apu-staging-and-selected-window-parameters}
+: {tbl-colwidths="[6,40,18,18,18]"}
 
-All rows below have read/write word access. Staging defaults are also restored
-after each recognized nonzero command; reset slot banks contain zero rather
-than a copy of the staging defaults.
-The selected addresses alias the bank chosen by staging SLOT bits 3:0.
+#### Voice settings {#sec-apu-slot-and-playback-words}
 
-#### Source-description words {#sec-apu-source-description-words}
+| No. | Parameter | Parameter register | Selected slot | Default |
+|---:|---|---|---|---|
+| 10 | SLOT | `08000148H` | `080001BCH` | 0 |
+| 11 | RATE_STEP_Q16 | `0800014CH` | `080001C0H` | `00010000H` |
+| 12 | GAIN_Q12 | `08000150H` | `080001C4H` | `00001000H` |
+| 13 | START_SAMPLE | `08000154H` | `080001C8H` | 0 |
+| 14 | FILTER_CONTROL | `08000158H` | `080001CCH` | 0 |
+| 15 | FILTER_B0_B1 | `0800015CH` | `080001D0H` | `00004000H` |
+| 16 | FILTER_B2_A1 | `08000160H` | `080001D4H` | 0 |
+| 17 | FILTER_A2 | `08000164H` | `080001D8H` | 0 |
+| 18 | FADE_SAMPLES | `08000168H` | `080001DCH` | 0 |
+| 19 | GENERATOR_KIND | `0800016CH` | `080001E0H` | 0 |
+| 20 | GENERATOR_DUTY_Q12 | `08000170H` | `080001E4H` | `00000800H` |
 
-| Index | Parameter | Staging address | Selected address | Staging reset | Selected reset |
-|---:|---|---|---|---|---|
-|0|SOURCE_ADDR| `08000120H` | `08000194H` | `00000000H` | `00000000H` |
-|1|SOURCE_BYTES| `08000124H` | `08000198H` | `00000000H` | `00000000H` |
-|2|SOURCE_SAMPLE_RATE_HZ| `08000128H` | `0800019CH` | `00000000H` | `00000000H` |
-|3|SOURCE_CHANNELS| `0800012CH` | `080001A0H` | `00000000H` | `00000000H` |
-|4|SOURCE_BITS_PER_SAMPLE| `08000130H` | `080001A4H` | `00000000H` | `00000000H` |
-|5|SOURCE_FRAME_COUNT| `08000134H` | `080001A8H` | `00000000H` | `00000000H` |
-|6|SOURCE_DATA_OFFSET| `08000138H` | `080001ACH` | `00000000H` | `00000000H` |
-|7|SOURCE_DATA_BYTES| `0800013CH` | `080001B0H` | `00000000H` | `00000000H` |
-|8|SOURCE_LOOP_START_SAMPLE| `08000140H` | `080001B4H` | `00000000H` | `00000000H` |
-|9|SOURCE_LOOP_END_SAMPLE| `08000144H` | `080001B8H` | `00000000H` | `00000000H` |
+: {tbl-colwidths="[6,40,18,18,18]"}
 
-: {tbl-colwidths="[6,36,15,15,14,14]"}
+The defaults apply to the parameter registers, after reset and after each
+command. The slot registers are 0 after reset.
 
-#### Slot and playback words {#sec-apu-slot-and-playback-words}
+### Command and status registers {#sec-apu-command-status-event-and-queue-ports}
 
-| Index | Parameter | Staging address | Selected address | Staging reset | Selected reset |
-|---:|---|---|---|---|---|
-|10|SLOT| `08000148H` | `080001BCH` | `00000000H` | `00000000H` |
-|11|RATE_STEP_Q16| `0800014CH` | `080001C0H` | `00010000H` | `00000000H` |
-|12|GAIN_Q12| `08000150H` | `080001C4H` | `00001000H` | `00000000H` |
-|13|START_SAMPLE| `08000154H` | `080001C8H` | `00000000H` | `00000000H` |
-|14|FILTER_CONTROL| `08000158H` | `080001CCH` | `00000000H` | `00000000H` |
-|15|FILTER_B0_B1| `0800015CH` | `080001D0H` | `00004000H` | `00000000H` |
-|16|FILTER_B2_A1| `08000160H` | `080001D4H` | `00000000H` | `00000000H` |
-|17|FILTER_A2| `08000164H` | `080001D8H` | `00000000H` | `00000000H` |
-|18|FADE_SAMPLES| `08000168H` | `080001DCH` | `00000000H` | `00000000H` |
-|19|GENERATOR_KIND| `0800016CH` | `080001E0H` | `00000000H` | `00000000H` |
-|20|GENERATOR_DUTY_Q12| `08000170H` | `080001E4H` | `00000800H` | `00000000H` |
-
-: {tbl-colwidths="[6,36,15,15,14,14]"}
-
-Each port retains the complete parameter word. The
-[source description](#sec-apu-voice-sources-and-their-lifetime),
-[rate](#sec-apu-source-phase-rate-and-duration),
-[gain](#sec-apu-gain-stereo-mixing-and-clipping) and
-[filter](#sec-apu-per-voice-q14-filter) sections define their units and encodings.
-[Live programming](#sec-apu-pause-resume-and-live-programming) defines the
-selected-window write effects.
-
-### Command, status, event and queue ports {#sec-apu-command-status-event-and-queue-ports}
-
-| Address | Name | Access | Reset read |
+| Address | Name | Access | Value after reset |
 |---|---|---|---|
-| `08000174H` | CMD | Command write / read zero | `00000000H` |
-| `08000178H` | STATUS | Read; writes fault | `00000020H` |
-| `0800017CH` | EVENT_KIND | Read; writes fault | `00000000H` |
-| `08000180H` | EVENT_SLOT | Read; writes fault | `00000000H` |
-| `08000184H` | EVENT_SOURCE_ADDR | Read; writes fault | `00000000H` |
-| `08000188H` | EVENT_SEQ | Read; writes fault | `00000000H` |
-| `0800018CH` | SELECTED_SOURCE_ADDR | Read; writes fault | `00000000H` |
-| `08000190H` | ACTIVE_MASK | Read; writes fault | `00000000H` |
-| `080001F4H` | CMD_QUEUED | Read; writes have no queue effect | `00000000H` |
-| `080001F8H` | CMD_FREE | Read; writes have no queue effect | `00000010H` |
-| `080001FCH` | CMD_CAPACITY | Read; writes have no queue effect | `00000010H` |
-| `08000200H` | SAMPLE_SEQUENCE | Read; writes have no clock effect | `00000000H` |
+| `08000174H` | CMD | W (reads 0) | 0 |
+| `08000178H` | STATUS | R | `00000020H` |
+| `0800017CH` | EVENT_KIND | R | 0 |
+| `08000180H` | EVENT_SLOT | R | 0 |
+| `08000184H` | EVENT_SOURCE_ADDR | R | 0 |
+| `08000188H` | EVENT_SEQ | R | 0 |
+| `0800018CH` | SELECTED_SOURCE_ADDR | R | 0 |
+| `08000190H` | ACTIVE_MASK | R | 0 |
+| `080001F4H` | CMD_QUEUED | R | 0 |
+| `080001F8H` | CMD_FREE | R | 16 |
+| `080001FCH` | CMD_CAPACITY | R | 16 |
+| `08000200H` | SAMPLE_SEQUENCE | R | 0 |
 
-STATUS reads observe output-frame progress through their access cycle.
-SAMPLE_SEQUENCE includes the same progress and returns the low 32 bits of elapsed output
-frames, even with no active slots. Event words, ACTIVE_MASK and
-SELECTED_SOURCE_ADDR are retained mirrors, not read-to-clear operations.
+### Transfer and fault registers {#sec-apu-transfer-and-fault-ports}
 
-### Transfer and fault ports {#sec-apu-transfer-and-fault-ports}
-
-| Address | Name | Access | Reset read |
+| Address | Name | Access | Value after reset |
 |---|---|---|---|
-| `080001E8H` | TRANSFER_ADDRESS | R/W full programmed word | `00000000H` |
-| `080001ECH` | TRANSFER_DATA | R/W data port | `00000000H` |
-| `080001F0H` | TRANSFER_CONTROL | R/W full programmed word | `00000000H` |
-| `08010218H` | FAULT_CODE | Read; writes fault | `00000000H` |
-| `0801021CH` | FAULT_DETAIL | Read; writes fault | `00000000H` |
-| `08010220H` | FAULT_ACK | Nonzero write acknowledges / read zero | `00000000H` |
+| `080001E8H` | TRANSFER_ADDRESS | R/W | 0 |
+| `080001ECH` | TRANSFER_DATA | R/W | 0 |
+| `080001F0H` | TRANSFER_CONTROL | R/W | 0 |
+| `08010218H` | FAULT_CODE | R | 0 |
+| `0801021CH` | FAULT_DETAIL | R | 0 |
+| `08010220H` | FAULT_ACK | W (reads 0) | 0 |
 
-### STATUS fields {#sec-apu-status-fields}
+### STATUS {#sec-apu-status-fields}
 
-| Bit | Name | Condition |
+| Bit | Name | Meaning |
 |---:|---|---|
-| 0 | FAULT | APU first-fault latch is set |
-| 1 | SELECTED_SLOT_ACTIVE | Selected slot is active |
-| 2 | BUSY | Any slot active or command FIFO nonempty |
-| 3–4 | Unassigned | Read zero |
-| 5 | CMD_FIFO_EMPTY | No queued commands |
-| 6 | CMD_FIFO_FULL | Sixteen queued commands |
-| 7 | DMA_REQUEST | DMA read request OR DMA write request |
-| 8 | DMA_READ_REQUEST | DMA_READ mode and full transfer FIFO |
-| 9 | DMA_WRITE_REQUEST | DMA_WRITE mode and empty transfer FIFO |
-| 10 | TRANSFER_BUSY | A sample-RAM transfer batch is in progress |
-| 11–31 | Unassigned | Read zero |
-
-TRANSFER_CONTROL bits 1:0 select STOP=0, MANUAL_WRITE=1, DMA_WRITE=2 or
-DMA_READ=3. Upper bits remain retained/readable but are not transfer controls.
-TRANSFER_ADDRESS retains its full programmed word, while the moving internal
-byte offset starts from its bits 18:2 with bits 1:0 zero. Its readback is not a
-progress counter. TRANSFER_DATA reads return the existing data latch to the CPU;
-DMA accesses have the distinct FIFO effects described in sample RAM transfer.
+| 0 | FAULT | A fault is recorded |
+| 1 | SELECTED_SLOT_ACTIVE | The selected slot is active |
+| 2 | BUSY | A slot is active or a command waits |
+| 5 | CMD_FIFO_EMPTY | No command waits |
+| 6 | CMD_FIFO_FULL | 16 commands wait |
+| 7 | DMA_REQUEST | Bit 8 or bit 9 |
+| 8 | DMA_READ_REQUEST | DMA_READ mode and FIFO full |
+| 9 | DMA_WRITE_REQUEST | DMA_WRITE mode and FIFO empty |
+| 10 | TRANSFER_BUSY | Words moving between FIFO and sample RAM |
+| Others | — | 0 |

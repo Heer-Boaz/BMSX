@@ -1,47 +1,44 @@
 # Image decompression unit {#sec-imgdec}
 
-## Function and resources {#sec-imgdec-function-and-resources}
+## Outline {#sec-imgdec-function-and-resources}
 
-IMGDEC expands a lossless compressed word stream into ordinary 32-bit data.
-Use it for texture and palette payloads, animation frames or other word data
-stored in ROM. The program supplies the compressed and decoded word counts.
-The decoder does not fetch from a source address or know a VRAM destination.
+The image decompression unit (IMGDEC) expands compressed data into 32-bit
+words. It is used for images, palettes, animation frames and other data stored
+compressed in ROM. The compression is lossless.
 
-DATA is bidirectional: writes supply compressed input; reads remove decoded
-output. One DMA channel can feed input from ROM or RAM while another drains
-output to RAM or a receiving device. For an image upload, the program sends
-the GPU command header and then routes decoded pixel words to GP0. The GPU,
-not IMGDEC, interprets the image dimensions and writes VRAM.
+Compressed words are written to the DATA register and decoded words are read
+from the same register. Normally one DMA channel feeds the compressed data in
+and another carries the decoded words out, to RAM or directly to the GPU. IMGDEC
+produces only the pixel data; the program sends the GPU image header itself.
 
-| Resource | Specification |
+| Item | Specification |
 |---|---|
-| Register and stream word | 32 bits; counts are words, not bytes |
+| Data unit | 32-bit word |
 | Input FIFO | 256 words |
-| Output work block | 256 words; also the readable result storage |
+| Output block | 256 words |
 | History | Last 4096 decoded words |
-| Completion timebase | 33,868,800 system cycles per second |
-| Decode interval | Two system cycles per word in the output block |
+| Decoding speed | 2 cycles per word (33,868,800 Hz clock) |
+| Interrupt | IRQ_IMGDEC (done or fault) |
 
-There is one output block, not a second queue of completed blocks. Input may
-accumulate while that block is decoding or being read. The next output block
-cannot replace it until its last word has been removed.
+## Function {#sec-imgdec-from-compressed-patterns-to-upload-words}
 
-## From compressed patterns to raw words {#sec-imgdec-from-compressed-patterns-to-upload-words}
+The compressed data consists of four kinds of tokens:
 
-A literal copies supplied words, a repeat emits one supplied value several
-times, a back-reference copies earlier decoded words, and a zero run emits
-zero words. These operations have no pixel or palette interpretation.
+- **Literal:** the following words are copied to the output.
+- **Repeat:** the following word is output a number of times.
+- **Back-reference:** earlier output words are copied again.
+- **Zero:** a number of zero words is output.
 
-For example, let A be `11112222H`, B be `33334444H`, and R be `55556666H`:
+For example, with A = `11112222H`, B = `33334444H` and R = `55556666H`:
 
-| Operation | Decoded words | Words produced so far |
+| Token | Output | Total output |
 |---|---|---:|
-| Literal length 2, followed by A and B | A, B | 2 |
-| Repeat length 2, followed by R | R, R | 4 |
-| Back-reference length 4, distance 4 | A, B, R, R | 8 |
-| Zero length 4 | 0, 0, 0, 0 | 12 |
+| Literal, length 2, then A and B | A, B | 2 |
+| Repeat, length 2, then R | R, R | 4 |
+| Back-reference, length 4, distance 4 | A, B, R, R | 8 |
+| Zero, length 4 | 0, 0, 0, 0 | 12 |
 
-The complete input is:
+The compressed data is:
 
 ```text
 00000001H 11112222H 33334444H
@@ -50,120 +47,85 @@ The complete input is:
 C0000003H
 ```
 
-Program INPUT_WORD_COUNT=7 and OUTPUT_WORD_COUNT=12. No stream header, magic
-word, image-size record or end token is present. The output is exactly twelve
-words; no GPU command words are inserted. Its single short block becomes
-readable 24 cycles after the input needed to assemble it has been accepted.
-Input transport and output transport have their own bus costs.
+For this data, set INPUT_WORD_COUNT to 7 and OUTPUT_WORD_COUNT to 12. The
+data has no header or end mark; the two counts define its length.
 
-## Compressed word stream {#sec-imgdec-compressed-word-stream}
+## Token format {#sec-imgdec-compressed-word-stream}
 
-A stream consists only of tokens and their following data words. Store each
-word little-endian: `11112222H` has bytes `22H 22H 11H 11H` at increasing
-addresses. This is data order, not CPU instruction encoding.
+Words are stored little-endian. Bits 31–30 of a token select its kind.
 
-Bits 31:30 select the token operation. A token and all of its data words count
-toward INPUT_WORD_COUNT; only reconstructed words count toward
-OUTPUT_WORD_COUNT and DECODED_WORD_COUNT.
+### Tokens {#sec-imgdec-token-layouts}
 
-### Token layouts {#sec-imgdec-token-layouts}
-
-| Kind | Bits 31:30 | Remaining fields | Following input |
+| Kind | Bits 31–30 | Bits 29–0 | Followed by |
 |---|---|---|---|
-| Literal | `00` | Bits 29:0: length minus 1 | That many literal words |
-| Repeat | `01` | Bits 29:0: length minus 1 | One word to repeat |
-| Back-reference | `10` | Bits 29:12: length minus 3; bits 11:0: distance minus 1 | None |
-| Zero | `11` | Bits 29:0: length minus 1 | None |
+| Literal | `00` | Length − 1 | Length words |
+| Repeat | `01` | Length − 1 | 1 word |
+| Back-reference | `10` | Bits 29–12: length − 3; bits 11–0: distance − 1 | — |
+| Zero | `11` | Length − 1 | — |
 
-Literal, repeat and zero lengths range from 1 to 1,073,741,824 words.
-Back-reference lengths range from 3 to 262,146 words; distances range from
-1 to 4096 words. A run may cross output-block boundaries. It must not extend
-past the programmed decoded count.
+| Kind | Length | Distance |
+|---|---|---|
+| Literal, repeat, zero | 1 to 2^30^ words | — |
+| Back-reference | 3 to 262,146 words | 1 to 4096 words |
 
-### History and overlapping references {#sec-imgdec-history-and-overlapping-references}
+INPUT_WORD_COUNT counts the tokens and the words that follow them.
+OUTPUT_WORD_COUNT counts the decoded words.
 
-Every decoded word enters history, including zeros and literal words.
-History starts empty at START and retains at most 4096 words. A reference
-cannot use a distance greater than the history already available at that point.
+### History {#sec-imgdec-history-and-overlapping-references}
 
-Each reference word is read relative to the current history write position,
-then the produced word advances that position. A run can therefore use words
-it has just produced. Distance 1 repeats the last word; a run longer than its
-distance repeats the preceding pattern. Wrapping the history storage does not
-reset it or change these distances.
+IMGDEC remembers the last 4096 words it has output. A back-reference copies
+words from this history, starting the given distance back. The history is
+cleared at START, so a back-reference may only reach words already output.
 
-History remains continuous across output blocks and across any image/palette
-boundary imposed by the program. An output word that happens to resemble a
-GPU opcode is still ordinary decompressed data.
+A back-reference may be longer than its distance: it then repeats the words it
+is producing. Distance 1 repeats the last word; distance 2 with length 6
+repeats the last two words three times.
 
-## Block timing and flow control {#sec-imgdec-data-transfer-and-completion}
+## Data transfer {#sec-imgdec-data-transfer-and-completion}
 
-IMGDEC assembles the next block from available input. Its length is the
-smaller of 256 and the number of decoded words still required. Incomplete
-literal input or a missing repeat value holds assembly; it does not publish
-a short intermediate result. Token boundaries do not create additional
-readable blocks.
+IMGDEC decodes in blocks of 256 words (the last block may be shorter). It
+starts a block when it has received enough input for it and the previous
+block has been read out completely. Decoding a block of N words takes 2N
+cycles. The block can then be read; DECODED_WORD_COUNT increases by N.
 
-When assembly is complete and the previous result has drained, a block of N
-words enters its 2N-cycle decode interval. Until its completion edge, DATA
-cannot remove those words, OUTPUT_REQUEST is clear and DECODED_WORD_COUNT
-excludes them. At completion, the whole block becomes readable and the decoded
-count advances by N. There is no independently observable per-word progress
-inside that interval.
+IMGDEC requests DMA as follows:
 
-For the final block, the complete declared input must also have arrived and
-been consumed with no unfinished run or trailing token. That block is not
-published while further declared input is still outstanding.
-
-The request conditions are:
-
-| Request | Condition |
+| Request | Active when |
 |---|---|
-| INPUT_REQUEST / IMGDEC_WRITE | BUSY, no system pause, input count not yet reached, and free input storage |
-| OUTPUT_REQUEST / IMGDEC_READ | BUSY, no system pause, and unread words in a completed output block |
+| Input (TO_IMGDEC) | The input FIFO has room and more input is expected |
+| Output (FROM_IMGDEC, IMGDEC_TO_GPU) | A decoded block has words left to read |
 
-DMA may shorten a burst at an endpoint's available-word boundary. A program can
-therefore drain a texture subrange, submit its own CLUT header and continue
-reading the same result block; no padding, extra token or decoder restart is
-needed. The DMA count still describes the exact number of words to transport.
+Start the output transfer before or together with the input transfer. If only
+the input is started, decoding stops when the first block is waiting to be
+read, and the input transfer waits for room in the FIFO.
 
-Establish the output consumer before waiting for input DMA to finish. Otherwise
-a completed result can hold decoding, input can fill, and both sides can wait
-without any malformed input. Output backpressure does not drop words or
-implicitly complete the job.
+The output may be read in several parts. For instance, the program can read
+the image words of a block to the GPU, send a palette header, and then read
+the remaining words of the same block as the palette.
 
 ### Completion and faults
 
-DONE is published after the final output word has been read and all declared
-input has been consumed. A zero-input, zero-output job completes immediately.
-Both normal completion and FORMAT_FAULT raise IRQ_IMGDEC; test STATUS to
-distinguish them. A terminal result replaces BUSY and the request bits.
+DONE is set when all input has been received and all output has been read.
+IMGDEC then requests IRQ_IMGDEC. A job with both counts 0 is done at once.
 
-FORMAT_FAULT stops the current job when a run exceeds the remaining decoded
-count, a reference uses unavailable history, declared input ends before the
-required output can be assembled, or input remains after the required output
-has been reconstructed. Unpublished work in the current block is discarded.
-Previously drained output is not retracted. A separately admitted DMA burst
-is not cancelled or rolled back by a decoder fault.
+FORMAT_FAULT is set, and IRQ_IMGDEC requested, when:
 
-A fault can leave an output DMA channel waiting. Its BUSY state is not a reason
-to continue waiting for successful decoding. Service the fault before reusing
-the transfer resources. A new accepted START clears the decoder's stream
-state; it does not cancel an independently programmed DMA channel or undo a
-GPU command that has already received data.
+- a token produces more words than OUTPUT_WORD_COUNT still allows;
+- a back-reference reaches before the start of the history;
+- the input ends before all output has been produced;
+- input remains after all output has been produced.
 
-IMGDEC DONE, DMA DONE and GPU completion are different events. In a DATA-to-RAM
-transfer, the final DATA read occurs before the destination write. Observe DMA
-completion before using that RAM result. In an upload, observe GPU completion
-before using the new image and display publication before relying on its
-appearance on screen.
+The block in progress is discarded; words already read are not affected. A
+DMA channel still waiting for output then remains BUSY: stop it with STOP
+before starting again.
 
-## Programming IMGDEC in BLua {#sec-imgdec-programming-imgdec-in-blua}
+DONE means that IMGDEC has delivered all words. Wait for DMA DONE before using
+data written to RAM, and for GPU completion before using an uploaded image.
 
-This example uploads a two-by-two direct-color image at VRAM origin. It assumes
-fresh BIOS cartridge entry, no other GP0 producer and both DMA channels idle.
-The source is three compressed ROM words: one literal token and two raw data
-words. GPU size and destination words are not IMGDEC configuration.
+## Programming example {#sec-imgdec-programming-imgdec-in-blua}
+
+This example uploads a 2 × 2 image to VRAM position (0, 0). The compressed data
+is one literal token followed by two words of pixels.
 
 ```lua
 rodata stream: word[3] = { 1, 0x03e0001f, 0x7fff7c00 }
@@ -181,94 +143,87 @@ local gp1<const>: *word = 0x08010240
 
 *irq_mask = 0
 *irq_ack = 0x000001c1
-*gp1 = 0x04000002                 -- DMA direction CPU_TO_GP0.
-*gp0 = 0xa0000000                 -- Software supplies the image header.
-*gp0 = 0
-*gp0 = 0x00020002
+*gp1 = 0x04000002                 -- GPU DMA direction: CPU_TO_GP0.
+*gp0 = 0xa0000000                 -- Image upload header:
+*gp0 = 0                          --   position (0, 0)
+*gp0 = 0x00020002                 --   size 2 × 2
 *input_count = 3
 *output_count = 2
 
-dma1[2] = 2                       -- Raw output only; no header words.
-dma1[3] = 5                       -- IMGDEC_TO_GPU; both ports are wired.
-dma1[5] = 1
+dma1[2] = 2                       -- Channel 1: 2 words,
+dma1[3] = 5                       --   IMGDEC_TO_GPU.
+dma1[5] = 1                       --   START
 
-dma0[0] = stream
-dma0[2] = 3
-dma0[3] = 3                       -- TO_IMGDEC; memory source increments.
-dma0[5] = 1
-*control = 1
+dma0[0] = stream                  -- Channel 0: from stream,
+dma0[2] = 3                       --   3 words,
+dma0[3] = 3                       --   TO_IMGDEC.
+dma0[5] = 1                       --   START
+*control = 1                      -- IMGDEC START
 while (*status & 1) ~= 0 do end
 if (*status & 2) == 0 then error('image decode fault') end
 while (dma0[4] & 1) ~= 0 or (dma1[4] & 1) ~= 0 do end
 
-*gp0 = 0x1f000000                 -- Ordered GPU completion marker.
+*gp0 = 0x1f000000                 -- GPU marker.
 while (*irq_flags & 0x40) == 0 do end
 *gp1 = 0x02000000
 *irq_ack = 0x000001c1
 ```
 
-The low pixel halfword precedes the high halfword, so the image receives
-`001FH,03E0H,7C00H,7FFFH`. GP0's own transfer dimensions determine its payload
-length. IMGDEC does not check whether OUTPUT_WORD_COUNT agrees with a GPU
-packet; the program is responsible for that connection.
+The low halfword of each word is the first pixel, so the image receives the
+pixels `001FH`, `03E0H`, `7C00H`, `7FFFH`. Make sure that OUTPUT_WORD_COUNT
+matches the size in the GPU header; IMGDEC does not check this.
 
-For palette data in the same compressed stream, stop the first output DMA at
-the exact texture-word count, wait for that DMA to complete, send the three-word
-CLUT upload header, and start the remaining output transfer. Keep input DMA
-and IMGDEC running. The palette words share the same decompression history.
+When the same compressed data also holds a palette, set channel 1's count to
+the number of image words. When that transfer is DONE, send the palette
+header to the GPU and start channel 1 again for the palette words. Channel 0
+and IMGDEC keep running, and the palette may refer to the image words in the
+history.
 
-## Register reference {#sec-imgdec-register-reference}
+## Registers {#sec-imgdec-register-reference}
 
-All ports are 32-bit word ports. Unassigned locations `08010404H` and
-`08010408H` are ordinary retained I/O words with no decompression function.
-
-| Address | Name | Access | Reset | Function |
-|---|---|---|---|---|
-| `080103FCH` | INPUT_WORD_COUNT | R/W configuration | 0 | Total compressed token and data words |
-| `08010400H` | OUTPUT_WORD_COUNT | R/W configuration | 0 | Total raw decoded words |
-| `0801040CH` | CONTROL | R/W configuration | 0 | Bit 0 START; bits 31:1 retained |
-| `08010410H` | STATUS | R | 0 | Job and request state |
-| `08010414H` | DATA | R/W | 0 | Compressed input writes and raw output reads |
-| `08010418H` | INPUT_WORDS_RECEIVED | R | 0 | Accepted input DATA writes |
-| `0801041CH` | DECODED_WORD_COUNT | R | 0 | Words in completed decode blocks |
-
-Configuration retains complete raw words. Program both counts before START.
-Configuration writes are admitted only while inactive and not paused; CPU
-writes wait otherwise. An accepted CONTROL write retains its complete word;
-START clears only bit 0, resets FIFO/history/block state and progress, and
-starts the new job. CONTROL has no ABORT bit.
-
-Writes to the three read-only ports raise BUS_FAULT_READ_ONLY. Progress reads
-do not drain DATA or acknowledge an interrupt. INPUT_WORDS_RECEIVED measures
-submissions, not FIFO occupancy or consumed compressed words.
-
-### STATUS fields {#sec-imgdec-status-0x08010410}
-
-| Bit | Mask | Name | Meaning |
+| Address | Name | Access | Function |
 |---|---|---|---|
-| 0 | `00000001H` | BUSY | Job active |
-| 1 | `00000002H` | DONE | Complete input processed and output drained |
-| 2 | `00000004H` | INPUT_REQUEST | Input can accept more words |
-| 3 | `00000008H` | OUTPUT_REQUEST | Completed output words can be removed |
-| 4 | `00000010H` | FORMAT_FAULT | Job stopped on a stream-format fault |
-| 31:5 | `FFFFFFE0H` | Unused | Zero |
+| `080103FCH` | INPUT_WORD_COUNT | R/W | Number of compressed words |
+| `08010400H` | OUTPUT_WORD_COUNT | R/W | Number of decoded words |
+| `0801040CH` | CONTROL | R/W | Bit 0: START |
+| `08010410H` | STATUS | R | Status |
+| `08010414H` | DATA | R/W | Write: compressed input; read: decoded output |
+| `08010418H` | INPUT_WORDS_RECEIVED | R | Number of words written to DATA |
+| `0801041CH` | DECODED_WORD_COUNT | R | Number of words decoded |
 
-STATUS is not write-one-to-clear. A new START replaces the terminal result;
-central IRQ acknowledgement does not clear STATUS.
+`08010404H` and `08010408H` are reserved. All registers are 0 after reset.
 
-### DATA latch and system pause
+Set both counts before START. While a job is running, writes to the counts and
+to CONTROL wait until it ends. START clears the FIFO, the history and the two
+progress counters and starts a new job. Writing a read-only register causes a
+READ_ONLY bus fault.
 
-An output read replaces the DATA latch with the removed word. Input writes
-also replace this latch. A read without completed output returns the latch
-without advancing output. So does a CPU read while a DMA channel owns the DATA
-read port. Poll STATUS, not DATA, for readiness.
+### STATUS {#sec-imgdec-status-0x08010410}
 
-Ordinary CPU writes wait for active input capacity and for release of any DMA
-write-port reservation. TO_IMGDEC admission is bounded by free input storage
-and remaining declared input. There is no forced DMA route that bypasses these
-conditions. Submission counters use modulo 2^32 arithmetic.
+| Bit | Value | Name | Meaning |
+|---|---|---|---|
+| 0 | `00000001H` | BUSY | Job running |
+| 1 | `00000002H` | DONE | All input received and all output read |
+| 2 | `00000004H` | INPUT_REQUEST | DATA can take input |
+| 3 | `00000008H` | OUTPUT_REQUEST | DATA has output to read |
+| 4 | `00000010H` | FORMAT_FAULT | Job stopped on a format fault |
+| 31–5 | — | — | 0 |
 
-A system pause stops new input and output requests. An admitted decode block
-first reaches its completion edge; partly assembled input or unread results
-remain retained. Pause does not drain the cartridge's output or manufacture
-missing input. Resume continues the retained work.
+DONE and FORMAT_FAULT stay set until the next START. Clearing IRQ_IMGDEC does
+not clear them.
+
+### DATA
+
+Reading DATA when no output is available returns the last word read or
+written and takes nothing from the output. Test OUTPUT_REQUEST in STATUS to
+know whether output is available. A write to DATA waits until the FIFO has
+room.
+
+While a DMA channel is transferring on an IMGDEC route, CPU reads of DATA
+return the last word without taking output, and CPU writes wait until the
+transfer ends.
+
+### Monitor entry
+
+When the monitor is entered, IMGDEC finishes the block it is decoding and
+pauses. It continues when the program resumes.

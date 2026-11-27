@@ -1761,7 +1761,7 @@ of maximale instructieduren en doorvoer zijn hier niet vastgesteld.
    apparaat kunnen tijd kosten. Een op gereedheid geblokkeerde store voert geen
    write uit terwijl hij wacht; de passende ready-gebeurtenis hervat de
    bewaarde operatie volgens de bestaande
-   [CPU-grenzen](book1/cpu.md#sec-cpu-additional-work-and-waiting), niet een nieuw
+   [CPU-grenzen](book1/cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries), niet een nieuw
    opgehaalde instructie. Er wordt geen
    automatische timeout, busfout of terugdraaiing van eerdere effecten
    toegevoegd. Bij een meerwoordtoegang behouden een fout en eerder uitgevoerde

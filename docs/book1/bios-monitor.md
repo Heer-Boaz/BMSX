@@ -1,23 +1,16 @@
 # BIOS diagnostics {#sec-bios-monitor}
 
-The BIOS monitor retains a stopped program's fault state so that its registers,
-memory and source context can be inspected before continuation. Clearing a
-report, repairing the cause and resuming execution are separate operations.
+When a program stops on a fault, the BIOS monitor shows the fault and lets the
+programmer examine registers, memory and source, change values and continue
+the program. During normal execution, a program can send text to the
+development system through the diagnostic output, or with BIOS `print` also to
+the console.
 
-During normal execution, a program can send diagnostic text through SYSTEM or
-use BIOS `print` to retain text for the console display as well. The first
-example distinguishes those two destinations. The memory examples then follow
-a fault from inspection to retry. The optional ROM diagnostic directory
-supplies source locations and named frame scopes; its binary reference follows
-the examples.
+## Diagnostic text and the console {#sec-system-send-a-diagnostic-line}
 
-## Diagnostic text and the BIOS console {#sec-system-send-a-diagnostic-line}
-
-BIOS `print` sends text to both the diagnostic channel and the console history.
-Direct SYSTEM port writes send only diagnostic text. In this example, the
-first and last lines use `print`; the middle line sends four codepoints
-directly, then publishes them. Assume no other diagnostic writer and enough
-queue space for each line. A zero FLUSH word is still a flush command.
+BIOS `print` sends a line to the diagnostic output and to the console. Writing
+the SYSTEM ports sends text to the diagnostic output only. In this example the
+first and last lines use `print`, and the middle line is written directly:
 
 ```lua
 local print_char<const>: *word = 0x08010230
@@ -34,15 +27,14 @@ local flush_readback<const> = *print_flush
 print('SYSTEM samples complete')
 ```
 
-CHAR readback is `FFFFFFFFH`, even though the invalid codepoint emits `?`.
-FLUSH readback is zero. Both are last-written words, not receiver-ready or
-completion flags. The raw middle line is encoded as:
+PRINT_CHAR reads back `FFFFFFFFH` and PRINT_FLUSH 0: the values last written.
+The middle line is sent as:
 
 ```text
 53 C3 A9 F0 9F 98 80 3F 0A
 ```
 
-The diagnostic text is:
+The diagnostic output is:
 
 ```text
 SYSTEM timer experiment
@@ -50,29 +42,22 @@ Sé😀?
 SYSTEM samples complete
 ```
 
-Only the two BIOS `print` calls also add text to the BIOS console history.
-The direct codepoint line neither enters that history nor draws glyphs.
+![BIOS console after the example](figures/system-console.png){#fig-system-console}
 
-![BIOS console after the diagnostic-output example](figures/system-console.png){#fig-system-console}
-
-The monitor displays the two BIOS print lines from retained console history.
-The raw diagnostic line does not appear in that history.
+The console shows only the two `print` lines.
 
 ## Memory faults and the monitor {#sec-memory-installed-response-to-a-memory-exception}
 
-A synchronous memory exception enters the **system exception entry**, even when the faulting instruction belongs to a cartridge. This differs from a maskable IRQ, whose entry is selected according to the interrupted mode. Declaring a cartridge `exception` function does not install it as the handler for this memory-fault route.
+A memory fault always enters the exception function of the system ROM, also
+when the faulting instruction belongs to a cartridge; a cartridge `exception`
+function is not used for it. The BIOS records the CPU registers with the SYSTEM
+FAULT command, enters the monitor, prepares its display and, one VBlank later,
+writes FAULT_PUBLISH.
 
-The system exception entry calls the BIOS exception function, which enters the BIOS monitor. Acknowledging the Memory fault record is not exception return: it clears the retained report but does not repair an address or advance the faulting instruction. Likewise, returning from an exception does not itself acknowledge that record.
+Clearing the bus-fault record (ACK) and continuing the program are separate
+steps: ACK does not repair the cause, and continuing does not clear the record.
 
-The BIOS captures the CPU diagnostic words through SYSTEM's FAULT command.
-It prepares the monitor display and waits another VBlank before issuing
-FAULT_PUBLISH. The resulting supervisor-fault sequence change therefore marks
-publication, later than CPU exception entry. An NMI entry alone does not
-refresh the fault report.
-
-### Inspect an actual unmapped load {#sec-memory-inspect-an-actual-unmapped-load}
-
-This cartridge fragment deliberately accesses unmapped storage. Its Word view addresses `01000000H`, the first byte of the unmapped gap after the system-ROM window. Startup initially clears `reached_after_load`; the attempted load faults before its result can be assigned there.
+### Example: an unmapped load {#sec-memory-inspect-an-actual-unmapped-load}
 
 ```lua
 module<entry>
@@ -80,7 +65,7 @@ module<entry>
 bss reached_after_load: word
 local unmapped<const>: *word = 0x01000000
 
--- This unmapped load enters the BIOS monitor before the assignment completes.
+-- This load enters the BIOS monitor.
 *reached_after_load = *unmapped
 
 while true do
@@ -88,47 +73,45 @@ while true do
 end
 ```
 
-This load produces a data bus error, displayed as **DBE**. The CPU cause field is `0000001CH` (code 7); the Memory fault CODE is instead `00000001H` (unmapped). These are different reports, not two encodings to write to the same register. DBE does not establish a new CP0 bad-address value. Inspect the Memory ADDR word for this bus fault's address.
-
-At the BIOS monitor prompt, type the following command and press Enter. Its address is hexadecimal, and the count selects three consecutive 32-bit words:
+The load causes a data bus error, shown as **DBE**: Cause `0000001CH` (code 7).
+The bus-fault CODE is `00000001H` (unmapped). BadAddress is not set by a bus
+error; the address is in the bus-fault ADDR register. At the monitor prompt,
+type:
 
 ```text
 MEM 08010208 3
 ```
 
-The displayed result is:
+The monitor shows three words from `08010208H`:
 
 ```text
 08010208: 00000001 01000000 00000801
 ```
 
-| Displayed word | Meaning for this load |
+| Word | Meaning |
 |---|---|
-| `00000001` | Memory CODE: unmapped access |
-| `01000000` | Memory ADDR: the invalid byte address |
-| `00000801` | Memory ACCESS: read direction and Word access kind |
+| `00000001` | CODE: unmapped |
+| `01000000` | ADDR: the address |
+| `00000801` | ACCESS: read, Word |
 
-![BIOS monitor after the unmapped Word load and the three-word MEM command](figures/memory-bus-fault.png){#fig-memory-bus-fault}
+![BIOS monitor after the unmapped load and the MEM command](figures/memory-bus-fault.png){#fig-memory-bus-fault}
 
-**Unmapped-load output.** The BIOS reports DBE, the faulting source statement and its EPC; the `MEM` line shows the three Memory report words. EPC is the instruction's address in this program, not a constant to copy into another cartridge.
+The monitor shows DBE, the source line that caused the fault and its EPC.
 
-### Clearing a report is not repairing the program {#sec-memory-clearing-a-report-is-not-repairing-the-program}
+### Clearing and continuing {#sec-memory-clearing-a-report-is-not-repairing-the-program}
 
-The monitor's `FAULT` command displays its saved fault report when one is retained. `FAULT CLEAR` discards that saved BIOS report; it does not write `IO_SYS_BUS_FAULT_ACK`, clear the Memory CODE/ADDR/ACCESS words, or resume the cartridge.
+`FAULT` shows the fault report kept by the BIOS; `FAULT CLEAR` deletes it. The
+bus-fault registers are not changed.
 
-`CONT` restores the saved EPC and CPU status. When the monitor owns the
-supervisor device context, it also issues LEAVE before returning. CPU exception
-return and device-context restoration are separate operations; neither
-advances the saved EPC. In the program above, the invalid address is unchanged,
-so `CONT` retries the load and enters the monitor again with another DBE. The
-first Memory fault remains latched. Clearing either report does not turn an
-unmapped address into usable storage.
+`CONT` continues the program at EPC: it restores the device state (LEAVE) and
+the CPU registers. In the example above the address is still invalid, so the
+load faults again. To continue past the fault, first repair its cause.
 
-CP0 reads and writes require non-user mode; attempting them from ordinary cartridge user mode causes the coprocessor-unusable exception. Do not attempt to repair this example by reading or replacing CP0 fields in ordinary cartridge code. The example demonstrates inspection and an unchanged-instruction retry, not a cartridge recovery handler or a successful recovery.
+### Example: repairing a load {#sec-memory-repair-a-word-load-and-retry}
 
-### Repair a word load and retry {#sec-memory-repair-a-word-load-and-retry}
-
-The preceding constant-address probe remains faulty after its report is cleared. This example instead makes the address a mutable local pointer, so you can repair the operand of the stopped read. Include the [BIOS diagnostic directory](#sec-memory-optional-bios-diagnostic-directory) for source and frame-scope lookup. Frame evaluation needs the correct source scope and an available, mutable live binding; it cannot recover arbitrary optimized-out locals.
+Here the address is held in a local variable, which the monitor can change.
+The program needs the [diagnostic directory](#sec-memory-optional-bios-diagnostic-directory)
+for its source and variable names.
 
 ```lua
 module<entry>
@@ -165,21 +148,14 @@ while true do
 end
 ```
 
-`source` first receives the invalid address stored in `source_address`. The first read faults before assigning `result.first`. `safe_words`, by contrast, names the address of two DATA words in main RAM. Repair the existing `source` binding to that address: changing the `source_address` word alone would leave the stopped read’s already loaded pointer unchanged. Do not change EPC; the same read must be retried with the repaired operand.
+The first read faults because `source` holds `01000000H`. Set `source` to the
+address of `safe_words` and continue; EPC stays the same, so the read is
+repeated.
 
-At the monitor, inspect `FRAMES`. Each physical frame row gives its index,
-function-record address and PC. Following `DEPTH` rows list the installed
-source-scope names active at that frame's suspension PC, including inlined
-functions. Choose the physical index from the preceding frame row and the
-depth from the matching source-scope row. Missing diagnostic information is
-reported instead of supplying a guessed scope. A binding must also be live and
-mutable at that PC to be assigned.
-
-In this example, the source frame is physical index `00000001`, depth
-`00000000`, and its PC matches the fault EPC. Both selectors are displayed as
-eight hexadecimal digits without a prefix; bare command selectors are decimal,
-so use `0x` when copying them. Other programs or builds need not use this pair.
-For this example, the sequence is:
+`FRAMES` lists the active functions: for each one its index, function-record
+address and PC, followed by its source scopes (`DEPTH`), inlined functions
+included. Here the function that faulted is index `00000001`, depth
+`00000000`. Selectors are given in hexadecimal with `0x`:
 
 ```text
 FRAMES
@@ -187,15 +163,13 @@ LUA --FRAME 0x00000001 0x00000000 source = safe_words
 CONT
 ```
 
-The single `LUA` assignment changes the selected frame's live pointer; it does not redeclare a typed local or change the `safe_words` address binding. It returns to the prompt without resuming execution or acknowledging Memory's report.
+A variable can be changed only where it is live and not constant.
 
-![Monitor after inspecting frames and assigning the repaired pointer, before continuing.](figures/memory-fault-repair.png){#fig-memory-fault-repair}
+![Monitor after the assignment, before CONT](figures/memory-fault-repair.png){#fig-memory-fault-repair}
 
-**Repair before retry.** The pointer has been repaired by `source = safe_words`, but execution remains stopped until `CONT`.
-
-`CONT` retries the saved instruction. The first read now succeeds; the program advances `source` by `sizeof(word)` (four bytes) and reads the second word. The old Memory CODE can remain `1` throughout both successful reads: a pending report does not make a valid address invalid. Only afterward does the program save that old code, write `1` to ACK, and read the cleared code.
-
-The successful run produces these diagnostic lines, not newly drawn text in the monitor image:
+After `CONT` the first read succeeds, and the program reads the second word.
+The bus-fault CODE stays 1 until the program clears it. The diagnostic output
+is:
 
 ```text
 RECOVERED
@@ -203,92 +177,77 @@ WORDS 12345678 9ABCDEF0
 FAULT 00000001 -> 00000000
 ```
 
-`REBOOT` is a restart request, not this repair or a saved-EPC continuation. With the cartridge unchanged, its bad initial pointer is encountered again. See [[System control and timing — Reset requests](system.md#sec-system-reset-requests)]{.content-visible when-format="html"}[Book I, §12.10]{.content-visible when-format="pdf"}.
+`REBOOT` restarts the console; see
+[[System control and timing — Reset](system.md#sec-system-reset-requests)]{.content-visible when-format="html"}[Book I, §12.10]{.content-visible when-format="pdf"}.
+Reading CP0 in an interrupt handler is shown in
+[CPU — Reading CP0 in an interrupt](cpu.md#sec-cpu-read-cp0-in-a-cartridge-irq).
 
-For a programming example of privileged CP0 reads inside an ordinary cartridge IRQ callback, see [CPU — Read CP0 in a cartridge IRQ](cpu.md#sec-cpu-read-cp0-in-a-cartridge-irq). The callback returns normally, allowing the standard IRQ entry to perform RFE and resume the interrupted cartridge code.
+## Diagnostic directory {#sec-memory-optional-bios-diagnostic-directory}
 
+The ROM word at offset `3CH` gives the offset of a diagnostic directory in the
+ROM, or 0 if there is none. The directory gives the BIOS the source lines and
+variable names of the program. Without it, the program runs normally, but the
+monitor cannot show source or variables.
 
-## Optional BIOS diagnostic directory {#sec-memory-optional-bios-diagnostic-directory}
+All words are 32-bit little-endian. The header is 76 bytes; offsets are from
+the start of the directory, and counts are numbers of records.
 
-The ROM word at byte offset `3CH` supplies a **ROM-relative byte offset** to
-an optional diagnostic directory. Zero means absent. This word extends beyond
-the CPU's 60-byte boot prefix: it is consumed by BIOS source reporting and
-selected-frame evaluation, not by instruction execution or image activation.
-Without the directory, executable code and ordinary boot remain usable, but
-those BIOS services cannot recover its source locations or named frame scopes.
-
-All directory words are unsigned 32-bit little-endian. The header occupies
-**76 bytes**. Table offsets below are relative to the directory base; a
-count is a number of records, not a byte count.
-
-| Header byte offset | Field |
+| Offset | Field |
 | --- | --- |
-| `00H`, `04H` | Source-range count; range-table offset |
-| `08H`, `0CH` | File count; file-table offset |
-| `10H`, `14H` | Line-offset count; line-offset-table offset |
-| `18H`, `1CH` | Path-byte-table offset; path byte count |
-| `20H`, `24H` | Scope-function count; function-table offset |
-| `28H`, `2CH` | Scope-frame count; frame-table offset |
-| `30H`, `34H` | Binding count; binding-table offset |
-| `38H`, `3CH` | Interval count; interval-table offset |
-| `40H`, `44H` | Scope-name byte count; name-byte-table offset |
-| `48H` | Static-global binding count; these occupy the first binding records |
+| `00H`, `04H` | Number of source ranges; offset of the range table |
+| `08H`, `0CH` | Number of files; offset of the file table |
+| `10H`, `14H` | Number of line offsets; offset of the line table |
+| `18H`, `1CH` | Offset of the path bytes; number of path bytes |
+| `20H`, `24H` | Number of scope functions; offset of the function table |
+| `28H`, `2CH` | Number of scope frames; offset of the frame table |
+| `30H`, `34H` | Number of bindings; offset of the binding table |
+| `38H`, `3CH` | Number of intervals; offset of the interval table |
+| `40H`, `44H` | Number of name bytes; offset of the name bytes |
+| `48H` | Number of static global bindings (the first binding records) |
 
-### Source locations {#sec-memory-source-locations}
+### Source lines {#sec-memory-source-locations}
 
-| Record | Bytes | Four-byte fields, in increasing byte-offset order |
+| Record | Bytes | Words |
 | --- | ---: | --- |
-| Range | 12 | Absolute PC start; packed line/file; column |
-| File | 20 | Directory-relative display-path offset; path byte count; ROM-relative source offset; source byte count; first line-offset index |
-| Line offset | 4 | UTF-8 byte offset from the file's source start |
+| Range | 12 | PC start; line and file; column |
+| File | 20 | Path offset; path length; source offset in ROM; source length; first line-offset index |
+| Line offset | 4 | Byte offset in the source |
 
-Range records are sorted by PC. Lookup selects the last record whose start is
-not greater than the PC. The packed location holds the one-based line in bits
-31:16 and the zero-based file index in bits 15:0; `FFFFFFFFH` marks no source.
-Column is one-based. Include a no-source record at PC zero and another at the
-text end so addresses outside mapped source do not inherit its final location.
+The ranges are sorted by PC; the last range with a start not greater than the
+PC applies. The line and file word holds the line (from 1) in bits 31–16 and
+the file (from 0) in bits 15–0; `FFFFFFFFH` means no source. Columns count from
+1. Put a range without source at PC 0 and one at the end of the code.
 
-Each file's line-offset sequence starts at zero and includes an end-of-source
-sentinel. For line *L*, BIOS reads offsets at `first + L - 1` and `first + L`;
-it strips terminal CR/LF bytes from the displayed line. Paths and source spans
-use explicit byte counts, not NUL termination. Source bytes may occupy their
-ordinary ROM location; they need not be duplicated inside the directory.
+The line offsets of a file start at 0 and end with the length of the source.
+Line L runs from offset `first + L − 1` to `first + L`; CR and LF at its end are
+not shown. Paths and sources are given by length, not terminated by 0; the
+source can be the ordinary source in ROM.
 
-### Named frame scopes {#sec-memory-named-frame-scopes}
+### Variables {#sec-memory-named-frame-scopes}
 
-Scope functions are sorted by their absolute function-record address. BIOS
-matches that address, computes instruction-word position
-`(PC - codeAddress) >> 2`, and selects a frame at the requested inline depth
-whose active interval contains that word. These are source scopes for BIOS
-evaluation, not additional CPU call frames or instruction-fetch bounds.
+The scope functions are sorted by function-record address. For a PC, the BIOS
+finds the function, computes the word position `(PC − code address) >> 2` and
+selects the frame with the requested depth whose active interval contains it.
 
-| Record | Bytes | Four-byte fields, in increasing byte-offset order |
+| Record | Bytes | Words |
 | --- | ---: | --- |
-| Scope function | 16 | Absolute function-record address; absolute code address; first frame index; frame count |
-| Scope frame | 28 | Inline depth; directory-relative name offset; name byte count; first active-interval index; active-interval count; first binding index; binding count |
-| Binding | 32 | Directory-relative name offset; name byte count; flags; location; first visible-interval index; visible-interval count; first live-interval index; live-interval count |
-| Interval | 8 | First instruction-word position; exclusive end position |
+| Scope function | 16 | Function-record address; code address; first frame; number of frames |
+| Scope frame | 28 | Depth; name offset; name length; first active interval; number of active intervals; first binding; number of bindings |
+| Binding | 32 | Name offset; name length; flags; location; first visible interval; number of visible intervals; first live interval; number of live intervals |
+| Interval | 8 | First word position; end position (excluded) |
 
-Interval lists are sorted nonoverlapping half-open ranges in instruction-word
-positions relative to the function's code address. Names use UTF-8 byte spans.
-A frame's visible bindings overlay the initial static-global bindings; later
-same-named bindings shadow earlier ones even when their value is unavailable.
-Visibility and availability are separate: the visible interval selects the
-name, while the live interval determines whether its stored value is available.
+Intervals are sorted and do not overlap. Names are UTF-8. A frame's bindings
+come after the static globals; a later binding with the same name hides an
+earlier one. The visible intervals tell where a name is in scope; the live
+intervals where its value is available.
 
-Binding flags are bit 0 UPVALUE, bit 1 CONST, bit 2 ADDRESS and bit 3 TYPE.
-Without ADDRESS or TYPE, location identifies a register or, with UPVALUE, an
-upvalue slot. ADDRESS selects a raw static-storage address and remains available
-without a live interval. TYPE describes a type rather than a readable value.
-`FFFFFFFFH` is the no-location word. CONST marks a binding that evaluation must
-not reassign; it does not freeze a Table's fields.
+| Flag bit | Name | Meaning |
+|---|---|---|
+| 0 | UPVALUE | Location is a captured variable |
+| 1 | CONST | The value may not be changed |
+| 2 | ADDRESS | Location is a static address (always available) |
+| 3 | TYPE | A type, not a value |
 
-A frame access selects an active frame of the supplied Thread. A register
-location is a zero-based index into that frame's reserved register window;
-an upvalue location is a zero-based index into the frame closure's captures.
-Neither can select storage belonging to another allocation. A diagnostic
-access with no such frame or slot raises `INVALID_ARGUMENT` without changing
-the selected Thread. A write must supply a value; nil is a value.
-
-The BIOS locates this directory directly through the ROM-header word described
-above.
+Without ADDRESS or TYPE, location is a register number (or captured variable
+number with UPVALUE). `FFFFFFFFH` means no location. A register or captured
+variable outside the frame raises `INVALID_ARGUMENT`.

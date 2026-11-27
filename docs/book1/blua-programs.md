@@ -1,80 +1,47 @@
-# BLua source programs and extensions {#sec-blua-programs}
+# BLua programs {#sec-blua-programs}
 
 > TO CODEX/CLAUDE/GEMINI/GROK/ETC, READ THIS AND CONSIDER THE FOLLOWING CAREFULLY!!
 > NEARLY ALL OF THE CONTENT IN THIS CHAPTER IS PROOF THAT THE BLUA-COMPILER AND INTERPRETER HAVE BEEN INCORRECTLY IMPLEMENTED IN SOME WAY. ONLY THE REAL EXTENSIONS ARE CORRECTLY DESCRIBED (e.g. structs, typed address selection, interrupt wait segment, augmented assignments, unary `&` on a String, named-member `->`), BUT THE REST ARE ALL INCORRECT IMPLEMENTATIONS AND SHOULD BE FIXED INSTEAD OF BEING REGARDED AS A CONTRACT! BLUA SHOULD FOLLOW THE LUA-STANDARDS STRICTLY AND NOT DEVIATE FROM THEM (EXCEPT FOR THE REAL EXTENSIONS).
 
-BLua provides the language facilities used to control the BMSX: named
-functions and modules, fixed byte layouts, typed address access, direct
-register access and interrupt waiting. This chapter specifies those forms
-and the source rules that differ from general Lua.
+BLua is Lua with extensions for programming the BMSX: modules linked when the
+program is built, static storage with fixed byte layouts, typed access to
+memory, direct access to memory and control registers, and waiting for
+interrupts. This chapter describes the extensions and the points where BLua
+differs from Lua. For the Lua language itself, see the
+[Lua documentation](https://www.lua.org/docs.html).
 
-Use the hardware chapters for device register values and command sequences.
-Use the BIOS chapters for installed function calls. The source forms here
-select accesses and calls; the addressed device or called routine determines
-their effects.
+Device registers are described in the hardware chapters, the BIOS functions in
+the BIOS chapters, the instructions in the [CPU reference](cpu.md#sec-cpu).
+Text compiled while the program runs uses the smaller language of
+[runtime compilation](bios-loader.md#sec-bios-loader).
 
-Program-source extensions and BIOS runtime compilation are separate interfaces.
-The BIOS `load` service accepts the text language specified in
-[BIOS runtime compilation](bios-loader.md#sec-bios-loader), not every declaration
-and access form in this chapter. The [CPU reference](cpu.md#sec-cpu) defines
-the instructions and execution behavior selected by these source forms.
+## Extensions {#sec-blua-programs-blua-extensions}
 
-## BLua extensions {#sec-blua-programs-blua-extensions}
-
-BLua provides explicit source forms for program linkage, static storage, typed
-address access, processor control, instrumentation, and augmented assignment.
-Hardware programming is a principal use, but not the limit of these extensions.
-
-For general Lua syntax and introductory material, see the
-[Lua documentation](https://www.lua.org/docs.html). The rules in this chapter
-apply where BLua differs. Local `<const>` has its familiar binding role;
-`module<const>` additionally selects the static namespace and call rules
-specified below.
-
-| Extension family | Source forms | Detailed reference |
+| Extension | Forms | Section |
 | --- | --- | --- |
-| Module roles and static linkage | `module<entry>`, `module<const>`, literal `require`, static exports, `<init>` | [Module modes, static imports, and `<init>`](#sec-blua-programs-module-modes-static-imports-and-init) |
-| Static storage and layouts | `struct`, `bss`, `data`, `rodata`, typed arrays | [Typed storage, layouts, and address views](#sec-blua-programs-typed-storage-layouts-and-address-views) |
-| Typed address selection | `local p: *type`, `*p`, fields, indices, unary `&`, `sizeof`, `offsetof`, static-array `#` | [Views, selection, and byte addresses](#sec-blua-programs-views-selection-and-byte-addresses) |
-| Six raw mapped-access forms | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [Byte-addressed memory maps](#sec-blua-programs-byte-addressed-memory-maps) |
-| Six control fields | `cop0.bad_address`, `cop0.lua_fault_reason`, `cop0.status`, `cop0.cause`, `cop0.epc`, `cop0.exec` | [Control-register access](#sec-blua-programs-control-registers-cop0) |
-| Three intrinsic operations | `blua32.closure`, `blua32.trace`, `blua32.trace_sink` | [Intrinsic calls](#sec-blua-programs-intrinsic-calls-blua32) |
-| Interrupt wait statement | `halt_until_irq` | [Interrupt waiting](#sec-blua-programs-interrupt-waiting-halt_until_irq) |
-| Six augmented assignments | `+=`, `-=`, `*=`, `/=`, `%=`, `^=` | [Augmented assignment](#sec-blua-programs-augmented-assignment) |
-| Additional operator forms | Unary `&` on a String; named-member `->` | [Unary `&`](#sec-blua-programs-unary-storage-address-or-string) and [named members](#sec-blua-programs-named-members-with) |
+| Modules | `module<entry>`, `module<const>`, `require`, `<init>` | [Modules](#sec-blua-programs-module-modes-static-imports-and-init) |
+| Static storage | `struct`, `bss`, `data`, `rodata` | [Storage](#sec-blua-programs-typed-storage-layouts-and-address-views) |
+| Typed access | `local p: *type`, `*p`, `p.field`, `p[i]`, `&`, `sizeof`, `offsetof`, `#` | [Views](#sec-blua-programs-views-selection-and-byte-addresses) |
+| Memory access | `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, `memf64le` | [Memory access](#sec-blua-programs-byte-addressed-memory-maps) |
+| Control registers | `cop0.…` | [cop0](#sec-blua-programs-control-registers-cop0) |
+| Intrinsics | `blua32.closure`, `blua32.float_bits`, `blua32.float_from_bits`, `blua32.trace`, `blua32.trace_sink` | [blua32](#sec-blua-programs-intrinsic-calls-blua32) |
+| Interrupt wait | `halt_until_irq` | [halt_until_irq](#sec-blua-programs-interrupt-waiting-halt_until_irq) |
+| Augmented assignment | `+=`, `-=`, `*=`, `/=`, `%=`, `^=` | [Augmented assignment](#sec-blua-programs-augmented-assignment) |
+| Operators | `&` on a String, `->` | [`&`](#sec-blua-programs-unary-storage-address-or-string), [`->`](#sec-blua-programs-named-members-with) |
 
-Memory-map names, `cop0` and `blua32` must be used in their direct source
-forms. Choose a mapped access for an explicit address and width, or a typed
-view when field offsets and element strides belong to a declared layout.
-Unary `*` reads a typed selection; the view itself occupies no new byte range.
+## Static storage {#sec-blua-programs-typed-storage-layouts-and-address-views}
 
-The [source-semantics reference](#sec-blua-programs-blua-source-semantics) specifies
-BLua literal spellings, local binding, result adjustment and control flow.
+Static storage is a range of bytes at a fixed address: for buffers, records
+for a device, and tables of constants. A Lua table holds values, not bytes at
+an address; use static storage when a device or a format requires bytes.
 
-## Typed storage, layouts, and address views {#sec-blua-programs-typed-storage-layouts-and-address-views}
+### Sections {#sec-blua-programs-choosing-a-storage-section}
 
-Storage declarations define byte ranges for scalar state, transfer buffers,
-lookup tables and structured records. A storage name supplies its byte
-address. Field selection and indexing apply the declared layout to that
-address; scalar dereference reads or writes the selected bytes.
-
-Use addressed storage when an operation needs a byte address or a prescribed
-binary layout: for example, a transfer buffer, a record exchanged with a device,
-or a lookup table read by numeric offset. Ordinary locals and Tables hold
-language values instead. A Table's indexed values are not a declaration of
-consecutive bytes, and assigning a storage address to a local does not copy
-those bytes into the local.
-
-### Choosing a storage section {#sec-blua-programs-choosing-a-storage-section}
-
-`bss` reserves writable RAM that is cleared to zero during section initialization.
-`data` reserves writable RAM whose initial bytes are copied from the program's
-ROM data. `rodata` places initialized bytes in ROM.
-
-Choose BSS for scratch space and state that starts at zero, DATA for mutable
-state with an initial value, and RODATA for fixed lookup data. These are program
-storage sections: an ordinary function call does not allocate another copy or
-initialize them again.
+| Declaration | Storage | Initial contents |
+| --- | --- | --- |
+| `bss name: type` | RAM | Zero |
+| `data name: type = value` | RAM | Copied from ROM at startup |
+| `rodata name: type = value` | ROM | Fixed |
 
 ```lua
 bss scratch: u8[16]
@@ -88,44 +55,22 @@ local previous = *counter
 *counter = previous + 1
 ```
 
-After these operations, `previous` and the contents of `total` are 3, while
-the contents of `counter` are 4. The Number `previous` is a loaded value;
-`counter` and `total` name the byte addresses of the two stored words.
-`scratch` reserves 16 bytes; `levels` holds three consecutive two-byte values.
+`previous` and `*total` are 3, `*counter` is 4. The name of a storage object
+is its address: `counter` is the address, `*counter` the word stored there.
+A storage name cannot be assigned to.
 
-A bare storage name, including `counter` or `total`, evaluates to its linked numeric address.
-Use `*counter` to load its scalar contents and `*counter = value` to store them.
-Assigning a new value directly to a `bss` or `data` name is rejected; the name is not a rebindable scalar variable.
+The startup routine copies DATA and clears BSS before the modules are
+initialized; see [startup](program-images.md#sec-memory-when-initialization-occurs).
+Each declaration starts at the alignment of its type and is followed by
+padding to 4 bytes: two `u8` declarations are not adjacent. Use an array or a
+struct where the spacing matters. Place the sections outside the
+[[BIOS area](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}.
 
-Section initialization copies `data` bytes into RAM and then clears `bss`, using word accesses.
-It precedes static module initializers and the entry routine.
-Locate writable program sections outside the installed firmware's RAM
-reservation. The standard placement puts program DATA after firmware BSS,
-then program BSS after DATA. Access declarations by their resolved addresses;
-fixed offsets from the start of RAM can overwrite firmware state. See
-[[reserved and cartridge storage](memory.md#sec-memory-reserved-and-cartridge-storage-in-main-ram)]{.content-visible when-format="html"}[Book I, §2.3]{.content-visible when-format="pdf"}
-for the firmware footprint and placement rules.
+## Example: copying records {#sec-blua-programs-worked-static-storage}
 
-Each declaration starts at its type's alignment, and the section cursor after a declaration is rounded to four bytes.
-Two separate `u8` declarations therefore need not occupy adjacent bytes.
-Use one array or struct when the relative spacing of bytes matters.
+### Program {#sec-memory-worked-example-prepare-and-copy-two-records}
 
-
-## Worked static storage {#sec-blua-programs-worked-static-storage}
-
-Prepare two writable records from fixed input records, then update an
-initialized counter. Each record has a tag, a 32-bit value and two 16-bit
-samples. RODATA supplies the inputs, DATA supplies the counter's initial value,
-and BSS supplies the destination bytes. The example connects these choices to
-field addresses and to the resulting words in RAM.
-
-Exporting a storage name likewise exports its numeric address, not a copy of
-its bytes.
-
-### Worked example: prepare and copy two records {#sec-memory-worked-example-prepare-and-copy-two-records}
-
-This sequence prepares bytes without submitting a device job. Start after
-normal cartridge DATA/BSS initialization. The declared objects supply the source and destination addresses.
+Two records in ROM are copied to RAM, and a counter is increased:
 
 ```lua
 module<entry>
@@ -152,125 +97,68 @@ end
 *counter = *counter + #inputs
 ```
 
-#### Record indexing is not byte arithmetic {#sec-memory-record-indexing-is-not-byte-arithmetic}
+### Layout {#sec-memory-record-indexing-is-not-byte-arithmetic}
 
-| Part of `memory_sample` | Byte offset | Bytes |
+| Field | Offset | Bytes |
 | --- | ---: | ---: |
 | `tag` | 0 | 1 |
 | Padding | 1 | 3 |
 | `value` | 4 | 4 |
 | `samples` | 8 | 4 |
 
-Record alignment is 4 and record size is 12 bytes. Each two-record array
-occupies 24 bytes. Typed indices start at zero: `&source[1]` is 12 bytes after
-`inputs`, `&source[0].value` is 4 bytes after it, and
-`&source[1].samples[1]` is 22 bytes after it. Advancing a byte view by one
-would instead select the next byte, here padding, not the next record.
+A record is 12 bytes, aligned to 4; each array is 24 bytes. Indices start at
+0: `&source[1]` is `inputs` + 12, `&source[0].value` is `inputs` + 4,
+`&source[1].samples[1]` is `inputs` + 22.
 
-#### Resulting bytes {#sec-memory-resulting-bytes}
+### Result {#sec-memory-resulting-bytes}
 
-BSS supplies initial zero output bytes. The copy writes scalar fields rather
-than assigning whole records, so their three padding bytes remain zero.
-
-| Output byte offset | Word | Contents |
+| Offset | Word | Contents |
 | ---: | --- | --- |
-| 0 | `00000011H` | First tag and three zero padding bytes |
-| 4 | `12345678H` | First value |
-| 8 | `33441122H` | First record's two samples |
-| 12 | `00000022H` | Second tag and three zero padding bytes |
-| 16 | `9ABCDEF0H` | Second value |
-| 20 | `77885566H` | Second record's two samples |
+| 0 | `00000011H` | Tag 1 and padding |
+| 4 | `12345678H` | Value 1 |
+| 8 | `33441122H` | Samples 1 |
+| 12 | `00000022H` | Tag 2 and padding |
+| 16 | `9ABCDEF0H` | Value 2 |
+| 20 | `77885566H` | Samples 2 |
 
-The final counter is `1234567AH`: `#inputs` counts **two records**, not bytes.
-No interrupt, rendering or buffer-release event follows this CPU copy. A
-hardware-facing use must still satisfy the receiving unit's address, layout,
-count, completion and lifetime rules.
+The padding stays 0 from BSS. The counter becomes `1234567AH`: `#inputs` is
+the number of records, 2.
 
-### Typed byte storage and address views {#sec-memory-typed-byte-storage-and-address-views}
+### Device registers {#sec-memory-typed-byte-storage-and-address-views}
 
-Use byte-addressed storage for the records, command words and sample bytes that
-hardware consumes. BLua's `bss`, `data` and `rodata` declarations define
-addressed storage objects; a local typed view supplies an access layout for an
-existing address. Neither a local value nor an ordinary Table is a device buffer.
-
-The [declaration and layout reference](#sec-blua-programs-declaration-and-expression-reference)
-defines declarations, initializers, sizes, alignment, arrays and structs,
-including `sizeof`, `offsetof`, address-of and zero-based indexing.
-[[Memory](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"}
-defines what happens when the resulting address reaches RAM, ROM or an I/O port.
-
-For example, a word view of an existing DMA register bank accesses consecutive
-four-byte ports. It does not reserve a DMA channel or alter the port layout:
+A view can also be placed on I/O registers:
 
 ```lua
 local dma0<const>: *word = 0x0800000c
 local remaining = dma0[2]
 ```
 
-The read reaches TRANSFER_COUNT at `08000014H`. By contrast, `dma0 + 2` is the
-byte address `0800000EH`, not that third port. Use an indexed typed access or an
-explicit byte offset that preserves the device's required alignment.
+`dma0[2]` reads the register at `08000014H` (TRANSFER_COUNT). `dma0 + 2`
+is the byte address `0800000EH`. Do not change a buffer that a device is
+still reading; see
+[[DMA buffers](memory.md#sec-memory-dma-buffer-lifetime)]{.content-visible when-format="html"}[Book I, §2.10]{.content-visible when-format="pdf"}.
 
-A storage address still carries the region's ownership and lifetime rules.
-Keep cartridge objects outside the reserved main-RAM ranges, use ROM as a
-read-only byte source, and keep a device's input bytes unchanged until its
-completion condition releases them. The record copy above only prepares bytes;
-[[DMA buffer lifetime](memory.md#sec-memory-dma-buffer-lifetime)]{.content-visible when-format="html"}[Book I, §2.10]{.content-visible when-format="pdf"}
-and the unit references cover asynchronous use.
+### Values and storage {#sec-memory-language-execution-storage-and-byte-ram}
 
-### Language execution storage and byte RAM {#sec-memory-language-execution-storage-and-byte-ram}
+Variables and tables are kept in
+[BLua storage](blua-system.md#sec-blua-system-blua-storage),
+which has no bus address; calls use the
+[CPU registers](cpu.md#sec-cpu-calling-and-returning-values). Only static
+storage has an address that can be given to a device.
 
-The record-copy example's `output` is twenty-four addressed RAM bytes. A Table
-used to organize two records is a language value with its own identity; it is
-not that byte array. A local variable holding an address also differs from the
-storage reached through the address. Keep these roles separate when supplying
-hardware operands or budgeting writable storage.
+#### Loading and storing {#sec-memory-values-are-not-byte-buffers}
 
-Calls use the [CPU's frame value slots](cpu.md#sec-cpu-calling-and-returning-values),
-not a cartridge-addressable byte stack. The function record's maximum stack
-counts value slots rather than bytes.
+A load gives a number in the format of the type; a store writes the number
+in that format. See
+[[scalar access](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, §2.7]{.content-visible when-format="pdf"}.
 
-Language values use a shared allocation budget, described under
-[CPU — Language allocation and lifetime](cpu.md#sec-cpu-language-allocation-and-lifetime).
-That budget does not describe a mapped byte-RAM heap or report free RAM bytes.
-Mapped DATA/BSS placement and the language budget are separate constraints:
-placing a static byte buffer neither allocates a language Table nor yields a
-byte address for the CPU's value slots.
+#### Addresses as arguments {#sec-memory-function-arguments-results-and-bios-calls}
 
-#### Values are not byte buffers {#sec-memory-values-are-not-byte-buffers}
+An address is passed to a function as a number; the function places a view on
+it. BIOS functions are ordinary calls; see
+[BIOS functions](#sec-blua-programs-named-bios-function-imports).
 
-A language value can hold a Number, text, a Table, a function or a Thread.
-Copying a Table or function value preserves its identity; it does not copy its
-contents into main RAM. A device needs the numeric address of storage containing
-its prescribed bytes, not the Table that the program uses to organize them.
-
-Use typed static storage and scalar writes to construct that byte layout.
-Loads return numeric scalars under the selected access format; they do not
-reconstruct arbitrary language values from words. Integer stores retain the
-specified low bits, while floating stores encode floating-point bits. See
-[[Scalar memory rules](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, §2.7]{.content-visible when-format="pdf"} for alignment, conversion
-and partial-access behavior.
-
-#### Function arguments, results and BIOS calls {#sec-memory-function-arguments-results-and-bios-calls}
-
-Passing an address to a function passes its numeric value. It neither copies
-the pointed-to bytes nor extends their lifetime. A callee can establish a typed
-view of that address before accessing it, as in the example below. Ordinary
-calls use value slots, not a cartridge-addressable byte stack.
-
-Use [Calling and returning values](cpu.md#sec-cpu-calling-and-returning-values)
-for argument/result placement and closure capture, and
-[BLua source semantics](#sec-blua-programs-blua-source-semantics) for source-level
-varargs and result expansion. Named static BIOS targets and installed global
-library values are distinct call routes; see
-[Named BIOS function imports](#sec-blua-programs-named-bios-function-imports).
-Calling either kind of BIOS function is an ordinary call, not EXEC or a
-privilege transition. Its documented memory and device requirements still apply.
-
-#### Passing an address to a function {#sec-memory-worked-values-byte-storage-and-text}
-
-After normal BIOS entry, typed storage supplies the destination bytes; passing
-its address to a function does not allocate a new destination:
+#### Example {#sec-memory-worked-values-byte-storage-and-text}
 
 ```lua
 bss written: word[2]
@@ -283,80 +171,52 @@ end
 local sum, count = write_pair(written, 17, 25)
 ```
 
-`sum` is 42, `count` is 2, and the two stored words are 17 and 25.
-The function's address view and the declared array select the same storage.
-Neither a Table nor a String can be substituted for its byte address.
+`sum` is 42, `count` 2; `written` holds 17 and 25.
 
-## Declaration and layout reference {#sec-blua-programs-declaration-and-expression-reference}
-
-The following forms use lowercase placeholder names; source identifiers cannot contain uppercase letters.
+## Declarations {#sec-blua-programs-declaration-and-expression-reference}
 
 | Form | Meaning |
 |---|---|
-| `struct record ... end` | Define a layout with fields written as `name: type_name`. |
-| `bss buffer: type_name` | Reserve zero-initialized writable storage; no initializer is accepted. |
-| `data buffer: type_name = initializer` | Define writable storage with a compile-time initializer. |
-| `rodata buffer: type_name = initializer` | Define image-resident storage with a compile-time initializer. |
-| `type_name[n][m]` | Array type with explicit dimensions. |
-| `type_name[]` | Infer the outer dimension of initialized `data` or `rodata`. |
-| `local view: *type_name = address` | Associate a local address value with an access layout. |
-| `local view<const>: *type_name = address` | The same view with an immutable local binding. |
-| `*view` / `*view = value` | Read or write a selected scalar through a typed address. |
-| `view.field` / `view[index]` | Select a field or element using its layout. |
-| `&view.field` / `&view[index]` | Obtain a selected address without loading its value. |
-| `sizeof(type_name)` | Obtain a type's size in bytes; array dimensions are allowed. |
-| `offsetof(record.field)` | Obtain a field's byte offset; nested field paths are allowed. |
-| `#buffer` | Obtain the outer element count of a declared static array. |
+| `struct record … end` | Record layout; fields `name: type`, optionally separated by `,` or `;` |
+| `bss name: type` | Zeroed RAM |
+| `data name: type = value` | Initialized RAM |
+| `rodata name: type = value` | ROM |
+| `type[n][m]` | Array |
+| `type[]` | Array whose size is given by the initial value (`data`, `rodata`) |
+| `local p: *type = address` | View on an address |
+| `local p<const>: *type = address` | The same; p cannot be assigned to |
+| `*p`, `*p = value` | Load, store |
+| `p.field`, `p[i]` | Field, element |
+| `&p.field`, `&p[i]` | Address of a field or element |
+| `sizeof(type)` | Size in bytes |
+| `offsetof(record.field)` | Offset of a field in bytes |
+| `#name` | Number of elements of a static array |
 
-Struct fields may be separated by commas or semicolons; a separator is not required between successive field declarations.
-Storage declarations accept an optional trailing semicolon.
-The declaration spellings are contextual forms, not additions to the lexical reserved-keyword list.
+### Types {#sec-blua-programs-primitive-storage-types}
 
-
-### Primitive storage types {#sec-blua-programs-primitive-storage-types}
-
-Every size and alignment below is in **bytes**.
-An alignment of four means that the address must be divisible by four.
-
-| Type names | Size | Alignment | Stored representation and access |
+| Type | Bytes | Alignment | Load |
 |---|---:|---:|---|
-| `u8`, `i8` | 1 | 1 | Unsigned byte read; stores keep the low 8 bits. |
-| `u16`, `i16` | 2 | 2 | Unsigned little-endian read; stores keep the low 16 bits. |
-| `u32`, `i32` | 4 | 4 | Little-endian word read as an Integer with the same 32 bits; stores keep the low 32 bits. |
-| `f32` | 4 | 4 | IEEE binary32; reads produce a Float and stores convert the Number to binary32. |
-| `f64` | 8 | 4 | IEEE binary64 accessed as two little-endian 32-bit words; reads round to Float. |
-| `addr` | 4 | 4 | Raw 32-bit address word, accessed like `u32`. |
-| `word` | 4 | 4 | Raw 32-bit word, read as an Integer with the same bits. |
-| `string` | 4 | 4 | Image constant-pool reference; reads the selected constant value. |
+| `u8`, `i8` | 1 | 1 | Byte, 0–255 |
+| `u16`, `i16` | 2 | 2 | 16 bits, 0–65535 |
+| `u32`, `i32`, `word`, `addr` | 4 | 4 | 32-bit Integer |
+| `f32` | 4 | 4 | Float |
+| `f64` | 8 | 4 | Double, rounded to Float |
+| `string` | 4 | 4 | A String constant |
 
-
-`i8` and `i16` have the same unsigned load behavior as their `u` counterparts;
-their loaded values are nonnegative Integers. Sign extension must be explicit
-for an eight- or sixteen-bit signed quantity. Both `i32` and `u32` preserve
-all 32 bits in an Integer; bit 31 is its sign bit. `word` holds a device word,
-and `addr` holds address bits; select the target layout with an annotated view.
-
-To recover an eight-bit signed quantity, toggle its sign bit and subtract that
-bit's value. Use `8000H` for a sixteen-bit quantity. A complete thirty-two-bit
-word already has the signed interpretation. Both shift directions fill with
-zero; see [bitwise operations and shifts](cpu.md#sec-cpu-bitwise-operations-and-shifts).
+Values are little-endian. A store writes the low bits. `i8` and `i16` load
+without sign; to obtain the signed value:
 
 ```lua
 bss delta: i8
 *delta = -3
-local raw = *delta                -- 253
+local raw = *delta                  -- 253
 local signed = (raw ~ 0x80) - 0x80  -- -3
 ```
 
-A `string` field holds a constant reference. Its RODATA initializer selects a
-String constant, and a read returns the referenced value. It is separate from
-inline text bytes; use byte storage and an explicit decoder for encoded text.
+A `string` field refers to a String constant (`rodata` only); it does not hold
+the bytes of the text.
 
-### Initializer rules {#sec-blua-programs-initializer-rules}
-
-Initializer table syntax describes bytes to encode at compile time, not a table allocated for later use.
-Integer storage initializers must evaluate to compile-time integers.
-A static initializer is not an arbitrary runtime expression.
+### Initial values {#sec-blua-programs-initializer-rules}
 
 ```lua
 struct settings
@@ -374,36 +234,17 @@ data matrix: u8[2][3] = {
 }
 ```
 
+Initial values are constants. An array has exactly as many elements as
+declared; a struct names each field once. Padding is 0. Only the first
+dimension of a `data` or `rodata` array may be omitted (`[]`). `string`
+values only in `rodata`. `f32` and `f64` are stored as IEEE 754 single and
+double precision.
 
-- Arrays require positional elements and exactly the declared outer element count.
-  Each further array dimension requires another nested initializer.
-- Struct initializers require identifier-named fields.
-  Missing, duplicate, or unknown fields are compilation errors.
-- Padding bytes in encoded initializers start at zero.
-- An explicit dimension must be a positive compile-time integer.
-- Only the outer dimension of initialized `data` or `rodata` may be inferred from the initializer's field count, and that count must be nonzero.
-  There is no inference source for `bss`, struct-field, inner-dimension, or local-view `[]`.
-- Static `string` initializers must be compile-time strings and are supported only in `rodata`, including string fields inside aggregates.
-  A `string` initializer in `data` is rejected.
-- `f32` and `f64` initializers in `data` and `rodata` must be compile-time numbers.
-  They encode IEEE 754 binary32 or binary64 in little-endian order, including inside arrays and structs.
-  `f32` converts the computed Number to binary32. `f64` encodes the computed
-  Integer or Float as binary64; it does not create a binary64 Number subtype.
-  Both formats preserve Float negative zero.
+### Layout {#sec-blua-programs-computing-struct-and-array-layouts}
 
-### Computing struct and array layouts {#sec-blua-programs-computing-struct-and-array-layouts}
-
-Fields are placed in declaration order.
-Before placing each field, its offset is rounded up to that field's alignment.
-The struct's alignment is the greatest field alignment; its final size is rounded up to that alignment.
-Nested structs use their own resolved sizes and alignments.
-An array retains its element type's alignment and multiplies its size by every declared dimension.
-There is no packed-layout declaration form.
-
-
-The following record combines a byte tag, a 32-bit value and a floating-point
-weight. Its field offsets determine both the record stride and the addresses
-selected by a typed view:
+Fields follow in order, each at its own alignment. A struct is aligned to its
+largest field alignment, and its size is rounded up to that alignment. An array
+has the alignment of its element.
 
 ```lua
 struct sample
@@ -419,66 +260,46 @@ current[0].value = 7
 current[0].weight = 1.5
 local value = current[0].value
 local second_weight = &current[1].weight
-local sample_bytes = sizeof(sample)       -- 16
-local array_bytes = sizeof(sample[2])     -- 32
+local sample_bytes = sizeof(sample)           -- 16
+local array_bytes = sizeof(sample[2])         -- 32
 local weight_offset = offsetof(sample.weight) -- 8
-local count = #samples                    -- 2
+local count = #samples                        -- 2
 ```
 
-| Part | Byte offset | Size | Alignment |
+| Field | Offset | Bytes | Alignment |
 |---|---:|---:|---:|
 | `tag` | 0 | 1 | 1 |
 | Padding | 1 | 3 | — |
 | `value` | 4 | 4 | 4 |
 | `weight` | 8 | 8 | 4 |
-| Complete `sample` | 0 | 16 | 4 |
+| `sample` | 0 | 16 | 4 |
 
+`&current[1].weight` is `samples` + 24.
 
-The second record starts 16 bytes after `samples`.
-Its `weight` address is therefore `samples + 24`, not `samples + 8` or `samples + 2`.
-The `f64` field requires four-byte, not eight-byte, alignment.
+### Views {#sec-blua-programs-views-selection-and-byte-addresses}
 
-Unknown types, unknown fields, duplicate field declarations, and recursive layouts are compilation errors.
-Type declarations have block-wide forward visibility, with lookup through enclosing scopes and then globals.
-Storage value references remain ordered; forward visibility of a type does not make every storage value available early.
+A view gives a type to an address; it reserves no storage.
 
-### Views, selection, and byte addresses {#sec-blua-programs-views-selection-and-byte-addresses}
+```lua
+local current<const>: *word = counter
+local value = *current      -- the word at counter
+*current = 5
+```
 
-A typed local view supplies a layout for an existing address. Declare it
-with `: *type_name`, then select fields or elements in the same way as for
-declared storage. The addressed bytes keep their existing lifetime and access
-permissions; creating the view reserves no storage and copies no record.
+`<const>` fixes the address of the view, not the contents.
 
-In the [section-choice example](#sec-blua-programs-choosing-a-storage-section),
-`local current<const>: *word = counter`
-selects word accesses at that address. `*current` reads the stored 4;
-`&current` obtains its address without a read. The annotation selects how an
-access is made, while `<const>` prevents rebinding `current` to another address.
-It still permits `*current = 5`. The address, its stored value and the view's
-binding are three separate things.
+| Expression | Address |
+|---|---|
+| `p[i]` | p + i × size of the element |
+| `p.field` | p + offset of the field |
+| `p + n` | p + n bytes |
+| `&p[i]`, `&p.field` | The address, without loading |
 
-Indexing is **zero-based**.
-This is different from the one-based sequence keys used by the
-[Table library](bios-table.md#sec-bios-table). A typed array describes consecutive bytes;
-an ordinary Table is a collection of language values keyed by values.
-For a view of `u16`, `view[1]` selects the address two bytes after `view`.
-For a view of `sample`, `view[1]` selects the address `sizeof(sample)` bytes after it.
-For a multidimensional array, each index removes one dimension and uses the size of the remaining array as the stride.
-Thus `matrix[1][2]` selects byte offset five in the `u8[2][3]` example.
+Indices start at 0 (Lua tables start at 1). `matrix[1][2]` is byte 5 of the
+`u8[2][3]` array. Whole structs and arrays cannot be loaded or assigned; use
+their fields and elements.
 
-Numeric address addition is different: `view + 1` adds **one byte**, regardless of the view's type.
-Selection offsets, `sizeof`, and `offsetof` all use bytes.
-A device register's explicitly specified word count is a device unit, not an automatic consequence of pointer typing.
-
-Storage names and typed local roots permit pointer-style indexing even when their declared type is a scalar or struct.
-After indexing, field selection, or dereference, that permission does not continue unless the selected type is an array.
-Dereference retains the selected type: it neither removes an array dimension nor automatically follows an address stored in a field.
-Whole arrays and structs are address ranges, not scalar values that can be loaded or assigned as complete aggregates.
-Select a scalar field or element, or use `&` to obtain the selected address.
-
-An `addr` field loads a numeric address only.
-Create an explicitly annotated local view before selecting the target layout.
-The same rule applies to scalar address storage:
+An `addr` field holds an address; place a view on it to use it:
 
 ```lua
 bss target_address: addr
@@ -488,179 +309,84 @@ local target: *u8 = *target_address
 target[0] = 65
 ```
 
-Unary `&` on typed storage or a typed selection computes its address without reading its contents.
-A bare storage name already provides its base address.
-This is not general address-of for arbitrary ordinary locals, and unary `*` requires resolved typed storage or a typed view rather than an arbitrary numeric expression.
+### sizeof, offsetof, # {#sec-blua-programs-sizes-offsets-and-counts}
 
-### Sizes, offsets, and counts {#sec-blua-programs-sizes-offsets-and-counts}
+| Form | Result |
+|---|---|
+| `sizeof(sample[2])` | Size of a type in bytes |
+| `offsetof(outer.inner.field)` | Offset of a field; no indices in the path |
+| `#samples` | Number of elements in the first dimension of a static array (`#matrix` is 2) |
 
-`sizeof` takes a **type**, not a storage value: use `sizeof(sample[2])`, not `sizeof(samples)`.
-`offsetof` takes a struct type followed by named fields, such as `offsetof(outer.inner.field)`.
-It adds the selected byte offsets; intermediate fields must be non-array structs.
-An indexed path such as `offsetof(outer.items[1].field)` is not accepted.
+### Faults {#sec-blua-programs-access-hazards}
 
-`#samples` is the declared array's **outer element count**, not its byte size.
-For `matrix: u8[2][3]`, the count is two, not six.
-This static-array form also recognizes resolved static storage exports, but does not provide capacity for arbitrary typed locals or selected fields.
-Do not use `#view` as a pointer-capacity query.
+Indices are not checked. An access that is not aligned to its type (2 for
+16-bit types, 4 for the others) raises an address exception; a bus error
+raises a bus exception. `rodata` cannot be assigned to. I/O registers are
+accessed as words; see [[I/O access](memory.md#sec-memory-scalar-memory-accesses)]{.content-visible when-format="html"}[Book I, §2.7]{.content-visible when-format="pdf"}.
+An `f64` is accessed as two words, low word first.
 
-### Access hazards {#sec-blua-programs-access-hazards}
-
-Typed indexing emits no array bounds check or runtime integer-index check.
-A statically known noninteger index is rejected. For computed indices, the
-programmer must keep the resulting byte address within the intended range.
-
-Effective access addresses are converted to unsigned 32-bit addresses.
-Misaligned accesses cause a synchronous address exception before the mapped access: two-byte alignment for `u16`/`i16`, four-byte alignment for `u32`/`i32`, `word`, `addr`, `f32`, and `f64`.
-Byte accesses have no additional alignment requirement.
-A bus fault causes a synchronous data-bus exception; a failed load leaves its destination register unchanged.
-A store can wait for the mapped destination to become ready before writing.
-
-Direct writes through `rodata` selections are rejected, as are static string-reference assignments and whole-array or whole-struct assignments.
-A local view of a RODATA address permits store syntax, so the mapped memory
-permissions still govern a write through that view. `<const>` fixes the local
-address binding while allowing stores through it.
-
-Typed accesses to memory-mapped I/O invoke the mapped device rather than behaving like inert RAM.
-Word accesses are not interchangeable with narrow accesses: an aligned I/O byte read reads the slot and keeps its low byte, other byte positions fault, byte writes fault, and 16-bit reads and writes fault.
-Use the device's specified access width; writes to read-only slots fault.
-
-An `f64` access performs its low-word access before its high-word access at byte offset four.
-If the first access faults, the second is skipped.
-The pair is not atomic: the first write may already have occurred when the second faults.
-
-
-## Operator spellings and source conventions {#sec-blua-programs-operator-spellings-and-source-conventions}
+## Operators and names {#sec-blua-programs-operator-spellings-and-source-conventions}
 
 ### Augmented assignment {#sec-blua-programs-augmented-assignment}
 
-BLua accepts six augmented assignments:
-
-| Assignment | Arithmetic operator |
+| Form | Meaning |
 |---|---|
-| `+=` | `+` |
-| `-=` | `-` |
-| `*=` | `*` |
-| `/=` | `/` |
-| `%=` | `%` |
-| `^=` | `^` |
+| `a += b` | `a = a + b` |
+| `a -= b` | `a = a - b` |
+| `a *= b` | `a = a * b` |
+| `a /= b` | `a = a / b` |
+| `a %= b` | `a = a % b` |
+| `a ^= b` | `a = a ^ b` |
 
+One target. The address of the target is evaluated once, then b, then a is read
+and written. For an I/O register this is a read followed by a write.
 
-Each requires exactly one target and one right-hand expression. There is no
-`//=`, bitwise or shift assignment, concatenation assignment, or increment or
-decrement form. In particular, `--` begins a comment, not a decrement.
+### Unary & {#sec-blua-programs-unary-storage-address-or-string}
 
-Evaluation prepares the target once, evaluates the right-hand expression,
-reads the target, performs the arithmetic and writes the result. This is a
-read followed by a write. Device read effects and write effects both apply;
-use explicit register values for commands whose fields are not suitable for
-read-modify-write operation.
+`&` on a storage expression gives its address. `&` on a String gives the
+String unchanged. `*` and `&` have the precedence of unary `-`: `*current + 4`
+adds 4 to the loaded value.
 
-### Unary `&`: storage address or String {#sec-blua-programs-unary-storage-address-or-string}
+### -> {#sec-blua-programs-named-members-with}
 
-For a typed storage selection, unary `&` obtains the selected storage address
-without reading its contents. A record field or indexed element therefore
-selects an address using its declared layout.
+`p->field` is the same as `p.field`.
 
-For a String operand, unary `&` returns the String value unchanged. Use
-String operations on that result. Only the typed-storage form yields a byte
-address; a String operand supplies neither a character-buffer address nor a
-numeric identifier.
+### Names {#sec-blua-programs-names-and-a-line-leading}
 
-Postfix field selection, indexing and calls bind before unary `*` and `&`.
-These unary forms have the same precedence as unary `-`, `not`, `#` and `~`:
-exponentiation binds more tightly, while multiplication and the other binary
-arithmetic operators bind less tightly. Thus `*current + 4` adds four to the
-loaded value, and `&samples[0].weight` selects a field before taking its address.
-Use `(*current)^2` to square a loaded scalar rather than making the power
-expression the operand of the dereference.
+Names consist of `a`–`z`, `_`, `$` and digits, not starting with a digit.
+Capital letters are not allowed in names (they are in hexadecimal numbers). A
+line starting with `*` starts a new statement (a store), not a
+multiplication.
 
-### Named members with `->` {#sec-blua-programs-named-members-with}
+## Modules {#sec-blua-programs-module-modes-static-imports-and-init}
 
-`base->member` is another named-member spelling alongside `base.member`.
-It is not C's automatic extra pointer dereference.
+A module returns a value (a table, a function) or, as `module<const>`,
+constants and functions that are linked when the program is built.
 
-For a typed field selection, the field's address is the base's typed address
-plus the declared field offset. The arrow does not first read an address-valued
-field and turn its contents into a new typed pointer. Choose the intended
-address view explicitly rather than expecting C pointer-member behavior.
+### Module kinds {#sec-blua-programs-choose-the-module-mode}
 
-### Names and a line-leading `*` {#sec-blua-programs-names-and-a-line-leading}
-
-Identifiers begin with lowercase ASCII `a`–`z`, `_`, or `$`; following
-characters may also include decimal digits. Uppercase ASCII letters in
-identifiers are rejected, and non-ASCII letters are not identifier characters.
-Uppercase hexadecimal digits inside numeric literals are a separate matter.
-
-Statements generally need no semicolon, but newlines are not universally
-insignificant. When `*` begins a new line, it does not continue the preceding
-expression as multiplication: it can begin a dereference statement instead.
-Keep a continuation multiplication operator on the existing expression line.
-Parentheses do not remove this particular newline rule; do not generalize it
-to every operator.
-
-
-## Module modes, static imports, and `<init>` {#sec-blua-programs-module-modes-static-imports-and-init}
-
-A module publishes either an ordinary value or static exports. Use an
-ordinary value for mutable state and replaceable function fields. Use static
-exports for named constants, storage addresses and directly resolved calls.
-
-This choice determines what an importer receives. An ordinary export can be
-retained, passed to other functions and changed through its runtime fields.
-A static namespace instead resolves named selections: a storage export gives
-its address, a constant gives its value, and a static function export supplies
-a call target. Importing a namespace does not create an object containing
-those exports. The import path names that interface, independently of the
-local name used for it.
-
-### Choose the module mode {#sec-blua-programs-choose-the-module-mode}
-
-Put an optional module marker before the chunk's statements.
-The spellings are case-sensitive; an optional semicolon may follow the marker.
-
-| Beginning of chunk | Meaning |
+| First line | Module |
 | --- | --- |
-| No marker | An ordinary module; a final export declaration supplies its runtime export. |
-| `module<entry>` | The program's entry chunk, entered after its ordinary dependencies are initialized. |
-| `module<const>` | A compile-time export namespace or root static function, not an allocated module table. |
+| — | Ordinary module |
+| `module<entry>` | The main module of the program (one per program) |
+| `module<const>` | Constants and static functions |
 
-A program has one entry chunk. `module<entry>` declares that role. Each
-module also has a distinct path using `/`; dots remain literal path
-characters. Use that path in imports. Module naming is independent of the
-physical memory map and cartridge selection; see
-[[Physical memory map](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"}
-and [[cartridge socket selection](../book3/cartridge.md#sec-cartridge-selection-and-execution)]{.content-visible when-format="html"}[Book III, §1.2]{.content-visible when-format="pdf"}.
-[Program images and startup](program-images.md#sec-program-images)
-specifies program entry and initialization.
+Modules are named by path with `/`, for instance `lib/state`.
 
-### Import a literal module path {#sec-blua-programs-import-a-literal-module-path}
-
-Use the built-in `require` with exactly one literal string argument:
+### require {#sec-blua-programs-import-a-literal-module-path}
 
 ```lua
 local state = require("lib/state")
 local settings <const> = require("lib/settings")
 ```
 
-The first form is suitable for an ordinary runtime export; the second can bind a
-compile-time namespace. `require "lib/state"` is also accepted.
-A computed path, an extra argument, or a method-style built-in import is a compile
-error. A lexical declaration named `require` shadows the built-in.
+The argument is a String constant. Modules are linked when the program is
+built: a missing module or a cycle is an error at that time. Each module is
+initialized once, before the modules that use it.
 
-Imports name supplied modules or installed named function imports.
-An unavailable module is a compile error, not a missing-file error during play.
-Module names use `/`; dots are not converted to `/`. An import variable's name
-does not change the imported module's path.
+### Example {#sec-blua-programs-worked-module-linkage}
 
-Literal imports select dependencies for the program, including imports written
-inside functions. They are not deferred file-loading instructions.
-Ordinary dependencies initialize before their importers; a dependency cycle is a
-compile error. Do not rely on filename ordering between unrelated dependencies.
-
-### Worked module linkage {#sec-blua-programs-worked-module-linkage}
-
-An ordinary module named `counter` can publish a mutable runtime object:
+Module `counter`:
 
 ```lua
 local counter = { value = 10 }
@@ -671,50 +397,24 @@ end
 return counter
 ```
 
-Its importer begins after that top-level initialization:
+Main module:
 
 ```lua
 module<entry>
 local first = require('counter')
 local second = require('counter')
-local before = first.advance(2)
-local after = second.advance(3)
+local before = first.advance(2)   -- 12
+local after = second.advance(3)   -- 15
 ```
 
-`before` is 12 and `after` is 15. Both imports select the same export, not two
-instances. Neither written import reruns the initializer. A dependency written
-inside a function is still initialized before entry; imports express dependency
-order rather than deferred loading.
+Both `require` calls give the same table.
 
-### Ordinary exports stay runtime values {#sec-blua-programs-ordinary-exports-stay-runtime-values}
+### Ordinary modules {#sec-blua-programs-ordinary-exports-stay-runtime-values}
 
-An ordinary module declares its export with a final top-level `return` containing
-exactly one expression. Its result may be a table, function, scalar, `false`, or
-`nil`. For `return make_value()`, only the call's first result is exported.
-An earlier or nested return, bare return, or final multiple-expression return
-does not declare that export contract.
+The module's value is given by a `return` at the end of the module; without
+it, the value is true.
 
-The module's top-level code is initialized before entry; an ordinary `require`
-expression reads its retained export rather than rerunning that code at the
-written import line. Successful initialization is recorded separately from the
-export, so exporting `nil` or `false` does not cause another initialization.
-An ordinary module with no final single-expression export supplies `true`;
-additional requested import results are nil. An earlier return does not select
-an alternative published export.
-
-Imports of an ordinary exported table read the same published root.
-Its fields remain runtime fields: replacing a function field changes what a later
-ordinary `module.field()` lookup calls. A const local naming that table does not
-turn the table into a compile-time namespace or freeze its fields.
-
-### A const namespace is not a const local {#sec-blua-programs-a-const-namespace-is-not-a-const-local}
-
-`local name <const>` makes a local binding immutable.
-`module<const>` instead declares compile-time exports: named constant leaves and
-static function targets, or a root static function. These are different features.
-A recognized const module has no ordinary runtime initializer.
-
-For example, a const module named `lib/settings` can declare:
+### module<const> {#sec-blua-programs-a-const-namespace-is-not-a-const-local}
 
 ```lua
 module<const>
@@ -726,53 +426,28 @@ return {
 }
 ```
 
-Its named exports can be selected without producing a runtime module table:
-
 ```lua
 local settings <const> = require("lib/settings")
 local step = settings.step
 local scaled = settings.scale(step)
 ```
 
-Named fields and literal string keys form export paths; nested fields form nested
-namespaces. `settings["scale"](step)` is also a static selection.
-Computed indices and positional array entries are not named namespace export paths.
+The fields are linked directly: `settings.step` is the constant 8,
+`settings.scale` a direct call. There is no table. Fields may be nil, booleans,
+numbers, Strings, storage addresses and functions, also nested.
 
-Constant leaves may be `nil`, booleans, numbers, strings, or static storage
-addresses. Numeric negation and supported numeric constant expressions can be
-folded; arbitrary runtime expressions are not thereby constant expressions.
-A named leaf that is neither a compile-time constant nor a static function target is a compile error.
+### Static functions {#sec-blua-programs-static-functions-are-call-targets-not-function-values}
 
-### Static functions are call targets, not function values {#sec-blua-programs-static-functions-are-call-targets-not-function-values}
+A function of a `module<const>` (or the module itself: `return function(v) …
+end`) is called directly and is not a value: it cannot be stored, passed or
+returned. Static functions use numbers, booleans, locals, memory access and
+other static functions; they do not use tables, globals, closures, varargs or
+String operations.
 
-Const modules may export function literals, top-level local function declarations,
-or top-level const locals initialized with function literals.
-A root export can be written as `return function(value) return value * 8 end`.
-Bind such a root with `local operation <const> = require("lib/operation")`, then
-call `operation(value)`. A named target can have an alias such as
-`local scale <const> = settings.scale`.
+### <init> {#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup}
 
-A compile-time namespace cannot be used as a runtime table. Select its exports instead.
-A static function target cannot be stored in a runtime table, passed as an ordinary
-callback, or returned as a runtime function value. A constant value export cannot
-be called. These are compile errors, not runtime conversions.
-Installed named function imports use the same call-target distinction.
-Exported static functions cannot capture runtime outer locals or use dynamic call
-targets. Their operations are restricted to scalar/static work: numeric and
-boolean constants, scalar locals, branches, static calls, and scalar memory access.
-Runtime global access, table allocation or dispatch, object length, runtime closure
-creation, vararg dispatch, and dynamic string concatenation are excluded.
-Ordinary string literals in such function bodies are also excluded;
-String constants read through immutable typed rodata are permitted.
-
-
-### Preparation participants: `<init>` {#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup}
-
-A program can collect local preparation functions into one callable sequence.
-Mark each function with `<init>` so a later sequence call can run them in
-dependency order while retaining access to their captured local state.
-
-The declaration form is a top-level local function with no parameters or varargs:
+`<init>` marks a top-level function without parameters as part of the
+**preparation function** of the program:
 
 ```lua
 module<entry>
@@ -783,140 +458,59 @@ end
 prepare()
 ```
 
-
-The explicit `prepare()` call runs the body at that source position.
-`<init>` marks participation in the separate preparation sequence. The
-participant is an ordinary local closure and may capture local state.
-Declarations inside `if`, loops, `do`, or other functions are not top-level
-participants. `<init>` is forbidden in a const module and is not an attribute on
-global or method declarations. A non-entry participant module must be statically required.
-
-Normal startup establishes DATA and BSS and initializes ordinary dependencies
-before entering the entry chunk, as specified in
-[Program images and startup](program-images.md#sec-program-images). It does not
-invoke the participant sequence. Use an explicit call when the body is needed
-during ordinary startup.
-
-When the separate participant sequence is invoked, it first completes any pending
-ordinary-module initialization, then calls participants with zero arguments.
-Dependency-module participants precede importer-module participants; entry
-participants are last, with declaration order retained within each module.
-Each invocation runs that participant order again. DATA, BSS and the entry
-chunk keep their existing state during the sequence. Use the explicit startup
-call for preparation required at normal entry; the annotation alone supplies
-no startup call or once-only latch.
-
-The executable header publishes the preparation sequence's absolute
-function-record address at byte offset `5CH`. Zero means that no sequence is
-present. A sequence can contain only module initialization when the program
-has dependencies but no annotated participants.
-For a nonzero address, construct a closure with `blua32.closure` and call it
-with no arguments. This is an ordinary call that returns to its caller; it
-does not require EXEC or a privilege change.
-It returns one nil value; participant return values are discarded. A language
-error escaping a participant propagates through the call and prevents later
-participants in that invocation from running.
-
-Continuing after the declaration above, a cartridge can invoke the complete
-sequence as follows. The ordinary data selection must select that cartridge
-when reading its ROM header:
+The startup routine does not call the preparation function; call `prepare()`
+yourself where needed. The preparation function completes the initialization
+of the modules and calls all `<init>` functions: first those of the modules
+used, the main module last, each in order of declaration. DATA and BSS are not
+changed. Its address is at offset `58H` of the program header (0: none):
 
 ```lua
 local image<const> = 0x10000000 + mem32le[0x10000020]
-local participants<const> = blua32.closure(mem32le[image + 0x5c])
+local participants<const> = blua32.closure(mem32le[image + 0x58])
 count = 5
 participants()
--- prepare runs through the sequence; count is now 0.
+-- count is 0
 ```
 
-Declare the entry's participants before making this call so their closures
-have been established. Dependency modules are initialized before the entry
-chunk. The sequence address designates this program's participants; it does
-not select another cartridge's or the BIOS's participants.
+## BIOS functions {#sec-blua-programs-named-bios-function-imports}
 
-## Named BIOS function imports {#sec-blua-programs-named-bios-function-imports}
-
-The named BIOS function imports are:
-
-
-| Function-table slot | Module path | Arguments and returned values | Routine reference |
+| Number | Module | Function | Reference |
 | --- | --- | --- | --- |
-| 0 | `math/sin` | One turn-phase word; returns one signed integer Q16 sine. | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
-| 1 | `string/float/decode` | High word, low word and byte count; returns one Number decoded from the supplied floating-point words. | [Floating-point word decoder](bios-string.md#sec-bios-string-floating-point-word-decoder) |
-| 2 | `gpu/system_vram_region` | No arguments; returns packed origin and extent words for the BIOS VRAM reservation. | [[Firmware reservation in VRAM](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, §2.4]{.content-visible when-format="pdf"} |
-| 3 | `kernel/bios_create_table` (`create_table`) | Two Integer capacities; returns one empty Table. | [Table construction](bios-table.md#sec-bios-table-construction) |
-
-
-
-Slots 0–2 name root static functions. Slot 3 is the resident routine used
-when an expression constructs a Table. Import and call the root functions
-as follows:
+| 0 | `math/sin` | Sine of a phase word, × 65536 | [Turn-phase sine](bios-math.md#sec-bios-math-turn-phase-sine) |
+| 1 | `string/float/decode` | Float from IEEE 754 words | [Floating-point words](bios-string.md#sec-bios-string-floating-point-word-decoder) |
+| 2 | `gpu/system_vram_region` | Position and size of the BIOS area in VRAM | [[VRAM reservation](memory.md#sec-memory-firmware-reservation-in-vram)]{.content-visible when-format="html"}[Book I, §2.4]{.content-visible when-format="pdf"} |
+| 3 | `kernel/bios_create_table` | Creates a table | [Tables](bios-table.md#sec-bios-table-construction) |
 
 ```lua
 local sin_turn32<const> = require('math/sin')
 local decode_float<const> = require('string/float/decode')
 local system_vram_region<const> = require('gpu/system_vram_region')
 
-local sine = sin_turn32(0x40000000)                 -- 65536: +1 in Q16
+local sine = sin_turn32(0x40000000)               -- 65536
 local decoded = decode_float(0x3fa00000, 0, 4)    -- 1.25
 local origin<const>, size<const> = system_vram_region()
 ```
 
+These are static functions. The other BIOS functions are globals. The function
+numbers are positions in the BIOS function table; see
+[BIOS functions](program-images.md#sec-blua-programs-locating-bios-call-targets).
 
-`math.sin(angle)` is not the turn-phase import: the ordinary Math-library
-function takes radians and returns an unscaled Number. Likewise, the floating
-word decoder does not read a String or a memory address. Follow the routine
-references for complete units, field packing and result contracts.
+## Direct access {#sec-blua-programs-direct-access-forms-and-intrinsics}
 
-These paths are reserved published BIOS names. Importing one selects its
-static call target; it leaves ordinary program-module initialization
-unchanged. A program module cannot redefine one of these paths. Other BIOS
-libraries use their installed globals unless a named import is listed.
+`mem…`, `cop0` and `blua32` are written directly in the forms below. They
+are not values and cannot be used as names of locals.
 
-The [program-image reference](program-images.md#sec-blua-programs-locating-bios-call-targets)
-specifies the published slots and the ROM fields used to locate these function
-records. The source import selects that public target; it does not supply a
-private copy of the BIOS or its global bindings.
+### Memory access {#sec-blua-programs-byte-addressed-memory-maps}
 
-## Direct access forms and intrinsics {#sec-blua-programs-direct-access-forms-and-intrinsics}
+`map[address]` reads or writes at a byte address:
 
-BLua provides direct memory access, control-register access, closure construction, selectable
-tracing, and an interrupt-wait statement. These are language forms, not a library of
-replaceable tables and functions.
-
-The six memory roots are `mem`, `mem8`, `mem16le`, `mem32le`, `memf32le`, and `memf64le`. The two
-intrinsic roots are `cop0` and `blua32`. None of these eight names may be declared as a local or
-parameter. They are not first-class values: do not assign a root to another variable, pass it as an
-argument, or replace it by assignment. Their supported forms use the root name directly, as
-described below.
-
-
-### Byte-addressed memory maps {#sec-blua-programs-byte-addressed-memory-maps}
-
-Each memory map uses `map[byte_address]` for a read or an assignment target. The index is a byte
-address, regardless of the access width. For example, adjacent 32-bit words are four address units
-apart, not one. Addresses are consumed as unsigned 32-bit addresses.
-
-| Map | Value transferred | Size in bytes | Required byte alignment |
+| Form | Value | Bytes | Alignment |
 |---|---|---:|---:|
-| `mem[address]` | Raw 32-bit word, little-endian; loaded as an Integer | 4 | 4 |
-| `mem8[address]` | Unsigned byte | 1 | 1 |
-| `mem16le[address]` | Unsigned 16-bit integer, little-endian | 2 | 2 |
-| `mem32le[address]` | Raw 32-bit integer bits, little-endian; loaded as an Integer | 4 | 4 |
-| `memf32le[address]` | Numeric IEEE float32, little-endian | 4 | 4 |
-| `memf64le[address]` | IEEE binary64, little-endian; loaded as binary32 Float | 8 | 4 |
-
-
-
-`mem` and `mem32le` both transfer the same little-endian 32-bit word. They remain distinct access
-kinds, including their fault-access identity; `mem32le` is not a source alias for `mem`. The
-floating-point maps convert between numeric values and their stored floating representation. They do
-not return the integer bit pattern of that representation. Use an integer map when the required
-result is raw bits.
-
-
-The following fragments show access shapes. Their address variables must already refer to suitable
-memory locations; the fragments are not complete programs.
+| `mem[a]`, `mem32le[a]` | 32-bit Integer | 4 | 4 |
+| `mem8[a]` | Byte | 1 | 1 |
+| `mem16le[a]` | 16 bits, unsigned | 2 | 2 |
+| `memf32le[a]` | Float | 4 | 4 |
+| `memf64le[a]` | Double, as Float | 8 | 4 |
 
 ```lua
 local raw_word = mem[word_address]
@@ -928,85 +522,44 @@ memf32le[float_address] = 1.5
 local wide = memf64le[double_address]
 ```
 
-Misalignment raises an address-error-load or address-error-store exception before the access. In
-particular, `memf64le` requires four-byte, not eight-byte, alignment. It transfers the low word
-first and the high word at the address plus four. A fault stops the sequence.
-If the second word of a write faults, the first word remains written.
+Consecutive words are 4 addresses apart. Faults as for
+[typed access](#sec-blua-programs-access-hazards). I/O registers: `mem8`
+reads the low byte of a register; `mem16le` and byte writes are not
+permitted.
 
-A mapped device retains its own access rules. An access width is not permission to slice a device
-register as though it were ordinary byte storage. For example, a `mem8` I/O read must address an I/O
-slot and returns that slot's low eight bits; a byte address between slots faults. `mem16le` I/O
-accesses fault even when their two-byte alignment is correct. Word and unsigned 32-bit I/O accesses
-use the addressed device slot. Mapped bus faults raise synchronous data-bus-error exceptions. A
-device that holds a store pending completes the access when it becomes ready;
-the processor waits for that access rather than requiring repeated writes.
+### Typed access {#sec-blua-programs-typed-dereference-is-a-separate-form}
 
-### Typed dereference is a separate form {#sec-blua-programs-typed-dereference-is-a-separate-form}
+`*p` works only on a view (`local p: *type`); for a plain number, use
+`mem32le[address]`.
 
-Unary `*` reads a resolved typed pointer, and `*pointer = value` writes its resolved scalar storage.
-The pointer's scalar type selects the access kind; the resolved byte offset and read-only status
-remain part of the access. Whole-structure scalar reads and assignments are not supported by this
-form, and directly resolved RODATA selections cannot be assigned through it. A local typed view
-does not retain that RODATA protection; the storage section above distinguishes these cases.
+### Augmented assignment to memory {#sec-blua-programs-compound-assignment-performs-a-read-and-a-write}
 
-An untyped numeric address is not a dereferenceable pointer. Do not replace `mem[address]` with
-`*address` when `address` has no compiled pointer type, and do not use `*0x08000000` as a raw memory
-access. Typed-pointer declarations, storage layout and address views are specified
-under [Typed storage, layouts, and address views](#sec-blua-programs-typed-storage-layouts-and-address-views).
+`mem[address] += amount` reads and then writes the word; it is not one
+indivisible operation.
 
-### Compound assignment performs a read and a write {#sec-blua-programs-compound-assignment-performs-a-read-and-a-write}
+### cop0 {#sec-blua-programs-control-registers-cop0}
 
-The [augmented-assignment spellings](#sec-blua-programs-augmented-assignment)
-also apply to mapped-memory targets. Each performs both accesses through the
-selected map.
-
-For a mapped-memory target, evaluation proceeds in this order:
-
-1. Evaluate and retain the target address.
-2. Evaluate the right-hand expression.
-3. Read the target through the selected memory map.
-4. Apply the arithmetic operation and write through that map.
-
-Thus `mem[address] += amount` performs an actual mapped read followed by an actual mapped write. It
-is not a device-atomic operation. Read-side effects, write readiness, and access faults still apply
-separately. For device registers, use the device-defined write value rather than assuming that
-reading and rewriting its previous value is harmless.
-
-### Control registers: `cop0` {#sec-blua-programs-control-registers-cop0}
-
-Use a direct field read or assignment, such as `cop0.status` or `cop0.epc = resume_address`. The
-complete source-visible field set is:
-
-| Field | Register number | Permitted source access |
+| Field | Register | Access |
 |---|---:|---|
-| `cop0.bad_address` | 8 | Read only |
-| `cop0.lua_fault_reason` | 9 | Read only |
-| `cop0.status` | 12 | Read and write; compound assignment permitted |
-| `cop0.cause` | 13 | Read only |
-| `cop0.epc` | 14 | Read and write; compound assignment permitted |
-| `cop0.exec` | 15 | Write only; compound assignment rejected |
-| `cop0.ram_end` | 17 | Write only; compound assignment rejected |
+| `cop0.bad_address` | 8 | Read |
+| `cop0.lua_fault_reason` | 9 | Read |
+| `cop0.status` | 12 | Read, write |
+| `cop0.cause` | 13 | Read |
+| `cop0.epc` | 14 | Read, write |
+| `cop0.exec` | 15 | Write |
+| `cop0.ram_end` | 17 | Write |
 
-Other field names are rejected. Reading `cop0.exec` or `cop0.ram_end`, or assigning a read-only field, is also rejected,
-rather than providing another control-register operation. Every permitted read and write still
-requires supervisor mode. In user mode it raises a coprocessor-unusable synchronous exception;
-ordinary program code does not gain privileged access by using this syntax.
+Only in supervisor mode; in user mode, access raises an exception. Status
+bits 0 and 1 select interrupt enable and user mode. Its bit 8 inhibits system
+reset and can be changed only by System ROM. Writing `cop0.exec` starts a
+function with [EXEC](cpu.md#sec-cpu-exec). A System ROM write to
+`cop0.ram_end` changes the main RAM boundary
+([`RAM_END`](cpu.md#sec-cpu-ram-end)). Neither `exec` nor `ram_end` permits a
+read or compound assignment.
 
-`cop0.status` and `cop0.epc` writes supply raw unsigned 32-bit words. In `status`, bit 0 is current
-interrupt enable and bit 1 is current user mode. Bit 8 inhibits system reset
-and can be changed only by System ROM. Writing `cop0.exec` starts execution
-at the supplied function-record address; it is not a normal function call.
-A System ROM write to `cop0.ram_end` changes the main RAM boundary. See
-[CPU control](cpu.md#sec-cpu-cp0-and-execution-control) for these effects.
+#### Instructions {#sec-cpu-blua-control-syntax}
 
-#### Source access and control instructions {#sec-cpu-blua-control-syntax}
-
-A permitted read emits `MFC0`; an assignment emits `MTC0`. Source access
-restrictions differ from the raw privileged instructions: the latter ignore
-writes to read-only fields and read zero from EXEC. The source restrictions do
-not introduce another hardware permission fault.
-
-A supervisor-only source fragment can read exception state and set a resume address:
+A read is an `MFC0`, a write an `MTC0`.
 
 ```lua
 local status = cop0.status
@@ -1015,110 +568,56 @@ cop0.epc = resume_address
 cop0.status = status | 1
 ```
 
-Compound assignment to `status` or `epc` evaluates the right-hand expression, then reads the control
-register, applies the operation, and writes the result. These are separate control-register
-operations, not an atomic update.
+The BIOS starts the cartridge with `cop0.exec = startup`, the startup-function
+address from the [ROM header](program-images.md#sec-memory-rom-header-fields).
 
-The installed monitor can save `cop0.epc` in a local and restore it before
-exception return. This requires supervisor context; ordinary user-mode entry
-cannot read CP0. At boot, BIOS writes `cop0.exec = startup`, where `startup`
-is the static function-record address supplied by the
-[ROM header](program-images.md#sec-memory-rom-header-fields), not an instruction
-address or an ordinary function value.
+The standard interrupt routine reads FLAGS, calls `irq(flags)` if it is not 0
+and returns with RFE. The standard exception routine calls
+`exception(error_value)` and returns with RFE. See
+[exceptions](cpu.md#sec-cpu-exception-entry-and-cartridge-dispatch).
 
-The standard BLua IRQ entry reads FLAGS, calls `irq(flags)` when it is nonzero,
-and executes RFE. The standard exception entry calls `exception(error_value)`
-and executes RFE after the callback returns. Return normally from either
-callback so its entry routine can perform exception return. A custom entry
-routine must implement its own dispatch and issue RFE from its exception frame.
-The [CPU control reference](cpu.md#sec-cpu-exception-entry-and-cartridge-dispatch)
-defines saved state and entry privilege.
+### blua32 {#sec-blua-programs-intrinsic-calls-blua32}
 
-### Intrinsic calls: `blua32` {#sec-blua-programs-intrinsic-calls-blua32}
+| Form | Function |
+| --- | --- |
+| `blua32.closure(address)` | Closure of a function record |
+| `blua32.float_bits(f)` | The 32 bits of a Float, as an Integer |
+| `blua32.float_from_bits(w)` | The Float with bits w |
+| `blua32.trace(subject, channel, …)` | Trace record |
+| `blua32.trace_sink(subject, channel, sink)` | Sets the receiver of a channel |
 
-The complete intrinsic operation set is `closure`, `float_bits`,
-`float_from_bits`, `trace`, and `trace_sink`. Use a direct dotted
-call on `blua32`; alias calls and colon-method calls do not provide intrinsic access. Unknown
-operation names are rejected.
-
-Use `closure` when a callable value must be formed from an existing function
-record. The two trace forms serve a different purpose: optional observation
-of program state. A subject identifies the observed object, a named channel
-selects the observation, and a bound sink receives the payload values. A
-compilation can retain selected channels or erase their statements and operand
-evaluation. Keep required program work outside these optional observations.
-
-#### `blua32.float_bits(value)` and `blua32.float_from_bits(word)` {#sec-blua-programs-float-word-intrinsics}
-
-Each form takes exactly one argument and produces one result. `float_bits`
-requires a Float and returns its raw binary32 word as an Integer.
-`float_from_bits` requires an Integer and returns the Float with those word
-bits. They are reinterpreting register moves, not numerical conversions:
+#### float_bits, float_from_bits {#sec-blua-programs-float-word-intrinsics}
 
 ```lua
 local minus_zero = blua32.float_from_bits(0x80000000)
-local word = blua32.float_bits(minus_zero) -- Integer word 80000000H
+local word = blua32.float_bits(minus_zero) -- 80000000H
 ```
 
-Both zero signs and all NaN payload bits are preserved. A wrong subtype raises
-`INVALID_ARGUMENT`. They emit the corresponding [numeric word move](cpu.md#sec-cpu-numeric-word-moves),
-without a function call or temporary memory. The forms are permitted in static
-functions as well as ordinary functions. Further requested results are nil;
-when the result is discarded, argument evaluation and subtype admission still
-occur. Like the other intrinsics, these names are not first-class functions.
+All bits are kept. A wrong argument type raises `INVALID_ARGUMENT`. Each is
+one [instruction](cpu.md#sec-cpu-numeric-word-moves).
 
-#### `blua32.closure(function_address)` {#sec-blua-programs-blua32closurefunction_address}
-
-`closure` constructs one closure from the supplied function-record address.
-Supply exactly one argument. The form is valid in an expression or a call
-statement; requesting further results supplies nil in those positions.
-
-The address is consumed as an unsigned 32-bit function-record address in the active execution image.
-The function record is read before closure construction; an unsuccessful record
-read hard-halts execution. The closure binds the record's function data at that
-time; changing the record later affects newly constructed closures, not this
-one. Function-record acquisition, capture context and closure execution follow
-the [CPU reference](cpu.md#sec-cpu).
+#### closure {#sec-blua-programs-blua32closurefunction_address}
 
 ```lua
 local callback = blua32.closure(function_record_address)
 ```
 
-Public program records supply addresses for such uses as the
-[preparation sequence](#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup)
-and [BIOS call-target lookup](program-images.md#sec-blua-programs-locating-bios-call-targets).
-Use the address and capture context required by the selected interface;
-`closure` does not discover them. For source text or a constructed syntax tree,
-the [BIOS compilation interfaces](bios-loader.md#sec-bios-loader) instead supply
-a callable root closure with its constant-pool capture context. Ordinary
-function expressions also need no programmer-supplied record address.
+Creates a closure of the function record at the address. Used for the
+[preparation function](#sec-blua-programs-init-registers-a-participant-it-does-not-call-it-at-startup)
+and the [BIOS functions](program-images.md#sec-blua-programs-locating-bios-call-targets).
+An unreadable record halts the CPU.
 
-#### `blua32.trace(subject, channel, ...)` {#sec-blua-programs-blua32tracesubject-channel}
+#### trace {#sec-blua-programs-blua32tracesubject-channel}
 
-`trace` is a statement-only form with at least two source arguments. The channel must be a String
-literal, not a variable or computed String. Each payload expression after the channel supplies one
-result. `trace` cannot be used as a value-producing expression.
+`blua32.trace(subject, 'channel', values…)` is a statement; the channel is a
+String constant. At build time all traces are removed (the default), or all
+or chosen channels are kept. A removed trace evaluates nothing. A kept trace
+calls `sink:record(values…)` if a sink is set for the channel.
 
-Instrumentation selection is a compilation choice: erase all trace statements, select all channels,
-or select a named set of channels. Erasure is the default. Argument-count and literal-channel
-requirements still apply to erased statements. An erased statement evaluates neither its subject nor
-its payload expressions. Do not put required program effects in those expressions.
+#### trace_sink {#sec-blua-programs-blua32trace_sinksubject-channel-sink}
 
-For a selected channel, `trace` evaluates the subject and reads its channel sink. If that sink is
-falsey, no payload expression is evaluated and no record is made. Otherwise it evaluates the payload
-and calls the sink's `record` method with the sink as receiver, followed by the payload values. A
-trace is therefore a call to a bound sink, not automatic output to a log.
-
-#### `blua32.trace_sink(subject, channel, sink)` {#sec-blua-programs-blua32trace_sinksubject-channel-sink}
-
-`trace_sink` is also statement-only and requires exactly three source arguments. Its channel must be
-a String literal. It obeys the same compilation selection: an erased binding evaluates neither the
-subject nor the sink expression. When selected, it evaluates the subject, then the sink, and binds
-that sink to the subject's channel. Passing nil clears the binding. Use the intrinsic rather than
-using ordinary field accesses to bind a channel.
-
-
-This fragment shows a receiver-aware sink and matching channel literals:
+`blua32.trace_sink(subject, 'channel', sink)` sets the sink of the channel; nil
+removes it.
 
 ```lua
 local subject = {}
@@ -1131,22 +630,11 @@ blua32.trace(subject, 'movement.step', 4)
 blua32.trace_sink(subject, 'movement.step', nil)
 ```
 
+### halt_until_irq {#sec-blua-programs-interrupt-waiting-halt_until_irq}
 
-### Interrupt waiting: `halt_until_irq` {#sec-blua-programs-interrupt-waiting-halt_until_irq}
-
-`halt_until_irq` is a keyword statement, not a function or replaceable name. It takes no parentheses
-or arguments; a following semicolon is optional. Unlike `cop0` access, it has no supervisor-mode
-requirement.
-
-If an interrupt-event-pending latch is already set, the statement consumes it without establishing a
-new halt. Otherwise it halts the active thread at its current call-frame depth. An occurrence
-need not wait for a future event. Accepted interrupts, not arbitrary device activity, define the
-interrupt boundary. Maskable interrupt acceptance requires current interrupt enable and an asserted
-maskable interrupt line. Full interrupt-entry, return, and scheduling rules are specified in the
-[CPU reference](cpu.md#sec-cpu).
-
-Wait for the required condition in a predicate loop, for example by comparing an
-interrupt-handler-maintained completion sequence with its previous value:
+`halt_until_irq` stops the CPU until an interrupt is accepted. If an interrupt
+has already occurred since the last wait, it continues at once. Also usable in
+user mode. Test the condition in a loop:
 
 ```lua
 while completion_sequence == previous_sequence do
@@ -1154,286 +642,74 @@ while completion_sequence == previous_sequence do
 end
 ```
 
-The interrupt handler and sequence belong to the operation being awaited. An interrupt alone does
-not establish that the desired transfer or frame completed.
+## Differences from Lua {#sec-blua-programs-blua-source-semantics}
 
-## BLua source semantics {#sec-blua-programs-blua-source-semantics}
+### Numbers {#sec-blua-programs-number-spellings}
 
-This section specifies BLua source conventions, bindings, expression results
-and control flow. Runtime values, arithmetic and instruction costs are
-specified by the [CPU reference](cpu.md#sec-cpu).
-
-### Number spellings {#sec-blua-programs-number-spellings}
-
-Decimal literals begin with a digit, or with `.` followed by a digit. A fractional dot after integer digits is part of the number only when another digit follows it. An exponent uses `e` or `E`, an optional sign, and one or more decimal digits.
+Integers are 32 bits, Floats single precision.
 
 | Form | Examples |
 | --- | --- |
-| Decimal integer | `0`, `12`, `480` |
-| Decimal fraction | `12.5`, `.5` |
-| Decimal exponent | `1e3`, `1E-3`, `1.5e+2` |
-| Hexadecimal integer | `0xff`, `0XFF` |
-| Hexadecimal fraction | `0x1.8`, `0x.8` |
-| Hexadecimal binary exponent | `0x1.8p+2`, `0x.8p-1` |
+| Integer | `0`, `12`, `480` |
+| Fraction | `12.5`, `.5` |
+| Exponent | `1e3`, `1E-3`, `1.5e+2` |
+| Hexadecimal | `0xff`, `0XFF` |
+| Hexadecimal fraction | `0x1.8`, `0x.8`, `0x1.8p+2` |
 
-Hexadecimal literals begin with `0x` or `0X`. Their digits may use either case, independently of the lowercase-only identifier rule. They require at least one hexadecimal digit across the integer and fractional parts. A `p` or `P` exponent has decimal digits and scales the hexadecimal value by a power of two.
+A decimal integer above 2147483647 is a Float; a hexadecimal integer gives the
+low 32 bits: `0x80000000` is −2147483648.
 
-An integer-spelled decimal literal within the positive Integer range produces
-an Integer; a larger decimal integer literal produces a Float. A hexadecimal
-integer literal produces an Integer from its low 32 bits. Fractional and
-exponent spellings produce Floats, rounded to binary32. A literal whose Float
-value is non-finite is rejected. Unary `-` is a separate operator, so `-12`
-is an expression rather than one signed numeric token. Use `1.0` rather than
-`1.` for a decimal fraction. Digit separators, binary or octal prefixes, and
-numeric suffixes are not supplied by these literal forms.
+### Strings {#sec-blua-programs-string-literal-differences}
 
-`-0` is Integer zero; `-0.0` is Float negative zero. `0x80000000` is Integer
-−2147483648, while decimal `2147483648` is a Float. Constant binding and
-loading preserve these subtypes and the Float zero sign.
+As in Lua.
 
-Hexadecimal spelling does not create a distinct address or register-word
-literal type. It is another spelling of a Number literal. The
-[typed-storage reference](#sec-blua-programs-typed-storage-layouts-and-address-views)
-defines declarations and address views; [[Memory and bus access](memory.md#sec-memory)]{.content-visible when-format="html"}[Book I, Chapter 2]{.content-visible when-format="pdf"} defines what happens when the resulting address reaches the bus.
+### Locals {#sec-blua-programs-local-binding-differences}
 
-### String literal differences {#sec-blua-programs-string-literal-differences}
+`<const>` as in Lua; `<close>` is not available. A view follows the
+attribute: `local cursor<const>: *word = address`.
 
-Quoted Strings accept `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`,
-`\\`, `\"`, `\'`, `\xHH`, one-to-three-digit decimal `\ddd` (0–255),
-and `\z` followed by discarded whitespace. Exactly two hexadecimal digits
-follow `\x`. Unsupported escapes, `\u{...}`, backslash-newline continuation,
-a literal line feed and an unterminated quoted String are rejected.
+### Calls {#sec-blua-programs-known-call-argument-diagnostics}
 
-Escapes select codepoints, not UTF-8 input bytes. For example,
-`'\xc3\xa9'` contains two codepoints, U+00C3 and U+00A9. Decode mapped UTF-8
-bytes explicitly with the [String BIOS interface](bios-string.md#sec-bios-string).
-Long bracket Strings skip one initial CR, CR/LF pair or LF; subsequent content
-is literal through the matching delimiter. Bracket delimiters do not nest.
+As in Lua.
 
-### Local binding differences {#sec-blua-programs-local-binding-differences}
+### Varargs {#sec-blua-programs-variable-arguments-and-result-positions}
 
-`<const>` makes the local binding immutable, including through captures, not the
-contents of a Table it names. It requires an initializer position. `<close>`
-and other local attributes are not supported. A typed address annotation
-follows the attribute: `local cursor<const>: *word = address`.
+As in Lua.
 
-Initializers normally resolve before the new locals become visible. Two forms
-make their own name available recursively: `local function name(...) ... end`
-and a single-name, single-value `local name<const> = function(...) ... end`.
-This exception does not extend to other or multi-name initializers.
+### Logical operators {#sec-cpu-logical-expressions}
 
-### Known-call argument diagnostics {#sec-blua-programs-known-call-argument-diagnostics}
+As in Lua: only nil and false are false; `and` and `or` return one of their
+operands and evaluate the right one only when needed.
 
-The compiler can diagnose too few written arguments when it resolves a callee signature. This minimum check counts argument expressions as written: an explicit `nil` counts as one argument. Surplus expressions are not rejected by this check. The diagnostic concerns source use, not a runtime fault. If execution reaches a source-function call, missing fixed parameters are filled with `nil`; that runtime behavior does not make every source spelling acceptable to the compiler. See [Calls, closures, globals and tables](cpu.md#sec-cpu-calls-closures-globals-and-tables) for the reached-call contract.
+### return {#sec-blua-programs-return-boundaries-and-grouped-results}
 
-### Variable arguments and result positions {#sec-blua-programs-variable-arguments-and-result-positions}
-
-`...` reads the variable arguments available to the **current call**. A nested function does not inherit an enclosing call’s variable arguments.
+As in Lua.
 
-BLua accepts `...` as an expression even when the function’s written parameter list contains no `...`, and in the entry chunk. This does not make a bare `...` a statement. A function without `...` in its parameter list has **zero available variable arguments**, even if its caller supplies extra arguments; the entry chunk likewise has zero available variable arguments.
+### Numeric for {#sec-blua-programs-numeric-for}
 
-Zero available arguments are not the same as one `nil` result. With zero available variable arguments, an open-result use of `...` supplies zero values. When a context requests a fixed number of result positions, unavailable positions are filled with `nil`; selecting one result therefore gives `nil` in this case. For argument and result transfer at the machine-call boundary, see [CPU calls](cpu.md#sec-cpu-calls-closures-globals-and-tables).
+As in Lua.
 
-### Logical expressions {#sec-cpu-logical-expressions}
+### Generic for {#sec-blua-programs-generic-for}
 
-Only `nil` and `false` are false-valued. Every other value is true-valued, including all numbers (zero and NaN included), the empty string, and object references.
+As in Lua; see the
+[BIOS iteration functions](bios-base.md#sec-bios-base-traversal-argument-selection-globals-and-output).
 
-| Expression | Result | Evaluation |
-| --- | --- | --- |
-| `a and b` | `a` if it is false-valued; otherwise `b` | Evaluate `a` first; evaluate `b` only if `a` is true-valued. |
-| `a or b` | `a` if it is true-valued; otherwise `b` | Evaluate `a` first; evaluate `b` only if `a` is false-valued. |
-| `not a` | Boolean `true` if `a` is false-valued; otherwise Boolean `false` | Evaluate `a` and negate its truth value. |
+### goto {#sec-blua-programs-labels-and-goto}
 
-`and` and `or` select an operand value without converting it to a Boolean. Each operand is adjusted to one result, so the expression produces one selected value, not multiple results. An unneeded right operand is not evaluated, including its side effects or runtime faults; short-circuit evaluation also applies when the expression is used as a condition.
+As in Lua.
 
-Thus `condition and 1 or 0` yields numeric `1` for a true-valued condition and numeric `0` otherwise: the intermediate `1` is true-valued. However, `condition and a or b` is not a general ternary expression: even when `condition` is true-valued, a selected `a` of `nil` or `false` causes `or` to select `b`.
+## Globals {#sec-blua-programs-ordinary-globals-are-a-name-bank}
 
-### Return boundaries and grouped results {#sec-blua-programs-return-boundaries-and-grouped-results}
-
-A newline alone does not terminate `return`. An expressionless return is
-recognized only before `end`, `else`, `elseif`, `until`, or end of source;
-`return;` is not its accepted spelling. An expressionless return or reaching the end of the function supplies zero
-results. Write `return nil` to supply one nil.
-
-A parenthesized call or variable-argument expression supplies exactly one
-result. Extra results are discarded; a call returning no values supplies nil.
-Thus `local a, b = (pair())` assigns the first result to `a` and nil to `b`,
-even when `pair` returns two values. The same call adjustment applies in the
-[BIOS runtime-loaded language](bios-loader.md#sec-bios-loader-calls-and-results).
-
-
-### Numeric `for` {#sec-blua-programs-numeric-for}
-
-```text
-for name = start, limit [, step] do
-    block
-end
-```
-
-Square brackets mark the optional step; they are not written in the source.
-
-The header evaluates `start`, then `limit`, then the explicit `step`, once
-before the first test on each ordinary entry into the statement. Each
-expression supplies one result, including a call expression. Omitting `step`
-supplies Number `1`; supplying `0` does not omit it. The start result initializes the control value. The limit
-and step results are retained for subsequent tests and updates: assigning to
-an outer variable used by a header expression does not reevaluate that
-expression or replace its retained result.
-
-The header expressions use the enclosing scope. Only the body has the new
-local binding named by `name`, so a same-named reference in the header still
-refers to its enclosing binding. The loop binding is not visible after the
-loop. A distinct local declared inside the body can shadow it in the usual
-lexical way.
-
-
-Before each body entry, let `i` denote the hidden control value, `limit` the
-retained limit, and `step` the retained step. The selector and exit tests are:
-
-| Selector | Exit before the body when | Finite-Number reading |
-| --- | --- | --- |
-| `0 < step` is true | `limit < i` | The body is allowed while `i <= limit`. |
-| `0 < step` is false | `i < limit` | The body is allowed while `i >= limit`. |
-
-
-The exit predicates are the strict comparisons shown, not universal
-`<=`/`>=` tests. The inclusive paraphrases apply to finite Numbers; they do not
-establish termination for every Number value. For Number operands, the loop
-uses ordinary Number arithmetic rather than an integer-only counter.
-
-Ordinary fallthrough from the body adds the retained step to the hidden
-control value, then repeats the selector and test. Each iteration has its own
-visible local, initialized from that control value. Assigning to the visible
-local does not change the tail addition or next test. A closure that captures
-it keeps that iteration's cell. A `break` leaves the loop without performing
-the tail addition.
-
-When both the current value and step are Integers, that addition wraps as
-Integer arithmetic. A positive-step loop whose limit is `2147483647` can
-therefore wrap to `−2147483648` after reaching the limit and continue rather
-than terminating. Use a bound that leaves room for the update, or leave the
-loop explicitly. A Float update instead rounds to binary32 and can stop
-changing when the step is smaller than the spacing at the current magnitude.
-
-An explicit zero step is accepted, not replaced by one or rejected as a
-zero-step error. It takes the second test above. With finite Numbers, a start
-below the limit skips the body, while a start equal to or above the limit
-allows initial entry. Adding zero makes no counter progress; `break` can leave
-immediately.
-
-The control path uses ordinary [Number addition and comparison](cpu.md#sec-cpu-values-and-numeric-instructions);
-header and body calls have the usual [call and result-adjustment costs](cpu.md#sec-cpu-calls-closures-globals-and-tables).
-Use the [instruction-cost guide](cpu.md#sec-cpu-blua-operators-and-instruction-costs) and
-[cycle-accounting boundaries](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries)
-for the selected instructions and executed path, rather than assigning the
-source loop a fixed per-iteration cycle charge.
-
-
-
-### Generic `for` {#sec-blua-programs-generic-for}
-
-A generic `for` obtains each set of loop-variable values by calling an iterator:
-
-```text
-for name [, name ...] in expression [, expression ...] do
-    block
-end
-```
-
-There must be at least one loop name and one expression after `in`.
-
-
-Before the first iteration, the expression list is evaluated once, in source order, and adjusted to three values: **iterator, state, control**. Each expression before the last supplies one value. Only the final expression can supply multiple results: a final call or `...` can fill the remaining entries. Missing entries become `nil`; surplus values are discarded. With three or more expressions, each supplies one value and only the first three values are retained. **Every expression is still evaluated**, including expressions whose results are discarded. Their effects and errors occur before the first iterator call.
-
-A final parenthesized `(factory())` supplies one value to this list. Use an
-unparenthesized final call when the iterator factory returns iterator, state
-and control together.
-
-The three values are retained, not recomputed on subsequent iterations. Rebinding a source variable does not replace its retained value. Retaining a mutable value does not copy its contents: changes to shared contents remain visible.
-
-
-Each attempted iteration calls exactly:
-
-```text
-iterator(state, control)
-```
-
-
-The call requests as many results as there are loop names. Extra results are discarded and missing results become `nil`.
-
-- If the first adjusted result is `nil`, the loop ends without assigning that call's results to the loop variables or executing the body.
-- Otherwise, all adjusted results are assigned to the visible loop variables. The first result also becomes the hidden control value **before** the body starts. After the body, the next iterator call uses that control.
-
-Only `nil` stops iteration: a first result of `false` continues and becomes the next control value. A later result of `nil` does not stop the loop. See [values](cpu.md#sec-cpu-values-and-numeric-instructions).
-
-The visible loop variables are writable locals. Reassigning them in the body does not change the already saved hidden control; each successful iteration creates fresh visible locals. Their lexical scope is the loop body. The new locals are not in scope in the `in` expressions or after `end`; a loop name in its own initializer does not refer to the new local.
-
-A reached `break` exits the nearest enclosing loop, skipping the remaining body and subsequent iterator calls.
-
-Iteration uses [ordinary calls](cpu.md#sec-cpu-calls-closures-globals-and-tables), passing state and control unchanged. A non-callable iterator causes an error at the attempted call, not an empty loop. Other errors occur at the expression, call or body operation reached. The ordinary [execution costs and boundaries](cpu.md#sec-cpu-cycle-accounting-and-execution-boundaries) apply to the loop operations, iterator calls and body.
-
-See the [BIOS iteration routines](bios-base.md#sec-bios-base-traversal-argument-selection-globals-and-output).
-
-
-### Labels and goto {#sec-blua-programs-labels-and-goto}
-
-Labels use `::name::` and branches use `goto name`.
-
-A label is visible in its block and in enclosed blocks, but not inside a
-nested function. A jump can go forward or backward to a visible label, but
-cannot enter the scope of a local. A label followed only by labels or empty
-statements at the end of a block is outside the locals declared in that block.
-This exception does not apply before the `until` condition of a repeat loop,
-where the body locals remain visible. A label cannot redeclare an already
-visible label of the same name.
-
-For example, a jump to `done` can skip an entire block and its declarations:
-
-```lua
-if skip then goto done end
-do
-    local cursor = make_cursor()
-    draw(cursor)
-end
-::done::
-```
-
-A jump that leaves a local’s scope closes any open capture of that local.
-A closure keeps the captured cell after the jump; re-entering the declaration
-creates a new local and cannot overwrite the old cell. The same rule applies
-to fallthrough, `break`, and the end of a loop iteration.
-
-## Global names and source resolution {#sec-blua-programs-ordinary-globals-are-a-name-bank}
-
-The [BIOS base reference](bios-base.md#sec-bios-base-installed-program-environment)
-defines the installed functions and library Tables. The rules here describe
-how a source name selects a shared ordinary-global binding.
-
-Ordinary global values belong to a shared bank indexed by String names. This bank is separate from the system-global bank. It is not an ordinary Table, and accessing it is not Table indexing.
-
-Source-name resolution and the value in that bank are distinct. A bare global
-read is resolved before execution; an unknown bare name is a compilation error.
-Installed bindings and the program's global assignments or function declarations
-make names known for this resolution. A declaration can make the name known
-before its assignment executes; it does not supply the assigned value early.
-A String argument to `setglobal` writes the bank without declaring a source identifier. Use
-`getglobal` and `setglobal` for names chosen during execution.
-
-A previously unseen ordinary name begins with `nil`. When another program image registers the same ordinary name, it uses the existing shared binding; registering the name does not clear its value. Do not assume that moving between program images gives every name a new `nil` value.
-
-For names chosen during execution, use the [BIOS `getglobal` and
-`setglobal` calls](bios-base.md#sec-bios-base-getglobalname-and-setglobalname-value).
-A computed name does not declare a bare source identifier. The
-[program startup reference](program-images.md#sec-blua-programs-fresh-system-boot-and-execution-transfer)
-describes which global bindings survive execution transfer.
+A global name used in the program must be known when the program is built:
+from the BIOS or from an assignment or function declaration in the program.
+For names formed while the program runs, use
+[`getglobal` and `setglobal`](bios-base.md#sec-bios-base-getglobalname-and-setglobalname-value).
+Globals are kept when another program is started with EXEC; see
+[globals](program-images.md#sec-blua-programs-fresh-system-boot-and-execution-transfer).
+The BIOS globals are listed in the
+[BIOS base library](bios-base.md#sec-bios-base-installed-program-environment).
 
 ### Runtime compilation {#sec-blua-programs-runtime-compilation}
 
-Use BIOS `load` to compile supported text during execution. On success it
-returns a closure; a protected compilation failure returns `nil, errorValue`.
-The [runtime-compilation reference](bios-loader.md#sec-bios-loader) specifies the accepted
-text language, environments, external bindings and errors.
-
-The BIOS monitor maintains its own session environment. Monitor variables
-and loaded-chunk environments are separate from the ordinary global bank;
-use the appropriate interface for the names being read or written.
+`load` compiles text while the program runs; see
+[runtime compilation](bios-loader.md#sec-bios-loader).

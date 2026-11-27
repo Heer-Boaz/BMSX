@@ -1,129 +1,78 @@
 # Input controller {#sec-input}
 
-## Function and resources {#sec-input-function-and-resources}
+## Outline {#sec-input-function-and-resources}
 
-The input controller samples a keyboard, a pointing device and four game pads.
-A program requests one sample with ARM. At the next VBlank-begin edge, the
-controller copies the control states into its registers and advances the sample
-sequence. The program can then read a stable set of key, button and axis values
-while it updates the game. Each subsequent sample requires another ARM.
+The input controller reads the keyboard, a pointing device and four game
+pads, and drives the vibration motors of the pads.
 
-Sampling follows the display timing, so a game can acquire one set of controls
-per display interval without tying input acquisition to the duration of its
-update routine. Register reads leave the captured values unchanged.
+The program requests a reading by writing ARM. At the start of the next
+vertical blanking interval (VBlank), the controller copies the state of all
+keys, buttons and axes into its registers and increments its sample counter.
+The registers then keep this state until the next requested reading, so the
+program can read them at any time during its update.
 
-The controller provides eight keyboard words, a pointer button word with three pointer data words, and four pad records. Each pad record contains a button word, two pairs of stick-axis words and two trigger words. A separate output port accepts vibration requests for a selected pad; its capability word is sampled with the input data.
-
-The register block occupies 47 consecutive 32-bit words, from byte address `08000064H` through `0800011CH`. Use aligned, whole-word accesses.
-
-| Resource | Capacity or condition |
+| Item | Specification |
 |---|---|
-| Register word | 32 bits |
-| Mapped register block | 47 words, 188 bytes |
-| Sampled data | 41 words, 164 bytes: 8 keyboard + 4 pointer + 28 pad + 1 capability |
-| Keyboard bitmap | 256 HID usage bits |
-| Pad records | 4 pads; 7 words, 28 bytes per pad |
-| Sample sequence | 32 bits, incrementing modulo 2³² |
-| Sample publication | A pending ARM request accepted at VBlank begin |
+| Registers | 47 words at `08000064H`–`0800011CH` |
+| Keyboard | 256 keys (USB HID usage page 07H), 8 words |
+| Pointer | 5 buttons, X, Y, wheel |
+| Game pads | 4; 18 buttons, 2 sticks and 2 triggers each |
+| Vibration | 1 output port, pad selectable |
+| Sampling | Once per requested VBlank |
 
-The sampling interval follows the programmed [PCRTC](pcrtc.md#sec-pcrtc) timing.
-[Interrupt controller](irq.md#sec-irq) describes the VBlank interrupt used to wait for
-this edge.
+![Sampling and the vibration output](figures/input-flow.svg){#fig-input-flow}
 
-![Armed sample latch and independent output request](figures/input-flow.svg){#fig-input-flow}
+## Reading the controls {#sec-input-sampling-and-snapshot-reads}
 
-The capture path transfers control states into the snapshot registers. The
-separate output path sends vibration parameters to the selected pad when APPLY
-is written. Solid arrows carry data; dashed arrows show the control sequence.
-The capability register belongs to the captured input data.
+1. Read `IO_INP_STATUS` and keep the value.
+2. Write `00000001H` (ARM) to `IO_INP_CTRL`.
+3. Wait until `IO_INP_STATUS` changes.
+4. Read the key, button and axis registers.
 
-## Sampling and snapshot reads {#sec-input-sampling-and-snapshot-reads}
+Each ARM produces one reading. Writing ARM several times before the next
+VBlank still produces one reading. Without ARM, the registers do not change at
+VBlank.
 
-The sampling path is one-shot. Write the complete word `00000001H` (ARM) to `IO_INP_CTRL` to leave one sample request pending. At an accepted VBlank-begin edge, the controller latches the keyboard, pointer, all four pad records and output-capability word as one snapshot. It then increments `IO_INP_STATUS` modulo 2³². The accepted sample clears the pending request; it does not clear the retained ARM word in `IO_INP_CTRL`.
+A key pressed and released between two readings is not seen.
 
-ARM chooses the next display edge at which to take a sample. STATUS tells the
-program when that choice has taken effect. Until the sequence changes, reading
-a key or axis can still return the preceding sample. Once it changes, the
-program can read several control words from the same captured state without
-another display edge changing them: the request has already been consumed.
+## Using the readings {#sec-input-from-a-snapshot-to-game-controls}
 
-Use this order to obtain a new snapshot:
-
-1. Read and retain `IO_INP_STATUS`.
-2. Write ARM to `IO_INP_CTRL`.
-3. Read `IO_INP_STATUS` until it differs from the retained value.
-4. Read the required snapshot words before requesting another sample.
-
-Use the sequence change as the completion indication; CTRL retains its last
-written command rather than reporting a pending request. The captured words
-remain stable until the next accepted sample or reset. To detect button edges,
-compare successive snapshots as described under
-[Retained levels and software edges](#sec-input-retained-levels-and-software-edges). A press and release between
-samples is lost.
-
-Repeated ARM writes before an accepted sample leave one pending request, not several. An unarmed VBlank does not latch a snapshot or advance `IO_INP_STATUS`. All sampled register words retain their raw bits; the latch does not clear unnamed bits or clamp sampled data.
-
-## From a snapshot to game controls {#sec-input-from-a-snapshot-to-game-controls}
-
-A capture gives the program control positions and pressed levels. The game
-assigns their actions: a held direction can move a character on every update,
-whereas a menu can confirm a choice on the transition from released to
-pressed. Reading the same captured level twice does not produce two presses.
-
-The input quantities have different units even where they share a numeric
-representation:
-
-| Captured quantity | Meaning for the program |
+| Value | Meaning |
 |---|---|
-| Keyboard, pointer and pad button bits | Pressed or released levels; compare captures for transitions |
-| Stick X/Y | Position from −1 through zero to +1; the program chooses the corresponding movement or steering scale |
-| Trigger travel | Fraction of travel from zero to one, independently of the trigger button bit |
-| Pointer X/Y | Position in displayed-image pixels; subtract successive positions when relative movement is required |
-| Pointer wheel | Scroll steps from the most recent attachment update; not the total since the preceding capture |
+| Key and button bits | 1 = pressed |
+| Stick X, Y | −1 (left, up) to +1 (right, down), 0 at centre |
+| Trigger | 0 (released) to 1 (fully pressed) |
+| Pointer X, Y | Position on the displayed picture, in pixels |
+| Pointer wheel | Scroll steps; positive is downward |
 
-For example, a left-stick X value of +0.5 is half travel to the right. A game
-choosing four pixels of movement per update at full travel obtains two pixels
-from this sample. The controller supplies the stick position, not the game's
-movement speed. By contrast, pointer X=128 already locates a position in the
-displayed raster; it is not half a stick's travel or a movement of 128 pixels.
-The exact axes, directions and word representations follow under
-[Raw input representations](#sec-input-raw-input-representations).
+A stick X value of +0.5 means half travel to the right. A game that moves a
+character 4 pixels per frame at full travel moves it 2 pixels for this value.
 
-### Retained levels and software edges {#sec-input-retained-levels-and-software-edges}
+### Detecting presses and releases {#sec-input-retained-levels-and-software-edges}
 
-Keyboard and button words describe sampled levels. They are not an event queue. A cartridge can compare a current mask with its own previous mask:
+The registers give the current state of each key, not events. To detect
+presses and releases, keep the previous reading and compare:
 
-- pressed: `current & ~previous`;
-- released: `previous & ~current`.
+- pressed: `current & ~previous`
+- released: `previous & ~current`
 
-These expressions detect transitions between the samples the cartridge actually observes. They cannot recover a press and release that both occurred between those samples. A pointer movement delta likewise requires subtraction of retained positions; X and Y themselves are not movement-delta registers.
+Use the first reading as `previous`, so that a key that is already held at
+start-up is not counted as a new press.
 
-Keep the preceding mask in program storage between captures. To start without
-counting an already-held button as a new press, use the first completed
-capture as `previous` before processing later captures.
+### Example {#sec-input-worked-keya-transition-sequence}
 
-### Worked KeyA transition sequence {#sec-input-worked-keya-transition-sequence}
+The A key is bit 4 (`00000010H`) of the first keyboard word.
 
-The KeyA mask is `00000010H`, not pad A's `00000001H`. Apply the pressed and
-released expressions above to this mask, keeping the current mask as
-`previous` for the next sample. With `previous` initially zero, four completed
-samples give:
+| Reading | A key | Pressed | Released |
+| --- | --- | --- | --- |
+| 1 | `0` | `0` | `0` |
+| 2 | `10H` | `10H` | `0` |
+| 3 | `10H` | `0` | `0` |
+| 4 | `0` | `0` | `10H` |
 
-| Sample | KeyA level | Pressed mask | Released mask | Cumulative presses | Cumulative releases |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `0` | `0` | `0` | 0 | 0 |
-| 2 | `10H` | `10H` | `0` | 1 | 0 |
-| 3 | `10H` | `0` | `0` | 1 | 0 |
-| 4 | `0` | `0` | `10H` | 1 | 1 |
+## Programming example {#sec-input-sample-input-in-blua}
 
-The cumulative columns show the counts a program obtains from the edge masks.
-An unchanged released sample has both masks zero.
-
-## Sample input in BLua {#sec-input-sample-input-in-blua}
-
-The following fragment obtains KeyA and pad 0's left-stick X from one capture.
-It assumes a running beam, ordinary BIOS cartridge entry and exclusive use of
-INPUT. It polls the sequence without changing the interrupt configuration.
+The following example reads the A key and the X axis of pad 0's left stick.
 
 ```lua
 local control<const>: *word = 0x08000064
@@ -132,86 +81,56 @@ local keys<const>: *word = 0x0800006c
 local pad0<const>: *word = 0x0800009c
 
 local before<const> = *status
-*control = 1
-while *status == before do
-end
+*control = 1                                        -- ARM
+while *status == before do end
 local key_a_down<const> = (keys[0] & 0x00000010) ~= 0
-local left_x_word<const> = pad0[1]
+local left_x<const> = pad0[1] / 65536.0             -- −1.0 to +1.0
 ```
 
-KeyA is bit 4 of the first keyboard word. The next word after pad 0's button
-word is its left X axis. For a captured keyboard word of `00000010H` and an
-axis word of `00008000H`, `key_a_down` is true and `left_x_word` represents
-+0.5, the half-travel position used above. `key_a_down` remains true in each
-capture while the key is held; use the preceding edge calculation when the
-operation should occur only on a new press. The bit assignments and signed
-16.16 interpretation are specified in the next section.
+Instead of polling, the program can wait with HALT for the VBlank interrupt
+and then test `IO_INP_STATUS`.
 
-Read any other required snapshot words before the next ARM. With exclusive
-use of INPUT, all those reads refer to the same capture. Retaining the current
-STATUS as the baseline accommodates samples taken during BIOS boot; it need
-not begin at zero.
+## Data formats {#sec-input-raw-input-representations}
 
-Polling is not required. A program with an enabled VBlank handler can wait
-with HALT, then recheck the same sequence predicate after each wake-up. VBlank
-provides the opportunity to capture; only a sequence change establishes that
-a new sample was accepted. See
-[VBlank ordering, interrupts and access faults](#sec-input-vblank-ordering-interrupts-and-access-faults)
-for interrupt setup requirements and publication order.
+### Keyboard {#sec-input-keyboard-usage-bitmap}
 
-## Raw input representations {#sec-input-raw-input-representations}
+The eight keyboard words hold one bit per USB HID key code (usage page
+`07H`). Key code u is bit `u & 31` of word `u >> 5`.
 
-Keyboard and button words are bitmaps; stick, trigger and pointer data words
-are signed 16.16 numbers. The following fields describe the meaning and units
-of the captured state. Their register addresses follow in the
-[register map](#sec-input-register-map).
-
-### Keyboard usage bitmap {#sec-input-keyboard-usage-bitmap}
-
-The keyboard occupies eight words: 256 bits indexed by USB HID keyboard/keypad usage on page `07H`. A set bit means that usage is pressed. The bitmap identifies key usages; this table does not define character or text-composition input.
-
-For usage `u`, select word `u >> 5` and bit `u & 31`. Its word is at the keyboard bitmap base plus `4 × (u >> 5)` bytes. The mask within that word is `1 << (u & 31)`.
-
-For example, `KeyA` is usage `04H`: word 0, bit 4, mask `00000010H`. This is not pad A. Pad A is bit 0 of a pad's buttons word, with mask `00000001H`.
-
-The following table gives the keyboard usage assignments. Usage IDs are decimal.
-
-| Key names | Usage IDs |
+| Keys | Key codes (decimal) |
 | --- | --- |
-| `KeyA` … `KeyZ` | 4 … 29, consecutive |
+| `KeyA` … `KeyZ` | 4 … 29 |
 | `Digit1` … `Digit9`, `Digit0` | 30 … 38, 39 |
 | `Enter`, `Escape`, `Backspace`, `Tab`, `Space` | 40, 41, 42, 43, 44 |
 | `Minus`, `Equal`, `BracketLeft`, `BracketRight`, `Backslash` | 45, 46, 47, 48, 49 |
 | `Semicolon`, `Quote`, `Backquote`, `Comma`, `Period`, `Slash` | 51, 52, 53, 54, 55, 56 |
 | `CapsLock` | 57 |
-| `F1` … `F12` | 58 … 69, consecutive |
+| `F1` … `F12` | 58 … 69 |
 | `PrintScreen`, `ScrollLock`, `Pause` | 70, 71, 72 |
 | `Insert`, `Home`, `PageUp`, `Delete`, `End`, `PageDown` | 73, 74, 75, 76, 77, 78 |
 | `ArrowRight`, `ArrowLeft`, `ArrowDown`, `ArrowUp` | 79, 80, 81, 82 |
 | `NumLock`, `NumpadDivide`, `NumpadMultiply`, `NumpadSubtract`, `NumpadAdd`, `NumpadEnter` | 83, 84, 85, 86, 87, 88 |
 | `Numpad1` … `Numpad9`, `Numpad0` | 89 … 97, 98 |
 | `NumpadDecimal`, `IntlBackslash`, `ContextMenu`, `Power`, `NumpadEqual` | 99, 100, 101, 102, 103 |
-| `F13` … `F24` | 104 … 115, consecutive |
+| `F13` … `F24` | 104 … 115 |
 | `IntlRo`, `IntlYen` | 135, 137 |
 | `Lang1`, `Lang2` | 144, 145 |
 | `ControlLeft`, `ShiftLeft`, `AltLeft`, `MetaLeft` | 224, 225, 226, 227 |
 | `ControlRight`, `ShiftRight`, `AltRight`, `MetaRight` | 228, 229, 230, 231 |
 
-### Pad records {#sec-input-pad-records}
+### Game pads {#sec-input-pad-records}
 
-There are four raw pad records, indexed 0 through 3. Each record occupies 28 bytes: one buttons word followed by six signed 16.16 axis words. Offsets below are bytes from that pad's base.
+Each pad has seven words: the buttons, then six axes.
 
-| Offset | Word | Axis index |
-| --- | --- | --- |
-| `+00H` | Buttons | — |
-| `+04H` | Left X | 0 |
-| `+08H` | Left Y | 1 |
-| `+0CH` | Right X | 2 |
-| `+10H` | Right Y | 3 |
-| `+14H` | Left trigger | 4 |
-| `+18H` | Right trigger | 5 |
-
-The pad button assignments are:
+| Offset | Word |
+| --- | --- |
+| `+00H` | Buttons |
+| `+04H` | Left stick X |
+| `+08H` | Left stick Y |
+| `+0CH` | Right stick X |
+| `+10H` | Right stick Y |
+| `+14H` | Left trigger |
+| `+18H` | Right trigger |
 
 | Bit | Button | Bit | Button |
 | --- | --- | --- | --- |
@@ -225,17 +144,13 @@ The pad button assignments are:
 | 7 | Right trigger | 16 | Home |
 | 8 | Select | 17 | Touchpad |
 
-Stick axes use −1 at the left or upper endpoint, zero at center, and +1 at
-the right or lower endpoint. Trigger travel uses zero at release and one at full
-travel. Digital trigger attachments supply only zero or one; analog attachments
-also supply intermediate values. Travel updates independently of the trigger's
-button bit, including movement while the button remains pressed. The button
-threshold belongs to the attachment, not the controller latch. Neutral words
-alone do not identify whether a pad is connected.
+A trigger has both a button bit and an axis. On a pad with digital triggers
+the axis is only 0 or 1. Released buttons and centred axes do not show
+whether a pad is connected. Dead zones and calibration are left to the program.
 
-### Pointer words {#sec-input-pointer-words}
+### Pointer {#sec-input-pointer-words}
 
-The pointer has a buttons word, X, Y and wheel, in that order. Its button positions are:
+The pointer has four words: buttons, X, Y and wheel.
 
 | Bit | Button |
 | --- | --- |
@@ -245,29 +160,21 @@ The pointer has a buttons word, X, Y and wheel, in that order. Its button positi
 | 3 | Back |
 | 4 | Forward |
 
-X and Y are retained signed 16.16 positions in the displayed image's raster
-coordinate system, not movement deltas or physical screen coordinates. The
-upper-left pixel is (0,0); X increases rightward and Y downward. Standard pointing
-attachments map the image to its displayed extent and clip position to
-`0..width−1` and `0..height−1`. Changing the display mode does not itself clear
-the retained controller snapshot.
+X and Y give the position on the displayed picture. The top-left pixel is
+(0, 0); X increases to the right and Y downward. The position stays within the
+picture.
 
-The wheel word is a signed 16.16 delta in logical scroll steps, positive
-downward and negative upward. One step is `00010000H`; a half step is
-`00008000H`. It describes the most recent attachment update, not an absolute
-wheel position or an accumulation since ARM. A subsequent stationary update
-supplies zero. Reading the retained controller word does not consume or clear
-it, so skipped controller samples can miss movement.
+The wheel word gives the scroll movement since the pointing device last
+reported, in steps (one step = `00010000H`); positive is downward. Wheel
+movement between two readings that are not collected is lost.
 
-### Signed 16.16 values {#sec-input-signed-1616-values}
+### Fixed-point values {#sec-input-signed-1616-values}
 
-Interpret a signed 16.16 word as a signed 32-bit integer divided by 65536.
-A BLua whole-word load already returns an Integer with the word's bits, so
-its sign is the sign of the fixed-point value. For a loaded word `w`,
-`w / 65536.0` produces a Float approximation; the Integer-to-Float conversion
-and division follow the CPU rounding rules.
+Axes, pointer positions and the wheel are signed 16.16 fixed-point numbers:
+the word as a signed 32-bit integer, divided by 65536. In BLua, `w / 65536.0`
+gives the value as a float.
 
-| Raw word | Numeric value |
+| Word | Value |
 | --- | --- |
 | `00000000H` | 0 |
 | `00008000H` | +0.5 |
@@ -275,195 +182,116 @@ and division follow the CPU rounding rules.
 | `FFFF0000H` | −1 |
 | `FFFF8000H` | −0.5 |
 
-Thus `FFFF8000H` is −0.5, not 65535.5. The same decoded +0.5 means
-half-travel on a stick or trigger, half a pixel in a pointer position, and
-half a scroll step in the wheel word.
+## Vibration {#sec-input-pad-output-commands}
 
-The word representation has a quantum of `1/65536` and a range of −32768
-through `32767 + 65535/65536`. A Float cannot retain every one of those
-fractions at every magnitude; keep the word when its exact bits are needed.
-Stick and trigger operating ranges are given above; pointer positions use
-raster coordinates. The controller retains the attachment's words unchanged.
-Apply any additional calibration or dead zone in the program.
-
-## Pad output commands {#sec-input-pad-output-commands}
-
-A short vibration pulse can accompany a collision or other game event. Its
-parameters are the pad number, a fraction of full intensity, and a duration in
-milliseconds. Prepare these three values, then issue APPLY. Input capture and
-output submission are separate operations: a pulse need not wait for another
-sample or display edge.
-
-After an accepted input sample, `IO_INP_OUTPUT_STATUS` bit 0 reports whether
-pad 0 supports vibration; bits 1 through 3 apply to the other pads. Use the bit
-for the intended pad before requesting its effect. This is a capability sample,
-not a report of an effect's progress.
+Set the pad number, the intensity and the duration, then write APPLY. The
+vibration starts at once; it does not wait for VBlank.
 
 ### Intensity and duration {#sec-input-intensity-and-duration}
 
-The normal intensity interval is `00000000H` through `00010000H`, inclusive.
-Intensity is the raw word divided by 65536: zero at `00000000H`, one-half at
-`00008000H`, and maximum at `00010000H`, with a step of 1/65536. The actuator's
-physical response depends on the attached pad.
+Intensity is an unsigned 16.16 number from 0 (`00000000H`) to full
+(`00010000H`). Larger values give full intensity. Duration is in milliseconds.
+APPLY with intensity 0 or duration 0 stops the vibration. A new APPLY for the
+same pad replaces the previous one.
 
-`IO_INP_OUTPUT_DURATION_MS` holds the requested duration as an unsigned 32-bit
-millisecond count. The complete word is retained unchanged throughout the effect;
-readback gives the programmed duration, not remaining time.
+Example: pad 0, half intensity, 100 ms.
 
-APPLY replaces the preceding effect request for the selected pad. A zero
-duration or zero intensity requests an immediate stop. Duration specifies time,
-independently of the requested intensity.
-
-For example, the following ordered writes request pad 0 at half intensity for 100 milliseconds. The last write is the command; the preceding writes only prepare its operands.
-
-| Order | Register | Written word |
+| Order | Register | Value |
 |---|---|---|
 | 1 | `IO_INP_OUTPUT_PORT` | `00000000H` |
 | 2 | `IO_INP_OUTPUT_INTENSITY_Q16` | `00008000H` |
 | 3 | `IO_INP_OUTPUT_DURATION_MS` | `00000064H` |
 | 4 | `IO_INP_OUTPUT_CTRL` | `00000001H` |
 
-### Preparing and submitting the request {#sec-input-preparing-and-submitting-the-request}
+### Registers {#sec-input-preparing-and-submitting-the-request}
 
-The output port uses three retained parameter words and one command word.
-Write the pad to `IO_INP_OUTPUT_PORT`, intensity to
-`IO_INP_OUTPUT_INTENSITY_Q16`, and duration to `IO_INP_OUTPUT_DURATION_MS`.
-These writes only prepare operands; write the complete word `00000001H`
-(APPLY) to `IO_INP_OUTPUT_CTRL` to submit them. A second effect for another pad
-requires selecting that pad and issuing another APPLY.
+The pad is selected by bits 1–0 of `IO_INP_OUTPUT_PORT`. The three parameter
+registers keep their values, so a second pad can be driven by changing only
+the port and writing APPLY again. APPLY is the exact value `00000001H`; other
+values have no effect. `IO_INP_OUTPUT_CTRL` reads 0 after a write.
 
-APPLY uses the parameters present at that write. The selected pad is `IO_INP_OUTPUT_PORT & 3`, so only the low two bits select pads 0 through 3. The upper bits remain stored and readable; they do not select additional pads.
+### Vibration capability {#sec-input-capability-and-completion}
 
-The command is dispatched on the APPLY write, without waiting for ARM or a VBlank edge. There is no output command queue. Each exact APPLY write issues a request with the current parameters. APPLY does not alter those parameters or the sampled capability word.
+Bits 3–0 of `IO_INP_OUTPUT_STATUS` show which pads can vibrate (bit 0 for
+pad 0). The bits are updated with each reading. There is no status or
+interrupt for the end of a vibration.
 
-`IO_INP_OUTPUT_CTRL` tests the entire command word. A word such as `00000003H`, `00000101H` or `80000001H` is not APPLY, even though bit 0 is set. Other command words issue no request. After a command write completes, the control word reads zero; that zero is not an output-completion indication.
+## Registers {#sec-input-register-map}
 
-The intensity register retains all 32 bits, and APPLY decodes the full
-unsigned U16.16 word exactly: `FFFFFFFFH` requests
-`65535 + 65535/65536`. The output attachment saturates requests above one to
-its maximum intensity. This saturation does not rewrite the programmed word.
-Unsupported output attachments produce no effect.
-
-### Capability and completion {#sec-input-capability-and-completion}
-
-`IO_INP_OUTPUT_STATUS` contains sampled vibration-capability bits, one per pad in bits 0 through 3. It is refreshed with the other input words when an armed sample is accepted. Until then it retains the previous snapshot's value; after reset it is zero until a new sample is accepted. The complete supplied word is retained, including bits above bit 3.
-
-Use the capability bits to identify pads supporting vibration. They retain
-their sampled values when APPLY is written. The output port supplies no busy,
-completion or error indication and raises no output-complete interrupt.
-
-Input RESET zeroes the output parameters and capability word without issuing a stop or cancellation command for an earlier request. Do not use a register reset as an output-stop operation.
-
-## Register map {#sec-input-register-map}
-
-All addresses below are byte addresses. `R` denotes a read-only word; `R/W` denotes a readable word with write behavior. Command words must be written in full, rather than treated as independently writable control bits. Every listed word has reset value `00000000H`.
+All registers are 32-bit words and are 0 after reset.
 
 ### Sampling control {#sec-input-sampling-control}
 
-| Address | Register | Access | Bits and use | Reset |
-|---|---|---|---|---|
-| `08000064H` | `IO_INP_CTRL` | R/W | 31:0: exact command word; ARM = `00000001H`, RESET = `00000002H` | `00000000H` |
-| `08000068H` | `IO_INP_STATUS` | R | 31:0: accepted-sample sequence, modulo 2³² | `00000000H` |
+| Address | Register | Access | Contents |
+|---|---|---|---|
+| `08000064H` | `IO_INP_CTRL` | R/W | Command: ARM = `00000001H`, RESET = `00000002H` |
+| `08000068H` | `IO_INP_STATUS` | R | Sample counter |
 
-: {tbl-colwidths="[16,34,7,27,16]"}
+: {tbl-colwidths="[18,30,10,42]"}
 
-### Keyboard and pointer snapshot {#sec-input-keyboard-and-pointer-snapshot}
+### Keyboard and pointer {#sec-input-keyboard-and-pointer-snapshot}
 
-| Address | Register | Access | Bits and use | Reset |
-|---|---|---|---|---|
-| `0800006CH` to `08000088H`, stride 4 | `IO_INP_KEYS[0..7]` | R | 31:0 of each word: keyboard bitmap | All `00000000H` |
-| `0800008CH` | `IO_INP_POINTER_BUTTONS` | R | 31:0: pointer button word | `00000000H` |
-| `08000090H` | `IO_INP_POINTER_X` | R | 31:0: pointer X word | `00000000H` |
-| `08000094H` | `IO_INP_POINTER_Y` | R | 31:0: pointer Y word | `00000000H` |
-| `08000098H` | `IO_INP_POINTER_WHEEL` | R | 31:0: pointer wheel word | `00000000H` |
+| Address | Register | Access | Contents |
+|---|---|---|---|
+| `0800006CH`–`08000088H` | `IO_INP_KEYS[0..7]` | R | Keyboard bits |
+| `0800008CH` | `IO_INP_POINTER_BUTTONS` | R | Pointer buttons |
+| `08000090H` | `IO_INP_POINTER_X` | R | Pointer X |
+| `08000094H` | `IO_INP_POINTER_Y` | R | Pointer Y |
+| `08000098H` | `IO_INP_POINTER_WHEEL` | R | Pointer wheel |
 
-: {tbl-colwidths="[16,34,7,27,16]"}
+: {tbl-colwidths="[18,30,10,42]"}
 
-### Pad snapshot records {#sec-input-pad-snapshot-records}
+### Game pads {#sec-input-pad-snapshot-records}
 
-`IO_INP_PADS` contains four records. Each record occupies seven words, or `1CH` bytes.
-
-| Pad index | Record base |
+| Pad | Address |
 |---|---|
 | 0 | `0800009CH` |
 | 1 | `080000B8H` |
 | 2 | `080000D4H` |
 | 3 | `080000F0H` |
 
-The following offsets apply to each record base.
+Each pad occupies seven words; see [game pads](#sec-input-pad-records).
 
-| Offset | Register field | Access | Bits and use | Reset |
-|---|---|---|---|---|
-| `+00H` | Buttons | R | 31:0: pad button word | `00000000H` |
-| `+04H` | Left X | R | 31:0: left-stick X word | `00000000H` |
-| `+08H` | Left Y | R | 31:0: left-stick Y word | `00000000H` |
-| `+0CH` | Right X | R | 31:0: right-stick X word | `00000000H` |
-| `+10H` | Right Y | R | 31:0: right-stick Y word | `00000000H` |
-| `+14H` | Left trigger | R | 31:0: left-trigger word | `00000000H` |
-| `+18H` | Right trigger | R | 31:0: right-trigger word | `00000000H` |
+### Vibration {#sec-input-pad-output-port}
 
-### Pad output port {#sec-input-pad-output-port}
+| Address | Register | Access | Contents |
+|---|---|---|---|
+| `0800010CH` | `IO_INP_OUTPUT_PORT` | R/W | Pad number (bits 1–0) |
+| `08000110H` | `IO_INP_OUTPUT_INTENSITY_Q16` | R/W | Intensity |
+| `08000114H` | `IO_INP_OUTPUT_DURATION_MS` | R/W | Duration in ms |
+| `08000118H` | `IO_INP_OUTPUT_STATUS` | R | Vibration capability (bits 3–0) |
+| `0800011CH` | `IO_INP_OUTPUT_CTRL` | W (reads 0) | Command: APPLY = `00000001H` |
 
-| Address | Register | Access | Bits and use | Reset |
-|---|---|---|---|---|
-| `0800010CH` | `IO_INP_OUTPUT_PORT` | R/W | 1:0: selected pad index; 31:2 retained | `00000000H` |
-| `08000110H` | `IO_INP_OUTPUT_INTENSITY_Q16` | R/W | 31:0: raw intensity word | `00000000H` |
-| `08000114H` | `IO_INP_OUTPUT_DURATION_MS` | R/W | 31:0: unsigned duration in milliseconds | `00000000H` |
-| `08000118H` | `IO_INP_OUTPUT_STATUS` | R | 3:0: sampled vibration-capability bits for pads 3 through 0; 31:4 retain supplied bits | `00000000H` |
-| `0800011CH` | `IO_INP_OUTPUT_CTRL` | R/W | 31:0: exact command word; APPLY = `00000001H`; reads zero after a command write | `00000000H` |
+: {tbl-colwidths="[18,30,10,42]"}
 
-: {tbl-colwidths="[16,34,7,27,16]"}
+## Commands {#sec-input-control-words-and-reset}
 
-## Control words and reset {#sec-input-control-words-and-reset}
+`IO_INP_CTRL` takes complete command values; the bits cannot be combined.
 
-`IO_INP_CTRL` recognizes complete words, not combinable flags.
-
-| Written word | Effect |
+| Value | Command |
 |---|---|
-| `00000000H` | Retains zero in CTRL; does not arm, reset or cancel a pending request |
-| `00000001H` | Arms one sample; leaves CTRL equal to `00000001H` |
-| `00000002H` | Resets the sampling register file and sequence; CTRL becomes zero |
-| `00000003H` | Retains `00000003H`; does not combine ARM and RESET and does not cancel a pending request |
-| Any other word | Retains the complete word; leaves the pending request, sequence and other register state unchanged |
+| `00000001H` | ARM: take a reading at the next VBlank |
+| `00000002H` | RESET: clear all input and vibration registers and the sample counter |
+| Other values | No effect |
 
-RESET takes effect on the control write. It clears any pending sample, sets `IO_INP_STATUS` to zero and zeroes the keyboard, pointer and pad words. It also zeroes the output port, intensity, duration and capability words. A console input-controller reset additionally sets `IO_INP_OUTPUT_CTRL` to zero.
+RESET does not stop a vibration in progress. To stop it, write APPLY with
+duration 0.
 
-The RESET command does not clear the previously sampled supervisor-request
-level. Holding that wire high across this command therefore does not create
-a new rising edge. A whole-unit reset initializes its edge history to low.
+## VBlank and the interrupt {#sec-input-vblank-ordering-interrupts-and-access-faults}
 
-An accepted sample does not replace the output parameter words. ARM itself does not sample immediately, increment the sequence or clear the existing snapshot. Unrecognized control words cause no input-specific fault.
+At the start of VBlank the reading is taken before the VBlank interrupt is
+requested, so an interrupt handler can read the new values. There is no
+separate interrupt for the input controller. A VBlank can occur without a
+reading, so test `IO_INP_STATUS`.
 
-## VBlank ordering, interrupts and access faults {#sec-input-vblank-ordering-interrupts-and-access-faults}
+The input controller also tests the monitor request line at each VBlank; see
+[supervisor mode and the monitor](system.md#sec-system-privilege-and-supervisor-entry).
 
-At VBlank begin, the display controller presents the frame, INPUT captures any
-armed sample, and the central controller raises `IRQ_VBLANK` (`00000004H`), in
-that order. The interrupt handler can therefore read the new snapshot and
-STATUS sequence. Handler entry depends on the CPU interrupt-enable state and
-other pending work.
+Writing a read-only register causes a READ_ONLY bus fault.
 
-Independently of ARM, the controller also observes the dedicated supervisor-request
-wire at each VBlank. A low-to-high transition is forwarded to SYSTEM; holding
-the wire high does not generate another transition. This wire is not a
-keyboard usage or a pad bit, and does not require a cartridge sample. See
-[SYSTEM, Privilege and supervisor entry](system.md#sec-system-privilege-and-supervisor-entry).
+### After startup and after the monitor {#sec-input-bios-handoff-and-supervisor-sampling}
 
-There is no separate input-complete interrupt. VBlank pending state is coalesced, not a count of completed samples, so test the sample sequence even when using VBlank interrupts. A cartridge that waits with HALT must first enable an owned VBlank interrupt route, and must recheck `IO_INP_STATUS` after waking. An interrupt source that is merely pending but masked does not guarantee a wakeup.
-
-The snapshot words, `IO_INP_STATUS` and `IO_INP_OUTPUT_STATUS` are read-only. A mapped whole-word write to one of these words raises the shared bus fault `BUS_FAULT_READ_ONLY` (code 3), without changing the word. The controller defines no separate input fault register. General alignment and access-size rules are those of the memory interface.
-
-### BIOS handoff and supervisor sampling {#sec-input-bios-handoff-and-supervisor-sampling}
-
-The BIOS samples this controller during boot and does not reset INPUT when
-handing control to the cartridge. The register table's reset words are not a
-cartridge-entry snapshot. Retain the **current** STATUS as the baseline for
-the sampling sequence above; do not require an initial sequence of zero.
-
-INPUT is not context-banked. Cartridge and supervisor share its pending ARM
-request, accepted-sample sequence and register file. The BIOS monitor arms
-captures while it runs: each accepted capture replaces the shared snapshot
-and advances the same sequence. LEAVE does not restore the cartridge's earlier
-snapshot or sequence. After resuming, request and observe a new capture before
-treating those words as a fresh cartridge sample. See
-[SYSTEM, Device boundaries during supervisor service](system.md#sec-system-device-boundaries-during-supervisor-service),
-for the other units' preservation rules.
+The BIOS reads the controls during startup, so `IO_INP_STATUS` is not 0 when
+the program starts. The BIOS monitor also takes readings, and the registers
+are not restored when the program resumes. Take a new reading before using
+the controls after startup and after a return from the monitor.

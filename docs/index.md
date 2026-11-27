@@ -18,14 +18,14 @@ Cartridge socket selection and mapped card devices are covered in Book III.
 
 ::: {.content-visible when-profile="book-ii"}
 
-BLua32 provides the processor instructions and language facilities used by
-BMSX cartridge programs. The resident BIOS supplies callable services for
-program loading, diagnostics and common operations. This volume specifies
-those interfaces and the program-image formats they use.
+The BMSX is programmed in BLua, which its processor executes directly. System
+ROM holds the BIOS: startup, the standard library, the compiler for text and
+the monitor. This volume describes the language, the BIOS functions, the
+program format and the instruction set.
 
-For BLua programming, begin with Chapter 2. For instruction encoding, begin
-with Chapter 1 and the program-image reference in Chapter 3. Each BIOS entry
-specifies its call, arguments, results and effects.
+Begin with Chapter 1 for the system and Chapter 2 for the language. The BIOS
+chapters follow; the last chapters give the program format and the
+instructions, for machine code and program tools.
 
 Physical memory mapping and hardware control are covered in Book I.
 Cartridge sockets and mapped card devices are covered in Book III.
@@ -58,28 +58,17 @@ map. The interrupt and DMA chapters explain the shared service and transfer
 mechanisms used by the individual units. Each unit chapter then gives its
 operating explanation, programming sequences and complete technical reference.
 
-**Book II — BLua32 and BIOS Reference** describes the processor, instruction set,
-BLua language extensions and resident BIOS services. It supplies the program
-and data representations needed to implement cartridge software. The BLua
-chapter explains the source-language extensions; the CPU chapter is the
-instruction reference. Program images and startup have their own chapter,
-separate from physical memory mapping. BIOS diagnostics describes console
-output, source and frame inspection, and the optional records that support them.
-
-For BLua source programming, begin with the language-extensions chapter and
-use the CPU chapter for the underlying operations and timing. For instruction
-encoding or independent code generation, begin with the CPU and program-image
-references. The startup chapter explains the state established before
-application entry; the BIOS chapters specify callable services available to
-that application.
+**Book II — BLua32 and BIOS Reference** describes BLua, the language of the
+console, and the BIOS in System ROM: the standard library, the compiler for
+text and the monitor. It begins with the BLua system and the language; the
+program format and the instruction set, for machine code and program tools,
+come last.
 
 **Book III — Cartridge and Expansion Reference** describes cartridge sockets
 and mapped card devices, including their memory and interrupt interfaces.
 
-Addresses are byte addresses unless stated otherwise. Register descriptions
-give bit positions within the named word; binary layouts give byte offsets
-within the described structure. Capacities, units and synchronization conditions
-are specified with the interface to which they apply.
+Addresses are byte addresses. Register tables give bit positions within the
+word; record layouts give byte offsets within the record.
 
 Hexadecimal quantities use uppercase digits and the suffix `H`. Program
 fragments retain the notation of their language, including BLua hexadecimal

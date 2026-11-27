@@ -1,47 +1,32 @@
 # BIOS time and calendar services {#sec-bios-os}
 
-The BIOS provides sampled elapsed time and civil-date conversion through the
-`os` Table. Use `clock` or the no-argument `time` form to sample system time.
-Use explicit timestamps with `time(date)` and `date(format, timestamp)` for
-stored calendar dates. `difftime` subtracts whole-second values.
+The `os` table provides the time since the console was switched on and
+conversion between dates and timestamps. The time comes from the
+[TIME_MS counter](system.md#sec-system-system-time-and-frame-timing); it is not
+a calendar clock. Dates use timestamps in seconds since 1970-01-01 00:00:00, in
+the fixed BMSX zone (no time zones, no daylight saving).
 
-The sampled counter is the system millisecond word, not a calendar clock.
-Civil conversion uses its own 1970 epoch and fixed BMSX zone convention.
-[[system-control reference](system.md#sec-system)]{.content-visible when-format="html"}[Book I, Chapter 12]{.content-visible when-format="pdf"} specifies the underlying counter;
-[Number arithmetic](cpu.md#sec-cpu-values-and-numeric-instructions) determines
-precision in date calculations. These services provide no filesystem or
-process operations.
+| Function | Result |
+| --- | --- |
+| `os.clock()` | Time since switch-on, in seconds (Float) |
+| `os.time()` | Time since switch-on, in whole seconds |
+| `os.time(date)` | Timestamp of a date |
+| `os.date(format, timestamp)` | Date as text or as a table |
+| `os.difftime(t2, t1)` | t2 − t1 |
 
-| Call | Returned value | Operation |
-| --- | --- | --- |
-| `os.clock()` | One Number, seconds | Sample the millisecond word and divide by 1000. |
-| `os.time(date_table)` | One Number, whole seconds | With nil, sample time; otherwise normalize the supplied civil fields in place and return their timestamp. |
-| `os.date(format, timestamp)` | One String or new Table | Format or decompose the selected timestamp. |
-| `os.difftime(t2, t1)` | One Number, seconds | Check each argument against its integer component, then subtract. |
+The time since switch-on and timestamps are both in seconds, but have
+different origins: `os.date(..., os.time())` does not give today's date.
 
-Use sampled time for intervals within one counter range. Use an explicit
-civil timestamp for stored dates. Passing a sampled `os.time()` result to
-`os.date()` applies the civil epoch to that number; it does not obtain the
-current calendar date from a clock or preserve elapsed time across counter
-wrap. The two uses share seconds as a unit, not a common time origin.
-
-
-## Example: time and calendar operations {#sec-bios-os-example-time-and-calendar-operations}
-
-Use an explicit timestamp for a stored calendar date. `os.time` normalizes the
-caller-owned Table, while `os.date('*t', ...)` creates a separate Table:
+## Example {#sec-bios-os-example-time-and-calendar-operations}
 
 ```lua
 local date = { year = 2024, month = 2, day = 28, hour = 25, min = 2, sec = 3 }
 local timestamp = os.time(date)             -- 1709168523
--- date is now 2024-02-29 at 01:02:03; wday = 5, yday = 60, isdst = false.
+-- date is now 2024-02-29 01:02:03, wday = 5, yday = 60, isdst = false
 local fields = os.date('*t', timestamp)
 local label = os.date('%F %T', timestamp)   -- '2024-02-29 01:02:03'
-local elapsed = os.difftime(timestamp, timestamp - 90) -- 90 seconds
+local elapsed = os.difftime(timestamp, timestamp - 90) -- 90
 ```
-
-
-Calendar-year and ISO-week-year fields can differ at a year boundary:
 
 | Call | Result |
 | --- | --- |
@@ -51,53 +36,39 @@ Calendar-year and ISO-week-year fields can differ at a year boundary:
 | `os.date('%F %T', -1)` | `'1969-12-31 23:59:59'` |
 | `os.date('offset %z zone %Z %%', 0)` | `'offset +0000 zone BMSX %'` |
 
+## os.clock {#sec-bios-os-osclock-sampled-time-in-seconds}
 
-## `os.clock()` — sampled time in seconds {#sec-bios-os-osclock-sampled-time-in-seconds}
+```text
+os.clock() -> seconds
+```
 
-`os.clock()` returns one Float in seconds. Interpret the current millisecond
-word as an unsigned value, convert it to Float, then divide by `1000.0`.
-The conversion and division follow the CPU's binary32 rounding rules.
-
-The sampled word contains whole milliseconds modulo 2³² and wraps to zero.
-Float rounding means that not every millisecond remains distinguishable at
-large sampled times. Use the raw SYSTEM word for an interval that needs the
-counter's full precision. The counter measures system time, including
-intervals when a particular program is not executing.
-
-For example, two readings can be subtracted to measure a span within the same uninterrupted counter range:
+Returns TIME_MS / 1000 as a Float. At large values the Float no longer shows
+every millisecond; use TIME_MS itself for full precision. The counter wraps
+after 2^32^ ms (about 49.7 days); a difference across the wrap is wrong.
 
 ```lua
 local before = os.clock()
--- Perform the work being measured.
-local after = os.clock()
-local elapsed = after - before
+-- Work to be measured.
+local elapsed = os.clock() - before
 ```
 
-Each call takes a new sample. If the word wraps between readings, direct
-subtraction crosses that discontinuity. Track wrap at the counter level when
-an interval must span it; `os.difftime` also performs ordinary subtraction.
+## os.time {#sec-bios-os-ostimedate_table-whole-seconds-or-civil-conversion}
 
-## `os.time([date_table])` — whole seconds or civil conversion {#sec-bios-os-ostimedate_table-whole-seconds-or-civil-conversion}
+```text
+os.time() -> seconds
+os.time(date) -> timestamp
+```
 
-`os.time()` and `os.time(nil)` return one Integer: interpret the sampled
-millisecond word as unsigned, then divide by 1000 and discard the remainder.
-The result is a whole-second value in the range 0 through 4294967. Its wrap
-is still the wrap of the underlying 2³²-millisecond word, not a 2³²-second
-interval. This call takes its own sample; it does not reuse a preceding
-`os.clock()` reading.
+Without an argument (or with nil), returns TIME_MS // 1000 as an Integer
+(0 to 4294967).
 
-Supply a date Table for civil conversion. The result is a whole-second
-timestamp, and the same Table receives normalized calendar fields. Nil
-selects sampling; every other supplied value selects the date-field route.
-Conversion leaves the sampled clock unchanged.
+With a date table, returns its timestamp and corrects the table (see below).
 
+### Timestamps {#sec-bios-os-civil-timestamp-convention}
 
-### Civil timestamp convention {#sec-bios-os-civil-timestamp-convention}
-
-A civil timestamp is a signed Integer count of seconds. The first supported
-instant is 1901-12-13 20:45:52 (−2147483648); the last is 2038-01-19
-03:14:07 (2147483647). The BIOS rejects a date outside this interval rather
-than wrapping into a different year. Timestamp 0 has the following fields:
+A timestamp is a signed 32-bit number of seconds, from 1901-12-13 20:45:52
+(−2147483648) to 2038-01-19 03:14:07 (2147483647). Dates outside this range
+raise an error. Timestamp 0:
 
 | Field | Value |
 | --- | --- |
@@ -111,463 +82,294 @@ than wrapping into a different year. Timestamp 0 has the following fields:
 | `yday` | 1 |
 | `isdst` | false |
 
-
-This origin belongs to civil-date conversion; it is independent of the running millisecond counter.
-
-
-For example:
-
 ```lua
 local date = { year = 1970, month = 1, day = 1, hour = 0 }
-local timestamp = os.time(date)
+local timestamp = os.time(date)   -- 0
 ```
 
+Without `hour`, the result would be 43200 (12:00).
 
-Here `timestamp` is 0, and `date` receives all nine fields shown above. If `hour` had also been omitted, its default would have been 12, producing 43200 instead.
+### Fields {#sec-bios-os-input-fields-defaults-and-bounds}
 
-
-### Input fields, defaults, and bounds {#sec-bios-os-input-fields-defaults-and-bounds}
-
-Fields are read and checked in this exact order: `year`, `month`, `day`, `hour`, `min`, `sec`. Each field's lookup and validation finish before the next field is read.
-
-| Field | Value when nil | Inclusive accepted integer range |
+| Field | Default | Range |
 | --- | --- | --- |
-| `year` | Required | −2147483648 through 2147483647 |
-| `month` | Required | −2147483648 through 2147483647 |
-| `day` | Required | −2147483648 through 2147483647 |
-| `hour` | 12 | −2147483648 through 2147483647 |
-| `min` | 0 | −2147483648 through 2147483647 |
-| `sec` | 0 | −2147483648 through 2147483647 |
+| `year` | Required | 32-bit integer |
+| `month` | Required | 32-bit integer |
+| `day` | Required | 32-bit integer |
+| `hour` | 12 | 32-bit integer |
+| `min` | 0 | 32-bit integer |
+| `sec` | 0 | 32-bit integer |
 
+The fields are checked in this order. Each must be a number with an integer
+value; strings are not converted. `wday`, `yday` and `isdst` are not read.
 
-Only nil selects a missing-field error or an optional default. False is a supplied value, not a default. A nil optional field uses its default without undergoing the integer check.
+### Correction {#sec-bios-os-normalization-and-result-checking}
 
-A supplied field must equal its truncated integer component and pass the
-listed bounds. Fractions, NaN and non-Number values fail the integer test;
-infinities fail the bounds test. Supply Numbers, not numeric Strings.
-
-Out-of-range calendar fields within those numeric bounds normalize
-arithmetically. For example, month 13 carries into the next year and hour 25
-carries into the next day. Only the six listed fields contribute to the
-timestamp; `wday`, `yday` and `isdst` are recomputed outputs.
-
-### Normalization and result checking {#sec-bios-os-normalization-and-result-checking}
-
-Months first carry into the year. Days then participate arithmetically in the
-civil-date conversion, including values outside the selected month's length.
-Hours, minutes, and seconds contribute their corresponding numbers of seconds.
-Fields that cross a calendar boundary therefore normalize through the combined
-timestamp.
-
-For example:
+Values outside the usual range carry over: month 13 is January of the next
+year, hour 25 is 01:00 of the next day.
 
 ```lua
-local date = {
-    year = 1970, month = 1, day = 1,
-    hour = 25, min = 0, sec = 0
-}
-local timestamp = os.time(date)
+local date = { year = 1970, month = 1, day = 1, hour = 25, min = 0, sec = 0 }
+local timestamp = os.time(date)   -- 90000; date becomes 1970-01-02 01:00:00
 ```
 
-This produces timestamp 90000 and normalizes the Table to 1970-01-02 at 01:00:00, together with its recomputed `wday`, `yday`, and `isdst` fields.
+Only the final timestamp must lie in the range above. Negative timestamps are
+divided into days by rounding down: −1 is 23:59:59 on the day before.
 
-The combined result must be in the signed timestamp interval above. Range is
-checked after normalization: for example, an extra day and −24 hours cancel.
-A failed conversion does not write normalized fields into the supplied Table.
+### The table {#sec-bios-os-in-place-table-update}
 
-Negative timestamps use floor-day decomposition. For example, timestamp −1 belongs to the day before timestamp 0, at 23:59:59; the day is not obtained by truncating toward zero.
+If the date is valid, os.time writes into the table, in this order: `year`,
+`month`, `day`, `hour`, `min`, `sec`, `wday`, `yday`, `isdst`. `wday` is the
+weekday (Sunday 1 to Saturday 7):
 
-### In-place Table update {#sec-bios-os-in-place-table-update}
+```text
+wday = ((days + 4) mod 7) + 1        days = timestamp // 86400
+```
 
+`yday` is the day of the year (from 1) and `isdst` is always false. Other
+fields of the table are kept. On an error the table is not changed.
 
-After all six fields and the combined timestamp pass their checks, the function
-converts the timestamp back to calendar fields before making its first Table
-write. It then writes these fields in this order:
+### Errors {#sec-bios-os-errors-and-their-order}
 
-`year`, `month`, `day`, `hour`, `min`, `sec`, `wday`, `yday`, `isdst`.
+| Error | Message |
+| --- | --- |
+| Missing field | `field 'year' missing in date table` (also `month`, `day`) |
+| Not an integer | `field '<field>' is not an integer` |
+| Out of range | `field '<field>' is out-of-bound` |
+| Timestamp out of range | `time is out-of-bound` |
+| Not a table | `Attempted to index field on a non-table value.` |
 
+### Time {#sec-bios-os-work-involved}
 
-`wday` uses a seven-day index. As a mathematical formula, with `days` denoting the floor-day index of the timestamp:
+The conversion is a fixed calculation; its time does not depend on the date.
 
-**weekday index = ((days + 4) modulo 7) + 1.**
+## os.difftime {#sec-bios-os-osdifftimet2-t1-subtract-whole-second-values}
 
-`yday` is the one-based day within the resulting year. `isdst` is always written as false; no daylight-saving adjustment is applied.
+```text
+os.difftime(t2, t1) -> t2 − t1
+```
 
-The supplied Table is not replaced, and other fields are not cleared. Reads use ordinary field lookup, including Table-valued `__index` chains; function-valued `__index` entries are not called. The output stores go directly into the supplied Table and are not redirected through `__newindex`.
-
-### Errors and their order {#sec-bios-os-errors-and-their-order}
-
-The messages below describe calls with the normally installed public `error` function.
-
-Missing required fields produce these exact messages:
-
-- `field 'year' missing in date table`
-- `field 'month' missing in date table`
-- `field 'day' missing in date table`
-
-
-For each supplied field, the integer check precedes the bounds check. Their exact message forms are:
-
-- `field '<field>' is not an integer`
-- `field '<field>' is out-of-bound`
-
-
-Here `<field>` is replaced by `year`, `month`, `day`, `hour`, `min`, or `sec`, as appropriate. Because fields are processed in order, a failure in an earlier field is reached before a later field is read.
-
-After the fields are accepted the result is already a whole second. An
-out-of-range combined timestamp raises `time is out-of-bound`.
-
-Date fields use ordinary indexed reads and writes. Passing false selects
-conversion and fails its first field read with
-`Attempted to index field on a non-table value.` Other indexed-access errors
-retain their ordinary texts, including
-`Attempted to assign to a non-table value.` and
-`Metatable __index loop detected.`
-
-### Work involved {#sec-bios-os-work-involved}
-
-Sampling reads one time word and divides. Date conversion reads six input
-fields, calculates the timestamp and normalized date, then writes nine
-fields. Its calendar calculation uses arithmetic rather than advancing one
-day at a time. Ordinary calls, field accesses and arithmetic contribute their
-CPU instruction costs.
-
-## `os.difftime(t2, t1)` — subtract whole-second values {#sec-bios-os-osdifftimet2-t1-subtract-whole-second-values}
-
-`os.difftime(t2, t1)` returns one Number, computed as the integer part of `t2` minus the integer part of `t1`, after checking that each argument equals its own integer part. For whole-second timestamps, the result is a signed difference in seconds: positive when `t2` is greater than `t1`.
+Both must be numbers with integer values: otherwise
+`os.difftime t2 must be an integer.` or `os.difftime t1 must be an integer.`
+(t2 is checked first). The result is an Integer, or a Float if it does not fit.
 
 ```lua
 local first = os.time({ year = 1970, month = 1, day = 1, hour = 0 })
 local second = os.time({ year = 1970, month = 1, day = 2, hour = 0 })
-local seconds = os.difftime(second, first)
--- seconds is 86400.
+local seconds = os.difftime(second, first) -- 86400
 ```
 
-The function checks `t2` first and then `t1`. With the normally installed public `error`, the exact messages are:
+### Globals used {#sec-bios-os-retained-dependencies-and-call-arguments}
 
-- `os.difftime t2 must be an integer.`
-- `os.difftime t1 must be an integer.`
+The os functions keep the number functions they had at installation. Errors
+are raised with the current global `error`.
 
-Fractions, NaN, missing/nil arguments, false, and other non-Number values fail the corresponding equality check; numeric strings are not parsed. If both arguments fail, the `t2` message is reached first.
+## Calendar calculation {#sec-bios-os-shared-civil-day-calculations}
 
-The operands are checked for integer equality without the civil-field or
-timestamp bounds. Infinities therefore pass those checks; their subtraction
-can yield infinity or NaN. A difference of two Integers remains an Integer
-when representable; a larger signed difference is rounded to a Float, not
-wrapped. Differences with an out-of-range Float operand use Float subtraction.
+D(year, month, day) gives the day number (0 = 1970-01-01), C(days) the date.
+`//` is division rounded down and `%` its remainder.
 
-`difftime` reads no clock and applies no calendar conversion. For samples
-straddling the millisecond-counter wrap, account for the discontinuity before
-using ordinary whole-second subtraction.
-
-### Retained dependencies and call arguments {#sec-bios-os-retained-dependencies-and-call-arguments}
-
-The conversion and truncation functions used here are retained at BIOS installation;
-replacing public Math bindings does not change date validation. Reported errors
-call the current global `error`.
-
-Missing fixed parameters are nil and surplus arguments are ignored. Thus an
-omitted date Table selects sampling, while missing `difftime` operands fail
-their integer checks. [BLua source-call diagnostics](blua-programs.md#sec-blua-programs-known-call-argument-diagnostics)
-also apply when the callee signature is known at compilation.
-
-## Shared civil-day calculations {#sec-bios-os-shared-civil-day-calculations}
-
-The formulas below define `D(year, month, day)`, the civil-day index, and
-`C(days)`, its inverse. The equations use mathematical integers,
-with floor division (`//`) and its corresponding remainder (`%`). Intermediate
-products are not wrapped timestamp words. These are reference formulas, not additional BIOS
-functions or BLua program listings.
-
-
-**Forward calculation: `D(year, month, day)`**
+**D(year, month, day)**
 
 ```text
 if month <= 2: year = year - 1
 era = year // 400
 year_of_era = year - era * 400
 month_prime = month + (if month > 2 then -3 else 9)
-day_of_year = (153 * month_prime + 2) // 5
-day_of_year = day_of_year + day - 1
-day_of_era = year_of_era * 365 + year_of_era // 4
-day_of_era = day_of_era - year_of_era // 100
-day_of_era = day_of_era + day_of_year
+day_of_year = (153 * month_prime + 2) // 5 + day - 1
+day_of_era = year_of_era * 365 + year_of_era // 4 - year_of_era // 100 + day_of_year
 result = era * 146097 + day_of_era - 719468
 ```
 
-
-
-**Inverse calculation: `C(days)`**
+**C(days)**
 
 ```text
 shifted = days + 719468
 era = shifted // 146097
 day_of_era = shifted - era * 146097
-year_numerator = day_of_era - day_of_era // 1460
-year_numerator = year_numerator + day_of_era // 36524
-year_numerator = year_numerator - day_of_era // 146096
-year_of_era = year_numerator // 365
+year_of_era = (day_of_era - day_of_era // 1460 + day_of_era // 36524 - day_of_era // 146096) // 365
 year = year_of_era + era * 400
-year_days = 365 * year_of_era + year_of_era // 4
-year_days = year_days - year_of_era // 100
-day_of_year = day_of_era - year_days
+day_of_year = day_of_era - (365 * year_of_era + year_of_era // 4 - year_of_era // 100)
 month_prime = (5 * day_of_year + 2) // 153
 day = day_of_year - (153 * month_prime + 2) // 5 + 1
 month = month_prime + (if month_prime < 10 then 3 else -9)
 if month <= 2: year = year + 1
-result = (year, month, day)
 ```
 
-
-**Month normalization for `os.time`**
-
-Before applying `D`, `os.time` calculates the normalized year and month as follows. Opposing field offsets cancel before the final timestamp range check.
+**os.time**
 
 ```text
 month_index = month - 1
-year_offset = month_index // 12
-normalized_year = year + year_offset
-normalized_month = month_index - year_offset * 12 + 1
-timestamp = D(normalized_year, normalized_month, day) * 86400
-timestamp = timestamp + hour * 3600
-timestamp = timestamp + min * 60
-timestamp = timestamp + sec
+year = year + month_index // 12
+month = month_index % 12 + 1
+timestamp = D(year, month, day) * 86400 + hour * 3600 + min * 60 + sec
 ```
 
-The resulting timestamp then undergoes the ordinary time-value check. Timestamp decomposition and the date/week rules use the same `D` and `C` calculations.
-
-
-## `os.date` {#sec-bios-os-osdate}
-
-```lua
-os.date(format, timestamp)
-```
-
-`os.date` returns one value: either a formatted String or a newly created Table. Choose the Table form when the individual calendar fields are needed; choose a format string when textual output is needed. It defines no date-specific processing for additional arguments.
-
-
-
-### Selecting the result {#sec-bios-os-selecting-the-result}
-
-Only `nil` selects a default. An omitted parameter is `nil` on an ordinary call.
-
-| Argument | Selection |
-|---|---|
-| `format == nil` | Use `"%c"`. |
-| A format beginning with `!` | Remove exactly one leading `!` before selecting the result kind. |
-| Format exactly `"*t"` after that removal | Return a fresh Table. |
-| Any other accepted format | Return a String. |
-| `timestamp == nil` | Read the word at address `08010228H` in this call, interpret it as unsigned and divide by 1000, discarding the remainder. |
-| Explicit timestamp | Apply the integer and range checks below. |
-
-
-Thus `"*t"` and `"!*t"` select the Table result. `"!!*t"` does not: after removing one `!`, the remaining `"!*t"` is an ordinary format string. With a valid timestamp it is copied literally. The removed `!` is not retained as a mode flag and does not select a different calendar or time-zone calculation.
-
-`date` selects the format, removes one leading `!`, then selects or checks
-the timestamp. It decomposes the calendar fields before producing the chosen
-Table or scanning a String format. An empty format still checks its timestamp;
-a malformed conversion is reached after timestamp processing.
-
-`false` is not a substitute for `nil`. A false format reaches the length operation within `string.sub` before timestamp processing and raises `Attempted to get length of an unsupported value.` (Lua reason 0); it does not produce a date-specific argument error. A false timestamp raises `time is not an integer` rather than selecting the default timestamp.
-
-### Explicit timestamp checks {#sec-bios-os-explicit-timestamp-checks}
-
-Supply an Integer or a Float whose value is an exact Integer in the signed
-timestamp interval. Fractions, NaN and non-Numbers raise `time is not an
-integer`; an integral Float outside the interval or an infinity raises
-`time is out-of-bound`. Values are not parsed as text, truncated, or wrapped.
-The default counter sample already produces an Integer and needs no conversion.
-
-### Table result and calendar fields {#sec-bios-os-table-result-and-calendar-fields}
-
-The `"*t"` form creates a new Table on every call and writes exactly these fields:
-
-| Field | Meaning |
-|---|---|
-| `year` | Civil year. |
-| `month` | Civil month, with January numbered 1. |
-| `day` | Day of the civil month. |
-| `hour` | Hour derived from the seconds within the day. |
-| `min` | Minute within that hour. |
-| `sec` | Remaining seconds within that minute. |
-| `wday` | Weekday with Sunday numbered 1 and Saturday numbered 7. |
-| `yday` | Day of the civil year, with January 1 numbered 1. |
-| `isdst` | Always `false`. |
-
-This form does not consume a caller-supplied date Table. It returns the newly created Table itself.
-
-The following is documentary formula notation, not a BLua program. The [shared civil-day calculations](#sec-bios-os-shared-civil-day-calculations) above define `D(y, m, d)` and `C(days)`; both result forms use those same calculations.
+## os.date {#sec-bios-os-osdate}
 
 ```text
-days           = timestamp // 86400
-seconds_of_day = timestamp - days * 86400
-(year, month, day) = C(days)
-hour           = seconds_of_day // 3600
-min            = (seconds_of_day - hour * 3600) // 60
-sec            = seconds_of_day - hour * 3600 - min * 60
-yday           = days - D(year, 1, 1) + 1
-wday           = ((days + 4) % 7) + 1
+os.date([format [, timestamp]]) -> text or table
 ```
 
-The Table and String forms use this same decomposition, including after a leading `!`.
+### Arguments {#sec-bios-os-selecting-the-result}
 
-### Format grammar {#sec-bios-os-format-grammar}
+| Argument | Meaning |
+|---|---|
+| format nil | `"%c"` |
+| format beginning with `!` | One `!` is removed; it has no other effect |
+| format `"*t"` (after that) | Return a table |
+| Other format | Return text |
+| timestamp nil | TIME_MS // 1000 |
 
-The formatter scans String codepoints, not UTF-8 byte offsets. Every codepoint other than `%` is copied literally. A `%` consumes one following conversion code; it may first consume exactly one `E` or `O` modifier.
+So `"*t"` and `"!*t"` give a table; `"!!*t"` gives the text `!*t`. false is not
+the same as nil: a false format or timestamp raises an error.
 
+### Timestamp {#sec-bios-os-explicit-timestamp-checks}
 
-There are no format flags, field-width syntax, precision syntax, repeated modifiers, or alternative escape introducers. The letters in the modifier table are the complete permitted sets:
+The timestamp must be a number with an integer value (`time is not an integer`)
+within the timestamp range (`time is out-of-bound`).
 
-| Modifier | Permitted following codes | Effect |
+### The table {#sec-bios-os-table-result-and-calendar-fields}
+
+`"*t"` returns a new table with `year`, `month`, `day`, `hour`, `min`, `sec`,
+`wday` (Sunday = 1), `yday` (1 January = 1) and `isdst` (false):
+
+```text
+days = timestamp // 86400
+seconds_of_day = timestamp - days * 86400
+(year, month, day) = C(days)
+hour = seconds_of_day // 3600
+min = (seconds_of_day - hour * 3600) // 60
+sec = seconds_of_day - hour * 3600 - min * 60
+yday = days - D(year, 1, 1) + 1
+wday = ((days + 4) % 7) + 1
+```
+
+### Format {#sec-bios-os-format-grammar}
+
+Characters other than `%` are copied. `%` is followed by a conversion code,
+optionally preceded by `E` or `O`:
+
+| Modifier | Allowed with | Effect |
 |---|---|---|
-| `E` | `c C x X y Y` | Use exactly the corresponding unmodified conversion. |
-| `O` | `d e H I m M S u U V w W y` | Use exactly the corresponding unmodified conversion. |
+| `E` | `c C x X y Y` | None |
+| `O` | `d e H I m M S u U V w W y` | None |
 
-
-The modifier is checked before conversion dispatch. It does not select alternative names, digits, or eras. For example, `%Ec` follows the `%c` path and `%OV` follows the `%V` path. A code may be accepted without a modifier but rejected with one.
+There are no widths, flags or precisions.
 
 #### Conversions {#sec-bios-os-conversions}
 
-In this table, `Z(value, n)` means: obtain the value's text with the current global `tostring`, then prepend `0` until the total text length is at least `n`. `S(value, n)` does the same with spaces. These are explanatory symbols, not callable BLua functions. Neither operation truncates text or places padding specially around a sign. The numeric-text limitations below apply to every such entry.
+In the tables, Z(v, n) is `tostring(v)` padded with zeros on the left to at
+least n characters; S(v, n) the same with spaces. hour12 is hour % 12, or 12 if
+that is 0; AMPM is `AM` before 12:00, otherwise `PM`.
 
-`hour12` is 12 when `hour % 12 == 0`, otherwise `hour % 12`. `AMPM` is `AM` when `hour < 12`, otherwise `PM`. `iso_year`, `iso_week`, `sunday_week`, and `monday_week` are defined under Week numbering.
+#### Date {#sec-bios-os-calendar-fields}
 
-#### Calendar fields {#sec-bios-os-calendar-fields}
-
-| Conversion | Output |
+| Code | Output |
 |---|---|
-| `%C` | `Z(year // 100, 2)` |
-| `%D`, `%x` | `Z(month, 2)/Z(day, 2)/Z(year % 100, 2)` |
-| `%F` | `Z(year, 4)-Z(month, 2)-Z(day, 2)` |
-| `%G` | `Z(iso_year, 4)` |
-| `%g` | `Z(iso_year % 100, 2)` |
-| `%Y` | `Z(year, 4)` |
-| `%y` | `Z(year % 100, 2)` |
-| `%m` | `Z(month, 2)` |
-| `%d` | `Z(day, 2)` |
-| `%e` | `S(day, 2)` |
+| `%C` | Z(year // 100, 2) |
+| `%D`, `%x` | Z(month, 2)/Z(day, 2)/Z(year % 100, 2) |
+| `%F` | Z(year, 4)-Z(month, 2)-Z(day, 2) |
+| `%G` | Z(iso_year, 4) |
+| `%g` | Z(iso_year % 100, 2) |
+| `%Y` | Z(year, 4) |
+| `%y` | Z(year % 100, 2) |
+| `%m` | Z(month, 2) |
+| `%d` | Z(day, 2) |
+| `%e` | S(day, 2) |
 
-#### Time of day {#sec-bios-os-time-of-day}
+#### Time {#sec-bios-os-time-of-day}
 
-| Conversion | Output |
+| Code | Output |
 |---|---|
-| `%H` | `Z(hour, 2)` |
-| `%M` | `Z(min, 2)` |
-| `%S` | `Z(sec, 2)` |
-| `%I` | `Z(hour12, 2)` |
-| `%R` | `Z(hour, 2):Z(min, 2)` |
-| `%r` | `Z(hour12, 2):Z(min, 2):Z(sec, 2) AMPM` |
-| `%T`, `%X` | `Z(hour, 2):Z(min, 2):Z(sec, 2)` |
-| `%p` | `AMPM` |
+| `%H` | Z(hour, 2) |
+| `%M` | Z(min, 2) |
+| `%S` | Z(sec, 2) |
+| `%I` | Z(hour12, 2) |
+| `%R` | Z(hour, 2):Z(min, 2) |
+| `%r` | Z(hour12, 2):Z(min, 2):Z(sec, 2) AMPM |
+| `%T`, `%X` | Z(hour, 2):Z(min, 2):Z(sec, 2) |
+| `%p` | AMPM |
 
-#### Names and day of year {#sec-bios-os-names-and-day-of-year}
+#### Names {#sec-bios-os-names-and-day-of-year}
 
-| Conversion | Output |
+| Code | Output |
 |---|---|
-| `%a` | Short weekday name. |
-| `%A` | Long weekday name. |
-| `%h`, `%b` | Short month name. |
-| `%B` | Long month name. |
-| `%j` | `Z(yday, 3)` |
+| `%a` | Short weekday name |
+| `%A` | Weekday name |
+| `%h`, `%b` | Short month name |
+| `%B` | Month name |
+| `%j` | Z(yday, 3) |
 
-#### Literal characters {#sec-bios-os-literal-characters}
+#### Characters {#sec-bios-os-literal-characters}
 
-| Conversion | Output |
+| Code | Output |
 |---|---|
-| `%n` | One newline codepoint. |
-| `%t` | One tab codepoint. |
+| `%n` | Line feed |
+| `%t` | Tab |
 
-#### Week numbers and composite output {#sec-bios-os-week-numbers-and-composite-output}
+#### Weeks and others {#sec-bios-os-week-numbers-and-composite-output}
 
-| Conversion | Output |
+| Code | Output |
 |---|---|
-| `%U` | `Z(sunday_week, 2)` |
-| `%u` | `tostring(wday == 1 and 7 or wday - 1)`, without padding: Monday 1 through Sunday 7. |
-| `%V` | `Z(iso_week, 2)` |
-| `%w` | `tostring(wday - 1)`, without padding: Sunday 0 through Saturday 6. |
-| `%W` | `Z(monday_week, 2)` |
-| `%c` | `shortWeekday shortMonth Z(day, 2) Z(hour, 2):Z(min, 2):Z(sec, 2) Z(year, 4)` |
-| `%z` | Literal `+0000`. |
-| `%Z` | Literal `BMSX`. |
-| `%%` | Literal `%`. |
+| `%U` | Z(sunday_week, 2) |
+| `%u` | Weekday, Monday 1 to Sunday 7 |
+| `%V` | Z(iso_week, 2) |
+| `%w` | Weekday, Sunday 0 to Saturday 6 |
+| `%W` | Z(monday_week, 2) |
+| `%c` | Short weekday, short month, Z(day, 2), Z(hour, 2):Z(min, 2):Z(sec, 2), Z(year, 4), separated by spaces |
+| `%z` | `+0000` |
+| `%Z` | `BMSX` |
+| `%%` | `%` |
 
-Slashes, hyphens, colons, and spaces shown between components are literal characters. In particular, `%c` has one space between each displayed component and uses a **zero-padded** day, not the space-padded `%e` conversion.
-
-The names are fixed, not locale lookups:
-
-| Kind | Names in index order |
+| Names | |
 |---|---|
 | Short weekdays | `Sun Mon Tue Wed Thu Fri Sat` |
-| Long weekdays | `Sunday Monday Tuesday Wednesday Thursday Friday Saturday` |
+| Weekdays | `Sunday Monday Tuesday Wednesday Thursday Friday Saturday` |
 | Short months | `Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec` |
-| Long months | `January February March April May June July August September October November December` |
+| Months | `January February March April May June July August September October November December` |
 
-#### Week numbering {#sec-bios-os-week-numbering}
-
-The following formulas are explanatory notation. They use the decomposed civil year and the `D` civil-day calculation defined above.
+#### Week numbers {#sec-bios-os-week-numbering}
 
 ```text
 sunday_week = (yday - 1 + 7 - (wday - 1)) // 7
 monday_week = (yday - 1 + 7 - ((wday + 5) % 7)) // 7
 ```
 
-For `%U`, week 0 is the part of the year before its first Sunday; week 1 starts on that Sunday. For `%W`, the corresponding boundary is Monday. These two conversions do not adjust the civil year.
+Week 0 is the part of the year before the first Sunday (`%U`) or Monday (`%W`).
 
-The ISO conversions first remap weekdays to Monday 1 through Sunday 7, then calculate:
+ISO weeks:
 
 ```text
 iso_weekday = 7 if wday == 1, otherwise wday - 1
-candidate   = (yday - iso_weekday + 10) // 7
+week = (yday - iso_weekday + 10) // 7
 ```
 
-An ISO year has 53 weeks exactly when its January 1 is Thursday, or when January 1 is Wednesday and the difference `D(year + 1, 1, 1) - D(year, 1, 1)` is 366. Otherwise it has 52 weeks. The January 1 weekday for this rule is `((D(year, 1, 1) + 3) % 7) + 1`, with Monday numbered 1.
+A year has 53 ISO weeks if 1 January is a Thursday, or a Wednesday in a leap
+year; otherwise 52. If week is below 1, it is the last week of the previous year;
+if it is above the number of weeks, it is week 1 of the next year. `%G` and `%g`
+give the year of the ISO week.
 
-If the candidate is below 1, `iso_year` is the preceding civil year and `iso_week` is that year's week count. If the candidate exceeds the current year's week count, `iso_year` is the following civil year and `iso_week` is 1. Otherwise `iso_year` is the civil year and `iso_week` is the candidate. `%G` and `%g` format this ISO year, not necessarily the year used by `%Y` and `%y`.
+#### Invalid conversions {#sec-bios-os-invalid-conversions-and-embedded-zero}
 
-#### Invalid conversions and embedded zero {#sec-bios-os-invalid-conversions-and-embedded-zero}
+Another code raises `invalid conversion specifier '%<code>'`, with the modifier
+if there is one:
 
-Any unsupported conversion invokes the current global `error` with this assembled message:
-
-```text
-invalid conversion specifier '%<modifier><code>'
-```
-
-Here `<modifier>` is empty, `E`, or `O`, and `<code>` is the consumed codepoint. These angle-bracket terms describe assembly; they are not literal message text. With an unfinished conversion, the absent code is the empty String:
-
-| Format ending | Error String |
+| Format ends with | Message |
 |---|---|
 | `%` | `invalid conversion specifier '%'` |
 | `%E` | `invalid conversion specifier '%E'` |
 | `%O` | `invalid conversion specifier '%O'` |
 | `%EO` | `invalid conversion specifier '%EO'` |
 
-In `%EO`, `O` is checked as the code after `E`; it is not parsed as a second modifier.
+A zero character in the format is copied like any other.
 
-A zero codepoint is not a String terminator. An embedded literal zero is copied and scanning continues. A zero used as the code after `%` is unsupported; the assembled error message contains that zero codepoint.
+### Padding {#sec-bios-os-numeric-text-and-padding-limits}
 
-### Numeric text and padding limits {#sec-bios-os-numeric-text-and-padding-limits}
+Padding is added in front of the whole text: −1 with Z(v, 4) gives `00-1`. The
+width is a minimum.
 
-Padding operates on the complete text returned by the current global `tostring`. For example, zero-prepending the text of `-1` to a minimum length of four produces `00-1`, not `-001`. A padding width is a minimum total text length, not a fixed digit count.
+### Globals used {#sec-bios-os-library-bindings-and-execution-cost}
 
-
-With the supplied `tostring`, Integer values use exact signed decimal text;
-Float values follow the [CPU Number-to-text rules](cpu.md#sec-cpu-number-to-text-examples).
-The formatter pads that result unchanged. `%Y` is padded to a minimum length
-of four, not constrained to four decimal digits.
-
-### Library bindings and execution cost {#sec-bios-os-library-bindings-and-execution-cost}
-
-Date validation retains its installation-time numeric conversions. Formatting
-uses `sub` from the original String Table, while `tostring` and `error` are
-read through their current global bindings. Replacing the `string` global
-leaves that original Table in use; replacing its `sub` field changes slicing.
-
-The Table result performs one calendar decomposition and stores the nine
-fields. String output additionally scans and concatenates text. ISO-week
-conversions calculate their year/week pair for each occurrence, and padding
-adds characters until the requested minimum length is reached. Format length,
-selected conversions and output size therefore affect execution cost.
-
-`%z`, `%Z` and `isdst` always use the fixed values listed above. They represent
-the BIOS civil-time convention rather than a configurable zone or
-daylight-saving rule.
+`os.date` uses the current global `tostring` and `error`, and `sub` of the string
+library installed by the BIOS. Its time depends on the format.
