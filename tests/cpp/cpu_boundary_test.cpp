@@ -1881,7 +1881,7 @@ void reservedMoveKindIgnoresUnusedRegisterOperands() {
 
 void reservedMemoryKinds() {
 	for (const auto op : {OpCode::LOAD_MEM, OpCode::STORE_MEM, OpCode::LOAD_MEM_D, OpCode::STORE_MEM_D}) {
-		for (const u8 kind : {6, 63}) {
+		for (const u8 kind : {7, 63}) {
 			for (const bool instrumented : {false, true}) {
 				auto image = returnImage(op, 0, 0, kind);
 				image.text.resize(2 * INSTRUCTION_BYTES);

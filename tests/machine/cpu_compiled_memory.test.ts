@@ -2,20 +2,24 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runCpuParity } from '../helpers/cpu_execution';
 import { integerConstant } from '../../toolchain/ts/lua/number';
-import { readLE32 } from '../../machine/ts/common/endian';
+import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
 import { COMPILED_BLOCK_THRESHOLD, CompiledBlockExit, CpuExecutionBackend } from '../../machine/ts/machine/cpu/compiled_block';
+import { FrameField } from '../../machine/ts/machine/cpu/call_state';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { CPU_CAUSE_CODE_DATA_BUS_ERROR, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
+import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { COP0_CONTEXT, COP0_STATUS, CPU_CAUSE_CODE_DATA_BUS_ERROR, CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
+	CPU_STATUS_INTERRUPT_ENABLE_CURRENT, CPU_STATUS_USER_MODE_CURRENT, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { valueBool, valueNil, valueInteger, valueFloat, valueFloatBits, ValueTag } from '../../machine/ts/machine/cpu/value';
 import { MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { writeInstruction, INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { writeInstruction, INSTRUCTION_BYTES, MAX_LOW_BX } from '../../machine/ts/spec/blua32/instruction_format';
+import { BLUA32_CONSTANT_PAYLOAD_OFFSET, BLUA32_CONSTANT_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_RESET_BANK_ADDRESS, DYNAMIC_RAM_BASE, IO_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BUS_FAULT_UNMAPPED, IO_SYS_BUS_FAULT_ADDR, IO_SYS_BUS_FAULT_CODE } from '../../machine/ts/spec/bmsx/io';
 import { MAPPED_BUS_MASTER_DMA } from '../../machine/ts/machine/memory/bus_signals';
-import { RAM_CODE_FIXTURE_BYTES, linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { RAM_CODE_FIXTURE_BYTES, createTestSystemCpu, linkRawTestSystemBlua32 } from '../helpers/blua32';
 import { createTestHeapServiceCpu } from '../helpers/heap_service_system';
 
 function memoryLoop(op: OpCode, kind: MemoryAccessKind, displacement = 0) {
@@ -363,6 +367,159 @@ test('a late physical byte watch routes an already generated store to the normal
 	assert.equal(page.compiledBlocks!.entries[site], block, 'data observation does not invalidate machine code');
 	memory.unwatchRamByte(offset);
 	unsubscribe();
+});
+
+test('warm ordinary Value accesses inline both lanes and retire watched, aliased and denied accesses in order', () => {
+	const context = DYNAMIC_RAM_BASE, frame = context + 0x100, values = context + 0x300;
+	const target = context + MAPPED_PAGE_BYTE_SIZE - 4, source = target + 0x104;
+	const constants: number[] = [];
+	const marks: number[] = [];
+	const words: [OpCode, number, number, number, number?][] = [];
+	function load(reg: number, value: number) {
+		const index = constants.push(value) - 1;
+		words.push([OpCode.LOADK, reg, index >>> 6, index & 63]);
+	}
+	function store(addr: number, value: number) {
+		load(0, value); load(1, addr);
+		words.push([OpCode.STORE_MEM, 0, 1, MemoryAccessKind.Word]);
+	}
+	store(context + ThreadField.StackBlock, values);
+	store(context + ThreadField.StackCapacity, 16);
+	store(context + ThreadField.FrameBlock, frame);
+	store(context + ThreadField.FrameCapacity, 2);
+	store(context + ThreadField.FrameDepth, 1);
+	store(context + ThreadField.StackTop, 4);
+	marks.push(constants.length);
+	store(frame + FrameField.Function, -2);
+	marks.push(constants.length);
+	store(frame + FrameField.Pc, -3);
+	store(frame + FrameField.Protected, -1);
+	store(frame + FrameField.StackCapacity, 4);
+	store(source, 0x7fc0f123);
+	store(source + 4, ValueTag.Float);
+	store(target + 4, 0x44332200);
+	load(0, context);
+	words.push([OpCode.MTC0, 0, COP0_CONTEXT, 0], [OpCode.RET, 0, 1, 0]);
+	const bootEnd = words.length;
+	load(1, source);
+	load(2, target - 4);
+	load(0, CPU_STATUS_INTERRUPT_ENABLE_CURRENT);
+	words.push([OpCode.MTC0, 0, COP0_STATUS, 0]);
+	words.push([OpCode.LOAD_MEM, 3, 1, MemoryAccessKind.Value], [OpCode.STORE_MEM_D, 3, 2, MemoryAccessKind.Value, 1]);
+	words.push([OpCode.JMP, 0, (MAX_LOW_BX - 2) >>> 6, (MAX_LOW_BX - 2) & 63, 255]);
+	const programEnd = words.length;
+	words.push([OpCode.RFE, 0, 0, 0]);
+	const text = new Uint8Array(INSTRUCTION_BYTES * words.length);
+	for (const [i, op] of words.entries()) writeInstruction(text, i, ...op);
+	const image = linkRawTestSystemBlua32({
+		constants: constants.map(integerConstant), text,
+		functions: [{ firstWord: 0, wordCount: bootEnd, maxStack: 4 },
+			{ firstWord: bootEnd, wordCount: programEnd - bootEnd, maxStack: 4 },
+			{ firstWord: programEnd, wordCount: 1, maxStack: 1 }],
+		irqFunctionIndex: 2, exceptionFunctionIndex: 2, verifiedControlFlow: true,
+	});
+	const base = image.image.header.constantTableAddress + BLUA32_CONSTANT_PAYLOAD_OFFSET;
+	const program = image.image.functions[1];
+	for (const [i, value] of [program.address, program.codeAddress].entries())
+		writeLE32(image.romBytes, base + BLUA32_CONSTANT_RECORD_SIZE * marks[i], value);
+	const js = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
+	const reference = createTestSystemCpu(image, CpuExecutionBackend.Interpreter);
+	const memory = js.memory;
+	let reads = 0, writes = 0;
+	const read = memory.readMappedValue.bind(memory), write = memory.writeMappedValue.bind(memory);
+	memory.readMappedValue = addr => { reads++; return read(addr); };
+	memory.writeMappedValue = (addr, value) => { writes++; return write(addr, value); };
+	for (let step = 0; step < 1024 && js.cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++step)
+		runCpuParity(js.cpu, reference.cpu, 1);
+	assert.equal(js.cpu.rootThread.address, context);
+	for (let step = 0; step < 20; ++step) runCpuParity(js.cpu, reference.cpu, 32);
+	assert.ok(reads > 0 && writes > 0, 'cold route uses the sequential memory owner');
+	const loop = program.codeAddress + 4 * INSTRUCTION_BYTES;
+	for (let step = 0; step < 3 && js.cpu.activeThread.currentFrame!.pc !== loop; ++step) runCpuParity(js.cpu, reference.cpu, 1);
+	assert.equal(js.cpu.activeThread.currentFrame!.pc, loop);
+	const loopCycles = BASE_CYCLES[OpCode.LOAD_MEM] + BASE_CYCLES[OpCode.STORE_MEM_D] + BASE_CYCLES[OpCode.JMP];
+	const before = [reads, writes];
+	for (const rt of [js, reference]) {
+		assert.equal(rt.memory.readRamRecordWord(target), 0x7fc0f123);
+		rt.memory.writeRamRecordWord(source, 0xc365a281);
+		rt.memory.writeRamRecordByte(source + 4, ValueTag.Nil);
+	}
+	for (let step = 0; step < 12; ++step) runCpuParity(js.cpu, reference.cpu, 4 * loopCycles);
+	assert.deepEqual([reads, writes], before, 'warm generated read and write transfer new data without entering the owner');
+	assert.equal(memory.readRamRecordWord(target), 0xc365a281);
+	assert.equal(memory.readRamRecordWord(target + 4), 0x44332200);
+	let observations = 0;
+	memory.watchRamByte(target + 4 - RAM_BASE);
+	const stopObserving = memory.onRamWrite(() => {
+		assert.equal(memory.readRamRecordWord(target), 0x80000000);
+		assert.equal(memory.readRamRecordWord(target + 4), 0x44332204);
+		observations++;
+	});
+	for (const rt of [js, reference]) {
+		rt.memory.writeRamRecordWord(source, 0x80000000);
+		rt.memory.writeRamRecordByte(source + 4, ValueTag.Float);
+	}
+	for (let step = 0; step < 4; ++step) runCpuParity(js.cpu, reference.cpu, 4 * loopCycles);
+	assert.ok(writes > before[1] && observations > 0, 'tag-page watch sends the complete instruction to the owner');
+	assert.equal(reads, before[0], 'read still executes directly');
+	memory.unwatchRamByte(target + 4 - RAM_BASE);
+	stopObserving();
+
+	// A load that reads the executing frame itself must see the already
+	// published successor PC, not the raw PC at the generated block entry.
+	for (const { cpu } of [js, reference])
+		cpu.activeThread.currentFrame!.registers.setInteger(1, frame + FrameField.Pc);
+	runCpuParity(js.cpu, reference.cpu, loopCycles);
+	assert.equal(reads, before[0] + 1, 'a frame-backing alias uses the retiring CPU path');
+	for (const rt of [js, reference]) {
+		assert.equal(rt.memory.readRamRecordWord(target), loop + INSTRUCTION_BYTES);
+		rt.cpu.activeThread.currentFrame!.registers.setInteger(1, source);
+		rt.cpu.activeThread.currentFrame!.registers.setInteger(2, context + ThreadField.ErrorWord - 4);
+	}
+	const priorWrites = writes;
+	runCpuParity(js.cpu, reference.cpu, loopCycles);
+	assert.equal(writes, priorWrites + 1, 'a selected context record alias uses the retiring CPU path');
+	for (const rt of [js, reference]) {
+		assert.equal(rt.memory.readRamRecordWord(context + ThreadField.ErrorWord), 0x80000000);
+		assert.equal(rt.memory.readRamRecordWord(context + ThreadField.ErrorKind), ValueTag.Float);
+		rt.cpu.activeThread.currentFrame!.registers.setInteger(2, target - 4);
+	}
+	runCpuParity(js.cpu, reference.cpu, loopCycles);
+
+	// Execute an authored Status write, then exercise both of the already generated
+	// Value instructions from user mode. Neither denial reaches the Memory pair.
+	const transferCounts = [reads, writes];
+	for (const { cpu } of [js, reference]) {
+		cpu.activeThread.currentFrame!.registers.setInteger(0, CPU_STATUS_INTERRUPT_ENABLE_CURRENT | CPU_STATUS_USER_MODE_CURRENT);
+		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, program.address, loop - INSTRUCTION_BYTES);
+	}
+	runCpuParity(js.cpu, reference.cpu, 1);
+	const busSequence = memory.readBusFaultSequence();
+	const badAddress = js.cpu.readBadAddressWord();
+	for (const [pc, expected, address] of [
+		[loop, CompiledBlockExit.ReadMemory, source],
+		[loop + INSTRUCTION_BYTES, CompiledBlockExit.WriteMemory, target],
+	] as const) {
+		const caller = js.cpu.activeThread.currentFrame!, page = caller.decodedPage!;
+		const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
+		assert.ok(block);
+		const run = { remainingCycles: loopCycles, registerTop: caller.top, memoryAddress: 0 };
+		const exit = block.region.exits[block.region.execute(caller.registers, caller.executionImage.constWords, page, caller, block.entry, run)];
+		assert.equal(exit.exit, expected);
+		assert.equal(run.memoryAddress, address);
+		runCpuParity(js.cpu, reference.cpu, 1);
+		for (const { cpu } of [js, reference]) {
+			assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			assert.equal(cpu.readEpcWord(), pc);
+			cpu.writeEpcWord(pc + INSTRUCTION_BYTES);
+		}
+		runCpuParity(js.cpu, reference.cpu, 1); // RFE restores the ordinary caller's user mode.
+	}
+	assert.deepEqual([reads, writes], transferCounts);
+	assert.equal(memory.readBusFaultSequence(), busSequence);
+	assert.equal(js.cpu.readBadAddressWord(), badAddress);
+	assert.equal(memory.readRamRecordWord(target), 0x80000000);
+	assert.equal(memory.readRamRecordWord(target + 4), 0x44332204);
 });
 
 test('a DMA memory span retires generated RAM code before its next execution', () => {

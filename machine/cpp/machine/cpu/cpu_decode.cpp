@@ -23,6 +23,9 @@ u16 fixedRegisterExtent(const DecodedInstruction& row) {
 		case OpCode::ITERN:
 			return static_cast<u16>(std::max(row.a + 3, row.b + row.c));
 		case OpCode::STORE_MEM: case OpCode::STORE_MEM_D:
+			if (row.c == static_cast<u8>(MemoryAccessKind::Value))
+				return static_cast<u16>(std::max(row.a + 1, row.b + 1));
+			[[fallthrough]];
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 			// Source values belong to the admitted bus operation, after readiness.
 			return static_cast<u16>(std::max(0, row.b + 1));
@@ -170,7 +173,7 @@ void CPU::decodeInstructionWords(
 				decoded.setBx(usesDisp ? ext : decodedBx);
 				break;
 		}
-		if (rawC > static_cast<u32>(page.privateFirmware ? MemoryAccessKind::Value : MemoryAccessKind::F64LE)
+		if (rawC > static_cast<u32>(MemoryAccessKind::Value)
 			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D

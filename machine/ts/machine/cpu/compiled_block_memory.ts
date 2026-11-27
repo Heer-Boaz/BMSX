@@ -1,12 +1,14 @@
 import { IO_SLOT_COUNT } from '../../spec/bmsx/io';
-import { CART_ROM_BASE, CART_ROM_SIZE, IO_WORD_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
-import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind, type ScalarMemoryAccessKind } from '../../spec/blua32/memory_access_kind';
+import { CART_ROM_BASE, CART_ROM_SIZE, CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END, CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END, IO_WORD_SIZE, MAIN_RAM_SIZE, RAM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { COP0_STATUS, CPU_STATUS_USER_MODE_CURRENT } from '../../spec/blua32/cop0';
+import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, MemoryAccessKind, VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET, type ScalarMemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import { OpCode } from '../../spec/blua32/opcode';
 import { MAPPED_PAGE_BYTE_SHIFT } from '../memory/mapped_page';
 import { ValueTag } from './value';
 import type { DecodedInstructionPage } from './execution_image';
 import type { Memory } from '../memory/memory';
 import type { JavaScriptRegisterCache } from './compiled_block_registers';
+import { THREAD_HEAP_BYTES } from './thread_record';
 
 const viewMethods = ['Uint32', 'Uint8', 'Uint16', 'Uint32', 'Uint32', 'Float64'] as const;
 const widths = [4, 1, 2, 4, 4, 8] as const;
@@ -28,6 +30,22 @@ const v=tag===${ValueTag.Integer}?word:(tag===${ValueTag.Float}?fw(word):null);i
 
 function emitRomStorageRead(storage: string, read: string, width: number, exit: string): string {
 	return `const d=${storage}.view; if(o+${width}>d.byteLength) ${exit} ${read}`;
+}
+
+/** The source instruction is in System ROM. Check live mode and the whole RAM cell before either lane. */
+export function emitValueMemoryAccess(load: boolean, slot: number, address: string, exit: string, registers: JavaScriptRegisterCache): string {
+	const alignment = MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[MemoryAccessKind.Value];
+	const mask = MAIN_RAM_SIZE - 1;
+	const guard = `{const a=${address},o=(a-${RAM_BASE})>>>0,end=o+${VALUE_MEMORY_SIZE},tag=o+${VALUE_MEMORY_TAG_OFFSET};
+if((a&${alignment})!==0||(cp[${COP0_STATUS}]&${CPU_STATUS_USER_MODE_CURRENT})!==0
+||o<${IO_SLOT_COUNT * IO_WORD_SIZE}||end>m.byteLength
+||(o<${CPU_FIXED_VALUE_END - RAM_BASE}&&end>${CPU_FIXED_FRAME_ADDRESS - RAM_BASE})
+||(o<${CPU_RESET_BANK_END - RAM_BASE}&&end>${CPU_RESET_BANK_ADDRESS - RAM_BASE})
+||(ca&&(((tag-vs)&${mask})<vl||((tag-fs)&${mask})<fl||((tag-cs)&${mask})<${THREAD_HEAP_BYTES + VALUE_MEMORY_TAG_OFFSET}))) ${exit}`;
+	if (load) return `${guard}${registers.writeEncoded(slot, 'm.getUint8(tag)', 'm.getUint32(o,true)')}}`;
+	return `${guard}
+if((g[o>>>${MAPPED_PAGE_BYTE_SHIFT}]|g[tag>>>${MAPPED_PAGE_BYTE_SHIFT}])!==0) ${exit}
+m.setUint32(o,${registers.wordOperand(slot)},true);m.setUint8(tag,${registers.tagOperand(slot)});}`;
 }
 
 /** Backed RAM/ROM stay in generated code; bus-visible accesses exit before acting. */

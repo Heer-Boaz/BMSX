@@ -171,6 +171,8 @@ public:
 		u32 readStep, u32 writeStep, MappedBusSignals readSignals, MappedBusSignals writeSignals);
 	void writeMappedF32LE(uint32_t addr, float value);
 	void writeMappedF64LE(uint32_t addr, double value, bool cpuProtected = false);
+	const u8* readMappedValue(u32 addr) const;
+	bool writeMappedValue(u32 addr, u32 payload, u8 tag);
 
 	void writeBytes(uint32_t addr, const u8* data, size_t length);
 	void readBytes(uint32_t addr, u8* out, size_t length) const;
@@ -230,6 +232,7 @@ private:
 	std::array<IoWritePolicy, IO_SLOT_COUNT> m_ioWritePolicy{};
 
 	bool isIoRegionRange(uint32_t addr, size_t length) const;
+	bool admitsMappedValue(u32 addr) const;
 	int ioAlignedSlot(uint32_t addr) const {
 		const uint32_t delta = addr - IO_BASE;
 		if (delta >= IO_SLOT_COUNT * IO_WORD_SIZE || (delta & (IO_WORD_SIZE - 1u)) != 0u) {

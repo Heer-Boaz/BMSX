@@ -115,7 +115,7 @@ export function deriveBlua32FixedStack(
 			if (op === OpCode.LOADK) admitConstant(bx, reject);
 			if (op === OpCode.LOAD_MEM || op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM || op === OpCode.STORE_MEM_D) {
 				if (boundary?.ordinaryCode !== undefined) {
-					if (c > MemoryAccessKind.F64LE) reject('not an ordinary CPU memory format');
+					if (c > MemoryAccessKind.Value) reject('not an ordinary CPU memory format');
 				} else if (c !== MemoryAccessKind.Word && c !== MemoryAccessKind.U32LE && c !== MemoryAccessKind.U8 && c !== MemoryAccessKind.Value)
 					reject('not a heap-service memory format');
 			}

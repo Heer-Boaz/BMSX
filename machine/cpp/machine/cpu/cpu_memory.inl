@@ -6,8 +6,22 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 		return;
 	}
-	const u32 faultSequence = m_memory.readBusFaultSequence();
 	const bool cpuProtected = supervisorSystemInstruction();
+	if (kind == MemoryAccessKind::Value) {
+		if (!cpuProtected) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return;
+		}
+		const auto* slot = m_memory.readMappedValue(address);
+		if (!slot) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			return;
+		}
+		frame.registers.set(destination, valueFromTag(static_cast<ValueTag>(slot[VALUE_MEMORY_TAG_OFFSET]), readLE32(slot)));
+		frame.extendTop(destination + 1);
+		return;
+	}
+	const u32 faultSequence = m_memory.readBusFaultSequence();
 	Value value;
 	switch (kind) {
 		case MemoryAccessKind::Word: value = valueInteger(static_cast<i32>(m_memory.readMappedWord(address, cpuProtected))); break;
@@ -29,6 +43,16 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 inline bool CPU::executeMemoryStore(CallFrame& frame, int source, MemoryAccessKind kind, u32 address) {
 	if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[static_cast<size_t>(kind)]) != 0u) {
 		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+		return true;
+	}
+	if (kind == MemoryAccessKind::Value) {
+		if (!supervisorSystemInstruction()) {
+			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return true;
+		}
+		const Value value = frame.registers.get(source);
+		if (!m_memory.writeMappedValue(address, valuePayload(value), static_cast<u8>(valueTag(value))))
+			enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 		return true;
 	}
 	return continueMemoryStore(frame, source, kind, address);
@@ -56,7 +80,7 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			m_memory.writeMappedF64LE(address, valueIsInteger(value) ? static_cast<double>(asInteger(value)) : static_cast<double>(asFloat(value)), cpuProtected); break;
-		case MemoryAccessKind::Value: BMSX_UNREACHABLE(); // The ordinary decoder rejects this format.
+		case MemoryAccessKind::Value: BMSX_UNREACHABLE(); // Tagged stores never wait on a bus device.
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);

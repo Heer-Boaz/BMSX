@@ -719,7 +719,7 @@ test('numeric lookahead cannot take a successor fetch fault before current effec
 
 test('all scalar memory instructions decode reserved kinds into an architectural exception', () => {
 	for (const op of [OpCode.LOAD_MEM, OpCode.STORE_MEM, OpCode.LOAD_MEM_D, OpCode.STORE_MEM_D]) {
-		for (const kind of [6, 63]) {
+		for (const kind of [7, 63]) {
 			for (const instrumented of [false, true]) {
 				const text = new Uint8Array(2 * INSTRUCTION_BYTES);
 				writeInstruction(text, 0, op, 0, 0, kind);

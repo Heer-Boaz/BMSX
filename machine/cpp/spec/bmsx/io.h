@@ -414,6 +414,7 @@ constexpr uint32_t BUS_FAULT_ACCESS_U32 = 1u << 10u;
 constexpr uint32_t BUS_FAULT_ACCESS_WORD = 1u << 11u;
 constexpr uint32_t BUS_FAULT_ACCESS_F32 = 1u << 12u;
 constexpr uint32_t BUS_FAULT_ACCESS_F64 = 1u << 13u;
+constexpr uint32_t BUS_FAULT_ACCESS_VALUE = 1u << 14u;
 
 constexpr uint32_t INP_CTRL_ARM = 1u;
 constexpr uint32_t INP_CTRL_RESET = 2u;

@@ -16,6 +16,7 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
+import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag } from '../cpu/value';
 import { bindDlmalloc, DLMALLOC_WASM_PAGE_COUNT, type DlmallocArena } from './dlmalloc_wasm';
 import { RomStorage } from './rom_storage';
 import type { MemoryWordCounters } from './word_counters';
@@ -28,6 +29,7 @@ import {
 	BUS_FAULT_ACCESS_U8,
 	BUS_FAULT_ACCESS_U16,
 	BUS_FAULT_ACCESS_U32,
+	BUS_FAULT_ACCESS_VALUE,
 	BUS_FAULT_ACCESS_WORD,
 	BUS_FAULT_ACCESS_WRITE,
 	BUS_FAULT_NONE,
@@ -78,6 +80,7 @@ import {
 	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 	IO_SYS_TIME_MS,
 } from '../../spec/bmsx/io';
+import { VALUE_MEMORY_SIZE, VALUE_MEMORY_TAG_OFFSET } from '../../spec/blua32/memory_access_kind';
 import { readLE16, readLE32, writeLE16, writeLE32 } from '../../common/endian';
 import {
 	MAPPED_BUS_INSTRUCTION_FETCH,
@@ -111,6 +114,8 @@ const BUS_ACCESS_WRITE_U16 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U16;
 const BUS_ACCESS_WRITE_U32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_U32;
 const BUS_ACCESS_WRITE_F32 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F32;
 const BUS_ACCESS_WRITE_F64 = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_F64;
+const BUS_ACCESS_READ_VALUE = BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_VALUE;
+const BUS_ACCESS_WRITE_VALUE = BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_VALUE;
 
 // Decode the physical IO word permissions once, not on every DMA/CPU write.
 const READ_ONLY_IO_SLOTS = new Uint8Array(IO_SLOT_COUNT);
@@ -967,6 +972,28 @@ export class Memory {
 			return;
 		}
 		this.writeMappedU32LE(addr + 4, this.mappedFloatView.getUint32(4, true), BUS_ACCESS_WRITE_F64, cpuProtected);
+	}
+
+	private admitMappedValue(addr: number, access: number): boolean {
+		if (addr >= IO_BASE + this.ioByteLength && this.isRamRange(addr, VALUE_MEMORY_SIZE, true)) return true;
+		this.raiseBusFault(BUS_FAULT_UNMAPPED, addr, access);
+		return false;
+	}
+
+	public readMappedValue(addr: number): Value | undefined {
+		if (!this.admitMappedValue(addr, BUS_ACCESS_READ_VALUE)) return;
+		const offset = addr - RAM_BASE;
+		return valueFromTag(this.ram[offset + VALUE_MEMORY_TAG_OFFSET] as ValueTag, readLE32(this.ram, offset));
+	}
+
+	public writeMappedValue(addr: number, value: Value): boolean {
+		if (!this.admitMappedValue(addr, BUS_ACCESS_WRITE_VALUE)) return false;
+		const offset = addr - RAM_BASE;
+		writeLE32(this.ram, offset, valuePayload(value));
+		this.ram[offset + VALUE_MEMORY_TAG_OFFSET] = valueTag(value);
+		// Physical observers see both written lanes, never a partial Value.
+		this.invalidateRamWrite(offset, VALUE_MEMORY_TAG_OFFSET + 1);
+		return true;
 	}
 
 	public readBytesInto(addr: number, out: Uint8Array, length: number, dstOffset = 0): void {

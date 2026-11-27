@@ -5,6 +5,7 @@
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
+#include "machine/cpu/jit/runtime/execution.h"
 #include "machine/cpu/jit/sljit/table_access.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
@@ -235,15 +236,17 @@ void NativeLowering::emitRomReads() {
 void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const NativeInstruction& instruction) {
 	auto& slow = *sideExit(instruction.slow);
 	const auto kind = access.format;
-	if (kind == MemoryAccessKind::Value) {
-		// The private owner transfers both planes as one decoded instruction.
+	const bool tagged = kind == MemoryAccessKind::Value;
+	if (tagged && (m_bindings.privateFirmware || !m_bindings.cpu || instruction.pc - SYSTEM_ROM_BASE >= SYSTEM_ROM_SIZE)) {
+		// The old private port and non-System execution keep the CPU exit.
 		emitLeave(slow, Charge::Pending);
 		return;
 	}
 	const bool words = access.mode == NativeMemoryMode::StoreWords;
 	const bool load = access.mode == NativeMemoryMode::Load;
 	const u32 width = words ? static_cast<u32>(access.wordCount) * sizeof(u32)
-		: kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u : kind == MemoryAccessKind::F64LE ? 8u : 4u;
+		: kind == MemoryAccessKind::U8 ? 1u : kind == MemoryAccessKind::U16LE ? 2u
+		: kind == MemoryAccessKind::F64LE ? 8u : tagged ? VALUE_MEMORY_SIZE : 4u;
 	const bool floatStore = kind == MemoryAccessKind::F32LE || kind == MemoryAccessKind::F64LE;
 	if (access.addressCheck == NativeTagCheck::Rejected || (!load && !words
 		&& (access.store == NativeWordSource::Invalid || (access.store == NativeWordSource::Float && !floatStore)))) {
@@ -264,6 +267,79 @@ void NativeLowering::lowerOperation(const NativeMemoryAccess& access, const Nati
 	if (width == 0) return; // Zero-count stores still require an aligned address.
 	if (width > m_bindings.ramBytes) {
 		emitLeave(slow, Charge::Pending);
+		return;
+	}
+	if (tagged) {
+		auto* c = m_compiler;
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM1(NativeBlockAbi::state),
+			offsetof(NativeCpuRunState, frameBank), SLJIT_IMM, frameBankWord(SYSTEM_EXECUTION_DOMAIN_ID)), slow, m_cache.state());
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, cop0Words));
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), COP0_STATUS * sizeof(u32),
+			SLJIT_IMM, CPU_STATUS_USER_MODE_CURRENT);
+		fault(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, 0), slow, m_cache.state());
+
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R1, 0, SLJIT_R0, 0, SLJIT_IMM, RAM_BASE);
+		fault(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM, m_bindings.ramBytes - width), slow, m_cache.state());
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R1, 0, SLJIT_IMM,
+			IO_BASE - RAM_BASE + IO_SLOT_COUNT * IO_WORD_SIZE), slow, m_cache.state());
+		// Reject overlap of the complete span with either dedicated backing.
+		for (const auto& [begin, end] : {std::pair{CPU_RESET_BANK_ADDRESS, CPU_RESET_BANK_END},
+			std::pair{CPU_FIXED_FRAME_ADDRESS, CPU_FIXED_VALUE_END}}) {
+			sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_IMM, begin - RAM_BASE - (width - 1u));
+			fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, end - begin + width - 1u), slow, m_cache.state());
+		}
+
+		// A tagged access can alias an unpublished register or control word.
+		// Use the live frame's bound backing, not an edited dormant descriptor.
+		// The fixed bank's backing was already excluded by the physical check.
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+		sljit_emit_op1(c, SLJIT_MOV_P, SLJIT_R3, 0, SLJIT_MEM1(SLJIT_R3), offsetof(CallFrame, thread));
+		sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, address));
+		auto* fixed = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, CPU_RESET_BANK_ADDRESS);
+		sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
+		sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R0, 0, SLJIT_R2, 0);
+		sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+		fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_IMM, THREAD_HEAP_BYTES + VALUE_MEMORY_TAG_OFFSET), slow, m_cache.state());
+
+		// Compare the five touched bytes in the physical RAM record address
+		// space; a backed control range can straddle the record-port wrap.
+		for (bool values : {true, false}) {
+			if (values) {
+				const auto stack = SLJIT_OFFSETOF(Thread, stack);
+				sljit_emit_op2(c, SLJIT_SUB, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::wordsOffset(),
+					SLJIT_IMM, reinterpret_cast<sljit_sw>(m_bindings.ram));
+				sljit_emit_op1(c, SLJIT_MOV, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), stack + ValueSpan::sizeOffset());
+			} else {
+				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameOffset));
+				sljit_emit_op1(c, SLJIT_MOV32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_R3), SLJIT_OFFSETOF(Thread, boundFrameCapacity));
+			}
+			sljit_emit_op2(c, SLJIT_SUB32, SLJIT_R2, 0, SLJIT_R1, 0, SLJIT_R2, 0);
+			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
+			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R2, 0, SLJIT_R2, 0, SLJIT_IMM, MAIN_RAM_SIZE - 1u);
+			sljit_emit_op2(c, SLJIT_MUL32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, values ? THREAD_STACK_SLOT_BYTES : FRAME_CONTROL_BYTES);
+			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R0, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
+			fault(sljit_emit_cmp(c, SLJIT_LESS | SLJIT_32, SLJIT_R2, 0, SLJIT_R0, 0), slow, m_cache.state());
+		}
+		sljit_set_label(fixed, sljit_emit_label(c));
+
+		if (!load) {
+			emitRamWordWriteWatch(slow, SLJIT_R1, 0, SLJIT_R3, SLJIT_R2, 1u, sizeof(u32));
+			sljit_emit_op2(c, SLJIT_ADD32, SLJIT_R0, 0, SLJIT_R1, 0, SLJIT_IMM, VALUE_MEMORY_TAG_OFFSET);
+			emitRamWordWriteWatch(slow, SLJIT_R0, 0, SLJIT_R3, SLJIT_R2, 1u, 1u);
+		}
+		sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_R1, 0);
+		NativeBlockAbi::emitRamAddress(c, SLJIT_R2, SLJIT_R1);
+		if (load) {
+			emitBackingLoad(kind, false);
+			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_R2), VALUE_MEMORY_TAG_OFFSET);
+			emitRawStore(access.slot, SLJIT_R0, SLJIT_R1, m_uses.nextOperandDemand(m_instruction, access.slot));
+		} else {
+			emitRawLoad(access.slot, SLJIT_R0, SLJIT_R1);
+			if constexpr (std::endian::native == std::endian::big)
+				sljit_emit_op1(c, SLJIT_REV32, SLJIT_R0, 0, SLJIT_R0, 0);
+			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_R2), 0, SLJIT_R0, 0);
+			sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM1(SLJIT_R2), VALUE_MEMORY_TAG_OFFSET, SLJIT_R1, 0);
+		}
 		return;
 	}
 	if (m_bindings.privateFirmware) {

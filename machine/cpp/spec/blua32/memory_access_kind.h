@@ -12,7 +12,7 @@ enum class MemoryAccessKind : uint8_t {
 	U32LE = 3,
 	F32LE = 4,
 	F64LE = 5,
-	Value = 6, // Fixed System activation only.
+	Value = 6, // Tagged System RAM transfer.
 };
 
 // A memory Value carries a little-endian payload and a tag byte.

@@ -10,6 +10,9 @@ import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_i
 import { planRegionRegisters } from './compiled_register_plan';
 import { CompiledExitWriteBacks } from './compiled_block_registers';
 import { luaPow } from '../../spec/blua32/pow';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../spec/bmsx/memory_map';
+import { VALUE_MEMORY_TAG_OFFSET } from '../../spec/blua32/memory_access_kind';
+import { THREAD_STACK_SLOT_BYTES } from './thread_record';
 import { CompiledBlockExit, emitJavaScriptBlock, finishJavaScriptBlock,
 	type CompiledBlock, type CompiledBlockExitSite, type CompiledBlockSource } from './compiled_block';
 
@@ -78,10 +81,18 @@ export function compileJavaScriptRegion(plans: readonly CompiledBlockSource[],
 	// store them. Each block assigns a local before any read of it.
 	const locals = Math.max(0, ...blocks.map(block => block.registers.localCount));
 	const source = ['"use strict";return function(r,k,p,F,N,S){',
-		'let B=S.remainingCycles,T=S.registerTop,X;',
+		'let B=S.remainingCycles,T=S.registerTop,X;'];
+	if (blocks.some(block => block.valueMemory)) {
+		// Cached register Values and the current control frontier are not
+		// visible to direct RAM accesses until this region writes them back.
+		source.push(`const A=F.thread,ca=A.address!==${CPU_RESET_BANK_ADDRESS};let vs,vl,fs,fl,cs;
+if(ca){const V=A.stackRegisters;vs=V.ramOffset();vl=V.capacity()*${THREAD_STACK_SLOT_BYTES}+${VALUE_MEMORY_TAG_OFFSET};
+fs=A.frameBackingOffset;fl=A.frameBackingBytes+${VALUE_MEMORY_TAG_OFFSET};cs=A.address-${RAM_BASE};}`);
+	}
+	source.push(
 		...[...bindings].map(register => `let y${register},z${register};`),
 		...Array.from({ length: locals }, (_, index) => `let t${index},w${index};`),
-		'switch(N){'];
+		'switch(N){');
 	// Entries with the same live-in registers share one load sequence.
 	const prologues = new Map<string, number[]>();
 	for (let index = 0; index < residents.length; ++index) {

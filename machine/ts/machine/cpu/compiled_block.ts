@@ -5,7 +5,7 @@ import { ValueTag } from './value';
 import type { Memory } from '../memory/memory';
 import { compiledArithmeticSupports, emitArithmetic } from './compiled_block_arithmetic';
 import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
-import { emitMemoryAccess, emitWordStores } from './compiled_block_memory';
+import { emitMemoryAccess, emitValueMemoryAccess, emitWordStores } from './compiled_block_memory';
 import { JavaScriptRegisterCache, type CompiledExitWriteBacks } from './compiled_block_registers';
 import { emitComparison } from './compiled_block_compare';
 import type { CompiledRegion } from './compiled_region';
@@ -14,6 +14,8 @@ import { compiledTableSupports, emitTableOperation } from './compiled_block_tabl
 import { COP0_STATUS, COP0_RAM_END, cop0FieldImplemented, cop0WriteRetiresControl } from '../../spec/blua32/cop0';
 import { compiledControlSupports, emitControl } from './compiled_block_control';
 import type { CallFrame } from './call_state';
+import { SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../spec/bmsx/memory_map';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../spec/blua32/execution_domain';
 
 export const enum CpuExecutionBackend {
 	Interpreter,
@@ -217,6 +219,7 @@ export type EmittedJavaScriptBlock = {
 	readonly admissionVarargs: number;
 	readonly openVarargs: number;
 	readonly formatCycles: number;
+	readonly valueMemory: boolean;
 };
 
 /** Emit a segment and its precise side exits; the region owns control flow. */
@@ -242,6 +245,7 @@ export function emitJavaScriptBlock(
 	let nextPc = pc;
 	let finalWord = firstWord;
 	let formatCycles = 0;
+	let valueMemory = false;
 	let controlAccess = false;
 	let stringOrderExit = -1;
 	for (let word = firstWord; word < endWord; word += page.widths[word]) {
@@ -304,6 +308,12 @@ export function emitJavaScriptBlock(
 			const address = displaced ? `(${base}+${page.operandByte[word] * 4})>>>0` : base;
 			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
 			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
+			else if (page.c[word] === MemoryAccessKind.Value) {
+				if (image.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID && ((currentPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE) {
+					valueMemory = true;
+					source.push(emitValueMemoryAccess(load, page.a[word], address, memoryExit, registers));
+				} else source.push(`{const a=${address};${memoryExit}}`);
+			}
 			else source.push(emitMemoryAccess(page, word, address, memoryExit, numericFault, memory, registers));
 		} else if (arithmetic) {
 			source.push(emitArithmetic(page, word, registers, numericFault));
@@ -371,7 +381,7 @@ export function emitJavaScriptBlock(
 	}
 	return { firstWord, terminal: exits[terminalIndex], exits: exits.slice(firstExit), sourceWords,
 		body: source.join('\n'), registers, finalWord, terminalIndex, takenIndex, deferredJumpIndex, stringOrderExit,
-		admissionCycles, admissionVarargs, openVarargs, formatCycles };
+		admissionCycles, admissionVarargs, openVarargs, formatCycles, valueMemory };
 }
 
 export function finishJavaScriptBlock(page: DecodedInstructionPage, block: EmittedJavaScriptBlock,

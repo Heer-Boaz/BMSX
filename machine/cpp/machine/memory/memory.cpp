@@ -3,6 +3,7 @@
 #include "common/compiler.h"
 #include "common/endian.h"
 #include "machine/devices/cartridge/controller.h"
+#include "spec/blua32/memory_access_kind.h"
 #include "spec/bmsx/memory_map.h"
 
 #include <cstring>
@@ -802,6 +803,32 @@ bool Memory::isRamRange(uint32_t addr, size_t length, bool cpuProtected) const {
 	return addr >= RAM_BASE && addr <= end && length <= end - addr
 		&& (addr + length <= CPU_RESET_BANK_ADDRESS || addr >= CPU_RESET_BANK_END)
 		&& (addr + length <= CPU_FIXED_FRAME_ADDRESS || addr >= CPU_FIXED_VALUE_END);
+}
+
+bool Memory::admitsMappedValue(u32 addr) const {
+	constexpr u32 ioEnd = IO_BASE + IO_SLOT_COUNT * IO_WORD_SIZE;
+	return addr >= ioEnd && isRamRange(addr, VALUE_MEMORY_SIZE, true);
+}
+
+const u8* Memory::readMappedValue(u32 addr) const {
+	if (!admitsMappedValue(addr)) {
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_VALUE);
+		return nullptr;
+	}
+	return m_ram.data() + (addr - RAM_BASE);
+}
+
+bool Memory::writeMappedValue(u32 addr, u32 payload, u8 tag) {
+	if (!admitsMappedValue(addr)) {
+		raiseBusFault(BUS_FAULT_UNMAPPED, addr, BUS_FAULT_ACCESS_WRITE | BUS_FAULT_ACCESS_VALUE);
+		return false;
+	}
+	const u32 offset = addr - RAM_BASE;
+	u8* slot = m_ram.data() + offset;
+	writeLE32(slot, payload);
+	slot[VALUE_MEMORY_TAG_OFFSET] = tag;
+	invalidateRamWrite(offset, VALUE_MEMORY_TAG_OFFSET + 1u);
+	return true;
 }
 
 MemoryRegionKind Memory::mappedRegion(uint32_t addr) const {

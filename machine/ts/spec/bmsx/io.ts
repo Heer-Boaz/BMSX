@@ -402,6 +402,7 @@ export const BUS_FAULT_ACCESS_U32 = 1 << 10;
 export const BUS_FAULT_ACCESS_WORD = 1 << 11;
 export const BUS_FAULT_ACCESS_F32 = 1 << 12;
 export const BUS_FAULT_ACCESS_F64 = 1 << 13;
+export const BUS_FAULT_ACCESS_VALUE = 1 << 14;
 
 export const INP_CTRL_ARM = 1;
 export const INP_CTRL_RESET = 2;

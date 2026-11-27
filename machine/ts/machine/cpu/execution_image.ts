@@ -15,6 +15,7 @@ import {
 } from '../../spec/blua32/opcode';
 import { cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
+import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import type { Memory, MemoryByteView } from '../memory/memory';
 import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
@@ -295,6 +296,8 @@ export function fixedRegisterExtent(op: number, a: number, b: number, c: number)
 		case OpCode.ITERN:
 			return Math.max(a + 3, b + c);
 		case OpCode.STORE_MEM: case OpCode.STORE_MEM_D:
+			// Tagged stores target only RAM; no device can postpone the source read.
+			return c === MemoryAccessKind.Value ? Math.max(a, b) + 1 : Math.max(0, b + 1);
 		case OpCode.STORE_MEM_WORDS: case OpCode.STORE_MEM_WORDS_D:
 			// Source values are consumed only after the bus admits the write.
 			return Math.max(0, b + 1);

@@ -1606,13 +1606,12 @@ export class CPU implements MappedPageInvalidator {
 			page.sourceWords[pageOffset] = sourceWord;
 			page.bodyWords[pageOffset] = bodyWord;
 			page.ops[pageOffset] = op;
-			const maxMemoryKind = page.privateFirmware ? MemoryAccessKind.Value : MemoryAccessKind.F64LE;
 			if (OPCODE_USES_DISP[op] !== 0) {
 				page.a[pageOffset] = (wideA << MAX_OPERAND_BITS) | aLow;
 				page.b[pageOffset] = (wideB << MAX_OPERAND_BITS) | bLow;
 				page.c[pageOffset] = (wideC << MAX_OPERAND_BITS) | cLow;
 				page.operandByte[pageOffset] = ext;
-				if (page.c[pageOffset] > maxMemoryKind
+				if (page.c[pageOffset] > MemoryAccessKind.Value
 					&& (op === OpCode.LOAD_MEM_D || op === OpCode.STORE_MEM_D)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				}
@@ -1651,7 +1650,7 @@ export class CPU implements MappedPageInvalidator {
 					page.tableCacheSlots[pageOffset] = -1;
 					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
-				if (rawC > maxMemoryKind && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
+				if (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				} else {
 					const constantCount = image.constWords.length;
@@ -3290,8 +3289,18 @@ export class CPU implements MappedPageInvalidator {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_LOAD, address);
 			return;
 		}
-		const faultSequence = this.memory.readBusFaultSequence();
 		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
+		if (kind === MemoryAccessKind.Value) {
+			if (!cpuProtected) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return;
+			}
+			const value = this.memory.readMappedValue(address);
+			if (value === undefined) this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
+			else this.setRegisterValueFast(frame, frame.registers, destination, value);
+			return;
+		}
+		const faultSequence = this.memory.readBusFaultSequence();
 		let value: Value;
 		switch (kind) {
 			case MemoryAccessKind.Word: value = valueInteger(this.memory.readMappedWord(address, cpuProtected) | 0); break;
@@ -3311,6 +3320,15 @@ export class CPU implements MappedPageInvalidator {
 	private executeMemoryStore(frame: CallFrame, source: number, kind: MemoryAccessKind, address: number): void {
 		if ((address & MEMORY_ACCESS_KIND_ALIGNMENT_MASKS[kind]) !== 0) {
 			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+			return;
+		}
+		if (kind === MemoryAccessKind.Value) {
+			if (this.isUserMode() || !this.executingSystemRom()) {
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return;
+			}
+			if (!this.memory.writeMappedValue(address, frame.registers.get(source)))
+				this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 			return;
 		}
 		this.continueMemoryStore(frame, source, kind, address);

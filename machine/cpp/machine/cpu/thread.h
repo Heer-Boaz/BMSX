@@ -109,6 +109,9 @@ private:
 		frame.compilationEntry = true;
 	}
 	friend struct CallFrame;
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	friend class NativeLowering;
+#endif
 	u32 frameCapacity() const;
 	u32 protectedCapacity() const;
 	u32 frameControlAddress(u32 index) const;

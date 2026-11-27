@@ -62,6 +62,8 @@ export class Thread {
 	}
 
 	public stackOffset(): number { return this.stackRegisters.ramOffset(); }
+	public get frameBackingOffset(): number { return this.boundFrameOffset; }
+	public get frameBackingBytes(): number { return this.boundFrameCapacity * FRAME_CONTROL_BYTES; }
 	private get frameCapacity(): number { return this.read(ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	private get protectedCapacity(): number { return this.read(ThreadField.ProtectedCapacity) & THREAD_CONTROL_COUNT_MASK; }
 	public get protectedDepth(): number { return this.read(ThreadField.ProtectedDepth) & THREAD_CONTROL_COUNT_MASK; }

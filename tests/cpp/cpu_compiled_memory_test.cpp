@@ -355,6 +355,138 @@ void wideTransfersRespectThePublicRamBoundary() {
 	}
 }
 
+void generatedTaggedValueTransfers() {
+	constexpr u32 destination = CPU_FIXED_STACK_BASE - MAPPED_PAGE_BYTE_SIZE - 4u;
+	constexpr u32 offset = destination - RAM_BASE; // The tag is in the next physical page.
+	constexpr u32 installedTail = RAM_BASE + MAIN_RAM_SIZE - 4u;
+	constexpr u32 previous = 0xbf64f210u;
+	constexpr auto kind = static_cast<u8>(MemoryAccessKind::Value);
+	for (const bool displaced : {false, true}) {
+		const auto store = static_cast<u8>(displaced ? OpCode::STORE_MEM_D : OpCode::STORE_MEM);
+		const auto load = static_cast<u8>(displaced ? OpCode::LOAD_MEM_D : OpCode::LOAD_MEM);
+		const u8 displacement = displaced ? 255u : 0u;
+		bmsx::test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(4 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, store, 0, 1, kind, displacement);
+		writeInstruction(image.text, 1, load, 2, 3, kind, displacement);
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::RET), 2, 2, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 3, .maxStack = 4}, {.firstWord = 3, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+
+		for (const bool watchTag : {false, true}) {
+			CpuMachine native(image), scalar(image, true);
+			native.cpu.prepareSystemNativeCode();
+			const Value value = displaced ? valueFloatBits(0xff812345u) : valueFromTag(ValueTag::Nil, 0xdecafbad);
+			for (auto* machine : {&native, &scalar}) {
+				auto& registers = machine->cpu.activeThread()->currentFrame->registers;
+				registers.set(0, value);
+				registers.set(1, valueInteger(destination - displacement * INSTRUCTION_BYTES));
+				registers.set(3, valueInteger(destination - displacement * INSTRUCTION_BYTES));
+				std::memset(machine->memory.ramData() + offset, 0xb6, VALUE_MEMORY_SIZE);
+				machine->memory.watchRamByte(offset + (watchTag ? VALUE_MEMORY_TAG_OFFSET : VALUE_MEMORY_SIZE - 1));
+			}
+			const int grant = BASE_CYCLES[store] + BASE_CYCLES[load] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 1;
+			require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Halted
+				&& native.cpu.instructionBudgetRemaining == 0, "tagged native transfer consumes exactly its instruction grant");
+			for (auto* machine : {&native, &scalar}) {
+				const auto result = machine->cpu.readCompletionValues();
+				const auto* cell = machine->memory.ramData() + offset;
+				require(result.size() == 1 && result.get(0) == value && readLE32(cell) == valuePayload(value)
+					&& cell[VALUE_MEMORY_TAG_OFFSET] == static_cast<u8>(valueTag(value))
+					&& cell[5] == 0xb6 && cell[6] == 0xb6 && cell[7] == 0xb6,
+					"tagged transfer neither normalizes tag/payload nor overwrites the padding");
+			}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+			const auto& exits = native.cpu.nativeGateProfile().exits;
+			require(exits[static_cast<size_t>(NativeBlockExit::ReadMemory)].entries == 0
+				&& exits[static_cast<size_t>(NativeBlockExit::WriteMemory)].entries == static_cast<u64>(watchTag),
+				"the generated Value store exits only for the actual next-page tag byte, not padding");
+			if (!watchTag) require(exits[static_cast<size_t>(NativeBlockExit::Return)].entries == 1
+				&& exits[static_cast<size_t>(NativeBlockExit::ScalarBoundary)].entries == 0,
+				"the valid transfer retired in generated code rather than the scalar dispatcher");
+#endif
+		}
+
+		CpuMachine native(image), scalar(image, true);
+		native.cpu.prepareSystemNativeCode();
+		for (auto* machine : {&native, &scalar}) {
+			auto& registers = machine->cpu.activeThread()->currentFrame->registers;
+			registers.set(0, valueFloatBits(0xff812345u));
+			registers.set(1, valueInteger(destination - displacement * INSTRUCTION_BYTES));
+			registers.set(2, valueInteger(57));
+			registers.set(3, valueInteger(installedTail - displacement * INSTRUCTION_BYTES));
+			writeLE32(machine->memory.ramData() + installedTail - RAM_BASE, previous);
+		}
+		require(test::runCpuParity(native.cpu, scalar.cpu, BASE_CYCLES[store] + BASE_CYCLES[load]) == RunResult::Yielded,
+			"the unsuccessful generated load consumes only the transfer pair's full charge");
+		for (auto* machine : {&native, &scalar}) {
+			require(machine->cpu.readCauseWord() == CPU_CAUSE_CODE_DATA_BUS_ERROR
+				&& machine->cpu.readEpcWord() == machine->rom.textAddress + INSTRUCTION_BYTES
+				&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_ADDR) == installedTail
+				&& machine->memory.readIoU32(IO_SYS_BUS_FAULT_ACCESS) == (BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_VALUE)
+				&& machine->cpu.rootThread()->currentFrame->registers.get(2) == valueInteger(57)
+				&& readLE32(machine->memory.ramData() + offset) == 0xff812345u,
+				"failed whole-span admission preserves the destination and the retired store prefix");
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto& reads = native.cpu.nativeGateProfile().exits[static_cast<size_t>(NativeBlockExit::ReadMemory)];
+		require(reads.entries == 1 && reads.returns == 1,
+			"the native guard exits to the bus exception owner exactly once");
+#endif
+	}
+}
+
+void generatedTaggedValueAliasesRegisterBacking() {
+	for (const bool load : {false, true}) {
+		const auto op = static_cast<u8>(load ? OpCode::LOAD_MEM : OpCode::STORE_MEM);
+		bmsx::test::Blua32TestImage image;
+		image.mappedCode = false;
+		image.text.resize(6 * INSTRUCTION_BYTES);
+		writeInstruction(image.text, 0, static_cast<u8>(OpCode::K1), 4, 0, 0);
+		writeInstruction(image.text, 1, op, load ? 2 : 0, 1, static_cast<u8>(MemoryAccessKind::Value));
+		writeInstruction(image.text, 2, static_cast<u8>(OpCode::MOV), 3, 4, 0);
+		writeInstruction(image.text, 3, static_cast<u8>(OpCode::MOV), 4, 5, 0);
+		writeInstruction(image.text, 4, static_cast<u8>(OpCode::RET), 2, 4, 0);
+		writeInstruction(image.text, 5, static_cast<u8>(OpCode::RFE), 0, 0, 0);
+		image.functions = {{.firstWord = 0, .wordCount = 5, .maxStack = 6}, {.firstWord = 5, .wordCount = 1}};
+		image.exceptionFunctionIndex = 1;
+
+		CpuMachine native(image), scalar(image, true);
+		native.cpu.prepareSystemNativeCode();
+		for (auto* machine : {&native, &scalar}) {
+			auto& thread = *machine->cpu.activeThread();
+			auto& frame = *thread.currentFrame;
+			const u32 address = RAM_BASE + thread.stackOffset() + 4u * (frame.stackBase() + 4u);
+			frame.registers.set(0, valueFloatBits(0xff812345u));
+			frame.registers.set(1, valueInteger(address));
+			frame.registers.set(2, valueInteger(57));
+			frame.registers.set(4, valueInteger(17));
+			// The byte at address + 4 is R5's low payload byte, not
+			// R4's architectural tag. The memory view decodes raw bytes.
+			frame.registers.set(5, valueInteger(load ? 0x33175504u : 0x3317550du));
+		}
+		const int grant = BASE_CYCLES[static_cast<u8>(OpCode::K1)] + BASE_CYCLES[op]
+			+ 2 * BASE_CYCLES[static_cast<u8>(OpCode::MOV)] + BASE_CYCLES[static_cast<u8>(OpCode::RET)] + 3;
+		require(test::runCpuParity(native.cpu, scalar.cpu, grant) == RunResult::Halted,
+			"aliasing the active register backing retains the original exact grant");
+		for (auto* machine : {&scalar, &native}) {
+			const auto result = machine->cpu.readCompletionValues();
+			require(result.size() == 3 && result.get(0) == (load ? valueFloatBits(1u) : valueInteger(57))
+				&& result.get(1) == (load ? valueInteger(1) : valueFromTag(ValueTag::Integer, 0xff812345u))
+				&& result.get(2) == valueInteger(0x33175504u),
+				load ? "the generated load sees the latest cached payload"
+					: "the generated store updates the payload seen by the next instruction");
+		}
+#if defined(BMSX_NATIVE_GATE_PROFILE)
+		const auto exit = load ? NativeBlockExit::ReadMemory : NativeBlockExit::WriteMemory;
+		require(native.cpu.nativeGateProfile().exits[static_cast<size_t>(exit)].entries == 1,
+			"the generated alias leaves once before borrowing or replacing cached register lanes");
+#endif
+	}
+}
+
 void coldExitsPreserveAddressOperands() {
 	Memory memory(MemoryInit{}, PSX_MACHINE_SPEC.ramBytes);
 	IrqController irq(memory);
@@ -873,6 +1005,8 @@ int main() {
 		publishedStoresObserveNewPhysicalByteWatches();
 		ramScalarDatapathsAndGuards();
 		coldExitsPreserveAddressOperands();
+		generatedTaggedValueTransfers();
+		generatedTaggedValueAliasesRegisterBacking();
 		generatedMemoryBoundaries();
 		wideTransfersRespectThePublicRamBoundary();
 		generatedBusOrdering();
