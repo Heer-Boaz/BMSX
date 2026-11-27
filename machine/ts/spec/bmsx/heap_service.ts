@@ -6,8 +6,8 @@ export const HEAP_SERVICE_IMAGE_HEADER_SIZE = 96;
 
 export const enum HeapServiceOperation {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject,
+	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, Count,
 }
 
 export const HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET = 0;
@@ -67,14 +67,6 @@ export const enum PreparedWindowField { Destination = 0, SourceSlot = 4, Copied 
 
 export const HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 export const enum HeapServiceResidentField { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 }
-
-export const HEAP_SERVICE_GC_OFFSET = 0xf20;
-export const enum HeapServiceGcField { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 }
-export const enum HeapServiceGcStage {
-	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
-	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
-	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
-}
 
 // Four Thread addresses followed by the seven root-bank descriptors.
 export const HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;

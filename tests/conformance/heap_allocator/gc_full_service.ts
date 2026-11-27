@@ -12,7 +12,7 @@ import { RamHistory } from '../../../machine/ts/machine/runtime/history/ram_hist
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceGcStage, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_TRACE_QUANTUM_OFFSET, HeapServiceTraceField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -67,9 +67,7 @@ try {
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 				const used = cycles - cpu.instructionBudgetRemaining;
-				const stage = gc.serviceStage();
-				assert.equal(stage, HeapServiceGcStage.Idle, 'the host does not select a collector phase or start nested services');
-				observe(`L ${cycles}`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+				observe(`L ${cycles}`, `${result} ${used} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 				if (cycles > 0) assert.ok(used > 0, 'an admitted quantum pays ordinary instruction cycles');
 				return result;
 			}

@@ -18,7 +18,7 @@ import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/b
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField,
-	HeapServiceBiosCallKind, HeapServiceGcStage,
+	HeapServiceBiosCallKind,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -103,7 +103,6 @@ try {
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 				assert.equal(cpu.allocationParked(), false);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 				observe(`J ${cycles} 1`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				return result;
 			}

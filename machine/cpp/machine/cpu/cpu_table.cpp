@@ -134,14 +134,8 @@ bool CPU::advanceAllocationRecovery() {
 		case AllocationRecovery::RetryFresh: return false;
 		case AllocationRecovery::Current:
 		case AllocationRecovery::Fresh: {
-			const auto& services = m_systemImage->heapServiceFunctions;
-			const auto* resident = services[static_cast<size_t>(HeapServiceOperation::Trace)] != 0u ? &services : nullptr;
-			if (m_heap.finalMarkPending()) {
-				m_heap.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage::MaintenanceTrace, resident);
-			} else {
-				m_heap.step(valueNil(), valueNil(), valueNil(), 0u, false, GC_STEP_WORDS, HeapServiceGcStage::AllocationRecoveryStringSweep,
-					resident);
-			}
+			if (m_heap.finalMarkPending()) m_heap.stepFinalMark();
+			else m_heap.step(valueNil(), valueNil(), valueNil());
 			finishAllocationRecovery();
 			return true;
 		}

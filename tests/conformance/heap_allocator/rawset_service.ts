@@ -17,7 +17,7 @@ import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/b
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField,
-	HeapServiceBiosCallKind, HeapServiceGcStage, HeapServiceRemarkHeadField, HeapServiceTableGrowthMode,
+	HeapServiceBiosCallKind, HeapServiceRemarkHeadField, HeapServiceTableGrowthMode,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -124,7 +124,6 @@ try {
 				observe(`J ${cycles} ${+spec.scheduled}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} 0 ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				assert.equal(cpu.allocationParked(), false);
 				assert.equal(cpu.tableRebuild.record, 0);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 				return result;
 			}
 			const history = new RamHistory();

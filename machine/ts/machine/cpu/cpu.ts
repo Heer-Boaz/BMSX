@@ -174,7 +174,7 @@ import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COM
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
-import { GC_STEP_WORDS, LuaAllocationMode, LuaHeap } from './lua_heap';
+import { LuaAllocationMode, LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import { HeapService } from './heap_service';
 import {
@@ -185,7 +185,7 @@ import {
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_GC_ARGUMENTS_OFFSET, HEAP_SERVICE_GC_PROJECTION_MASK, HEAP_SERVICE_TRACE_QUANTUM_OFFSET,
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
-	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
+	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
 	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedFrameField, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
@@ -758,10 +758,9 @@ export class CPU implements MappedPageInvalidator {
 		const recovery = this.pendingAllocation!.recovery;
 		if (recovery === AllocationRecovery.RetryCurrent || recovery === AllocationRecovery.RetryFresh) return false;
 		if (this.gc.finalMarkPending()) {
-			this.gc.stepFinalMark(GC_STEP_WORDS, HeapServiceGcStage.MaintenanceTrace, this.systemImage.heapServiceFunctions);
+			this.gc.stepFinalMark();
 		} else {
-			this.gc.step(valueNil(), valueNil(), valueNil(), 0, false, GC_STEP_WORDS,
-				HeapServiceGcStage.AllocationRecoveryStringSweep, this.systemImage.heapServiceFunctions);
+			this.gc.step();
 		}
 		this.finishAllocationRecovery();
 		return true;
@@ -2302,7 +2301,6 @@ export class CPU implements MappedPageInvalidator {
 			const firstFrame = this.heapService.thread.firstFrame!, services = this.systemImage.heapServiceFunctions;
 			const root = firstFrame.functionAddress, flags = this.memory.readRamRecordWord(firstFrame.controlOffset + FrameField.Flags);
 			const resident = (flags & FRAME_RESIDENT_ACTIVATION) !== 0;
-			const gcStage = !resident && cartLane === 0 && completion === HeapServiceBiosCallKind.Idle ? this.gc.serviceStage() : HeapServiceGcStage.Idle;
 			const stoppedFinalMark = root === services?.[HeapServiceOperation.StoppedFinalMark];
 			this.runKind = kind;
 			this.deviceClock = deviceClock;
@@ -2311,64 +2309,23 @@ export class CPU implements MappedPageInvalidator {
 				if (!this.heapServiceActive()) {
 					try {
 						if (resident) this.finishResidentCall(flags);
-						else switch (gcStage) {
-							case HeapServiceGcStage.FullTrace:
-							case HeapServiceGcStage.MaintenanceTrace: {
-								const work = this.gc.finishTraceQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullTrace) this.chargeCollectionWork(work);
-								break;
-							}
-							case HeapServiceGcStage.FullRemark:
-							case HeapServiceGcStage.MaintenanceRemark: {
-								const work = this.gc.finishRemarkQuantum(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRemark) this.chargeCollectionWork(work);
-								break;
-							}
-							case HeapServiceGcStage.FullRootHead:
-							case HeapServiceGcStage.MaintenanceRootHead: {
-								const work = this.gc.finishRootHead(this.systemImage.heapServiceFunctions!, gcStage);
-								if (gcStage === HeapServiceGcStage.FullRootHead) this.chargeCollectionWork(work);
-								break;
-							}
-							case HeapServiceGcStage.FullRootBanks:
-							case HeapServiceGcStage.MaintenanceRootBanks:
-								this.gc.finishRootBanks(this.systemImage.heapServiceFunctions!, gcStage);
-								break;
-							case HeapServiceGcStage.FullWeakClear:
-							case HeapServiceGcStage.MaintenanceWeakClear:
-								this.gc.finishWeakQuantum();
-								break;
-							case HeapServiceGcStage.FullObjectSweep:
-							case HeapServiceGcStage.AllocationRecoveryObjectSweep: {
-								const services = this.systemImage.heapServiceFunctions!;
-								this.gc.finishObjectSweep(gcStage, services[HeapServiceOperation.ObjectSweep], services[HeapServiceOperation.StringSweep]);
-								break;
-							}
-							case HeapServiceGcStage.FullStringSweep:
-							case HeapServiceGcStage.AllocationRecoveryStringSweep:
-								this.gc.finishStringSweep(gcStage);
-								if (gcStage === HeapServiceGcStage.AllocationRecoveryStringSweep) this.finishAllocationRecovery();
-								break;
-							case HeapServiceGcStage.Idle:
-								if (cartLane !== 0) {
-									const vector = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.Vector);
-									this.memory.writeRamRecordWord(irq + HeapServiceIrqForwardField.CartLane, 0);
-									this.placeExceptionVector(this.executionImageForDomain((cartLane - 1) as ExecutionDomainId)!,
-										vector, false, this.cop0Words[COP0_EPC]);
-								} else if (completion !== HeapServiceBiosCallKind.Idle) {
-									this.finishBiosCall(completion);
-								} else {
-									this.finishExecFloorService();
-									this.finishClosureReservation();
-								}
-								break;
+						else if (cartLane !== 0) {
+							const vector = this.memory.readRamRecordWord(irq + HeapServiceIrqForwardField.Vector);
+							this.memory.writeRamRecordWord(irq + HeapServiceIrqForwardField.CartLane, 0);
+							this.placeExceptionVector(this.executionImageForDomain((cartLane - 1) as ExecutionDomainId)!,
+								vector, false, this.cop0Words[COP0_EPC]);
+						} else if (completion !== HeapServiceBiosCallKind.Idle) {
+							this.finishBiosCall(completion);
+						} else {
+							this.finishExecFloorService();
+							this.finishClosureReservation();
 						}
 					} catch (error) {
 						this.handleRunLoopError(error);
 					}
 				}
 				if (this.hardHalted) return RunResult.Halted;
-				return (stoppedFinalMark || cartLane !== 0 || gcStage !== HeapServiceGcStage.Idle) && kind === CpuRunKind.Scheduled
+				return (stoppedFinalMark || cartLane !== 0) && kind === CpuRunKind.Scheduled
 					? RunResult.CollectionProgress : RunResult.Yielded;
 			} finally {
 				this.runKind = CpuRunKind.Idle;

@@ -13,7 +13,7 @@ import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { LogicalTickResult } from '../../../machine/ts/machine/scheduler/frame';
-import { HEAP_SERVICE_FRAME_OFFSET, HeapServiceGcStage, HeapServiceOperation } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET, HeapServiceOperation } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { linkTestSystemBlua32 } from '../../helpers/blua32';
@@ -71,13 +71,12 @@ try {
 				if (scheduled) {
 					const result = runtime.frameScheduler.advanceLogicalTick(cycles);
 					assert.notEqual(result, LogicalTickResult.Maintenance);
-					observe(`p ${cycles}`, `${+(result === LogicalTickResult.Completed)} ${scheduler.nowCycles - elapsed} ${runtime.frameScheduler.lastTickSequence - previous} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${+cpu.isHaltedUntilIrq()}`);
+					observe(`p ${cycles}`, `${+(result === LogicalTickResult.Completed)} ${scheduler.nowCycles - elapsed} ${runtime.frameScheduler.lastTickSequence - previous} ${+cpu.heapServiceActive()} ${+cpu.isHaltedUntilIrq()}`);
 				} else {
 					const result = runtime.cpuExecution.runSuspendedUntilDepth(depth, cycles);
 					assert.equal(result, cpu.heapServiceActive() ? CpuSuspendedRunResult.Yielded : CpuSuspendedRunResult.Completed);
 					observe(`q ${depth} ${cycles}`, `${result} ${scheduler.nowCycles - elapsed} ${+cpu.heapServiceActive()} ${cpu.getFrameDepth()} ${cpu.readFramePc(depth - 1)} ${+cpu.isHaltedUntilIrq()}`);
 				}
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no native leaf-stage continuation');
 				return scheduler.nowCycles - elapsed;
 			}
 			assert.equal(grant(0), 0);

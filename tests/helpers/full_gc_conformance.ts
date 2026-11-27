@@ -11,7 +11,7 @@ import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeCheckpointState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
-import { HEAP_SERVICE_FRAME_OFFSET, HeapServiceGcStage } from '../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_FRAME_OFFSET } from '../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 
@@ -56,13 +56,12 @@ export class FullGcConformance {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		const used = cycles - cpu.instructionBudgetRemaining;
 		assert.ok(used > 0);
-		assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the host phase chain never takes ownership');
 		if (this.caller !== -1 && active) {
 			assert.equal(result, RunResult.Yielded);
 			this.held();
 		}
 		this.trace.push(`L ${cycles}`);
-		this.expected.push(`${result} ${used} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+		this.expected.push(`${result} ${used} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 		return result;
 	}
 

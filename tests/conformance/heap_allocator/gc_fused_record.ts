@@ -15,7 +15,7 @@ import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveS
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_RESULT_OFFSET, HEAP_SERVICE_VALUE_COUNT,
-	HeapServiceGcStage, HeapServiceClosureField, HeapServiceRecordKind, HeapServiceRecordMode,
+	HeapServiceClosureField, HeapServiceRecordKind, HeapServiceRecordMode,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -94,7 +94,6 @@ try {
 			const stage = memory.readRamRecordWord(closureLatch);
 			assert.ok(used > 0, 'recovery spends ordinary guest instruction cycles');
 			assert.equal(stage, 0);
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the host does not select the next GC stage');
 			assert.equal(cpu.readFramePc(caller), waitPc);
 			assert.equal(cpu.allocationParked(), false);
 			observe(`J ${cycles} 1`, `${result} ${used} ${+cpu.heapServiceActive()} ${stage} ${arena.occupiedBytes()} ${budget.usedBytes()}`);

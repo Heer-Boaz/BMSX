@@ -13,7 +13,7 @@ import { applyRuntimeCheckpointState, applyRuntimeSaveState, captureRuntimeSaveS
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceBiosCallField,
-	HeapServiceBiosCallKind, HeapServiceGcStage, HeapServiceRemarkHeadField,
+	HeapServiceBiosCallKind, HeapServiceRemarkHeadField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
@@ -84,7 +84,6 @@ try {
 				assert.equal(cpu.allocationParked(), false, 'recovery belongs to the running BIOS frame');
 				assert.equal(cpu.allocationReady(), false);
 				assert.equal(cpu.tableRebuild.record, 0);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no native GC dispatcher owns these quanta');
 			}
 			function grant(cycles: number) {
 				const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -98,7 +97,7 @@ try {
 				const result = frames.stepInstruction(1), paid = scheduler.nowCycles - time;
 				const irqFlags = memory.readIoU32(IO_IRQ_FLAGS);
 				noHostJob();
-				observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} 0 0 ${+cpu.heapServiceActive()} ${HeapServiceGcStage.Idle} 0 ${irqFlags} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
+				observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} 0 0 ${+cpu.heapServiceActive()} 0 ${irqFlags} ${arena.occupiedBytes()} ${heap.usedBytes()}`);
 				return paid;
 			}
 			const history = new RamHistory();

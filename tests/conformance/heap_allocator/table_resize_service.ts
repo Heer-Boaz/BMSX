@@ -17,7 +17,7 @@ import { INSTRUCTION_BYTES, instructionOpcode } from '../../../machine/ts/spec/b
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_REMARK_HEAD_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
-	HeapServiceGcStage, HeapServiceRemarkHeadField,
+	HeapServiceRemarkHeadField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -29,11 +29,12 @@ import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 
 const input = { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {} };
 const field = '__newindex';
+const extent = 8;
 const assignments = [
 	['sett', 'owner[key]', OpCode.SETT],
+	['seti', `owner[${extent + 2}]`, OpCode.SETI],
 	['setfield', `owner.${field}`, OpCode.SETFIELD],
 ] as const;
-const extent = 8;
 const added = valueInteger(61);
 
 mkdirSync('tmp', { recursive: true });
@@ -47,7 +48,7 @@ try {
 	}
 
 	function exercise(system: ReturnType<typeof linkTestSystemBlua32>, opcode: OpCode, label: string, recovering: boolean) {
-		const relocates = opcode === OpCode.SETT;
+		const relocates = opcode !== OpCode.SETFIELD;
 		const configuration = { systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC };
 		const runtime = new Runtime(configuration, input), reference = new Runtime(configuration, input);
 		runtime.boot(); reference.boot();
@@ -107,7 +108,7 @@ try {
 			const frames = runtime.frameScheduler, time = scheduler.nowCycles, tick = frames.lastTickSequence;
 			const result = frames.stepInstruction(1), paid = scheduler.nowCycles - time;
 			const irqFlags = memory.readIoU32(IO_IRQ_FLAGS);
-			observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} ${gc.serviceStage()} 0 ${irqFlags} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
+			observe('d', `${result} ${paid} ${+(frames.lastTickSequence !== tick)} ${+cpu.allocationParked()} ${+cpu.allocationReady()} ${+cpu.heapServiceActive()} 0 ${irqFlags} ${arena.occupiedBytes()} ${budget.usedBytes()}`);
 			return paid;
 		}
 
@@ -126,7 +127,6 @@ try {
 		function held() {
 			assert.ok(cpu.heapServiceActive());
 			assert.equal(operation(), HeapServiceBiosCallKind.Discard);
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, "no host collector continuation is active");
 			assert.equal(cpu.readFramePc(caller), nextPc);
 			assert.equal(budget.usedBytes(), resumeLogical);
 			assert.equal(cpu.tableRebuild.record, 0, 'immediate resize has no staged rebuild');

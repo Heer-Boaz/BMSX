@@ -8,7 +8,7 @@ static_assert(HEAP_SERVICE_FRAME_OFFSET + HEAP_SERVICE_FRAME_COUNT * FRAME_CONTR
 static_assert(HEAP_SERVICE_VALUE_OFFSET + HEAP_SERVICE_VALUE_COUNT * THREAD_STACK_SLOT_BYTES <= HEAP_SERVICE_PREPARED_FRAME_OFFSET);
 static_assert(static_cast<u32>(PreparedFrameField::SourceSlot) == FRAME_CONTROL_BYTES);
 static_assert(HEAP_SERVICE_PREPARED_FRAME_OFFSET + static_cast<u32>(PreparedFrameField::RelocateFormals) + sizeof(u32) <= RUNTIME_MANAGEMENT_SIZE);
-static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_GC_OFFSET);
+static_assert(HEAP_SERVICE_CLOSURE_OFFSET + static_cast<u32>(HeapServiceClosureField::NextPc) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_BANKS_OFFSET + HEAP_SERVICE_ROOT_BANKS_SIZE <= HEAP_SERVICE_REMARK_HEAD_OFFSET);
 static_assert(HEAP_SERVICE_ROOT_PORT_BASE >= SYSTEM_ROM_BASE + SYSTEM_ROM_SIZE);
 static_assert(HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32) <= RAM_BASE);
@@ -18,7 +18,6 @@ static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRema
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
 static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
-static_assert(HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::QuantumLimit) + sizeof(u32) <= HEAP_SERVICE_BIOS_CALL_OFFSET);
 static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32)
 	<= HEAP_SERVICE_RESIDENT_OFFSET);
 static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::RunKind) + sizeof(u32)

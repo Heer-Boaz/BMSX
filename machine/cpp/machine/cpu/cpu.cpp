@@ -2591,8 +2591,6 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		const u32 root = firstFrame.readControl(FrameField::Function);
 		const u32 flags = firstFrame.readControl(FrameField::Flags);
 		const bool resident = (flags & FRAME_RESIDENT_ACTIVATION) != 0u;
-		const auto gcStage = !resident && cartLane == 0u && completion == HeapServiceBiosCallKind::Idle
-			? m_heap.serviceStage() : HeapServiceGcStage::Idle;
 		const auto& functions = m_systemImage->heapServiceFunctions;
 		const bool stoppedFinalMark = root == functions[static_cast<size_t>(HeapServiceOperation::StoppedFinalMark)];
 		m_runKind = kind;
@@ -2608,59 +2606,16 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 		if (!heapServiceActive()) {
 			try {
 				if (resident) finishResidentCall(flags);
-				else switch (gcStage) {
-					case HeapServiceGcStage::FullTrace:
-					case HeapServiceGcStage::MaintenanceTrace: {
-						const auto work = m_heap.finishTraceQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullTrace) chargeCollectionWork(work);
-						break;
-					}
-					case HeapServiceGcStage::FullRemark:
-					case HeapServiceGcStage::MaintenanceRemark: {
-						const auto work = m_heap.finishRemarkQuantum(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRemark) chargeCollectionWork(work);
-						break;
-					}
-					case HeapServiceGcStage::FullRootHead:
-					case HeapServiceGcStage::MaintenanceRootHead: {
-						const auto work = m_heap.finishRootHead(m_systemImage->heapServiceFunctions, gcStage);
-						if (gcStage == HeapServiceGcStage::FullRootHead) chargeCollectionWork(work);
-						break;
-					}
-					case HeapServiceGcStage::FullRootBanks:
-					case HeapServiceGcStage::MaintenanceRootBanks:
-						m_heap.finishRootBanks(m_systemImage->heapServiceFunctions, gcStage);
-						break;
-					case HeapServiceGcStage::FullWeakClear:
-					case HeapServiceGcStage::MaintenanceWeakClear:
-						m_heap.finishWeakQuantum();
-						break;
-					case HeapServiceGcStage::FullObjectSweep:
-					case HeapServiceGcStage::AllocationRecoveryObjectSweep: {
-						const auto& services = m_systemImage->heapServiceFunctions;
-						m_heap.finishObjectSweep(gcStage,
-							services[static_cast<size_t>(HeapServiceOperation::ObjectSweep)],
-							services[static_cast<size_t>(HeapServiceOperation::StringSweep)]);
-						break;
-					}
-					case HeapServiceGcStage::FullStringSweep:
-					case HeapServiceGcStage::AllocationRecoveryStringSweep:
-						m_heap.finishStringSweep(gcStage);
-						if (gcStage == HeapServiceGcStage::AllocationRecoveryStringSweep) finishAllocationRecovery();
-						break;
-					case HeapServiceGcStage::Idle:
-						if (cartLane != 0u) {
-							const u32 vector = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::Vector));
-							m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
-							placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
-								vector, false, m_cop0Words[COP0_EPC]);
-						} else if (completion != HeapServiceBiosCallKind::Idle) {
-							finishBiosCall(completion);
-						} else {
-							finishExecutionFloor();
-							finishClosureReservation();
-						}
-						break;
+				else if (cartLane != 0u) {
+					const u32 vector = m_memory.readRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::Vector));
+					m_memory.writeRamRecordWord(irq + static_cast<u32>(HeapServiceIrqForwardField::CartLane), 0u);
+					placeExceptionVector(*executionImageForDomain(static_cast<ExecutionDomainId>(cartLane - 1u)),
+						vector, false, m_cop0Words[COP0_EPC]);
+				} else if (completion != HeapServiceBiosCallKind::Idle) {
+					finishBiosCall(completion);
+				} else {
+					finishExecutionFloor();
+					finishClosureReservation();
 				}
 			} catch (const LuaOutOfMemorySignal&) {
 				const auto value = m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY];
@@ -2673,7 +2628,7 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 			}
 		}
 		if ((m_runSignals & RunHardHalted) != 0u) return RunResult::Halted;
-		return (stoppedFinalMark || cartLane != 0u || gcStage != HeapServiceGcStage::Idle) && kind == CpuRunKind::Scheduled
+		return (stoppedFinalMark || cartLane != 0u) && kind == CpuRunKind::Scheduled
 			? RunResult::CollectionProgress : RunResult::Yielded;
 	}
 	if (allocationParked()) {

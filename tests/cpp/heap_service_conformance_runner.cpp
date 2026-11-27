@@ -100,10 +100,8 @@ int main(int argc, char** argv) {
 					int cycles;
 					trace >> cycles;
 					const auto result = scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
-					const auto stage = memory.readRamRecordWord(cpu.heapAllocator().managementOffset()
-						+ HEAP_SERVICE_GC_OFFSET + static_cast<u32>(HeapServiceGcField::Stage));
 					std::cout << static_cast<int>(result) << ' ' << cycles - cpu.instructionBudgetRemaining << ' '
-						<< cpu.heapServiceActive() << ' ' << stage << ' ' << cpu.gcHeap().fullEpochs()
+						<< cpu.heapServiceActive() << ' ' << cpu.gcHeap().fullEpochs()
 						<< ' ' << static_cast<int>(cpu.gcHeap().phase()) << ' ' << cpu.luaHeap().usedBytes() << '\n';
 					break;
 				}
@@ -119,27 +117,6 @@ int main(int argc, char** argv) {
 					if (grants == 0 || memory.readRamRecordWord(address) != word || !cpu.heapServiceActive())
 						throw std::runtime_error("Object sweep did not suspend at the observed store");
 					std::cout << grants << '\n';
-					break;
-				}
-				case 'g': {
-					int cycles;
-					trace >> cycles;
-					const u32 epochs = cpu.gcHeap().fullEpochs();
-					const u32 actionOffset = cpu.heapAllocator().managementOffset() + HEAP_SERVICE_OBJECT_SWEEP_OFFSET
-						+ static_cast<u32>(HeapServiceObjectSweepField::Action);
-					i64 spent = 0;
-					u32 actions = 0;
-					for (int grant = 0; grant < 4096 && cpu.gcHeap().fullEpochs() == epochs; ++grant) {
-						scheduler.runCpuSlice(0, cycles, 0u, CpuRunKind::Scheduled);
-						spent += cycles - cpu.instructionBudgetRemaining;
-						if (cpu.gcHeap().serviceStage() == HeapServiceGcStage::FullObjectSweep) {
-							const u32 action = memory.readRamRecordWord(actionOffset);
-							if (action != 0u) actions |= 1u << action;
-						}
-					}
-					if (cpu.gcHeap().fullEpochs() == epochs || cpu.heapServiceActive())
-						throw std::runtime_error("Timed collection did not complete its epoch");
-					std::cout << spent << ' ' << cpu.gcHeap().fullEpochs() << ' ' << actions << '\n';
 					break;
 				}
 				case 'w': {
@@ -372,27 +349,15 @@ int main(int argc, char** argv) {
 					break;
 				}
 				case 'a':
-				case 'd':
-				case 'k': {
+				case 'd': {
 					auto& frames = runtime.frameScheduler;
 					const auto before = frames.lastTickSequence;
 					const auto cycles = scheduler.nowCycles();
-					const auto admitted = cpu.gcHeap().serviceStage();
 					const int result = op == 'a' ? static_cast<int>(frames.advanceLogicalTick(runtime, 0))
 						: static_cast<int>(frames.stepInstruction(runtime, 1));
-					if (op == 'k') {
-						if (admitted != HeapServiceGcStage::MaintenanceTrace && admitted != HeapServiceGcStage::MaintenanceRemark
-							&& admitted != HeapServiceGcStage::MaintenanceRootHead && admitted != HeapServiceGcStage::MaintenanceRootBanks)
-							throw std::runtime_error("Expected an active allocation-recovery mark stage");
-						for (int grant = 1; cpu.gcHeap().serviceStage() == admitted && grant < 65536; ++grant)
-							frames.stepInstruction(runtime, 1);
-						if (cpu.gcHeap().serviceStage() == admitted || scheduler.nowCycles() <= cycles)
-							throw std::runtime_error("Allocation recovery did not retire the timed mark stage");
-					}
 					const u32 management = cpu.heapAllocator().managementOffset();
-					std::cout << result << ' ' << (op == 'k' ? 1 : scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
+					std::cout << result << ' ' << (scheduler.nowCycles() - cycles) << ' ' << (frames.lastTickSequence != before)
 						<< ' ' << cpu.allocationParked() << ' ' << cpu.allocationReady() << ' ' << cpu.heapServiceActive()
-						<< ' ' << static_cast<u32>(cpu.gcHeap().serviceStage())
 						<< ' ' << memory.readRamRecordWord(management + HEAP_SERVICE_CLOSURE_OFFSET)
 						<< ' ' << memory.readIoU32(IO_IRQ_FLAGS)
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes() << '\n';
@@ -414,7 +379,7 @@ int main(int argc, char** argv) {
 					const bool completed = frames.runCyclesToNextLogicalTick(runtime, cycles);
 					std::cout << completed << ' ' << scheduler.nowCycles() - before << ' '
 						<< frames.lastTickSequence - tick << ' ' << cpu.heapServiceActive() << ' '
-						<< static_cast<u32>(cpu.gcHeap().serviceStage()) << ' ' << cpu.isHaltedUntilIrq() << '\n';
+						<< cpu.isHaltedUntilIrq() << '\n';
 					break;
 				}
 				case 'A': {

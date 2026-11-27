@@ -14,8 +14,8 @@ constexpr uint32_t HEAP_SERVICE_IMAGE_HEADER_SIZE = 96u;
 
 enum class HeapServiceOperation : uint32_t {
 	Reset, SetFloor, Floor, Allocate, Free, ReserveBacking, ResizeBacking,
-	Shrink, AllocationBytes, OccupiedBytes, IsObject, StringSweep, ObjectSweep, Trace, WeakClear, Remark,
-	RootHead, RootBanks, AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, Count,
+	Shrink, AllocationBytes, OccupiedBytes, IsObject,
+	AllocateRecord, TableGrow, InterruptPrelude, StoppedFinalMark, CreateCoroutine, ReserveFrameSpace, StoreClosedUpvalue, Count,
 };
 constexpr uint32_t HEAP_SERVICE_ENTRY_COUNT = static_cast<uint32_t>(HeapServiceOperation::Count);
 using HeapServiceFunctions = std::array<uint32_t, HEAP_SERVICE_ENTRY_COUNT>;
@@ -78,14 +78,6 @@ enum class PreparedWindowField : uint32_t { Destination = 0, SourceSlot = 4, Cop
 
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };
-
-constexpr uint32_t HEAP_SERVICE_GC_OFFSET = 0xf20;
-enum class HeapServiceGcField : uint32_t { Stage = 0, PrefixWork = 4, OccupiedBefore = 8, QuantumLimit = 12 };
-enum class HeapServiceGcStage : uint32_t {
-	Idle, FullStringSweep, AllocationRecoveryStringSweep, FullObjectSweep, AllocationRecoveryObjectSweep,
-	FullTrace, MaintenanceTrace, FullWeakClear, MaintenanceWeakClear, FullRemark, MaintenanceRemark,
-	FullRootHead, MaintenanceRootHead, FullRootBanks, MaintenanceRootBanks,
-};
 
 // Four Thread addresses followed by the seven root-bank descriptors.
 constexpr uint32_t HEAP_SERVICE_ROOT_BANKS_OFFSET = 0x600;

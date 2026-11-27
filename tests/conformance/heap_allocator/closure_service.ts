@@ -21,7 +21,7 @@ import { CPU_CAUSE_CODE_MASK, CPU_CAUSE_CODE_RESERVED_INSTRUCTION, CPU_CAUSE_COD
 import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceClosureField, HeapServiceGcStage,
+	HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HeapServiceClosureField,
 } from '../../../machine/ts/spec/bmsx/heap_service';
 import { HEAP_PAGE_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -274,7 +274,6 @@ try {
 			assert.equal(pending(), destination + 1);
 			assert.equal(cpu.heapServiceActive(), true);
 			assert.equal(memory.readRamRecordWord(root), operation, 'one record activation owns the request through GC and retry');
-			assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no host collector continuation');
 			assert.equal(cpu.readFramePc(caller), pc);
 			assert.equal(cpu.readFrameRegister(caller, destination), oldValue);
 			assert.equal(cpu.allocationParked(), false);
@@ -355,7 +354,6 @@ try {
 				for (let i = 0; i < 16384 && gc.phase() !== GcPhase.Pause; ++i) paid += grant(1, true);
 				assert.ok(paid > 0, 'the recovery ran BIOS instructions on the ordinary clock');
 				assert.equal(gc.phase(), GcPhase.Pause, 'the current epoch completed before the original request was retried');
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 				assert.equal(cpu.stringPool.find(deadString), undefined);
 				assert.ok(arena.occupiedBytes() < before[0]);
 				assert.ok(gc.workSinceEpoch(epochBefore) > 0);

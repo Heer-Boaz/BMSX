@@ -12,9 +12,9 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
+	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_RESIDENT_OFFSET,
 	HEAP_SERVICE_REMARK_HEAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind,
-	HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage, HeapServiceRemarkHeadField, HeapServiceResidentField, HeapServiceTableGrowthMode,
+	HeapServiceClosureField, HeapServiceRemarkHeadField, HeapServiceResidentField, HeapServiceTableGrowthMode,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -174,7 +174,6 @@ test('the resident full collection crosses VBlank during String reclamation', ()
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.gc.phase(), GcPhase.Strings);
 	assert.equal(cpu.gc.fullEpochs(), 1);
-	assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle, 'the CPU did not schedule a collector phase');
 	const depth = cpu.getFrameDepth(), callerPc = cpu.readFramePc(depth - 1);
 	advanceRuntimeTime(runtime, edge - scheduler.nowCycles - 32);
 	assert.equal(frames.runCyclesToNextLogicalTick(64), true);
@@ -183,7 +182,6 @@ test('the resident full collection crosses VBlank during String reclamation', ()
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
 	assert.equal(cpu.gc.phase(), GcPhase.Strings);
-	assert.equal(cpu.gc.serviceStage(), HeapServiceGcStage.Idle);
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(depth - 1), callerPc);
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
@@ -258,7 +256,6 @@ test('a suspended SETT retains only its published roots across a timed recovery 
 	assert.ok(frames.lastTickCpuUsedCycles > 0, 'the recovery pays ordinary CPU time');
 	assert.equal(memory.readIoU32(IO_IRQ_FLAGS) & IRQ_VBLANK, IRQ_VBLANK);
 	assert.equal(cpu.heapServiceActive(), true);
-	assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'the collector phase is not serialized by the host');
 	assert.equal(cpu.enterPendingInterrupt(), false);
 	assert.equal(cpu.readFramePc(caller), successor);
 	assert.equal(parked(), 1);
@@ -272,7 +269,7 @@ test('a suspended SETT retains only its published roots across a timed recovery 
 		// than relying on the old native loop's low grant count.
 		for (let i = 0; i < 64 && cpu.getFrameDepth() !== 0; ++i) {
 			frames.runCyclesToNextLogicalTick(100_000);
-			grants.push([scheduler.nowCycles, gc.phase(), gc.serviceStage(), parked(), +cpu.heapServiceActive()]);
+			grants.push([scheduler.nowCycles, gc.phase(), parked(), +cpu.heapServiceActive()]);
 		}
 		assert.equal(cpu.allocationParked(), false);
 		assert.equal(cpu.heapServiceActive(), false);
@@ -316,7 +313,6 @@ test('production object sweep frees records before debugger callbacks without pu
 	};
 	for (let i = 0; i < 16384 && gc.phase() !== GcPhase.Sweep; ++i) slice(gc.phase() < GcPhase.Atomic ? 512 : 1);
 	assert.equal(gc.phase(), GcPhase.Sweep);
-	assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 	assert.equal(cpu.heapServiceActive(), true);
 	const newerBlock = newer - RAM_BASE - GC_OBJECT_PREFIX;
 	assert.ok(cpu.heapAllocator.issuedObjectStart(newerBlock));
@@ -331,7 +327,6 @@ test('production object sweep frees records before debugger callbacks without pu
 	assert.notEqual(frontier[1], 0);
 	assert.deepEqual(callbacks.filter(([address]) => address === newer), [[newer, ...frontier, 0]]);
 	assert.equal(callbacks.some(([address]) => address === older), false);
-	assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 	assert.equal(cpu.heapServiceActive(), true, 'the retired Table stays within the same firmware activation');
 	assert.deepEqual([count(), cursor()], frontier);
 	const checkpoint = captureRuntimeSaveState(runtime);

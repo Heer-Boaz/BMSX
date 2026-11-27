@@ -14,7 +14,7 @@ import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import { BASE_CYCLES, OpCode } from '../../../machine/ts/spec/blua32/opcode';
-import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HeapServiceBiosCallField, HeapServiceBiosCallKind } from '../../../machine/ts/spec/bmsx/heap_service';
 import { RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { decodeBlua32InstructionAtPc } from '../../../toolchain/ts/rompack/blua32_instruction_decode';
@@ -105,9 +105,8 @@ try {
 			function grant(cycles: number) {
 				const result = slice(cycles), spent = cycles - cpu.instructionBudgetRemaining;
 				assert.ok(spent > 0);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle);
 				assert.equal(completion(), HeapServiceBiosCallKind.Idle, 'ordinary CALL never uses the selector mailbox');
-				record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
+				record(`L ${cycles}`, `${result} ${spent} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${budget.usedBytes()}`);
 				return { result, spent };
 			}
 			assert.deepEqual(grant(1), { result: RunResult.Yielded, spent: BASE_CYCLES[OpCode.CALL] });

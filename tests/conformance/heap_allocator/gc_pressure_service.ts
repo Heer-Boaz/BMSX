@@ -18,7 +18,7 @@ import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine
 import {
 	CPU_CAUSE_IRQ, CPU_CAUSE_NMI, CPU_STATUS_MODE_STACK_MASK, CPU_STATUS_RFE_RESTORE_MASK,
 } from '../../../machine/ts/spec/blua32/cop0';
-import { HEAP_SERVICE_IRQ_FORWARD_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceIrqForwardField, HeapServiceGcStage } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_IRQ_FORWARD_OFFSET, HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_OFFSET, HEAP_SERVICE_VALUE_COUNT, HeapServiceIrqForwardField } from '../../../machine/ts/spec/bmsx/heap_service';
 import { IO_CART_SELECT, IO_IRQ_ACK, IO_IRQ_FLAGS, IO_IRQ_MASK, IRQ_DMA0_DONE, IRQ_VBLANK } from '../../../machine/ts/spec/bmsx/io';
 import { CART_ROM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -139,7 +139,7 @@ try {
 		}
 		function grant(cycles: number) {
 			const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
-			observe(`L ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${gc.serviceStage()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
+			observe(`L ${cycles}`, `${result} ${cycles - cpu.instructionBudgetRemaining} ${+cpu.heapServiceActive()} ${gc.fullEpochs()} ${gc.phase()} ${cpu.luaHeap.usedBytes()}`);
 			if (proveGeneratedTrace) trace.push('n');
 			return result;
 		}
@@ -159,7 +159,6 @@ try {
 					}
 				}
 				assert.equal(grant(4096), RunResult.CollectionProgress);
-				assert.equal(gc.serviceStage(), HeapServiceGcStage.Idle, 'no host phase handoffs');
 			}
 			if (shortGrants) assert.ok(tested, 'pause in the linked Table trace itself');
 			assert.equal(cpu.heapServiceActive(), false);
@@ -224,7 +223,7 @@ try {
 		assert.equal(frames.stepInstruction(1), InstructionStepResult.Advanced);
 		const elapsed = scheduler.nowCycles - before;
 		assert.ok(elapsed > 0 && elapsed <= 8);
-		observe('d', `${InstructionStepResult.Advanced} ${elapsed} ${+(frames.lastTickSequence !== tick)} 0 0 1 0 0 ${IRQ_VBLANK} ${occupied} ${cpu.luaHeap.usedBytes()}`);
+		observe('d', `${InstructionStepResult.Advanced} ${elapsed} ${+(frames.lastTickSequence !== tick)} 0 0 1 0 ${IRQ_VBLANK} ${occupied} ${cpu.luaHeap.usedBytes()}`);
 		assert.equal(cpu.heapServiceActive(), true);
 		const partialPath = join(directory, `partial-O${optLevel}.state`), nativePath = join(directory, `native-O${optLevel}.state`);
 		const partial = captureRuntimeSaveState(runtime);
@@ -310,7 +309,7 @@ try {
 			const clock = scheduler.nowCycles, display = frames.lastTickSequence;
 			assert.equal(frames.stepInstruction(1), InstructionStepResult.Advanced);
 			assert.equal(scheduler.nowCycles, clock, 'admission alone is not a CPU instruction');
-			observe('d', `${InstructionStepResult.Advanced} 0 ${+(frames.lastTickSequence !== display)} 0 0 ${+cpu.heapServiceActive()} 0 0 ${IRQ_VBLANK} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
+			observe('d', `${InstructionStepResult.Advanced} 0 ${+(frames.lastTickSequence !== display)} 0 0 ${+cpu.heapServiceActive()} 0 ${IRQ_VBLANK} ${arena.occupiedBytes()} ${cpu.luaHeap.usedBytes()}`);
 		}
 		assert.equal(lane(), 1);
 		assert.equal(cpu.readEpcWord(), issuePc);
