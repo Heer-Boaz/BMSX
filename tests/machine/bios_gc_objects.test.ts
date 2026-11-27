@@ -7,13 +7,14 @@ import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_COLOR_OFFSET, GC_OBJECT_LINK_BEFORE, GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader, TableRecords } from '../../machine/ts/machine/cpu/table';
-import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField } from '../../machine/ts/machine/cpu/thread_record';
+import { THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, ThreadField, ThreadStatus } from '../../machine/ts/machine/cpu/thread_record';
 import { initialize as initializeCell, UPVALUE_HEAP_BYTES } from '../../machine/ts/machine/cpu/upvalue';
-import { ValueTag, valueThread } from '../../machine/ts/machine/cpu/value';
+import { ValueTag, valueInteger, valueNil, valueThread } from '../../machine/ts/machine/cpu/value';
 import {
 	HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT,
 	HeapServiceObjectSweepAction as Action, HeapServiceObjectSweepField as Sweep,
 } from '../../machine/ts/spec/bmsx/heap_service';
+import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
@@ -47,7 +48,7 @@ function fixture(optLevel: 0 | 3) {
 	const context = management + HEAP_SERVICE_OBJECT_SWEEP_OFFSET;
 	const arena = cpu.heapAllocator.allocatorStateOffset();
 	const floor = memory.ramBusEnd() - RAM_BASE, end = management + HEAP_SERVICE_THREAD_OFFSET;
-	const parts = [[floor, context], [context + Sweep.ProtectedCapacity + 4, end]] as const;
+	const parts = [[floor, context], [context + Sweep.Next + 4, end]] as const;
 	function compare() {
 		for (const [first, last] of parts) {
 			const actual = memory.ramData().subarray(first, last), expected = oracle.memory.ramData().subarray(first, last);
@@ -95,9 +96,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.notEqual(address, 0);
 		switch (contextWord(Sweep.Action)) {
 			case Action.RetireCanonicalClosure: cpu.retireStaticClosure(address); return;
-			case Action.RetireThreadView: cpu.retireThreadView(address); return;
 			case Action.ObserveRetiredRecord: cpu.gc.onRecordRetirement!(address); return;
-			case Action.RebindRelocatedThread: cpu.rebindRelocatedThread(address); return;
 		}
 		assert.fail('expected a pending host action');
 	}
@@ -193,7 +192,7 @@ for (const optLevel of [0, 3] as const) {
 		compare();
 	});
 
-	test(`BLua retains one quantum across pre-release, post-compaction and observer actions at O${optLevel}`, () => {
+	test(`BLua keeps compaction, storage release and observer order inside one quantum at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, occupied, allocate, cell, color, setCursor, compare,
 			begin, grant, finish, contextWord, resume, handleDeferred } = fixture(optLevel);
 		const deadThread = allocate(target => {
@@ -272,13 +271,11 @@ for (const optLevel of [0, 3] as const) {
 		const partial = captureCpuCheckpoint(cpu);
 
 		function finishWholeQuantum() {
-			const liveView = cpu.bindThread(liveThread);
-			assert.equal(liveView.stackRegisters.capacity(), liveValueCapacity);
 			let cumulative = 1;
 			for (const [action, address] of [
-				[Action.ObserveRetiredRecord, table], [Action.RebindRelocatedThread, liveThread],
+				[Action.ObserveRetiredRecord, table],
 				[Action.ObserveRetiredRecord, ordinary], [Action.RetireCanonicalClosure, canonical],
-				[Action.ObserveRetiredRecord, canonical], [Action.RetireThreadView, deadThread],
+				[Action.ObserveRetiredRecord, canonical],
 				[Action.ObserveRetiredRecord, deadThread],
 			] as const) {
 				assert.equal(contextWord(Sweep.Action), action);
@@ -290,30 +287,21 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), published, 'only the saved link advances between owners');
 				const issued = cpu.heapAllocator.issuedObjectStart(address - RAM_BASE - GC_OBJECT_PREFIX);
 				assert.equal(issued, action !== Action.ObserveRetiredRecord, 'pre-release owner sees issued storage, observer sees retirement');
-				if (action === Action.RebindRelocatedThread) {
-					assert.equal(link, liveThread - GC_OBJECT_LINK_BEFORE);
-					assert.equal(memory.readRamRecordByte(address + GC_COLOR_OFFSET), white, 'recolor before compaction');
-					assert.equal(memory.readRamRecordWord(address + ThreadField.StackCapacity), liveValueCapacity >>> 1);
-					assert.equal(memory.readRamRecordWord(address + ThreadField.FrameCapacity), liveFrameCapacity >>> 1);
-					assert.equal(liveView.stackRegisters.capacity(), liveValueCapacity, 'the host view still names the old stack plane');
-					assert.equal(cumulative, 2 + 2 * ((liveRetained + 3) >> 2), 'firmware has charged the retained words');
+				if (address === ordinary) {
+					assert.equal(memory.readRamRecordByte(liveThread + GC_COLOR_OFFSET), white, 'recolor before compaction');
+					assert.equal(memory.readRamRecordWord(liveThread + ThreadField.StackCapacity), liveValueCapacity >>> 1);
+					assert.equal(memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity), liveFrameCapacity >>> 1);
+					assert.equal(cumulative, 4 + 2 * ((liveRetained + 3) >> 2), 'retain and charge the same compaction without a host stop');
 				}
 				if (action === Action.RetireCanonicalClosure)
 					assert.equal(contextWord(Sweep.Header), memory.readRamRecordWord(address));
-				if (action === Action.RetireThreadView) {
-					for (const [saved, field] of [[Sweep.ValueBlock, ThreadField.StackBlock], [Sweep.ValueCapacity, ThreadField.StackCapacity],
-						[Sweep.FrameBlock, ThreadField.FrameBlock], [Sweep.FrameCapacity, ThreadField.FrameCapacity],
-						[Sweep.ProtectedBlock, ThreadField.ProtectedBlock], [Sweep.ProtectedCapacity, ThreadField.ProtectedCapacity]] as const)
-						assert.equal(contextWord(saved), memory.readRamRecordWord(address + field), 'latch raw Thread backing fields before view invalidation');
-				}
 				let charge = memory.readRamRecordWord(occupied);
 				handleDeferred();
 				assert.equal(contextWord(Sweep.Work), cumulative, 'host action cannot change logical GC work');
 				assert.equal(memory.readRamRecordWord(occupied), charge, 'host action cannot release BIOS storage');
-				if (action === Action.RebindRelocatedThread) assert.equal(liveView.stackRegisters.capacity(), liveValueCapacity >>> 1);
 				resume(growing, 1, 0, 1);
 				let partialRelease: ReturnType<typeof captureCpuCheckpoint> | null = null;
-				if (action === Action.RetireThreadView) {
+				if (action === Action.ObserveRetiredRecord && address === canonical) {
 					for (const [i, bytes] of threadDebits.entries()) {
 						for (let i = 0; i < 4096 && memory.readRamRecordWord(occupied) === charge; ++i) grant(1);
 						charge -= bytes;
@@ -355,7 +343,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua finishes an oversized compaction's quantum without visiting its successor at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, allocate, color, setCursor, compare,
-			begin, finish, contextWord, resume, handleDeferred } = fixture(optLevel);
+			begin, finish, contextWord } = fixture(optLevel);
 		const successor = allocate(target => target.createTable(0, 0));
 		const thread = allocate(target => {
 			const address = target.createThread(0);
@@ -369,16 +357,42 @@ for (const optLevel of [0, 3] as const) {
 		const expected = oracle.gc['sweepObjects'](1, growing, true);
 		assert.ok(expected > 1);
 		begin(1, growing, 1);
-		assert.equal(finish(), expected - 1, 'the firmware records the retained extent before rebinding');
-		assert.equal(contextWord(Sweep.Action), Action.RebindRelocatedThread);
-		assert.equal(contextWord(Sweep.Deferred), thread);
-		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), published);
-		handleDeferred();
-		resume(growing, 1);
-		assert.equal(finish(), expected, 'the acknowledgement accounts for the traversal once');
+		assert.equal(finish(), expected, 'the complete traversal still charges the final record once');
 		assert.equal(contextWord(Sweep.Action), Action.None);
 		assert.equal(memory.readRamRecordWord(control + SWEEP_LINK), thread - GC_OBJECT_LINK_BEFORE);
 		assert.equal(memory.readRamRecordByte(successor + GC_COLOR_OFFSET), 3);
 		compare();
 	});
+	test(`a swept borrowed Thread address reattaches to the new lifetime at O${optLevel}`, () => {
+		const { cpu, memory, oracle, control, allocate, color, setCursor, begin, finish } = fixture(optLevel);
+		const dead = allocate(target => target.createThread(0));
+		const loan = cpu.bindThread(dead);
+		const original = cpu.rootThread.currentFrame!, saved = loan.acquireFrame();
+		saved.initializeControl(original.functionAddress, original.pc, 0, false, SYSTEM_EXECUTION_DOMAIN_ID,
+			0, 0, 0, 0, 1, original.closure, 0, 8);
+		loan.enterFrame(saved);
+		loan.stackTop = 8;
+		loan.status = ThreadStatus.Suspended;
+		saved.registers.set(0, valueInteger(73));
+		color(dead, oracle.gc.white() ^ 1);
+		setCursor(control + OBJECT_HEAD);
+		begin(1);
+		const checkpoint = captureCpuCheckpoint(cpu);
+		function complete() {
+			assert.equal(finish(), 1);
+			assert.equal(cpu.gc.threadRecordAddress(dead), 0);
+			const fresh = cpu.createThread(0);
+			assert.equal(fresh, dead, 'the allocator really reused the object address');
+			const view = cpu.bindThread(fresh);
+			assert.equal(view.frameDepth, 0);
+			assert.equal(view.currentFrame, null, 'no stale ordinary frame belongs to this Thread');
+			assert.equal(view.stackRegisters.get(0), valueNil(), 'the new record supplies its own Value plane');
+			assert.equal(view.status, ThreadStatus.New);
+			return memory.ramData().slice(fresh - RAM_BASE, fresh - RAM_BASE + THREAD_HEAP_BYTES);
+		}
+		const expected = complete();
+		restoreCpuCheckpoint(cpu, checkpoint);
+		assert.deepEqual(complete(), expected);
+	});
+
 }

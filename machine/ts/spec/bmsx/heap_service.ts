@@ -120,10 +120,8 @@ export const HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
 export const enum HeapServiceObjectSweepField {
 	Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20,
 	Action = 24, Header = 28, Next = 32,
-	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
-	ProtectedBlock = 52, ProtectedCapacity = 56,
 }
-export const enum HeapServiceObjectSweepAction { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord }
+export const enum HeapServiceObjectSweepAction { None = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4 }
 
 export const HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 }
@@ -134,7 +132,7 @@ export const enum HeapServiceTraceField { Work = 0, Limit = 4, Atomic = 8, Pendi
 export const HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 export const HEAP_SERVICE_GC_PROJECTION_MASK = 7;
 export const enum HeapServiceProjection {
-	PublishRoots, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord, ReleaseStringWork,
+	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4, ReleaseStringWork = 5,
 }
 export const HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 export const enum HeapServiceGcArgumentField { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 }

@@ -46,19 +46,16 @@ test('published GC sweep offsets agree with the compiler layout of the owning st
 	}
 	const returnSpan = objectFile.chunk.body.get(objectFile.chunk.body.length - 1).span;
 	const context = types.resolve(port, { name: 'object_sweep_context', arrayLengths: [], span: returnSpan });
-	assert.equal(context.size, Sweep.ProtectedCapacity + 4);
+	assert.equal(context.size, Sweep.Next + 4);
 	for (const [name, offset] of [['link', Sweep.Link], ['work', Sweep.Work], ['removed', Sweep.Removed],
 		['deferred', Sweep.Deferred], ['allowance', Sweep.Allowance], ['mirror_policy', Sweep.MirrorPolicy],
-		['action', Sweep.Action], ['header', Sweep.Header], ['next', Sweep.Next],
-		['value_block', Sweep.ValueBlock], ['value_capacity', Sweep.ValueCapacity], ['frame_block', Sweep.FrameBlock],
-		['frame_capacity', Sweep.FrameCapacity], ['protected_block', Sweep.ProtectedBlock], ['protected_capacity', Sweep.ProtectedCapacity]] as const) {
+		['action', Sweep.Action], ['header', Sweep.Header], ['next', Sweep.Next]] as const) {
 		const field = context.struct!.fields.get(name);
 		assert.ok(field, name);
 		assert.equal(field.offset, offset, name);
 		assert.equal(field.size, 4, name);
 	}
-	for (const [name, action] of [['none', Action.None], ['rebind_relocated_thread', Action.RebindRelocatedThread],
-		['retire_canonical_closure', Action.RetireCanonicalClosure], ['retire_thread_view', Action.RetireThreadView],
+	for (const [name, action] of [['none', Action.None], ['retire_canonical_closure', Action.RetireCanonicalClosure],
 		['observe_retired_record', Action.ObserveRetiredRecord]] as const) {
 		const decl = objectFile.decls.find(decl => decl.name === `action_${name}`);
 		assert.ok(decl, name);
@@ -101,9 +98,12 @@ test('the object sweep maps reachable work and separately identifies the deferre
 		['I', [[118, 120], [122, 124], [128, 128], [130, 130]]], ['J', [[59, 64]]],
 		['Q', [[66, 68]]], ['R', [[69, 71]]],
 	] as const;
+	// These pinned native operations were host view-projection effects only.
+	// The mirrored VM owners now acquire projections from the retired RAM
+	// state; the firmware must not defer either Thread operation.
 	const deferred = [
-		['T', [[778, 778], [783, 783], [788, 788], [793, 793], [798, 798], [803, 803]]],
-		['C', [[838, 838], [848, 848], [858, 858]]],
+		['T', [[783, 783], [788, 788], [793, 793], [803, 803]]],
+		['C', [[848, 848]]],
 	] as const;
 	// The common TS Thread view also samples scratch-only metadata. Dead
 	// release consumes none of these values, and C++ never reads them here.

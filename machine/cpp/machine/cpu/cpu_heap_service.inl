@@ -17,7 +17,7 @@ static_assert(MAX_THREAD_VALUE_SLOTS * sizeof(u32) <= HEAP_SERVICE_ROOT_PORT_STR
 static_assert(HEAP_SERVICE_REMARK_HEAD_OFFSET + static_cast<u32>(HeapServiceRemarkHeadField::ValueWord) + sizeof(u32)
 	<= HEAP_SERVICE_REMARK_FAULTS_OFFSET);
 static_assert(HEAP_SERVICE_REMARK_FAULTS_OFFSET + (LUA_FAULT_REASON_INDEX_NAN + 1u) * sizeof(u32) <= HEAP_SERVICE_OBJECT_SWEEP_OFFSET);
-static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::ProtectedCapacity) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
+static_assert(HEAP_SERVICE_OBJECT_SWEEP_OFFSET + static_cast<u32>(HeapServiceObjectSweepField::Next) + sizeof(u32) <= HEAP_SERVICE_TRACE_QUANTUM_OFFSET);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
 static_assert(HEAP_SERVICE_BIOS_CALL_OFFSET + static_cast<u32>(HeapServiceBiosCallField::ResultWord) + sizeof(u32)
 	<= HEAP_SERVICE_RESIDENT_OFFSET);
@@ -343,9 +343,7 @@ void CPU::writeHeapServiceProjection(u32 word) {
 	}
 	const u32 record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
 	switch (static_cast<Projection>(word & HEAP_SERVICE_GC_PROJECTION_MASK)) {
-		case Projection::RebindRelocatedThread: rebindRelocatedThread(record); return;
 		case Projection::RetireCanonicalClosure: retireStaticClosure(record); return;
-		case Projection::RetireThreadView: retireThreadView(record); return;
 		case Projection::ObserveRetiredRecord: return; // No native record inspector.
 		default: throw BMSX_RUNTIME_ERROR("Unknown heap projection store command.");
 	}

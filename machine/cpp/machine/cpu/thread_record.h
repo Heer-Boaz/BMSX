@@ -54,6 +54,10 @@ inline u32 read(const Memory& memory, u32 address, ThreadField field) {
 inline u32 count(const Memory& memory, u32 address, ThreadField field) {
 	return read(memory, address, field) & THREAD_CONTROL_COUNT_MASK;
 }
+inline u32 readFrameWord(const Memory& memory, u32 thread, u32 index, FrameField field) {
+	const u32 base = read(memory, thread, ThreadField::FrameBlock) & RAM_RECORD_WORD_MASK;
+	return memory.readRamRecordWord(base + index * FRAME_CONTROL_BYTES + static_cast<u32>(field));
+}
 inline ThreadStorageLayout storageLayout(const Memory& memory, u32 address) {
 	return {
 		read(memory, address, ThreadField::StackBlock),

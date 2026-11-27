@@ -130,11 +130,14 @@ bool Thread::stackRequiresScalar() const {
 		|| stackByteLength() > MAIN_RAM_SIZE - stackOffset();
 }
 
-void Thread::bindStack() {
+void Thread::bindStack(bool ifRelocated) {
+	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
+	if (ifRelocated && layout.valueCapacity == stackCapacity && layout.offset() == stackOffset()
+		&& layout.frameCapacity == boundFrameCapacity && layout.frameAddress(0) == boundFrameOffset
+		&& layout.protectedAddress(0) == boundProtectedOffset) return;
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	recordedWriteEpoch = 0;
 #endif
-	const auto layout = ThreadRecord::storageLayout(heap.memory, address);
 	stackCapacity = layout.valueCapacity;
 	boundFrameCapacity = layout.frameCapacity;
 	boundFrameOffset = layout.frameAddress(0);

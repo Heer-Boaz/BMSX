@@ -16,7 +16,7 @@ import { captureCount, CLOSURE_BINDING_FLAGS, CLOSURE_CANONICAL } from '../../..
 import { ThreadField } from '../../../machine/ts/machine/cpu/thread_record';
 import { TableRecords } from '../../../machine/ts/machine/cpu/table';
 import { ValueTag, valueInteger, valueNil, valuePayload, valueTag } from '../../../machine/ts/machine/cpu/value';
-import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceObjectSweepAction, HeapServiceObjectSweepField } from '../../../machine/ts/spec/bmsx/heap_service';
+import { HEAP_SERVICE_OBJECT_SWEEP_OFFSET, HeapServiceObjectSweepField } from '../../../machine/ts/spec/bmsx/heap_service';
 const source = `
 local function grow(depth, value)
 	if depth == 0 then return value end
@@ -74,8 +74,6 @@ try {
 		const head = () => memory.readRamRecordWord(control + OBJECT_HEAD);
 		const count = () => memory.readRamRecordWord(control + OBJECT_COUNT);
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
-		const action = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Action);
-		const deferred = () => memory.readRamRecordWord(context + HeapServiceObjectSweepField.Deferred);
 		const occupied = () => cpu.luaHeap.usedBytes();
 		const tail = cpu.createTable(6, 16);
 		const driver = new FullGcConformance(runtime, native, path, rom, residentFunctionAddress(system, 'kernel/gc_full', 'collect_full'));
@@ -129,13 +127,11 @@ try {
 		assert.equal(liveCapacity(), oldCapacity);
 		assert.equal(liveFrameCapacity(), oldFrameCapacity);
 		driver.checkpoint('relocated-tag', [[tags + lane - RAM_BASE, tags + lane - RAM_BASE + 4]]);
-		driver.reach(() => action() === HeapServiceObjectSweepAction.RebindRelocatedThread && deferred() === liveThread,
-			'request native view rebinding after compaction');
-		assert.equal(liveCapacity(), oldCapacity >>> 1);
-		assert.equal(liveFrameCapacity(), oldFrameCapacity >>> 1);
-		driver.reach(() => action() === HeapServiceObjectSweepAction.RetireThreadView && deferred() === deadThread, 'retire dead Thread view');
-		assert.ok(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), 'the host retires only its view');
-		driver.checkpoint('thread-release', [[context, context + 60], [deadThread - RAM_BASE, deadThread - RAM_BASE + 48]]);
+		driver.reach(() => liveCapacity() === oldCapacity >>> 1 && liveFrameCapacity() === oldFrameCapacity >>> 1,
+			'published relocated Thread backing and controls');
+		driver.reach(() => memory.readRamRecordByte(deadThread) === 0, 'retire the dead Thread record');
+		assert.ok(cpu.heapAllocator.issuedObjectStart(deadThread - RAM_BASE - GC_OBJECT_PREFIX), 'Kind clears before physical record release');
+		driver.checkpoint('thread-release', [[context, context + HeapServiceObjectSweepField.Next + 4], [deadThread - RAM_BASE, deadThread - RAM_BASE + 48]]);
 
 		driver.finish(58, () => {
 			assert.equal(gc.tableRecordAddress(first), 0);

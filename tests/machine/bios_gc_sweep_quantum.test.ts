@@ -64,7 +64,7 @@ function fixture(optLevel: 0 | 3) {
 	cpu.gc.onRecordRetirement = address => { if (address !== null) notices.push(address); };
 	oracle.gc.onRecordRetirement = address => { if (address !== null) nativeNotices.push(address); };
 	function compare() {
-		for (const [from, to] of [[floor, context], [context + Sweep.ProtectedCapacity + 4, last]]) {
+		for (const [from, to] of [[floor, context], [context + Sweep.Next + 4, last]]) {
 			const actual = memory.ramData().subarray(from, to), expected = oracle.memory.ramData().subarray(from, to);
 			if (Buffer.compare(actual, expected) === 0) continue;
 			const mismatch = actual.findIndex((value, index) => value !== expected[index]);

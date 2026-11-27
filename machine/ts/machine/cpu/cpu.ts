@@ -1418,7 +1418,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	/** A borrowed execution/inspection bank; never retain it across a thread switch. */
+	/** A borrowed bank, not retained across a Thread switch or fixed activation. */
 	public bindThread(address: number): Thread {
 		for (const bank of this.threadBanks) if (bank.address === address) return bank;
 		const bank = this.threadBanks[1] !== this.activeThread ? this.threadBanks[1] : this.threadBanks[2];
@@ -2309,6 +2309,14 @@ export class CPU implements MappedPageInvalidator {
 			try {
 				this.runUntilDepthInstrumented(0, instructionBudget, true);
 				if (!this.heapServiceActive()) {
+					// The fixed activation may have changed the physical Thread
+					// layout or retired an inactive bank's previous referent.
+					this.activeThread.bindStack(true);
+					if (this.activeThread !== this.rootThread) this.rootThread.bindStack(true);
+					for (let i = 1; i < this.threadBanks.length; ++i) {
+						const bank = this.threadBanks[i];
+						if (bank !== this.activeThread && bank.address !== 0) bank.bindAddress(0);
+					}
 					try {
 						if (resident) this.finishResidentCall(flags);
 						else if (cartLane !== 0) {
@@ -2608,7 +2616,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameExecutionDomain(frameIndex: number): ExecutionDomainId {
-		return this.activeThread.frameAtDepth(frameIndex).savedExecutionBank;
+		return this.readThreadFrameExecutionDomain(this.activeThread.address, frameIndex);
 	}
 
 	public readLastExecutionDomain(): ExecutionDomainId {
@@ -2621,15 +2629,15 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameFunctionAddress(frameIndex: number): number {
-		return this.activeThread.frameAtDepth(frameIndex).functionAddress;
+		return this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Function);
 	}
 
 	public readFramePc(frameIndex: number): number {
-		return this.activeThread.frameAtDepth(frameIndex).pc;
+		return this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Pc);
 	}
 
 	public readFrameCallSitePc(childFrameIndex: number): number {
-		return this.activeThread.frameAtDepth(childFrameIndex).callSitePc;
+		return this.readThreadFrameWord(this.activeThread.address, childFrameIndex, FrameField.CallSite);
 	}
 
 	public completionCallPending(): boolean {
@@ -2670,19 +2678,19 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public getFrameRegisterCount(frameIndex: number): number {
-		return this.activeThread.frameAtDepth(frameIndex).top;
+		return this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Top) & FRAME_WINDOW_MASK;
 	}
 
 	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
-		return this.activeThread.frameAtDepth(frameIndex).registers.get(registerIndex);
+		return this.readThreadRegister(this.activeThread.address, frameIndex, registerIndex);
 	}
 
 	public getFrameUpvalueCount(frameIndex: number): number {
-		return this.activeThread.frameAtDepth(frameIndex).captureCount;
+		return Closure.captureCount(this.memory, this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure));
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		return Upvalue.load(this.memory, this.activeThread.frameAtDepth(frameIndex).captureAddress(upvalueIndex));
+		return this.readClosureUpvalue(this.readThreadFrameWord(this.activeThread.address, frameIndex, FrameField.Closure), upvalueIndex);
 	}
 
 	/** Read a retained closure without calling it or requiring an active frame. */
@@ -4141,9 +4149,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const record = word & ~HEAP_SERVICE_GC_PROJECTION_MASK;
 		switch (word & HEAP_SERVICE_GC_PROJECTION_MASK) {
-			case HeapServiceProjection.RebindRelocatedThread: this.rebindRelocatedThread(record); return;
 			case HeapServiceProjection.RetireCanonicalClosure: this.retireStaticClosure(record); return;
-			case HeapServiceProjection.RetireThreadView: this.retireThreadView(record); return;
 			case HeapServiceProjection.ObserveRetiredRecord: this.gc.onRecordRetirement?.(record); return;
 		}
 		throw new Error('Unknown heap projection store command.');

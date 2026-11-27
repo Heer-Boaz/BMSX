@@ -33,7 +33,7 @@ struct Thread {
 		return valueEnd <= stackCapacity && frameDepth() + 2u <= boundFrameCapacity;
 	}
 	void reserveFrame(size_t valueEnd, Value root = valueNil(), bool exception = false);
-	void bindStack();
+	void bindStack(bool ifRelocated = false);
 	u32 stackOffset() const;
 	u32 stackByteLength() const { return static_cast<u32>(stack.size()) * THREAD_STACK_SLOT_BYTES; }
 	bool stackRequiresScalar() const;

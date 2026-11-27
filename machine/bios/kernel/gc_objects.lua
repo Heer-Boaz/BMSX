@@ -37,9 +37,7 @@ local frame_bytes<const> = 56 -- F:21 G:34
 local protected_bytes<const> = 20 -- F:152 G:28
 local thread_control_count_mask<const> = (1 << 18) - 1 -- I:34 J:27
 local action_none<const> = 0 -- T:766 C:828; private protocol, no host action
-local action_rebind_relocated_thread<const> = 1 -- T:778 C:838; private host action after physical shrink
 local action_retire_canonical_closure<const> = 2 -- T:788 C:848; private host action
-local action_retire_thread_view<const> = 3 -- T:798 C:858; private host action
 local action_observe_retired_record<const> = 4 -- T:783,793,803; private host action
 
 struct table_record
@@ -65,23 +63,17 @@ struct thread_record
 	protected_block: addr -- I:24,130 J:23,64
 end
 
--- Saved loop locals across the private handoff to a native record owner.
+-- Saved loop locals across the observer or canonical-index notifications.
 struct object_sweep_context
 	link: addr -- T:741,757 C:803,819
 	work: u32 -- T:745,758 C:807,820
 	removed: u32 -- T:746,756 C:808,818
-	deferred: addr -- T:773-779,783,787-803 C:835-839,846-852,857-862; private continuation reason
+	deferred: addr -- T:783,788,793,803 C:848; private continuation reason
 	allowance: u32 -- T:738,747 C:801,809
 	mirror_policy: u32 -- A:166-168 B:509-511; CPU-owned release order
-	action: u32 -- T:774-779,783,788,793,798,803 C:836-839,848,858; private continuation stage
+	action: u32 -- T:783,788,793,803 C:848; private continuation stage
 	header: u32 -- T:752,787-791 C:814,846-851
 	next: addr -- T:751,759 C:813,821
-	value_block: addr -- T:797,799 C:857,859 I:120 J:59
-	value_capacity: u32 -- T:797,799 C:857,859 I:122 J:60
-	frame_block: addr -- T:797,800 C:857,860 I:128 J:63
-	frame_capacity: u32 -- T:797,800 C:857,860 I:123 J:61
-	protected_block: addr -- T:797,801 C:857,861 I:130 J:64
-	protected_capacity: u32 -- T:797,801 C:857,861 I:124 J:62
 end
 
 local free_table<const> = function(arena, occupied, address, hash_first) -- T:782 C:842 A:165,170 B:508,514
@@ -110,13 +102,20 @@ local free_closure<const> = function(arena, occupied, address, header) -- T:789-
 	allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, bytes, occupied) -- T:792 C:852
 end
 
-local free_thread<const> = function(arena, occupied, object_context, address) -- T:799-802 C:859-862
-	local context<const>: *object_sweep_context = ram_base + object_context -- T:797,799-801 C:857,859-861
-	allocator.bmsx_dlmalloc_release_record(arena, context.value_block - ram_base, context.value_capacity * value_slot_bytes, occupied) -- T:799 C:859 J:38
-	allocator.bmsx_dlmalloc_release_record(arena, context.frame_block - ram_base, (context.frame_capacity & thread_control_count_mask) * frame_bytes, occupied) -- T:800 I:123 C:860 J:39,61
-	local protected<const> = context.protected_block -- T:801 C:861
+local free_thread<const> = function(arena, occupied, address) -- T:796-797,799-802 C:857,859-862
+	-- Capture the original descriptors before releasing any backing. No
+	-- cache or view is part of the firmware-owned record lifetime.
+	local thread<const>: *thread_record = ram_base + (address & ram_word_mask) -- T:796-797 C:857 I:118-119 J:57
+	local value_block<const> = thread.value_block -- I:120 J:59
+	local value_capacity<const> = thread.value_capacity -- I:122 J:60
+	local frame_capacity<const> = thread.frame_capacity -- I:123 J:61
+	local protected_capacity<const> = thread.protected_capacity -- I:124 J:62
+	local frame_block<const> = thread.frame_block -- I:128 J:63
+	local protected<const> = thread.protected_block -- I:130 J:64
+	allocator.bmsx_dlmalloc_release_record(arena, value_block - ram_base, value_capacity * value_slot_bytes, occupied) -- T:799 C:859 J:38
+	allocator.bmsx_dlmalloc_release_record(arena, frame_block - ram_base, (frame_capacity & thread_control_count_mask) * frame_bytes, occupied) -- T:800 I:123 C:860 J:39,61
 	if protected ~= 0 then -- T:801 C:861
-		allocator.bmsx_dlmalloc_release_record(arena, protected - ram_base, (context.protected_capacity & thread_control_count_mask) * protected_bytes, occupied) -- T:801 I:124 C:861 J:40,62
+		allocator.bmsx_dlmalloc_release_record(arena, protected - ram_base, (protected_capacity & thread_control_count_mask) * protected_bytes, occupied) -- T:801 I:124 C:861 J:40,62
 	end
 	allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, thread_bytes, occupied) -- T:802 C:862
 end
@@ -133,7 +132,7 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 		return 0 -- T:742 C:804
 	end
 	local link_word: *u32 = ram_base + (link & ram_word_mask) -- T:743 C:805
-	local prior<const> = context.action -- T:778,783,788,793,798,803 C:838,848,858
+	local prior<const> = context.action -- T:783,788,793,803 C:848
 	local address -- T:743,759 C:805,821
 	if prior == action_none then address = *link_word -- T:743 C:805
 	else address = context.next end -- T:751,759 C:813,821
@@ -141,13 +140,9 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 	local white<const> = *white_byte & 1 -- T:89,744 C:806 H:92
 	local work, removed = context.work, context.removed -- T:745-746 C:807-808
 	local allowance<const> = context.allowance -- T:738,747 C:801,809
-	if prior ~= action_none then -- T:778,783,788,793,798,803 C:838,848,858; resume after the synchronous host action
-		if prior == action_retire_canonical_closure or prior == action_retire_thread_view then -- T:788,798 C:848,858
-			if prior == action_retire_canonical_closure then -- T:787-788 C:846-848
-				free_closure(arena, occupied, context.deferred, context.header) -- T:789-792 C:849-852
-			else -- T:798 C:858
-				free_thread(arena, occupied, object_context, context.deferred) -- T:799-802 C:859-862
-			end
+	if prior ~= action_none then -- T:783,788,793,803 C:848; resume after the synchronous host action
+		if prior == action_retire_canonical_closure then -- T:787-788 C:846-848
+			free_closure(arena, occupied, context.deferred, context.header) -- T:789-792 C:849-852
 			if observe_retirement ~= 0 then -- T:793,803
 				context.action = action_observe_retired_record -- T:793,803
 				return work -- T:794,804; native observation precedes charging this record
@@ -163,7 +158,7 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 		local header<const> = *header_word -- T:752 C:814
 		local garbage<const> = ((header >> 8) & color_mask) == (white ~ 1) -- T:753 C:815
 		local kind<const> = header & 0xff -- T:769-770 C:831-832
-		local pending = action_none -- T:774-779,783,788,793,798,803 C:836-839,848,858
+		local pending = action_none -- T:783,788,793,803 C:848
 		if garbage then -- T:754,771 C:816,833
 			*link_word = next_record -- T:755 C:817
 			removed = removed + 1 -- T:756 C:818
@@ -171,16 +166,8 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 				free_table(arena, occupied, address, hash_first) -- T:782 C:842
 				if observe_retirement ~= 0 then pending = action_observe_retired_record end -- T:783
 			elseif kind == thread_kind then -- T:786,796 C:845,857
-				-- The TS scratch offsets, depths and stack top are not used by
-				-- dead release; C++ reads only these six live backing lanes.
-				local thread<const>: *thread_record = ram_base + (address & ram_word_mask) -- T:796-797 C:857 I:118-119 J:57
-				context.value_block = thread.value_block -- I:120 J:59
-				context.value_capacity = thread.value_capacity -- I:122 J:60
-				context.frame_capacity = thread.frame_capacity -- I:123 J:61; retain raw bits through the handoff
-				context.protected_capacity = thread.protected_capacity -- I:124 J:62; retain raw bits through the handoff
-				context.frame_block = thread.frame_block -- I:128 J:63
-				context.protected_block = thread.protected_block -- I:130 J:64
-				pending = action_retire_thread_view -- T:798 C:858
+				free_thread(arena, occupied, address) -- T:796-797,799-802 C:857,859-862
+				if observe_retirement ~= 0 then pending = action_observe_retired_record end -- T:803
 			elseif kind == upvalue_kind then -- T:789 C:849
 				allocator.bmsx_dlmalloc_release_object(arena, address - ram_base, upvalue_bytes, occupied) -- T:789,792 C:849,852
 			elseif kind == closure_kind and (header & closure_canonical) ~= 0 then -- T:787 C:846-847
@@ -197,9 +184,8 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 			*color = white -- T:772 C:834
 			if kind == thread_kind and compact_threads ~= 0 and address ~= growing_thread then -- T:773 C:835
 				local retained<const> = thread_compact.shrink_stack(arena, occupied, address) -- T:774-776 C:836-837
-				if retained ~= 0 then -- T:778 C:838
+				if retained ~= 0 then -- T:778 C:838; native view attachment is owned at CPU consumption
 					work = work + 2 * ((retained + 3) >> 2) -- T:779 C:839 Q:66-68 R:69-71; policy work, not a second CPU charge
-					pending = action_rebind_relocated_thread -- T:778 C:838
 				end
 			end
 		end
@@ -207,9 +193,9 @@ local sweep_objects<const> = function(control, arena, occupied, object_context, 
 			context.link = link -- T:741,757 C:803,819
 			context.work = work -- T:745,758 C:807,820
 			context.removed = removed -- T:746,756 C:808,818
-			context.deferred = address -- T:773-779,783,788,793,798,803 C:835-839,848,858
+			context.deferred = address -- T:783,788,793,803 C:848
 			context.next = next_record -- T:751,759 C:813,821
-			context.action = pending -- T:774-779,783,788,793,798,803 C:836-839,848,858
+			context.action = pending -- T:783,788,793,803 C:848
 			return work -- T:758,766 C:820,828; cumulative, not an independently committed quantum
 		end
 		work = work + 1 -- T:758,773,779,784,794,804 C:820,835,839,843,853,863

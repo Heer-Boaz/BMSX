@@ -2600,6 +2600,12 @@ RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, u32 target,
 #endif
 		runLoop<true, false, true>(0, instructionBudget);
 		if (!heapServiceActive()) {
+			// An inactive borrow might name reused storage. The selected
+			// Thread itself is rooted but its physical planes can change.
+			m_activeThread->bindStack(true);
+			if (m_activeThread != &m_rootView) m_rootView.bindStack(true);
+			for (auto& view : m_transferViews)
+				if (&view != m_activeThread && view.address != 0u) view.select(0u);
 			try {
 				if (resident) finishResidentCall(flags);
 				else if (cartLane != 0u) {
@@ -2750,7 +2756,7 @@ size_t CPU::stepHeap(Value root0, Value root1, Value root2, u32 growingThread) {
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->savedExecutionBank();
+	return frameExecutionBank(ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Flags));
 }
 
 ExecutionDomainId CPU::readLastExecutionDomain() const {
@@ -2762,15 +2768,15 @@ u32 CPU::readCurrentInstructionPc() const {
 }
 
 u32 CPU::readFrameFunctionAddress(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readControl(FrameField::Function);
+	return ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Function);
 }
 
 u32 CPU::readFramePc(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readControl(FrameField::Pc);
+	return ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Pc);
 }
 
 u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->readControl(FrameField::CallSite);
+	return ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(childFrameIndex), FrameField::CallSite);
 }
 
 bool CPU::completionCallPending() const {
@@ -2814,22 +2820,24 @@ bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	return m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex))->readWindow(FrameField::Top);
+	return static_cast<int>(ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Top) & FRAME_WINDOW_MASK);
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
-	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return frame.registers.get(static_cast<size_t>(registerIndex));
+	const u32 thread = m_activeThread->address;
+	const u32 base = ThreadRecord::readFrameWord(m_memory, thread, static_cast<u32>(frameIndex), FrameField::StackBase) & FRAME_WINDOW_MASK;
+	const auto layout = ThreadRecord::storageLayout(m_memory, thread);
+	return layout.slots(m_memory, base + static_cast<u32>(registerIndex) >= layout.valueCapacity).get(base + static_cast<u32>(registerIndex));
 }
 
 int CPU::getFrameUpvalueCount(int frameIndex) const {
-	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return static_cast<int>(frame.captureCount());
+	const u32 closure = ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Closure);
+	return static_cast<int>(ClosureRecord::captureCount(m_memory, closure));
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
-	const CallFrame& frame = *m_activeThread->frameAtDepth(static_cast<size_t>(frameIndex));
-	return Upvalue::load(m_memory, frame.captureAddress(static_cast<u32>(upvalueIndex)));
+	const u32 closure = ThreadRecord::readFrameWord(m_memory, m_activeThread->address, static_cast<u32>(frameIndex), FrameField::Closure);
+	return readClosureUpvalue(closure, upvalueIndex);
 }
 
 Value CPU::readClosureUpvalue(u32 closure, int upvalueIndex) const {

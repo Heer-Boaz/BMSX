@@ -17,7 +17,6 @@ local control_count_mask<const> = (1 << 18) - 1 -- I:34 H:27 T:217 C:224
 local value_bytes<const> = 5 -- I:29 H:14 T:212 C:220
 local frame_bytes<const> = 56 -- F:21 G:34 T:213 C:221
 local current_or_fresh<const> = 0 -- T:92,225 C:103,232
-local rebind_thread<const> = 1 -- P:121-122 X:4016 Y:703-707
 local out_of_memory<const> = 9 -- E:43 T:86 L:1111 C:98 N:1214
 
 struct thread_storage_record
@@ -192,7 +191,6 @@ local grow_thread_frame_storage<const> = function(management, address, values, f
 	end
 	while true do -- T:204,228 C:213,235
 		if reserve_frame_storage(management, address, values, frames) ~= 0 then -- T:205-206,229-235 C:214,238-243
-			*effect = address | rebind_thread -- V:167-175 W:190-199 P:121-122 X:1420-1422,4016 Y:703-707 S:188; derived views only after both descriptors and charges
 			if projected then *effect = layout.release_string_work end -- X:4009-4013 S:180-184
 			return 0, 0, 0 -- T:206,234 C:214,242; original CALL owner receives no Lua Value from reservation
 		end

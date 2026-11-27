@@ -130,10 +130,8 @@ constexpr uint32_t HEAP_SERVICE_OBJECT_SWEEP_OFFSET = 0x700;
 enum class HeapServiceObjectSweepField : uint32_t {
 	Link = 0, Work = 4, Removed = 8, Deferred = 12, Allowance = 16, MirrorPolicy = 20,
 	Action = 24, Header = 28, Next = 32,
-	ValueBlock = 36, ValueCapacity = 40, FrameBlock = 44, FrameCapacity = 48,
-	ProtectedBlock = 52, ProtectedCapacity = 56,
 };
-enum class HeapServiceObjectSweepAction : uint32_t { None, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord };
+enum class HeapServiceObjectSweepAction : uint32_t { None = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4 };
 
 constexpr uint32_t HEAP_SERVICE_TRACE_QUANTUM_OFFSET = 0x740;
 enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, PendingStringWork = 12, MirrorPolicy = 16 };
@@ -144,7 +142,7 @@ enum class HeapServiceTraceField : uint32_t { Work = 0, Limit = 4, Atomic = 8, P
 constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_OFFSET = 0x788;
 constexpr uint32_t HEAP_SERVICE_GC_PROJECTION_MASK = 7;
 enum class HeapServiceProjection : uint32_t {
-	PublishRoots, RebindRelocatedThread, RetireCanonicalClosure, RetireThreadView, ObserveRetiredRecord, ReleaseStringWork,
+	PublishRoots = 0, RetireCanonicalClosure = 2, ObserveRetiredRecord = 4, ReleaseStringWork = 5,
 };
 constexpr uint32_t HEAP_SERVICE_GC_ARGUMENTS_OFFSET = 0x790;
 enum class HeapServiceGcArgumentField : uint32_t { ModeKey = 0, NewIndexKey = 4, ActiveThread = 8, PendingTop = 12 };

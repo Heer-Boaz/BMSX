@@ -124,13 +124,17 @@ export class Thread {
 			|| this.frameDepth > this.boundFrameCapacity;
 	}
 
-	public bindStack(): void {
-		const capacity = this.read(ThreadField.StackCapacity);
-		this.boundFrameCapacity = this.frameCapacity;
+	public bindStack(ifRelocated = false): void {
+		const capacity = this.read(ThreadField.StackCapacity), frameCapacity = this.frameCapacity;
 		const block = this.read(ThreadField.StackBlock) & RAM_RECORD_WORD_MASK;
-		this.boundFrameOffset = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
-		this.boundProtectedOffset = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
-		this.bindFrameControls(this.boundFrameOffset);
+		const frames = this.read(ThreadField.FrameBlock) & RAM_RECORD_WORD_MASK;
+		const protectedOffset = this.read(ThreadField.ProtectedBlock) & RAM_RECORD_WORD_MASK;
+		if (ifRelocated && capacity === this.stackRegisters.capacity() && block === this.stackRegisters.ramOffset()
+			&& frameCapacity === this.boundFrameCapacity && frames === this.boundFrameOffset && protectedOffset === this.boundProtectedOffset) return;
+		this.boundFrameCapacity = frameCapacity;
+		this.boundFrameOffset = frames;
+		this.boundProtectedOffset = protectedOffset;
+		this.bindFrameControls(frames);
 		let extent = 0;
 		for (let frame = this.currentFrame; frame !== null; frame = frame.previous)
 			extent = Math.max(extent, frame.stackBase + frame.stackCapacity);
