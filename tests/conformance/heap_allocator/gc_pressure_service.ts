@@ -199,7 +199,8 @@ try {
 		assert.equal(cpu.heapServiceActive(), true);
 		assert.equal(readReport()[0], 0, 'cart vector cannot run before the firmware retires');
 		assert.equal(flags(), IRQ_VBLANK | IRQ_DMA0_DONE, 'firmware did not acknowledge any pending source');
-		assert.equal(settleSuspended(4096), CpuSuspendedRunResult.Completed);
+		// The first cart vector can also need BIOS frame backing.
+		assert.equal(settleSuspended(65_536), CpuSuspendedRunResult.Completed);
 		assert.equal(cpu.heapServiceActive(), false);
 		assert.equal(cpu.getFrameDepth(), callerDepth);
 		assert.equal(callerPc(), maskedPc.pc, 'stop after RFE before the next ordinary instruction');

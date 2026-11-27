@@ -37,6 +37,11 @@ const FRAME_EXTEND_RESULT_TOP = 1 << 5;
 export const FRAME_RESIDENT_ACTIVATION = 1 << 6;
 // The fixed root returns into a prepared ordinary frame, not Value slots.
 export const FRAME_RESIDENT_PREPARED_ENTRY = 1 << 7;
+export const FRAME_RESIDENT_PLACE_WINDOW = 1 << 8;
+
+export function registerWindowBucket(required: number): number {
+	return Math.max(8, 1 << (32 - Math.clz32(required - 1)));
+}
 
 export function frameExecutionBank(flags: number): ExecutionDomainId {
 	return (flags & FRAME_BANK_CART) === 0 ? SYSTEM_EXECUTION_DOMAIN_ID : ((flags & FRAME_BANK_SECOND) >>> 4) as ExecutionDomainId;

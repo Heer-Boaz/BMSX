@@ -103,6 +103,13 @@ void CPU::beginResidentCall(u32 address, BuiltinArgsView supplied, CallResultPla
 	enterResidentFrame(callee);
 }
 
+void CPU::beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags) {
+	const std::array args{m_activeThread->address, valueEnd, frameEnd, root};
+	auto& firmware = prepareHeapServiceFrame(function, 0, static_cast<int>(args.size()), {}, m_currentInstructionPc);
+	for (size_t i = 0; i < args.size(); ++i) firmware.registers.set(i, valueInteger(static_cast<i32>(args[i])));
+	enterResidentFrame(firmware, receiverFlags);
+}
+
 void CPU::enterResidentFrame(CallFrame& frame, u32 receiverFlags) {
 	frame.addControlFlags(FRAME_RESIDENT_ACTIVATION | receiverFlags);
 	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;
@@ -163,6 +170,15 @@ void CPU::finishResidentCall(u32 flags) {
 	const auto& frame = *m_heapServiceView.firstFrame;
 	if ((flags & FRAME_RESIDENT_PREPARED_ENTRY) != 0u) {
 		enterPreparedFrame();
+		return;
+	}
+	if ((flags & FRAME_RESIDENT_PLACE_WINDOW) != 0u) {
+		auto& window = *m_activeThread->currentFrame;
+		const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+		using Window = PreparedWindowField;
+		const auto read = [&](Window field) { return static_cast<i32>(m_memory.readRamRecordWord(prepared + static_cast<u32>(field))); };
+		window.growRegisterWindow(read(Window::Capacity));
+		placeRegisterWindow(window, read(Window::Destination), read(Window::SourceSlot), read(Window::Copied), read(Window::Padded), read(Window::Top));
 		return;
 	}
 	const i32 protectedIndex = static_cast<i32>(frame.readControl(FrameField::Protected));

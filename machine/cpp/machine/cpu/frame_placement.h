@@ -5,10 +5,15 @@
 #include <optional>
 
 #include "common/types.h"
+#include "machine/common/numeric.h"
 #include "machine/cpu/thread_record.h"
 #include "spec/blua32/image_format.h"
 
 namespace bmsx {
+
+inline size_t registerWindowBucket(size_t required) {
+	return std::max(size_t{8}, nextPowerOfTwo(required));
+}
 
 // Counts for writing one receiving window: a prefix from the supplied values,
 // followed by nil padding. No backing has been acquired yet.

@@ -519,7 +519,7 @@ DISPATCH_LABEL(SETUP) {
 
 DISPATCH_LABEL(VARARG) {
 	PUBLISH_SCALAR_FRONTIER();
-	executeVararg(FRAME, decoded->a, decodeValueCount(decoded->b, -1));
+	if (executeVararg(FRAME, decoded->a, decodeValueCount(decoded->b, -1))) DISPATCH_CONTINUE();
 	RESUME_SCALAR_FRONTIER();
 	DISPATCH_NEXT();
 }

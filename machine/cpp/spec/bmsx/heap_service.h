@@ -69,9 +69,12 @@ enum class HeapServiceBiosCallField : uint32_t {
 	ResultBaseOrProtectedIndex = 24, ResultWord = 28,
 };
 
-// Cold CPU frame entry: 56 bytes of canonical control words + argument plan.
+// One pending ordinary VM transfer owns this scratch while backing is acquired.
 constexpr uint32_t HEAP_SERVICE_PREPARED_FRAME_OFFSET = 0x1800;
+// Entry: 56 bytes of canonical control words followed by the argument plan.
 enum class PreparedFrameField : uint32_t { SourceSlot = 56, Supplied = 60, RelocateFormals = 64 };
+// Receiving window: raw placement in the live frame; Top=-1 leaves it untouched.
+enum class PreparedWindowField : uint32_t { Destination = 0, SourceSlot = 4, Copied = 8, Padded = 12, Capacity = 16, Top = 20 };
 
 constexpr uint32_t HEAP_SERVICE_RESIDENT_OFFSET = 0xfa0;
 enum class HeapServiceResidentField : uint32_t { IssuePc = 0, LastPc = 4, SourceBase = 8, SourceCount = 12, SourceCycles = 16, RunKind = 20 };

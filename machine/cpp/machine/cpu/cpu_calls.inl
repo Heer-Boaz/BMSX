@@ -117,15 +117,42 @@ inline bool CPU::executeReturn(CallFrame& frame, int a, int produced) {
 	return true;
 }
 
-inline void CPU::executeVararg(CallFrame& frame, int a, int requested) {
+inline bool CPU::executeVararg(CallFrame& frame, int a, int requested) {
 	const int available = frame.readWindow(FrameField::VarargCount);
 	const auto placement = ValuePlacement::fit(available, requested < 0 ? available : requested);
-	const int count = placement.count();
-	if (count != 0) {
-		ValueSpan& registers = ensureRegisterCapacity(frame, a + count - 1);
-		registers.copyFrom(m_activeThread->stack, a, frame.readWindow(FrameField::VarargBase), placement.copied, placement.padded);
+	const int count = placement.count(), end = a + count;
+	const int top = requested < 0 || (count != 0 && end > frame.readWindow(FrameField::Top)) ? end : -1;
+	if (count == 0) {
+		if (top >= 0) frame.setTop(top);
+		return false;
 	}
-	instructionBudgetRemaining -= count;
-	if (requested < 0) frame.setTop(a + count);
-	else if (count != 0) frame.extendTop(a + count);
+	auto& thread = *frame.thread;
+	const int source = frame.readWindow(FrameField::VarargBase);
+	if (end > frame.stackCapacity()) {
+		const auto capacity = registerWindowBucket(static_cast<size_t>(end));
+		const auto extent = static_cast<size_t>(frame.stackBase()) + capacity;
+		if (extent > thread.stackCapacity) {
+			const u32 function = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::ReserveFrameSpace)];
+			if (function != 0u) {
+				const u32 prepared = m_heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+				using Window = PreparedWindowField;
+				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Destination), a, source);
+				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Copied), placement.copied, placement.padded);
+				m_memory.writeRamRecordPair(prepared + static_cast<u32>(Window::Capacity), static_cast<u32>(capacity), static_cast<u32>(top));
+				// The executing Closure is already an edge of the live Thread.
+				beginFrameSpaceAcquisition(function, static_cast<u32>(extent), 0, 0, FRAME_RESIDENT_PLACE_WINDOW);
+				return true;
+			}
+			thread.resizeStack(nextPowerOfTwo(extent));
+		}
+		frame.growRegisterWindow(static_cast<int>(capacity));
+	}
+	placeRegisterWindow(frame, a, source, placement.copied, placement.padded, top);
+	return false;
+}
+
+inline void CPU::placeRegisterWindow(CallFrame& frame, int destination, int source, int copied, int padded, int top) {
+	frame.registers.copyFrom(frame.thread->stack, destination, source, copied, padded);
+	instructionBudgetRemaining -= copied + padded;
+	if (top >= 0) frame.setTop(top);
 }

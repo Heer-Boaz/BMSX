@@ -216,10 +216,13 @@ local reserve_frame_space<const> = function(address, value_end, frame_end, root)
 	local fault_port<const>: *u32 = layout.call_fault_address -- L:1111 N:1214; ordinary resident fault
 	local management<const> = *management_port -- T:227 A:25 C:234 B:20
 	local thread<const>: *thread_storage_record = layout.ram_base + (address & word_mask) -- V:161-164 W:183-188 H:21-22
-	local previous_frames<const> = thread.frame_capacity & control_count_mask -- V:161,164 W:183,185,188 H:27
-	local frames = previous_frames < 2 and 2 or previous_frames -- V:161 W:185 H:17
-	while frames < frame_end do frames = frames * 2 end -- V:162 W:186
-	if frames == previous_frames then frames = 0 end -- V:164 W:188
+	local frames = 0 -- X:4169-4176 Y:3207-3217; no change to frame backing for a Value-only request
+	if frame_end ~= 0 then -- X:4169-4176 Y:3207-3217; a receiving window only reserves Values
+		local previous_frames<const> = thread.frame_capacity & control_count_mask -- V:161,164 W:183,185,188 H:27
+		frames = previous_frames < 2 and 2 or previous_frames -- V:161 W:185 H:17
+		while frames < frame_end do frames = frames * 2 end -- V:162 W:186
+		if frames == previous_frames then frames = 0 end -- V:164 W:188
+	end
 	local values = 0 -- X:519 V:163 W:187
 	if value_end > thread.stack_capacity then -- X:518-519 V:163 W:187
 		values = value_end <= 8 and 8 or 1 << (allocator.internal.highest_bit(value_end - 1) + 1) -- X:519 W:187 H:16

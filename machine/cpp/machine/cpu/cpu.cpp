@@ -3110,10 +3110,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, u32 closure, int argBase, int argCo
 			});
 			m_memory.writeRamRecordPair(prepared + static_cast<u32>(PreparedFrameField::SourceSlot), callerArgBase, argCount);
 			m_memory.writeRamRecordWord(prepared + static_cast<u32>(PreparedFrameField::RelocateFormals), placement.relocatesFormals);
-			const std::array args{thread.address, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, closure};
-			auto& firmware = prepareHeapServiceFrame(function, 0, static_cast<int>(args.size()), {}, m_currentInstructionPc);
-			for (size_t i = 0; i < args.size(); ++i) firmware.registers.set(i, valueInteger(static_cast<i32>(args[i])));
-			enterResidentFrame(firmware, FRAME_RESIDENT_PREPARED_ENTRY);
+			beginFrameSpaceAcquisition(function, static_cast<u32>(end), static_cast<u32>(thread.frameDepth()) + 2u, closure, FRAME_RESIDENT_PREPARED_ENTRY);
 			return nullptr;
 		}
 	}
@@ -3228,11 +3225,7 @@ ValueSpan& CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	if (index < frame.stackCapacity()) {
 		return frame.registers;
 	}
-	const size_t needed = static_cast<size_t>(index) + 1;
-	size_t bucket = nextPowerOfTwo(needed);
-	if (bucket < 8) {
-		bucket = 8;
-	}
+	const size_t bucket = registerWindowBucket(static_cast<size_t>(index) + 1);
 	const size_t end = static_cast<size_t>(frame.stackBase()) + bucket;
 	if (end > m_activeThread->stackCapacity) m_activeThread->resizeStack(nextPowerOfTwo(end));
 	frame.growRegisterWindow(static_cast<int>(bucket));

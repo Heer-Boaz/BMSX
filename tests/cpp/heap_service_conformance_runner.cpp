@@ -237,14 +237,15 @@ int main(int argc, char** argv) {
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
 					char opcode;
 					trace >> opcode;
-					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y' && opcode != 'A')
-						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET, coroutine.create or prepared CALL");
+					if (opcode != 'C' && opcode != 'F' && opcode != 'R' && opcode != 'Y' && opcode != 'A' && opcode != 'V')
+						throw std::runtime_error("Expected generated CLOSURE, SETFIELD, RAWSET, coroutine.create, prepared CALL or VARARG");
 					const bool growField = opcode == 'F';
 					const bool rawSet = opcode == 'R';
 					const bool coroutine = opcode == 'Y';
-					const bool prepared = opcode == 'A';
-					const auto gate = rawSet || coroutine || prepared ? NativeBlockExit::Call : growField ? NativeBlockExit::WriteField
-						: NativeBlockExit::CreateClosure;
+					const bool prepared = opcode == 'A', vararg = opcode == 'V';
+					const bool acquiresFrameSpace = prepared || vararg;
+					const auto gate = vararg ? NativeBlockExit::Vararg : rawSet || coroutine || prepared ? NativeBlockExit::Call
+						: growField ? NativeBlockExit::WriteField : NativeBlockExit::CreateClosure;
 					if (rawSet) {
 						auto& frame = *cpu.activeThread()->currentFrame;
 						const u32 closure = frame.readControl(FrameField::Closure);
@@ -303,6 +304,20 @@ int main(int argc, char** argv) {
 						}
 						cpu.beginCompletionCall(closure, {original.data(), original.size()});
 					}
+					if (vararg) {
+						auto& frame = *cpu.activeThread()->currentFrame;
+						const u32 closure = frame.readControl(FrameField::Closure);
+						const std::array warm{frame.thread->stack.get(frame.readWindow(FrameField::VarargBase))};
+						for (int visit = 0; visit < 128; ++visit) {
+							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
+							const auto outcome = scheduler.runCpuSlice(0, 65536, 0u, CpuRunKind::Scheduled);
+							if (outcome != RunResult::Halted || cpu.heapServiceActive())
+								throw std::runtime_error("A fitting VARARG suspend would invalidate the native gate warm-up");
+						}
+						std::array<Value, 33> args;
+						for (int i = 0; i < static_cast<int>(args.size()); ++i) args[i] = valueInteger(74 + i);
+						cpu.beginCompletionCall(closure, {args.data(), args.size()});
+					}
 					cpu.prepareSystemNativeCode();
 					const auto& allocation = cpu.nativeGateProfile().exits[static_cast<size_t>(gate)];
 					const auto before = allocation;
@@ -324,19 +339,20 @@ int main(int argc, char** argv) {
 					const u32 caller = cpu.readFramePc(cpu.getFrameDepth() - 1);
 					if (result != RunResult::Yielded || !cpu.heapServiceActive())
 						throw std::runtime_error("The generated allocation did not suspend");
-					if (growField || rawSet || coroutine || prepared) {
+					if (growField || rawSet || coroutine || acquiresFrameSpace) {
 						const u32 imageAddress = SYSTEM_ROM_BASE
 							+ memory.readMappedU32LE(SYSTEM_ROM_BASE + BMSX_ROM_HEADER_BLUA32_IMAGE_OFFSET);
 						const u32 descriptor = memory.readMappedU32LE(imageAddress + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
 						const u32 root = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET
-							+ static_cast<u32>(prepared ? HeapServiceOperation::ReserveFrameSpace : coroutine ? HeapServiceOperation::CreateCoroutine : HeapServiceOperation::TableGrow) * sizeof(u32));
+							+ static_cast<u32>(acquiresFrameSpace ? HeapServiceOperation::ReserveFrameSpace : coroutine ? HeapServiceOperation::CreateCoroutine : HeapServiceOperation::TableGrow) * sizeof(u32));
 						const u32 activeRoot = memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Function));
-						const u32 origin = prepared
+						const u32 origin = acquiresFrameSpace
 							? memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResidentField::IssuePc))
 							: memory.readRamRecordWord(frontier + static_cast<u32>(HeapServiceBiosCallField::InstructionPc));
-						const auto want = prepared ? HeapServiceBiosCallKind::Idle
+						const auto want = acquiresFrameSpace ? HeapServiceBiosCallKind::Idle
 							: rawSet || coroutine ? HeapServiceBiosCallKind::Call : HeapServiceBiosCallKind::Discard;
-						if (prepared && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != (FRAME_RESIDENT_ACTIVATION | FRAME_RESIDENT_PREPARED_ENTRY))
+						const u32 receiver = vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY;
+						if (acquiresFrameSpace && memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + static_cast<u32>(FrameField::Flags)) != (FRAME_RESIDENT_ACTIVATION | receiver))
 							throw std::runtime_error("The fixed root did not retain its prepared-activation receiving mode");
 						if (completion != want || cpu.allocationParked() || activeRoot != root
 							|| origin != cpu.readCurrentInstructionPc() || caller != cpu.lastPc + INSTRUCTION_BYTES)
@@ -346,8 +362,8 @@ int main(int argc, char** argv) {
 						throw std::runtime_error("The generated allocation did not suspend at its own instruction");
 					}
 					std::cout << allocation.entries - before.entries;
-					if (growField || rawSet || coroutine || prepared)
-						std::cout << ' ' << (prepared ? (FRAME_RESIDENT_ACTIVATION | FRAME_RESIDENT_PREPARED_ENTRY) : static_cast<u32>(completion))
+					if (growField || rawSet || coroutine || acquiresFrameSpace)
+						std::cout << ' ' << (acquiresFrameSpace ? (FRAME_RESIDENT_ACTIVATION | (vararg ? FRAME_RESIDENT_PLACE_WINDOW : FRAME_RESIDENT_PREPARED_ENTRY)) : static_cast<u32>(completion))
 						<< ' ' << cpu.heapAllocator().occupiedBytes() << ' ' << cpu.luaHeap().usedBytes();
 					std::cout << '\n';
 #else

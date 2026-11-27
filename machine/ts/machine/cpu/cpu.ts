@@ -170,7 +170,7 @@ import {
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
 } from './execution_image';
-import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY } from './call_state';
+import { FRAME_CONTROL_BYTES, PROTECTED_CALL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXCEPTION, FrameField, frameExecutionBank, ProtectedCallKind, ProtectedField, PROTECTED_CALL_KIND_MASK, PROTECTED_CALL_HANDLER_IMMUTABLE, PROTECTED_CALL_PARENT, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, writeFrameEntryControl, FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FRAME_RESIDENT_PLACE_WINDOW, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, MAX_THREAD_VALUE_SLOTS } from './thread_record';
@@ -187,7 +187,7 @@ import {
 	HEAP_SERVICE_VALUE_CELL_OFFSET, HEAP_SERVICE_VALUE_CELL_TAG_OFFSET,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceBiosCallField, HeapServiceBiosCallKind, HeapServiceClosureField, HeapServiceExecStage, HeapServiceGcStage, HeapServiceOperation,
 	HeapServiceGcArgumentField, HeapServiceProjection, HeapServiceTraceField, HeapServiceResidentField,
-	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedFrameField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
+	HEAP_SERVICE_RESIDENT_OFFSET, HEAP_SERVICE_MANAGEMENT_ADDRESS, HEAP_SERVICE_PREPARED_FRAME_OFFSET, PreparedFrameField, PreparedWindowField, HEAP_SERVICE_CALL_CYCLES_ADDRESS,
 	HEAP_SERVICE_CALL_RUN_KIND_ADDRESS, HEAP_SERVICE_CALL_FAULT_ADDRESS, HEAP_SERVICE_RESULT_FAULT,
 	HeapServiceIrqForwardField,
 	HeapServiceRecordKind, HeapServiceRecordMode,
@@ -3091,16 +3091,41 @@ export class CPU implements MappedPageInvalidator {
 		return Math.max(0, Math.min(produced, selectedCallResultCount(wanted, produced + 1) - 1));
 	}
 
-	private executeVararg(frame: CallFrame, a: number, b: number): void {
-		const count = decodeValueCount(b, frame.varargCount);
-		if (count !== 0) {
-			this.ensureRegisterCapacity(frame, a + count - 1);
-			const copied = Math.min(count, frame.varargCount);
-			frame.registers.copyRangeFrom(frame.thread.stackRegisters, a, frame.varargBase, copied, count - copied);
+	private executeVararg(frame: CallFrame, a: number, b: number): boolean {
+		const available = frame.varargCount, count = decodeValueCount(b, available);
+		const end = a + count;
+		const top = b === 0 || (count !== 0 && end > frame.top) ? end : -1;
+		if (count === 0) {
+			if (top >= 0) frame.top = top;
+			return false;
 		}
-		this.charge(count);
-		if (b === 0) frame.top = a + count;
-		else if (count !== 0) frame.top = Math.max(frame.top, a + count);
+		const thread = frame.thread, source = frame.varargBase, copied = Math.min(count, available), padded = count - copied;
+		if (end > frame.stackCapacity) {
+			const capacity = registerWindowBucket(end), extent = frame.stackBase + capacity;
+			if (extent > thread.stackRegisters.capacity()) {
+				const services = this.systemImage.heapServiceFunctions;
+				if (services !== null) {
+					const prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Destination, a, source);
+					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Copied, copied, padded);
+					this.memory.writeRamRecordPair(prepared + PreparedWindowField.Capacity, capacity, top);
+					// The executing Closure is already a live Thread frame
+					// edge. No extra operand scope is required for this write.
+					this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], extent, 0, 0, FRAME_RESIDENT_PLACE_WINDOW);
+					return true;
+				}
+				this.ensureStackCapacity(extent, valueClosure(frame.closureAddress));
+			}
+			frame.growRegisterWindow(capacity);
+		}
+		this.placeRegisterWindow(frame, a, source, copied, padded, top);
+		return false;
+	}
+
+	private placeRegisterWindow(frame: CallFrame, destination: number, source: number, copied: number, padded: number, top: number): void {
+		frame.registers.copyRangeFrom(frame.thread.stackRegisters, destination, source, copied, padded);
+		this.charge(copied + padded);
+		if (top >= 0) frame.top = top;
 	}
 
 	private executeMemoryLoad(frame: CallFrame, destination: number, kind: MemoryAccessKind, address: number): void {
@@ -3443,7 +3468,7 @@ export class CPU implements MappedPageInvalidator {
 						else frame.pc = (exit.nextPc + exit.skippedInstructionWidth * INSTRUCTION_BYTES) >>> 0;
 					}
 					break;
-				case CompiledBlockExit.Vararg: this.executeVararg(frame, exit.exitA, exit.exitB); break;
+				case CompiledBlockExit.Vararg: redispatch = this.executeVararg(frame, exit.exitA, exit.exitB); break;
 				case CompiledBlockExit.WriteGlobal:
 				case CompiledBlockExit.WriteSystemGlobal: {
 					const bank = exit.exit === CompiledBlockExit.WriteGlobal ? this.globalBank : this.systemGlobalBank;
@@ -3941,6 +3966,15 @@ export class CPU implements MappedPageInvalidator {
 		this.enterResidentFrame(callee);
 	}
 
+	private beginFrameSpaceAcquisition(functionAddress: number, valueEnd: number, frameEnd: number, root: number, receiverFlags: number): void {
+		const firmware = this.prepareHeapServiceFrame(functionAddress, 0, 0, 0, this.currentInstructionPc);
+		firmware.registers.setInteger(0, this.activeThread.address);
+		firmware.registers.setInteger(1, valueEnd);
+		firmware.registers.setInteger(2, frameEnd);
+		firmware.registers.setInteger(3, root);
+		this.enterResidentFrame(firmware, receiverFlags);
+	}
+
 	private enterResidentFrame(frame: CallFrame, receiverFlags = 0): void {
 		const flags = frame.controlOffset + FrameField.Flags;
 		this.memory.writeRamRecordWord(flags, this.memory.readRamRecordWord(flags) | FRAME_RESIDENT_ACTIVATION | receiverFlags);
@@ -3962,6 +3996,14 @@ export class CPU implements MappedPageInvalidator {
 		const thread = this.heapService.thread, frame = thread.firstFrame!, source = thread.stackRegisters;
 		if ((flags & FRAME_RESIDENT_PREPARED_ENTRY) !== 0) {
 			this.enterPreparedFrame();
+			return;
+		}
+		if ((flags & FRAME_RESIDENT_PLACE_WINDOW) !== 0) {
+			const window = this.activeThread.currentFrame!, prepared = this.heapAllocator.managementOffset() + HEAP_SERVICE_PREPARED_FRAME_OFFSET;
+			window.growRegisterWindow(memory.readRamRecordWord(prepared + PreparedWindowField.Capacity));
+			this.placeRegisterWindow(window, memory.readRamRecordWord(prepared + PreparedWindowField.Destination),
+				memory.readRamRecordWord(prepared + PreparedWindowField.SourceSlot), memory.readRamRecordWord(prepared + PreparedWindowField.Copied),
+				memory.readRamRecordWord(prepared + PreparedWindowField.Padded), memory.readRamRecordWord(prepared + PreparedWindowField.Top) | 0);
 			return;
 		}
 		const index = frame.protectedContinuationIndex;
@@ -4145,12 +4187,7 @@ export class CPU implements MappedPageInvalidator {
 					varargBase, extras, returnBase, returnCount, numParams, closure, stackBase, capacity);
 				this.memory.writeRamRecordPair(prepared + PreparedFrameField.SourceSlot, first, supplied);
 				this.memory.writeRamRecordWord(prepared + PreparedFrameField.RelocateFormals, +vararg);
-				const firmware = this.prepareHeapServiceFrame(services[HeapServiceOperation.ReserveFrameSpace], 0, 0, 0, this.currentInstructionPc);
-				firmware.registers.setInteger(0, thread.address);
-				firmware.registers.setInteger(1, end);
-				firmware.registers.setInteger(2, thread.frameDepth + 2);
-				firmware.registers.setInteger(3, closure);
-				this.enterResidentFrame(firmware, FRAME_RESIDENT_PREPARED_ENTRY);
+				this.beginFrameSpaceAcquisition(services[HeapServiceOperation.ReserveFrameSpace], end, thread.frameDepth + 2, closure, FRAME_RESIDENT_PREPARED_ENTRY);
 				return null;
 			}
 		}
@@ -4301,9 +4338,7 @@ export class CPU implements MappedPageInvalidator {
 	private ensureRegisterCapacity(frame: CallFrame, index: number): ValueSlots {
 		const registers = frame.registers;
 		if (index >= frame.stackCapacity) {
-			const needed = index + 1;
-			let capacity = 1 << (32 - Math.clz32(needed - 1));
-			if (capacity < 8) capacity = 8;
+			const capacity = registerWindowBucket(index + 1);
 			this.ensureStackCapacity(frame.stackBase + capacity, valueClosure(frame.closureAddress));
 			frame.growRegisterWindow(capacity);
 		}

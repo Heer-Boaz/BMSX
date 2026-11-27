@@ -476,6 +476,7 @@ private:
 	void placeSharedFormals(CallFrame&, int first, int copied, int padded, bool relocate);
 	void enterPreparedFrame();
 	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
+	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});
@@ -493,7 +494,8 @@ private:
 	int closeUpvalues(CallFrame& frame, u32 firstSlot = 0);
 	bool executeCall(CallFrame& frame, int callee, int supplied, int requested);
 	bool executeReturn(CallFrame& frame, int first, int produced);
-	void executeVararg(CallFrame& frame, int first, int requested);
+	bool executeVararg(CallFrame& frame, int first, int requested);
+	void placeRegisterWindow(CallFrame&, int destination, int source, int copied, int padded, int top);
 	u32 findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, u32 cell, u32 slot);
 	void writeReturnValuesFromRegisters(CallFrame& frame, CallResultPlacement, const CallFrame& source, int sourceBase, int sourceCount);

@@ -325,7 +325,8 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			return nullptr;
 		}
 		case NativeBlockExit::Vararg:
-			cpu.executeVararg(*frame, exit->operands.vararg.first, exit->operands.vararg.requested);
+			if (cpu.executeVararg(*frame, exit->operands.vararg.first, exit->operands.vararg.requested))
+				transition = NativeBlockTransition::Redispatch;
 			break;
 		case NativeBlockExit::WriteGlobal:
 		case NativeBlockExit::WriteSystemGlobal: {

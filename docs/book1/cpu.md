@@ -1009,6 +1009,12 @@ On entry to a closure, its bound function data supplies the code address and par
 
 `VARARG A,0` copies the saved excess arguments starting at `R(A)` and sets `top` exactly to the end of that copied range. If there are none, it sets `top` to `A`. A nonempty fixed-count `VARARG` pads with nil as needed and only raises `top`, to at least `A+B-1`. `VARARG A,1` writes nothing and leaves `top` unchanged.
 
+If a receiving range needs more physical stack storage, the CPU runs BIOS
+allocation before writing the range or updating `top`. This uses ordinary
+guest cycles and can span a CPU grant; it does not execute the following
+instruction. If the allocation fails, the Out of memory exception identifies
+the original `VARARG` instruction and no results are placed.
+
 `RET` closes the returning frame's open upvalues before routing its results. An ordinary nested return places results in the caller's saved destination range and releases the returning frame. A return need not have an ordinary caller: protected-call targets, completion, and coroutine resumption have distinct return routes. Returning from a root frame with no resumer records completion values.
 
 #### Value placement and capture cycles
