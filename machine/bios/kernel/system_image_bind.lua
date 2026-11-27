@@ -115,7 +115,7 @@ local bind_initial_image<const> = function(management, header, output, system_by
 	end
 	local global_count<const>, system_count<const> = image.global_count, image.system_count -- T:1053-1054 C:335-341
 	local extent<const> = 4 * (global_count + system_count + strings_count) -- T:1076-1077 C:370,419
-	local base, strings, ram_count = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
+	local base, string_base, ram_count = 0, 0, 0 -- T:1139,1005-1006 C:420,282,291
 	local view<const>: *operand_bindings = output -- T:1139-1144 C:420-426
 	view.global_base, view.global_capacity, view.global_count = 0, 0, 0 -- G:15-17 H:13; first System registration has no previous namespace
 	view.system_base, view.system_capacity, view.system_count = 0, 0, 0 -- G:15-17 H:13
@@ -131,19 +131,19 @@ local bind_initial_image<const> = function(management, header, output, system_by
 		local system_base<const> = base + 4 * global_count -- T:1143-1144 C:425-426
 		fault = bind_name_table(management, image.system_names, system_count, &view.system_base, system_base, system_bytes, cart0_bytes) -- T:1143-1144 C:425-426
 		if fault ~= 0 then return fault end -- T:1143 C:425
-		strings = system_base + 4 * system_count -- T:1147 C:440
+		string_base = system_base + 4 * system_count -- T:1147 C:440
 		local slot = 0 -- T:1005-1006 C:282,291
 		local metadata<const> = management + layout.metadata_offset -- T:1001-1002 C:288 S:65
 		for index = 0, count - 1 do -- T:968,996 C:282; copy only the decoded String ordinals into binding RAM
 			if constants[index].tag == string_constant_tag then -- T:996 C:270-272
 				local id<const>, reason<const> = resolve_initial_string(metadata, constants[index].word, system_bytes, cart0_bytes) -- T:1001-1003 C:287-289
 				if reason ~= 0 then return reason end -- S:253 R:253; same external-data failure, before the CPU sees bindings
-				ram_count = string_bindings.store_binding(strings, strings_count, slot, ram_count, id) -- T:1003,1009 C:289,301
+				ram_count = string_bindings.store_binding(string_base, strings_count, slot, ram_count, id) -- T:1003,1009 C:289,301
 				slot = slot + 1 -- T:1005 C:291
 			end
 		end
 	end
-	view.image.strings = strings -- T:1147 C:440; compact prefix with the binding's own backing
+	view.image.strings = string_base -- T:1147 C:440; compact prefix with the binding's own backing
 	view.image.ram_strings = ram_count -- T:1005-1006 C:282,291
 	view.image.base = base -- T:1178 C:421; final bind source, not a hardware latch
 	view.image.bytes = extent -- T:1076-1077 C:370,419
