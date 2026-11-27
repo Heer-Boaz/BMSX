@@ -115,7 +115,7 @@ import { BuiltinFunctionId, BUILTIN_FUNCTION_COUNT } from '../../spec/blua32/bui
 import {
 	EMPTY_CALL_ARGS,
 	ValueTag,
-	valueTable, valueClosure, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
+	valueTable, valueNil, valueInteger, valueFloat, valueFloatBits, valuePayload, valueFromTag,
 	canonicalTableKey, valueIsInteger, valueIsFloat, valueIsNumber, asInteger, asFloat, compareNumbers, valuesEqual, valueString, valueBool, valueThread,
 	isNil, valueTag, valueTagHasGcEdge, valueToInteger,
 	type Value,
@@ -125,7 +125,7 @@ import { TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT, TABLE_STORE_FIRMWARE,
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
-import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT, UPVALUE_OWNER } from './upvalue';
+import { UPVALUE_NEXT, UPVALUE_CHAIN_LIMIT } from './upvalue';
 import * as Upvalue from './upvalue';
 import { ValueSlots } from './value_slots';
 import { GlobalBank } from './global_bank';
@@ -159,8 +159,8 @@ import {
 } from './execution_image';
 import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_RESULT_TOP, FrameField, frameBankWord, frameExecutionBank, CALL_RESULT_EXTEND_TOP, SINGLE_CALL_RESULT, DISCARD_CALL_RESULT, selectedCallResultCount, CallFrame, frameCaptureCount, registerWindowBucket } from './call_state';
 import { CompiledCodeLookup } from './compiled_code_lookup';
-import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
-import { invokeThreadDiagnostic, ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
+import { Thread, ThreadStatus } from './thread';
+import { invokeThreadDiagnostic, ThreadField, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
 import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
@@ -255,7 +255,6 @@ export class CPU implements MappedPageInvalidator {
 	private readonly threadBanks: readonly Thread[];
 	private readonly irqThread: Thread;
 	private completionThread = 0;
-	private readonly inspectionThreadLayout = new ThreadLayout();
 	private readonly inspectionThreadValues = new ValueSlots(0);
 	public readonly memory: Memory;
 
@@ -2368,6 +2367,9 @@ export class CPU implements MappedPageInvalidator {
 		return this.activeThread.frameAtDepth(frameIndex).returnToCompletionLatch;
 	}
 
+	public get completionThreadAddress(): number { return this.completionThread; }
+	public get haltedUntilIrqThreadAddress(): number { return this.haltedUntilIrqThread; }
+
 	public readCompletionValues(target: Value[]): void {
 		this.completionValueSlots.copyTo(target, this.completionValueCount);
 	}
@@ -4039,93 +4041,6 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = state.yieldRequested;
 		this.hardHalted = state.hardHalted;
 	}
-
-	public visitReachableExecutionRecords(visitor: (closure: number) => void, visitThread?: (thread: number, frameDepth: number) => void): void {
-		const objects: number[] = [];
-		const upvalues: number[] = [];
-		const seen = new Set<number>();
-		const add = (value: Value): void => {
-			const tag = valueTag(value);
-			if (tag === ValueTag.Table) {
-				const address = this.gc.tableRecordAddress(valuePayload(value));
-				if (address !== 0) objects.push(address);
-			} else if (tag === ValueTag.Closure) {
-				const closure = this.gc.closureRecordAddress(valuePayload(value));
-				if (closure !== 0) objects.push(closure);
-			} else if (tag === ValueTag.Thread) objects.push(valuePayload(value));
-		};
-		const addSlots = (slots: ValueSlots, count: number): void => {
-			for (let index = 0; index < count; index += 1) add(slots.get(index));
-		};
-		addSlots(this.systemGlobalBank.slots, this.systemGlobalBank.count);
-		addSlots(this.globalBank.slots, this.globalBank.count);
-		addSlots(this.completionValueSlots, this.completionValueCount);
-		add(valueFromTag(this.gc.diagnosticWord(GcDiagnosticField.StringIndexTag), this.gc.diagnosticWord(GcDiagnosticField.StringIndexWord)));
-		objects.push(this.rootThread.address, this.activeThread.address);
-		if (this.completionThread !== 0) objects.push(this.completionThread);
-		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
-		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
-			const slots = this.builtinResultsScratch.peek(index);
-			for (let valueIndex = 0; valueIndex < slots.length; valueIndex += 1) add(slots.get(valueIndex));
-		}
-		while (objects.length > 0 || upvalues.length > 0) {
-			if (upvalues.length > 0) {
-				const cell = upvalues.pop()!;
-				if (seen.has(cell)) continue;
-				seen.add(cell);
-				if (Upvalue.isOpen(this.memory, cell)) {
-					const thread = this.memory.readRamRecordWord(cell + UPVALUE_OWNER);
-					if (thread !== 0) objects.push(thread);
-				}
-				add(Upvalue.load(this.memory, cell));
-				continue;
-			}
-			const address = objects.pop()!;
-			if (seen.has(address)) continue;
-			seen.add(address);
-			switch (this.memory.readRamRecordByte(address)) {
-				case ValueTag.Closure: {
-					const closure = this.gc.closureRecordAddress(address)!;
-					visitor(closure);
-					for (let index = 0, count = Closure.captureCount(this.memory, closure); index < count; ++index) {
-						const cell = this.gc.cellRecordAddress(Closure.captureAddress(this.memory, closure, index));
-						if (cell !== 0) upvalues.push(cell);
-					}
-					break;
-				}
-				case ValueTag.Table: {
-					const meta = this.gc.tables.metatableAddress(address);
-					if (meta !== 0) add(valueTable(meta));
-					this.gc.tables.forEachStoredEntry(address, (key, value) => { add(key); add(value); });
-					break;
-				}
-				case THREAD_RECORD_KIND: {
-					const entry = this.memory.readRamRecordWord(address + ThreadField.Entry);
-					if (entry !== 0) objects.push(entry);
-					const resumer = this.readThreadResumer(address);
-					if (resumer !== 0) objects.push(resumer);
-					add(this.readThreadError(address));
-					const layout = this.inspectionThreadLayout;
-					this.gc.threads.readLayout(address, layout);
-					visitThread?.(address, layout.depth);
-					this.inspectionThreadValues.bindRam(this.memory, layout.offset, layout.capacity, false, true);
-					addSlots(this.inspectionThreadValues, layout.top);
-					for (let index = layout.depth - 1; index >= 0; --index) {
-						add(valueClosure(this.readThreadFrameWord(address, index, FrameField.Closure)));
-						let head = this.readThreadFrameWord(address, index, FrameField.OpenHead);
-						for (let remaining = UPVALUE_CHAIN_LIMIT; head !== 0 && remaining !== 0; --remaining) {
-							const cell = this.gc.openCellAddress(head);
-							if (cell === 0) break;
-							upvalues.push(cell);
-							head = this.memory.readRamRecordWord(cell + UPVALUE_NEXT);
-						}
-					}
-					break;
-				}
-			}
-		}
-	}
-
 
 }
 

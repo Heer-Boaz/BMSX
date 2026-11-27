@@ -11,6 +11,7 @@ import { IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { EXECUTION_IMAGE_BINDING_SPAN_OFFSET, executionImageBindingOffset, SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { blua32FunctionIndexAtAddress, decodeBlua32Image } from '../../toolchain/ts/rompack/blua32_image';
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
+import { visitRuntimeExecutionRecords } from '../../ide/runtime/execution_records';
 import { verifyHotResumeBinding } from '../../ide/runtime/hot_resume_binding';
 import { integerConstant } from '../../toolchain/ts/lua/number';
 import { compileFrameEvaluationTest } from '../helpers/frame_evaluation';
@@ -226,7 +227,7 @@ return pcall(run, 17)
 	for (let slot = 0; slot < thread.stackTop; ++slot)
 		if (slot !== argument && thread.stackRegisters.get(slot) === valueClosure(handler)) thread.stackRegisters.set(slot, valueNil());
 	const seen = new Set<number>();
-	cpu.visitReachableExecutionRecords(closure => seen.add(closure));
+	visitRuntimeExecutionRecords(cpu, closure => seen.add(closure));
 	assert.ok(seen.has(handler));
 	cpu.clearHaltUntilIrq();
 	runGuestToHalt(cpu, 1_000_000);

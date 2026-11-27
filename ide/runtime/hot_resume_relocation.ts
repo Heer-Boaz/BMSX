@@ -7,6 +7,7 @@ import {
 	type Blua32ImageLayout,
 } from '../../toolchain/ts/rompack/blua32_image';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { visitRuntimeExecutionRecords } from './execution_records';
 import {
 	relocatedCallSitePc,
 	relocatedContinuationPc,
@@ -69,7 +70,7 @@ export function buildHotResumeRelocation(
 			unmappedWords.push(`canonical function 0x${record.toString(16)} must retain its record address`);
 	});
 	let binding: FunctionPrototype | undefined;
-	cpu.visitReachableExecutionRecords(closure => {
+	visitRuntimeExecutionRecords(cpu, closure => {
 		binding = cpu.captureClosureBinding(closure, binding);
 		const target = revisions[binding.executionDomainId + 1];
 		if (target === null) return;
