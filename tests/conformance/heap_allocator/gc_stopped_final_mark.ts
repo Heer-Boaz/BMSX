@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -69,7 +70,7 @@ try {
 			const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
 			const { cpu, memory, scheduler, gxGpu, irqController } = runtime.machine;
-			const { gc, heapAllocator: arena, luaHeap } = cpu;
+			const { gc, heapAllocator: arena, luaHeap } = nativeHeapReference(cpu);
 			const report = linked.layout.header.bssAddress, offset = report - RAM_BASE;
 			const word = (slot: number) => memory.readRamRecordWord(report + 4 * slot);
 			for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
@@ -91,7 +92,7 @@ try {
 			// collector work from this exact MarkAgain boundary onward.
 			luaHeap.setCollectionTarget(luaHeap.capacity());
 			const weak = createReferenceTable(cpu, slots, 0), meta = createReferenceTable(cpu, 0, 1);
-			gc.tables.set(meta, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
+			gc.tables.set(meta, valueString(cpu.stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(1), valueTable(createReferenceTable(cpu)));
 			gc.tables.set(weak, valueInteger(slots), valueTable(createReferenceTable(cpu)));

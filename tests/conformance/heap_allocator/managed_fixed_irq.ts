@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -81,7 +82,7 @@ try {
 		const stack = memory.readRamRecordWord(retained + ThreadField.StackBlock);
 		const frameBlock = memory.readRamRecordWord(retained + ThreadField.FrameBlock);
 		const frameCapacity = memory.readRamRecordWord(retained + ThreadField.FrameCapacity);
-		const arena = cpu.heapAllocator, heap = cpu.luaHeap;
+		const arena = nativeHeapReference(cpu).heapAllocator, heap = nativeHeapReference(cpu).luaHeap;
 		while (arena.allocate(8192, true)) { /* occupy each large extent */ }
 		while (arena.allocate(24, true)) { /* then occupy the small extents */ }
 		assert.equal(arena.allocate(24, true), 0, 'a real arena reservation is refused');

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
@@ -22,7 +23,7 @@ interface Shape {
 }
 
 function installThread(cpu: CPU, shape: Shape) {
-	const { memory } = cpu, threads = cpu.gc.threads;
+	const { memory } = cpu, threads = nativeHeapReference(cpu).gc.threads;
 	const thread = allocateThreadRecordReference(cpu, 0);
 	assert.ok(threads.resizeStackBacking(thread, shape.values));
 	const frames = threads.growFrameBacking(thread, shape.frames);
@@ -104,7 +105,7 @@ for (const optLevel of [0, 3] as const) test(`BLua Thread shrink matches physica
 		const before = cpu.luaHeap.usedBytes();
 		const layout = new ThreadLayout();
 		oracle.gc.threads.readLayout(target.thread, layout);
-		assert.equal(oracle.gc.threads.shrinkStack(target.thread, layout), retained);
+		assert.equal(nativeHeapReference(oracle).gc.threads.shrinkStack(target.thread, layout), retained);
 		assert.ok(cpu.beginHeapService(linked.layout.functions[entry].address,
 			[cpu.heapAllocator.allocatorStateOffset(), cpu.luaHeap.occupiedOffset, target.thread]));
 		if (index === 0) {

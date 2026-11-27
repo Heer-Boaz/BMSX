@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -37,7 +38,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), actual);
 		return actual;
 	}
-	const output = same(target => target.heapAllocator.allocate(8, true));
+	const output = same(target => nativeHeapReference(target).heapAllocator.allocate(8, true));
 	assert.ok(output);
 	function header(record: number) {
 		return memory.ramData().slice(record - RAM_BASE, record - RAM_BASE + TableRecords.HEADER_BYTES);
@@ -81,7 +82,7 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel), array = 9, hash = 8;
 		const record = f.same(target => createReferenceTable(target, 0, 0));
 		const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
-		const arena = f.oracle.heapAllocator;
+		const arena = nativeHeapReference(f.oracle).heapAllocator;
 		const storage = arena.allocate(hashBytes(hash), true);
 		const hashOnly = arena.occupiedBytes();
 		const base = arena.allocate(5 * array, true);
@@ -111,10 +112,10 @@ for (const optLevel of [0, 3] as const) {
 			f.same(target => target.memory.writeRamRecordWord(oldBase, 0x378422bc));
 			let base: number;
 			if (staged) {
-				base = f.oracle.heapAllocator.reserveBacking(oldBase, 5 * array);
+				base = nativeHeapReference(f.oracle).heapAllocator.reserveBacking(oldBase, 5 * array);
 				assert.notEqual(base, oldBase, 'blocked old array reserves a separate raw backing');
 			} else {
-				base = f.oracle.heapAllocator.resizeBacking(oldBase, 5 * array);
+				base = nativeHeapReference(f.oracle).heapAllocator.resizeBacking(oldBase, 5 * array);
 				assert.notEqual(base, oldBase, 'blocked old array must relocate and copy its payload');
 			}
 			assert.ok(base);
@@ -144,14 +145,14 @@ test('table growth restores only its owned hash block on an array refusal', () =
 	const f = fixture(3), hash = 8;
 	const record = f.same(target => createReferenceTable(target, 0, hash));
 	const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
-	const fit = f.same(target => target.heapAllocator.allocate(hashBytes(hash), true));
-	assert.ok(fit && f.same(target => target.heapAllocator.allocate(32, true)));
+	const fit = f.same(target => nativeHeapReference(target).heapAllocator.allocate(hashBytes(hash), true));
+	assert.ok(fit && f.same(target => nativeHeapReference(target).heapAllocator.allocate(32, true)));
 	f.same(target => {
-		while (target.heapAllocator.allocate(4088, true)) { /* exhaust page supply */ }
-		while (target.heapAllocator.allocate(hashBytes(hash), true)) { /* exhaust hash fits */ }
-		target.heapAllocator.free(fit);
+		while (nativeHeapReference(target).heapAllocator.allocate(4088, true)) { /* exhaust page supply */ }
+		while (nativeHeapReference(target).heapAllocator.allocate(hashBytes(hash), true)) { /* exhaust hash fits */ }
+		nativeHeapReference(target).heapAllocator.free(fit);
 	});
-	const arena = f.oracle.heapAllocator, array = 1024;
+	const arena = nativeHeapReference(f.oracle).heapAllocator, array = 1024;
 	assert.equal(arena.allocate(5 * array, true), 0);
 	f.begin(record, array, hash, true, false);
 	f.finish();

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -138,7 +139,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua table creation refusal performs only the legacy reservation cleanup at O${optLevel}`, () => {
 		const { cpu, oracle, control, memory, begin, finish, compare } = fixture(optLevel);
-		const arena = cpu.heapAllocator;
+		const arena = nativeHeapReference(cpu).heapAllocator;
 		const record = arena.allocate(TableRecords.HEADER_BYTES + GC_OBJECT_PREFIX, true);
 		assert.ok(record && arena.allocate(32, true));
 		const array = arena.allocate(5, true);
@@ -150,7 +151,7 @@ for (const optLevel of [0, 3] as const) {
 		restoreCpuCheckpoint(oracle, captureCpuCheckpoint(cpu));
 		const occupied = arena.occupiedBytes(), charged = cpu.luaHeap.usedBytes();
 		const head = memory.readRamRecordWord(control + OBJECT_HEAD), count = memory.readRamRecordWord(control + OBJECT_COUNT);
-		assert.equal(oracle.luaHeap['reserveRecord'](TableRecords.HEADER_BYTES, true, 5, TableHeader.ArrayStorage,
+		assert.equal(nativeHeapReference(oracle).luaHeap['reserveRecord'](TableRecords.HEADER_BYTES, true, 5, TableHeader.ArrayStorage,
 			TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(1, 8), TableRecords.hashStorageBytes(8), TableHeader.HashStorage), 0);
 		begin(1, 8);
 		finish();

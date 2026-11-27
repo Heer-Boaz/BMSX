@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,11 +39,11 @@ try {
 		writeFileSync(rom, bytes);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
 		assert.ok(cpu.isHaltedUntilIrq());
 		cpu.clearHaltUntilIrq();
-		const dead = Array.from({ length: 12 }, (_, i) => cpu.stringPool.intern(`unrooted-intern-${i}`));
+		const dead = Array.from({ length: 12 }, (_, i) => nativeHeapReference(cpu).stringPool.intern(`unrooted-intern-${i}`));
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		driver.reach(() => gc.phase() >= GcPhase.Sweep, 'object sweep phase', 113);

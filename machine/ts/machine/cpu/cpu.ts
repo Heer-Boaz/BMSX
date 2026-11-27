@@ -1,5 +1,5 @@
 import { ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
-import { GcDiagnosticField, GcHeap, GcRootBank, GC_WORK_WORD_CYCLES } from './gc_heap';
+import { GcDiagnosticField, GcHeap } from './gc_heap';
 import { PendingMemoryKind, type PendingMemoryOperation } from './memory_operation';
 import { valueAdd, valueSubtract, valueMultiply, valueDivide, valueFloorDivide, valueModulo, valuePower, valueNegate, integerOperand, wordOperand, } from './value_arithmetic';
 import { numberToF32Bits } from '../../common/float32';
@@ -54,7 +54,6 @@ import {
 	LUA_FAULT_REASON_ASSIGN_NON_TABLE,
 	LUA_FAULT_REASON_CALL_NON_FUNCTION,
 	LUA_FAULT_REASON_EXPLICIT_ERROR,
-	LUA_FAULT_REASON_INDEX_NAN,
 	LUA_FAULT_REASON_INDEX_NON_TABLE,
 	LUA_FAULT_REASON_INVALID_ARGUMENT,
 	LUA_FAULT_REASON_ITERATE_NON_TABLE,
@@ -101,7 +100,7 @@ import {
 	SYSTEM_EXECUTION_DOMAIN_ID,
 	type ExecutionDomainId,
 	type ExecutionDomainMask,
-	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
+	executionImageBindingOffset, EXECUTION_IMAGE_BINDING_SPAN_OFFSET,
 	EXECUTION_IMAGE_BINDING_STRINGS_OFFSET, GLOBAL_BANK_OFFSET, SYSTEM_GLOBAL_BANK_OFFSET,
 } from '../../spec/blua32/execution_domain';
 import { MEMORY_ACCESS_KIND_ALIGNMENT_MASKS, VALUE_MEMORY_TAG_OFFSET, MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
@@ -153,7 +152,7 @@ import {
 	readRomFunctionDirectory,
 	fixedRegisterExtent,
 	DecodedDispatchOp,
-	IMAGE_STRING_RAM_ORDINAL, loadImageStringBinding,
+	loadImageStringBinding,
 	type Blua32ExecutionImage,
 	type Blua32FunctionRecordLatch,
 	type DecodedInstructionPage,
@@ -269,7 +268,6 @@ export class CPU implements MappedPageInvalidator {
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
-	private runKind = CpuRunKind.Idle;
 	private deviceClock: DeviceScheduler | null = null;
 	private stringComparison = new StringComparisonLatch();
 	private readonly pendingMemory: PendingMemoryOperation = { kind: PendingMemoryKind.None, instructionPc: 0, nextPc: 0, address: 0, accessKind: MemoryAccessKind.Word, registerIndex: 0, wordCount: 0 };
@@ -367,9 +365,9 @@ export class CPU implements MappedPageInvalidator {
 		memory.setRamBusEnd(DYNAMIC_RAM_BASE);
 		this.cop0Words[COP0_STATUS] = CPU_STATUS_CART_ENTRY;
 		this.heapAllocator = new HeapAllocator(memory);
-		this.luaHeap = new LuaHeap(this);
-		this.stringPool = new StringPool(this.luaHeap, this.memory, this.heapAllocator);
-		this.gc = new GcHeap(this, this.luaHeap, memory, this.heapAllocator);
+		this.luaHeap = new LuaHeap(memory, this.heapAllocator);
+		this.stringPool = new StringPool(this.memory, this.heapAllocator);
+		this.gc = new GcHeap(memory, this.heapAllocator);
 		const management = this.heapAllocator.managementOffset();
 		this.systemGlobalBank = new GlobalBank(memory, management + SYSTEM_GLOBAL_BANK_OFFSET);
 		this.globalBank = new GlobalBank(memory, management + GLOBAL_BANK_OFFSET);
@@ -2088,9 +2086,8 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public runUntilDepth(targetDepth: number, instructionBudget: number, target: number = this.rootThread.address,
-		kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
+		_kind = CpuRunKind.Direct, deviceClock: DeviceScheduler | null = null): RunResult {
 		if (this.unpublishedRomMask !== 0) throw new Error('Installed ROM must be published before CPU execution.');
-		this.runKind = kind;
 		this.deviceClock = deviceClock;
 		try {
 			for (;;) {
@@ -2102,7 +2099,6 @@ export class CPU implements MappedPageInvalidator {
 				if (instructionBudget <= 0) return RunResult.Yielded;
 			}
 		} finally {
-			this.runKind = CpuRunKind.Idle;
 			this.deviceClock = null;
 		}
 	}
@@ -4130,66 +4126,6 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
-	public chargeCollectionWork(work: number): void {
-		if (this.runKind !== CpuRunKind.Idle) this.charge(GC_WORK_WORD_CYCLES * work);
-	}
-
-	public assistAllocation(root0: Value, root1: Value, root2: Value, growingThread: number, words: number,
-		sourceCycles = this.instructionBudgetRemaining): number {
-		if (this.runKind !== CpuRunKind.Idle) {
-			if (sourceCycles < GC_WORK_WORD_CYCLES) return 0;
-			words = Math.min(words, Math.trunc(sourceCycles / GC_WORK_WORD_CYCLES));
-		}
-		const work = this.gc.step(root0, root1, root2, growingThread, false, words);
-		this.chargeCollectionWork(work);
-		return work;
-	}
-
-	public markRootHead(heap: GcHeap): void {
-		heap.markString(heap.diagnosticWord(GcDiagnosticField.Mode));
-		heap.markString(heap.diagnosticWord(GcDiagnosticField.Index));
-		heap.markString(heap.diagnosticWord(GcDiagnosticField.NewIndex));
-		heap.markString(heap.diagnosticWord(GcDiagnosticField.Length));
-		heap.markString(heap.diagnosticWord(GcDiagnosticField.Error));
-		const faults = heap.diagnosticWord(GcDiagnosticField.FaultIds);
-		for (let reason = 0; reason <= LUA_FAULT_REASON_INDEX_NAN; ++reason)
-			if (reason !== LUA_FAULT_REASON_EXPLICIT_ERROR) heap.markString(this.memory.readRamRecordWord(faults + reason * 4));
-		heap.markValue(valueFromTag(heap.diagnosticWord(GcDiagnosticField.StringIndexTag), heap.diagnosticWord(GcDiagnosticField.StringIndexWord)));
-		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
-
-	}
-
-	public rootBankSlots(bank: GcRootBank): number {
-		if (bank === GcRootBank.SystemGlobals) return this.systemGlobalBank.count;
-		if (bank === GcRootBank.Globals) return this.globalBank.count;
-		if (bank === GcRootBank.Completion) return this.completionValueCount;
-		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
-		return this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_RAM_STRINGS_OFFSET);
-	}
-
-	public markRootBank(heap: GcHeap, bank: GcRootBank, first: number, end: number): void {
-		if (bank < GcRootBank.SystemConstants) {
-			const names = bank === GcRootBank.SystemGlobals ? this.systemGlobalBank : this.globalBank;
-			const slots = names.slots;
-			for (let slot = first; slot < end; ++slot) {
-				heap.markString(names.name(slot)); heap.markSlot(slots, slot);
-			}
-			return;
-		}
-		if (bank === GcRootBank.Completion) {
-			for (let slot = first; slot < end; ++slot) heap.markSlot(this.completionValueSlots, slot);
-			return;
-		}
-		const binding = executionImageBindingOffset(this.heapAllocator.managementOffset(), (bank - GcRootBank.Cart0Constants) as ExecutionDomainId);
-		const strings = this.memory.readRamRecordWord(binding + EXECUTION_IMAGE_BINDING_STRINGS_OFFSET);
-		for (let slot = first; slot < end; ++slot)
-			heap.markString(this.memory.readRamRecordWord(strings + 4 * slot) & ~IMAGE_STRING_RAM_ORDINAL);
-	}
-
-	public markRootThreads(heap: GcHeap): void {
-		heap.markThread(this.rootThread.address); heap.markThread(this.activeThread.address); heap.markThread(this.completionThread);
-		heap.markThread(this.haltedUntilIrqThread);
-	}
 
 }
 

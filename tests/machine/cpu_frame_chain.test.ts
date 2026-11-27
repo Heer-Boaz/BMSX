@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference, resizeThreadStackReference, reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { GC_GRAY_INDEX_BITS, GC_RECORD_LINK } from '../../machine/ts/machine/cpu/gc_object';
@@ -62,7 +63,7 @@ test('thread growth resizes only the required storage lane', () => {
 
 test('Thread growth at its logical assist threshold admits only the new capacity', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
-	const thread = cpu.rootThread, frame = thread.currentFrame!, heap = cpu.luaHeap;
+	const thread = cpu.rootThread, frame = thread.currentFrame!, heap = nativeHeapReference(cpu).luaHeap;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	const oldValues = read(ThreadField.StackBlock), oldFrames = read(ThreadField.FrameBlock);
 	const oldValueCount = read(ThreadField.StackCapacity), oldFrameCount = read(ThreadField.FrameCapacity);
@@ -89,7 +90,7 @@ test('Thread growth at its logical assist threshold admits only the new capacity
 
 test('full collection trims both Thread execution reservations with no replacement space', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
-	const thread = cpu.rootThread, arena = cpu.heapAllocator, frame = thread.currentFrame!;
+	const thread = cpu.rootThread, arena = nativeHeapReference(cpu).heapAllocator, frame = thread.currentFrame!;
 	reserveThreadStorageReference(cpu, thread.address, 64, 8, valueNil());
 	thread.bindStack();
 	frame.registers.setInteger(0, 73); frame.top = 1;
@@ -101,7 +102,7 @@ test('full collection trims both Thread execution reservations with no replaceme
 	const history = new RamHistory();
 	history.start(memory);
 	const initial = history.capture(memory, null), state = cpu.captureRuntimeState();
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.deepEqual(blocks.map(read), before);
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [32, 4]);
 	assert.equal(frame.registers.get(0), valueInteger(73));
@@ -119,14 +120,14 @@ test('full collection trims both Thread execution reservations with no replaceme
 	cpu.restoreRuntimeState(state);
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [64, 8]);
 	assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(73));
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	regrow();
 	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0, 'rewind restores the tag plane and the allocator suffixes');
 });
 
 test('a stack grows when only its increment fits and rewinds to the old tag plane', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
-	const thread = cpu.rootThread, arena = cpu.heapAllocator;
+	const thread = cpu.rootThread, arena = nativeHeapReference(cpu).heapAllocator;
 	resizeThreadStackReference(cpu, thread, 1536);
 	const base = memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
 	while (arena.allocate(4096, true) !== 0) {}
@@ -153,10 +154,10 @@ test('a stack grows when only its increment fits and rewinds to the old tag plan
 
 test('second-lane physical failure does not publish either replacement or charge', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(callImage(8, 1));
-	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = cpu.heapAllocator;
+	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = nativeHeapReference(cpu).heapAllocator;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	frame.registers.setInteger(0, 73); frame.top = 1;
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
 	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
 	const newValues = 128, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
@@ -371,18 +372,18 @@ return pcall(target)
 		seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 		cpu.runUntilDepth(0, 1);
 		const caller = thread.currentFrame!, prepared = thread.acquireFrame();
-		const live = cpu.stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
+		const live = nativeHeapReference(cpu).stringPool.intern('caller-only-across-admission'); caller.registers.set(0, valueString(live));
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.setCollectionTarget(trackedBytes);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CALL] + 6);
 		assert.ok(cpu.gc.active(), 'stack growth triggers an allocation assist');
 		assert.equal(thread.currentFrame, prepared); assert.equal(thread.firstFrame, caller); assert.equal(thread.frameDepth, 2);
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
-		prepared.registers.set(7, valueString(cpu.stringPool.intern('retired-frame-only')));
+		prepared.registers.set(7, valueString(nativeHeapReference(cpu).stringPool.intern('retired-frame-only')));
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, prepared);
 		assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
-		cpu.gc.collect();
+		nativeHeapReference(cpu).gc.collect();
 		assert.equal(cpu.stringPool.find('retired-frame-only'), undefined, 'unused retained frames and their old windows are not roots');
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
 	});
@@ -394,9 +395,9 @@ return pcall(target)
 		for (let grant = 0; grant < 8 && thread.frameDepth !== 2; ++grant) cpu.runUntilDepth(0, 1);
 		assert.equal(thread.frameDepth, 2);
 		const caller = thread.firstFrame!, callee = thread.currentFrame!;
-		const result = cpu.stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
+		const result = nativeHeapReference(cpu).stringPool.intern('returning-frame-only'); callee.registers.set(0, valueString(result)); callee.top = 1;
 		const trackedBytes = cpu.luaHeap.usedBytes();
-		cpu.luaHeap.setCollectionTarget(trackedBytes);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(trackedBytes);
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.ok(cpu.gc.active(), 'caller window growth triggers an allocation assist');
 		assert.equal(cpu.stringPool.find('returning-frame-only'), result);
@@ -414,7 +415,7 @@ return pcall(target)
 		if (completion) {
 			const values = cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock);
 			const frames = cpu.memory.readRamRecordWord(thread.address + ThreadField.FrameBlock);
-			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, cpu.gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+			assert.throws(() => cpu.beginCompletionCall(caller.registers.getClosure(0, nativeHeapReference(cpu).gc)), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 			assert.equal(thread.frameDepth, 1); assert.equal(thread.stackTop, 8);
 			assert.equal(caller.next, null, 'an impossible extent is rejected before a frame view is acquired');
 			assert.equal(cpu.memory.readRamRecordWord(thread.address + ThreadField.StackBlock), values);

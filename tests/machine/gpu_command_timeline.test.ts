@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as io from '../../machine/ts/spec/bmsx/io';
@@ -19,7 +20,7 @@ function fixture() {
 	const memory = new Memory({ systemRom: new Uint8Array(8), cartridgeSlots: cartridgeSlots(new Uint8Array(8)) }, spec.ramBytes);
 	const irq = new IrqController(memory), cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	// DMA command words occupy the static page at offset 0x1000.
-	assert.equal(cpu.heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x2000), true);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x2000), true);
 	const scheduler = new DeviceScheduler(cpu), dma = new DmaController(memory, cpu, irq, scheduler);
 	const gpu = new GxGpu(memory, cpu, irq, scheduler, dma, spec.gxGpuVramBytes);
 	memory.cartridgeController.connect(memory, irq, dma);

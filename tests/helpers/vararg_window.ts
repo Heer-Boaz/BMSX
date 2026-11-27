@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import assert from 'node:assert/strict';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, valuePayload, type Value } from '../../machine/ts/machine/cpu/value';
@@ -22,11 +23,11 @@ export function varargWindowFixture(level: 0 | 3) {
 	const romBytes = writeTestBlua32Rom(linkManagedTestSystem(source, level));
 	const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	runGuestToHalt(cpu, 1_000_000);
 	const [value] = runtime.readCompletionValues();
 	const closure = valuePayload(value);
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		return { result, used: cycles - cpu.instructionBudgetRemaining };

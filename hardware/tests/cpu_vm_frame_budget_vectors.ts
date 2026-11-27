@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../tests/helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../../tests/helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../tests/helpers/global_bank_reference';
 // Exercise the actual CPU's logical accounting for recursive stack slots and
@@ -18,7 +19,7 @@ const image = linkRawTestSystemBlua32({
 	globalNames: ['rec'],
 });
 const { cpu } = createTestSystemCpu(image);
-setReferenceGlobal(cpu, cpu.stringPool.intern('rec'), valueClosure(cpu.activeThread.frameAtDepth(0)!.closure));
+setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('rec'), valueClosure(cpu.activeThread.frameAtDepth(0)!.closure));
 const before = collectReferenceHeapBytes(cpu);
 const initialCapacity = cpu.activeThread.stackRegisters.capacity();
 cpu.runUntilDepth(0, 20000);
@@ -56,7 +57,7 @@ for (const nameCount of [0, 16]) {
 	globalCpu.runUntilDepth(0, 1000);
 	const finalCharge = globalCpu.luaHeap.usedBytes();
 	for (let index = 0; index < nameCount; index += 1) {
-		const name = globalCpu.stringPool.intern(names[index], false);
+		const name = nativeHeapReference(globalCpu).stringPool.intern(names[index]);
 		if (globalCpu.getGlobalByKey(name) !== index) {
 			throw Error(`global slot ${index} did not retain its guest-written Number`);
 		}

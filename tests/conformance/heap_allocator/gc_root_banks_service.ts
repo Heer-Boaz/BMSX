@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -42,16 +43,16 @@ try {
 		writeFileSync(cartRom, system.cartRomBytes);
 		const runtime = new Runtime({ systemRomBytes: system.systemRomBytes, cartridgeSlots: cartridgeSlots(system.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory } = runtime.machine, { gc } = cpu;
-		const { heapAllocator: arena } = cpu;
+		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
+		const { heapAllocator: arena } = nativeHeapReference(cpu);
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const metadata = management + HEAP_STRING_METADATA_OFFSET, rootThread = cpu.rootThread.address;
 		const rootCursor = () => memory.readRamRecordWord(control + GC_ROOT_CURSOR);
 		const epochWork = () => memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK - 4);
 		const marked = (id: number) => (memory.readRamRecordByte(id + 1) & 1) === (memory.readRamRecordWord(metadata + 12) & 1);
-		const name = cpu.stringPool.intern(nameText), value = cpu.stringPool.intern(valueText);
+		const name = nativeHeapReference(cpu).stringPool.intern(nameText), value = nativeHeapReference(cpu).stringPool.intern(valueText);
 		setReferenceGlobal(cpu, name, valueString(value));
-		const constants = constantTexts.map(text => cpu.stringPool.intern(text));
+		const constants = constantTexts.map(text => nativeHeapReference(cpu).stringPool.intern(text));
 		for (const id of [name, value, ...constants]) assert.ok(id >= RAM_BASE);
 		assert.equal(cpu.rootBankSlots(GcRootBank.Cart0Constants), 0);
 		const image = cpu['executionImageForDomain'](0)!;

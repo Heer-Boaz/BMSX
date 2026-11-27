@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import assert from 'node:assert/strict';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
@@ -5,7 +6,7 @@ import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { GcDiagnostics } from '../../machine/ts/machine/cpu/gc_diagnostics';
+import { GcDiagnostics } from './native_heap/gc_diagnostics';
 import { BLUA32_FUNCTION_CODE_ADDRESS_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { MAPPED_BUS_MASTER_CPU } from '../../machine/ts/machine/memory/bus_signals';
 import { MAPPED_PAGE_BYTE_MASK, type MappedPageBinding } from '../../machine/ts/machine/memory/mapped_page';
@@ -73,7 +74,7 @@ return true`;
 
 export function runGcPressureStage(cpu: CPU): void {
 	for (let call = 0; call < 12000; ++call) {
-		if (cpu.gc.finalMarkPending()) { cpu.gc.stepFinalMark(); continue; }
+		if (cpu.gc.finalMarkPending()) { nativeHeapReference(cpu).gc.stepFinalMark(); continue; }
 		const result = cpu.runUntilDepth(0, call % 3 === 0 ? 1 : call % 3 === 1 ? 17 : 2048);
 		if (cpu.readExceptionReturnFrameDepth() !== -1) assert.fail(`guest fault ${cpu.readLuaFaultReasonWord()} at ${cpu.readEpcWord().toString(16)}: ${valueToString(cpu.readFrameRegister(cpu.readExceptionReturnFrameDepth(), 0), cpu.stringPool)}`);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
@@ -87,7 +88,7 @@ export function runGcPressureStage(cpu: CPU): void {
 }
 
 export function exerciseGcPressure(cpu: CPU, compiled = false): void {
-	const diagnostics = cpu.gc.diagnostics = new GcDiagnostics();
+	const diagnostics = nativeHeapReference(cpu).gc.diagnostics = new GcDiagnostics();
 	const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 	runGcPressureStage(cpu);
 	if (compiled) for (const name of ['assign', 'change']) {

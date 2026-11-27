@@ -1,3 +1,4 @@
+import { bindReferenceDlmalloc } from '../helpers/native_heap/dlmalloc_wasm';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAPPED_PAGE_BYTE_SHIFT, MAPPED_PAGE_BYTE_SIZE } from '../../machine/ts/machine/memory/mapped_page';
@@ -20,7 +21,7 @@ test('Wasm allocator uses the installed RAM extent and the normal rewind watches
 	assert.equal(watches.groupData().length, (ramBytes + MAPPED_PAGE_BYTE_SIZE - 1) >>> MAPPED_PAGE_BYTE_SHIFT);
 
 	source.setRamBusEnd(RAM_BASE + floor);
-	const allocator = source.bindDlmalloc(state);
+	const allocator = bindReferenceDlmalloc(source, state);
 	allocator.reset(floor, limit);
 	const history = new RamHistory();
 	history.start(source);
@@ -42,7 +43,7 @@ test('Wasm allocator uses the installed RAM extent and the normal rewind watches
 
 	// The new instance receives only guest bytes, not their Wasm backing tail.
 	const restored = new Memory(init, ramBytes);
-	const second = restored.bindDlmalloc(state);
+	const second = bindReferenceDlmalloc(restored, state);
 	restored.restoreSaveState(source.captureSaveState());
 	assert.equal(second.floor(), floor);
 	assert.equal(second.allocationBytes(offset), allocator.allocationBytes(offset));

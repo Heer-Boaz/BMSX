@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -67,7 +68,7 @@ for (const optLevel of [0, 3] as const) {
 			const memory = new Memory({ systemRom: linked.romBytes, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
 			return new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 		}
-		const cpu = machine(), oracle = machine(), { memory, heapAllocator: arena } = cpu;
+		const cpu = machine(), oracle = machine(), { memory } = cpu, { heapAllocator: arena } = nativeHeapReference(cpu);
 		cpu.reset(); // maps immutable instructions so the test can enter from the existing fixed fixture
 		const management = arena.managementOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
 		const constantAddress = readLE32(linked.romBytes, linked.image.address + BLUA32_IMAGE_CONSTANT_TABLE_ADDRESS_OFFSET);
@@ -78,9 +79,9 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(nativeIds.every(id => id >= RAM_BASE));
 		// Independent C/WASM allocator and TS StringPool with the exact original
 		// bytes, not restored arena metadata or injected addresses.
-		resetAllocatorReference(oracle.memory, oracle.heapAllocator, DYNAMIC_RAM_BASE);
-		oracle.luaHeap.setCollectionTarget(1024 * 1024);
-		assert.deepEqual(startupTexts.map(text => oracle.stringPool.intern(text)), nativeIds);
+		resetAllocatorReference(oracle.memory, nativeHeapReference(oracle).heapAllocator, DYNAMIC_RAM_BASE);
+		nativeHeapReference(oracle).luaHeap.setCollectionTarget(1024 * 1024);
+		assert.deepEqual(startupTexts.map(text => nativeHeapReference(oracle).stringPool.intern(text)), nativeIds);
 
 		const start = (index: number, args: number[]) => assert.ok(cpu.beginHeapService(linked.image.functions[index].address, args));
 		const grant = (cycles: number) => {

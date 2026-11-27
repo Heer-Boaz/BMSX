@@ -1,3 +1,5 @@
+import { nativeHeapReference } from './native_heap/reference';
+import { bindReferenceDlmalloc } from './native_heap/dlmalloc_wasm';
 import { type OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import assert from 'node:assert/strict';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
@@ -108,10 +110,10 @@ const fixtureFaultTexts = [
 
 /** Admit the native reference's initial heap on a fresh test CPU after raw reset. */
 export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: ExecutionAddressSpace): void {
-	const { memory, heapAllocator: arena, gc, luaHeap, stringPool } = cpu;
+	const { memory } = cpu, { heapAllocator: arena, gc, luaHeap, stringPool } = nativeHeapReference(cpu);
 	const boot = executionAddressSpace.resolveSystemDomain();
 	const management = arena.managementOffset(), floor = arena.floorOffset(boot.staticEnd);
-	memory.bindDlmalloc(arena.allocatorStateOffset()).reset(floor, management);
+	bindReferenceDlmalloc(memory, arena.allocatorStateOffset()).reset(floor, management);
 	memory.setRamBusEnd(RAM_BASE + floor);
 	luaHeap.setCollectionTarget(1024 * 1024);
 
@@ -172,7 +174,7 @@ export function admitTestHeapServiceCpu(cpu: CPU, executionAddressSpace: Executi
 			executionAddressSpace.bindReadOnlyView(domain, readLE32(header, h + tableOffset), count * BLUA32_GLOBAL_NAME_RECORD_SIZE, view);
 			for (let slot = 0; slot < count; ++slot) {
 				const name = stringPool.resolveImageRecord(domain, readLE32(view.bytes, view.byteOffset + slot * BLUA32_GLOBAL_NAME_RECORD_SIZE + BLUA32_GLOBAL_NAME_ADDRESS_OFFSET));
-				memory.writeRamRecordWord(output, registerReferenceGlobalName(cpu.gc, bank, name));
+				memory.writeRamRecordWord(output, registerReferenceGlobalName(nativeHeapReference(cpu).gc, bank, name));
 				output += 4;
 			}
 		}

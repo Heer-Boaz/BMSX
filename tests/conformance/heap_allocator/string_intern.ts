@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -93,7 +94,7 @@ try {
 			const makeRuntime = () => new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(cart0, cart1), machineModel: PSX_MACHINE_SPEC }, input);
 			const runtime = makeRuntime();
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, stringPool: pool, gc } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, stringPool: pool, gc } = nativeHeapReference(cpu);
 			runGuestToHalt(cpu, 300_000);
 			const [systemId, firstId] = runtime.readCompletionValues().map(valuePayload);
 			const management = arena.managementOffset(), metadata = management + HEAP_STRING_METADATA_OFFSET;
@@ -134,13 +135,13 @@ try {
 					while (arena.allocate(bytes, true)) { /* saturate physical runs, not the quota */ }
 				assert.equal(arena.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
 			}
-			cpu.luaHeap.setCollectionTarget(scenario === 'logical-assist' ? cpu.luaHeap.usedBytes() : cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(scenario === 'logical-assist' ? cpu.luaHeap.usedBytes() : cpu.luaHeap.capacity());
 			const policyCycles = scenario === 'logical-assist' || scenario === 'physical-assist' ? 4096 : 0;
 			const request = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 			if (scenario === 'logical-assist') {
-				const debt = cpu.luaHeap.allocationDebt(request);
+				const debt = nativeHeapReference(cpu).luaHeap.allocationDebt(request);
 				assert.ok(debt > 0);
-				assert.ok(cpu.luaHeap.logicalAssistAllowance(debt, cpu.luaHeap.logicalAssistPressure(request)) * GC_WORK_WORD_CYCLES <= policyCycles);
+				assert.ok(nativeHeapReference(cpu).luaHeap.logicalAssistAllowance(debt, nativeHeapReference(cpu).luaHeap.logicalAssistPressure(request)) * GC_WORK_WORD_CYCLES <= policyCycles);
 			}
 			if (scenario === 'physical-assist') {
 				// Start the original collector's real pacing window. Grow the arena
@@ -152,7 +153,7 @@ try {
 				while (growth < arena.capacityBytes() && gc.reservationAssistAllowance(growth) === null) growth *= 2;
 				assert.ok(growth + arena.occupiedBytes() < arena.capacityBytes());
 				assert.notEqual(arena.allocate(growth, true), 0);
-				assert.equal(cpu.luaHeap.allocationDebt(request), 0);
+				assert.equal(nativeHeapReference(cpu).luaHeap.allocationDebt(request), 0);
 				const allowance = gc.reservationAssistAllowance(request);
 				assert.ok(allowance !== null && allowance > 0 && allowance * GC_WORK_WORD_CYCLES <= policyCycles);
 			}
@@ -165,7 +166,7 @@ try {
 			// Native reference calls StringPool in Idle (no host quantum clamp).
 			// Both assist fixtures explicitly fit within the supplied BLua policy allowance.
 			let reference = 0;
-			try { reference = internStringSliceReference(oracle.machine.cpu.stringPool, source, 2, text.length); }
+			try { reference = internStringSliceReference(nativeHeapReference(oracle.machine.cpu).stringPool, source, 2, text.length); }
 			catch (error) {
 				if (knownFault) {
 					assert.match((error as Error).message, knownFault === 1 ? /String chain is invalid/ : knownFault === 2 ? /String header is invalid/ : /String is truncated/);

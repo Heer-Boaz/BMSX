@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import { runGuestToHalt, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
@@ -41,11 +42,11 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			reserveThreadFrameReference(cpu, cpu.rootThread, 24); // Measure the call once its Value and frame space is available.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, read = base + 3 * INSTRUCTION_BYTES;
-			const indexKey = cpu.stringPool.intern('__index');
-			const key = op === OpCode.GETT ? valueFloat(1) : op === OpCode.GETI ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
+			const indexKey = nativeHeapReference(cpu).stringPool.intern('__index');
+			const key = op === OpCode.GETT ? valueFloat(1) : op === OpCode.GETI ? valueInteger(1) : valueString(nativeHeapReference(cpu).stringPool.intern('field'));
 			const table = createReferenceTable(cpu), forwarded = createReferenceTable(cpu);
 			const meta = createReferenceTable(cpu, 0, 1), forwardedMeta = createReferenceTable(cpu, 0, 1);
-			cpu.gc.tables.set(table, key, valueBool(false));
+			nativeHeapReference(cpu).gc.tables.set(table, key, valueBool(false));
 			frame.registers.setTable(0, table); frame.registers.set(1, key);
 			frame.registers.setInteger(12, 91); frame.top = 13;
 			const readCycles = BASE_CYCLES[op];
@@ -54,10 +55,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.runUntilDepth(0, (readCycles + 6) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)
 				assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-			cpu.gc.tables.setStringKey(meta, indexKey, valueTable(forwarded));
-			cpu.gc.tables.setStringKey(forwardedMeta, indexKey, frame.registers.get(10));
-			cpu.gc.tables.setMetatableAddress(table, meta); cpu.gc.tables.setMetatableAddress(forwarded, forwardedMeta);
-			cpu.gc.tables.set(table, key, valueNil());
+			nativeHeapReference(cpu).gc.tables.setStringKey(meta, indexKey, valueTable(forwarded));
+			nativeHeapReference(cpu).gc.tables.setStringKey(forwardedMeta, indexKey, frame.registers.get(10));
+			nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, meta); nativeHeapReference(cpu).gc.tables.setMetatableAddress(forwarded, forwardedMeta);
+			nativeHeapReference(cpu).gc.tables.set(table, key, valueNil());
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 			frame.registers.setInteger(8, 57);
 			assert.equal(cpu.runUntilDepth(0, 3), RunResult.Yielded);
@@ -149,16 +150,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
 			const root = createReferenceTable(cpu), meta = createReferenceTable(cpu, 0, 128), parent = createReferenceTable(cpu, 2, 1);
-			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
-			const method = valueString(cpu.stringPool.intern('__index'));
+			const key = kind === 'string' ? valueString(nativeHeapReference(cpu).stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
+			const method = valueString(nativeHeapReference(cpu).stringPool.intern('__index'));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
-			cpu.gc.tables.setMetatableAddress(root, meta); cpu.gc.tables.set(parent, key, valueBool(false));
+			nativeHeapReference(cpu).gc.tables.setMetatableAddress(root, meta); nativeHeapReference(cpu).gc.tables.set(parent, key, valueBool(false));
 			for (let i = 0, n = 0; i < 96; ++i) {
-				if (inherited && i === 1) cpu.gc.tables.set(meta, method, valueTable(parent));
+				if (inherited && i === 1) nativeHeapReference(cpu).gc.tables.set(meta, method, valueTable(parent));
 				else {
 					let other: Value;
 					do other = valueInteger(n++); while (((hashCanonicalTableKey(other) ^ hashCanonicalTableKey(method)) & 127) !== 0);
-					cpu.gc.tables.set(meta, other, valueInteger(i));
+					nativeHeapReference(cpu).gc.tables.set(meta, other, valueInteger(i));
 				}
 			}
 			const total = 2 + BASE_CYCLES[op] + (inherited ? 32 + 8 : 95);
@@ -173,7 +174,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(frame.registers.get(8), marker ? expected : valueInteger(91));
 			}
 			if (inherited) {
-				cpu.gc.tables.set(meta, method, valueTable(root));
+				nativeHeapReference(cpu).gc.tables.set(meta, method, valueTable(root));
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 				cpu.runUntilDepth(0, 3);
 				assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
@@ -186,16 +187,16 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!;
-			const start = frame.pc, root = createReferenceTable(cpu, 0, 128), key = valueString(cpu.stringPool.intern('field'));
+			const start = frame.pc, root = createReferenceTable(cpu, 0, 128), key = valueString(nativeHeapReference(cpu).stringPool.intern('field'));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			let n = 0, placed = 0;
 			for (const depth of [64, 65, 96]) {
 				while (placed < depth) {
-					if (placed === 1) cpu.gc.tables.set(root, key, valueInteger(73));
+					if (placed === 1) nativeHeapReference(cpu).gc.tables.set(root, key, valueInteger(73));
 					else {
 						let other: Value;
 						do other = valueInteger(n++); while (((hashCanonicalTableKey(other) ^ hashCanonicalTableKey(key)) & 127) !== 0);
-						cpu.gc.tables.set(root, other, valueBool(false));
+						nativeHeapReference(cpu).gc.tables.set(root, other, valueBool(false));
 					}
 					++placed;
 				}
@@ -216,7 +217,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 					frame = cpu.rootThread.currentFrame!;
 				}
 			}
-			cpu.gc.tables.set(root, key, valueNil());
+			nativeHeapReference(cpu).gc.tables.set(root, key, valueNil());
 			chain(cpu, root, 2, key, valueBool(false));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 			cpu.runUntilDepth(0, 3);
@@ -232,12 +233,12 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 		const { image } = readProgram(op, false, names), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
-			const key = valueString(cpu.stringPool.intern('field')), root = createReferenceTable(cpu, 0, 8);
+			const key = valueString(nativeHeapReference(cpu).stringPool.intern('field')), root = createReferenceTable(cpu, 0, 8);
 			frame.registers.setTable(0, root); frame.registers.set(1, key); frame.top = 2;
-			const collisions = names.map(name => valueString(cpu.stringPool.intern(name)))
+			const collisions = names.map(name => valueString(nativeHeapReference(cpu).stringPool.intern(name)))
 				.filter(candidate => ((hashCanonicalTableKey(candidate) ^ hashCanonicalTableKey(key)) & 7) === 0);
 			assert.ok(collisions.length >= 8);
-			for (let i = 0; i < 8; ++i) cpu.gc.tables.set(root, collisions[i], valueInteger(i + 1));
+			for (let i = 0; i < 8; ++i) nativeHeapReference(cpu).gc.tables.set(root, collisions[i], valueInteger(i + 1));
 			const total = 2 + BASE_CYCLES[op] + 7;
 			cpu.runUntilDepth(0, (total + 4) * 68);
 			if (backend === CpuExecutionBackend.JavaScript)
@@ -252,8 +253,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(frame.registers.get(8), marker ? valueNil() : valueInteger(91));
 			}
 			const meta = createReferenceTable(cpu, 0, 1);
-			cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root));
-			cpu.gc.tables.setMetatableAddress(root, meta);
+			nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(root));
+			nativeHeapReference(cpu).gc.tables.setMetatableAddress(root, meta);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
 			cpu.runUntilDepth(0, 3);
 			assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);
@@ -266,9 +267,9 @@ function chain(cpu: CPU, root: number, depth: number, key: Value, value: Value):
 	let current = root;
 	for (let i = 1; i < depth; ++i) {
 		const next = createReferenceTable(cpu, 2, 2), meta = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(next)); cpu.gc.tables.setMetatableAddress(current, meta); current = next;
+		nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(next)); nativeHeapReference(cpu).gc.tables.setMetatableAddress(current, meta); current = next;
 	}
-	cpu.gc.tables.set(current, key, value);
+	nativeHeapReference(cpu).gc.tables.set(current, key, value);
 	return current;
 }
 
@@ -278,15 +279,15 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			const { image, starts } = readProgram(op, wide), { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + starts[0] * INSTRUCTION_BYTES;
-			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
-			const root = createReferenceTable(cpu, 2, 2); cpu.gc.tables.set(root, key, valueBool(false));
+			const key = kind === 'string' ? valueString(nativeHeapReference(cpu).stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
+			const root = createReferenceTable(cpu, 2, 2); nativeHeapReference(cpu).gc.tables.set(root, key, valueBool(false));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			const ownLoop = 2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2;
 			cpu.runUntilDepth(0, ownLoop * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
-			cpu.gc.tables.set(root, key, valueNil()); chain(cpu, root, depth, key, valueBool(false));
+			nativeHeapReference(cpu).gc.tables.set(root, key, valueNil()); chain(cpu, root, depth, key, valueBool(false));
 			if (depth === 1) {
-				const meta = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
+				const meta = createReferenceTable(cpu, 0, 1); nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(root)); nativeHeapReference(cpu).gc.tables.setMetatableAddress(root, meta);
 			}
 			const lookup = (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 8 * (depth - 1);
 			const charges = [2, lookup, 2, 2], total = charges.reduce((a, b) => a + b, 0);
@@ -326,13 +327,13 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		for (const [op, kind] of forms) for (const cyclic of [false, true]) {
 			const { image, starts } = readProgram(op, wide), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, base = frame.pc;
-			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
-			const root = createReferenceTable(cpu, 2, 2); cpu.gc.tables.set(root, key, valueInteger(73));
+			const key = kind === 'string' ? valueString(nativeHeapReference(cpu).stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
+			const root = createReferenceTable(cpu, 2, 2); nativeHeapReference(cpu).gc.tables.set(root, key, valueInteger(73));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			cpu.runUntilDepth(0, (2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2) * 64);
-			cpu.gc.tables.set(root, key, valueNil());
+			nativeHeapReference(cpu).gc.tables.set(root, key, valueNil());
 			if (cyclic) {
-				const meta = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
+				const meta = createReferenceTable(cpu, 0, 1); nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(root)); nativeHeapReference(cpu).gc.tables.setMetatableAddress(root, meta);
 			} else chain(cpu, root, 33, key, valueInteger(73));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			frame.registers.setInteger(8, 57);
@@ -348,20 +349,20 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 
 	test(`String receiver starts at installed index Table and follows live prototype replacement (${backend}, WIDE=${wide})`, () => {
 		const { image, starts } = readProgram(OpCode.GETFIELD, wide), { cpu } = createTestSystemCpu(image, backend);
-		const frame = cpu.rootThread.currentFrame!, base = frame.pc, key = valueString(cpu.stringPool.intern('field'));
-		const installed = createReferenceTable(cpu, 0, 2); cpu.gc.tables.set(installed, key, valueInteger(19));
+		const frame = cpu.rootThread.currentFrame!, base = frame.pc, key = valueString(nativeHeapReference(cpu).stringPool.intern('field'));
+		const installed = createReferenceTable(cpu, 0, 2); nativeHeapReference(cpu).gc.tables.set(installed, key, valueInteger(19));
 		const remark = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexTag, ValueTag.Table);
 		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexWord, installed);
-		frame.registers.set(0, valueString(cpu.stringPool.intern('receiver')));
+		frame.registers.set(0, valueString(nativeHeapReference(cpu).stringPool.intern('receiver')));
 		cpu.runUntilDepth(0, 22 * 64);
-		cpu.gc.tables.set(installed, key, valueNil()); chain(cpu, installed, 3, key, valueInteger(73));
+		nativeHeapReference(cpu).gc.tables.set(installed, key, valueNil()); chain(cpu, installed, 3, key, valueInteger(73));
 		const loop = base + starts[0] * INSTRUCTION_BYTES;
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		frame.registers.setInteger(8, 57); cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 32);
 		assert.equal(frame.registers.getInteger(6), 73); assert.equal(frame.registers.getInteger(8), 57);
-		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(installed), cpu.stringPool.intern('__index'), valueTable(createReferenceTable(cpu)));
+		nativeHeapReference(cpu).gc.tables.setStringKey(cpu.gc.tables.metatableAddress(installed), nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(createReferenceTable(cpu)));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 24);

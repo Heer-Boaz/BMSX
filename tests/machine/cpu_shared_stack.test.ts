@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
@@ -129,7 +130,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		runGuestToHalt(cpu, 1000);
 		for (const [name, expected] of [['outer_read', 51], ['inner_read', 42]] as const) {
-			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern(name)), cpu.gc));
+			cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(name)), cpu.gc));
 			runGuestToHalt(cpu, 100);
 			const values: Value[] = [];
 			cpu.readCompletionValues(values);
@@ -210,11 +211,11 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 		assert.equal(cpu.rootThread.currentFrame!.top, top);
-		cpu.gc.collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
+		nativeHeapReference(cpu).gc.collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 		const table = cpu.rootThread.currentFrame!.registers.get(2);
 		assert.equal(cpu.rootThread.currentFrame!.registers.getTag(2), ValueTag.Table, 'capture owns its cell independently of the open result range');
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0); cpu.runUntilDepth(0, 100);
-		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('read')), cpu.gc));
+		cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('read')), cpu.gc));
 		cpu.runUntilDepth(0, 100);
 		const values: Value[] = []; cpu.readCompletionValues(values);
 		assert.deepEqual(values, [table]);

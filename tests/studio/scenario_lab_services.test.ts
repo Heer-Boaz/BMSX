@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -257,24 +258,24 @@ test('scenario result service retains aggregate failure and cancellation item st
 
 test('scenario FSM observation consumes the fixed guest channel and fails on overflow', () => {
 	const cpu = createTestSystemCpu(EMPTY_IMAGE).cpu;
-	const stringPool = cpu.stringPool;
+	const stringPool = nativeHeapReference(cpu).stringPool;
 	const records = createReferenceTable(cpu, 2, 0);
 	for (let index = 1; index <= 2; index += 1) {
 		const record = createReferenceTable(cpu, 6, 0);
-		cpu.gc.tables.setInteger(record, 1, valueInteger(index));
-		cpu.gc.tables.setInteger(record, 2, valueInteger(100 + index));
-		cpu.gc.tables.setInteger(record, 3, valueString(stringPool.intern('machine:/lane')));
-		cpu.gc.tables.setInteger(record, 4, valueString(stringPool.intern(`machine:/from_${index}`)));
-		cpu.gc.tables.setInteger(record, 5, valueString(stringPool.intern(`machine:/to_${index}`)));
-		cpu.gc.tables.setInteger(record, 6, valueBool(index === 2));
-		cpu.gc.tables.setInteger(records, index, valueTable(record));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 1, valueInteger(index));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 2, valueInteger(100 + index));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 3, valueString(stringPool.intern('machine:/lane')));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 4, valueString(stringPool.intern(`machine:/from_${index}`)));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 5, valueString(stringPool.intern(`machine:/to_${index}`)));
+		nativeHeapReference(cpu).gc.tables.setInteger(record, 6, valueBool(index === 2));
+		nativeHeapReference(cpu).gc.tables.setInteger(records, index, valueTable(record));
 	}
 	const channel = createReferenceTable(cpu, 5, 0);
-	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('object.machine')));
-	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('machine')));
-	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));
-	cpu.gc.tables.setInteger(channel, 4, valueInteger(2));
-	cpu.gc.tables.setInteger(channel, 5, valueTable(records));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 1, valueString(stringPool.intern('object.machine')));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 2, valueString(stringPool.intern('machine')));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 3, valueInteger(2));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 4, valueInteger(2));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 5, valueTable(records));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -283,7 +284,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new FsmTransitionObservation(channel, stringPool, cpu.gc, (...record) => service.appendFsmTransition(trace, ...record));
+	const observation = new FsmTransitionObservation(channel, stringPool, nativeHeapReference(cpu).gc, (...record) => service.appendFsmTransition(trace, ...record));
 	const trace = service.beginFsmTransitionTrace(result, observation.instanceId, observation.machineId, TEST_CARTRIDGE_CONTEXT_IDS[0]);
 	observation.drain(20);
 
@@ -298,34 +299,34 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		trace.transitions.at(0).outcome,
 	], [1, 101, 20, 'machine:/from_1', 'machine:/to_1', 'rejected']);
 	assert.equal(trace.transitions.at(1).outcome, 'committed');
-	cpu.gc.tables.setInteger(channel, 4, valueInteger(5));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 
 test('scenario ActionEffect observation consumes ordered producer facts and fails on overflow', () => {
 	const cpu = createTestSystemCpu(EMPTY_IMAGE).cpu;
-	const stringPool = cpu.stringPool;
+	const stringPool = nativeHeapReference(cpu).stringPool;
 	const records = createReferenceTable(cpu, 2, 0);
 	const activation = createReferenceTable(cpu, 5, 0);
-	cpu.gc.tables.setInteger(activation, 1, valueInteger(1));
-	cpu.gc.tables.setInteger(activation, 2, valueInteger(301));
-	cpu.gc.tables.setInteger(activation, 3, valueString(stringPool.intern('activate')));
-	cpu.gc.tables.setInteger(activation, 4, valueString(stringPool.intern('fire')));
-	cpu.gc.tables.setInteger(activation, 5, valueInteger(1));
-	cpu.gc.tables.setInteger(records, 1, valueTable(activation));
+	nativeHeapReference(cpu).gc.tables.setInteger(activation, 1, valueInteger(1));
+	nativeHeapReference(cpu).gc.tables.setInteger(activation, 2, valueInteger(301));
+	nativeHeapReference(cpu).gc.tables.setInteger(activation, 3, valueString(stringPool.intern('activate')));
+	nativeHeapReference(cpu).gc.tables.setInteger(activation, 4, valueString(stringPool.intern('fire')));
+	nativeHeapReference(cpu).gc.tables.setInteger(activation, 5, valueInteger(1));
+	nativeHeapReference(cpu).gc.tables.setInteger(records, 1, valueTable(activation));
 	const rejection = createReferenceTable(cpu, 5, 0);
-	cpu.gc.tables.setInteger(rejection, 1, valueInteger(2));
-	cpu.gc.tables.setInteger(rejection, 2, valueInteger(302));
-	cpu.gc.tables.setInteger(rejection, 3, valueString(stringPool.intern('trigger')));
-	cpu.gc.tables.setInteger(rejection, 4, valueString(stringPool.intern('fire')));
-	cpu.gc.tables.setInteger(rejection, 5, valueString(stringPool.intern('custom_gate')));
-	cpu.gc.tables.setInteger(records, 2, valueTable(rejection));
+	nativeHeapReference(cpu).gc.tables.setInteger(rejection, 1, valueInteger(2));
+	nativeHeapReference(cpu).gc.tables.setInteger(rejection, 2, valueInteger(302));
+	nativeHeapReference(cpu).gc.tables.setInteger(rejection, 3, valueString(stringPool.intern('trigger')));
+	nativeHeapReference(cpu).gc.tables.setInteger(rejection, 4, valueString(stringPool.intern('fire')));
+	nativeHeapReference(cpu).gc.tables.setInteger(rejection, 5, valueString(stringPool.intern('custom_gate')));
+	nativeHeapReference(cpu).gc.tables.setInteger(records, 2, valueTable(rejection));
 	const channel = createReferenceTable(cpu, 5, 0);
-	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('player.1')));
-	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('player')));
-	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));
-	cpu.gc.tables.setInteger(channel, 4, valueInteger(2));
-	cpu.gc.tables.setInteger(channel, 5, valueTable(records));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 1, valueString(stringPool.intern('player.1')));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 2, valueString(stringPool.intern('player')));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 3, valueInteger(2));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 4, valueInteger(2));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 5, valueTable(records));
 
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -334,7 +335,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.contextId, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
-	const observation = new ActionEffectObservation(channel, stringPool, cpu.gc, {
+	const observation = new ActionEffectObservation(channel, stringPool, nativeHeapReference(cpu).gc, {
 		trigger: (...record) => service.appendActionEffectTrigger(trace, ...record),
 		activity: (...record) => service.appendActionEffectActivity(trace, ...record),
 	});
@@ -361,7 +362,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		kind: 'trigger',
 		outcome: 'custom_gate',
 	});
-	cpu.gc.tables.setInteger(channel, 4, valueInteger(5));
+	nativeHeapReference(cpu).gc.tables.setInteger(channel, 4, valueInteger(5));
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });
 

@@ -1,6 +1,7 @@
+import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HeapAllocator } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HeapAllocator } from "../helpers/native_heap/heap_allocator";
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -13,7 +14,7 @@ const FLOOR = RAM_BASE + 0x126000;
 function fixture() {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const heap = new HeapAllocator(memory);
-	heap.reset(FLOOR);
+	resetAllocatorReference(memory, heap, FLOOR);
 	return { heap, memory };
 }
 

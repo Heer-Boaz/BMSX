@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -86,8 +87,8 @@ test('physical viewport routing reaches only the selected independent machine th
 	};
 	const samples = (target: typeof primary | typeof secondary) => {
 		const cpu = target.runtime.machine.cpu;
-		const game = valuePayload(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))));
-		return asInteger(cpu.gc.tables.getStringKey(game, cpu.stringPool.intern('down_samples')));
+		const game = valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(buildModuleExportSlotName('game', []))));
+		return asInteger(cpu.gc.tables.getStringKey(game, nativeHeapReference(cpu).stringPool.intern('down_samples')));
 	};
 	input.guestInputRecipient = channel;
 	advance(primary); advance(secondary);
@@ -130,7 +131,7 @@ return {kind='integration',
 		physical.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); physical.pollInput();
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
 		assert.equal(play.state, 'ready'); assert.equal(input.fixture.samples, 3);
-		const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
+		const cpu = target.runtime.machine.cpu, pool = nativeHeapReference(cpu).stringPool;
 		const game = valuePayload(cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))));
 		const down = pool.intern('down_samples'), scriptedSamples = input.fixture.samples;
 		input.interactive = true;
@@ -218,14 +219,14 @@ return {kind='integration',
  tests={never=function() error('body must not run') end},
 }`, optLevel);
 		f.drain(); assert.equal(f.play.state, 'ready');
-		const cpu = f.target.runtime.machine.cpu, pool = cpu.stringPool;
+		const cpu = f.target.runtime.machine.cpu, pool = nativeHeapReference(cpu).stringPool;
 		const slot = pool.intern(buildModuleExportSlotName('game', []));
 		const priorGame = valuePayload(cpu.getGlobalByKey(slot));
 		const marker = pool.intern('marker'), closed = pool.intern('closed');
 		const history = f.target.runtime.history;
 		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
 		history.captureCheckpoint();
-		cpu.gc.tables.setStringKey(priorGame, marker, valueInteger(25));
+		nativeHeapReference(cpu).gc.tables.setStringKey(priorGame, marker, valueInteger(25));
 		history.beginSeek(history.latestCycles);
 		const restoredGame = valuePayload(cpu.getGlobalByKey(slot));
 		assert.equal(restoredGame, priorGame, 'rewind restores the original guest address');

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -105,7 +106,7 @@ test('string.byte uses signed word positions in a builtin CALL', () => {
 			}, RAM_CODE_FIXTURE_BYTES), backend);
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setBuiltinFunction(0, BuiltinFunctionId.StringByte);
-			registers.setString(1, cpu.stringPool.intern(textToByteString(source)));
+			registers.setString(1, nativeHeapReference(cpu).stringPool.intern(textToByteString(source)));
 			if (position !== undefined) registers.set(2, position);
 			const pc = cpu.readFramePc(0);
 			const callee = registers.get(0);
@@ -291,7 +292,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
 			assert.equal(cpu.getFrameDepth(), 2);
 			const callee = cpu.rootThread.frameAtDepth(1);
-			const samples: Value[] = [valueFloat(-0), valueNil(), valueBool(false), valueString(cpu.stringPool.intern('result')), valueTable(table)];
+			const samples: Value[] = [valueFloat(-0), valueNil(), valueBool(false), valueString(nativeHeapReference(cpu).stringPool.intern('result')), valueTable(table)];
 			for (let i = 0; i < produced; ++i) callee.registers.set(5 + i, samples[i % 5]);
 			callee.top = 5 + produced;
 			assert.equal(cpu.runUntilDepth(1, 2), RunResult.Halted);
@@ -317,8 +318,8 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 		}, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		const table = createReferenceTable(cpu, 1, 0);
-		const result = valueString(cpu.stringPool.intern('result'));
-		if (kind === 2) cpu.gc.tables.setInteger(table, 1, result);
+		const result = valueString(nativeHeapReference(cpu).stringPool.intern('result'));
+		if (kind === 2) nativeHeapReference(cpu).gc.tables.setInteger(table, 1, result);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setInteger(0, 91); registers.setBoolean(1, true);
 		registers.setBuiltinFunction(2, kind === 0 ? BuiltinFunctionId.SetFrameRegister : BuiltinFunctionId.Next);

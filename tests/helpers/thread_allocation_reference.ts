@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import { writeLE32 } from '../../machine/ts/common/endian';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -12,7 +13,7 @@ import { RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 export function resizeThreadStackReference(cpu: CPU, thread: Thread, capacity: number): void {
 	const previous = thread.stackRegisters.capacity();
 	if (capacity === previous) return;
-	if (capacity < previous) cpu.gc.threads.resizeStackBacking(thread.address, capacity);
+	if (capacity < previous) nativeHeapReference(cpu).gc.threads.resizeStackBacking(thread.address, capacity);
 	else reserveThreadStorageReference(cpu, thread.address, capacity, 0, valueNil());
 	thread.bindStack();
 }
@@ -30,7 +31,7 @@ export function reserveThreadFrameReference(cpu: CPU, thread: Thread, values: nu
 }
 
 function growFrameBacking(cpu: CPU, address: number, capacity: number, staged = 0): number {
-	const { memory, heapAllocator: arena, luaHeap: budget } = cpu, ram = memory.ramData();
+	const { memory } = cpu, { heapAllocator: arena, luaHeap: budget } = nativeHeapReference(cpu), ram = memory.ramData();
 	const oldBlock = memory.readRamRecordWord(address + ThreadField.FrameBlock);
 	const bytes = capacity * FRAME_CONTROL_BYTES;
 	const block = staged || (oldBlock !== 0 ? arena.resizeBacking(oldBlock, bytes) : arena.allocate(bytes, true));
@@ -53,7 +54,7 @@ function growFrameBacking(cpu: CPU, address: number, capacity: number, staged = 
 export function reserveThreadStorageReference(cpu: CPU, address: number, valueCapacity: number, frameCapacity: number, root: Value): void {
 	const valueBytes = valueCapacity * THREAD_STACK_SLOT_BYTES;
 	const frameBytes = frameCapacity * FRAME_CONTROL_BYTES;
-	const { memory, luaHeap: budget, gc, heapAllocator: arena } = cpu;
+	const { memory } = cpu, { luaHeap: budget, gc, heapAllocator: arena } = nativeHeapReference(cpu);
 	const previousValues = valueCapacity !== 0 ? memory.readRamRecordWord(address + ThreadField.StackCapacity) * THREAD_STACK_SLOT_BYTES : 0;
 	const previousFrames = frameCapacity !== 0
 		? (memory.readRamRecordWord(address + ThreadField.FrameCapacity) & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES : 0;
@@ -104,7 +105,7 @@ function initializeThread(cpu: CPU, address: number, block: number, frameBlock: 
 }
 
 export function allocateThreadRecordReference(cpu: CPU, entry: number): number {
-	const { luaHeap: budget, heapAllocator: arena, gc } = cpu;
+	const { luaHeap: budget, heapAllocator: arena, gc } = nativeHeapReference(cpu);
 	const valueBytes = THREAD_INITIAL_VALUES * THREAD_STACK_SLOT_BYTES;
 	const frameBytes = THREAD_INITIAL_FRAMES * FRAME_CONTROL_BYTES;
 	const charged = THREAD_HEAP_BYTES + valueBytes + frameBytes;

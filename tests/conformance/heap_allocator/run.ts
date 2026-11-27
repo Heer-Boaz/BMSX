@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HeapAllocator } from '../../../machine/ts/machine/cpu/heap_allocator';
+import { HeapAllocator } from "../../helpers/native_heap/heap_allocator";
 import { Memory } from '../../../machine/ts/machine/memory/memory';
 import { DYNAMIC_RAM_BASE, HEAP_PAGE_SIZE, RAM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';

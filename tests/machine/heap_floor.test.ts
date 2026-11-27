@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -71,7 +72,7 @@ test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetche
 	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.JMP, 0, 63, 62, 255);
-	assert.equal(cpu.heapAllocator.setFloor(pc + HEAP_PAGE_SIZE), true);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(pc + HEAP_PAGE_SIZE), true);
 	memory.writeBytes(pc, code);
 	select(pc);
 	const loop = BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
@@ -80,7 +81,7 @@ test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetche
 	const page = cpu.rootThread.currentFrame!.decodedPage!;
 	assert.ok(page.compiledBlocks?.entries[0], 'a warm executable page is translated');
 	const ram = memory.captureSaveState(), saved = cpu.captureRuntimeState();
-	assert.equal(cpu.heapAllocator.setFloor(pc), true);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(pc), true);
 	assert.ok(!page.compiledBlocks?.entries[0], 'the floor change retires coded entries');
 	assert.equal(memory.readRamRecordWord(pc), readInstructionWord(code, 0), 'the dormant code bytes still exist in physical RAM');
 	assert.equal(memory.readMappedU32LE(pc), 0, 'the retired page is no longer mapped on the system bus');
@@ -100,7 +101,7 @@ test('warm RAM code is retired when the floor shrinks and WIDE obeys both fetche
 	writeInstruction(code, 0, OpCode.WIDE, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 0, 0, 0);
 	memory.writeBytes(pc - INSTRUCTION_BYTES, code);
-	assert.equal(cpu.heapAllocator.setFloor(pc), true);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(pc), true);
 	select(pc - INSTRUCTION_BYTES);
 	cpu.runUntilDepth(0, 1);
 	assert.equal(cpu.readCauseWord(), CPU_CAUSE_CODE_INSTRUCTION_BUS_ERROR);

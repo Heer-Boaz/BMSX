@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -56,13 +57,13 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 		const resume = linked.symbols.functionAddresses[linked.symbols.metadata.functionIds.indexOf('module:kernel/coroutine_resume/module')];
 		const romBytes = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, input);
-		const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
+		const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = nativeHeapReference(cpu);
 		runtime.boot();
 		runGuestToHalt(cpu, 4_194_304);
 		const [start, outer, body] = runtime.readCompletionValues().map(valuePayload);
 		heap.setCollectionTarget(heap.capacity());
 		const parent = allocateThreadRecordReference(cpu, outer), child = allocateThreadRecordReference(cpu, body), box = createReferenceTable(cpu, 0, 1);
-		gc.tables.setStringKey(box, cpu.stringPool.intern('marker'), valueInteger(67));
+		gc.tables.setStringKey(box, nativeHeapReference(cpu).stringPool.intern('marker'), valueInteger(67));
 		cpu.beginCompletionCall(start, [valueThread(parent), valueThread(child), valueTable(box)]);
 		const read = (field: ThreadField) => memory.readRamRecordWord(child + field);
 		const atChildSVC = () => {
@@ -79,7 +80,7 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 
 		gc.collect();
 		heap.setCollectionTarget(heap.capacity());
-		if (!refuse) cpu.stringPool.intern(deadText);
+		if (!refuse) nativeHeapReference(cpu).stringPool.intern(deadText);
 		while (arena.allocate(4088, true)) { /* occupy remaining large extents */ }
 		while (arena.allocate(24, true)) { /* force a physical backing-growth refusal */ }
 		const caller = cpu.activeThread.currentFrame!;

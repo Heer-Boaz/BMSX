@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
@@ -17,8 +18,8 @@ export function logicalThreadBytes(cpu: CPU, address = cpu.rootThread.address): 
 /** Count positive guest heap charges, including allocations collected within the measurement. */
 export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: number, budget = 10_000_000) {
 	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);
-	const heap = cpu.luaHeap;
-	cpu.gc.collect();
+	const heap = nativeHeapReference(cpu).luaHeap;
+	nativeHeapReference(cpu).gc.collect();
 	// Collection can shrink the stack below this kernel's peak. Warm its
 	// call depth again before attributing any reservation to steady-state work.
 	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);

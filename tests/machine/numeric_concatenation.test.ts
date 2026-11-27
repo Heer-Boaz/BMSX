@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -48,7 +49,7 @@ return forward, 'v=' .. *operand,
 				`${sample.text}=v`, `${sample.text}=v`,
 				`${sample.text}42`, `${sample.text}42`,
 				`[${sample.text}]`, `[${sample.text}]`,
-			].map(text => valueString(cpu.stringPool.intern(text))), sample.source);
+			].map(text => valueString(nativeHeapReference(cpu).stringPool.intern(text))), sample.source);
 		}
 	});
 
@@ -61,7 +62,7 @@ return ${CASES.map((_, index) => `labels[${index}]`).join(', ')}
 `;
 		const cpu = runCompiledTestSystem(compileHeapServiceSystem(source, optLevel, [], 'numeric_concat_rodata.lua'), 100000);
 		const values = materializeCpuCompletionValues(cpu);
-		assert.deepEqual(values, CASES.map(sample => valueString(cpu.stringPool.intern(`[${sample.text}]`))));
+		assert.deepEqual(values, CASES.map(sample => valueString(nativeHeapReference(cpu).stringPool.intern(`[${sample.text}]`))));
 	});
 
 	test(`O${optLevel} static dimensions measure folded numeric text`, () => {

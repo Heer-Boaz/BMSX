@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { resetAllocatorReference } from '../helpers/heap_allocator_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
-import { LuaHeap } from '../../machine/ts/machine/cpu/lua_heap';
+import { LuaHeap } from "../helpers/native_heap/lua_heap";
 import { SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
 import { BLUA32_IMAGE_STRING_BUCKET_ADDRESS_OFFSET, BLUA32_IMAGE_STRING_BUCKET_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, DYNAMIC_RAM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -50,7 +51,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const staticEnd of [DYNAMIC_RAM_BASE, DYNAMIC_RAM_BASE + 0x111, 0x083fc000]) {
 			const { cpu, memory } = createTestSystemCpu(linked);
 			const oracle = createTestSystemCpu(linked).cpu;
-			const arena = cpu.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
+			const arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 			const metadata = management + HEAP_STRING_METADATA_OFFSET;
 			const end = state + arenaStateBytes;
 			const floor = oracle.heapAllocator.floorOffset(staticEnd);
@@ -68,10 +69,10 @@ for (const optLevel of [0, 3] as const) {
 			memory.writeRamRecordWord(heads + weakClosureHeadsBytes, 0xdecafbad);
 			// Mechanical bus state comes from reset independent of the algorithm.
 			memory.setRamBusEnd(RAM_BASE + floor);
-			resetAllocatorReference(oracle.memory, oracle.heapAllocator, staticEnd);
-			const nativeBudget = new LuaHeap(oracle);
+			resetAllocatorReference(oracle.memory, nativeHeapReference(oracle).heapAllocator, staticEnd);
+			const nativeBudget = new LuaHeap(oracle, nativeHeapReference(oracle).heapAllocator);
 			nativeBudget.setCollectionTarget(coldCollectionTarget);
-			oracle.stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, bucketAddress, bucketCount);
+			nativeHeapReference(oracle).stringPool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, bucketAddress, bucketCount);
 
 			const compare = () => {
 				assert.deepEqual(actualBytes, expectedBytes);
@@ -124,14 +125,14 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(cpu.stringPool.find('impossible-cold-heap-string-never-in-ROM'), undefined);
 			// The first allocation from the guest-produced bins is directly
 			// usable by the unchanged oracle, but did not depend on a seed.
-			const expected = oracle.heapAllocator.allocate(21, false);
+			const expected = nativeHeapReference(oracle).heapAllocator.allocate(21, false);
 			const offset = expected === 0 ? 0 : expected - RAM_BASE;
 			begin(1, [state, 21, 1]);
 			finish(offset);
 			compare();
 			assert.equal(arena.issuedObjectStart(offset), offset !== 0);
 			if (offset !== 0) {
-				oracle.heapAllocator.free(expected);
+				nativeHeapReference(oracle).heapAllocator.free(expected);
 				begin(2, [state, offset]);
 				finish(0);
 				compare();

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { runGuestToHalt } from '../helpers/cpu_execution';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { hashText } from '../../machine/ts/common/hash';
@@ -35,8 +36,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 				// does not determine the comparison cycle debit.
 				const right = textToByteString('a😀雪\0');
 				const left = repeat % 3 === 2 ? right : textToByteString(repeat % 3 === 1 ? 'a😀雪' : 'z😀雪');
-				frame.registers.setString(1, cpu.stringPool.intern(left));
-				frame.registers.setString(2, cpu.stringPool.intern(right));
+				frame.registers.setString(1, nativeHeapReference(cpu).stringPool.intern(left));
+				frame.registers.setString(2, nativeHeapReference(cpu).stringPool.intern(right));
 				cpu.runUntilDepth(0, 1);
 				const cycles = BASE_CYCLES[op] + (op === OpCode.EQ ? 0 : Math.min(left.length, right.length));
 				assert.equal(cpu.instructionBudgetRemaining, 1 - cycles);
@@ -79,7 +80,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		const image = linkRawTestSystemBlua32({ text: code, functions: [{ firstWord: 0, wordCount: 4, maxStack: 4 }] });
 		const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 		const pc = image.image.functions[0].codeAddress;
-		const a = cpu.stringPool.intern('x'.repeat(513)), b = cpu.stringPool.intern('x'.repeat(512) + 'y');
+		const a = nativeHeapReference(cpu).stringPool.intern('x'.repeat(513)), b = nativeHeapReference(cpu).stringPool.intern('x'.repeat(512) + 'y');
 		const frame = cpu.rootThread.currentFrame!;
 		frame.registers.setString(1, a); frame.registers.setString(2, op === OpCode.LE ? a : b); frame.top = 3;
 		for (let i = 0; i < 24; ++i) {
@@ -112,7 +113,7 @@ const portImage = linkRawTestSystemBlua32({ text: portCode, functions: [{ firstW
 
 test('RAM String reads and intern probes wrap at the physical seam', () => {
 	const { cpu } = createTestHeapServiceCpu(portImage, CpuExecutionBackend.Interpreter);
-	const memory = cpu.memory, pool = cpu.stringPool;
+	const memory = cpu.memory, pool = nativeHeapReference(cpu).stringPool;
 	const bytes = 'wrapRAM!\x00\xf7xyz';
 	const straight = pool.intern(bytes), after = pool.intern('wrapRAM!\x00\xf8xyz');
 	const mirror = RAM_BASE + 2 * MAIN_RAM_SIZE - 24;

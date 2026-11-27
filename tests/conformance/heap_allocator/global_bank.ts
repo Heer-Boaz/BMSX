@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -55,11 +56,11 @@ try {
 				scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 			assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 		}
-		const { cpu, memory, scheduler } = runtime.machine, ram = memory.ramData(), arena = cpu.heapAllocator, management = arena.managementOffset();
-		const old = oracle.machine.cpu, oldArena = old.heapAllocator, oldMem = oracle.machine.memory, oldRam = oldMem.ramData();
+		const { cpu, memory, scheduler } = runtime.machine, ram = memory.ramData(), arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
+		const old = oracle.machine.cpu, oldArena = nativeHeapReference(old).heapAllocator, oldMem = oracle.machine.memory, oldRam = oldMem.ramData();
 		const keys = candidates.map(name => {
-			const key = cpu.stringPool.intern(name);
-			assert.equal(old.stringPool.intern(name), key);
+			const key = nativeHeapReference(cpu).stringPool.intern(name);
+			assert.equal(nativeHeapReference(old).stringPool.intern(name), key);
 			return key;
 		});
 		const preexisting = readNamespaceBank(memory, management + GLOBAL_BANK_OFFSET);
@@ -177,8 +178,8 @@ try {
 
 		// Start a real marking epoch with a borrowed unmarked String. A
 		// native raw-ID setter avoids reinterning (which itself retains it).
-		const barrierKey = old.stringPool.intern('namespace_pending_name');
-		old.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+		const barrierKey = nativeHeapReference(old).stringPool.intern('namespace_pending_name');
+		nativeHeapReference(old).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(old.gc.phase(), GcPhase.Mark);
 		const markByte = oldMem.readRamRecordByte(barrierKey + 1);
 		const prior = readNamespaceBank(oldMem, management + GLOBAL_BANK_OFFSET);
@@ -225,7 +226,7 @@ end`, 0);
 		const code = writeTestBlua32Rom(linked);
 		const runtime = new Runtime({ systemRomBytes: code, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator, management = arena.managementOffset();
+		const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator, management = arena.managementOffset();
 		for (let i = 0; i < 1024 && cpu.rootThread.address === CPU_RESET_BANK_ADDRESS; ++i)
 			scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -273,7 +274,7 @@ end`, 0);
 		note('X'); note('l'); note('s');
 		for (let i = 0; i < 16; ++i) {
 			const name = `physical_global_${i}`;
-			setReferenceGlobal(cpu, cpu.stringPool.intern(name), valueNil());
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern(name), valueNil());
 			note(`f ${name}`, '0 0');
 		}
 		const grown = readNamespaceBank(memory, execution);

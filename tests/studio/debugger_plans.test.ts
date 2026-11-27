@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -248,7 +249,7 @@ end
 halt_until_irq`, 0));
 	runGuestToHalt(cpu, 100000);
 	const thread = cpu.activeThread.address, depth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('probe')), cpu.gc));
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('probe')), cpu.gc));
 	const plans = new RuntimeDebuggerPlanManager(cpu);
 	const events: RuntimeDebuggerCompletionResult[] = [];
 	plans.pushCompletionBatch(thread, depth, [SYSTEM_EXECUTION_DOMAIN_ID], result => events.push(result));

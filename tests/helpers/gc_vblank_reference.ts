@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { HEAP_GC_CONTROL_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
@@ -9,7 +10,7 @@ const GC_PHYSICAL_ASSIST = GC_PHYSICAL_OCCUPIED_AT_TICK + 4;
 
 // Frozen TS admission reference for kernel/gc_vblank.lua.
 export function assistPhysicalPressureAtTickReference(cpu: CPU, rebuilding = 0): void {
-	const { gc, heapAllocator: arena, memory } = cpu;
+	const { memory } = cpu, { gc, heapAllocator: arena } = nativeHeapReference(cpu);
 	const control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	if (rebuilding) return;
 	if (gc.fullEpochs()) return;

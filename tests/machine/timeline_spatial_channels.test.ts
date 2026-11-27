@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { asClosure, asStringId, numberToHost, valueBool, valueInteger, valueString, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -415,9 +416,9 @@ test(`external-clock phases retain unconsumed elapsed time across a schedule abo
 	advance(0, 0, false, [0, 0, 0, 0]);
 	advance(20, 882, true, [20, 0, 20, 0]);
 	advance(40, 1764, false, [40, 40, 40, 40]);
-	runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('other'))]);
+	runCompletionClosure(cpu, space, [valueString(nativeHeapReference(cpu).stringPool.intern('other'))]);
 	advance(1000, 44100, false, [40, 40, 40, 40]);
-	runCompletionClosure(cpu, space, [valueString(cpu.stringPool.intern('main'))]);
+	runCompletionClosure(cpu, space, [valueString(nativeHeapReference(cpu).stringPool.intern('main'))]);
 	advance(1010, 44541, false, [40, 40, 40, 40]);
 	advance(1020, 44982, false, [50, 50, 50, 50]);
 	runCompletionClosure(cpu, restart, []);
@@ -439,7 +440,7 @@ test('warmed grouped curve sampling makes no guest heap reservations', t => {
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
-	const heap = cpu.luaHeap;
+	const heap = nativeHeapReference(cpu).luaHeap;
 	const before = collectReferenceHeapBytes(cpu);
 	const admit = heap.admit;
 	let reservations = 0;

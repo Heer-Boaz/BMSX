@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -52,11 +53,11 @@ function fixture(optLevel: 0 | 3) {
 	const table = () => same(t => createReferenceTable(t, 0, 0));
 	const [t0, t1, t2] = [thread(), thread(), thread()];
 	const [w0, w1, w2, staleTrace, changed, stringIndex, receiver, value] = Array.from({ length: 8 }, table);
-	const string = (text: string) => same(t => t.stringPool.intern(text));
+	const string = (text: string) => same(t => nativeHeapReference(t).stringPool.intern(text));
 	const left = string('comparison left'), right = string('comparison right'), key = string('pending SETT key');
 	const mode = same(t => t.gc.diagnosticWord(GcDiagnosticField.Mode));
 	const descriptor = same(t => {
-		const base = t.heapAllocator.allocate(72 + 4 * (LUA_FAULT_REASON_INDEX_NAN + 1), true);
+		const base = nativeHeapReference(t).heapAllocator.allocate(72 + 4 * (LUA_FAULT_REASON_INDEX_NAN + 1), true);
 		assert.ok(base);
 		const faultBase = base + 72, ram = t.memory;
 		const originalFaults = t.gc.diagnosticWord(GcDiagnosticField.FaultIds);
@@ -77,14 +78,14 @@ function fixture(optLevel: 0 | 3) {
 		for (const [list, records] of [[GC_THREAD_VISITS, [t0, t1, t2]], [GC_WEAK_VISITS, [w0, w1, w2]]] as const) {
 			for (const record of records) {
 				ram.writeRamRecordByte(record + GC_VISIT_HEADER_BYTE, 0x80);
-				t.gc['appendVisit'](list, record);
+				nativeHeapReference(t).gc['appendVisit'](list, record);
 			}
 		}
 		for (const record of [t0, t2, w0, w2]) ram.writeRamRecordByte(record + GC_COLOR_OFFSET, 0xa3);
 		for (const record of [t1, w1]) ram.writeRamRecordByte(record + GC_COLOR_OFFSET, 0xa2);
 		ram.writeRamRecordByte(changed + GC_COLOR_OFFSET, 2);
-		t.stringPool.beginReachabilityEpoch();
-		t.stringPool.resumeMarkWork(9);
+		nativeHeapReference(t).stringPool.beginReachabilityEpoch();
+		nativeHeapReference(t).stringPool.resumeMarkWork(9);
 		return base;
 	});
 	put(GC_TRACE_HEAD, index(staleTrace));
@@ -112,21 +113,21 @@ function fixture(optLevel: 0 | 3) {
 		for (let i = 0; i < 32 && cpu.heapServiceActive(); ++i) cycles += grant(512);
 		// This isolated call borrows the work latch as a descriptor word.
 		// Return it before comparing the native collector's physical latch.
-		cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(descriptor));
+		nativeHeapReference(cpu).stringPool.resumeMarkWork(memory.readRamRecordWord(descriptor));
 		return cycles;
 	}
 	function verify(allowance: number) {
 		const stage = control + GC_REMARK_VISIT_STATE;
 		const before = oracle.memory.readRamRecordWord(stage);
-		const expected = oracle.gc['remarkVisits'](allowance);
+		const expected = nativeHeapReference(oracle).gc['remarkVisits'](allowance);
 		if (before !== ROOTS && oracle.memory.readRamRecordWord(stage) === ROOTS) {
 			// The old native rule is retained only on this reference side.
-			oracle.gc.markValue(valueTable(receiver));
-			oracle.gc.markValue(valueString(key));
-			oracle.gc.markValue(valueTable(value));
+			nativeHeapReference(oracle).gc.markValue(valueTable(receiver));
+			nativeHeapReference(oracle).gc.markValue(valueString(key));
+			nativeHeapReference(oracle).gc.markValue(valueTable(value));
 		}
-		const carry = oracle.stringPool.takeMarkWork();
-		oracle.stringPool.resumeMarkWork(carry);
+		const carry = nativeHeapReference(oracle).stringPool.takeMarkWork();
+		nativeHeapReference(oracle).stringPool.resumeMarkWork(carry);
 		oracle.memory.writeRamRecordWord(descriptor, carry);
 		assert.equal(cpu.heapServiceResult(), expected);
 		compare(`allowance=${allowance}`);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -75,7 +76,7 @@ return copied, reused, media, ok, reason
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, memory, scheduler, gxGpu } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	const report = cart.layout.header.bssAddress, data = report + 8;
 	const readStage = () => memory.readRamRecordWord(report);
 	for (let i = 0; i < 1024 && readStage() !== 1; ++i) {
@@ -122,7 +123,7 @@ return copied, reused, media, ok, reason
 		String(hashBytes(memory.ramData(), offset, 8)),
 	]);
 
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	for (let bytes = MAIN_RAM_SIZE >>> 1; bytes !== 0; bytes >>>= 1) {
 		while (arena.allocate(bytes, true)) { /* exhaust physical backing */ }
 	}

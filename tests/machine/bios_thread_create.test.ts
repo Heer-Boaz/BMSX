@@ -1,3 +1,5 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
+import { bindReferenceDlmalloc } from '../helpers/native_heap/dlmalloc_wasm';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -121,15 +123,15 @@ for (const opt of [0, 3] as const) {
 	});
 
 	test(`failed Thread attempts free precisely the reserved prefixes without publication at O${opt}`, () => {
-		const f = fixture(opt), owner = f.same(cpu => cpu.heapAllocator.allocate(3 * HEAP_PAGE_SIZE, true)) - RAM_BASE;
+		const f = fixture(opt), owner = f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(3 * HEAP_PAGE_SIZE, true)) - RAM_BASE;
 		const floor = (owner + 0x600 + HEAP_PAGE_SIZE - 1) & -HEAP_PAGE_SIZE;
 		const state = owner + (f.cpu.heapAllocator.allocatorStateOffset() - f.cpu.heapAllocator.managementOffset());
 		const charge = owner + HEAP_LOGICAL_OCCUPIED_OFFSET, control = owner + HEAP_GC_CONTROL_OFFSET;
 		for (const [extent, canAllocateValues] of [[144, false], [200, true]] as const) {
-			const arena = f.memory.bindDlmalloc(state), reference = f.oracle.memory.bindDlmalloc(state);
+			const arena = bindReferenceDlmalloc(f.memory, state), reference = bindReferenceDlmalloc(f.oracle.memory, state);
 			f.same(cpu => {
 				cpu.memory.ramData().fill(dirty, floor, floor + extent);
-				cpu.memory.bindDlmalloc(state).reset(floor, floor + extent);
+				bindReferenceDlmalloc(cpu.memory, state).reset(floor, floor + extent);
 				cpu.memory.writeRamRecordWord(charge, 123);
 			});
 			const base = reference.allocate(THREAD_HEAP_BYTES + GC_OBJECT_PREFIX, 1);
@@ -175,7 +177,7 @@ halt_until_irq
 
 function detachEntry(f: ReturnType<typeof fixture>): number {
 	return f.same(cpu => {
-		const key = cpu.stringPool.intern('detached_entry'), operand = cpu.getGlobalByKey(key);
+		const key = nativeHeapReference(cpu).stringPool.intern('detached_entry'), operand = cpu.getGlobalByKey(key);
 		assert.equal(valueTag(operand), ValueTag.Closure);
 		setReferenceGlobal(cpu, key, valueNil());
 		// O3 can retain a now-dead physical temporary. Explicitly remove it
@@ -190,26 +192,26 @@ function detachEntry(f: ReturnType<typeof fixture>): number {
 for (const opt of [0, 3] as const) {
 	test(`Coroutine keeps its detached Closure alive through a real failed reservation at O${opt}`, () => {
 		const f = fixture(opt, detachedEntrySource);
-		const { cpu, oracle, memory } = f, arena = cpu.heapAllocator;
+		const { cpu, oracle, memory } = f, arena = nativeHeapReference(cpu).heapAllocator;
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f);
 		const victim = f.same(cpu => createReferenceTable(cpu, 256, 0));
 		f.same(cpu => {
-			const arena = cpu.heapAllocator;
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			const arena = nativeHeapReference(cpu).heapAllocator;
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}
 		});
 		const before = arena.occupiedBytes(), beforeLogical = cpu.luaHeap.usedBytes(), oldWhite = cpu.gc.white();
 		assert.equal(memory.readRamRecordByte(entry + GC_COLOR_OFFSET), oldWhite);
 		const seed = captureCpuCheckpoint(oracle);
-		oracle.gc.collect();
+		nativeHeapReference(oracle).gc.collect();
 		assert.equal(oracle.gc.closureRecordAddress(entry), 0, 'no ordinary published root owns the operand');
 		restoreCpuCheckpoint(oracle, seed);
-		oracle['runKind'] = CpuRunKind.Direct;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
 		const record = allocateThreadRecordReference(oracle, entry);
-		oracle['runKind'] = CpuRunKind.Idle;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
 		assert.notEqual(record, 0);
 		assert.equal(oracle.gc.tableRecordAddress(victim), 0);
 		f.beginWhole(management, entry, 0);
@@ -240,16 +242,16 @@ for (const opt of [0, 3] as const) {
 
 	test(`Coroutine logical assist spends the source allowance before reserving any backing at O${opt}`, () => {
 		const f = fixture(opt, detachedEntrySource);
-		const { cpu, oracle, memory } = f, arena = cpu.heapAllocator;
+		const { cpu, oracle, memory } = f, arena = nativeHeapReference(cpu).heapAllocator;
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f), sourceCycles = 21;
-		f.same(cpu => cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes()));
+		f.same(cpu => nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes()));
 		const target = cpu.luaHeap.collectionTarget(), occupied = arena.occupiedBytes(), work = cpu.gc.epochWork();
 		const head = memory.readRamRecordWord(control + objectHead);
-		oracle['runKind'] = CpuRunKind.Direct;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = sourceCycles;
 		const record = allocateThreadRecordReference(oracle, entry);
-		oracle['runKind'] = CpuRunKind.Idle;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
 		assert.ok(oracle.gc.epochWork() > work, 'the old source granted a positive mark quantum');
 		assert.ok(oracle.luaHeap.collectionTarget() > target);
 		f.beginWhole(management, entry, sourceCycles);
@@ -267,21 +269,21 @@ for (const opt of [0, 3] as const) {
 
 	test(`Coroutine reports terminal physical OOM only after the permitted rooted epoch at O${opt}`, () => {
 		const f = fixture(opt, detachedEntrySource);
-		const { cpu, oracle, memory } = f, arena = cpu.heapAllocator;
+		const { cpu, oracle, memory } = f, arena = nativeHeapReference(cpu).heapAllocator;
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f);
 		f.same(cpu => {
-			cpu.gc.collect(valueClosure(entry));
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-			while (cpu.heapAllocator.allocate(HEAP_PAGE_SIZE - 8, true)) {}
-			while (cpu.heapAllocator.allocate(16, true)) {}
+			nativeHeapReference(cpu).gc.collect(valueClosure(entry));
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			while (nativeHeapReference(cpu).heapAllocator.allocate(HEAP_PAGE_SIZE - 8, true)) {}
+			while (nativeHeapReference(cpu).heapAllocator.allocate(16, true)) {}
 		});
 		const before = arena.occupiedBytes(), count = memory.readRamRecordWord(control + objectCount);
 		const white = cpu.gc.white();
-		oracle['runKind'] = CpuRunKind.Direct;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 		oracle.instructionBudgetRemaining = 0;
 		assert.throws(() => allocateThreadRecordReference(oracle, entry), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
-		oracle['runKind'] = CpuRunKind.Idle;
+		nativeHeapReference(oracle).runKind = CpuRunKind.Idle;
 		f.beginWhole(management, entry, 0);
 		for (let i = 0; i < 256 && cpu.heapServiceActive(); ++i) f.grant(4096);
 		assert.equal(cpu.heapServiceResult(), 0);

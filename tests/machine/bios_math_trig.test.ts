@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -26,8 +27,8 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 		const { cpu } = createTestSystemCpu({ romBytes }, backend);
 		runGuestToHalt(cpu, 1_000_000);
 		const completed = materializeCpuCompletionValues(cpu);
-		const functions = completed.slice(0, 3).map(value => v.asClosure(value, cpu.gc));
-		const protectedCall = v.asClosure(completed[3], cpu.gc);
+		const functions = completed.slice(0, 3).map(value => v.asClosure(value, nativeHeapReference(cpu).gc));
+		const protectedCall = v.asClosure(completed[3], nativeHeapReference(cpu).gc);
 		const maximum = [0, 0, 0];
 		for (const [index, reference] of [Math.sin, Math.cos, Math.tan].entries()) {
 			for (const word of TRIG32_INPUT_WORDS) {
@@ -53,13 +54,13 @@ return trig_roots[1], trig_roots[2], trig_roots[3], trig_roots[4]`;
 				const expected = numberToF32Bits(reference(Math.fround(integer)));
 				assert.ok(Math.abs(v.valuePayload(actual) - expected) <= 3);
 			}
-			for (const value of [v.valueNil(), v.valueBool(false), v.valueString(cpu.stringPool.intern('2'))]) {
+			for (const value of [v.valueNil(), v.valueBool(false), v.valueString(nativeHeapReference(cpu).stringPool.intern('2'))]) {
 				runCompletionClosure(cpu, protectedCall, [completed[index], value]);
 				assert.equal(materializeCpuCompletionValues(cpu)[0], v.valueBool(false));
 			}
 		}
 		for (const fn of functions) runCompletionClosure(cpu, fn, [v.valueFloat(200)]);
-		const reserve = t.mock.method(cpu.luaHeap, 'admit');
+		const reserve = t.mock.method(nativeHeapReference(cpu).luaHeap, 'admit');
 		for (let repeat = 0; repeat < 32; ++repeat) for (const fn of functions) {
 			for (const value of [0.125, -0.125, 200, -200]) runCompletionClosure(cpu, fn, [v.valueFloat(value)]);
 		}

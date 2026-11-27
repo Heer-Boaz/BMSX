@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import assert from 'node:assert/strict';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { valueInteger, valuePayload, ValueTag, valueTag } from '../../machine/ts/machine/cpu/value';
@@ -30,7 +31,7 @@ export function returnWindowFixture(level: 0 | 3) {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	function grant(cycles: number) {
 		const result = scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 		return { result, used: cycles - cpu.instructionBudgetRemaining };
@@ -44,7 +45,7 @@ export function returnWindowFixture(level: 0 | 3) {
 	for (let n = 0; n < 65_536 && !atLeafRet(); ++n)
 		assert.equal(grant(cpu.fixedInterruptActive() ? 256 : 1).result, RunResult.Yielded);
 	assert.ok(atLeafRet());
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const thread = cpu.activeThread, callee = thread.currentFrame!, caller = callee.previous!;
 	const issue = callee.pc;
 	const ret = decodeBlua32InstructionAtPc(linked.layout.textBytes, linked.layout.header.textAddress, issue);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -52,14 +53,14 @@ function fixture(optLevel: 0 | 3) {
 	const addresses = [cpu, oracle].map(target => {
 		// These fixtures splice into an established collector epoch; bare
 		// instruction reset does not prepare the collector's initial cursor.
-		target.gc.collect();
+		nativeHeapReference(target).gc.collect();
 		let result = target.runUntilDepth(0, 4096);
 		for (let n = 0; n < 8 && result === RunResult.Yielded; ++n) result = target.runUntilDepth(0, 4096);
 		assert.equal(result, RunResult.Halted);
 		const live = createReferenceTable(target, 4, 0), garbage = createReferenceTable(target, 0, 16);
-		setReferenceGlobal(target, target.stringPool.intern(root), valueTable(live));
-		target.gc.tables.set(live, valueInteger(4), valueString(target.stringPool.intern('retained by live table')));
-		target.stringPool.intern(dead);
+		setReferenceGlobal(target, nativeHeapReference(target).stringPool.intern(root), valueTable(live));
+		nativeHeapReference(target).gc.tables.set(live, valueInteger(4), valueString(nativeHeapReference(target).stringPool.intern('retained by live table')));
+		nativeHeapReference(target).stringPool.intern(dead);
 		return [live, garbage] as const;
 	});
 	assert.deepEqual(addresses[0], addresses[1]);
@@ -122,7 +123,7 @@ for (const opt of [0, 3] as const) {
 		const before = oracle.gc.epochWork();
 		assistPhysicalPressureAtTickReference(oracle);
 		assert.equal(oracle.gc.phase(), GcPhase.Atomic);
-		oracle.gc.finishFinalMark();
+		nativeHeapReference(oracle).gc.finishFinalMark();
 		const expected = oracle.gc.epochWork() - before;
 		f.begin(0, 0, 0);
 		f.reach(GcPhase.Atomic);
@@ -141,8 +142,8 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), { cpu, oracle } = f;
 		let work = 0;
 		do {
-			work += oracle.gc.finalMarkPending() ? oracle.gc.stepFinalMark(17)
-				: oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 17);
+			work += oracle.gc.finalMarkPending() ? nativeHeapReference(oracle).gc.stepFinalMark(17)
+				: nativeHeapReference(oracle).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 17);
 		} while (oracle.gc.active());
 		f.begin(1, 17, 0, 1);
 		f.reach(GcPhase.Strings);
@@ -168,11 +169,11 @@ for (const opt of [0, 3] as const) {
 		const value = valueString(f.same(target => target.stringPool.find(f.dead)!));
 		const operandOffset = f.publishRoots(receiver, valueTable(key), value);
 		f.same(target => {
-			target.stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 			target.memory.writeRamRecordByte(control, GcPhase.Mark);
 			target.memory.writeRamRecordWord(control + GC_ROOT_CURSOR, GcRootBank.Globals << (GC_GRAY_INDEX_BITS + 1));
 		});
-		const want = oracle.gc.step(valueTable(receiver), valueTable(key), value, 0, false, 1);
+		const want = nativeHeapReference(oracle).gc.step(valueTable(receiver), valueTable(key), value, 0, false, 1);
 		assert.ok(want > 1);
 		f.begin(1, 1, operandOffset, 0);
 		for (let n = 0; n < 32768 && memory.readRamRecordWord(control + GC_TRACE_HEAD) !== index(f.live); ++n) f.grant(1);
@@ -203,9 +204,9 @@ for (const opt of [0, 3] as const) {
 			target.memory.writeRamRecordWord(control + GC_REMARK_VISIT_STATE, 1 << GC_GRAY_INDEX_BITS); // Thread visits
 			target.memory.writeRamRecordWord(control + GC_CHANGED_HEAD, index(f.live));
 			target.memory.writeRamRecordByte(f.live + GC_COLOR_OFFSET, 2);
-			target.stringPool.resumeMarkWork(1);
+			nativeHeapReference(target).stringPool.resumeMarkWork(1);
 		});
-		const want = oracle.gc.step(valueTable(f.garbage), valueTable(key), valueTable(value), 0, false, 1);
+		const want = nativeHeapReference(oracle).gc.step(valueTable(f.garbage), valueTable(key), valueTable(value), 0, false, 1);
 		f.begin(1, 1, operandOffset, 0);
 		for (let n = 0; n < 32768 && memory.readRamRecordWord(control + GC_TRACE_HEAD) !== index(f.live); ++n) f.grant(1);
 		assert.ok(cpu.heapServiceActive());
@@ -229,20 +230,20 @@ for (const opt of [0, 3] as const) {
 		const [weak, array, removed] = f.same(target => {
 			const slots = 4096;
 			const weak = createReferenceTable(target, slots, 0), mode = createReferenceTable(target, 0, 2), removed = createReferenceTable(target, 0, 0);
-			const value = target.stringPool.intern('v');
-			target.gc.tables.set(mode, valueString(target.gc.diagnosticWord(GcDiagnosticField.Mode)), valueString(value));
-			target.gc.tables.setMetatableAddress(weak, mode);
-			target.gc.tables.set(weak, valueInteger(1), valueTable(f.garbage));
-			target.gc.tables.set(weak, valueInteger(2), valueTable(removed));
-			setReferenceGlobal(target, target.stringPool.intern('scoped weak roots'), valueTable(weak));
-			for (let i = 0; i < 64 && target.gc.phase() !== GcPhase.Atomic; ++i) target.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 4096);
+			const value = nativeHeapReference(target).stringPool.intern('v');
+			nativeHeapReference(target).gc.tables.set(mode, valueString(target.gc.diagnosticWord(GcDiagnosticField.Mode)), valueString(value));
+			nativeHeapReference(target).gc.tables.setMetatableAddress(weak, mode);
+			nativeHeapReference(target).gc.tables.set(weak, valueInteger(1), valueTable(f.garbage));
+			nativeHeapReference(target).gc.tables.set(weak, valueInteger(2), valueTable(removed));
+			setReferenceGlobal(target, nativeHeapReference(target).stringPool.intern('scoped weak roots'), valueTable(weak));
+			for (let i = 0; i < 64 && target.gc.phase() !== GcPhase.Atomic; ++i) nativeHeapReference(target).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 4096);
 			assert.equal(target.gc.phase(), GcPhase.Atomic);
 			return [weak, target.gc.tables.arrayAddress(weak), removed];
 		});
-		const key = f.same(target => createReferenceTable(target, 0, 0)), value = valueString(f.same(target => target.stringPool.intern('explicit value only')));
+		const key = f.same(target => createReferenceTable(target, 0, 0)), value = valueString(f.same(target => nativeHeapReference(target).stringPool.intern('explicit value only')));
 		const operandOffset = f.publishRoots(f.garbage, valueTable(key), value);
 		const epochWork = oracle.gc.epochWork();
-		const want = oracle.gc.step(valueTable(f.garbage), valueTable(key), value, 0, false, 1);
+		const want = nativeHeapReference(oracle).gc.step(valueTable(f.garbage), valueTable(key), value, 0, false, 1);
 		assert.ok(want > 4096, 'source completes Atomic through more than one fixed chunk despite caller allowance one');
 		assert.equal(oracle.gc.phase(), GcPhase.Sweep);
 		f.begin(1, 1, operandOffset, 0);
@@ -273,7 +274,7 @@ for (const opt of [0, 3] as const) {
 		const value = valueString(valueId), operandOffset = f.publishRoots(f.garbage, valueTable(key), value);
 		let work = 0;
 		do {
-			work += oracle.gc.step(valueTable(f.garbage), valueTable(key), value, 0, false, 17);
+			work += nativeHeapReference(oracle).gc.step(valueTable(f.garbage), valueTable(key), value, 0, false, 17);
 		} while (oracle.gc.active());
 		f.begin(1, 17, operandOffset, 1);
 		f.reach(GcPhase.Strings);

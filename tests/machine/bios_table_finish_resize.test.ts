@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -47,7 +48,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), result);
 		return result;
 	}
-	const scratch = same(target => target.heapAllocator.allocate(40, true) - RAM_BASE);
+	const scratch = same(target => nativeHeapReference(target).heapAllocator.allocate(40, true) - RAM_BASE);
 	assert.ok(scratch > 0);
 	const reserved = () => [memory.readRamRecordWord(scratch), memory.readRamRecordWord(scratch + 4)];
 	function compare() {
@@ -71,7 +72,7 @@ function fixture(optLevel: 0 | 3) {
 		return cycles;
 	}
 	function begin(record: number, array: number, hash: number, keepHash: boolean, key: Value, value: Value, cppMirror = true) {
-		const tables = oracle.gc.tables;
+		const tables = nativeHeapReference(oracle).gc.tables;
 		const oldArray = tables.arrayCapacity(record), oldHash = tables.hashSize(record);
 		const oldStorage = tables.hashAddress(record);
 		const previous = TableRecords.allocationCharge(oldArray, oldHash), requested = TableRecords.allocationCharge(array, hash);
@@ -125,16 +126,16 @@ for (const opt of [0, 3] as const) {
 			[31, 4, 32, 4, true], [32, 8, 31, 16, false], [16, 4, 0, 32, false], [1, 128, 2, 1024, false],
 		] as const) {
 			const record = f.same(target => createReferenceTable(target, oldArray, oldHash));
-			const key = keepHash ? valueInteger(array) : f.same(target => valueString(target.stringPool.intern('grow')));
+			const key = keepHash ? valueInteger(array) : f.same(target => valueString(nativeHeapReference(target).stringPool.intern('grow')));
 			const value = valueInteger(-2147483648);
 			const mappings = f.same(target => {
 				const next: [Value, Value][] = [];
-				const tick = valueString(target.stringPool.intern('tick'));
+				const tick = valueString(nativeHeapReference(target).stringPool.intern('tick'));
 				for (let i = 1; i <= oldArray; ++i) {
 					const values = [tick, valueBool(true), valueFloatBits(0xbf400000), valueInteger(i * 17)];
 					next.push([valueInteger(i), i === 5 ? valueBool(false) : values[i & 3]]);
 				}
-				const store = target.gc.tables;
+				const store = nativeHeapReference(target).gc.tables;
 				next.push([tick, valueInteger(87)], [valueInteger(-100), tick]);
 				if (hash === 1024) next.push([valueInteger(59), valueBool(false)], [valueInteger(64), valueInteger(815)],
 					[valueBool(false), valueInteger(98)], [valueBool(true), tick], [valueFloatBits(0xbf400000), valueInteger(17)],
@@ -190,8 +191,8 @@ for (const opt of [0, 3] as const) {
 			const c = integerWithHome(7);
 			const first = valueInteger(10), second = valueFloatBits(0x7fa35125), third = valueBool(true);
 			f.same(target => {
-				target.gc.tables.set(record, a, first);
-				target.gc.tables.set(record, b, second);
+				nativeHeapReference(target).gc.tables.set(record, a, first);
+				nativeHeapReference(target).gc.tables.set(record, b, second);
 			});
 			const expected = f.begin(record, 0, 8, false, c, third, cppMirror);
 			for (let n = 0; n < 4096 && f.cpu.gc.tables.hashSize(record) !== 8; ++n) f.grant(1);
@@ -221,13 +222,13 @@ for (const opt of [0, 3] as const) {
 	test(`the firmware resize clears method absence before its direct marking barrier at O${opt}`, () => {
 		const f = fixture(opt);
 		const owner = f.same(target => createReferenceTable(target, 0, 1));
-		const id = f.same(target => target.stringPool.intern('a new collectable edge'));
+		const id = f.same(target => nativeHeapReference(target).stringPool.intern('a new collectable edge'));
 		const key = f.same(target => valueString(target.gc.diagnosticWord(GcDiagnosticField.NewIndex)));
 		f.same(target => {
-			const pending = target.stringPool.intern('a String marked before the table write');
+			const pending = nativeHeapReference(target).stringPool.intern('a String marked before the table write');
 			const control = target.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-			target.stringPool.beginReachabilityEpoch();
-			target.stringPool.markReachable(pending);
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.markReachable(pending);
 			target.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
 			target.memory.writeRamRecordByte(owner + GC_COLOR_OFFSET, 3);
 		});
@@ -241,7 +242,7 @@ for (const opt of [0, 3] as const) {
 		const cycles = f.drain();
 		f.verify(expected);
 		assert.ok(f.cpu.gc.epochWork() > work, 'the guest accounted String work');
-		assert.equal(f.cpu.stringPool.takeMarkWork(), 0);
+		assert.equal(nativeHeapReference(f.cpu).stringPool.takeMarkWork(), 0);
 		restoreCpuCheckpoint(f.cpu, checkpoint);
 		assert.equal(f.drain(), cycles);
 		f.verify(expected);
@@ -251,8 +252,8 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), hash = 16;
 		const record = f.same(target => createReferenceTable(target, 32, 8));
 		f.same(target => {
-			const arena = target.heapAllocator;
-			target.gc.tables.set(record, valueInteger(32), valueInteger(17));
+			const arena = nativeHeapReference(target).heapAllocator;
+			nativeHeapReference(target).gc.tables.set(record, valueInteger(32), valueInteger(17));
 			while (arena.allocate(4088, true)) { /* exhaust page supply */ }
 			while (arena.allocate(TableRecords.hashStorageBytes(hash), true)) { /* exhaust hash fits */ }
 		});

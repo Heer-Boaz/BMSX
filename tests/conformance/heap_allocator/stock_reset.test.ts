@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -80,7 +81,7 @@ class Trace {
 function verifySystemExec(rom: string, native: string, out: string): void {
 	const system = readFileSync(rom);
 	const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
-	const { cpu, memory, scheduler } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, memory, scheduler } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	let target = 0;
 	runtime.boot();
 	cpu.setExecutionHook((_domain, pc) => {
@@ -524,7 +525,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const cartPath = join(dir, 'cart.rom');
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: sys, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
-	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = cpu.heapAllocator, frames = rt.frameScheduler;
+	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
 	const management = arena.managementOffset(), report = linked.layout.header.bssAddress;
 	const nativePartial = join(dir, 'warm-native.state');
 	const tsPartial = join(dir, 'warm-ts.state');
@@ -579,7 +580,7 @@ function verifyWarmReset(rom: string, native: string, dir: string, optLevel: Opt
 	const index = memory.readRamRecordWord(indexWord);
 	assert.equal(memory.readRamRecordWord(indexTag), ValueTag.Table);
 	assert.notEqual(index, 0);
-	const orphan = cpu.stringPool.intern('warm_gc_orphan');
+	const orphan = nativeHeapReference(cpu).stringPool.intern('warm_gc_orphan');
 	trace.observe('b warm_gc_orphan', orphan);
 	const canaryAddress = DYNAMIC_RAM_BASE - 4, canary = 0x5a792267;
 	memory.writeMappedWord(canaryAddress, canary);
@@ -697,7 +698,7 @@ function verifyResetDuringTableGrowth(rom: string, native: string, dir: string, 
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
 	const { cpu, memory, scheduler, gxGpu, systemController } = rt.machine, frames = rt.frameScheduler;
-	const { heapAllocator: arena } = cpu, scratch = arena.managementOffset();
+	const { heapAllocator: arena } = nativeHeapReference(cpu), scratch = arena.managementOffset();
 	const gate = image.layout.header.bssAddress, progress = gate + 4;
 	const tsState = join(dir, 'reset-growth-ts.state'), nativeState = join(dir, 'reset-growth-native.state');
 	const trace = new Trace(native, join(dir, 'reset-growth.trace'), cartPath);
@@ -830,7 +831,7 @@ halt_until_irq`;
 	const cartPath = join(dir, label + '.cart');
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
-	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = cpu.heapAllocator, frames = rt.frameScheduler;
+	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
 	const management = arena.managementOffset(), cartBinding = executionImageBindingOffset(management, 0);
 	const trace = new Trace(native, join(dir, label + '.trace'), cartPath);
 	const { commands, expected } = trace;
@@ -852,16 +853,16 @@ halt_until_irq`;
 			&& instructionOpcode(word) === OpCode.MTC0 && instructionLowB(word) === COP0_RAM_END) {
 			root = cpu.rootThread.address;
 			initialFloor = memory.ramBusEnd();
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (retainsBlocker) {
 				const spacer = arena.allocate(0x2c0000, true);
 				assert.notEqual(spacer, 0);
-				alias = cpu.stringPool.intern(literal);
+				alias = nativeHeapReference(cpu).stringPool.intern(literal);
 				arena.free(spacer);
 				blocker = alias;
 			} else {
-				alias = cpu.stringPool.intern(literal);
-				blocker = cpu.stringPool.intern(blockerText);
+				alias = nativeHeapReference(cpu).stringPool.intern(literal);
+				blocker = nativeHeapReference(cpu).stringPool.intern(blockerText);
 			}
 		}
 		return false;
@@ -883,7 +884,7 @@ halt_until_irq`;
 	assert.equal(memory.readRamRecordWord(outgoingStrings) & ~IMAGE_STRING_RAM_ORDINAL, alias, 'outgoing ROM uploaded the exact canonical RAM id');
 	assert.equal(memory.readRamRecordWord(cartBinding + 4), 4 * (linked.layout.header.globalNameCount + linked.layout.header.systemGlobalNameCount + 1));
 	if (!retainsBlocker) {
-		cpu.gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
+		nativeHeapReference(cpu).gc.step(valueString(blocker), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(cpu.gc.phase(), GcPhase.Mark);
 	}
 	writeFileSync(seedPath, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));
@@ -979,7 +980,7 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	const cartPath = join(dir, label + '.cart');
 	writeFileSync(cartPath, cart);
 	const rt = new Runtime({ systemRomBytes: original, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, input);
-	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = cpu.heapAllocator, frames = rt.frameScheduler;
+	const { cpu, memory, scheduler, gxGpu } = rt.machine, arena = nativeHeapReference(cpu).heapAllocator, frames = rt.frameScheduler;
 	const management = arena.managementOffset(), installed = executionImageBindingOffset(management, SYSTEM_EXECUTION_DOMAIN_ID);
 	const seedPath = join(dir, label + '.seed'), tsPartial = join(dir, label + '.ts'), nativePartial = join(dir, label + '.cpp');
 	const trace = new Trace(native, join(dir, label + '.trace'), cartPath);
@@ -1003,12 +1004,12 @@ function verifyWarmBinding(rom: string, native: string, dir: string, optLevel: O
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	assert.equal(cpu.gc.phase(), GcPhase.Pause);
 	const root = cpu.rootThread.address, floor = memory.ramBusEnd(), white = cpu.gc.white();
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const deadText = 'unreachable warm-reset binding blocker: ' + 'a'.repeat(0x28000);
-	if (reclaim) assert.ok(cpu.stringPool.intern(deadText) >= RAM_BASE);
+	if (reclaim) assert.ok(nativeHeapReference(cpu).stringPool.intern(deadText) >= RAM_BASE);
 	while (arena.allocate(8192, true) !== 0) { /* non-GC allocations eliminate the remaining large free extents */ }
 	assert.equal(cpu.gc.phase(), GcPhase.Pause);
-	assert.equal(cpu.luaHeap.allocationDebt(4 * ordinals), 0, 'the fixture isolates physical refusal from logical admission');
+	assert.equal(nativeHeapReference(cpu).luaHeap.allocationDebt(4 * ordinals), 0, 'the fixture isolates physical refusal from logical admission');
 	const fullEpochs = cpu.gc.fullEpochs(), oldBinding = memory.readRamRecordWord(installed);
 	assert.notEqual(oldBinding, 0);
 	writeFileSync(seedPath, encodeRuntimeSaveState(captureRuntimeSaveState(rt)));

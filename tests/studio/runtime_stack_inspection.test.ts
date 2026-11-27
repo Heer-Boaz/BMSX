@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -489,7 +490,7 @@ test('manual frame contexts retain only installed source identity and expire acr
 test('a debugger completion root does not invent a guest call site in its suspended caller', () => {
 	const f = fixture('function park() halt_until_irq end\npark()', 0), cpu = f.runtime.machine.cpu;
 	const depth = cpu.getFrameDepth(), suspendedPc = cpu.readFramePc(depth - 1);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('park')), cpu.gc));
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('park')), cpu.gc));
 	assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
 	assert.equal(readRuntimeStackFrames(cpu, f.sources)[depth - 1].tracePc, suspendedPc);
 });

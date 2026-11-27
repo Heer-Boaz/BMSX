@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -42,7 +43,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
 	resizeThreadStackReference(cpu, other, 22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
-		valueString(cpu.stringPool.intern('upvalue')), valueTable(createReferenceTable(cpu))];
+		valueString(nativeHeapReference(cpu).stringPool.intern('upvalue')), valueTable(createReferenceTable(cpu))];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		if (source === 'closed') {
 			if (Upvalue.isOpen(cpu.memory, upvalue)) closeUpvalueReference(cpu, upvalue);

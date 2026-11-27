@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,7 +60,7 @@ try {
 			memory.writeMappedWord(IO_CART_SELECT, select);
 			for (const id of [...ids, alias]) {
 				const mode = valueFromTag(ValueTag.String, id), length = cpu.stringPool.byteLength(id);
-				call(addresses[0], [ValueTag.String, id], cpu.gc['weakModeBits'](mode));
+				call(addresses[0], [ValueTag.String, id], nativeHeapReference(cpu).gc['weakModeBits'](mode));
 				call(addresses[1], [id], length >>> 0);
 				for (let i = 0; i < length; ++i) call(addresses[2], [id, i], cpu.stringPool.byteAt(id, i));
 			}

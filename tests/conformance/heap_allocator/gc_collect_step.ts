@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -59,7 +60,7 @@ try {
 			const runtime = new Runtime(cfg, input), oracle = new Runtime(cfg, input);
 			runtime.boot();
 			oracle.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc, luaHeap: budget, heapAllocator: arena } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { gc, luaHeap: budget, heapAllocator: arena } = nativeHeapReference(cpu);
 			const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 			const pc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const slice = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -79,10 +80,10 @@ try {
 			budget.setCollectionTarget(budget.capacity());
 			const slots = entry === GcPhase.Atomic ? 2 * GC_STEP_WORDS : 16;
 			const weak = createReferenceTable(cpu, slots, 0), meta = createReferenceTable(cpu, 0, 1), dead = createReferenceTable(cpu);
-			gc.tables.set(meta, valueString(gc['modeKey']), valueString(cpu.stringPool.intern('v')));
+			gc.tables.set(meta, valueString(gc['modeKey']), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(slots), valueTable(dead));
-			setReferenceGlobal(cpu, cpu.stringPool.intern('explicit-step-weak-root'), valueTable(weak));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('explicit-step-weak-root'), valueTable(weak));
 			for (let n = 0; n < 64 && entry === GcPhase.Atomic && gc.phase() !== entry; ++n) gc.step();
 			for (let n = 0; n < 4096 && entry === GcPhase.Strings && gc.phase() !== entry; ++n)
 				gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
@@ -91,7 +92,7 @@ try {
 			writeFileSync(seedFile, encodeRuntimeSaveState(seed));
 			applyRuntimeSaveState(oracle, seed);
 			const ref = oracle.machine.cpu;
-			const before = gc.epochWork(), work = ref.gc.step(), finished = !ref.gc.active();
+			const before = gc.epochWork(), work = nativeHeapReference(ref).gc.step(), finished = !ref.gc.active();
 			const target = finished ? ref.luaHeap.collectionTarget() : ref.luaHeap.usedBytes() + GC_ASSIST_BYTES;
 			if (entry === GcPhase.Atomic) {
 				assert.ok(work > GC_STEP_WORDS, 'the original Atomic admission needs several physical quanta');

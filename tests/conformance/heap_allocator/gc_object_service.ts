@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -73,7 +74,7 @@ try {
 		writeFileSync(rom, bytes);
 		const runtime = new Runtime({ systemRomBytes: bytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 		runtime.boot();
-		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
 		assert.ok(cpu.isHaltedUntilIrq());
 		assert.notEqual(cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
@@ -87,7 +88,7 @@ try {
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
 		assert.equal(gc.fullEpochs(), 1);
-		const live = cpu.getGlobalByKey(cpu.stringPool.intern('fixture_live_thread'));
+		const live = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('fixture_live_thread'));
 		assert.equal(valueTag(live), ValueTag.Thread);
 		const liveThread = valuePayload(live);
 		const liveCapacity = () => memory.readRamRecordWord(liveThread + ThreadField.StackCapacity);
@@ -97,7 +98,7 @@ try {
 
 		// Adjust roots before the firmware publishes the frozen root projection.
 		const dropRoot = (name: string, tag: ValueTag) => {
-			const key = cpu.stringPool.intern(name), value = cpu.getGlobalByKey(key);
+			const key = nativeHeapReference(cpu).stringPool.intern(name), value = cpu.getGlobalByKey(key);
 			assert.equal(valueTag(value), tag);
 			const address = valuePayload(value);
 			setReferenceGlobal(cpu, key, valueNil());

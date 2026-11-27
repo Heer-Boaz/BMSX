@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -57,7 +58,7 @@ try {
 		for (const name of ['fixed', 'recovery', 'protected-oom', 'protected-invalid'] as const) {
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator: arena, luaHeap: heap } = nativeHeapReference(cpu);
 			runGuestToHalt(cpu, 4_194_304);
 			const entries = runtime.readCompletionValues().slice();
 			const fixed = name === 'fixed', recover = name === 'recovery', oom = name === 'protected-oom';
@@ -68,7 +69,7 @@ try {
 			// accidentally make room by reclaiming one of its test function values.
 			const anchor = createReferenceTable(cpu, entries.length, 0);
 			for (let i = 0; i < entries.length; ++i) gc.tables.set(anchor, valueInteger(i + 1), entries[i]);
-			setReferenceGlobal(cpu, cpu.stringPool.intern('coroutine-create-test-anchor'), valueTable(anchor));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('coroutine-create-test-anchor'), valueTable(anchor));
 			if (failure) {
 				gc.collect(closure, valueTable(anchor));
 				heap.setCollectionTarget(heap.capacity());
@@ -78,7 +79,7 @@ try {
 				runGuestToHalt(cpu, 65_536);
 				assert.deepEqual(runtime.readCompletionValues(), [valueBool(false), valueString(cpu.stringPool.find('Invalid argument.')!)]);
 			}
-			const raw = recover ? cpu.stringPool.intern(deadText) : 0;
+			const raw = recover ? nativeHeapReference(cpu).stringPool.intern(deadText) : 0;
 			const fn = valuePayload(entries[fixed ? 0 : recover ? 1 : 2]);
 			cpu.beginCompletionCall(fn, failure ? [create, closure, entries[6], entries[3]]
 				: [create, closure, valueTable(anchor)]);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runGuestToHalt } from '../helpers/cpu_test_harness';
@@ -37,7 +38,7 @@ end
 observed_ok,observed_error=pcall(verify)
 `, {optLevel});
 		runGuestToHalt(cpu, 20_000_000);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.concat owns conversion independently of global tostring (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
@@ -56,7 +57,7 @@ end
 observed_ok,observed_error = pcall(execute)
 `, {optLevel});
 		runGuestToHalt(cpu, 20_000_000);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.unpack preserves counts, nils, bounds and ordered index effects (O${optLevel})`, () => {
 		const {cpu} = createCartlibProgramHarness(`
@@ -98,7 +99,7 @@ observed_ok,observed_error=pcall(execute)
 		runGuestToHalt(cpu, 20_000_000);
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_ok')), valueBool(true));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('observed_ok')), valueBool(true));
 	});
 	test(`BIOS table.unpack observes inherited indices in ascending order (O${optLevel})`, () => {
 		const {cpu, images} = createCartlibProgramHarness(`
@@ -120,7 +121,7 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 			const instruction = decodeBlua32InstructionAtPc(image.textBytes, image.header.textAddress, pc);
 			if (instruction.op === OpCode.GETT) keyRegisterByPc.set(pc, {table: instruction.b, key: instruction.c});
 		}
-		const target = cpu.stringPool.intern('unpack_target');
+		const target = nativeHeapReference(cpu).stringPool.intern('unpack_target');
 		const visited: number[] = [];
 		cpu.setInstructionObserver({ points: [new Set(keyRegisterByPc.keys()), new Set(), new Set()], observe(_domain, pc, registers) {
 			const operands = keyRegisterByPc.get(pc)!;
@@ -130,8 +131,8 @@ unpack_ok,unpack_error=pcall(table.unpack,faulting,1,12)
 		assert.equal(cpu.captureRuntimeState().hardHalted, false);
 		assert.equal(cpu.getFrameDepth(), 0);
 		assert.deepEqual(visited, [...Array.from({length:16}, (_,i) => i+1), ...Array.from({length:9}, (_,i) => i+1)]);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('unpack_ok')), valueBool(false));
-		const error = cpu.getGlobalByKey(cpu.stringPool.intern('unpack_error'));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('unpack_ok')), valueBool(false));
+		const error = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('unpack_error'));
 		assert.ok(valueIsString(error));
 		assert.equal(cpu.stringPool.toString(asStringId(error)), 'Metatable index chain too long.');
 	});

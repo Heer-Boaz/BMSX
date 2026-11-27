@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -85,9 +86,9 @@ test('compiled ITERN resumes its physical table cursor and preserves its scalar 
 			assert.equal(entry.terminal.skippedInstructionWidth, 2);
 		}
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
-		cpu.gc.tables.setInteger(table, 1, valueBool(false));
-		cpu.gc.tables.setInteger(table, 3, valueInteger(33));
-		cpu.gc.tables.setInteger(table, -4, valueInteger(99));
+		nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueBool(false));
+		nativeHeapReference(cpu).gc.tables.setInteger(table, 3, valueInteger(33));
+		nativeHeapReference(cpu).gc.tables.setInteger(table, -4, valueInteger(99));
 		for (const [key, value] of [[valueInteger(1), valueBool(false)], [valueInteger(3), valueInteger(33)],
 			[valueInteger(-4), valueInteger(99)], [valueNil(), valueNil()]] as const) {
 			registers.setInteger(6, -7);
@@ -95,7 +96,7 @@ test('compiled ITERN resumes its physical table cursor and preserves its scalar 
 			assert.equal(frame.pc, pc + 3 * INSTRUCTION_BYTES);
 			assert.deepEqual([registers.get(4), registers.get(5), registers.get(6)], [key, value, valueNil()]);
 			if (key === valueInteger(1)) {
-				cpu.gc.tables.setInteger(table, 1, valueNil());
+				nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueNil());
 				assert.equal(registers.getTag(2), ValueTag.Nil);
 				assert.equal(registers.getPayload(2), 1);
 			}
@@ -125,7 +126,7 @@ test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', (
 		const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
 		const tables = [js, scalar].map((cpu, i) => {
 			const table = createReferenceTable(cpu, 1);
-			cpu.gc.tables.setInteger(table, 1, valueInteger(0));
+			nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(0));
 			frames[i].registers.setInteger(2, 0);
 			frames[i].registers.setTable(3, table);
 			return table;
@@ -155,15 +156,15 @@ test('negative integer keys use hash storage without disturbing the array', () =
 		const { cpu } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const table = createReferenceTable(cpu, 1, 1), child = createReferenceTable(cpu), meta = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
-		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table));
-		cpu.gc.tables.setMetatableAddress(child, meta);
+		nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(61));
+		nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(table));
+		nativeHeapReference(cpu).gc.tables.setMetatableAddress(child, meta);
 		r.setTable(0, table); r.setInteger(1, 1); r.setInteger(2, 89); r.setTable(5, child); r.setInteger(7, 1);
 		cpu.runUntilDepth(0, 1024);
 		if (backend === CpuExecutionBackend.JavaScript)
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]);
-		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
-		cpu.gc.tables.setInteger(table, key, valueInteger(73));
+		nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(61));
+		nativeHeapReference(cpu).gc.tables.setInteger(table, key, valueInteger(73));
 		r.setInteger(1, key);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		cpu.runUntilDepth(0, 3 * BASE_CYCLES[OpCode.GETT] + BASE_CYCLES[OpCode.SETT]);
@@ -203,8 +204,8 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 		for (const value of [valueNil(), valueBool(false), valueBool(true), valueFloat(-0), valueFloatBits(0xffc01234), valueFloat(Infinity), 'value'] as const) {
 			for (const cpu of [js, ref]) {
 				const r = cpu.rootThread.frameAtDepth(0).registers;
-				r.set(1, key === 'field' ? valueString(cpu.stringPool.intern(key)) : key);
-				r.set(2, value === 'value' ? valueString(cpu.stringPool.intern(value)) : value);
+				r.set(1, key === 'field' ? valueString(nativeHeapReference(cpu).stringPool.intern(key)) : key);
+				r.set(2, value === 'value' ? valueString(nativeHeapReference(cpu).stringPool.intern(value)) : value);
 			}
 			runCpuParity(js, ref, 16);
 			// Rebuilding can consume the grant before the loop's readback.
@@ -236,12 +237,12 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const own = createReferenceTable(cpu, 2, 0), parent = createReferenceTable(cpu, 2, 0), meta = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setInteger(parent, 1, valueInteger(73)); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent)); cpu.gc.tables.setMetatableAddress(own, meta);
+		nativeHeapReference(cpu).gc.tables.setInteger(parent, 1, valueInteger(73)); nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(parent)); nativeHeapReference(cpu).gc.tables.setMetatableAddress(own, meta);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, own); cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	for (const value of [valueBool(false), valueInteger(0), valueNil(), valueBool(true), valueInteger(19), valueNil()]) {
-		for (const cpu of [js, ref]) cpu.gc.tables.setInteger(cpu.rootThread.frameAtDepth(0).registers.getPayload(0), 1, value);
+		for (const cpu of [js, ref]) nativeHeapReference(cpu).gc.tables.setInteger(cpu.rootThread.frameAtDepth(0).registers.getPayload(0), 1, value);
 		runCpuParity(js, ref, 6);
 		assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 		assert.equal(js.readFrameRegister(0, 3), value === valueNil() ? valueInteger(73) : value);
@@ -263,7 +264,7 @@ test('compiled array stores retain hints and length searches preserve live regis
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const table = createReferenceTable(cpu, 2, 4);
-		for (let i = 1; i <= 5; ++i) cpu.gc.tables.setInteger(table, i, valueInteger(i));
+		for (let i = 1; i <= 5; ++i) nativeHeapReference(cpu).gc.tables.setInteger(table, i, valueInteger(i));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2); cpu.runUntilDepth(0, 605);
 	}
 	for (const value of [valueNil(), valueBool(false), valueNil(), valueInteger(2)]) {
@@ -289,7 +290,7 @@ test('compiled byte length retains live definitions and destination/source alias
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 5 }] });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		cpu.rootThread.frameAtDepth(0).registers.setString(1, cpu.stringPool.intern(textToByteString('Aé雪\0😀'))); cpu.runUntilDepth(0, 500);
+		cpu.rootThread.frameAtDepth(0).registers.setString(1, nativeHeapReference(cpu).stringPool.intern(textToByteString('Aé雪\0😀'))); cpu.runUntilDepth(0, 500);
 	}
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
 	assert.equal(js.readFrameRegister(0, 2), valueInteger(11)); assert.equal(js.readFrameRegister(0, 3), valueInteger(18));
@@ -307,7 +308,7 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 		{ firstWord: 32, wordCount: 1 }], constants: ['method'], exceptionFunctionIndex: 1 });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const table = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueInteger(73));
+		const table = createReferenceTable(cpu, 0, 1); nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern('method'), valueInteger(73));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -315,8 +316,8 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 	assert.equal(frame.registers.get(7), frame.registers.get(9));
 	for (const cpu of [js, ref]) {
 		const root = cpu.rootThread.frameAtDepth(0), table = root.registers.getPayload(9), meta = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueNil()); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table));
-		cpu.gc.tables.setMetatableAddress(table, meta); root.top = 0;
+		nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern('method'), valueNil()); nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(table));
+		nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, meta); root.top = 0;
 	}
 	runCpuParity(js, ref, 4);
 	assert.ok(isDeepStrictEqual(js.captureRuntimeState(), ref.captureRuntimeState()));
@@ -342,17 +343,17 @@ for (const [op, key] of [
 		const cpu = createTestHeapServiceCpu(image, backend).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 		const table = createReferenceTable(cpu, 2, 1);
-		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
-		cpu.gc.tables.set(table, encodedKey, valueInteger(73));
+		const encodedKey = key === 'field' ? valueString(nativeHeapReference(cpu).stringPool.intern(key)) : key;
+		nativeHeapReference(cpu).gc.tables.set(table, encodedKey, valueInteger(73));
 		r.setTable(0, table); r.set(1, encodedKey); r.setInteger(9, 17);
 		cpu.runUntilDepth(0, 32 * (2 * BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[op] + BASE_CYCLES[OpCode.JMP]));
 		if (backend === CpuExecutionBackend.JavaScript) {
 			const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
 		}
-		cpu.gc.tables.set(table, encodedKey, valueNil());
+		nativeHeapReference(cpu).gc.tables.set(table, encodedKey, valueNil());
 		const meta = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table)); cpu.gc.tables.setMetatableAddress(table, meta);
+		nativeHeapReference(cpu).gc.tables.setStringKey(meta, nativeHeapReference(cpu).stringPool.intern('__index'), valueTable(table)); nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, meta);
 		r.setInteger(3, 91); r.setInteger(4, 57); frame.top = 0;
 		cpu.runUntilDepth(0, 4);
 		assert.equal(cpu.readLuaFaultReasonWord(), LUA_FAULT_REASON_METATABLE_LOOP);

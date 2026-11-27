@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
@@ -42,11 +43,11 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	if (name === 'table') {
 		const weak = createReferenceTable(cpu, 1, 0);
 		const mode = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
-		cpu.gc.tables.setMetatableAddress(weak, mode);
-		cpu.gc.tables.setInteger(weak, 1, cpu.readFrameRegister(0, 0));
-		setReferenceGlobal(cpu, cpu.stringPool.intern('weak'), valueTable(weak));
-		cpu.gc.collect();
+		nativeHeapReference(cpu).gc.tables.setStringKey(mode, nativeHeapReference(cpu).stringPool.intern('__mode'), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
+		nativeHeapReference(cpu).gc.tables.setMetatableAddress(weak, mode);
+		nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, cpu.readFrameRegister(0, 0));
+		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('weak'), valueTable(weak));
+		nativeHeapReference(cpu).gc.collect();
 		assert.ok(cpu.gc.tables.getInteger(weak, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
 	}
 	const saved = cpu.captureRuntimeState();
@@ -130,12 +131,12 @@ test('restore retains weak referents until the original allocation-triggered col
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(
 		compileLuaSource('return 0', 'snapshot-weak.lua'),
 	));
-	const weakKey = cpu.stringPool.intern('weak');
+	const weakKey = nativeHeapReference(cpu).stringPool.intern('weak');
 	const weak = createReferenceTable(cpu, 1, 0);
 	const metatable = createReferenceTable(cpu, 0, 1);
-	cpu.gc.tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
-	cpu.gc.tables.setMetatableAddress(weak, metatable);
-	cpu.gc.tables.setInteger(weak, 1, valueTable(createReferenceTable(cpu)));
+	nativeHeapReference(cpu).gc.tables.setStringKey(metatable, nativeHeapReference(cpu).stringPool.intern('__mode'), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
+	nativeHeapReference(cpu).gc.tables.setMetatableAddress(weak, metatable);
+	nativeHeapReference(cpu).gc.tables.setInteger(weak, 1, valueTable(createReferenceTable(cpu)));
 	setReferenceGlobal(cpu, weakKey, valueTable(weak));
 	// These allocations have left guest accounting debt but are unreachable.
 	for (let index = 0; index < 17; index += 1) createReferenceTable(cpu, 256, 0);
@@ -209,7 +210,7 @@ return 1
 
 	cpu.memory.restoreSaveState(warmRam);
 	cpu.restoreRuntimeState(warm);
-	while (cpu.gc.phase() !== GcPhase.Sweep) cpu.gc.step();
+	while (cpu.gc.phase() !== GcPhase.Sweep) nativeHeapReference(cpu).gc.step();
 	assert.equal(cpu.memory.readRamRecordByte(closureAddress + GC_COLOR_OFFSET), cpu.gc.white() ^ 1);
 	const sweep = cpu.captureRuntimeState(), sweepRam = cpu.memory.captureSaveState();
 	const atColdSite = () => {
@@ -253,7 +254,7 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 test('CPU capture walks no language records; fresh restore reattaches a graph from RAM', () => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem('return 19, 21', 0, [], 'snapshot-physical-records.lua'));
 	const { cpu } = createTestSystemCpu(image);
-	const key = cpu.stringPool.intern('graph');
+	const key = nativeHeapReference(cpu).stringPool.intern('graph');
 	setReferenceGlobal(cpu, key, valueNil());
 	runGuestToHalt(cpu, 10_000);
 	const before = cpu.captureRuntimeState();
@@ -262,8 +263,8 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	setReferenceGlobal(cpu, key, rootValue);
 	for (let index = 1; index <= 1024; ++index) {
 		const child = createReferenceTable(cpu, 1, 0);
-		cpu.gc.tables.setInteger(child, 1, rootValue);
-		cpu.gc.tables.setInteger(root, index, valueTable(child));
+		nativeHeapReference(cpu).gc.tables.setInteger(child, 1, rootValue);
+		nativeHeapReference(cpu).gc.tables.setInteger(root, index, valueTable(child));
 	}
 	const ram = cpu.memory.captureSaveState();
 	const storage: Value[] = [];
@@ -286,17 +287,17 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 
 test('snapshot words preserve int32 and f32 bits, primitive tags and interned ids', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-values.lua')));
-	const key = cpu.stringPool.intern('values');
+	const key = nativeHeapReference(cpu).stringPool.intern('values');
 	const values = [
 		valueInteger(0), valueInteger(-2147483648), valueInteger(2147483647),
 		valueFloatBits(0x80000000), valueFloat(0), valueFloat(1.25), valueFloatBits(0xffc12345),
 		valueFloatBits(0x7f800001), valueFloat(Infinity), valueFloat(-Infinity), valueFloatBits(1), valueFloatBits(0x7f7fffff),
-		valueBool(false), valueBool(true), valueString(cpu.stringPool.intern('saved')),
+		valueBool(false), valueBool(true), valueString(nativeHeapReference(cpu).stringPool.intern('saved')),
 		valueBuiltinFunction(BuiltinFunctionId.Next), valueNil(),
 	];
 	const table = createReferenceTable(cpu, values.length, 0);
 	setReferenceGlobal(cpu, key, valueTable(table));
-	for (let index = 0; index < values.length; index += 1) cpu.gc.tables.setInteger(table, index + 1, values[index]);
+	for (let index = 0; index < values.length; index += 1) nativeHeapReference(cpu).gc.tables.setInteger(table, index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
@@ -306,16 +307,16 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 
 test('deep cyclic guest graphs do not consume the host serialization stack', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-depth.lua')));
-	const key = cpu.stringPool.intern('deep');
+	const key = nativeHeapReference(cpu).stringPool.intern('deep');
 	const root = createReferenceTable(cpu, 1, 0);
 	setReferenceGlobal(cpu, key, valueTable(root));
 	let tail = root;
 	for (let index = 1; index < 4096; index += 1) {
 		const child = createReferenceTable(cpu, 1, 0);
-		cpu.gc.tables.setInteger(tail, 1, valueTable(child));
+		nativeHeapReference(cpu).gc.tables.setInteger(tail, 1, valueTable(child));
 		tail = child;
 	}
-	cpu.gc.tables.setInteger(tail, 1, valueTable(root));
+	nativeHeapReference(cpu).gc.tables.setInteger(tail, 1, valueTable(root));
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
@@ -328,22 +329,22 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 
 test('table boundary hints and mixed numeric hash layout survive restore without normalization', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-boundaries.lua')));
-	const key = cpu.stringPool.intern('boundary');
+	const key = nativeHeapReference(cpu).stringPool.intern('boundary');
 	const table = createReferenceTable(cpu, 64, 128);
-	for (let n = 64; n > 0; n--) cpu.gc.tables.setInteger(table, n, valueBool(false));
-	for (let n = -1; n >= -64; n--) cpu.gc.tables.setInteger(table, n, valueInteger(n));
+	for (let n = 64; n > 0; n--) nativeHeapReference(cpu).gc.tables.setInteger(table, n, valueBool(false));
+	for (let n = -1; n >= -64; n--) nativeHeapReference(cpu).gc.tables.setInteger(table, n, valueInteger(n));
 	setReferenceGlobal(cpu, key, valueTable(table));
 	const ram = cpu.memory.captureSaveState();
 	const state = cpu.captureRuntimeState();
 	assert.equal(cpu.gc.tables.length(table), 64);
 	assert.deepEqual(cpu.captureRuntimeState(), state, 'inspection does not normalize a non-boundary hint');
-	cpu.gc.tables.setInteger(table, 1, valueNil()); cpu.gc.tables.setInteger(table, 64, valueNil()); cpu.gc.tables.setInteger(table, -32, valueInteger(999));
+	nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, 64, valueNil()); nativeHeapReference(cpu).gc.tables.setInteger(table, -32, valueInteger(999));
 	cpu.memory.restoreSaveState(ram);
 	cpu.restoreRuntimeState(state);
 	const restored = valuePayload(cpu.getGlobalByKey(key));
 	assert.equal(cpu.gc.tables.length(restored), 64);
 	assert.equal(cpu.gc.tables.getInteger(restored, -32), valueInteger(-32));
 	assert.deepEqual(cpu.captureRuntimeState(), state);
-	for (let n = -65; n >= -256; n--) cpu.gc.tables.setInteger(restored, n, valueInteger(n));
+	for (let n = -65; n >= -256; n--) nativeHeapReference(cpu).gc.tables.setInteger(restored, n, valueInteger(n));
 	assert.equal(cpu.gc.tables.length(restored), 64, 'hash growth redistributes storage without changing the boundary');
 });

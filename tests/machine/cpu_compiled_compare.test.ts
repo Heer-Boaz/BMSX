@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -36,7 +37,7 @@ function values(cpu: CPU): Value[] {
 	const closure = seedTestRomClosure(cpu, cpu.rootThread.frameAtDepth(0).functionAddress);
 	return [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueInteger(1), valueInteger(-1),
 		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
-		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
+		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(nativeHeapReference(cpu).stringPool.intern(text))),
 		valueTable(createReferenceTable(cpu)), valueTable(createReferenceTable(cpu)), valueClosure(closure),
 		valueThread(cpu.rootThread.address), valueThread(allocateThreadRecordReference(cpu, closure)),
 		valueBuiltinFunction(BuiltinFunctionId.RawGet), valueBuiltinFunction(BuiltinFunctionId.Next)];
@@ -105,8 +106,8 @@ for (const op of [OpCode.LT, OpCode.LE]) test(`compiled ordering ${op} retains l
 		observeRegisterStores(frame.registers, index => { if (index === 4) ++countStores; });
 		for (const cpu of [js, ref]) {
 			const current = cpu.rootThread.frameAtDepth(0);
-			current.registers.setString(0, cpu.stringPool.intern('mz'));
-			current.registers.setString(1, cpu.stringPool.intern('my'));
+			current.registers.setString(0, nativeHeapReference(cpu).stringPool.intern('mz'));
+			current.registers.setString(1, nativeHeapReference(cpu).stringPool.intern('my'));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
 		}
 		countStores = 0;
@@ -175,7 +176,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 		for (const { cpu } of machines) {
 			cpu.writeFrameExecution(0, domain, domain === SYSTEM_EXECUTION_DOMAIN_ID
 				? images.systemSymbols.functionAddresses[0] : images.cartSymbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-			cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(cpu.stringPool.intern('same-slot')));
+			cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(nativeHeapReference(cpu).stringPool.intern('same-slot')));
 		}
 		runCpuParity(machines[0].cpu, machines[1].cpu, 1024);
 		const frame = machines[0].cpu.rootThread.frameAtDepth(0);
@@ -197,7 +198,7 @@ test('warmed RK comparisons at one RAM PC belong to each execution image and ret
 	for (const { cpu, memory } of machines) {
 		memory.installSystemRom(replacement.romBytes);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, replacement.symbols.functionAddresses[0], DYNAMIC_RAM_BASE);
-		cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(cpu.stringPool.intern('same-slot')));
+		cpu.rootThread.frameAtDepth(0).registers.set(0, valueString(nativeHeapReference(cpu).stringPool.intern('same-slot')));
 	}
 	runCpuParity(machines[0].cpu, machines[1].cpu, 4);
 	assert.equal(machines[0].cpu.rootThread.frameAtDepth(0).registers.get(1), valueBool(false),
@@ -458,8 +459,8 @@ for (const comparisonWide of [false, true]) for (const jumpWide of [false, true]
 					for (const { cpu } of machines) {
 						const r = cpu.rootThread.frameAtDepth(0).registers;
 						if (strings) {
-							r.setString(0, cpu.stringPool.intern(expected ? 'aaaaaa' : 'zzzzzz'));
-							r.setString(2, cpu.stringPool.intern(op === OpCode.EQ && expected ? 'aaaaaa' : 'mmmmmm'));
+							r.setString(0, nativeHeapReference(cpu).stringPool.intern(expected ? 'aaaaaa' : 'zzzzzz'));
+							r.setString(2, nativeHeapReference(cpu).stringPool.intern(op === OpCode.EQ && expected ? 'aaaaaa' : 'mmmmmm'));
 						} else {
 							r.setInteger(0, op === OpCode.EQ ? (expected ? 7 : 6) : (expected ? 6 : 8));
 							r.setInteger(2, 7);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -77,7 +78,7 @@ end`;
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted, 'cold boot');
 	const read = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
 	const lookup = (id: string, system = false) => {
-		runCompletionClosure(cpu, read, [valueString(cpu.stringPool.intern(id)), valueBool(system)]);
+		runCompletionClosure(cpu, read, [valueString(nativeHeapReference(cpu).stringPool.intern(id)), valueBool(system)]);
 		return materializeCpuCompletionValues(cpu);
 	};
 	assert.deepEqual(lookup('warm'), [valueInteger(CART_ROM_BASE + 0x100), valueInteger(4)]);
@@ -102,8 +103,8 @@ end`;
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
 	cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, linked.vectors.initFunctionAddress);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('preparations'))), 2, 'preparation retains the live program');
-	assert.equal(isNil(cpu.getGlobalByKey(cpu.stringPool.intern('ready_image'))), false, 'directory refresh precedes dependent init');
+	assert.equal(asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('preparations'))), 2, 'preparation retains the live program');
+	assert.equal(isNil(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('ready_image'))), false, 'directory refresh precedes dependent init');
 	assert.deepEqual(lookup('warm'), [valueInteger(CART_ROM_BASE + 0x120), valueInteger(8)]);
 	assert.deepEqual(lookup('late'), [valueInteger(CART_ROM_BASE + 0x130), valueInteger(12)]);
 	assert.deepEqual(lookup('removed'), [valueNil()]);

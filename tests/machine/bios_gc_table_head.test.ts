@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -74,7 +75,7 @@ function fixture(optLevel: 0 | 3) {
 		return address;
 	}
 	function string(text: string) {
-		const id = add(target => target.stringPool.intern(text));
+		const id = add(target => nativeHeapReference(target).stringPool.intern(text));
 		assert.ok(id >= RAM_BASE);
 		byte(id + 1, 0x94);
 		return id;
@@ -86,8 +87,8 @@ function fixture(optLevel: 0 | 3) {
 		return id;
 	}
 	function pendingString(id: number) {
-		cpu.stringPool.markReachable(id);
-		oracle.stringPool.markReachable(id);
+		nativeHeapReference(cpu).stringPool.markReachable(id);
+		nativeHeapReference(oracle).stringPool.markReachable(id);
 	}
 	function table(array: number, hash: number) {
 		const record = add(target => createReferenceTable(target, array, hash));
@@ -123,10 +124,10 @@ function fixture(optLevel: 0 | 3) {
 			memory.readRamRecordWord(control + GC_WEAK_VISITS + GC_VISIT_COUNT)];
 	}
 	function begin(record: number, limit: number, resuming: boolean) {
-		const work = oracle.gc['traceTable'](record, limit, resuming);
-		const pending = oracle.stringPool.takeMarkWork();
+		const work = nativeHeapReference(oracle).gc['traceTable'](record, limit, resuming);
+		const pending = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		assert.ok(cpu.beginHeapService(linked.image.functions[index].address,
-			[control, arena, metadata, record, modeKey, limit, +resuming, cpu.stringPool.takeMarkWork(), 0, output]));
+			[control, arena, metadata, record, modeKey, limit, +resuming, nativeHeapReference(cpu).stringPool.takeMarkWork(), 0, output]));
 		return [work, pending];
 	}
 	function grant(cycles: number) {

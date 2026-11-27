@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -55,8 +56,8 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), [valueNil()]);
   }
   const sparse = createReferenceTable(cpu, 8, 0);
-  cpu.gc.tables.setInteger(sparse, 3, valueInteger(33));
-  cpu.gc.tables.setInteger(sparse, 7, valueInteger(77));
+  nativeHeapReference(cpu).gc.tables.setInteger(sparse, 3, valueInteger(33));
+  nativeHeapReference(cpu).gc.tables.setInteger(sparse, 7, valueInteger(77));
   runNext(sparse, valueNil(), [valueInteger(3), valueInteger(33)]);
   runNext(sparse, valueInteger(3), [valueInteger(7), valueInteger(77)]);
   runNext(sparse, valueInteger(7), [valueNil()]);
@@ -64,7 +65,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   runNext(sparse, valueInteger(2), [valueInteger(3), valueInteger(33)]);
 
   const hash = createReferenceTable(cpu, 0, 8);
-  for (let index = 0; index < 8; ++index) cpu.gc.tables.setStringKey(hash, cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
+  for (let index = 0; index < 8; ++index) nativeHeapReference(cpu).gc.tables.setStringKey(hash, nativeHeapReference(cpu).stringPool.intern(`next-${index}`), valueInteger(index + 10));
   const stored = new ValueSlots(2);
   const keys: Value[] = [], values: Value[] = [];
   for (let slot = 0; slot < 8; ++slot) {
@@ -72,14 +73,14 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    keys.push(stored.get(0));
    values.push(stored.get(1));
   }
-  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) cpu.gc.tables.set(hash, keys[slot], valueNil());
+  for (let slot = 0; slot < 8; ++slot) if (slot !== 1 && slot !== 4) nativeHeapReference(cpu).gc.tables.set(hash, keys[slot], valueNil());
   runNext(hash, valueNil(), [keys[1], values[1]]);
   runNext(hash, keys[1], [keys[4], values[4]]);
   runNext(hash, keys[2], [keys[4], values[4]]);
   runNext(hash, keys[4], [valueNil()]);
 
   const falseKey = createReferenceTable(cpu, 0, 1);
-  cpu.gc.tables.set(falseKey, valueBool(false), valueBool(false));
+  nativeHeapReference(cpu).gc.tables.set(falseKey, valueBool(false), valueBool(false));
   runNext(falseKey, valueNil(), [valueBool(false), valueBool(false)]);
   runNext(falseKey, valueBool(false), [valueNil()]);
  });
@@ -111,10 +112,10 @@ return true`, 3);
   const { cpu } = createTestHeapServiceCpu(image, backend), scheduler = new DeviceScheduler(cpu);
   scheduler.setNowCycles(73);
   const r = cpu.rootThread.currentFrame!.registers, table = createReferenceTable(cpu);
-  const key = valueString(cpu.stringPool.intern('field'));
+  const key = valueString(nativeHeapReference(cpu).stringPool.intern('field'));
   r.setTable(0, table); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
   cpu.instructionBudgetRemaining = 29;
-  cpu.gc.tables.set(table, key, valueInteger(37));
+  nativeHeapReference(cpu).gc.tables.set(table, key, valueInteger(37));
   assert.equal(cpu.instructionBudgetRemaining, 29);
   assert.equal(scheduler.currentNowCycles(), 73, 'host storage work does not advance machine time');
   const saved = cpu.captureRuntimeState();

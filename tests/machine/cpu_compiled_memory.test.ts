@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -149,8 +150,8 @@ test('cached values reach field, memory and fault owners without stale tags or n
 		.reduce((cycles, op) => cycles + BASE_CYCLES[op], 2); // Second bus transfer for F64LE.
 	for (const { cpu } of machines) {
 		const table = createReferenceTable(cpu, 0, 2);
-		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('stable'), ValueTag.Integer, 22);
-		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('result'), ValueTag.Integer, 0);
+		nativeHeapReference(cpu).gc.tables.storeStringKey(table, nativeHeapReference(cpu).stringPool.intern('stable'), ValueTag.Integer, 22);
+		nativeHeapReference(cpu).gc.tables.storeStringKey(table, nativeHeapReference(cpu).stringPool.intern('result'), ValueTag.Integer, 0);
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setTable(1, table); frame.registers.setInteger(5, address);
 		frame.registers.setFloat(12, Infinity); frame.registers.setFloat(13, Infinity);

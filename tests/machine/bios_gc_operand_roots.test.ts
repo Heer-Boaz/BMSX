@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -74,7 +75,7 @@ for (const optLevel of [0, 3] as const) {
 		write(GC_ROOT_CURSOR, cursor);
 		f.publish(receiver, valueTable(key), valueTable(value));
 		const limit = 13;
-		assert.equal(f.oracle.gc['remarkRoots'](valueTable(receiver), valueTable(key), valueTable(value), limit, limit, false), limit);
+		assert.equal(nativeHeapReference(f.oracle).gc['remarkRoots'](valueTable(receiver), valueTable(key), valueTable(value), limit, limit, false), limit);
 		f.begin();
 		for (let i = 0; i < 4096 && f.memory.readRamRecordWord(f.control + GC_TRACE_HEAD) !== index(receiver); ++i) f.grant(1);
 		assert.ok(!f.cpu.isHaltedUntilIrq());
@@ -97,17 +98,17 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`Scoped Atomic operand suffix matches native explicit roots before its work cutoff at O${optLevel}`, () => {
 		const f = fixture(optLevel), receiver = f.add(cpu => createReferenceTable(cpu));
-		const key = f.add(cpu => cpu.stringPool.intern('pending own Table assignment key'));
-		const value = f.add(cpu => cpu.stringPool.intern('pending own Table assignment value'));
+		const key = f.add(cpu => nativeHeapReference(cpu).stringPool.intern('pending own Table assignment key'));
+		const value = f.add(cpu => nativeHeapReference(cpu).stringPool.intern('pending own Table assignment value'));
 		const cursor = GcRootBank.SystemConstants << (GC_GRAY_INDEX_BITS + 1);
 		for (const cpu of [f.cpu, f.oracle]) {
-			cpu.stringPool.beginReachabilityEpoch();
+			nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
 			cpu.memory.writeRamRecordByte(f.control, GcPhase.Atomic);
 			cpu.memory.writeRamRecordWord(f.control + GC_REMARK_VISIT_STATE, 3 << GC_GRAY_INDEX_BITS); // Roots
 			cpu.memory.writeRamRecordWord(f.control + GC_ROOT_CURSOR, cursor);
 		}
 		f.publish(receiver, valueString(key), valueString(value));
-		const want = f.oracle.gc['finalMarkWork'](valueTable(receiver), valueString(key), valueString(value), true, 1);
+		const want = nativeHeapReference(f.oracle).gc['finalMarkWork'](valueTable(receiver), valueString(key), valueString(value), true, 1);
 		assert.equal(want, 2, 'the work cutoff follows both String marks');
 		f.begin();
 		assert.equal(f.finish()[0], want);
@@ -116,8 +117,8 @@ for (const optLevel of [0, 3] as const) {
 
 		// A retry of the same roots does not double-credit their String
 		// colors; the source prefix obtains its existing incoming work.
-		f.oracle.stringPool.resumeMarkWork(1);
-		assert.equal(f.oracle.gc['finalMarkWork'](valueTable(receiver), valueString(key), valueString(value), true, 1), 1);
+		nativeHeapReference(f.oracle).stringPool.resumeMarkWork(1);
+		assert.equal(nativeHeapReference(f.oracle).gc['finalMarkWork'](valueTable(receiver), valueString(key), valueString(value), true, 1), 1);
 		f.begin();
 		assert.equal(f.finish()[0], 0);
 		f.compare();

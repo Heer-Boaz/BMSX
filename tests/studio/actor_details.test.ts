@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
@@ -645,8 +646,8 @@ test('blackboard pins follow real semantic rebinds, not the previous value slot 
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
-	const healthIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('health'))) };
-	const unsetIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('unset'))) };
+	const healthIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(nativeHeapReference(f.cpu).stringPool.intern('health'))) };
+	const unsetIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(nativeHeapReference(f.cpu).stringPool.intern('unset'))) };
 	const health = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity))!;
 	const unset = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, unsetIdentity))!;
 	const pin = f.details.watches.add(target, 'tree', health), nilPin = f.details.watches.add(target, 'tree', unset);
@@ -678,7 +679,7 @@ test('duplicate blackboard occurrences stay distinct while only the owner-resolv
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
-	const answerIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('answer'))) };
+	const answerIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(nativeHeapReference(f.cpu).stringPool.intern('answer'))) };
 	const slots = f.details.items.filter(item => item.identity?.section === 'blackboard-slot'
 		|| item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, answerIdentity));
 	assert.equal(slots.length, 2); assert.deepEqual(slots.map(item => item.value), ['42', '43']);

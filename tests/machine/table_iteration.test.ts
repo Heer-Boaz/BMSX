@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -27,13 +28,13 @@ test('a physical object address remains a deleted-key continuation', () => {
 	const key = createReferenceTable(cpu);
 	const table = createReferenceTable(cpu, 0, 64);
 	const keyValue = valueTable(key);
-	cpu.gc.tables.set(table, keyValue, valueInteger(9));
-	for (let index = 1; index <= 8; index++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`other_${index}`), valueInteger(index));
+	nativeHeapReference(cpu).gc.tables.set(table, keyValue, valueInteger(9));
+	for (let index = 1; index <= 8; index++) nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern(`other_${index}`), valueInteger(index));
 	const continuation = new ValueSlots(2);
 	cpu.gc.tables.next(table, keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	const expected = continuation.get(0);
-	cpu.gc.tables.set(table, keyValue, valueNil());
+	nativeHeapReference(cpu).gc.tables.set(table, keyValue, valueNil());
 	cpu.gc.tables.next(table, keyValue, continuation, 0);
 	assert.notEqual(continuation.getTag(0), ValueTag.Nil);
 	assert.equal(continuation.get(0), expected);

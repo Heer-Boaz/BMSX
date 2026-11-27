@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -34,7 +35,7 @@ function fixture(optLevel: 0 | 3) {
 		return got;
 	}
 	function begin(record: number, key: Value, value: Value, expected: number) {
-		const tables = oracle.gc.tables, hash = tables.hashSize(record), words = tables.hashAddress(record);
+		const tables = nativeHeapReference(oracle).gc.tables, hash = tables.hashSize(record), words = tables.hashAddress(record);
 		let inserted = -1;
 		if (hash !== 0) {
 			const home = hashCanonicalTableKey(key) & (hash - 1);
@@ -77,14 +78,14 @@ for (const opt of [0, 3] as const) {
 	test(`old Hash retries really reuse weak-cleared and identity tombstones at home at O${opt}`, () => {
 		const f = fixture(opt);
 		const [owner, dead, trigger, tagBase] = f.same(cpu => {
-			const strings = cpu.stringPool, table = createReferenceTable(cpu, 0, 8);
+			const strings = nativeHeapReference(cpu).stringPool, table = createReferenceTable(cpu, 0, 8);
 			const meta = createReferenceTable(cpu, 0, 4), victim = createReferenceTable(cpu, 0, 0);
 			const weakKey = valueString(strings.intern('existing-hash-weak-home'));
 			const home = hashCanonicalTableKey(weakKey) & 7;
-			cpu.gc.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
-			cpu.gc.tables.setMetatableAddress(table, meta);
-			cpu.gc.tables.set(table, weakKey, valueTable(victim));
-			cpu.gc.collect(valueTable(table));
+			nativeHeapReference(cpu).gc.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
+			nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, meta);
+			nativeHeapReference(cpu).gc.tables.set(table, weakKey, valueTable(victim));
+			nativeHeapReference(cpu).gc.collect(valueTable(table));
 			assert.equal(cpu.gc.tables.get(table, weakKey), valueNil(), 'a real native weak epoch cleared the value');
 			return [table, home, keysAt(8, home)[0], cpu.gc.tables.hashAddress(table) + 8 * 8] as const;
 		});
@@ -97,8 +98,8 @@ for (const opt of [0, 3] as const) {
 
 		const [identityTable, identityHome] = f.same(cpu => {
 			const record = createReferenceTable(cpu, 0, 8), key = valueTable(createReferenceTable(cpu, 0, 0));
-			cpu.gc.tables.set(record, key, val);
-			cpu.gc.tables.set(record, key, valueNil());
+			nativeHeapReference(cpu).gc.tables.set(record, key, val);
+			nativeHeapReference(cpu).gc.tables.set(record, key, valueNil());
 			return [record, hashCanonicalTableKey(key) & 7] as const;
 		});
 		const tags = f.cpu.gc.tables.hashAddress(identityTable) + 8 * 8;
@@ -116,10 +117,10 @@ for (const opt of [0, 3] as const) {
 		for (const hash of [8, 128]) {
 			const record = f.same(cpu => {
 				const table = createReferenceTable(cpu, 0, hash);
-				for (let home = 0; home < hash; ++home) cpu.gc.tables.set(table, keysAt(hash, home)[0], val);
+				for (let home = 0; home < hash; ++home) nativeHeapReference(cpu).gc.tables.set(table, keysAt(hash, home)[0], val);
 				// The small table has a logical hole which cannot be used
 				// as a free displaced node; the large one is truly full.
-				if (hash === 8) cpu.gc.tables.set(table, keysAt(hash, 1)[0], valueNil());
+				if (hash === 8) nativeHeapReference(cpu).gc.tables.set(table, keysAt(hash, 1)[0], valueNil());
 				return table;
 			});
 			const key = keysAt(hash, 0, 2)[1];
@@ -144,8 +145,8 @@ for (const opt of [0, 3] as const) {
 			const [anchor, displaced, append] = keysAt(hash, 0, 3), trigger = keysAt(hash, home)[0];
 			const [record, traced] = f.same(cpu => {
 				const table = createReferenceTable(cpu, 0, hash);
-				cpu.gc.tables.set(table, anchor, val);
-				cpu.gc.tables.set(table, displaced, val);
+				nativeHeapReference(cpu).gc.tables.set(table, anchor, val);
+				nativeHeapReference(cpu).gc.tables.set(table, displaced, val);
 				// Word links additionally exercise the ModeMeta-only alias:
 				// the original TraceRecord, not the moving Table, rescans.
 				return [table, hash === 8 ? table : createReferenceTable(cpu, 0, 0)] as const;

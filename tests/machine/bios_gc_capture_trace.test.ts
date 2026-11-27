@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -81,9 +82,9 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function cell() {
 		return add(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initializeCell(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
@@ -93,12 +94,12 @@ function fixture(optLevel: 0 | 3) {
 			const prototype = target.captureClosureBinding(target.rootThread.currentFrame!.closure);
 			initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures.length);
 			for (const [index, cell] of captures.entries()) setCaptureAddress(target.memory, address, index, cell);
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
 	function enqueue(address: number, link: number) {
-		for (const target of [cpu, oracle]) target.gc['enqueue'](address, link, GC_TRACE_HEAD);
+		for (const target of [cpu, oracle]) nativeHeapReference(target).gc['enqueue'](address, link, GC_TRACE_HEAD);
 	}
 	function begin(name: 'queued' | 'resumed', ...args: number[]) {
 		assert.ok(cpu.beginHeapService(linked.image.functions[entries.get(name)!].address, [control, arena, metadata, ...args, output]));
@@ -123,9 +124,9 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, memory, oracle, control, add, cell, closure, enqueue, word, begin, finish, compare } = fixture(optLevel);
 		const open = cell(), closed = cell();
 		const owner = add(target => allocateThreadRecordReference(target, 0)), table = add(target => createReferenceTable(target));
-		const fake = add(target => target.heapAllocator.allocate(32, true)) + GC_OBJECT_PREFIX;
-		const string = add(target => target.stringPool.intern('bios-trace-closed-value'));
-		const prior = add(target => target.stringPool.intern('bios-trace-prior-work'));
+		const fake = add(target => nativeHeapReference(target).heapAllocator.allocate(32, true)) + GC_OBJECT_PREFIX;
+		const string = add(target => nativeHeapReference(target).stringPool.intern('bios-trace-closed-value'));
+		const prior = add(target => nativeHeapReference(target).stringPool.intern('bios-trace-prior-work'));
 		const liveColor = cpu.gc.white();
 		const alias = (closed | 0x40000001) >>> 0;
 		const head = closure([open, closed, closed, fake, alias]);
@@ -138,15 +139,15 @@ for (const optLevel of [0, 3] as const) {
 			mem.writeRamRecordByte(block + 4 * capacity + slot, ValueTag.Table);
 			mem.writeRamRecordByte(closed + UPVALUE_VALUE_TAG, ValueTag.String);
 			mem.writeRamRecordWord(closed + UPVALUE_VALUE_WORD, string);
-			target.stringPool.beginReachabilityEpoch();
-			target.stringPool.markReachable(prior);
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.markReachable(prior);
 		}
-		assert.equal(cpu.stringPool.takeMarkWork(), 1);
+		assert.equal(nativeHeapReference(cpu).stringPool.takeMarkWork(), 1);
 		word(fake, UPVALUE_RECORD_KIND | (liveColor << 8));
 		word(open, memory.readRamRecordWord(open) | 0x9800);
 		word(closed, memory.readRamRecordWord(closed) | 0x7400);
 		enqueue(head, GC_RECORD_LINK);
-		const expectedWork = oracle.gc['trace'](false, 64), expectedStrings = oracle.stringPool.takeMarkWork();
+		const expectedWork = nativeHeapReference(oracle).gc['trace'](false, 64), expectedStrings = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		begin('queued', head, ValueTag.Closure, 64, 1, 0);
 		assert.deepEqual(finish(), [expectedWork, expectedStrings]);
 		assert.deepEqual([expectedWork, expectedStrings], [16, 2]);
@@ -161,19 +162,19 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua traceCaptures resumes native cursor and String-work boundaries at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, add, cell, closure, enqueue, word, begin, grant, finish, compare } = fixture(optLevel);
 		const first = cell(), second = cell(), head = closure([first, first, second]);
-		const string = add(target => target.stringPool.intern('bios-slow-capture-string'));
-		const prior = add(target => target.stringPool.intern('bios-slow-pending-string'));
+		const string = add(target => nativeHeapReference(target).stringPool.intern('bios-slow-capture-string'));
+		const prior = add(target => nativeHeapReference(target).stringPool.intern('bios-slow-pending-string'));
 		for (const target of [cpu, oracle]) {
 			target.memory.writeRamRecordByte(first + UPVALUE_VALUE_TAG, ValueTag.String);
 			target.memory.writeRamRecordWord(first + UPVALUE_VALUE_WORD, string);
-			target.stringPool.beginReachabilityEpoch();
-			target.stringPool.markReachable(prior);
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.markReachable(prior);
 		}
-		assert.equal(cpu.stringPool.takeMarkWork(), 1);
+		assert.equal(nativeHeapReference(cpu).stringPool.takeMarkWork(), 1);
 		enqueue(head, GC_RECORD_LINK);
-		assert.equal(oracle.gc['trace'](false, 3), 3);
+		assert.equal(nativeHeapReference(oracle).gc['trace'](false, 3), 3);
 		begin('queued', head, ValueTag.Closure, 3, 1, 0);
-		const pendingCarry = oracle.stringPool.takeMarkWork();
+		const pendingCarry = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		assert.equal(pendingCarry, 1);
 		assert.deepEqual(finish(), [3, pendingCarry], 'no capture visit leaves the old String latch pending');
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_RECORD), head);
@@ -182,8 +183,8 @@ for (const optLevel of [0, 3] as const) {
 
 		let pending = pendingCarry;
 		for (const [limit, cursor, want] of [[1, 1, 7], [1, 2, 1], [1, 0, 5]]) {
-			oracle.stringPool.resumeMarkWork(pending);
-			const work = oracle.gc['resumeTrace'](head, false, limit);
+			nativeHeapReference(oracle).stringPool.resumeMarkWork(pending);
+			const work = nativeHeapReference(oracle).gc['resumeTrace'](head, false, limit);
 			assert.equal(work, want);
 			begin('resumed', head, limit, pending, 0);
 			let partial: ReturnType<typeof captureCpuCheckpoint> | null = null;
@@ -194,7 +195,7 @@ for (const optLevel of [0, 3] as const) {
 				assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0, 'the first capture is only partly traced');
 				partial = captureCpuCheckpoint(cpu);
 			}
-			const expected = [work, oracle.stringPool.takeMarkWork()];
+			const expected = [work, nativeHeapReference(oracle).stringPool.takeMarkWork()];
 			assert.deepEqual(finish(), expected);
 			if (partial !== null) {
 				restoreCpuCheckpoint(cpu, partial);
@@ -207,18 +208,18 @@ for (const optLevel of [0, 3] as const) {
 		word(control + GC_TRACE_RECORD, head);
 		word(control + GC_TRACE_CURSOR, 0x80000001);
 		begin('resumed', head, 4, 0, 0);
-		assert.deepEqual(finish(), [oracle.gc['resumeTrace'](head, false, 4), 0], 'cursor comparison is unsigned');
+		assert.deepEqual(finish(), [nativeHeapReference(oracle).gc['resumeTrace'](head, false, 4), 0], 'cursor comparison is unsigned');
 		compare();
 	});
 
 	test(`BLua closed Upvalue trace resumes between gray queue pop and link clear at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, add, cell, closure, enqueue, word, begin, grant, finish, compare } = fixture(optLevel);
 		const tail = closure([]), head = cell();
-		const string = add(target => target.stringPool.intern('bios-queued-upvalue-string'));
+		const string = add(target => nativeHeapReference(target).stringPool.intern('bios-queued-upvalue-string'));
 		for (const target of [cpu, oracle]) {
 			target.memory.writeRamRecordByte(head + UPVALUE_VALUE_TAG, ValueTag.String);
 			target.memory.writeRamRecordWord(head + UPVALUE_VALUE_WORD, string);
-			target.stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 		}
 		word(head, memory.readRamRecordWord(head) | 0x9000);
 		enqueue(tail, GC_RECORD_LINK);
@@ -230,7 +231,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(head + UPVALUE_NEXT), grayIndex(tail), 'Next has not cleared yet');
 		assert.equal(memory.readRamRecordByte(head + GC_COLOR_OFFSET), 0x92, 'recolor follows unlink');
 		const partial = captureCpuCheckpoint(cpu);
-		const work = oracle.gc['trace'](false, 1), stringWork = oracle.stringPool.takeMarkWork();
+		const work = nativeHeapReference(oracle).gc['trace'](false, 1), stringWork = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		assert.deepEqual([work, stringWork], [4, 1]);
 		assert.deepEqual(finish(), [work, stringWork]);
 		assert.equal(memory.readRamRecordWord(head + UPVALUE_NEXT), 0);
@@ -241,7 +242,7 @@ for (const optLevel of [0, 3] as const) {
 		// The C++ mirror stores the full color byte, even on a raw header.
 		word(tail, memory.readRamRecordWord(tail) | 0x9000);
 		begin('queued', tail, ValueTag.Closure, 8, 0, 1);
-		assert.deepEqual(finish(), [oracle.gc['trace'](false, 8), 0]);
+		assert.deepEqual(finish(), [nativeHeapReference(oracle).gc['trace'](false, 8), 0]);
 		assert.equal(memory.readRamRecordByte(tail + GC_COLOR_OFFSET), 3);
 		oracle.memory.writeRamRecordByte(tail + GC_COLOR_OFFSET, 3);
 		compare();

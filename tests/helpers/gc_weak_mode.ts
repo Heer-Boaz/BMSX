@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import { admitTestHeapServiceCpu, compileTestSystemWithHeap, createTestHeapServiceCpu } from './heap_service_system';
 import assert from 'node:assert/strict';
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -45,7 +46,7 @@ export function createGcWeakModeFixture(optLevel: 0 | 3, carts: boolean) {
 	admitTestHeapServiceCpu(cpu, addressSpace);
 	for (const [slot, linkedCart] of [[0, slot0], [1, slot1]] as const) {
 		const { stringBucketAddress, stringBucketCount } = linkedCart.cartImage.header;
-		cpu.stringPool.activateRomTable(slot, stringBucketAddress, stringBucketCount);
+		nativeHeapReference(cpu).stringPool.activateRomTable(slot, stringBucketAddress, stringBucketCount);
 	}
 	return { cpu, memory, addresses, rom: linked.romBytes, carts: [slot0.cartRomBytes, slot1.cartRomBytes] as const };
 }

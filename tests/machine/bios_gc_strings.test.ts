@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -56,8 +57,8 @@ function fixture(optLevel: 0 | 3) {
 	runGuestToHalt(cpu, 10_000);
 	runGuestToHalt(oracle, 10_000);
 	const ids = names.map(name => {
-		const id = cpu.stringPool.intern(name);
-		assert.equal(id, oracle.stringPool.intern(name));
+		const id = nativeHeapReference(cpu).stringPool.intern(name);
+		assert.equal(id, nativeHeapReference(oracle).stringPool.intern(name));
 		return id;
 	});
 	const floor = memory.ramBusEnd() - RAM_BASE;
@@ -97,7 +98,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`BLua String reachability and sweep entry match the TS reference at O${optLevel}`, () => {
 		const { memory, oracle, ids, metadata, word, invoke } = fixture(optLevel);
-		const pool = oracle.stringPool;
+		const pool = nativeHeapReference(oracle).stringPool;
 		const previous = memory.readRamRecordByte(ids[0] + 1) & 1;
 		word(EPOCH, 0xa5c3d000 | previous);
 		pool.beginReachabilityEpoch();
@@ -130,13 +131,13 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua String directory rehash matches each reference quantum and resumes before publication at O${optLevel}`, () => {
 		const { cpu, memory, oracle, ids, metadata, arena, word, compare, begin, grant, finish, invoke } = fixture(optLevel);
-		const pool = oracle.stringPool;
+		const pool = nativeHeapReference(oracle).stringPool;
 		const oldBase = memory.readRamRecordWord(metadata + BUCKETS), count = memory.readRamRecordWord(metadata + CAPACITY);
 		assert.equal(count & RAM_BUCKET_REHASH, 0, 'fixture starts with a single published directory');
-		const oldBytes = oracle.heapAllocator.allocationBytes(oldBase);
-		const nextBase = oracle.heapAllocator.allocate(8 * count, true);
+		const oldBytes = nativeHeapReference(oracle).heapAllocator.allocationBytes(oldBase);
+		const nextBase = nativeHeapReference(oracle).heapAllocator.allocate(8 * count, true);
 		assert.ok(nextBase > 0);
-		assert.equal(cpu.heapAllocator.allocate(8 * count, true), nextBase);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocate(8 * count, true), nextBase);
 		for (const mem of [memory, oracle.memory]) mem.ramData().fill(0x6d, nextBase - RAM_BASE, nextBase - RAM_BASE + 8 * count);
 		word(CAPACITY, count | RAM_BUCKET_REHASH);
 		word(REHASH_BASE, nextBase);
@@ -179,7 +180,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua sweeps retained and dead Strings and resumes between unlink and release at O${optLevel}`, () => {
 		const { cpu, memory, oracle, ids, metadata, arena, occupied, floor, compare, begin, grant, finish, invoke } = fixture(optLevel);
-		const pool = oracle.stringPool;
+		const pool = nativeHeapReference(oracle).stringPool;
 		const base = memory.readRamRecordWord(metadata + BUCKETS);
 		const count = memory.readRamRecordWord(metadata + CAPACITY);
 		const bucketOf = (record: number) => memory.readRamRecordWord(record + BLUA32_STRING_HASH_OFFSET) & (count - 1);
@@ -238,11 +239,11 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua sweeps both prepared prefixes without advancing the frozen rehash at O${optLevel}`, () => {
 		const { cpu, memory, oracle, metadata, arena, occupied, word, invoke } = fixture(optLevel);
-		const pool = oracle.stringPool;
+		const pool = nativeHeapReference(oracle).stringPool;
 		const count = memory.readRamRecordWord(metadata + CAPACITY);
-		const nextBase = oracle.heapAllocator.allocate(8 * count, true);
+		const nextBase = nativeHeapReference(oracle).heapAllocator.allocate(8 * count, true);
 		assert.ok(nextBase > 0);
-		assert.equal(cpu.heapAllocator.allocate(8 * count, true), nextBase);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocate(8 * count, true), nextBase);
 		word(CAPACITY, count | RAM_BUCKET_REHASH);
 		word(REHASH_BASE, nextBase);
 		let low = 0, high = 0, ready = 0;
@@ -295,13 +296,13 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua republishes a contracted String directory, resumes a link move, and preserves the mirror boundary at O${optLevel}`, () => {
 		const { cpu, memory, oracle, ids, metadata, arena, occupied, word, compare, begin, grant, finish, invoke } = fixture(optLevel);
-		const pool = oracle.stringPool;
+		const pool = nativeHeapReference(oracle).stringPool;
 		const oldBase = memory.readRamRecordWord(metadata + BUCKETS);
 		const oldCount = memory.readRamRecordWord(metadata + CAPACITY);
 		const count = 2048, half = count >>> 1;
-		const base = oracle.heapAllocator.allocate(4 * count, true);
+		const base = nativeHeapReference(oracle).heapAllocator.allocate(4 * count, true);
 		assert.ok(base > 0);
-		assert.equal(cpu.heapAllocator.allocate(4 * count, true), base);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocate(4 * count, true), base);
 		for (const mem of [memory, oracle.memory]) mem.ramData().fill(0, base - RAM_BASE, base - RAM_BASE + 4 * count);
 		let records = 0, upperRecords = 0;
 		for (let i = 0; i < oldCount; ++i) {
@@ -322,9 +323,9 @@ for (const optLevel of [0, 3] as const) {
 		assert.ok(records <= (count >>> 2) && upperRecords > 0, 'the enlarged directory is sparse and has upper links');
 		word(BUCKETS, base);
 		word(CAPACITY, count);
-		cpu.heapAllocator.free(oldBase);
-		oracle.heapAllocator.free(oldBase);
-		const backingBytes = cpu.heapAllocator.allocationBytes(base), charged = memory.readRamRecordWord(occupied);
+		nativeHeapReference(cpu).heapAllocator.free(oldBase);
+		nativeHeapReference(oracle).heapAllocator.free(oldBase);
+		const backingBytes = nativeHeapReference(cpu).heapAllocator.allocationBytes(base), charged = memory.readRamRecordWord(occupied);
 		pool.beginSweep();
 		invoke('begin_sweep', 0);
 		function step(allowance: number, exact = 1) {
@@ -358,11 +359,11 @@ for (const optLevel of [0, 3] as const) {
 		step(half + upperRecords - first - 1);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), half);
 		assert.equal(memory.readRamRecordWord(metadata + SWEEP), SWEEP_SHRINK);
-		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes, 'the exact work boundary still owns both halves');
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(base), backingBytes, 'the exact work boundary still owns both halves');
 		const atBoundary = captureCpuCheckpoint(cpu), oracleAtBoundary = captureCpuCheckpoint(oracle);
 		step(1);
 		assert.equal(memory.readRamRecordWord(metadata + SWEEP), 0);
-		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes - 4 * half);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(base), backingBytes - 4 * half);
 
 		restoreCpuCheckpoint(cpu, atBoundary);
 		restoreCpuCheckpoint(oracle, oracleAtBoundary);
@@ -370,14 +371,14 @@ for (const optLevel of [0, 3] as const) {
 		// The C++ reference leaves this raw state and allocation untouched.
 		invoke('sweep_step', 0, arena, occupied, 1, 1);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), half + 1);
-		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(base), backingBytes);
 		// The TS reference publishes even though the raw cursor overshot.
 		step(1, 0);
 		assert.equal(memory.readRamRecordWord(metadata + SWEEP), 0);
 		assert.equal(memory.readRamRecordWord(metadata + CAPACITY), half);
 		assert.equal(memory.readRamRecordWord(metadata + REHASH_READY), 0);
 		assert.equal(memory.readRamRecordWord(occupied), charged);
-		assert.equal(cpu.heapAllocator.allocationBytes(base), backingBytes - 4 * half);
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(base), backingBytes - 4 * half);
 		for (const [i, name] of names.entries()) assert.equal(cpu.stringPool.find(name), ids[i], name);
 	});
 }

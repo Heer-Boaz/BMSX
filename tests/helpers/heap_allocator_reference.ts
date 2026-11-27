@@ -1,3 +1,4 @@
+import { bindReferenceDlmalloc } from './native_heap/dlmalloc_wasm';
 import type { HeapAllocator } from '../../machine/ts/machine/cpu/heap_allocator';
 import type { Memory } from '../../machine/ts/machine/memory/memory';
 import { RAM_BASE, RUNTIME_MANAGEMENT_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -8,6 +9,6 @@ export function resetAllocatorReference(memory: Memory, allocator: HeapAllocator
 	memory.ramData().fill(0, management, management + RUNTIME_MANAGEMENT_SIZE);
 	memory.invalidateRamWrite(management, RUNTIME_MANAGEMENT_SIZE);
 	const floor = allocator.floorOffset(floorAddress);
-	memory.bindDlmalloc(allocator.allocatorStateOffset()).reset(floor, management);
+	bindReferenceDlmalloc(memory, allocator.allocatorStateOffset()).reset(floor, management);
 	memory.setRamBusEnd(RAM_BASE + floor);
 }

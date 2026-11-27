@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ const image = linkTestSystemBlua32(compileTestSystemWithHeap(parseLuaChunk(entry
 function fixture(backend: CpuExecutionBackend) {
 	const { cpu, memory } = createTestHeapServiceCpu(image, backend);
 	const reference = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
-	const ref = reference.memory, gc = reference.gc;
+	const ref = reference.memory, gc = nativeHeapReference(reference).gc;
 	const referenceControl = reference.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	// Finish startup and admit the mailbox's frame before narrowing the bus
 	// to the synthetic records; startup uses the production backing service.

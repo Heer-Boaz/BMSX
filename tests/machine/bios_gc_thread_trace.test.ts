@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -68,9 +69,9 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function cell() {
 		return add(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initializeCell(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
@@ -78,7 +79,7 @@ function fixture(optLevel: 0 | 3) {
 		return add(target => {
 			const address = allocateClosureRecordReference(target, 0);
 			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 0);
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
@@ -105,14 +106,14 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function traceNative(address: number, atomic: boolean, limit: number, resumed: boolean) {
 		const mem = oracle.memory;
-		return oracle.gc['traceThread'](address, atomic, limit, resumed ? mem.readRamRecordWord(control + GC_TRACE_CURSOR) : 0,
+		return nativeHeapReference(oracle).gc['traceThread'](address, atomic, limit, resumed ? mem.readRamRecordWord(control + GC_TRACE_CURSOR) : 0,
 			resumed ? mem.readRamRecordWord(control + GC_THREAD_TRACE_OPEN) : openHead,
 			resumed ? mem.readRamRecordWord(control + GC_THREAD_TRACE_OPEN + 4) : 0, resumed);
 	}
 	function step(address: number, atomic: boolean, limit: number, resumed: boolean, pendingStrings = 0) {
 		const work = traceNative(address, atomic, limit, resumed);
 		begin(address, atomic, limit, resumed, pendingStrings);
-		assert.deepEqual(finish(), [work, oracle.stringPool.takeMarkWork()]);
+		assert.deepEqual(finish(), [work, nativeHeapReference(oracle).stringPool.takeMarkWork()]);
 		compare();
 		return work;
 	}
@@ -126,9 +127,9 @@ for (const optLevel of [0, 3] as const) {
 		const thread = add(target => allocateThreadRecordReference(target, 0)), resumer = add(target => allocateThreadRecordReference(target, 0));
 		const entry = closure(), framed = closure(), handler = closure(), ignored = closure();
 		const open = cell(), stale = cell();
-		const string = add(target => target.stringPool.intern('thread-open-value'));
-		const err = add(target => target.stringPool.intern('thread-error-value'));
-		const prior = add(target => target.stringPool.intern('thread-pending-value'));
+		const string = add(target => nativeHeapReference(target).stringPool.intern('thread-open-value'));
+		const err = add(target => nativeHeapReference(target).stringPool.intern('thread-error-value'));
+		const prior = add(target => nativeHeapReference(target).stringPool.intern('thread-pending-value'));
 		const frames = memory.readRamRecordWord(thread + ThreadField.FrameBlock);
 		word(thread + ThreadField.Resumer, resumer);
 		word(thread + ThreadField.Entry, entry);
@@ -155,10 +156,10 @@ for (const optLevel of [0, 3] as const) {
 		for (const target of [cpu, oracle]) {
 			bindOpen(target.memory, open, thread, 6, stale);
 			bindOpen(target.memory, stale, thread, 7, 0);
-			target.stringPool.beginReachabilityEpoch();
-			target.stringPool.markReachable(prior);
+			nativeHeapReference(target).stringPool.beginReachabilityEpoch();
+			nativeHeapReference(target).stringPool.markReachable(prior);
 		}
-		assert.equal(cpu.stringPool.takeMarkWork(), 1);
+		assert.equal(nativeHeapReference(cpu).stringPool.takeMarkWork(), 1);
 		assert.equal(step(thread, false, 1, false, 1), 22, 'header drains pending and error string work');
 		assert.equal(memory.readRamRecordWord(control + GC_THREAD_VISITS + GC_VISIT_COUNT), 1);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_CURSOR), 0);
@@ -171,9 +172,9 @@ for (const optLevel of [0, 3] as const) {
 
 		// A returning frame can close the saved cell and move the control
 		// array before the next collector grant. The cursor is logical.
-		for (const target of [cpu, oracle]) close(target.gc, stale);
+		for (const target of [cpu, oracle]) close(nativeHeapReference(target).gc, stale);
 		const newFrames = add(target => {
-			const staged = target.heapAllocator.allocate(4 * FRAME_CONTROL_BYTES, true);
+			const staged = nativeHeapReference(target).heapAllocator.allocate(4 * FRAME_CONTROL_BYTES, true);
 			return target.gc.threads.growFrameBacking(thread, 4, staged);
 		});
 		assert.notEqual(newFrames, frames);

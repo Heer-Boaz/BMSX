@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -109,24 +110,24 @@ return protect(caller${weak ? ', weak_owner()' : ''})
 	const top = instruction.a + selected;
 	const required = caller.stackBase + registerWindowBucket(top);
 	assert.ok(caller.stackBase + top > initialCapacity, 'the actual result, not merely its rounded bucket, exceeds backing');
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	if (weak) {
 		assert.equal(valueTag(output[1]), ValueTag.Table);
 		// Start with a clean heap, temporarily keeping the weak member
 		// during setup. The next epoch sees only the actual guest roots.
-		cpu.gc.collect(output[1]);
-		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		cpu.stringPool.intern(deadText);
+		nativeHeapReference(cpu).gc.collect(output[1]);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).stringPool.intern(deadText);
 		for (let step = 0; cpu.gc.phase() !== GcPhase.Atomic && step < 4096; ++step)
-			cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
+			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
 		assert.equal(cpu.gc.phase(), GcPhase.Atomic);
 		assert.equal(cpu.gc.isAlive(valuePayload(output[1])), false, 'the next() value is weak-only while the producer is still stopped');
 		assert.equal(cpu.gc.tables.getInteger(weakOwner, 1), output[1]);
 	}
 	if (weak || refusal) {
-		if (refusal) cpu.gc.collect();
-		while (cpu.heapAllocator.allocate(4088, true)) { /* occupy the remaining large extents */ }
-		while (cpu.heapAllocator.allocate(24, true)) { /* leave no extent for Value backing */ }
+		if (refusal) nativeHeapReference(cpu).gc.collect();
+		while (nativeHeapReference(cpu).heapAllocator.allocate(4088, true)) { /* occupy the remaining large extents */ }
+		while (nativeHeapReference(cpu).heapAllocator.allocate(24, true)) { /* leave no extent for Value backing */ }
 	}
 
 	const dir = mkdtempSync(join(tmpdir(), 'firmware-result-window-'));

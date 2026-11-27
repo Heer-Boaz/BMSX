@@ -1,3 +1,4 @@
+import { bindReferenceDlmalloc } from '../helpers/native_heap/dlmalloc_wasm';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -53,7 +54,7 @@ function fixture(backend: CpuExecutionBackend) {
 	const { cpu, memory } = createTestHeapServiceCpu(linkTestSystemBlua32(compiled), backend);
 	memory.setRamBusEnd(RAM_BASE + END);
 	const reference = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
-	const arena = reference.bindDlmalloc(STATE);
+	const arena = bindReferenceDlmalloc(reference, STATE);
 	const actualBytes = memory.ramData().subarray(FLOOR, END);
 	const expectedBytes = reference.ramData().subarray(FLOOR, END);
 	// Scratch around the state starts nonzero so an accidental wider clear

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -64,13 +65,13 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 		begin(name, args);
 		finish(expected);
 	}
-	oracle.gc['setPhase'](GcPhase.Mark);
-	oracle.stringPool.beginReachabilityEpoch();
+	nativeHeapReference(oracle).gc['setPhase'](GcPhase.Mark);
+	nativeHeapReference(oracle).stringPool.beginReachabilityEpoch();
 	invoke('begin_mark', [control, metadata], 1);
 	invoke('begin_mark', [control, metadata]);
 
 	const occupied = cpu.heapAllocator.occupiedBytes();
-	oracle.gc['beginInitialBanks']();
+	nativeHeapReference(oracle).gc['beginInitialBanks']();
 	begin('begin_initial_banks', [control, state, capacity]);
 	for (let i = 0; i < 128 && memory.readRamRecordWord(control + GC_ROOT_CURSOR) === 0; ++i) {
 		grantFirmwareProbe(cpu, 1);
@@ -82,39 +83,39 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	restoreCpuCheckpoint(cpu, checkpoint);
 	assert.equal(finish(0), cycles);
 
-	assert.ok(same(target => target.heapAllocator.allocate(512, true)));
-	const after = oracle.gc['finishStepWork'](occupied, 207);
+	assert.ok(same(target => nativeHeapReference(target).heapAllocator.allocate(512, true)));
+	const after = nativeHeapReference(oracle).gc['finishStepWork'](occupied, 207);
 	invoke('finish_step', [control, state, occupied, 207], after);
 
 	const table = same(target => createReferenceTable(target));
-	same(target => target.gc['setPhase'](GcPhase.Atomic));
+	same(target => nativeHeapReference(target).gc['setPhase'](GcPhase.Atomic));
 	const args = [control, state, metadata, capacity, 19];
 	same(target => target.memory.writeRamRecordWord(control + GC_TRACE_RECORD, table));
-	invoke('finish_atomic_collection', args, oracle.gc['finishAtomicCollection'](19));
+	invoke('finish_atomic_collection', args, nativeHeapReference(oracle).gc['finishAtomicCollection'](19));
 	assert.equal(cpu.gc.phase(), GcPhase.Atomic);
 	same(target => {
 		target.memory.writeRamRecordWord(control + GC_TRACE_RECORD, 0);
 		target.memory.writeRamRecordWord(control + GC_WEAK_VISITS, 1);
 	});
-	invoke('finish_atomic_collection', args, oracle.gc['finishAtomicCollection'](19));
+	invoke('finish_atomic_collection', args, nativeHeapReference(oracle).gc['finishAtomicCollection'](19));
 	assert.equal(cpu.gc.phase(), GcPhase.Atomic);
 	same(target => target.memory.writeRamRecordWord(control + GC_WEAK_VISITS, 0));
 	const white = cpu.gc.white();
-	invoke('finish_atomic_collection', args, oracle.gc['finishAtomicCollection'](19));
+	invoke('finish_atomic_collection', args, nativeHeapReference(oracle).gc['finishAtomicCollection'](19));
 	assert.equal(cpu.gc.white(), white ^ 1);
 	assert.equal(cpu.gc.phase(), GcPhase.Sweep);
 
-	oracle.gc['beginStrings']();
+	nativeHeapReference(oracle).gc['beginStrings']();
 	invoke('begin_strings', [control, metadata]);
-	oracle.gc['finishStrings']();
+	nativeHeapReference(oracle).gc['finishStrings']();
 	invoke('finish_strings', [control, metadata, state]);
 	assert.equal(cpu.gc.phase(), GcPhase.Strings);
-	for (let i = 0; i < 128 && cpu.stringPool.sweeping(); ++i) same(target => target.stringPool.sweepStep(4096));
-	assert.equal(cpu.stringPool.sweeping(), false);
-	oracle.gc['finishStrings']();
+	for (let i = 0; i < 128 && nativeHeapReference(cpu).stringPool.sweeping(); ++i) same(target => nativeHeapReference(target).stringPool.sweepStep(4096));
+	assert.equal(nativeHeapReference(cpu).stringPool.sweeping(), false);
+	nativeHeapReference(oracle).gc['finishStrings']();
 	invoke('finish_strings', [control, metadata, state]);
 	assert.equal(cpu.gc.phase(), GcPhase.Pause);
-	invoke('finish_step', [control, state, occupied, 1], oracle.gc['finishStepWork'](occupied, 1));
+	invoke('finish_step', [control, state, occupied, 1], nativeHeapReference(oracle).gc['finishStepWork'](occupied, 1));
 	assert.equal(memory.readRamRecordWord(control + GC_LAST_EPOCH_WORK), 208);
 });
 

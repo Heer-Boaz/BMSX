@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -39,7 +40,7 @@ function fixture(optLevel: 0 | 3) {
 		return result;
 	}
 	const [keep, live, dead, deadArray, deadHash] = same(target => {
-		const { gc, luaHeap, stringPool } = target;
+		const { gc, luaHeap, stringPool } = nativeHeapReference(target);
 		luaHeap.setCollectionTarget(luaHeap.capacity());
 		const keep = createReferenceTable(target, 2, 0), live = stringPool.intern(liveText);
 		const dead = stringPool.intern(deadText), deadArray = createReferenceTable(target, 3, 0), deadHash = createReferenceTable(target, 0, 8);
@@ -66,7 +67,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(actual[mismatch], expected[mismatch], `private RAM differs at 0x${(floor + mismatch).toString(16)}`);
 	}
 	function begin(limit: number) {
-		const expected = oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
+		const expected = nativeHeapReference(oracle).gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
 		issueFirmwareProbe(cpu, [state, limit, 0, 0]);
 		return expected;
 	}

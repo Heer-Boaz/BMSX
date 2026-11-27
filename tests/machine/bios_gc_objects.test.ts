@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -56,9 +57,9 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function cell() {
 		return allocate(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initializeCell(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
@@ -83,7 +84,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function step(allowance: number, growing = 0, compact = false) {
 		begin(allowance, growing, +compact);
-		assert.equal(finish(), oracle.gc['sweepObjects'](allowance, growing, compact));
+		assert.equal(finish(), nativeHeapReference(oracle).gc['sweepObjects'](allowance, growing, compact));
 		compare();
 	}
 	compare();
@@ -108,19 +109,19 @@ for (const optLevel of [0, 3] as const) {
 		const inventory = memory.readRamRecordWord(control + OBJECT_COUNT);
 		const charged = memory.readRamRecordWord(occupied);
 		const backing = memory.readRamRecordWord(table + TableHeader.ArrayStorage);
-		const backingBytes = cpu.heapAllocator.allocationBytes(backing);
+		const backingBytes = nativeHeapReference(cpu).heapAllocator.allocationBytes(backing);
 
 		begin(1);
 		for (let i = 0; i < 256 && memory.readRamRecordWord(control + OBJECT_HEAD) === table; ++i) grant(1);
 		assert.equal(memory.readRamRecordWord(control + OBJECT_HEAD), retire[3], 'dead Table is unlinked first');
 		assert.equal(memory.readRamRecordWord(control + OBJECT_COUNT), inventory, 'the removed count is local to the service');
 		assert.equal(memory.readRamRecordWord(occupied), charged);
-		assert.equal(cpu.heapAllocator.allocationBytes(backing), backingBytes, 'the first backing is still allocated');
+		assert.equal(nativeHeapReference(cpu).heapAllocator.allocationBytes(backing), backingBytes, 'the first backing is still allocated');
 		assert.ok(cpu.heapServiceActive());
 		const partial = captureCpuCheckpoint(cpu);
 		for (let i = 0; i < 4096 && memory.readRamRecordWord(occupied) === charged; ++i) grant(1);
 		assert.equal(memory.readRamRecordWord(occupied), charged - 3 * 5, 'TS retires array before hash');
-		const work = oracle.gc['sweepObjects'](1, 0, false);
+		const work = nativeHeapReference(oracle).gc['sweepObjects'](1, 0, false);
 		assert.equal(finish(), work);
 		compare();
 		restoreCpuCheckpoint(cpu, partial);
@@ -152,9 +153,9 @@ for (const optLevel of [0, 3] as const) {
 		// Execute the pinned C++ order with the common physical allocator.
 		const ref = oracle.memory;
 		ref.writeRamRecordWord(control + OBJECT_HEAD, next);
-		oracle.luaHeap.releaseRecord(ref.readRamRecordWord(table + TableHeader.HashStorage), 8 * 10);
-		oracle.luaHeap.releaseRecord(ref.readRamRecordWord(table + TableHeader.ArrayStorage), 3 * 5);
-		oracle.luaHeap.releaseObject(table, TableRecords.HEADER_CHARGE);
+		nativeHeapReference(oracle).luaHeap.releaseRecord(ref.readRamRecordWord(table + TableHeader.HashStorage), 8 * 10);
+		nativeHeapReference(oracle).luaHeap.releaseRecord(ref.readRamRecordWord(table + TableHeader.ArrayStorage), 3 * 5);
+		nativeHeapReference(oracle).luaHeap.releaseObject(table, TableRecords.HEADER_CHARGE);
 		ref.writeRamRecordWord(control + OBJECT_COUNT, count - 1);
 		ref.writeRamRecordWord(control + SWEEP_LINK, control + OBJECT_HEAD);
 		assert.equal(finish(), 1);
@@ -181,7 +182,7 @@ for (const optLevel of [0, 3] as const) {
 				const address = allocateClosureRecordReference(target, captures, latched);
 				initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures, latched);
 				target.memory.writeRamRecordByte(address, kind);
-				target.gc.publishObject(address);
+				nativeHeapReference(target).gc.publishObject(address);
 				return address;
 			});
 		}
@@ -226,7 +227,7 @@ for (const optLevel of [0, 3] as const) {
 		const liveFrameCapacity = memory.readRamRecordWord(liveThread + ThreadField.FrameCapacity);
 		const threadDebits = [valueCapacity * THREAD_STACK_SLOT_BYTES, (frameCapacity & THREAD_CONTROL_COUNT_MASK) * FRAME_CONTROL_BYTES,
 			THREAD_HEAP_BYTES];
-		const expectedWork = oracle.gc['sweepObjects'](allowance, growing, true);
+		const expectedWork = nativeHeapReference(oracle).gc['sweepObjects'](allowance, growing, true);
 		assert.deepEqual(refObserved.map(([address, count, cursor, , issued]) => [address, count, cursor, issued]),
 			[deadCell, table, ordinary, opaque, fewerCaptures, deadThread].map(address => [address, inventory, published, 1]));
 		begin(allowance, growing, 1);
@@ -286,7 +287,7 @@ for (const optLevel of [0, 3] as const) {
 		color(thread, 3);
 		color(successor, 3);
 		setCursor(published);
-		const expected = oracle.gc['sweepObjects'](1, growing, true);
+		const expected = nativeHeapReference(oracle).gc['sweepObjects'](1, growing, true);
 		assert.ok(expected > 1);
 		begin(1, growing, 1);
 		assert.equal(finish(), expected, 'the complete traversal still charges the final record once');

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { asClosure, valueInteger, valueBool, valueNil, asStringId, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -66,7 +67,7 @@ end
 		cpu.gc.tables.forEachStoredEntry(childData, () => childFields++);
 		assert.equal(childFields, 1, 'tree reset must remove every undeclared child field');
 		assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getStringKey(childData, cpu.stringPool.find('status')!))), 'idle');
-		cpu.gc.collect();
+		nativeHeapReference(cpu).gc.collect();
 		for (let index = 1; index <= 32; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `stale data reference ${index} survived reset`);
 		assert.notEqual(cpu.gc.tables.getInteger(weak, 33), valueNil(), 'declared object defaults must retain their identity');
 	}

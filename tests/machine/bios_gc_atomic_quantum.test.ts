@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -48,7 +49,7 @@ function fixture(optLevel: 0 | 3) {
 	const records: number[][] = [];
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		const { gc, stringPool } = target, modeKey = gc.diagnosticWord(GcDiagnosticField.Mode);
+		const { gc, stringPool } = nativeHeapReference(target), modeKey = gc.diagnosticWord(GcDiagnosticField.Mode);
 		const weak = createReferenceTable(target, arraySlots, 0), meta = createReferenceTable(target, 0, 2);
 		const firstDead = createReferenceTable(target, 0, 0), secondDead = createReferenceTable(target, 0, 0), retained = createReferenceTable(target, 0, 0);
 		gc.tables.set(meta, valueString(modeKey), valueString(stringPool.intern('v')));
@@ -67,7 +68,7 @@ function fixture(optLevel: 0 | 3) {
 	assert.deepEqual(records[0], records[1]);
 	const [weak, array, firstDead, secondDead, retained] = records[0];
 	function begin(limit: number) {
-		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address, [management, limit, 0, 0, 0]));
 	}
 	function grant(cycles: number) {
@@ -80,7 +81,7 @@ function fixture(optLevel: 0 | 3) {
 		let cycles = 0;
 		for (let i = 0; i < 512 && cpu.heapServiceActive(); ++i) cycles += grant(512);
 		assert.equal(cpu.readLuaFaultReasonWord(), 0);
-		cpu.stringPool.resumeMarkWork(memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork));
+		nativeHeapReference(cpu).stringPool.resumeMarkWork(memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork));
 		return [cpu.heapServiceResult(), cycles];
 	}
 	function compare() {
@@ -96,7 +97,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`One stopped guest Atomic quantum clears real weak values, then flips white and enters Sweep at O${optLevel}`, () => {
 		const f = fixture(optLevel), limit = 4096;
 		const initialWork = f.memory.readRamRecordWord(f.beforeWork), white = f.cpu.gc.white();
-		const want = f.oracle.gc.stepFinalMark(limit);
+		const want = nativeHeapReference(f.oracle).gc.stepFinalMark(limit);
 		assert.equal(f.oracle.gc.phase(), GcPhase.Sweep);
 		f.begin(limit);
 		const tags = f.array + 4 * arraySlots;
@@ -128,7 +129,7 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel), white = f.cpu.gc.white();
 		const stages = new Set<number>();
 		for (let i = 0; i < 256 && f.cpu.gc.phase() === GcPhase.Atomic; ++i) {
-			const want = f.oracle.gc.stepFinalMark(1);
+			const want = nativeHeapReference(f.oracle).gc.stepFinalMark(1);
 			f.begin(1);
 			assert.equal(f.finish()[0], want);
 			f.compare();

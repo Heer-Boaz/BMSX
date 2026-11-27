@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { abortFixtureCompletionCall, runCpuWithinBudget } from '../helpers/cpu_execution';
@@ -753,30 +754,30 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	}
 
 	assert.equal(restoredProtectedCall, true);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success')), valueBool(true));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success_a')), valueInteger(3));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('success_b')), valueInteger(4));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('failure')), valueBool(false));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('success')), valueBool(true));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('success_a')), valueInteger(3));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('success_b')), valueInteger(4));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('failure')), valueBool(false));
 	assert.equal(
-		cpu.getGlobalByKey(cpu.stringPool.intern('handled')),
-		cpu.getGlobalByKey(cpu.stringPool.intern('marker')),
+		cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('handled')),
+		cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('marker')),
 	);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('invalid_handler_success')), valueBool(false));
-	assert.ok(valueIsString(cpu.getGlobalByKey(cpu.stringPool.intern('invalid_handler_error'))));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('multiple_failure')), valueBool(false));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('invalid_handler_success')), valueBool(false));
+	assert.ok(valueIsString(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('invalid_handler_error'))));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('multiple_failure')), valueBool(false));
 	assert.equal(
-		cpu.getGlobalByKey(cpu.stringPool.intern('multiple_handled')),
-		cpu.getGlobalByKey(cpu.stringPool.intern('marker')),
+		cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('multiple_handled')),
+		cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('marker')),
 	);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('multiple_extra')), valueNil());
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('handler_failure')), valueBool(false));
-	const handlerFailureError = cpu.getGlobalByKey(cpu.stringPool.intern('handler_failure_error'));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('multiple_extra')), valueNil());
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('handler_failure')), valueBool(false));
+	const handlerFailureError = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('handler_failure_error'));
 	assert.ok(valueIsString(handlerFailureError));
 	assert.equal(cpu.stringPool.toString(asStringId(handlerFailureError)), 'error in error handling');
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_outer')), valueBool(true));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_inner')), valueBool(true));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_a')), valueInteger(3));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_b')), valueInteger(4));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('nested_outer')), valueBool(true));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('nested_inner')), valueBool(true));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('nested_a')), valueInteger(3));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('nested_b')), valueInteger(4));
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
@@ -898,7 +899,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	const { cpu, irqController } = createTestSystemCpu(COMPLETION_LATCH_TEST_IMAGE);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const closure = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
-	const closureKey = cpu.stringPool.intern('completion_call');
+	const closureKey = nativeHeapReference(cpu).stringPool.intern('completion_call');
 	setReferenceGlobal(cpu, closureKey, valueClosure(closure));
 
 	cpu.beginCompletionCall(closure, [valueTable(createReferenceTable(cpu))]);
@@ -910,7 +911,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const restoredTable = valuePayload(materializeCpuCompletionValues(cpu)[0]);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(restoredTable), restoredTable, 'completion is the sole root of the returned Table');
 	assert.equal(valuePayload(materializeCpuCompletionValues(cpu)[0]), restoredTable);
 
@@ -919,7 +920,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	const results = runtime.callClosure(restoredClosure, [valueTable(createReferenceTable(cpu))]);
 	assert.equal(results, runtime.readCompletionValues());
 	const borrowedTable = valuePayload(results[0]);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(borrowedTable), borrowedTable);
 	assert.equal(valuePayload(results[0]), borrowedTable);
 });
@@ -1040,7 +1041,7 @@ end
 `;
 	const { cpu, irqController } = runCompiledVblankIrq(source);
 
-	const irqSeen = cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen'));
+	const irqSeen = cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('irq_seen'));
 	assert.equal(irqSeen, valueInteger(IRQ_VBLANK));
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
@@ -1067,8 +1068,8 @@ observed_sequence = sequence
 		irqController.raise(IRQ_VBLANK);
 		assert.equal(cpu.enterPendingInterrupt(), true, `O${optLevel} IRQ entry`);
 		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted, `O${optLevel} resumed run`);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_before')), valueInteger(0), `O${optLevel} snapshot`);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('observed_sequence')), valueInteger(1), `O${optLevel} live sequence`);
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('observed_before')), valueInteger(0), `O${optLevel} snapshot`);
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('observed_sequence')), valueInteger(1), `O${optLevel} live sequence`);
 	}
 });
 
@@ -1148,7 +1149,7 @@ while true do
 end
 `;
 	const { cpu, irqController } = runCompiledVblankIrq(source);
-	assert.equal(asInteger(cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen'))) > 1, true);
+	assert.equal(asInteger(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('irq_seen'))) > 1, true);
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) !== 0, true);
 });
 
@@ -1173,8 +1174,8 @@ after_enable = irq_seen
 	state.cycleBudgetGranted = 1000;
 	cpuExecution.runWithBudget(state);
 
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen')), valueInteger(IRQ_VBLANK));
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('after_enable')), valueInteger(IRQ_VBLANK));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('irq_seen')), valueInteger(IRQ_VBLANK));
+	assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('after_enable')), valueInteger(IRQ_VBLANK));
 	assert.equal((irqController.captureState().pendingFlags & IRQ_VBLANK) === 0, true);
 });
 
@@ -1839,17 +1840,17 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 
 test('CPU runtime snapshot preserves nested table object identities', () => {
 	const { cpu } = makeHaltCpu();
-	const rootName = cpu.stringPool.intern('root');
-	const childKey = cpu.stringPool.intern('child');
-	const parentKey = cpu.stringPool.intern('parent');
-	const objectKeyName = cpu.stringPool.intern('object_key');
+	const rootName = nativeHeapReference(cpu).stringPool.intern('root');
+	const childKey = nativeHeapReference(cpu).stringPool.intern('child');
+	const parentKey = nativeHeapReference(cpu).stringPool.intern('parent');
+	const objectKeyName = nativeHeapReference(cpu).stringPool.intern('object_key');
 	const root = createReferenceTable(cpu, 0, 64);
 	const child = createReferenceTable(cpu, 0, 1);
 	const objectKey = createReferenceTable(cpu, 0, 0);
-	cpu.gc.tables.setStringKey(child, parentKey, valueTable(root));
-	cpu.gc.tables.setStringKey(root, childKey, valueTable(child));
-	cpu.gc.tables.setStringKey(root, objectKeyName, valueTable(objectKey));
-	cpu.gc.tables.set(root, valueTable(objectKey), valueTable(child));
+	nativeHeapReference(cpu).gc.tables.setStringKey(child, parentKey, valueTable(root));
+	nativeHeapReference(cpu).gc.tables.setStringKey(root, childKey, valueTable(child));
+	nativeHeapReference(cpu).gc.tables.setStringKey(root, objectKeyName, valueTable(objectKey));
+	nativeHeapReference(cpu).gc.tables.set(root, valueTable(objectKey), valueTable(child));
 	setReferenceGlobal(cpu, rootName, valueTable(root));
 	const snapshot = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(snapshot);

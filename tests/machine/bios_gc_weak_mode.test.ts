@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -31,9 +32,9 @@ function call(cpu: CPU, address: number, args: readonly number[]) {
 }
 
 function checkRecord(cpu: CPU, [weak, length, byte]: readonly number[], id: number, expected: number) {
-	const pool = cpu.stringPool;
+	const pool = nativeHeapReference(cpu).stringPool;
 	const mode = valueFromTag(ValueTag.String, id);
-	assert.equal(cpu.gc['weakModeBits'](mode), expected);
+	assert.equal(nativeHeapReference(cpu).gc['weakModeBits'](mode), expected);
 	assert.equal(call(cpu, weak, [ValueTag.String, id]), expected);
 	const count = pool.byteLength(id);
 	assert.equal(call(cpu, length, [id]), count >>> 0);
@@ -66,11 +67,11 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, memory, addresses } = createGcWeakModeFixture(optLevel, false);
 		runGuestToHalt(cpu, 10_000);
 		for (const [text, result] of [['k', 1], ['v', 2], ['kv', 3], ['vk', 3], ['kvk', 0], ['kk', 0], ['k\0', 0], ['\xff', 0], ['', 0]] as const) {
-			const id = cpu.stringPool.intern(text);
+			const id = nativeHeapReference(cpu).stringPool.intern(text);
 			assert.ok(id >= RAM_BASE && id < RAM_BASE + MAIN_RAM_SIZE);
 			checkRecord(cpu, addresses, id, result);
 		}
-		const id = cpu.stringPool.intern('kv');
+		const id = nativeHeapReference(cpu).stringPool.intern('kv');
 		memory.writeRamRecordWord(id + BLUA32_STRING_LENGTH_OFFSET, 0xab000002);
 		const alias = id + MAIN_RAM_SIZE * 7;
 		checkRecord(cpu, addresses, alias, 3);

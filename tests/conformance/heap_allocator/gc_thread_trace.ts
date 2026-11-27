@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -63,14 +64,14 @@ try {
 		const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
 		const arena = cpu.heapAllocator.allocatorStateOffset(), result = management + HEAP_SERVICE_RESULT_OFFSET;
 		memory.writeRamRecordWord(control, GcPhase.Mark | 0x100);
-		const thread = allocateThreadRecordReference(cpu, 0), cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+		const thread = allocateThreadRecordReference(cpu, 0), cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 		initializeCell(memory, cell, cpu.gc.white());
-		cpu.gc.publishObject(cell);
+		nativeHeapReference(cpu).gc.publishObject(cell);
 		bindOpen(memory, cell, thread, 0, 0);
 		const closure = allocateClosureRecordReference(cpu, 0);
 		const prototype = cpu.getGlobalByKey(cpu.stringPool.find('collector_probe')!);
 		initializeClosure(memory, closure, cpu.captureClosureBinding(valuePayload(prototype)), false, cpu.gc.white(), 0);
-		cpu.gc.publishObject(closure);
+		nativeHeapReference(cpu).gc.publishObject(closure);
 		memory.writeRamRecordWord(thread + ThreadField.FrameDepth, 1);
 		const frame = memory.readRamRecordWord(thread + ThreadField.FrameBlock);
 		// The absent frame Closure still samples this matching public
@@ -81,8 +82,8 @@ try {
 		memory.writeRamRecordWord(frame + FrameField.VarargBase, 1);
 		memory.writeRamRecordWord(frame + FrameField.StackBase, 2);
 		const stack = memory.readRamRecordWord(thread + ThreadField.StackBlock), capacity = memory.readRamRecordWord(thread + ThreadField.StackCapacity);
-		const id = cpu.stringPool.intern('native thread captured string');
-		cpu.stringPool.beginReachabilityEpoch();
+		const id = nativeHeapReference(cpu).stringPool.intern('native thread captured string');
+		nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
 		memory.writeRamRecordWord(stack, id);
 		memory.writeRamRecordByte(stack + 4 * capacity, ValueTag.String);
 		memory.writeRamRecordWord(stack + 4, closure);

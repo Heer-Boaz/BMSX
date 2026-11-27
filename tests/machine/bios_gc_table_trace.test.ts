@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -87,15 +88,15 @@ function fixture(optLevel: 0 | 3) {
 		return { work: cpu.heapServiceResult(), pending: memory.readRamRecordWord(output), elapsed };
 	}
 	function beginEdges(record: number, mode: number, first: number, end: number) {
-		oracle.gc['traceTableEdges'](record, mode, first, end);
-		const expected = oracle.stringPool.takeMarkWork();
+		nativeHeapReference(oracle).gc['traceTableEdges'](record, mode, first, end);
+		const expected = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		begin('trace_table_edges', record, mode, first, end, 0);
 		return expected;
 	}
 	function beginEntries(record: number, mode: number, next: number, work: number, limit: number) {
-		const credited = oracle.gc['traceTableEntries'](record, mode, next, work, limit);
-		const pending = oracle.stringPool.takeMarkWork();
-		begin('entries', record, mode, next, work, limit, cpu.stringPool.takeMarkWork(), 0, output);
+		const credited = nativeHeapReference(oracle).gc['traceTableEntries'](record, mode, next, work, limit);
+		const pending = nativeHeapReference(oracle).stringPool.takeMarkWork();
+		begin('entries', record, mode, next, work, limit, nativeHeapReference(cpu).stringPool.takeMarkWork(), 0, output);
 		return [credited, pending];
 	}
 	function checkEntries(record: number, mode: number, next: number, work: number, limit: number, expected: number[]) {
@@ -120,13 +121,13 @@ function fixture(optLevel: 0 | 3) {
 		return { record, arraySlot, hashSlot };
 	}
 	function string(text: string) {
-		const id = add(target => target.stringPool.intern(text));
+		const id = add(target => nativeHeapReference(target).stringPool.intern(text));
 		byte(id + 1, 0x94);
 		return id;
 	}
 	function pendingString(id: number) {
-		cpu.stringPool.markReachable(id);
-		oracle.stringPool.markReachable(id);
+		nativeHeapReference(cpu).stringPool.markReachable(id);
+		nativeHeapReference(oracle).stringPool.markReachable(id);
 	}
 	function frontier() {
 		return [memory.readRamRecordWord(control + GC_TRACE_RECORD), memory.readRamRecordWord(control + GC_TRACE_CURSOR)];

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { closeUpvalueReference, storeUpvalueReference } from '../helpers/upvalue_store_reference';
@@ -41,7 +42,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 		if (scenario === 'control') { r.setInteger(0,-2147483648);r.set(1,value); }
 		if (scenario === 'loop') { r.setInteger(0,3);r.setInteger(1,1);r.setInteger(2,0);r.setInteger(3,0); }
 		if (scenario === 'table') {
-			cpu.gc.tables.setInteger(table, 1, v.valueInteger(9));cpu.gc.tables.setStringKey(table, field, v.valueInteger(9));
+			nativeHeapReference(cpu).gc.tables.setInteger(table, 1, v.valueInteger(9));nativeHeapReference(cpu).gc.tables.setStringKey(table, field, v.valueInteger(9));
 			r.setTable(0, table);r.set(1, value);r.setFloat(7, 1);
 		}
 		if (scenario === 'memory') {

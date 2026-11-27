@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -50,14 +51,14 @@ test('compiled globals use the live banks across growth, keep namespaces distinc
 	const block = page.compiledBlocks!.entries[entry]!;
 	assert.equal(block.sourceWords, 8);
 	for (const cpu of [js, ref]) for (let i = 0; i < 257; ++i) {
-		setReferenceGlobal(cpu, cpu.stringPool.intern(`grown-${i}`), valueInteger(i));
+		setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern(`grown-${i}`), valueInteger(i));
 	}
 	for (const value of [valueNil(), valueBool(false), valueBool(true), valueInteger(-1), valueFloat(-0), valueFloatBits(0xffa12345), valueFloat(Infinity)]) {
 		for (const cpu of [js, ref]) {
 			const r = cpu.rootThread.frameAtDepth(0).registers;
 			r.set(12, value);
-			setReferenceGlobal(cpu, cpu.stringPool.intern('shared'), r.get(12));
-			setReferenceSystemGlobal(cpu, cpu.stringPool.intern('shared'), valueInteger(73));
+			setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('shared'), r.get(12));
+			setReferenceSystemGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('shared'), valueInteger(73));
 		}
 		runCpuParity(js, ref, loopCycles);
 		assert.deepEqual(js.captureRuntimeState(), ref.captureRuntimeState());
@@ -82,7 +83,7 @@ for (const system of [false, true]) test(`generated ${system ? 'SETSYS' : 'SETGL
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 },
 		{ firstWord: 5, wordCount: 1, maxStack: 2, numParams: 2 }],
 		globalNames: ['cart-slot'], systemGlobalNames: ['system-slot'], exceptionFunctionIndex: 1 });
-	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), gc = cpu.gc;
+	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), gc = nativeHeapReference(cpu).gc;
 	const loopCycles = BASE_CYCLES[OpCode.SETGL] + BASE_CYCLES[OpCode.SETSYS] + BASE_CYCLES[OpCode.LOADNIL] + 2
 		+ BASE_CYCLES[OpCode.K1] + BASE_CYCLES[OpCode.JMP];
 	cpu.runUntilDepth(0, 50 * loopCycles);
@@ -432,7 +433,7 @@ end
 			sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 		});
 		runtime.boot();
-		const { cpu, memory } = runtime.machine, { gc } = cpu;
+		const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 4_194_304);
 		const setter = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('set_captured')!), gc);
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)

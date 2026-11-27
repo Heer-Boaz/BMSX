@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valueBool } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -47,7 +48,7 @@ answer = fail(nil)`;
 ready = true
 while true do halt_until_irq end`, optLevel);
 		afterTest(t, () => target.dispose());
-		const cpu = target.runtime.machine.cpu, ready = cpu.stringPool.intern('ready'), interrupted = cpu.stringPool.intern('interrupted');
+		const cpu = target.runtime.machine.cpu, ready = nativeHeapReference(cpu).stringPool.intern('ready'), interrupted = nativeHeapReference(cpu).stringPool.intern('interrupted');
 		await target.runUntil(() => cpu.getGlobalByKey(ready) === valueBool(true));
 		cpu.requestNonMaskableInterrupt();
 		await target.runUntil(() => cpu.getGlobalByKey(interrupted) === valueBool(true));

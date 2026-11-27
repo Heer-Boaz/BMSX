@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GeometryOverlap2dPhase, GeometryOverlap2dUnit } from '../../machine/ts/machine/devices/geometry/overlap2d';
@@ -115,7 +116,7 @@ function overlapMachine() {
 	}, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	machine.scheduler.reset();
-	assert.ok(machine.cpu.heapAllocator.setFloor(job.src0 + 0x2000));
+	assert.ok(nativeHeapReference(machine.cpu).heapAllocator.setFloor(job.src0 + 0x2000));
 	const vector = geometryVectors().find(vector => vector.name === 'overlap-overlap')!;
 	for (const [address, word] of vector.writes) memory.writeMappedWord(address, word);
 	let now = 0;

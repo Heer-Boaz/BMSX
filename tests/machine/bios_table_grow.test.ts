@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -29,7 +30,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	const { cpu, memory } = createTestHeapServiceCpu(linked);
 	runGuestToHalt(cpu, 10_000);
-	const heap = cpu.luaHeap, arena = cpu.heapAllocator, { gc } = cpu, { tables } = gc;
+	const heap = nativeHeapReference(cpu).luaHeap, arena = nativeHeapReference(cpu).heapAllocator, { gc } = nativeHeapReference(cpu), { tables } = gc;
 	const management = arena.managementOffset(), head = management + GC_DIAGNOSTIC_OFFSET;
 	memory.writeRamRecordWord(management + GC_ROOT_BANKS_OFFSET, cpu.rootThread.address);
 	const parked = () => memory.readRamRecordWord(head + 48);
@@ -67,8 +68,8 @@ for (const opt of [0, 3] as const) {
 	test(`BIOS Scheduled growth accounts scoped logical work and commits the own mapping at O${opt}`, () => {
 		const f = fixture(opt);
 		const receiver = createReferenceTable(f.cpu, 0, 1);
-		const keep = valueString(f.cpu.stringPool.intern('keep-before-bios-growth'));
-		const key = valueString(f.cpu.stringPool.intern('grow-through-bios'));
+		const keep = valueString(nativeHeapReference(f.cpu).stringPool.intern('keep-before-bios-growth'));
+		const key = valueString(nativeHeapReference(f.cpu).stringPool.intern('grow-through-bios'));
 		const value = valueTable(createReferenceTable(f.cpu, 0, 0));
 		f.tables.set(receiver, keep, valueInteger(5));
 		const charge = f.heap.usedBytes();
@@ -86,8 +87,8 @@ for (const opt of [0, 3] as const) {
 	test(`BIOS Scheduled preferred physical refusal retries zero extra without a parked recovery at O${opt}`, () => {
 		const f = fixture(opt);
 		const receiver = createReferenceTable(f.cpu, 0, 1);
-		const keep = valueString(f.cpu.stringPool.intern('preferred-refusal-existing'));
-		const key = valueString(f.cpu.stringPool.intern('preferred-refusal-trigger'));
+		const keep = valueString(nativeHeapReference(f.cpu).stringPool.intern('preferred-refusal-existing'));
+		const key = valueString(nativeHeapReference(f.cpu).stringPool.intern('preferred-refusal-trigger'));
 		f.tables.set(receiver, keep, valueInteger(5));
 		f.heap.setCollectionTarget(f.heap.capacity());
 		const largeBytes = TableRecords.hashStorageBytes(16);
@@ -165,7 +166,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`Scheduled recovery reuses a weak-cleared old home before making another reservation at O${opt}`, () => {
 		const f = fixture(opt);
-		const strings = f.cpu.stringPool;
+		const strings = nativeHeapReference(f.cpu).stringPool;
 		const receiver = createReferenceTable(f.cpu, 0, 1), meta = createReferenceTable(f.cpu, 0, 1);
 		const victim = createReferenceTable(f.cpu, 0, 0);
 		const oldKey = valueString(strings.intern('weak-value-before-table-retry'));
@@ -195,7 +196,7 @@ for (const opt of [0, 3] as const) {
 		const receiver = createReferenceTable(f.cpu, 0, 1), meta = createReferenceTable(f.cpu, 0, 1);
 		const unrootedVictim = createReferenceTable(f.cpu, 0, 0);
 		const detachedKey = createReferenceTable(f.cpu, 0, 0), detachedValue = createReferenceTable(f.cpu, 0, 0);
-		const strings = f.cpu.stringPool, key = valueTable(detachedKey), value = valueTable(detachedValue);
+		const strings = nativeHeapReference(f.cpu).stringPool, key = valueTable(detachedKey), value = valueTable(detachedValue);
 		const oldKey = valueString(strings.intern('general-weak-value-before-retry'));
 		f.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
 		f.tables.setMetatableAddress(receiver, meta);
@@ -204,7 +205,7 @@ for (const opt of [0, 3] as const) {
 		pressure(f, TableRecords.hashStorageBytes(2));
 		const white = f.gc.white(), backing = f.tables.hashAddress(receiver);
 		const reference = f.cloneNativeReference();
-		reference.gc.tables.set(receiver, key, value);
+		nativeHeapReference(reference).gc.tables.set(receiver, key, value);
 
 		// Nothing puts these three Table values in a register/bank/parked
 		// head for the collector. They live only in the typed operand tuple.
@@ -233,7 +234,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`General restores no preferred hash slots after collecting a refused request at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = createReferenceTable(f.cpu, 0, 1), strings = f.cpu.stringPool;
+		const receiver = createReferenceTable(f.cpu, 0, 1), strings = nativeHeapReference(f.cpu).stringPool;
 		const keep = valueString(strings.intern('general-preferred-existing'));
 		const key = valueString(strings.intern('general-preferred-trigger'));
 		f.tables.set(receiver, keep, valueInteger(5));
@@ -245,7 +246,7 @@ for (const opt of [0, 3] as const) {
 		const reference = f.cloneNativeReference();
 		// The native General String store passes the preference to the
 		// original allocation loop, then never restores it after recovery.
-		reference.gc.tables.storeStringKey(receiver, valuePayload(key), ValueTag.Integer, 61, -2, 9);
+		nativeHeapReference(reference).gc.tables.storeStringKey(receiver, valuePayload(key), ValueTag.Integer, 61, -2, 9);
 
 		f.begin(receiver, key, valueInteger(61), 0, 9, 1);
 		f.finish();

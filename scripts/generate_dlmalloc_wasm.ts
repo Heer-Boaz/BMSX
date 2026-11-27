@@ -15,7 +15,7 @@ const stackBytes = 16 * 1024;
 
 const root = resolve(import.meta.dirname, '..');
 const source = join(root, 'machine/common/dlmalloc');
-const destination = join(root, 'machine/ts/machine/memory/dlmalloc_wasm.generated.ts');
+const destination = join(root, 'tests/helpers/native_heap/dlmalloc_wasm.generated.ts');
 const clang = process.env.CLANG || 'clang-21';
 const output = mkdtempSync(join(tmpdir(), 'bmsx-dlmalloc-wasm-'));
 try {

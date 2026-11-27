@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { asClosure, numberToHost, valueInteger, valueNil } from '../../machine/ts/machine/cpu/value';
@@ -565,7 +566,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const replacement = asClosure(materializeCpuCompletionValues(cpu)[0], cpu.gc);
-	cpu.gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
+	nativeHeapReference(cpu).gc.tables.setStringKey(valuePayload(cpu.readClosureUpvalue(replacement, 0)), cpu.stringPool.find('value')!, valueInteger(99));
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
 	const resolved = readRuntimeLuaValue(

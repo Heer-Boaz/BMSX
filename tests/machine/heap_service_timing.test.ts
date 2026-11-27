@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -31,7 +32,7 @@ test('a storage-window exception preserves the resolved operands across a recove
 	});
 	runtime.boot();
 	const { cpu, memory, scheduler } = runtime.machine;
-	const { gc, luaHeap: budget } = cpu, tables = gc.tables;
+	const { gc, luaHeap: budget } = nativeHeapReference(cpu), tables = gc.tables;
 	const frames = runtime.frameScheduler;
 	const boot = captureRuntimeSaveState(runtime);
 	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
@@ -44,8 +45,8 @@ test('a storage-window exception preserves the resolved operands across a recove
 	budget.setCollectionTarget(budget.capacity());
 	const slots = 8192, owner = createReferenceTable(cpu, slots, 0);
 	for (let i = 1; i <= slots; ++i) tables.setInteger(owner, i, valueInteger(i));
-	const payload = valueString(cpu.stringPool.intern('live-only-through-sett'));
-	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-sett-string-${i}`);
+	const payload = valueString(nativeHeapReference(cpu).stringPool.intern('live-only-through-sett'));
+	for (let i = 0; i < 24; ++i) nativeHeapReference(cpu).stringPool.intern(`dead-sett-string-${i}`);
 	cpu.beginCompletionCall(valuePayload(setter), [valueTable(owner), valueInteger(slots + 1), payload]);
 	const garbage = createReferenceTable(cpu, Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
 	assert.ok(budget.usedBytes() + 5 * slots > budget.capacity());
@@ -153,7 +154,7 @@ test('the storage-window deadline is the hardware allowance, not the caller gran
 	runGuestToHalt(cpu, 4_194_304);
 	const closure = valuePayload(runtime.readCompletionValues()[0]);
 	const table = createReferenceTable(cpu, 0, 1);
-	cpu.gc.tables.set(table, valueInteger(-1), valueInteger(1));
+	nativeHeapReference(cpu).gc.tables.set(table, valueInteger(-1), valueInteger(1));
 	cpu.beginCompletionCall(closure, [valueTable(table), valueInteger(-2), valueInteger(2)]);
 	const depth = cpu.getFrameDepth() - 1;
 	const op = () => instructionOpcode(memory.readMappedU32LE(cpu.readFramePc(depth)));

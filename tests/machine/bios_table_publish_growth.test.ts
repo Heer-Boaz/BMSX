@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -40,7 +41,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), result);
 		return result;
 	}
-	const reservation = same(target => target.heapAllocator.allocate(8, true));
+	const reservation = same(target => nativeHeapReference(target).heapAllocator.allocate(8, true));
 	assert.ok(reservation);
 	function compare() {
 		const actual = memory.ramData().subarray(first, last), expected = oracle.memory.ramData().subarray(first, last);
@@ -51,8 +52,8 @@ function fixture(optLevel: 0 | 3) {
 	function begin(record: number, array: number, hash: number, keepHash: boolean, storage: number, base: number, cppMirror = false) {
 		same(target => target.memory.writeRamRecordPair(reservation, storage, base));
 		// The frozen native immediate resize prefix, excluding rehash and array work.
-		const tables = oracle.gc.tables;
-		oracle.gc.tableEntriesMoved(record);
+		const tables = nativeHeapReference(oracle).gc.tables;
+		nativeHeapReference(oracle).gc.tableEntriesMoved(record);
 		// The C++ fixture also requeues this black record, but replaces its
 		// whole color byte instead of preserving the high six bits (GcHeap::color).
 		if (cppMirror) oracle.memory.writeRamRecordByte(record + GC_COLOR_OFFSET, 2);
@@ -77,7 +78,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function backing(bytes: number) {
 		return same(target => {
-			const address = target.heapAllocator.allocate(bytes, true);
+			const address = nativeHeapReference(target).heapAllocator.allocate(bytes, true);
 			assert.ok(address);
 			for (let offset = 0; offset < bytes; ++offset) target.memory.writeRamRecordByte(address + offset, dirty);
 			return address;

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -32,7 +33,7 @@ function fixture(optLevel: 0 | 3) {
 		runGuestToHalt(target, 10_000);
 		target.memory.writeRamRecordWord(management + GC_ROOT_BANKS_OFFSET, target.rootThread.address);
 	}
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	const prototype = linked.vectors.startupFunctionAddress;
 	function begin(kind: Kind, operand0: number, operand1: number, mode: Mode, sourceCycles = 0) {
 		issueFirmwareProbe(cpu, [management, kind, operand0, operand1, mode, sourceCycles]);
@@ -61,7 +62,7 @@ function fixture(optLevel: 0 | 3) {
 }
 
 function exhaust(f: ReturnType<typeof fixture>) {
-	const arena = f.cpu.heapAllocator;
+	const arena = nativeHeapReference(f.cpu).heapAllocator;
 	while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) { /* keep external backing blocks live */ }
 	while (arena.allocate(16, true)) { /* exhaust the remaining small fits */ }
 }
@@ -71,18 +72,18 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel), { cpu, memory, oracle } = f;
 		const array = 31, hash = 129, capacity = TableRecords.hashCapacity(hash);
 		const deadText = 'reclaim before table reservation '.repeat(144);
-		const dead = cpu.stringPool.intern(deadText);
+		const dead = nativeHeapReference(cpu).stringPool.intern(deadText);
 		exhaust(f);
 		for (let n = 0; n < 4096 && cpu.gc.phase() !== GcPhase.Strings; ++n)
-			cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(cpu.gc.phase(), GcPhase.Strings);
 		assert.equal(cpu.stringPool.find(deadText), dead);
 		const initial = captureCpuCheckpoint(cpu);
 		restoreCpuCheckpoint(oracle, initial);
-		assert.equal(oracle.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, array * 5, TableHeader.ArrayStorage,
+		assert.equal(nativeHeapReference(oracle).luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, array * 5, TableHeader.ArrayStorage,
 			valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, capacity),
 			LuaAllocationMode.Retry, TableRecords.hashStorageBytes(capacity), TableHeader.HashStorage), 0);
-		while (oracle.gc.active()) oracle.gc.step();
+		while (oracle.gc.active()) nativeHeapReference(oracle).gc.step();
 		const address = createReferenceTable(oracle, array, hash);
 		assert.ok(address);
 		for (const mode of [Mode.Direct, Mode.Scheduled]) {
@@ -134,7 +135,7 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel), { cpu } = f;
 		exhaust(f);
 		for (let n = 0; n < 4096 && cpu.gc.phase() !== GcPhase.Strings; ++n)
-			cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
+			nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(cpu.gc.phase(), GcPhase.Strings);
 		const white = cpu.gc.white();
 		f.begin(Kind.Table, 4, 129, Mode.Direct);
@@ -152,7 +153,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BIOS charges logical assist to the original work allowance, not elapsed CPU cycles at O${optLevel}`, () => {
 		const f = fixture(optLevel), { cpu } = f;
 		const logical = cpu.luaHeap.usedBytes(), charge = TableRecords.HEADER_CHARGE;
-		cpu.luaHeap.setCollectionTarget(logical);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(logical);
 		const initial = captureCpuCheckpoint(cpu);
 		f.begin(Kind.Table, 0, 0, Mode.Scheduled, 2);
 		const noAssist = f.finish();

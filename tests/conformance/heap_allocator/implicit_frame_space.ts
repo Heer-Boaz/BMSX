@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
@@ -72,7 +73,7 @@ return ok, result, trailing
 			assert.equal(runtime.machine.cpu.rootThread.address, CPU_RESET_BANK_ADDRESS);
 			return runtime;
 		}
-		const runtime = boot(), { cpu, memory } = runtime.machine, arena = cpu.heapAllocator, tables = cpu.gc.tables;
+		const runtime = boot(), { cpu, memory } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator, tables = nativeHeapReference(cpu).gc.tables;
 		runGuestToHalt(cpu, 4_194_304);
 		assert.equal(cpu.isHaltedUntilIrq(), true);
 		const thread = cpu.activeThread, owner = thread.address, depth = thread.frameDepth, caller = thread.currentFrame!;
@@ -101,10 +102,10 @@ return ok, result, trailing
 		assert.equal(callee.numParams, 1);
 		assert.equal(memory.readRamRecordWord(invoked), 0);
 
-		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		if (refusal) {
 			for (let i = 0; i < 4096 && cpu.gc.phase() !== GcPhase.Atomic; ++i)
-				cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
+				nativeHeapReference(cpu).gc.step(valueNil(), valueNil(), valueNil(), 0, false, 11);
 			assert.equal(cpu.gc.phase(), GcPhase.Atomic);
 			assert.equal(cpu.gc.isAlive(forward), false, 'the selected receiver is only weakly reachable before the fault');
 			while (arena.allocate(4088, true)) { /* fill the large free extents before either core runs the fault */ }

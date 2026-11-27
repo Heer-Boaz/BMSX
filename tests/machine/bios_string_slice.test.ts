@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { hashText } from '../../machine/ts/common/hash';
@@ -62,8 +63,8 @@ function fixture(optLevel: 0 | 3) {
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
 
 	function seed(text: string) {
-		const id = cpu.stringPool.intern(text);
-		assert.equal(id, oracle.stringPool.intern(text));
+		const id = nativeHeapReference(cpu).stringPool.intern(text);
+		assert.equal(id, nativeHeapReference(oracle).stringPool.intern(text));
 		return id;
 	}
 	function word(field: number, value: number) {
@@ -109,9 +110,9 @@ for (const optLevel of [0, 3] as const) {
 		const oldCount = memory.readRamRecordWord(metadata + capacity);
 		assert.equal(oldCount, countBefore, 'the two seeds leave the original directory size');
 		const index = hash & (oldCount - 1);
-		const nextBase = cpu.heapAllocator.allocate(8 * oldCount, true);
+		const nextBase = nativeHeapReference(cpu).heapAllocator.allocate(8 * oldCount, true);
 		assert.notEqual(nextBase, 0);
-		assert.equal(nextBase, oracle.heapAllocator.allocate(8 * oldCount, true));
+		assert.equal(nextBase, nativeHeapReference(oracle).heapAllocator.allocate(8 * oldCount, true));
 		word(capacity, oldCount | growFlag);
 		word(rehashBase, nextBase);
 		for (const target of [memory, oracle.memory]) {
@@ -144,9 +145,9 @@ for (const optLevel of [0, 3] as const) {
 		}
 		word(rehashReady, lower);
 		const occupiedBefore = cpu.heapAllocator.occupiedBytes();
-		cpu.stringPool.beginReachabilityEpoch();
-		oracle.stringPool.beginReachabilityEpoch();
-		assert.equal(internStringSliceReference(oracle.stringPool, source, 2, text.length), match);
+		nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
+		nativeHeapReference(oracle).stringPool.beginReachabilityEpoch();
+		assert.equal(internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length), match);
 		assert.equal(invoke('retain', metadata, source, 2, text.length, hash), match, 'shrink frontier probes upper after lower');
 		assert.equal(cpu.heapAllocator.occupiedBytes(), occupiedBefore);
 		equalArena();
@@ -173,7 +174,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(memory.readRamRecordWord(metadata + capacity), count);
 		const hash = hashText(text);
 		assert.equal(invoke('lookup_ram_slice', metadata, source, 2, text.length, hash), 0);
-		const expectedId = internStringSliceReference(oracle.stringPool, source, 2, text.length);
+		const expectedId = internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length);
 		assert.equal(invoke('prepare_existing_directory', metadata, arena), 0);
 		const destination = memory.readRamRecordWord(metadata + rehashBase);
 		assert.notEqual(destination, 0, 'directory growth has reserved and published the next directory');
@@ -202,15 +203,15 @@ for (const optLevel of [0, 3] as const) {
 	test(`the reference retries a refused slice after reclaim while retaining its source at O${optLevel}`, () => {
 		const { oracle } = fixture(optLevel);
 		const text = 'string-borrowed-retry-result'.repeat(96);
-		const source = oracle.stringPool.intern('##' + text + '!!');
+		const source = nativeHeapReference(oracle).stringPool.intern('##' + text + '!!');
 		const victimText = 'reclaimable backing for a borrowed String'.repeat(512);
-		oracle.stringPool.intern(victimText);
+		nativeHeapReference(oracle).stringPool.intern(victimText);
 		for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
-			while (oracle.heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
-		assert.equal(oracle.heapAllocator.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
+			while (nativeHeapReference(oracle).heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
+		assert.equal(nativeHeapReference(oracle).heapAllocator.allocate(BLUA32_STRING_RECORD_HEADER_SIZE + text.length, true), 0);
 		const before = oracle.stringPool.bytes(source);
 		const white = oracle.gc.white();
-		const result = internStringSliceReference(oracle.stringPool, source, 2, text.length);
+		const result = internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length);
 		assert.equal(oracle.stringPool.find(victimText), undefined);
 		assert.equal(oracle.gc.white(), white ^ 1, 'exactly one fresh recovery epoch suffices');
 		assert.equal(oracle.stringPool.bytes(result), text);
@@ -220,13 +221,13 @@ for (const optLevel of [0, 3] as const) {
 	test(`the reference reports borrowed-slice OOM without freeing the source or publishing a result at O${optLevel}`, () => {
 		const { oracle } = fixture(optLevel);
 		const text = 'string-borrowed-oom-result'.repeat(96);
-		const source = oracle.stringPool.intern('##' + text + '!!');
+		const source = nativeHeapReference(oracle).stringPool.intern('##' + text + '!!');
 		// Raw backing does not belong to the GC object inventory. Keep it issued
 		// through both real recovery epochs, leaving no run large enough for the result.
 		for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
-			while (oracle.heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
+			while (nativeHeapReference(oracle).heapAllocator.allocate(extent, true) !== 0) { /* exhaust this size class */ }
 		const before = oracle.stringPool.bytes(source);
-		assert.throws(() => internStringSliceReference(oracle.stringPool, source, 2, text.length), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
+		assert.throws(() => internStringSliceReference(nativeHeapReference(oracle).stringPool, source, 2, text.length), error => error === LUA_OUT_OF_MEMORY_SIGNAL);
 		assert.equal(oracle.stringPool.bytes(source), before);
 		assert.equal(oracle.stringPool.find(text), undefined);
 	});

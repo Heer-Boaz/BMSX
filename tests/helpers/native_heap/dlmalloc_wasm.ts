@@ -1,4 +1,5 @@
-import { MAIN_RAM_SIZE } from '../../spec/bmsx/memory_map';
+import type { Memory } from '../../../machine/ts/machine/memory/memory';
+import { MAIN_RAM_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { DLMALLOC_WASM_BASE64 } from './dlmalloc_wasm.generated';
 
 export { DLMALLOC_WASM_PAGE_COUNT } from './dlmalloc_wasm.generated';
@@ -24,9 +25,9 @@ interface DlmallocModuleExports extends DlmallocArena {
 
 let compiledModule: WebAssembly.Module | undefined;
 
-export function bindDlmalloc(memory: WebAssembly.Memory, state: number): DlmallocArena {
+export function bindReferenceDlmalloc(memory: Memory, state: number): DlmallocArena {
 	compiledModule ??= new WebAssembly.Module(Uint8Array.from(atob(DLMALLOC_WASM_BASE64), byte => byte.charCodeAt(0)));
-	const arena = new WebAssembly.Instance(compiledModule, { env: { memory } }).exports as unknown as DlmallocModuleExports;
+	const arena = new WebAssembly.Instance(compiledModule, { env: { memory: memory['ramBacking'] } }).exports as unknown as DlmallocModuleExports;
 	arena.bind(state, MAIN_RAM_SIZE);
 	return arena;
 }

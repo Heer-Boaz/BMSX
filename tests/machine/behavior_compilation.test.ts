@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
@@ -33,14 +34,14 @@ probe.check()
 probe.drop_definition()
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	runGuestToHalt(cpu, 10_000_000);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak_inputs')!));
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil(), 'capture does not retain the mutable declaration');
 	assert.equal(cpu.gc.tables.getInteger(weak, 2), valueNil(), 'declaration identity map dies with the compilation layout');
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check_replaced')!), cpu.gc), []);
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('check')!), cpu.gc), []);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const displaced = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('displaced')!));
 	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(displaced, index), valueNil());
 	const retained = collectReferenceHeapBytes(cpu) - logicalThreadBytes(cpu);
@@ -209,7 +210,7 @@ probe.abandoned = setmetatable({ abandoned, recorder.programs[abandoned] }, weak
 function probe.drop_first() probe.first = nil end
 `, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
 	runGuestToHalt(cpu, 10_000_000);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	for (const name of ['old', 'unused']) {
 		const references = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find(name)!));
@@ -221,7 +222,7 @@ function probe.drop_first() probe.first = nil end
 		for (let index = 1; index <= count; index += 1) assert.equal(cpu.gc.tables.getInteger(references, index), valueNil(), name);
 	}
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('drop_first')!), cpu.gc), []);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const old = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('old')!));
 	for (let index = 1; index <= 3; index += 1) assert.equal(cpu.gc.tables.getInteger(old, index), valueNil());
 });

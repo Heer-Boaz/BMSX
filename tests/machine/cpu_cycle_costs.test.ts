@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -186,7 +187,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
 		writeInstruction(text, 4, OpCode.JMP, 0, 63, 63, 255);
 		const image = linkManagedTestOpcodes({ text, constants: [integerConstant(17), integerConstant(29)], systemGlobalNames: ['tointeger'], functions: [{ firstWord: 0, wordCount: 5, maxStack: 8 }] });
 		const { cpu } = createManagedTestOpcodeCpu(image, backend);
-		setReferenceSystemGlobal(cpu, cpu.stringPool.intern('tointeger'), valueBuiltinFunction(BuiltinFunctionId.ToInteger));
+		setReferenceSystemGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('tointeger'), valueBuiltinFunction(BuiltinFunctionId.ToInteger));
 		for (let grant = 0; grant < 32 && (cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES); ++grant) cpu.runUntilDepth(0, 1);
 		assert.ok(!(cpu.rootThread.currentFrame!.pc !== image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES), 'fixture reached its measured instruction');
 		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
@@ -208,7 +209,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`completion-latch 
 	const { cpu } = createManagedTestOpcodeCpu(image, backend);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 	cpu.runUntilDepth(0, 1);
-	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, cpu.gc);
+	const closure = cpu.rootThread.currentFrame!.registers.getClosure(0, nativeHeapReference(cpu).gc);
 	for (let call = 0; call < 16; ++call) {
 		cpu.beginCompletionCall(closure, [valueInteger(17), valueInteger(29)]);
 		assert.equal(cpu.runUntilDepth(1, 1), RunResult.Halted);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -76,7 +77,7 @@ try {
 		memory.writeRamRecordWord(control, phase);
 		memory.writeRamRecordWord(control + SWEEP_LINK, control + OBJECT_HEAD);
 		// The native step wrapper accounts pacing after the sweep leaf.
-		cpu.gc['beginPaceCredit'](memory.readRamRecordWord(control + OBJECT_HEAD + 4) + cpu.stringPool.estimateSweepWork(), 0);
+		nativeHeapReference(cpu).gc['beginPaceCredit'](memory.readRamRecordWord(control + OBJECT_HEAD + 4) + nativeHeapReference(cpu).stringPool.estimateSweepWork(), 0);
 		for (let word = SWEEP_LINK + 4; word <= GC_PACE_PAID + 4; word += 4) {
 			const address = control + word;
 			seed.push(`W ${address} ${memory.readRamRecordWord(address)}`);

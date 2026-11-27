@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -63,7 +64,7 @@ try {
 		}, input);
 		const runtime = makeRuntime(), oracle = makeRuntime();
 		runtime.boot(); oracle.boot();
-		const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, luaHeap: heap } = cpu;
+		const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, luaHeap: heap } = nativeHeapReference(cpu);
 		runGuestToHalt(cpu, 300_000);
 		const rawRam = memory.ramData(), management = arena.managementOffset();
 		const { cpu: old, memory: oldMemory } = oracle.machine, oldRam = oldMemory.ramData();
@@ -79,7 +80,7 @@ try {
 		const banks = ['prior-system', 'prior-global'].map((name, lane) => {
 			const descriptor = systemDesc + 12 * lane;
 			const bank = new GlobalBank(memory, descriptor);
-			for (let i = 0; i < lane + 2; ++i) registerReferenceGlobalName(cpu.gc, bank, cpu.stringPool.intern(`${name}-${i}`));
+			for (let i = 0; i < lane + 2; ++i) registerReferenceGlobalName(nativeHeapReference(cpu).gc, bank, nativeHeapReference(cpu).stringPool.intern(`${name}-${i}`));
 			return readNamespaceBank(memory, descriptor);
 		});
 		const spans = [16, opt === 0 ? 28 : 0, 44];
@@ -98,7 +99,7 @@ try {
 		write(lowCanary, 0x49faa398); write(highCanary, 0xccda2e34);
 		for (const slot of [1, 0] as const) {
 			const { stringBucketAddress, stringBucketCount } = fixtures[slot].cartImage.header;
-			cpu.stringPool.activateRomTable(slot, stringBucketAddress, stringBucketCount);
+			nativeHeapReference(cpu).stringPool.activateRomTable(slot, stringBucketAddress, stringBucketCount);
 		}
 		const oldDirectory = readWords(metadata + directory, directoryWords);
 		assert.ok(oldDirectory.every(value => value !== 0));
@@ -160,7 +161,7 @@ try {
 		assert.ok(arena.occupiedBytes() < initialPhysical);
 		hashes(rawRam, note);
 		finish();
-		for (const [i] of banks.entries()) clearReferenceGlobalBank(old.gc, new GlobalBank(oldMemory, systemDesc + 12 * i));
+		for (const [i] of banks.entries()) clearReferenceGlobalBank(nativeHeapReference(old).gc, new GlobalBank(oldMemory, systemDesc + 12 * i));
 		assert.equal(heap.usedBytes(), initialUsed - nameCharge * (banks[0].count + banks[1].count));
 		assert.deepEqual(readWords(systemDesc, 6), [0, 0, 0, 0, 0, 0]);
 		assert.deepEqual(readWords(metadata + directory, directoryWords), oldDirectory, 'namespace phase must not retire String directories');
@@ -211,10 +212,10 @@ try {
 		const historyEnd = history.capture(memory, historyBaseline);
 		for (const [lane, base] of imageBases.entries()) {
 			if (base === 0) continue;
-			old.luaHeap.releaseRecord(base, spans[lane]); // The TS native owner clears the old host record after free.
+			nativeHeapReference(old).luaHeap.releaseRecord(base, spans[lane]); // The TS native owner clears the old host record after free.
 			oldMemory.writeRamRecordWord(imageDesc + 8 * lane, 0);
 		}
-		old.stringPool.clearRomTables();
+		nativeHeapReference(old).stringPool.clearRomTables();
 		match();
 		hashes(rawRam, note);
 		nativeReference.push(`% i ${imageDesc}`);

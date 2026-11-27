@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
@@ -33,7 +34,7 @@ function createCpu(): CPU {
 }
 
 test('all byte values survive intern, indexing and snapshot restore', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	for (const text of [Array.from({ length: 256 }, (_, code) => String.fromCharCode(code)).join(''),
 		...['Aé雪\0Z', 'β😀A🚀\0é', '😀', 'a'.repeat(4096), '雪'.repeat(65), 'β😀A🚀\0é'.repeat(23)].map(textToByteString)]) {
 		const id = pool.intern(text);
@@ -62,13 +63,13 @@ test('a ROM String requires a complete payload before publication and preserves 
 	rom.set([0x41, 0xf7, 0x00, 0x81, 0x5a, 0x00], start);
 
 	const truncatedMemory = new Memory({ systemRom: rom.subarray(0, -1), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
-	const truncated = new CPU(truncatedMemory, new IrqController(truncatedMemory), new ExecutionAddressSpace(truncatedMemory)).stringPool;
+	const truncated = nativeHeapReference(new CPU(truncatedMemory, new IrqController(truncatedMemory), new ExecutionAddressSpace(truncatedMemory))).stringPool;
 	truncated.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, directory, 1);
 	assert.throws(() => truncated.resolveImageRecord(SYSTEM_EXECUTION_DOMAIN_ID, address), /ROM String is truncated/);
 	assert.throws(() => truncated.find(payload), /ROM String is truncated/);
 
 	const memory = new Memory({ systemRom: rom, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
-	const pool = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)).stringPool;
+	const pool = nativeHeapReference(new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory))).stringPool;
 	pool.activateRomTable(SYSTEM_EXECUTION_DOMAIN_ID, directory, 1);
 	const id = pool.resolveImageRecord(SYSTEM_EXECUTION_DOMAIN_ID, address);
 	assert.equal(id, address);
@@ -83,7 +84,7 @@ test('a ROM String requires a complete payload before publication and preserves 
 });
 
 test('a borrowed String stays live through emergency admission of its slice', () => {
-	const cpu = createCpu(), pool = cpu.stringPool, heap = cpu.luaHeap, arena = cpu.heapAllocator;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool, heap = nativeHeapReference(cpu).luaHeap, arena = nativeHeapReference(cpu).heapAllocator;
 	heap.setCollectionTarget(heap.capacity());
 	const input = '\xff\0\x80A'.repeat(32 * 1024);
 	const source = pool.intern(input);
@@ -101,7 +102,7 @@ test('a borrowed String stays live through emergency admission of its slice', ()
 });
 
 test('collection removes unreachable records from all intern buckets and reuses the same capacity', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	const suffix = 'x'.repeat(512);
 	let steadyBytes = 0;
 	for (let round = 0; round < 8; round += 1) {
@@ -114,7 +115,7 @@ test('collection removes unreachable records from all intern buckets and reuses 
 });
 
 test('major String sweep rewinds a real bucket chain behind a retained predecessor', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	const names: string[] = [];
 	for (let i = 0; names.length < 7; ++i) {
 		const name = `chain:${i}`;
@@ -145,7 +146,7 @@ test('major String sweep rewinds a real bucket chain behind a retained predecess
 });
 
 test('String admission starts its sweep during an uncharged index resize', () => {
-	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool, { memory } = cpu, { gc } = nativeHeapReference(cpu);
 	const capacity = 8192;
 	const roots = createReferenceTable(cpu, capacity, 0), key = pool.intern('String growth root');
 	setReferenceGlobal(cpu, key, valueTable(roots));
@@ -160,7 +161,7 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 	assert.equal(gc.phase(), GcPhase.Sweep);
 	const ram = memory.captureSaveState(), state = cpu.captureRuntimeState();
 	const finish = () => {
-		cpu.luaHeap.setCollectionTarget(0);
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(0);
 		const added = pool.intern('growth crosses into Strings');
 		assert.equal(bucketCapacity(), capacity);
 		assert.equal(gc.phase(), GcPhase.Strings, 'growth does not synchronously drain the new sweep');
@@ -179,7 +180,7 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 });
 
 test('String rehash splits a collision chain across both planes and replays sweep and retirement', () => {
-	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool, { memory } = cpu, { gc } = nativeHeapReference(cpu);
 	const capacity = 4096;
 	const roots = createReferenceTable(cpu, 4, 0);
 	setReferenceGlobal(cpu, pool.intern('collision rehash root'), valueTable(roots));
@@ -198,7 +199,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 	});
 	assert.equal(read(4), capacity);
 	const oldBase = read(0), trigger = collision();
-	const arena = cpu.heapAllocator;
+	const arena = nativeHeapReference(cpu).heapAllocator;
 	const logicalBefore = cpu.luaHeap.usedBytes(), physicalBefore = arena.occupiedBytes();
 	const inserted = pool.intern(trigger);
 	const insertedBytes = BLUA32_STRING_RECORD_HEADER_SIZE + trigger.length;
@@ -243,7 +244,7 @@ test('String rehash splits a collision chain across both planes and replays swee
 });
 
 test('sparse String buckets shrink in place and rewind an upper chain mid-merge', () => {
-	const cpu = createCpu(), pool = cpu.stringPool, arena = cpu.heapAllocator, memory = cpu.memory;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool, arena = nativeHeapReference(cpu).heapAllocator, memory = cpu.memory;
 	const half = HEAP_PAGE_SIZE / 4, capacity = 2 * half;
 	const metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(metadata + field);
@@ -308,7 +309,7 @@ test('sparse String buckets shrink in place and rewind an upper chain mid-merge'
 });
 
 test('String index growth is optional when only the requested String fits', () => {
-	const cpu = createCpu(), pool = cpu.stringPool, arena = cpu.heapAllocator;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool, arena = nativeHeapReference(cpu).heapAllocator;
 	const capacity = HEAP_PAGE_SIZE / 4;
 	const metadata = arena.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => cpu.memory.readRamRecordWord(metadata + field);
@@ -332,41 +333,41 @@ test('String index growth is optional when only the requested String fits', () =
 });
 
 test('empty strings are interned and then collected like non-empty records', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	const empty = pool.intern('');
 	assert.equal(pool.intern(''), empty);
 	assert.equal(pool.byteLength(empty), 0);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find(''), undefined);
 });
 
 test('nested materialization scopes retain newly returned IDs only through their owning phase', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	pool.beginLocalRoots();
 	const outer = pool.intern('outer string');
 	pool.beginLocalRoots();
 	const inner = pool.intern('inner string');
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.toString(outer), 'outer string');
 	assert.equal(pool.toString(inner), 'inner string');
 	pool.endLocalRoots();
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('inner string'), undefined);
 	assert.equal(pool.find('outer string'), outer);
 	pool.endLocalRoots();
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('outer string'), undefined);
 });
 
 test('RAM restore replays string allocation after partial reuse', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	pool.beginLocalRoots();
 	pool.intern('left anchor');
 	pool.beginLocalRoots();
 	for (const text of ['hole one', 'hole two', 'hole three']) pool.intern(text);
 	pool.endLocalRoots();
 	pool.intern('right anchor');
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	pool.intern('partially reused');
 	pool.endLocalRoots();
 	const ram = cpu.memory.captureSaveState();
@@ -379,19 +380,19 @@ test('RAM restore replays string allocation after partial reuse', () => {
 });
 
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
 	const root = pool.intern('table root'), table = createReferenceTable(cpu, 0, 8);
 	setReferenceGlobal(cpu, root, valueTable(table));
 	const removed = pool.intern('removed key');
-	cpu.gc.tables.setStringKey(table, removed, valueInteger(19));
-	cpu.gc.tables.setStringKey(table, removed, valueNil());
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, removed, valueInteger(19));
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, removed, valueNil());
 	const retained = pool.intern('retained key');
-	cpu.gc.tables.setStringKey(table, retained, valueInteger(23));
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, retained, valueInteger(23));
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
 	assert.equal(cpu.gc.tables.getStringKey(table, replacement), valueNil());
-	cpu.gc.tables.setStringKey(table, replacement, valueInteger(29));
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, replacement, valueInteger(29));
 	assert.equal(cpu.gc.tables.get(table, valueString(replacement)), valueInteger(29));
 	assert.equal(cpu.gc.tables.getStringKey(table, retained), valueInteger(23));
 	const entry = new ValueSlots(2), keys: string[] = [];
@@ -405,22 +406,22 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 
 
 test('long byte strings are reclaimed before an ID is reused', () => {
-	const cpu = createCpu(), pool = cpu.stringPool;
-	cpu.gc.collect();
+	const cpu = createCpu(), pool = nativeHeapReference(cpu).stringPool;
+	nativeHeapReference(cpu).gc.collect();
 	const baseline = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
 	const bytes = BLUA32_STRING_RECORD_HEADER_SIZE + text.length;
 	assert.equal(cpu.luaHeap.usedBytes(), baseline + bytes);
-	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + cpu.heapAllocator.allocationBytes(old));
+	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + nativeHeapReference(cpu).heapAllocator.allocationBytes(old));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.luaHeap.usedBytes(), baseline);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
 	assert.equal(pool.find(text), undefined);
 	const id = pool.intern(textToByteString('😀'.repeat(65)));
 	assert.equal(pool.byteAt(id, 64), 0xf0);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.byteAt(pool.intern('ascii'), 4), 105);
 });
 
@@ -431,7 +432,7 @@ test('activation interns matching bytes across RAM and ROM sockets in activation
 	const first = linkRawTestBlua32Pair(system, { text, functions, constants: ['two sockets', 'system key', 'first only'] });
 	const second = linkRawTestBlua32Pair(system, { text, functions, constants: ['two sockets', 'existing RAM', 'second only'] });
 	const memory = new Memory({ systemRom: first.systemRomBytes, cartridgeSlots: cartridgeSlots(first.cartRomBytes, second.cartRomBytes) }, PSX_MACHINE_SPEC.ramBytes);
-	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)), pool = cpu.stringPool;
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory)), pool = nativeHeapReference(cpu).stringPool;
 	cpu.reset();
 	const bios = pool.find('system key'), ram = pool.intern('existing RAM');
 	cpu.writeFrameExecution(0, 1, second.cartImage.functions[0].address, second.cartImage.header.textAddress);
@@ -447,14 +448,14 @@ test('activation interns matching bytes across RAM and ROM sockets in activation
 
 	// Restoring a checkpoint during collection must not publish a new table
 	// or mark a RAM record merely by rebuilding the decoded image.
-	cpu.gc.step();
+	nativeHeapReference(cpu).gc.step();
 	const checkpoint = cpu.captureRuntimeState(), state = memory.captureSaveState();
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('existing RAM'), ram, 'the resident image owns its original RAM String');
 	memory.restoreSaveState(state);
 	cpu.restoreRuntimeState(checkpoint);
 	assert.deepEqual(memory.captureSaveState(), state);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('existing RAM'), ram, 'restored image retains the same RAM String through a fresh epoch');
 	assert.equal(pool.intern('two sockets'), socket1);
 });

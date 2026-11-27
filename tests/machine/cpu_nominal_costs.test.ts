@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
@@ -40,16 +41,16 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		const image = linkRawTestSystemBlua32({ text, constants: ['field'], globalNames: ['value'], systemGlobalNames: ['value'],
 			functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 24 }] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
-		const base = frame.pc, key = cpu.stringPool.intern('field'), global = cpu.stringPool.intern('value');
-		const table = createReferenceTable(cpu, 1, 1); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
+		const base = frame.pc, key = nativeHeapReference(cpu).stringPool.intern('field'), global = nativeHeapReference(cpu).stringPool.intern('value');
+		const table = createReferenceTable(cpu, 1, 1); nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(11)); nativeHeapReference(cpu).gc.tables.setStringKey(table, key, valueInteger(17));
 		r.setTable(0, table); r.setInteger(1, 1); r.setString(2, key); r.setInteger(3, 23);
-		r.setInteger(4, 2); r.setInteger(5, 3); r.setInteger(6, 7); r.setInteger(7, 3); r.setString(8, cpu.stringPool.intern('abc'));
+		r.setInteger(4, 2); r.setInteger(5, 3); r.setInteger(6, 7); r.setInteger(7, 3); r.setString(8, nativeHeapReference(cpu).stringPool.intern('abc'));
 		const charges = [...instructions.map(row => row[4]), 2], total = charges.reduce((a, b) => a + b, 0);
 		cpu.runUntilDepth(0, total * 32);
 		if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 		for (let grant = 0; grant <= total; ++grant) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-			r.clear(13, 9); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
+			r.clear(13, 9); nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(11)); nativeHeapReference(cpu).gc.tables.setStringKey(table, key, valueInteger(17));
 			setReferenceSystemGlobal(cpu, global, valueInteger(31)); setReferenceGlobal(cpu, global, valueInteger(37));
 			assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 			let remaining = grant, completed = 0;
@@ -109,9 +110,9 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			const next = [rootStarts[0], rootStarts[1], rootStarts[2], ...childStarts, rootStarts[3], rootStarts[4], 0][completed];
 			assert.equal(cpu.rootThread.currentFrame!.pc, base + next * INSTRUCTION_BYTES);
 			assert.equal(root.registers.get(4), completed >= 6 ? valueInteger(29) : completed >= 1 ? valueInteger(17) : valueNil());
-			assert.equal(root.registers.getClosure(0, cpu.gc), captured);
+			assert.equal(root.registers.getClosure(0, nativeHeapReference(cpu).gc), captured);
 			assert.equal(root.registers.getTag(6), completed >= 2 ? ValueTag.Closure : ValueTag.Nil);
-			if (completed >= 2) assert.equal(root.registers.getClosure(6, cpu.gc), cached);
+			if (completed >= 2) assert.equal(root.registers.getClosure(6, nativeHeapReference(cpu).gc), cached);
 			assert.equal(root.registers.get(5), completed >= 8 ? valueBool(true) : valueNil());
 			if (completed >= 3 && completed < 7) {
 				const r = cpu.rootThread.currentFrame!.registers;

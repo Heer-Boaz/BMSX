@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { spendTableCensusReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
@@ -60,7 +61,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), result);
 		return result;
 	}
-	const scratch = same(target => target.heapAllocator.allocate(SCRATCH_BYTES + 32, true) - RAM_BASE);
+	const scratch = same(target => nativeHeapReference(target).heapAllocator.allocate(SCRATCH_BYTES + 32, true) - RAM_BASE);
 	same(target => {
 		for (let i = 0; i < SCRATCH_BYTES; i += 4) target.memory.writeRamRecordWord(scratch + i, 0);
 		target.memory.writeRamRecordWord(scratch + SCRATCH_BYTES + 28, 0x27a0bf63);
@@ -81,7 +82,7 @@ function fixture(optLevel: 0 | 3) {
 		return firmwareProbeResult(cpu) | 0;
 	}
 	function plan(record: number, key: Value, extra: number, counted?: TableRebuildReference) {
-		const { tables } = oracle.gc;
+		const { tables } = nativeHeapReference(oracle).gc;
 		tables['planRehash'](record, key, extra, counted);
 		const { array, hash, keepHash } = tables['resizePlan'];
 		const sizes = oracle.heapAllocator.occupiedBytes(), charged = oracle.luaHeap.usedBytes();
@@ -107,12 +108,12 @@ for (const opt of [0, 3] as const) {
 		function table(array: number, hash: number, keys: readonly Value[]) {
 			return f.same(target => {
 				const address = createReferenceTable(target, array, hash);
-				for (const key of keys) target.gc.tables.set(address, key, int(42));
+				for (const key of keys) nativeHeapReference(target).gc.tables.set(address, key, int(42));
 				return address;
 			});
 		}
-		const string = f.same(cpu => valueString(cpu.stringPool.intern('source-table-plan')));
-		const missing = f.same(cpu => valueString(cpu.stringPool.intern('source-table-plan-missing')));
+		const string = f.same(cpu => valueString(nativeHeapReference(cpu).stringPool.intern('source-table-plan')));
+		const missing = f.same(cpu => valueString(nativeHeapReference(cpu).stringPool.intern('source-table-plan-missing')));
 		const empty = table(0, 0, []);
 		assert.deepEqual(f.plan(empty, int(1), 7), [1, 0, 1]);
 		assert.deepEqual(f.plan(empty, int(2), 7), [0, 1, 0]);
@@ -124,8 +125,8 @@ for (const opt of [0, 3] as const) {
 		// A removed identity key retains its dead payload, not a live census edge.
 		f.same(cpu => {
 			const owner = createReferenceTable(cpu, 0, 0);
-			cpu.gc.tables.set(small, valueTable(owner), int(1));
-			cpu.gc.tables.set(small, valueTable(owner), valueNil());
+			nativeHeapReference(cpu).gc.tables.set(small, valueTable(owner), int(1));
+			nativeHeapReference(cpu).gc.tables.set(small, valueTable(owner), valueNil());
 		});
 		assert.deepEqual(f.plan(small, int(30), 0), [32, 1, 0]);
 		assert.deepEqual(f.plan(small, missing, 1), [8, 32, 0]);
@@ -147,13 +148,13 @@ for (const opt of [0, 3] as const) {
 		const record = f.same(cpu => {
 			const address = createReferenceTable(cpu, array, hash);
 			for (let key = 1; key <= array; ++key)
-				if (key % 7 !== 0) cpu.gc.tables.set(address, int(key), int(key));
-			for (const key of [4097, 5119, 8193]) cpu.gc.tables.set(address, int(key), int(key));
+				if (key % 7 !== 0) nativeHeapReference(cpu).gc.tables.set(address, int(key), int(key));
+			for (const key of [4097, 5119, 8193]) nativeHeapReference(cpu).gc.tables.set(address, int(key), int(key));
 			return address;
 		});
 		const job = new TableRebuildReference();
 		for (const budget of [0, 3, -2, 147, 23, 2000]) {
-			const cycles = spendTableCensusReference(f.oracle.gc, record, array, job, budget);
+			const cycles = spendTableCensusReference(nativeHeapReference(f.oracle).gc, record, array, job, budget);
 			const expected = { cycles, density: [job.scanned, job.live, job.slots, job.kept] };
 			f.begin(2, [record, f.scratch, budget]);
 			if (budget === 147) {

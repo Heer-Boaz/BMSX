@@ -1,208 +1,29 @@
-import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
-import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
-import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
-import { GC_OBJECT_PREFIX } from './gc_object';
-import type { CPU } from './cpu';
-import { valueNil, type Value } from './value';
+import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
+import type { Memory } from '../memory/memory';
+import type { HeapAllocator } from './heap_allocator';
 
-const MIN_COLLECTION_BYTES = 1024 * 1024;
-const COLLECTION_RESERVE_SHIFT = 3;
-const GC_ASSIST_MIN_WORDS = 512;
 export const GC_STEP_WORDS = 4096;
 export const GC_ASSIST_BYTES = 256;
 export const enum LuaAllocationRecovery { CurrentOrFresh, Fresh, Exhausted }
 export const enum LuaAllocationMode { Direct, Scheduled, Retry }
 
 export class LuaHeap {
-	private readonly targetAddress: number;
+	protected readonly targetAddress: number;
 	public readonly occupiedOffset: number;
-	private readonly gcControlAddress: number;
 
-	public constructor(private readonly cpu: CPU) {
-		const management = cpu.heapAllocator.managementOffset();
+	public constructor(private readonly memory: Memory, private readonly arena: HeapAllocator) {
+		const management = arena.managementOffset();
 		this.targetAddress = management + HEAP_COLLECTION_TARGET_OFFSET;
 		this.occupiedOffset = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
-		this.gcControlAddress = management + HEAP_GC_CONTROL_OFFSET;
 	}
 
 	public collectionTarget(): number {
-		return this.cpu.memory.readRamRecordWord(this.targetAddress);
-	}
-
-	public setCollectionTarget(bytes: number): void {
-		this.cpu.memory.writeRamRecordWord(this.targetAddress, bytes);
-	}
-
-	public allocationDebt(byteCount: number): number {
-		const nextBytes = this.usedBytes() + byteCount;
-		if (nextBytes > this.capacity()) return -1;
-		const target = this.collectionTarget();
-		if (nextBytes <= target) return 0;
-		if (decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)) >= GcPhase.Atomic) return 0;
-		return nextBytes - target;
-	}
-
-	public logicalAssistPressure(byteCount: number): boolean {
-		const capacity = this.capacity();
-		return this.usedBytes() + byteCount > capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
-	}
-
-	public logicalAssistAllowance(debt: number, pressure: boolean): number {
-		return pressure ? GC_STEP_WORDS : Math.min(GC_STEP_WORDS, Math.max(GC_ASSIST_MIN_WORDS, (debt + 1) >>> 1));
-	}
-
-	public creditLogicalAssist(byteCount: number, debt: number, pressure: boolean, work: number): void {
-		if (!work || !this.cpu.gc.active()) return;
-		if (pressure) {
-			this.setCollectionTarget(this.usedBytes() + Math.trunc(GC_ASSIST_BYTES * Math.min(work, GC_STEP_WORDS) / GC_STEP_WORDS));
-		} else {
-			// A work unit covers four bytes at a two-times pace. Preserve
-			// unpaid debt and count the pending request in the new frontier.
-			const capacity = this.capacity();
-			const reserve = capacity - (capacity >>> COLLECTION_RESERVE_SHIFT);
-			this.setCollectionTarget(Math.min(reserve, Math.max(0, this.usedBytes() + byteCount + 2 * work - debt)));
-		}
-	}
-
-	public prepareAllocation(byteCount: number, root0: Value, root1: Value,
-		root2: Value, growingThread = 0, sourceCycles?: number): boolean {
-		const debt = this.allocationDebt(byteCount);
-		if (debt < 0) return false;
-		if (debt === 0) return true;
-		const pressure = this.logicalAssistPressure(byteCount);
-		const work = this.cpu.assistAllocation(root0, root1, root2, growingThread, this.logicalAssistAllowance(debt, pressure), sourceCycles);
-		this.creditLogicalAssist(byteCount, debt, pressure, work);
-		return true;
-	}
-
-	private prepareFixedAllocation(byteCount: number, root0: Value, root1: Value, root2: Value, growingThread = 0): boolean {
-		if (this.prepareAllocation(byteCount, root0, root1, root2, growingThread)) return true;
-		if (byteCount > this.capacity()) throw LUA_OUT_OF_MEMORY_SIGNAL;
-		return false;
-	}
-
-	public admit(byteCount: number, root0: Value = valueNil(), root1: Value = valueNil(),
-		root2: Value = valueNil(), growingThread = 0): LuaAllocationRecovery {
-		let recovery = LuaAllocationRecovery.CurrentOrFresh;
-		if (!this.prepareFixedAllocation(byteCount, root0, root1, root2, growingThread)) {
-			do {
-				recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
-			} while (this.usedBytes() + byteCount > this.capacity());
-		}
-		return recovery;
-	}
-
-	private assistBeforeReservation(requested: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): void {
-		// BIOS String keys precede the collector view, but not the RAM
-		// phase latch owned by the language arena.
-		if (gcPacedPhase(decodeGcPhase(this.cpu.memory.readRamRecordByte(this.gcControlAddress)))) {
-			this.cpu.gc.assistBeforeReservation(requested, root0, root1, root2, growingThread);
-		}
-	}
-
-	private reserveRecord(bytes: number, object: boolean, backingBytes: number, backingField: number, charged: number, secondBytes: number, secondField: number): number {
-		const prefix = object ? GC_OBJECT_PREFIX : 0;
-		const arena = this.cpu.heapAllocator;
-		const base = arena.allocate(bytes + prefix, !object);
-		if (base === 0) return 0;
-		const backing = backingBytes === 0 ? 0 : arena.allocate(backingBytes, true);
-		if (backingBytes !== 0 && backing === 0) {
-			arena.free(base);
-			return 0;
-		}
-		const second = secondBytes === 0 ? 0 : arena.allocate(secondBytes, true);
-		if (secondBytes !== 0 && second === 0) {
-			if (backing !== 0) arena.free(backing);
-			arena.free(base);
-			return 0;
-		}
-		const address = base + prefix;
-		if (backingField !== 0) this.cpu.memory.writeRamRecordWord(address + backingField, backing);
-		if (secondField !== 0) this.cpu.memory.writeRamRecordWord(address + secondField, second);
-		this.accountAllocation(charged);
-		return address;
-	}
-
-	public admitRecordAllocation(charged: number, requested: number, mode: LuaAllocationMode,
-		root0 = valueNil(), root1 = valueNil(), root2 = valueNil()): LuaAllocationRecovery | null {
-		if (mode === LuaAllocationMode.Retry)
-			return this.usedBytes() + charged <= this.capacity() ? LuaAllocationRecovery.CurrentOrFresh : null;
-		let recovery = LuaAllocationRecovery.CurrentOrFresh;
-		if (mode === LuaAllocationMode.Scheduled) {
-			if (!this.prepareFixedAllocation(charged, root0, root1, root2)) return null;
-		} else recovery = this.admit(charged, root0, root1, root2);
-		this.assistBeforeReservation(requested, root0, root1, root2);
-		return recovery;
-	}
-
-	public allocateRecord(bytes: number, object: boolean, backingBytes: number, backingField: number,
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(), recordCharge: number | undefined = undefined,
-		mode = LuaAllocationMode.Direct, secondBytes = 0, secondField = 0): number {
-		const charged = recordCharge ?? (bytes + backingBytes + secondBytes);
-		let recovery = this.admitRecordAllocation(charged, bytes + (object ? GC_OBJECT_PREFIX : 0) + backingBytes + secondBytes, mode, root0, root1, root2);
-		if (recovery === null) return 0;
-		if (mode !== LuaAllocationMode.Direct)
-			return this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
-		for (;;) {
-			const address = this.reserveRecord(bytes, object, backingBytes, backingField, charged, secondBytes, secondField);
-			if (address !== 0) return address;
-			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2);
-		}
-	}
-
-	/** Admit the owner's logical increase, then reserve backing without committing occupancy. */
-	public reserveBacking(bytes: number, logicalBytes: number, root0 = valueNil(), root1 = valueNil(), root2 = valueNil(), growingThread = 0): number {
-		let recovery = logicalBytes !== 0 ? this.admit(logicalBytes, root0, root1, root2, growingThread) : LuaAllocationRecovery.CurrentOrFresh;
-		this.assistBeforeReservation(bytes, root0, root1, root2, growingThread);
-		for (;;) {
-			const block = this.cpu.heapAllocator.allocate(bytes, true);
-			if (block !== 0) return block;
-			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
-		}
-	}
-
-	public collectRuntime(
-		root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil(),
-		growingThread = 0,
-	): void {
-		this.cpu.chargeCollectionWork(this.cpu.gc.collect(root0, root1, root2, growingThread));
-	}
-
-	private accountAllocation(bytes: number): void {
-		const memory = this.cpu.memory;
-		memory.writeRamRecordWord(this.occupiedOffset, memory.readRamRecordWord(this.occupiedOffset) + bytes);
-	}
-
-	public releaseRecord(address: number, bytes: number): void {
-		this.cpu.heapAllocator.free(address);
-		const memory = this.cpu.memory;
-		memory.writeRamRecordWord(this.occupiedOffset, memory.readRamRecordWord(this.occupiedOffset) - bytes);
-	}
-
-	public releaseObject(address: number, bytes: number): void {
-		this.cpu.memory.writeRamRecordByte(address, 0);
-		this.releaseRecord(address - GC_OBJECT_PREFIX, bytes);
-	}
-
-	public replaceRecord(oldAddress: number, oldBytes: number, newBytes: number): void {
-		if (oldAddress !== 0) this.cpu.heapAllocator.free(oldAddress);
-		this.resizeRecordCharge(oldBytes, newBytes);
-	}
-
-	public resizeRecordCharge(oldBytes: number, newBytes: number): void {
-		if (oldBytes !== newBytes) this.accountAllocation(newBytes - oldBytes);
-	}
-
-	public finishCollection(): void {
-		const liveBytes = this.usedBytes();
-		const capacity = this.capacity();
-		this.setCollectionTarget(Math.max(liveBytes + GC_ASSIST_BYTES,
-			Math.min(capacity - (capacity >>> COLLECTION_RESERVE_SHIFT), Math.max(MIN_COLLECTION_BYTES, liveBytes * 2))));
+		return this.memory.readRamRecordWord(this.targetAddress);
 	}
 
 	public usedBytes(): number {
-		return this.cpu.memory.readRamRecordWord(this.occupiedOffset);
+		return this.memory.readRamRecordWord(this.occupiedOffset);
 	}
-	public capacity(): number { return this.cpu.heapAllocator.capacityBytes(); }
+	public capacity(): number { return this.arena.capacityBytes(); }
 
 }

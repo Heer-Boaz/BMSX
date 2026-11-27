@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -183,7 +184,7 @@ function createAudioControllerHarness(
 	const irq = new IrqController(memory);
 	const cpu = new CPU(memory, irq, new ExecutionAddressSpace(memory));
 	// The DMA upload and download buffers occupy the first static page.
-	assert.equal(cpu.heapAllocator.setFloor(DYNAMIC_RAM_BASE + HEAP_PAGE_SIZE), true);
+	assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(DYNAMIC_RAM_BASE + HEAP_PAGE_SIZE), true);
 	const scheduler = new DeviceScheduler(cpu);
 	const dma = new DmaController(memory, cpu, irq, scheduler);
 	memory.cartridgeController.connect(memory, irq, dma);
@@ -230,7 +231,7 @@ function createAudioMachine(): Machine {
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes), SILENT_INPUT_SOURCE, PSX_MACHINE_SPEC);
 	machine.resetDevices();
 	// Reserve the same static DMA page when exercising the full machine scheduler.
-	assert.equal(machine.cpu.heapAllocator.setFloor(DYNAMIC_RAM_BASE + HEAP_PAGE_SIZE), true);
+	assert.equal(nativeHeapReference(machine.cpu).heapAllocator.setFloor(DYNAMIC_RAM_BASE + HEAP_PAGE_SIZE), true);
 	machine.audioController.setTiming(APU_SAMPLE_RATE_HZ, 0);
 	return machine;
 }

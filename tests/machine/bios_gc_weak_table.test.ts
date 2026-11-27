@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -61,9 +62,9 @@ function fixture(optLevel: 0 | 3) {
 		return [firmwareProbeResult(cpu), elapsed];
 	}
 	function beginClear(record: number, mode: number, first: number, end: number) {
-		oracle.gc.tables.clearWeakEntries(record, (mode & 1) !== 0, (mode & 2) !== 0, oracle.gc['alive'], first, end);
+		nativeHeapReference(oracle).gc.tables.clearWeakEntries(record, (mode & 1) !== 0, (mode & 2) !== 0, nativeHeapReference(oracle).gc['alive'], first, end);
 		begin('clear_weak_entries', metadata, record, mode, first, end, newIndex);
-		return oracle.stringPool.takeMarkWork();
+		return nativeHeapReference(oracle).stringPool.takeMarkWork();
 	}
 	function clear(record: number, mode: number, first: number, end: number, expectedWork: number) {
 		assert.equal(beginClear(record, mode, first, end), expectedWork, 'native new String marks');
@@ -89,7 +90,7 @@ function fixture(optLevel: 0 | 3) {
 		return { record, arrayBase, hashBase, arraySlot, hashSlot, readHash };
 	}
 	function string(text: string) {
-		const id = add(target => target.stringPool.intern(text));
+		const id = add(target => nativeHeapReference(target).stringPool.intern(text));
 		byte(id + 1, 0x94);
 		return id;
 	}
@@ -104,7 +105,7 @@ for (const optLevel of [0, 3] as const) {
 		const table = add(target => createReferenceTable(target));
 		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
-		const unissued = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
+		const unissued = add(target => nativeHeapReference(target).heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
 		byte(unissued, ValueTag.Table);
 		byte(unissued + GC_COLOR_OFFSET, 0x80);
 		byte(table + GC_COLOR_OFFSET, 0x81);
@@ -114,7 +115,7 @@ for (const optLevel of [0, 3] as const) {
 		for (const [tag, word, expected] of [[ValueTag.Table, table, 0], [ValueTag.Closure, alias, 1],
 			[ValueTag.Thread, thread, 1], [ValueTag.Thread, closure, 0], [ValueTag.Table, unissued, 0],
 			[ValueTag.String, table, 1], [ValueTag.Float, 0xffffffff, 1], [ValueTag.Nil, 0, 1]] as const) {
-			assert.equal(+oracle.gc['alive'](valueFromTag(tag, word)), expected);
+			assert.equal(+nativeHeapReference(oracle).gc['alive'](valueFromTag(tag, word)), expected);
 			begin('value_is_alive', tag, word);
 			assert.equal(finish()[0], expected);
 		}

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { ActorRenderFrames } from '../../ide/workbench/contrib/actor_lab/render_frames';
@@ -883,7 +884,7 @@ return world`));
 end
 return world`)); resources.add(f.stop);
 		const cpu = f.runtime.machine.cpu, guest = f.guest;
-		const candidates: Value[] = [valueNil(), valueBool(false), valueBool(true), valueInteger(1), valueFloat(1), valueString(cpu.stringPool.intern('1')),
+		const candidates: Value[] = [valueNil(), valueBool(false), valueBool(true), valueInteger(1), valueFloat(1), valueString(nativeHeapReference(cpu).stringPool.intern('1')),
 			guest.global('probe'), guest.global('rename'), valueThread(cpu.activeThread.address), valueBuiltinFunction(BuiltinFunctionId.RawGet)];
 		const heap = cpu.luaHeap.usedBytes(), identities = candidates.map(value => guest.identity(value));
 		for (let i = 0; i < candidates.length; i++) for (let j = 0; j < candidates.length; j++) {

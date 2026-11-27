@@ -1,3 +1,4 @@
+import { bindReferenceDlmalloc } from '../../helpers/native_heap/dlmalloc_wasm';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -9,6 +10,7 @@ import { deriveBlua32FixedStack } from '../../../toolchain/ts/rompack/blua32_fix
 import { writeTestBlua32Rom } from '../../helpers/blua32';
 import { parseLuaChunk } from '../../helpers/cpu_test_harness';
 import { buildBlua32Image } from '../../../toolchain/ts/rompack/blua32_image_builder';
+import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { nativeConformanceRunner } from '../../helpers/native_conformance.mjs';
 import { runSystemCaseRom } from '../../helpers/system_case_rom';
 
@@ -17,7 +19,7 @@ const limit = floor + 4 * HEAP_PAGE_SIZE;
 const state = limit + 0x400;
 const arenaBytes = state + 0x200 - floor;
 const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, MAIN_RAM_SIZE);
-const oracle = memory.bindDlmalloc(state);
+const oracle = bindReferenceDlmalloc(memory, state);
 const source = [`
 local alloc<const> = require('kernel/dlmalloc')
 bss arena: u8[${arenaBytes}]
@@ -130,10 +132,12 @@ try {
 		});
 		const { layout: image, symbols } = linked;
 		const romBytes = writeTestBlua32Rom(linked);
-		const allocatorEntries = image.functions.flatMap((_, index) =>
-			symbols.metadata.functionIds[index].startsWith(`module:${modulePath}/`)
-			&& symbols.metadata.functionIds[index].includes('|constant|bmsx_dlmalloc_') ? [index] : []);
+		const publicSlot = buildModuleExportSlotName(modulePath, ['bmsx_dlmalloc_']);
+		const allocatorEntries = Object.entries(symbols.metadata.staticFunctionIdBySlot)
+			.filter(([slot]) => slot.startsWith(publicSlot))
+			.map(([, id]) => symbols.metadata.functionIds.indexOf(id));
 		assert.equal(allocatorEntries.length, 11);
+		assert.ok(allocatorEntries.every(index => index >= 0), 'all declared allocator exports have physical Function records');
 		const { valueSlots, frames } = deriveBlua32FixedStack(image, allocatorEntries);
 		assert.equal(image.header.bssAddress, RAM_BASE + floor);
 		assert.equal(image.header.bssByteCount, arenaBytes);

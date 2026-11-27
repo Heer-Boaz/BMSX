@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -70,7 +71,7 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, memory, scheduler, gxGpu } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, memory, scheduler, gxGpu } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	const report = cart.layout.header.bssAddress, offset = report - RAM_BASE;
 	for (let grant = 0; grant < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++grant) {
 		if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
@@ -79,7 +80,7 @@ test('stock type and math.type classify a cartridge’s values without allocatin
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	assert.ok(cpu.isHaltedUntilIrq());
 	assert.equal(memory.readMappedU32LE(report), 1, 'the unpressured pass warmed the same frames');
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 	for (let bytes = MAIN_RAM_SIZE >>> 1; bytes !== 0; bytes >>>= 1) {
 		while (arena.allocate(bytes, true)) { /* exhaust physical backing */ }
 	}

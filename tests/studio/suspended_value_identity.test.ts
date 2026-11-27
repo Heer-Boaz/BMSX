@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -47,7 +48,7 @@ function collectOnGuest(runtime: ReturnType<typeof bootWatchGuest>): void {
 
 test('retained string identities and property indexes follow text, not recycled intern slots', () => {
 	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
-	const pool = cpu.stringPool, guest = new SuspendedGuestSession(runtime);
+	const pool = nativeHeapReference(cpu).stringPool, guest = new SuspendedGuestSession(runtime);
 	const old = pool.intern('retained-identity-before-gc'), identity = guest.identity(valueString(old));
 	const property = { section: 'entries', field: '', key: identity }, index = new RuntimePropertyIndex<string>();
 	index.set(property, 'selected');
@@ -105,10 +106,10 @@ test('table previews use the returned key, not traversal work, to detect exhaust
 	const presentation = new SuspendedValuePresentation(guest, 'preview');
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'vacant allocated storage has no preview entries');
 	assert.equal(presentation.update(value), '{}');
-	cpu.gc.tables.set(table, valueBool(false), valueInteger(7));
+	nativeHeapReference(cpu).gc.tables.set(table, valueBool(false), valueInteger(7));
 	assert.equal(guest.previewValue(value, 1, 8), '{ false = 7 }', 'a false key is a live entry');
 	assert.equal(presentation.update(value), '{ false = 7 }');
-	cpu.gc.tables.set(table, valueBool(false), valueNil());
+	nativeHeapReference(cpu).gc.tables.set(table, valueBool(false), valueNil());
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'a deleted hash node is not a preview entry');
 	assert.equal(presentation.update(value), '{}');
 });
@@ -116,7 +117,7 @@ test('table previews use the returned key, not traversal work, to detect exhaust
 test('suspended member reads and enumeration follow the runtime index field', () => {
 	const runtime = bootWatchGuest();
 	const guest = new SuspendedGuestSession(runtime), { cpu } = runtime.machine;
-	const { tables } = cpu.gc, pool = cpu.stringPool;
+	const { tables } = nativeHeapReference(cpu).gc, pool = nativeHeapReference(cpu).stringPool;
 	const child = createReferenceTable(cpu, 0, 1), parent = createReferenceTable(cpu, 0, 2), meta = createReferenceTable(cpu, 0, 1);
 	const shared = pool.intern('member-shadow'), inherited = pool.intern('member-inherited');
 	tables.setStringKey(child, shared, valueBool(false));

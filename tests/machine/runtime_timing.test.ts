@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
@@ -348,12 +349,12 @@ return 1
 	const runtime = new Runtime({ systemRomBytes: writeTestBlua32Rom(image), cartridgeSlots: cartridgeSlots(),
 		machineModel: PSX_MACHINE_SPEC }, new TimingInputSource());
 	runtime.boot();
-	const { cpu, memory } = runtime.machine, { gc } = cpu;
+	const { cpu, memory } = runtime.machine, { gc } = nativeHeapReference(cpu);
 	runGuestToHalt(cpu, 1_000_000);
 	assert.ok(cpu.isHaltedUntilIrq());
 	cpu.clearHaltUntilIrq();
 	const live = createReferenceTable(cpu, 8, 0);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('retained across both epochs'), valueTable(live));
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('retained across both epochs'), valueTable(live));
 	const floating = createReferenceTable(cpu);
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 	runtime.frameLoop.beginFrameState(16_000_000, 0);

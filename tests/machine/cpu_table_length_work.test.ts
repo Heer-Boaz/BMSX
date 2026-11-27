@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
@@ -33,14 +34,14 @@ function program(wide: boolean) {
 
 function makeTable(cpu: CPU, kind: typeof cases[number][0]): number {
 	const table = createReferenceTable(cpu, kind === 'sparse' || kind === 'terminal' ? 0 : 4096, 128);
-	if (kind === 'ascending') for (let k = 1; k <= 64; k++) cpu.gc.tables.setInteger(table, k, valueBool(false));
+	if (kind === 'ascending') for (let k = 1; k <= 64; k++) nativeHeapReference(cpu).gc.tables.setInteger(table, k, valueBool(false));
 	if (kind === 'descending' || kind === 'stale') {
 		const value = kind === 'stale' ? valueTable(createReferenceTable(cpu)) : valueBool(false);
-		for (let k = 4096; k >= 1; k--) cpu.gc.tables.setInteger(table, k, value);
+		for (let k = 4096; k >= 1; k--) nativeHeapReference(cpu).gc.tables.setInteger(table, k, value);
 	}
-	if (kind === 'stale') cpu.gc.tables.clearWeakEntries(table, false, true, () => false);
-	if (kind === 'sparse' || kind === 'terminal') for (let bit = 30; bit >= 0; bit--) cpu.gc.tables.setInteger(table, 2 ** bit, valueBool(false));
-	if (kind === 'terminal') cpu.gc.tables.setInteger(table, 0x7fffffff, valueBool(false));
+	if (kind === 'stale') nativeHeapReference(cpu).gc.tables.clearWeakEntries(table, false, true, () => false);
+	if (kind === 'sparse' || kind === 'terminal') for (let bit = 30; bit >= 0; bit--) nativeHeapReference(cpu).gc.tables.setInteger(table, 2 ** bit, valueBool(false));
+	if (kind === 'terminal') nativeHeapReference(cpu).gc.tables.setInteger(table, 0x7fffffff, valueBool(false));
 	return table;
 }
 test('Table length reads a stable boundary without changing mappings', () => {
@@ -56,14 +57,14 @@ test('Table length reads a stable boundary without changing mappings', () => {
 	}
 	const { image } = program(false), { cpu } = createTestSystemCpu(image), table = makeTable(cpu, 'descending');
 	assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 1);
-	for (let k = 0; k < 300; ++k) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`key${k}`), valueBool(true));
+	for (let k = 0; k < 300; ++k) nativeHeapReference(cpu).gc.tables.setStringKey(table, nativeHeapReference(cpu).stringPool.intern(`key${k}`), valueBool(true));
 	assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 1, 'hash redistribution preserves the logical seed');
 	assert.equal(cpu.gc.tables.length(table), 4096);
-	cpu.gc.tables.setInteger(table, 4097, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4097, 'adjacent append advances the cached boundary');
-	cpu.gc.tables.setInteger(table, 4097, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4096);
-	cpu.gc.tables.clear(table); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 0); assert.equal(cpu.gc.tables.length(table), 0);
-	const hash = createReferenceTable(cpu, 0, 16); cpu.gc.tables.setInteger(hash, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 1);
-	cpu.gc.tables.setInteger(hash, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
+	nativeHeapReference(cpu).gc.tables.setInteger(table, 4097, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4097, 'adjacent append advances the cached boundary');
+	nativeHeapReference(cpu).gc.tables.setInteger(table, 4097, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4096);
+	nativeHeapReference(cpu).gc.tables.clear(table); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 0); assert.equal(cpu.gc.tables.length(table), 0);
+	const hash = createReferenceTable(cpu, 0, 16); nativeHeapReference(cpu).gc.tables.setInteger(hash, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 1);
+	nativeHeapReference(cpu).gc.tables.setInteger(hash, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
 
 for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) for (const wide of [false, true]) {
@@ -79,7 +80,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const savedSeed = cpu.memory.readRamRecordWord(table + TableHeader.Length), heap = cpu.luaHeap.usedBytes();
 			for (let grant = 0; grant <= total; ++grant) {
 				cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
-				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); cpu.gc.tables.setInteger(marker, 1, valueInteger(-1));
+				frame.registers.setInteger(6, 91); frame.registers.setNil(8); frame.registers.setNil(9); nativeHeapReference(cpu).gc.tables.setInteger(marker, 1, valueInteger(-1));
 				assert.equal(cpu.runUntilDepth(0, grant), RunResult.Yielded);
 				let remaining = grant, completed = 0; while (remaining > 0) remaining -= charges[completed++];
 				assert.equal(cpu.instructionBudgetRemaining, remaining, `${kind}/${grant}: fixed charge once`);
@@ -94,7 +95,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			cpu.memory.restoreSaveState(memory); cpu.restoreRuntimeState(before); cpu.runUntilDepth(0, 5); frame = cpu.rootThread.currentFrame!;
 			assert.equal(cpu.instructionBudgetRemaining, debt); assert.ok(isDeepStrictEqual(cpu.captureRuntimeState(), after));
 			// String LEN uses the same fixed charge.
-			frame.registers.set(0, valueString(cpu.stringPool.intern(textToByteString('é😀\0'))));
+			frame.registers.set(0, valueString(nativeHeapReference(cpu).stringPool.intern(textToByteString('é😀\0'))));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			cpu.runUntilDepth(0, 5); assert.equal(cpu.instructionBudgetRemaining, -2); assert.equal(frame.registers.getInteger(6), 7);
 			frame.registers.setBoolean(0, true); frame.registers.setNil(8);
@@ -113,7 +114,7 @@ for (const kind of ['ascending', 'descending'] as const) test(`published JS regi
 	frame.registers.setTable(0, table); frame.registers.setTable(10, marker); cpu.runUntilDepth(0, 19 * 64);
 	const page = frame.decodedPage!, block = page.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
 	assert.ok(block && 19 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');
-	frame.registers.setInteger(6, 91); frame.registers.setNil(8); cpu.gc.tables.setInteger(marker, 1, valueInteger(-1));
+	frame.registers.setInteger(6, 91); frame.registers.setNil(8); nativeHeapReference(cpu).gc.tables.setInteger(marker, 1, valueInteger(-1));
 	const state = { remainingCycles: 19, registerTop: frame.top, memoryAddress: 0 };
 	const exit = block.region.exits[block.region.execute(frame.registers, frame.executionImage.constWords, page, frame, block.entry, state)];
 	assert.equal(exit.nextPc, base);

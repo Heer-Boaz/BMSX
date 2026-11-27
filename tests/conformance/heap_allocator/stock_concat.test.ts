@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -46,7 +47,7 @@ test('ordinary cartridge concatenation preserves bytes and a full-arena intern h
 			const runtime = new Runtime({ systemRomBytes: images.systemRomBytes,
 				cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, stringPool: pool } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, stringPool: pool } = nativeHeapReference(cpu);
 			const entry = () => {
 				for (let grant = 0; grant < 250000; ++grant) {
 					scheduler.runCpuSlice(0, 73, undefined, CpuRunKind.Scheduled);

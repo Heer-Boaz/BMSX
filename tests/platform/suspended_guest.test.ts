@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -16,17 +17,17 @@ test('suspended member reads consume lookup results without executing or chargin
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }] });
 	const runtime = createTestRuntime(image.romBytes), cpu = runtime.machine.cpu;
 	cpu.reset();
-	const guest = new SuspendedGuestSession(runtime), key = cpu.stringPool.intern('member');
+	const guest = new SuspendedGuestSession(runtime), key = nativeHeapReference(cpu).stringPool.intern('member');
 	const index = cpu.stringPool.find('__index')!;
 	const parent = createReferenceTable(cpu, 0, 1), child = createReferenceTable(cpu, 0, 1), meta = createReferenceTable(cpu, 0, 1);
 	const parentValue = v.valueTable(parent), childValue = v.valueTable(child);
-	cpu.gc.tables.setStringKey(parent, key, v.valueInteger(41));
-	cpu.gc.tables.setStringKey(meta, index, parentValue); cpu.gc.tables.setMetatableAddress(child, meta);
+	nativeHeapReference(cpu).gc.tables.setStringKey(parent, key, v.valueInteger(41));
+	nativeHeapReference(cpu).gc.tables.setStringKey(meta, index, parentValue); nativeHeapReference(cpu).gc.tables.setMetatableAddress(child, meta);
 	const loop = createReferenceTable(cpu, 0, 1), loopMeta = createReferenceTable(cpu, 0, 1);
 	const loopValue = v.valueTable(loop);
-	cpu.gc.tables.setStringKey(loopMeta, index, loopValue); cpu.gc.tables.setMetatableAddress(loop, loopMeta);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('child'), childValue);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('loop'), loopValue);
+	nativeHeapReference(cpu).gc.tables.setStringKey(loopMeta, index, loopValue); nativeHeapReference(cpu).gc.tables.setMetatableAddress(loop, loopMeta);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('child'), childValue);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('loop'), loopValue);
 	cpu.instructionBudgetRemaining = 123;
 	const before = cpu.captureRuntimeState(), cycle = runtime.machine.scheduler.nowCycles;
 	for (let repeat = 0; repeat < 3; ++repeat) {
@@ -42,7 +43,7 @@ test('suspended member reads consume lookup results without executing or chargin
 	assert.equal(cpu.instructionBudgetRemaining, 123);
 	assert.equal(runtime.machine.scheduler.nowCycles, cycle);
 	assert.deepEqual(cpu.captureRuntimeState(), before, 'inspection preserves the guest graph, PC, seed and allocation state');
-	cpu.gc.tables.setStringKey(child, key, v.valueBool(false));
+	nativeHeapReference(cpu).gc.tables.setStringKey(child, key, v.valueBool(false));
 	assert.equal(guest.readStringMember(childValue, 'member'), v.valueBool(false), 'an own false value still wins over inherited data');
 	members.clear();
 	guest.visitTableStringMembers(childValue, (name, value) => members.set(name, value));

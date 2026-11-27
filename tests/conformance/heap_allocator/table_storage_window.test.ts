@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -56,7 +57,7 @@ return ok, result, ${scenario.read}
 `, scenario.opt));
 	const runtime = new Runtime({ systemRomBytes: rom, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { tables } = cpu.gc;
+	const { cpu, memory, scheduler } = runtime.machine, { tables } = nativeHeapReference(cpu).gc;
 	runGuestToHalt(cpu, 4_194_304);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	cpu.clearHaltUntilIrq();
@@ -75,10 +76,10 @@ return ok, result, ${scenario.read}
 	assert.equal(tables.arrayCapacity(receiver), 0);
 	assert.equal(tables.hashSize(receiver), 0);
 	if (scenario.refuse) {
-		cpu.gc.collect();
-		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		while (cpu.heapAllocator.allocate(4088, true)) { /* occupy page-sized extents */ }
-		while (cpu.heapAllocator.allocate(1, true)) { /* no minimum chunk is available */ }
+		nativeHeapReference(cpu).gc.collect();
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		while (nativeHeapReference(cpu).heapAllocator.allocate(4088, true)) { /* occupy page-sized extents */ }
+		while (nativeHeapReference(cpu).heapAllocator.allocate(1, true)) { /* no minimum chunk is available */ }
 	}
 
 	const dir = mkdtempSync(join(tmpdir(), 'table-storage-window-'));
@@ -202,7 +203,7 @@ test('a bare System ROM controls retirement of a table store without backing', t
 	});
 	const runtime = new Runtime({ systemRomBytes: image.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC }, input);
 	runtime.boot();
-	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = cpu;
+	const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena } = nativeHeapReference(cpu);
 	const management = arena.allocatorStateOffset(), bytes = 32;
 	assert.deepEqual(memory.ramData().subarray(management, management + bytes), new Uint8Array(bytes));
 	const result = scheduler.runCpuSlice(0, 4096, undefined, CpuRunKind.Scheduled);

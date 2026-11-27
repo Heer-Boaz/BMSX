@@ -1,5 +1,6 @@
+import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
-import { GC_CHANGED_HEAD, GC_TRACE_HEAD, GcPhase, RemarkStage, type GcHeap } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_CHANGED_HEAD, GC_TRACE_HEAD, GcPhase, RemarkStage, type GcHeap } from './native_heap/gc_heap';
 import { THREAD_RECORD_KIND } from '../../machine/ts/machine/cpu/thread_record';
 import type { GlobalBank } from '../../machine/ts/machine/cpu/global_bank';
 import type { StringId } from '../../machine/ts/machine/cpu/string_pool';
@@ -88,13 +89,13 @@ export function registerReferenceGlobalName(gc: GcHeap, bank: GlobalBank, key: S
 
 export function setReferenceGlobal(cpu: CPU, key: StringId, value: Value): void {
 	const bank = cpu['globalBank'];
-	const slot = registerReferenceGlobalName(cpu.gc, bank, key, value);
-	writeReferenceGlobalSlot(cpu.gc, bank, slot, value);
+	const slot = registerReferenceGlobalName(nativeHeapReference(cpu).gc, bank, key, value);
+	writeReferenceGlobalSlot(nativeHeapReference(cpu).gc, bank, slot, value);
 }
 
 export function setReferenceSystemGlobal(cpu: CPU, key: StringId, value: Value): void {
 	const bank = cpu['systemGlobalBank'], slot = bank.find(key);
 	if (slot === undefined)
 		throw new Error(`System global '${cpu.stringPool.toString(key)}' has no register slot.`);
-	writeReferenceGlobalSlot(cpu.gc, bank, slot, value);
+	writeReferenceGlobalSlot(nativeHeapReference(cpu).gc, bank, slot, value);
 }

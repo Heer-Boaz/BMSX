@@ -1,10 +1,11 @@
+import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 
 /** Apply allocation pressure before the shared admission decision, including
  * table membership that grows without reserving another backing block. */
 export function installAllocationStress(cpu: CPU): { allocations: number } {
 	const counter = { allocations: 0 };
-	const heap = cpu.luaHeap;
+	const heap = nativeHeapReference(cpu).luaHeap;
 	const prepareAllocation = heap.prepareAllocation;
 	heap.prepareAllocation = (...args: Parameters<typeof prepareAllocation>): ReturnType<typeof prepareAllocation> => {
 		heap.setCollectionTarget(0);

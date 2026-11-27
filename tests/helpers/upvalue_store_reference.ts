@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { GC_LAST_EPOCH_WORK, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_GRAY_INDEX_MASK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
@@ -7,7 +8,7 @@ import { type ValueTag, valueFromTag, valueTagHasGcEdge } from '../../machine/ts
 
 // The former native SETUP/debug closed-cell policy, retained only for differential tests.
 export function writeBlackClosedValueReference(cpu: CPU, cell: number, tag: ValueTag, word: number): void {
-	const { gc, memory, stringPool } = cpu;
+	const { memory } = cpu, { gc, stringPool } = nativeHeapReference(cpu);
 	if (gc.phase() === GcPhase.MarkAgain) {
 		gc.markValue(valueFromTag(tag, word));
 		const work = stringPool.takeMarkWork();
@@ -42,5 +43,5 @@ export function storeUpvalueReference(cpu: CPU, address: number, tag: ValueTag, 
 export function closeUpvalueReference(cpu: CPU, address: number): void {
 	const cell = address & UPVALUE_ADDRESS_MASK;
 	close(cpu.memory, cell);
-	if (valueTagHasGcEdge(cpu.memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG))) cpu.gc.writeBarrier(cell, UPVALUE_NEXT);
+	if (valueTagHasGcEdge(cpu.memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG))) nativeHeapReference(cpu).gc.writeBarrier(cell, UPVALUE_NEXT);
 }

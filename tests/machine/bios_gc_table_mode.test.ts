@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -60,8 +61,8 @@ function fixture(optLevel: 0 | 3) {
 		oracle.memory.writeRamRecordByte(address, value);
 	}
 	function setMeta(table: number, address: number) {
-		cpu.gc.tables.setMetatableAddress(table, address);
-		oracle.gc.tables.setMetatableAddress(table, address);
+		nativeHeapReference(cpu).gc.tables.setMetatableAddress(table, address);
+		nativeHeapReference(oracle).gc.tables.setMetatableAddress(table, address);
 	}
 	function table(hash: number) {
 		const address = add(target => createReferenceTable(target, 0, hash));
@@ -88,8 +89,8 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function begin(receiver: number, limit: number) {
 		const address = oracle.gc.tableRecordAddress(oracle.gc.tables.metatableAddress(receiver));
-		const mode = oracle.gc['probeTableMode'](receiver, limit), pending = +(mode < 0);
-		const { value, work } = oracle.gc['modeProbe'];
+		const mode = nativeHeapReference(oracle).gc['probeTableMode'](receiver, limit), pending = +(mode < 0);
+		const { value, work } = nativeHeapReference(oracle).gc['modeProbe'];
 		const result = pending || !address ? [pending, ValueTag.Nil, 0, work] : [pending, valueTag(value), valuePayload(value), work];
 		issueFirmwareProbe(cpu, [control, address, modeKey, limit, output]);
 		return { result, mode };
@@ -118,8 +119,8 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua own __mode probe resumes byte and word collision chains at O${optLevel}`, () => {
 		const { modeKey, add, table, setMeta, cursor, check } = fixture(optLevel);
 		const receiver = table(0).address;
-		const value = add(target => target.stringPool.intern('vk'));
-		const other = add(target => target.stringPool.intern('__mode_other'));
+		const value = add(target => nativeHeapReference(target).stringPool.intern('vk'));
+		const other = add(target => nativeHeapReference(target).stringPool.intern('__mode_other'));
 		for (const hash of [128, 256]) {
 			const { address, home, node } = table(hash);
 			setMeta(receiver, address);

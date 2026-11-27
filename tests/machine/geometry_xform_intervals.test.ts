@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GeometryXform2Phase, GeometryXform2Unit } from '../../machine/ts/machine/devices/geometry/xform2';
@@ -87,7 +88,7 @@ function controllerCase(count = 2) {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {},
 	}, PSX_MACHINE_SPEC);
 	machine.resetDevices(); machine.scheduler.reset();
-	assert.ok(machine.cpu.heapAllocator.setFloor(GEO_BUFFERS + 0x3000));
+	assert.ok(nativeHeapReference(machine.cpu).heapAllocator.setFloor(GEO_BUFFERS + 0x3000));
 	machine.geometryController.setTiming(PSX_MACHINE_SPEC.cpuFreqHz, PSX_MACHINE_SPEC.geoWorkUnitsPerSec);
 	for (const [address, word] of [
 		[io.IO_GEO_SRC0, f.job.src0], [io.IO_GEO_SRC1, f.job.src1], [io.IO_GEO_SRC2, f.job.src2],

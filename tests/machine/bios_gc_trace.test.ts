@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
@@ -35,7 +36,7 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		target.stringPool.beginReachabilityEpoch();
+		nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 	}
 	const management = cpu.heapAllocator.managementOffset(), arena = cpu.heapAllocator.allocatorStateOffset();
 	const control = management + HEAP_GC_CONTROL_OFFSET, metadata = management + HEAP_STRING_METADATA_OFFSET;
@@ -64,30 +65,30 @@ function fixture(optLevel: 0 | 3) {
 			const address = allocateClosureRecordReference(target, 1);
 			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 1);
 			setCaptureAddress(target.memory, address, 0, captured);
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
 	}
 	function cell(value: number) {
 		return add(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initializeCell(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			target.memory.writeRamRecordByte(address + UPVALUE_VALUE_TAG, ValueTag.String);
 			target.memory.writeRamRecordWord(address + UPVALUE_VALUE_WORD, value);
 			return address;
 		});
 	}
 	function string(text: string) {
-		const id = add(target => target.stringPool.intern(text));
+		const id = add(target => nativeHeapReference(target).stringPool.intern(text));
 		byte(id + 1, (memory.readRamRecordByte(metadata + 0xc) & 1) ^ 1);
 		return id;
 	}
 	function pendingString(id: number) {
-		for (const target of [cpu, oracle]) target.stringPool.markReachable(id);
+		for (const target of [cpu, oracle]) nativeHeapReference(target).stringPool.markReachable(id);
 	}
 	function queue(address: number, link = GC_RECORD_LINK) {
-		for (const target of [cpu, oracle]) target.gc['enqueue'](address, link, GC_TRACE_HEAD);
+		for (const target of [cpu, oracle]) nativeHeapReference(target).gc['enqueue'](address, link, GC_TRACE_HEAD);
 	}
 	function beginning(limit: number, work: number, pending: number, policy = 0) {
 		const modeKey = cpu.gc.diagnosticWord(GcDiagnosticField.Mode);
@@ -109,12 +110,12 @@ function fixture(optLevel: 0 | 3) {
 		return [firmwareProbeResult(cpu), memory.readRamRecordWord(context + GcTraceContextField.PendingStringWork)];
 	}
 	function check(limit: number, work: number, want: number[]) {
-		beginning(limit, work, cpu.stringPool.takeMarkWork());
-		const ref = oracle.gc['traceQuantum'](false, limit, work);
+		beginning(limit, work, nativeHeapReference(cpu).stringPool.takeMarkWork());
+		const ref = nativeHeapReference(oracle).gc['traceQuantum'](false, limit, work);
 		assert.deepEqual([ref, oracle.memory.readRamRecordWord(management + HEAP_STRING_MARK_WORK_OFFSET)], want);
 		const result = finish();
 		assert.deepEqual(result, want);
-		cpu.stringPool.resumeMarkWork(result[1]);
+		nativeHeapReference(cpu).stringPool.resumeMarkWork(result[1]);
 		compare();
 	}
 	const head = () => memory.readRamRecordWord(control + GC_TRACE_HEAD);
@@ -138,14 +139,14 @@ for (const optLevel of [0, 3] as const) {
 		byte(queuedCell + GC_COLOR_OFFSET, 0xaa);
 		pendingString(string('before queued cell'));
 
-		beginning(2, 1, cpu.stringPool.takeMarkWork());
+		beginning(2, 1, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		for (let i = 0; i < 1024 && head() === indexOfRecord(queuedCell); ++i) grant(1);
 		assert.ok(!cpu.isHaltedUntilIrq());
 		assert.equal(head(), indexOfRecord(capturing));
 		assert.equal(memory.readRamRecordByte(queuedCell + GC_COLOR_OFFSET), 0xaa, 'publish popped head before recoloring');
 		assert.equal(memory.readRamRecordWord(queuedCell + UPVALUE_NEXT) & GC_GRAY_INDEX_MASK, indexOfRecord(capturing));
 		const checkpoint = captureCpuCheckpoint(cpu);
-		assert.equal(oracle.gc['traceQuantum'](false, 2, 1), 7);
+		assert.equal(nativeHeapReference(oracle).gc['traceQuantum'](false, 2, 1), 7);
 		assert.deepEqual(finish(), [7, 0]);
 		compare();
 		restoreCpuCheckpoint(cpu, checkpoint);
@@ -177,7 +178,7 @@ for (const optLevel of [0, 3] as const) {
 		check(4, 0, [0, 1]);
 		// Even a correctly colored header cannot clock a link if its
 		// allocation was not issued as a collector object.
-		const backing = add(target => target.heapAllocator.allocate(16, true)) + GC_OBJECT_PREFIX;
+		const backing = add(target => nativeHeapReference(target).heapAllocator.allocate(16, true)) + GC_OBJECT_PREFIX;
 		byte(backing, ValueTag.Table);
 		byte(backing + GC_COLOR_OFFSET, 2);
 		word(backing + GC_RECORD_LINK, indexOfRecord(cpu.rootThread.address));

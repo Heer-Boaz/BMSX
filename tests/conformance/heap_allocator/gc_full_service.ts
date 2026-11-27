@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../../helpers/thread_allocation_reference';
@@ -63,7 +64,7 @@ try {
 			const configuration = { systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC };
 			const runtime = new Runtime(configuration, input);
 			runtime.boot();
-			const { cpu, memory, scheduler, gxGpu } = runtime.machine, { gc, heapAllocator: arena, luaHeap } = cpu;
+			const { cpu, memory, scheduler, gxGpu } = runtime.machine, { gc, heapAllocator: arena, luaHeap } = nativeHeapReference(cpu);
 			for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
 				if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
 				runtime.frameScheduler.runCyclesToNextLogicalTick(65536);
@@ -79,11 +80,11 @@ try {
 			const owner = cpu.activeThread.address;
 			resizeThreadStackReference(cpu, cpu.activeThread, 512);
 			const weak = createReferenceTable(cpu, 4, 0), metatable = createReferenceTable(cpu, 0, 1), hidden = createReferenceTable(cpu), floating = createReferenceTable(cpu);
-			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
+			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(nativeHeapReference(cpu).stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));
 			setReferenceGlobal(cpu, cpu.stringPool.find('full_collection_root')!, valueTable(weak));
-			const dropped = cpu.stringPool.intern(deadText);
+			const dropped = nativeHeapReference(cpu).stringPool.intern(deadText);
 			assert.equal(gc.phase(), GcPhase.Pause);
 			if (alreadyActive) {
 				gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -108,7 +109,7 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, oracle, begin, update, control, occupied, beginCall, grant, finish, lanes } = fixture(optLevel);
 		const capacity = cpu.heapAllocator.capacityBytes();
 		for (const [estimate, shift] of [[1, 0], [8192, 1], [513, 0]] as const) {
-			oracle.gc['beginPaceCredit'](estimate, shift);
+			nativeHeapReference(oracle).gc['beginPaceCredit'](estimate, shift);
 			beginCall(begin, [control, occupied, capacity, estimate, shift]);
 			finish();
 			assert.deepEqual(lanes(), lanes(oracle.memory));
@@ -116,7 +117,7 @@ for (const optLevel of [0, 3] as const) {
 		beginCall(begin, [control, 4096, 4096, 2048, 1]);
 		finish();
 		assert.deepEqual(lanes(), [4096, 2048, 1, 0, 4097], 'a full arena still prices the next batch at one-byte runway');
-		oracle.gc['beginPaceCredit'](513, 0);
+		nativeHeapReference(oracle).gc['beginPaceCredit'](513, 0);
 		beginCall(begin, [control, occupied, capacity, 513, 0]);
 		finish();
 		const cases = [
@@ -130,7 +131,7 @@ for (const optLevel of [0, 3] as const) {
 		] as const;
 		for (const [index, [basis, paid, estimate, runway]] of cases.entries()) {
 			const before = lanes();
-			oracle.gc['updatePaceCredit'](basis, paid, estimate, runway);
+			nativeHeapReference(oracle).gc['updatePaceCredit'](basis, paid, estimate, runway);
 			beginCall(update, [control, basis, paid, estimate, runway]);
 			if (index === 0) {
 				grant(64);
@@ -153,7 +154,7 @@ for (const optLevel of [0, 3] as const) {
 		}
 		// The pure word port follows C++'s paid+batch wrap. JS keeps the
 		// carry above bit 31 and reaches a different clamped pay threshold.
-		oracle.gc['updatePaceCredit'](0, 0xffffffff, 512, 1);
+		nativeHeapReference(oracle).gc['updatePaceCredit'](0, 0xffffffff, 512, 1);
 		beginCall(update, [control, 0, 0xffffffff, 512, 1]);
 		finish();
 		assert.equal(lanes()[4], referenceCpp(0, 0xffffffff, 512, 1));
@@ -161,7 +162,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(lanes(oracle.memory)[4], MAIN_RAM_SIZE);
 		// No word wraps here: the legacy TS multiplication rounds a
 		// numerator above 2^53 and moves the threshold by one byte.
-		oracle.gc['updatePaceCredit'](0, 2_200_000_000, 2_200_000_001, 4_094_427);
+		nativeHeapReference(oracle).gc['updatePaceCredit'](0, 2_200_000_000, 2_200_000_001, 4_094_427);
 		beginCall(update, [control, 0, 2_200_000_000, 2_200_000_001, 4_094_427]);
 		finish();
 		assert.equal(lanes()[4], referenceCpp(0, 2_200_000_000, 2_200_000_001, 4_094_427));

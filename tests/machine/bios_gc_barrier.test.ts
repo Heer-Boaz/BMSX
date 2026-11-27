@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -77,15 +78,15 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function invoke(name: string, ...args: number[]) {
 		begin(name, ...args);
-		const expectedWork = oracle.stringPool.takeMarkWork();
+		const expectedWork = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		assert.equal(finish()[0], expectedWork, name);
 		compare(name);
 	}
 	function pendingString(id: number) {
 		byte(id + 1, 0x74); // The test selects epoch 1 for the new mark.
-		cpu.stringPool.markReachable(id);
-		oracle.stringPool.markReachable(id);
-		const pending = cpu.stringPool.takeMarkWork();
+		nativeHeapReference(cpu).stringPool.markReachable(id);
+		nativeHeapReference(oracle).stringPool.markReachable(id);
+		const pending = nativeHeapReference(cpu).stringPool.takeMarkWork();
 		assert.equal(pending, 1);
 		return pending;
 	}
@@ -107,8 +108,8 @@ for (const optLevel of [0, 3] as const) {
 		const { memory, oracle, arena, control, metadata, add, word, byte, begin, finish, invoke, pendingString, phase } = fixture(optLevel);
 		const table = add(target => createReferenceTable(target));
 		const thread = add(target => target.rootThread.address);
-		const carried = add(target => target.stringPool.intern('pending-global-mark'));
-		const value = add(target => target.stringPool.intern('global-barrier-value'));
+		const carried = add(target => nativeHeapReference(target).stringPool.intern('pending-global-mark'));
+		const value = add(target => nativeHeapReference(target).stringPool.intern('global-barrier-value'));
 		for (const [current, remark, queue] of [[GcPhase.Mark, 0, GC_TRACE_HEAD], [GcPhase.Mark, 1, GC_CHANGED_HEAD],
 			[GcPhase.MarkAgain, 2, GC_TRACE_HEAD], [GcPhase.Atomic, 0, GC_CHANGED_HEAD], [GcPhase.Atomic, 3, GC_TRACE_HEAD],
 			[GcPhase.Sweep, 2, 0], [7, 2, 0]]) {
@@ -152,21 +153,21 @@ for (const optLevel of [0, 3] as const) {
 		const key = add(target => createReferenceTable(target));
 		const value = add(target => createReferenceTable(target));
 		const cell = add(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initialize(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		});
-		const carried = add(target => target.stringPool.intern('pending-table-mark'));
-		const stringKey = add(target => target.stringPool.intern('inserted-key-mark'));
-		const stringValue = add(target => target.stringPool.intern('written-value-mark'));
+		const carried = add(target => nativeHeapReference(target).stringPool.intern('pending-table-mark'));
+		const stringKey = add(target => nativeHeapReference(target).stringPool.intern('inserted-key-mark'));
+		const stringValue = add(target => nativeHeapReference(target).stringPool.intern('written-value-mark'));
 		phase(GcPhase.MarkAgain);
 		byte(table + GC_COLOR_OFFSET, 0xbb);
 		byte(key + GC_COLOR_OFFSET, 0);
 		byte(value + GC_COLOR_OFFSET, 0);
 		word(control + EPOCH_WORK, 23);
 		const pending = pendingString(carried);
-		oracle.gc.writeTableAssignment(table, ValueTag.Table, value, valueFromTag(ValueTag.Table, key));
+		nativeHeapReference(oracle).gc.writeTableAssignment(table, ValueTag.Table, value, valueFromTag(ValueTag.Table, key));
 		invoke('write_table_assignment', arena, metadata, table, ValueTag.Table, value, 1, ValueTag.Table, key, 0, pending);
 		assert.equal(memory.readRamRecordWord(control + GC_TRACE_HEAD), indexOfRecord(value));
 		assert.equal(memory.readRamRecordWord(value + GC_RECORD_LINK), indexOfRecord(key), 'key edge precedes the new value');
@@ -174,23 +175,23 @@ for (const optLevel of [0, 3] as const) {
 		byte(stringKey + 1, 0);
 		byte(stringValue + 1, 0);
 		const pendingBoth = pendingString(carried);
-		oracle.gc.writeTableAssignment(table, ValueTag.String, stringValue, valueFromTag(ValueTag.String, stringKey));
+		nativeHeapReference(oracle).gc.writeTableAssignment(table, ValueTag.String, stringValue, valueFromTag(ValueTag.String, stringKey));
 		invoke('write_black_table_assignment', arena, metadata, table, ValueTag.String, stringValue, 1, ValueTag.String, stringKey, 0, pendingBoth);
 		assert.equal(memory.readRamRecordWord(control + EPOCH_WORK), 27, 'credit both new String marks and carried work once');
 		word(table + TableHeader.Metatable, key);
 		byte(value + GC_COLOR_OFFSET, 0);
 		const pendingAgain = pendingString(carried);
-		oracle.gc.writeTableAssignment(table, ValueTag.Table, value);
+		nativeHeapReference(oracle).gc.writeTableAssignment(table, ValueTag.Table, value);
 		invoke('write_table_assignment', arena, metadata, table, ValueTag.Table, value, 0, 0, 0, 0, pendingAgain);
 		assert.equal(memory.readRamRecordWord(control + GC_CHANGED_HEAD), indexOfRecord(table));
 		assert.equal(memory.readRamRecordByte(value + GC_COLOR_OFFSET), 0, 'a metatable requires a rescan');
 		byte(table + GC_COLOR_OFFSET, 3);
 		const pendingIgnored = pendingString(carried);
-		oracle.gc.writeTableAssignment(table, ValueTag.BuiltinFunction, value);
+		nativeHeapReference(oracle).gc.writeTableAssignment(table, ValueTag.BuiltinFunction, value);
 		invoke('write_table_assignment', arena, metadata, table, ValueTag.BuiltinFunction, value, 0, 0, 0, 0, pendingIgnored);
 		assert.equal(memory.readRamRecordByte(table + GC_COLOR_OFFSET), 3, 'no edge, no rescan');
 		byte(table + GC_COLOR_OFFSET, 2);
-		oracle.gc.writeTableAssignment(table, ValueTag.Table, value);
+		nativeHeapReference(oracle).gc.writeTableAssignment(table, ValueTag.Table, value);
 		invoke('write_table_assignment', arena, metadata, table, ValueTag.Table, value, 0, 0, 0, 0, 0);
 		assert.equal(memory.readRamRecordByte(value + GC_COLOR_OFFSET), 0, 'only a black owner admits the barrier');
 
@@ -204,10 +205,10 @@ for (const optLevel of [0, 3] as const) {
 		writeBlackClosedValueReference(oracle, cell, ValueTag.Table, value);
 		invoke('write_black_closed_value', arena, metadata, cell, ValueTag.Table, value, 0);
 		assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x311);
-		oracle.gc.writeBarrier(cell, UPVALUE_NEXT);
+		nativeHeapReference(oracle).gc.writeBarrier(cell, UPVALUE_NEXT);
 		invoke('write_barrier', cell, UPVALUE_NEXT, 0);
 		byte(cell + GC_COLOR_OFFSET, 0x8b);
-		oracle.gc.writeBarrier(cell, UPVALUE_NEXT);
+		nativeHeapReference(oracle).gc.writeBarrier(cell, UPVALUE_NEXT);
 		invoke('write_barrier', cell, UPVALUE_NEXT, 0);
 		assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET), 0x8a);
 	});
@@ -215,12 +216,12 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua closed store preserves native write order and interrupted String credit at O${optLevel}`, t => {
 		const { cpu, memory, oracle, management, arena, control, metadata, add, word, byte, begin, grant, finish, phase, compare } = fixture(optLevel);
 		const cell = add(target => {
-			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			const address = nativeHeapReference(target).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initialize(target.memory, address, target.gc.white());
-			target.gc.publishObject(address);
+			nativeHeapReference(target).gc.publishObject(address);
 			return address;
 		}) & UPVALUE_ADDRESS_MASK;
-		const value = add(target => target.stringPool.intern('new closed-cell String'));
+		const value = add(target => nativeHeapReference(target).stringPool.intern('new closed-cell String'));
 		const mark = (value + 1) & (MAIN_RAM_SIZE - 1);
 		const latch = management + HEAP_STRING_MARK_WORK_OFFSET, work = control + EPOCH_WORK;
 		const next = cell + UPVALUE_NEXT, color = cell + GC_COLOR_OFFSET, changed = control + GC_CHANGED_HEAD;
@@ -290,9 +291,9 @@ for (const optLevel of [0, 3] as const) {
 		word(control + GC_MODE_META + 4, 0x861);
 		word(control + MODE_REMAINING, 0x44);
 		word(control + GC_CHANGED_HEAD, 0x177);
-		oracle.gc.tableEntriesMoved(cpu.rootThread.address);
+		nativeHeapReference(oracle).gc.tableEntriesMoved(cpu.rootThread.address);
 		invoke('table_entries_moved', cpu.rootThread.address, 0);
-		oracle.gc.tableEntriesMoved(mode);
+		nativeHeapReference(oracle).gc.tableEntriesMoved(mode);
 		begin('table_entries_moved', mode, 0);
 		for (let i = 0; i < 128 && memory.readRamRecordWord(control + GC_TRACE_RECORD) !== 0; ++i) grant(1);
 		assert.equal(cpu.heapServiceActive(), true);

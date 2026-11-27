@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -33,7 +34,7 @@ end, fixture_bytes`;
 	const { cpu, memory } = createTestSystemCpu(linkTestSystemBlua32(program), backend);
 	runGuestToHalt(cpu, 1_000_000);
 	const [decodeValue, decodeMetadataValue, buffer] = materializeCpuCompletionValues(cpu);
-	const decode = v.asClosure(decodeValue, cpu.gc), decodeMetadata = v.asClosure(decodeMetadataValue, cpu.gc);
+	const decode = v.asClosure(decodeValue, nativeHeapReference(cpu).gc), decodeMetadata = v.asClosure(decodeMetadataValue, nativeHeapReference(cpu).gc);
 	const address = v.valuePayload(buffer);
 	const read = (bytes: Uint8Array) => {
 		memory.writeBytes(address, bytes);
@@ -58,7 +59,7 @@ end, fixture_bytes`;
 		assert.equal(cpu.stringPool.toString(v.asStringId(read(encodeBinary(value)))), value);
 	}
 	for (const id of [0, 127, 128, 0x7fffffff, 0x80000000, 0xffffffff]) {
-		assert.equal(cpu.gc.tables.getStringKey(tableAddressPayload(read(encodeBinary({ r: id }))), cpu.stringPool.intern('r')), v.valueInteger(id));
+		assert.equal(cpu.gc.tables.getStringKey(tableAddressPayload(read(encodeBinary({ r: id }))), nativeHeapReference(cpu).stringPool.intern('r')), v.valueInteger(id));
 	}
 	const binary = v.valuePayload(read(encodeBinary(new Uint8Array([0, 1, 127, 128, 255]))));
 	assert.deepEqual([1, 2, 3, 4, 5].map(index => cpu.gc.tables.getInteger(binary, index)), [0, 1, 127, 128, 255].map(v.valueInteger));
@@ -71,7 +72,7 @@ end, fixture_bytes`;
 			'雪🙂', -8, { value: 9 }, 10, 0.25, -11, 0x7fffffff, -0x80000000, 12],
 		after: 77,
 	})));
-	const mixed = v.valuePayload(cpu.gc.tables.getStringKey(mixedRoot, cpu.stringPool.intern('values')));
+	const mixed = v.valuePayload(cpu.gc.tables.getStringKey(mixedRoot, nativeHeapReference(cpu).stringPool.intern('values')));
 	for (const [index, value] of [[1, 0], [2, -1], [3, 63], [4, -64], [5, 64], [6, -65],
 		[8, 3], [10, -4], [12, 7], [14, -8], [16, 10], [18, -11], [19, 0x7fffffff],
 		[20, -0x80000000], [21, 12]] as const) {
@@ -82,8 +83,8 @@ end, fixture_bytes`;
 	assert.equal(cpu.gc.tables.getInteger(mixed, 17), v.valueFloat(0.25));
 	assert.deepEqual([1, 2, 3].map(index => cpu.gc.tables.getInteger(v.valuePayload(cpu.gc.tables.getInteger(mixed, 11)), index)), [5, 8192, -6].map(v.valueInteger));
 	assert.equal(cpu.stringPool.toString(v.asStringId(cpu.gc.tables.getInteger(mixed, 13))), '雪🙂');
-	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(mixed, 15)), cpu.stringPool.intern('value')), v.valueInteger(9));
-	assert.equal(cpu.gc.tables.getStringKey(mixedRoot, cpu.stringPool.intern('after')), v.valueInteger(77),
+	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(mixed, 15)), nativeHeapReference(cpu).stringPool.intern('value')), v.valueInteger(9));
+	assert.equal(cpu.gc.tables.getStringKey(mixedRoot, nativeHeapReference(cpu).stringPool.intern('after')), v.valueInteger(77),
 		'batched scalar runs publish the cursor before a following object field');
 	const key = '雪'.repeat(60);
 	const data = { [key]: { count: 0x7fffffff, nested: [true, 'name', { r: 128 }] }, tail: -0x80000000 };
@@ -96,11 +97,11 @@ end, fixture_bytes`;
 	const [rootValue, headerLength] = materializeCpuCompletionValues(cpu);
 	const root = v.valuePayload(rootValue);
 	assert.equal(headerLength, v.valueInteger(section.header.length), 'the first payload starts immediately after the shared names');
-	assert.equal(cpu.gc.tables.getStringKey(root, cpu.stringPool.intern('tail')), v.valueInteger(-0x80000000));
-	const object = v.valuePayload(cpu.gc.tables.getStringKey(root, cpu.stringPool.intern(textToByteString(key))));
-	assert.equal(cpu.gc.tables.getStringKey(object, cpu.stringPool.intern('count')), v.valueInteger(0x7fffffff));
-	const nested = v.valuePayload(cpu.gc.tables.getStringKey(object, cpu.stringPool.intern('nested')));
+	assert.equal(cpu.gc.tables.getStringKey(root, nativeHeapReference(cpu).stringPool.intern('tail')), v.valueInteger(-0x80000000));
+	const object = v.valuePayload(cpu.gc.tables.getStringKey(root, nativeHeapReference(cpu).stringPool.intern(textToByteString(key))));
+	assert.equal(cpu.gc.tables.getStringKey(object, nativeHeapReference(cpu).stringPool.intern('count')), v.valueInteger(0x7fffffff));
+	const nested = v.valuePayload(cpu.gc.tables.getStringKey(object, nativeHeapReference(cpu).stringPool.intern('nested')));
 	assert.equal(cpu.gc.tables.getInteger(nested, 1), v.valueBool(true));
 	assert.equal(cpu.stringPool.toString(v.asStringId(cpu.gc.tables.getInteger(nested, 2))), 'name');
-	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(nested, 3)), cpu.stringPool.intern('r')), v.valueInteger(128));
+	assert.equal(cpu.gc.tables.getStringKey(v.valuePayload(cpu.gc.tables.getInteger(nested, 3)), nativeHeapReference(cpu).stringPool.intern('r')), v.valueInteger(128));
 });

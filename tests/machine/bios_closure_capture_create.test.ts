@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readLE32, writeLE32 } from '../../machine/ts/common/endian';
@@ -79,7 +80,7 @@ for (const level of [0, 3] as const) {
 		}
 		const actual = machine(), oracle = machine(), memory = actual.memory;
 		runGuestToHalt(oracle, 4_194_304);
-		oracle.luaHeap.setCollectionTarget(oracle.luaHeap.capacity());
+		nativeHeapReference(oracle).luaHeap.setCollectionTarget(oracle.luaHeap.capacity());
 		const completion: Value[] = [];
 		oracle.readCompletionValues(completion);
 		oracle.beginCompletionCall(valuePayload(completion[0]), [valueInteger(11), valueInteger(12), valueInteger(13), valueInteger(14), valueInteger(15)]);
@@ -99,7 +100,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(bx * BLUA32_FUNCTION_ALIGNMENT, target.address);
 		const seed = captureCpuCheckpoint(oracle);
 		restoreCpuCheckpoint(actual, seed);
-		const arena = actual.heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
+		const arena = nativeHeapReference(actual).heapAllocator, management = arena.managementOffset(), state = arena.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = actual.luaHeap.occupiedOffset;
 		const workspace = RAM_BASE + management + FIRMWARE_DATA_OFFSET;
 		const binding = RAM_BASE + management + 0x200, descriptors = binding + 36;
@@ -133,7 +134,7 @@ for (const level of [0, 3] as const) {
 			const signals = oracle.readExecutionBusSignals();
 			assert.ok(oracle['readFunctionRecordOnBus'](frame.executionImage, target.address, signals));
 			oracle.instructionBudgetRemaining = 0;
-			oracle['runKind'] = CpuRunKind.Direct;
+			nativeHeapReference(oracle).runKind = CpuRunKind.Direct;
 			return createReferenceCapturedClosure(oracle, frame, oracle['functionRecordLatch'], signals);
 		}
 		function startWhole() {
@@ -266,7 +267,7 @@ for (const level of [0, 3] as const) {
 		// The allocation and layout operations of the old mapped zero-capture CPU branch.
 		const expected = allocateClosureRecordReference(oracle, 0, true);
 		initializeRecord(oracle.memory, expected, proto, canonical, oracle.gc.white(), 0, true);
-		oracle.gc.publishObject(expected);
+		nativeHeapReference(oracle).gc.publishObject(expected);
 		f.startWhole();
 		f.finish();
 		assert.equal(RAM_BASE + actual.heapServiceResult(), expected);
@@ -281,7 +282,7 @@ for (const level of [0, 3] as const) {
 	test(`captured Closure BIOS reclaims space and retries the prepared edges at O${level}`, () => {
 		const { actual, frame, arena, memory, destination } = fixture();
 		const text = 'unrooted capture allocation retry '.repeat(256);
-		const discarded = actual.stringPool.intern(text);
+		const discarded = nativeHeapReference(actual).stringPool.intern(text);
 		while (arena.allocate(4088, true)) { /* fence out the remaining arena pages */ }
 		while (arena.allocate(1, true)) { /* leave no minimum chunk */ }
 		const before = actual.luaHeap.usedBytes(), owner = frame.thread.address, depth = frame.thread.frameDepth - 1;
@@ -354,7 +355,7 @@ for (const level of [0, 3] as const) {
 		const occupied = arena.occupiedBytes(), charged = actual.luaHeap.usedBytes(), open = frame.openUpvalueHead;
 		const count = memory.readRamRecordWord(control + 0x70);
 		restoreCpuCheckpoint(oracle, captureCpuCheckpoint(actual));
-		const native = oracle.heapAllocator;
+		const native = nativeHeapReference(oracle).heapAllocator;
 		const raw = native.allocate(closureBytes, false), a = native.allocate(cellBytes, false), b = native.allocate(cellBytes, false);
 		assert.equal(raw, hole);
 		assert.notEqual(a, 0);

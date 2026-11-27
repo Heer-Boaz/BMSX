@@ -19,7 +19,6 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
-import { bindDlmalloc, DLMALLOC_WASM_PAGE_COUNT, type DlmallocArena } from './dlmalloc_wasm';
 import { RomStorage } from './rom_storage';
 import type { MemoryWordCounters } from './word_counters';
 import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
@@ -259,9 +258,9 @@ export class Memory {
 		this.systemRom = new RomStorage(init.systemRom);
 		this.dmaRomView = { bytes: init.systemRom, byteOffset: 0, byteLength: 0 };
 		this.cartridgeController = new CartridgeController(init.cartridgeSlots);
-		// The allocator and CPU view the same fixed backing. The tail is only
-		// for host write watches and Wasm execution, never part of guest RAM.
-		this.ramBacking = new WebAssembly.Memory({ initial: DLMALLOC_WASM_PAGE_COUNT, maximum: DLMALLOC_WASM_PAGE_COUNT });
+		// Reserve the host write-watch plane beyond the physical RAM aperture.
+		const pages = (MAIN_RAM_SIZE >>> 16) + 1;
+		this.ramBacking = new WebAssembly.Memory({ initial: pages, maximum: pages });
 		const buffer = this.ramBacking.buffer;
 		this.ram = new Uint8Array(buffer, 0, ramByteCount);
 		this.busEnd = RAM_BASE + ramByteCount;
@@ -298,9 +297,6 @@ export class Memory {
 		return this.ram.byteLength;
 	}
 
-	public bindDlmalloc(stateOffset: number): DlmallocArena {
-		return bindDlmalloc(this.ramBacking, stateOffset);
-	}
 
 	public ramWriteWatches(): MappedPageWriteWatches { return this.ramPageWriteWatches; }
 

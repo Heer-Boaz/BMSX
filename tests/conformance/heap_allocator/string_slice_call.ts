@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -46,7 +47,7 @@ try {
 				systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
 			}, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = nativeHeapReference(cpu);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const issue = () => {
 				if (!cpu.fixedInterruptActive() || cpu.readCauseWord() !== CPU_CAUSE_CODE_SYSCALL) return null;
@@ -63,7 +64,7 @@ try {
 			const { owner, depth, pc } = call;
 			const inSlice = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
 				&& memory.readRamRecordWord(CPU_INTERRUPTED_CONTEXT_ADDRESS) === owner;
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (outcome === 'oom') {
 				for (let extent = MAIN_RAM_SIZE >> 1; extent >= 1024; extent >>= 1)
 					while (arena.allocate(extent, true)) { /* exhaust this physical size class */ }

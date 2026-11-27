@@ -1,3 +1,5 @@
+import type { GcHeap } from '../helpers/native_heap/gc_heap';
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,9 +30,9 @@ function fixture(optLevel: 0 | 3) {
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		assert.ok(target.heapAllocator.allocate(1024 * 1024, true));
+		assert.ok(nativeHeapReference(target).heapAllocator.allocate(1024 * 1024, true));
 	}
-	const arena = cpu.heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
+	const arena = nativeHeapReference(cpu).heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 	const occupied = arena.occupiedBytes(), free = arena.unoccupiedBytes();
 	assert.equal(oracle.heapAllocator.occupiedBytes(), occupied);
 	function seed(phase: number, sampled: number, credit: number, done: number, last: number, epochs: number) {
@@ -65,7 +67,7 @@ for (const opt of [0, 3] as const) {
 	test(`BIOS VBlank preserves native pressure ordering and work allowance at O${opt}`, t => {
 		const f = fixture(opt), { cpu, oracle, occupied, free } = f;
 		let allowance = 0;
-		const nativeStep = t.mock.method(oracle.gc, 'step', (...args: Parameters<CPU['gc']['step']>) => {
+		const nativeStep = t.mock.method(nativeHeapReference(oracle).gc, 'step', (...args: Parameters<GcHeap['step']>) => {
 			assert.deepEqual(args.slice(0, 5), [valueNil(), valueNil(), valueNil(), 0, false]);
 			allowance = args[5]!;
 			return 0;

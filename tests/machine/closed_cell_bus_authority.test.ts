@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -49,14 +50,14 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	const valueCapacity = memory.readRamRecordWord(thread.address + ThreadField.StackCapacity);
 	const frameCapacity = memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
 	caller.registers.setInteger(0, target);
-	const cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+	const cell = nativeHeapReference(cpu).luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 	initialize(memory, cell, cpu.gc.white());
-	cpu.gc.publishObject(cell);
+	nativeHeapReference(cpu).gc.publishObject(cell);
 	memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3);
 	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, 73);
 	memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, ValueTag.Integer);
 	caller.registers.setInteger(1, cell);
-	caller.registers.setString(2, cpu.stringPool.intern('must not overwrite'));
+	caller.registers.setString(2, nativeHeapReference(cpu).stringPool.intern('must not overwrite'));
 	cpu.clearHaltUntilIrq();
 	const callPc = entry.codeAddress + 3 * INSTRUCTION_BYTES;
 	for (let i = 0; i < 4096 && (caller.pc !== callPc); ++i) cpu.runUntilDepth(0, 1);

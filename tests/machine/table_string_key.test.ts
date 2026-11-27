@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
@@ -17,11 +18,11 @@ import { cartridgeSlots } from '../helpers/cartridge';
 test('aligned String identities distribute home slots and preserve displaced collision chains', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, table = createReferenceTable(cpu, 0, 8);
+	const tables = nativeHeapReference(cpu).gc.tables, table = createReferenceTable(cpu, 0, 8);
 	const keys: number[][] = Array.from({ length: 8 }, () => []);
 	const probe = { node: -1, remaining: 0, slot: -1, value: valueNil() };
 	for (let i = 10; i < 90; ++i) {
-		const key = cpu.stringPool.intern(`table-home-key-${i}`);
+		const key = nativeHeapReference(cpu).stringPool.intern(`table-home-key-${i}`);
 		const home = (key >>> BLUA32_STRING_RECORD_ALIGNMENT_SHIFT) & 7;
 		tables.beginStringProbe(table, key, probe);
 		assert.equal(probe.node, home, 'use record identity bits, not zero byte-offset bits');
@@ -61,7 +62,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const keys: number[] = [];
 	for (let n = 0; keys.length < 16; n += 1) {
-		const key = cpu.stringPool.intern(`collision_${n}`);
+		const key = nativeHeapReference(cpu).stringPool.intern(`collision_${n}`);
 		if ((hashCanonicalTableKey(valueString(key)) & 31) === 0) keys.push(key);
 	}
 	const generic = createReferenceTable(cpu, 0, 4);
@@ -73,7 +74,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	let prediction = 0;
 	const cached = { slot: -1, value: valueNil() };
 	const compare = () => {
-		const bytes = cpu.gc.tables.getTrackedHeapBytes(strings);
+		const bytes = nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(strings);
 		for (const key of keys) {
 			const expected = cpu.gc.tables.get(generic, valueString(key));
 			assert.equal(cpu.gc.tables.getStringKey(strings, key), expected);
@@ -83,7 +84,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 			prediction = cached.slot;
 			assert.equal(cached.value, expected);
 		}
-		assert.equal(cpu.gc.tables.getTrackedHeapBytes(strings), bytes, 'lookups reserve no guest storage');
+		assert.equal(nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(strings), bytes, 'lookups reserve no guest storage');
 		// Physical iteration order is serialized state, not an incidental layout.
 		assert.equal(cpu.gc.tables.storedSlotCount(strings), cpu.gc.tables.storedSlotCount(generic));
 		for (let slot = 0; slot < cpu.gc.tables.storedSlotCount(generic); slot += 1) {
@@ -99,33 +100,33 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	};
 	compare();
 	for (const key of [valueInteger(0), valueBool(false), objectKey]) {
-		cpu.gc.tables.set(generic, key, valueInteger(19));
-		cpu.gc.tables.set(strings, key, valueInteger(19));
+		nativeHeapReference(cpu).gc.tables.set(generic, key, valueInteger(19));
+		nativeHeapReference(cpu).gc.tables.set(strings, key, valueInteger(19));
 	}
 	for (let n = 0; n < 256; n += 1) {
 		const key = keys[(n * 7) & 15];
 		const value = values[(n >> 4) & 7];
-		cpu.gc.tables.set(generic, valueString(key), value);
+		nativeHeapReference(cpu).gc.tables.set(generic, valueString(key), value);
 		slots.set(0, value);
 		if ((n & 1) === 0) {
-			cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
+			nativeHeapReference(cpu).gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
 		} else if (!cpu.gc.tables.storePredictedStringKey(strings, key, prediction, slots.getTag(0), slots.getPayload(0))) {
-			prediction = cpu.gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
+			prediction = nativeHeapReference(cpu).gc.tables.storeStringKey(strings, key, slots.getTag(0), slots.getPayload(0));
 		}
 		if ((n & 15) === 0) {
-			cpu.gc.tables.setInteger(generic, (n >> 4) + 1, valueInteger(n));
-			cpu.gc.tables.setInteger(strings, (n >> 4) + 1, valueInteger(n));
+			nativeHeapReference(cpu).gc.tables.setInteger(generic, (n >> 4) + 1, valueInteger(n));
+			nativeHeapReference(cpu).gc.tables.setInteger(strings, (n >> 4) + 1, valueInteger(n));
 		}
 		compare();
 	}
-	cpu.gc.tables.set(generic, objectKey, valueNil());
-	cpu.gc.tables.set(strings, objectKey, valueNil());
+	nativeHeapReference(cpu).gc.tables.set(generic, objectKey, valueNil());
+	nativeHeapReference(cpu).gc.tables.set(strings, objectKey, valueNil());
 	compare();
-	cpu.gc.tables.clear(generic);
-	cpu.gc.tables.clear(strings);
+	nativeHeapReference(cpu).gc.tables.clear(generic);
+	nativeHeapReference(cpu).gc.tables.clear(strings);
 	compare();
 
-	const tables = cpu.gc.tables, chain = createReferenceTable(cpu, 0, 2);
+	const tables = nativeHeapReference(cpu).gc.tables, chain = createReferenceTable(cpu, 0, 2);
 	const head = tables.storeStringKey(chain, keys[0], ValueTag.Integer, 11);
 	const tail = tables.storeStringKey(chain, keys[1], ValueTag.Integer, 22);
 	tables.setStringKey(chain, keys[0], valueNil());
@@ -140,14 +141,14 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 test('known string lookup follows changing inherited fields and preserves false and signed zero', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const key = cpu.stringPool.intern('field');
-	const indexKey = cpu.stringPool.intern('__index');
+	const key = nativeHeapReference(cpu).stringPool.intern('field');
+	const indexKey = nativeHeapReference(cpu).stringPool.intern('__index');
 	const parent = createReferenceTable(cpu, 0, 2);
-	cpu.gc.tables.setStringKey(parent, key, valueBool(false));
+	nativeHeapReference(cpu).gc.tables.setStringKey(parent, key, valueBool(false));
 	const metatable = createReferenceTable(cpu, 0, 1);
-	cpu.gc.tables.setStringKey(metatable, indexKey, valueTable(parent));
+	nativeHeapReference(cpu).gc.tables.setStringKey(metatable, indexKey, valueTable(parent));
 	const child = createReferenceTable(cpu);
-	cpu.gc.tables.setMetatableAddress(child, metatable);
+	nativeHeapReference(cpu).gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
 	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
 	cpu.gc.tables.resolveStringIndex(child, key, result);
@@ -158,26 +159,26 @@ test('known string lookup follows changing inherited fields and preserves false 
 	assert.equal(result.extraVisits, 1);
 	assert.ok(prediction >= 0);
 	assert.equal(result.value, valueBool(false));
-	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Nil, 0);
+	nativeHeapReference(cpu).gc.tables.storeStringKey(parent, key, ValueTag.Nil, 0);
 	cpu.gc.tables.resolveStringIndexCached(child, key, prediction, result);
 	prediction = result.slot;
 	assert.equal(prediction, -1);
 	assert.equal(result.value, valueNil());
-	cpu.gc.tables.storeStringKey(parent, key, ValueTag.Float, 0x80000000);
+	nativeHeapReference(cpu).gc.tables.storeStringKey(parent, key, ValueTag.Float, 0x80000000);
 	cpu.gc.tables.resolveStringIndex(child, key, result);
 	assert.equal(result.status, TableLookupStatus.Resolved);
 	assert.equal(result.value, valueFloatBits(0x80000000));
 
-	cpu.gc.tables.setStringKey(child, key, valueBool(false));
+	nativeHeapReference(cpu).gc.tables.setStringKey(child, key, valueBool(false));
 	cpu.gc.tables.resolveStringIndexCached(child, key, result.slot, result);
 	assert.equal(result.value, valueBool(false));
 	assert.equal(result.extraVisits, 0, 'an own field stops traversal even when its value is false');
 
 	const raw = createReferenceTable(cpu, 0, 8);
 	const highBitKey = valueString((key ^ 0x80000000) >>> 0);
-	cpu.gc.tables.set(raw, highBitKey, valueInteger(21));
+	nativeHeapReference(cpu).gc.tables.set(raw, highBitKey, valueInteger(21));
 	assert.equal(cpu.gc.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
-	cpu.gc.tables.setStringKey(raw, key, valueInteger(42));
+	nativeHeapReference(cpu).gc.tables.setStringKey(raw, key, valueInteger(42));
 	memory.writeRamRecordWord(raw + TableHeader.HashStorage, cpu.gc.tables.hashAddress(raw) + MAIN_RAM_SIZE);
 	assert.equal(cpu.gc.tables.get(raw, highBitKey), valueInteger(21));
 	cpu.gc.tables.getStringKeyCached(raw, key, -1, result);
@@ -192,11 +193,11 @@ test('known string lookup follows changing inherited fields and preserves false 
 test('deleting a string mapping allows its reserved hash placement to be reused', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const table = createReferenceTable(cpu, 0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
-	cpu.gc.tables.setStringKey(table, present, valueInteger(73));
+	const table = createReferenceTable(cpu, 0, 1), present = nativeHeapReference(cpu).stringPool.intern('full'), missing = nativeHeapReference(cpu).stringPool.intern('new');
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueInteger(73));
 	const storage = cpu.gc.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
-	cpu.gc.tables.setStringKey(table, present, valueNil());
-	assert.equal(cpu.gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, present, valueNil());
+	assert.equal(nativeHeapReference(cpu).gc.tables.storeStringKey(table, missing, ValueTag.Integer, 19), 0);
 	assert.equal(cpu.gc.tables.hashAddress(table), storage);
 	assert.equal(cpu.luaHeap.usedBytes(), used, 'the pre-paid mapping is reused');
 	assert.equal(cpu.gc.tables.getStringKey(table, missing), valueInteger(19));
@@ -205,9 +206,9 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 test('fixed string assignment probes the terminal table only if it can invoke a setter', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, source = createReferenceTable(cpu), forwarded = createReferenceTable(cpu, 0, 2);
+	const tables = nativeHeapReference(cpu).gc.tables, source = createReferenceTable(cpu), forwarded = createReferenceTable(cpu, 0, 2);
 	const meta = createReferenceTable(cpu, 0, 1), terminalMeta = createReferenceTable(cpu);
-	const newIndex = cpu.stringPool.intern('__newindex'), field = cpu.stringPool.intern('field'), absent = cpu.stringPool.intern('absent');
+	const newIndex = nativeHeapReference(cpu).stringPool.intern('__newindex'), field = nativeHeapReference(cpu).stringPool.intern('field'), absent = nativeHeapReference(cpu).stringPool.intern('absent');
 	tables.setStringKey(meta, newIndex, valueTable(forwarded));
 	tables.setMetatableAddress(source, meta);
 	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
@@ -243,8 +244,8 @@ test('fixed string assignment probes the terminal table only if it can invoke a 
 test('a periodic __index path retains the cost of its prefix and last incomplete round', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, next = [1, 2, 3, 4, 2], roots = next.map(() => createReferenceTable(cpu));
-	const indexKey = cpu.stringPool.intern('__index'), method = valueString(indexKey), key = valueString(cpu.stringPool.intern('field'));
+	const tables = nativeHeapReference(cpu).gc.tables, next = [1, 2, 3, 4, 2], roots = next.map(() => createReferenceTable(cpu));
+	const indexKey = nativeHeapReference(cpu).stringPool.intern('__index'), method = valueString(indexKey), key = valueString(nativeHeapReference(cpu).stringPool.intern('field'));
 	for (let i = 0; i < roots.length; ++i) {
 		const meta = createReferenceTable(cpu, 0, 128);
 		tables.setMetatableAddress(roots[i], meta);

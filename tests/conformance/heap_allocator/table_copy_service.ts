@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -65,7 +66,7 @@ try {
 				systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC,
 			}, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = nativeHeapReference(cpu);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
 			const systemVector = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL;
 			const atCopy = () => systemVector() && cpu.activeThread.frameAtDepth(0).registers.get(0) === valueInteger(0x10020);
@@ -73,7 +74,7 @@ try {
 			assert.ok(atCopy(), 'public Table copy entered the ordinary System vector');
 			const source = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('copy_source')!));
 			const member = cpu.stringPool.find('__newindex')!;
-			const tables = cpu.gc.tables;
+			const tables = nativeHeapReference(cpu).gc.tables;
 			assert.equal(tables.arrayCapacity(source), 1024);
 			assert.ok(!isNil(tables.getStringKey(source, member)));
 			assert.equal(memory.readRamRecordByte(source + TableHeader.NewIndexAbsent), 0);
@@ -85,7 +86,7 @@ try {
 			// Source is rooted and before the first allocation in the firmware.
 			// Occupy *physical* slots; the recovered case frees a real dead
 			// backing record, not a simulated failed status or logical quota.
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (scenario === 'weak_recovered') createReferenceTable(cpu, 1536, 0);
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}

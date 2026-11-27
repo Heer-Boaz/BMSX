@@ -1,3 +1,5 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
+import { bindReferenceDlmalloc } from '../../helpers/native_heap/dlmalloc_wasm';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -60,7 +62,7 @@ function verifyFullArenaTransfer(native: string, directory: string) {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});
 	runtime.boot();
-	const { cpu, scheduler, memory, executionAddressSpace } = runtime.machine, arena = cpu.heapAllocator;
+	const { cpu, scheduler, memory, executionAddressSpace } = runtime.machine, arena = nativeHeapReference(cpu).heapAllocator;
 	admitTestHeapServiceCpu(cpu, executionAddressSpace);
 	const minimum = closureRecordBytes(0, false);
 	for (let bytes = arena.unoccupiedBytes(); bytes >= minimum; bytes >>>= 1) {
@@ -196,10 +198,10 @@ try {
 				sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 			});
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { gc, heapAllocator } = nativeHeapReference(cpu);
 			memory.writeMappedWord(IO_CART_SELECT, 1);
 			const management = heapAllocator.managementOffset();
-			const allocatorState = heapAllocator.allocatorStateOffset(), arena = memory.bindDlmalloc(allocatorState);
+			const allocatorState = heapAllocator.allocatorStateOffset(), arena = bindReferenceDlmalloc(memory, allocatorState);
 			const control = management + HEAP_GC_CONTROL_OFFSET;
 			const traceLimit = management + GC_TRACE_CONTEXT_OFFSET + GcTraceContextField.Limit;
 			const parked = () => cpu.fixedInterruptActive() && cpu.readCauseWord() === CPU_CAUSE_CODE_SYSCALL
@@ -218,16 +220,16 @@ try {
 			assert.ok(floor > oldFloor);
 
 			let dead = 0, deadText = '';
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 			if (scenario === 'refused') {
 				// This non-object backing is not on the collector inventory.
 				const backing = heapAllocator.allocate(0x380000, true);
 				assert.ok(backing >= oldFloor && backing < floor);
 				deadText = 'floor refusal must still collect unrooted language storage';
-				dead = cpu.stringPool.intern(deadText);
+				dead = nativeHeapReference(cpu).stringPool.intern(deadText);
 			} else if (scenario === 'reclaimed') {
 				deadText = 'T'.repeat(0x380000);
-				dead = cpu.stringPool.intern(deadText);
+				dead = nativeHeapReference(cpu).stringPool.intern(deadText);
 				assert.ok(dead >= oldFloor && dead < floor);
 				// This earlier transient root lets the current epoch retain the
 				// physical obstacle; only the subsequent fresh epoch can free it.

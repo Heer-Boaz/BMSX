@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -65,7 +66,7 @@ tonumber('nan'),tonumber('infinity'),tonumber('12x'),tonumber('  +.25e1  '),tonu
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS decimal ${backend}: exact midpoint tails through normal, subnormal and overflow boundaries`, () => {
 	const { cpu,results } = run("require('base');return tonumber",3,backend);
-	const closure = v.asClosure(results[0],cpu.gc);
+	const closure = v.asClosure(results[0],nativeHeapReference(cpu).gc);
 	const lowerWords = [0,1,0x7ffffe,0x7fffff,0x800000,0x800001,0x3f7fffff,0x3f800000,0x3f800001,0x7f7fffff];
 	for (const exponent of [2,32,64,128,190,253]) lowerWords.push((exponent << 23) | 0x3fffff);
 	for (const lower of lowerWords) {
@@ -77,7 +78,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS decimal ${ba
 			const digits = (middle+delta).toString().padStart(places+1,'0');
 			const text = digits.slice(0,-places)+'.'+digits.slice(-places);
 			const expected = delta < 0n ? lower : delta > 0n ? lower+1 : (lower & 1) === 0 ? lower : lower+1;
-			cpu.beginCompletionCall(closure,[v.valueString(cpu.stringPool.intern(text))]);
+			cpu.beginCompletionCall(closure,[v.valueString(nativeHeapReference(cpu).stringPool.intern(text))]);
 			runGuestToHalt(cpu, budget);
 			const actual: v.Value[] = []; cpu.readCompletionValues(actual);
 			assert.deepEqual(actual,[v.valueFloatBits(expected)],text);
@@ -107,7 +108,7 @@ for (const [name,source] of [['load',loadSource],['syntax',syntaxSource]]) for (
 
 for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS literal ${backend}: hexadecimal exponents and long significands cancel without a wide accumulator`, () => {
 	const { cpu,results } = run("require('base');return require('number/parse').literal",3,backend);
-	const closure = v.asClosure(results[0],cpu.gc);
+	const closure = v.asClosure(results[0],nativeHeapReference(cpu).gc);
 	const texts = ['0x1'+'0'.repeat(200)+'p-800','0x0.'+'0'.repeat(300)+'1p1204','0x1p-149','0x1.fffffep127'];
 	let word = 0x12345678;
 	for (let i=0;i<64;++i) {
@@ -117,7 +118,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) test(`BIOS literal ${ba
 		texts.push(`0x${mantissa.toString(16)}p${exponent === 0 ? -149 : exponent-150}`);
 	}
 	for (const text of texts) {
-		cpu.beginCompletionCall(closure,[v.valueString(cpu.stringPool.intern(text))]);
+		cpu.beginCompletionCall(closure,[v.valueString(nativeHeapReference(cpu).stringPool.intern(text))]);
 		runGuestToHalt(cpu, budget);
 		const actual: v.Value[] = [];cpu.readCompletionValues(actual);
 		assert.deepEqual(actual,[v.valueFloatBits(parseHexFloat32Bits(text))],text);

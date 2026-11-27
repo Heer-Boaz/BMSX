@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { registerReferenceGlobalName, writeReferenceGlobalSlot } from '../helpers/global_bank_reference';
@@ -75,7 +76,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		admitTestHeapServiceCpu(cpu, addressSpace);
 		// Intern the retained Strings before admitting either mounted image: its
 		// constant binding reuses the existing RAM identity, not the ROM literal.
-		for (const literal of RETAINED_CART_STRINGS) cpu.stringPool.intern(literal);
+		for (const literal of RETAINED_CART_STRINGS) nativeHeapReference(cpu).stringPool.intern(literal);
 		cpu.replaceExecutionImages([addressSpace.resolveDomain(0)!, addressSpace.resolveDomain(1)!]);
 		runGuestToHalt(cpu, 10_000);
 		return cpu;
@@ -96,7 +97,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 		return result;
 	}
 	function string(text: string) {
-		const id = equal(target => target.stringPool.intern(text));
+		const id = equal(target => nativeHeapReference(target).stringPool.intern(text));
 		assert.ok(id >= RAM_BASE);
 		return id;
 	}
@@ -126,8 +127,8 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	] as const) {
 		equal(target => {
 			const bank = kind === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
-			const slot = registerReferenceGlobalName(target.gc, bank, key);
-			writeReferenceGlobalSlot(target.gc, bank, slot, value);
+			const slot = registerReferenceGlobalName(nativeHeapReference(target).gc, bank, key);
+			writeReferenceGlobalSlot(nativeHeapReference(target).gc, bank, slot, value);
 			return slot;
 		});
 	}
@@ -159,12 +160,12 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 			const bank = moved === GcRootBank.SystemGlobals ? target['systemGlobalBank'] : target['globalBank'];
 			const previous = ram.readRamRecordWord(namespace + GlobalBankField.Base);
 			const capacity = ram.readRamRecordWord(namespace + GlobalBankField.Capacity);
-			for (let i = bank.count; i < capacity; ++i) registerReferenceGlobalName(target.gc, bank, target.stringPool.intern(`namespace filler ${i}`));
-			writeReferenceGlobalSlot(target.gc, bank, registerReferenceGlobalName(target.gc, bank, lateName), valueString(lateValue));
+			for (let i = bank.count; i < capacity; ++i) registerReferenceGlobalName(nativeHeapReference(target).gc, bank, nativeHeapReference(target).stringPool.intern(`namespace filler ${i}`));
+			writeReferenceGlobalSlot(nativeHeapReference(target).gc, bank, registerReferenceGlobalName(nativeHeapReference(target).gc, bank, lateName), valueString(lateValue));
 			assert.notEqual(ram.readRamRecordWord(namespace + GlobalBankField.Base), previous);
 		}
-		target.stringPool.takeMarkWork();
-		target.stringPool.beginReachabilityEpoch();
+		nativeHeapReference(target).stringPool.takeMarkWork();
+		nativeHeapReference(target).stringPool.beginReachabilityEpoch();
 	});
 
 	function setCursor(kind: GcRootBank, next = 0) {
@@ -187,7 +188,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	function step(limit: number, work: number, stop: GcRootBank) {
 		begin(limit, work, stop);
 		finish();
-		assert.equal(cpu.heapServiceResult(), oracle.gc['traceRootBanks'](limit, work, stop));
+		assert.equal(cpu.heapServiceResult(), nativeHeapReference(oracle).gc['traceRootBanks'](limit, work, stop));
 		compare(`limit=${limit}, initial=${work}, stop=${stop}`);
 	}
 	const nameSlot = cpu['systemGlobalBank'].find(name)!;
@@ -246,7 +247,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.cursor(), (GcRootBank.SystemGlobals << CURSOR_BITS) | (f.nameSlot));
 		const checkpoint = captureCpuCheckpoint(f.cpu);
 		const cycles = f.finish();
-		assert.equal(f.cpu.heapServiceResult(), f.oracle.gc['traceRootBanks'](3, 0, GcRootBank.End));
+		assert.equal(f.cpu.heapServiceResult(), nativeHeapReference(f.oracle).gc['traceRootBanks'](3, 0, GcRootBank.End));
 		f.compare('name → Value');
 		restoreCpuCheckpoint(f.cpu, checkpoint);
 		assert.equal(f.finish(), cycles);
@@ -262,7 +263,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(f.marked(f.returned), false);
 		const checkpoint = captureCpuCheckpoint(f.cpu);
 		const cycles = f.finish();
-		assert.equal(f.cpu.heapServiceResult(), f.oracle.gc['traceRootBanks'](1, 0, GcRootBank.End));
+		assert.equal(f.cpu.heapServiceResult(), nativeHeapReference(f.oracle).gc['traceRootBanks'](1, 0, GcRootBank.End));
 		assert.equal(f.marked(f.returned), true);
 		f.compare('borrowed Completion slot');
 

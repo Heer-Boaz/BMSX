@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { asThread, valueBool, valueInteger, valueNil, valuePayload, valueTag } from '../../machine/ts/machine/cpu/value';
@@ -32,7 +33,7 @@ test('a dead coroutine is collected after its last stack roots return', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.collection, 3));
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak_threads')!));
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil());
 });

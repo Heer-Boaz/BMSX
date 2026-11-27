@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -25,20 +26,20 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 		runGuestToHalt(cpu, 1_000_000);
 		const roots = v.valuePayload(materializeCpuCompletionValues(cpu)[0]);
 		const fsm = v.valuePayload(cpu.gc.tables.getInteger(roots, 1)), effects = v.valuePayload(cpu.gc.tables.getInteger(roots, 2));
-		const fsmRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 6),cpu.gc), effectRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 7),cpu.gc);
+		const fsmRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 6),nativeHeapReference(cpu).gc), effectRecord = v.asClosure(cpu.gc.tables.getInteger(roots, 7),nativeHeapReference(cpu).gc);
 		for (const start of [0x7ffffffd,0xfffffffd]) {
-			for (const channel of [fsm,effects]) cpu.gc.tables.setInteger(channel, 4,v.valueInteger(start));
+			for (const channel of [fsm,effects]) nativeHeapReference(cpu).gc.tables.setInteger(channel, 4,v.valueInteger(start));
 			const transitions: unknown[][] = [], facts: unknown[][] = [];
-			const observation = new FsmTransitionObservation(fsm,cpu.stringPool,cpu.gc,(...args)=>transitions.push(args));
-			const effect = new ActionEffectObservation(effects,cpu.stringPool,cpu.gc,{
+			const observation = new FsmTransitionObservation(fsm,nativeHeapReference(cpu).stringPool,nativeHeapReference(cpu).gc,(...args)=>transitions.push(args));
+			const effect = new ActionEffectObservation(effects,nativeHeapReference(cpu).stringPool,nativeHeapReference(cpu).gc,{
 				trigger:(...args)=>facts.push(args),activity:(...args)=>facts.push(args),
 			});
 			observation.discardPublished(); effect.discardPublished();
 			const produce = (index: number) => {
 				cpu.memory.writeIoU32(IO_SYS_TIME_MS,(0xfffffffc+index)>>>0);
 				runCompletionClosure(cpu,fsmRecord,[cpu.gc.tables.getInteger(roots, 1),cpu.gc.tables.getInteger(roots, 3),cpu.gc.tables.getInteger(roots, 4),cpu.gc.tables.getInteger(roots, 5),v.valueBool(index%2===0)]);
-				runCompletionClosure(cpu,effectRecord,[cpu.gc.tables.getInteger(roots, 2),v.valueString(cpu.stringPool.intern(index%2===0?'trigger':'activate')),
-					v.valueString(cpu.stringPool.intern('fire')),index%2===0?v.valueString(cpu.stringPool.intern('accepted')):v.valueInteger(index)]);
+				runCompletionClosure(cpu,effectRecord,[cpu.gc.tables.getInteger(roots, 2),v.valueString(nativeHeapReference(cpu).stringPool.intern(index%2===0?'trigger':'activate')),
+					v.valueString(nativeHeapReference(cpu).stringPool.intern('fire')),index%2===0?v.valueString(nativeHeapReference(cpu).stringPool.intern('accepted')):v.valueInteger(index)]);
 			};
 			for(let index=1;index<=8;index++) { produce(index); if(index%4===0) {observation.drain(20);effect.drain(20);} }
 			assert.equal(transitions.length,8);assert.equal(facts.length,8);
@@ -48,9 +49,9 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 			}
 			observation.drain(21);effect.drain(21);assert.equal(transitions.length,8);assert.equal(facts.length,8);
 			const retained: number[] = [], retainedEffects: number[] = [];
-			const rollingEffect = new ActionEffectObservation(effects,cpu.stringPool,cpu.gc,{trigger:sequence=>retainedEffects.push(sequence),activity:sequence=>retainedEffects.push(sequence)},'rolling');
+			const rollingEffect = new ActionEffectObservation(effects,nativeHeapReference(cpu).stringPool,nativeHeapReference(cpu).gc,{trigger:sequence=>retainedEffects.push(sequence),activity:sequence=>retainedEffects.push(sequence)},'rolling');
 			rollingEffect.discardPublished();
-			const rolling = new FsmTransitionObservation(fsm,cpu.stringPool,cpu.gc,sequence=>retained.push(sequence),'rolling'); rolling.discardPublished();
+			const rolling = new FsmTransitionObservation(fsm,nativeHeapReference(cpu).stringPool,nativeHeapReference(cpu).gc,sequence=>retained.push(sequence),'rolling'); rolling.discardPublished();
 			for(let index=9;index<=14;index++) produce(index);
 			assert.throws(()=>observation.drain(22),/overflowed its 4-record buffer/);
 			assert.throws(()=>effect.drain(22),/overflowed its 4-record buffer/);
@@ -63,14 +64,14 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 				const closure = kind === 'fsm' ? fsmRecord : effectRecord;
 				const args = kind === 'fsm'
 					? [cpu.gc.tables.getInteger(roots, 1), cpu.gc.tables.getInteger(roots, 3), cpu.gc.tables.getInteger(roots, 4), cpu.gc.tables.getInteger(roots, 5), v.valueBool(true)]
-					: [cpu.gc.tables.getInteger(roots, 2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
+					: [cpu.gc.tables.getInteger(roots, 2), v.valueString(nativeHeapReference(cpu).stringPool.intern('activate')), v.valueString(nativeHeapReference(cpu).stringPool.intern('fire')), v.valueInteger(1)];
 				const accepted: number[] = [];
 				const strict = kind === 'fsm'
-					? new FsmTransitionObservation(channel, cpu.stringPool, cpu.gc, () => assert.fail('overwritten data cannot be published'))
-					: new ActionEffectObservation(channel, cpu.stringPool, cpu.gc, { trigger: () => assert.fail('overwritten data'), activity: () => assert.fail('overwritten data') });
+					? new FsmTransitionObservation(channel, nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc, () => assert.fail('overwritten data cannot be published'))
+					: new ActionEffectObservation(channel, nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc, { trigger: () => assert.fail('overwritten data'), activity: () => assert.fail('overwritten data') });
 				const rolling = kind === 'fsm'
-					? new FsmTransitionObservation(channel, cpu.stringPool, cpu.gc, sequence => accepted.push(sequence), 'rolling')
-					: new ActionEffectObservation(channel, cpu.stringPool, cpu.gc, { trigger: sequence => accepted.push(sequence), activity: sequence => accepted.push(sequence) }, 'rolling');
+					? new FsmTransitionObservation(channel, nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc, sequence => accepted.push(sequence), 'rolling')
+					: new ActionEffectObservation(channel, nativeHeapReference(cpu).stringPool, nativeHeapReference(cpu).gc, { trigger: sequence => accepted.push(sequence), activity: sequence => accepted.push(sequence) }, 'rolling');
 				strict.discardPublished(); rolling.discardPublished();
 				for (let index = 0; index < 4; index++) runCompletionClosure(cpu, closure, args);
 				const published = v.valuePayload(cpu.gc.tables.getInteger(channel, 4)), next = (published + 1) >>> 0;
@@ -92,9 +93,9 @@ for (const optLevel of [3] as const) for (const backend of [CpuExecutionBackend.
 
 		}
 		const fsmArgs = [cpu.gc.tables.getInteger(roots, 1), cpu.gc.tables.getInteger(roots, 3), cpu.gc.tables.getInteger(roots, 4), cpu.gc.tables.getInteger(roots, 5), v.valueBool(false)];
-		const effectArgs = [cpu.gc.tables.getInteger(roots, 2), v.valueString(cpu.stringPool.intern('activate')), v.valueString(cpu.stringPool.intern('fire')), v.valueInteger(1)];
+		const effectArgs = [cpu.gc.tables.getInteger(roots, 2), v.valueString(nativeHeapReference(cpu).stringPool.intern('activate')), v.valueString(nativeHeapReference(cpu).stringPool.intern('fire')), v.valueInteger(1)];
 		runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs);
-		const reserve = t.mock.method(cpu.luaHeap, 'admit');
+		const reserve = t.mock.method(nativeHeapReference(cpu).luaHeap, 'admit');
 		for (let index = 0; index < 32; index++) { runCompletionClosure(cpu, fsmRecord, fsmArgs); runCompletionClosure(cpu, effectRecord, effectArgs); }
 		assert.equal(reserve.mock.callCount(), 0, 'preallocated recorder writes reserve no guest storage after warmup');
 	});

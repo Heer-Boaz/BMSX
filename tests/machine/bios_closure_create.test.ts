@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -98,7 +99,7 @@ function fixture(optLevel: 0 | 3) {
 	function native(proto: FunctionPrototype, canonical: boolean) {
 		const address = allocateClosureRecordReference(oracle, 0, false);
 		initializeRecord(oracle.memory, address, proto, canonical, oracle.gc.white(), 0);
-		oracle.gc.publishObject(address);
+		nativeHeapReference(oracle).gc.publishObject(address);
 		return address;
 	}
 	return { cpu, oracle, memory, control, compare, begin, grant, finish, native, heads: management + WEAK_HEADS,
@@ -169,12 +170,12 @@ for (const optLevel of [0, 3] as const) for (const canonical of [true, false]) {
 }
 
 for (const canonical of [true, false]) test(`captureless ROM Closure (${canonical}) refusal leaves charge and inventory untouched`, () => {
-	const f = fixture(3), arena = f.cpu.heapAllocator;
+	const f = fixture(3), arena = nativeHeapReference(f.cpu).heapAllocator;
 	while (arena.allocate(4088, true)) { /* leave no complete page supply */ }
 	while (arena.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, true)) { /* exhaust the remaining Closure-size fits */ }
 	restoreCpuCheckpoint(f.oracle, captureCpuCheckpoint(f.cpu));
 	const occupied = f.cpu.luaHeap.usedBytes();
-	assert.equal(f.oracle.heapAllocator.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, false), 0);
+	assert.equal(nativeHeapReference(f.oracle).heapAllocator.allocate(GC_OBJECT_PREFIX + CLOSURE_CAPTURE_WORDS, false), 0);
 	f.begin(f.prototypes[0], canonical);
 	f.finish();
 	assert.equal(f.cpu.heapServiceResult(), 0);

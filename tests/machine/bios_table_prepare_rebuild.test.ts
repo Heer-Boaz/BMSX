@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { advanceTableRebuildReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
@@ -45,7 +46,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.deepEqual(action(oracle), result);
 		return result;
 	}
-	const jobOffset = same(target => target.heapAllocator.allocate(64, true) - RAM_BASE);
+	const jobOffset = same(target => nativeHeapReference(target).heapAllocator.allocate(64, true) - RAM_BASE);
 	assert.ok(jobOffset > 0);
 	function seed(job: TableRebuildReference): void {
 		const words = [job.source, job.count, job.storage, job.capacity, job.arrayStorage, job.arraySlots, job.arrayCleared, job.cleared,
@@ -54,7 +55,7 @@ function fixture(optLevel: 0 | 3) {
 		same(target => words.forEach((word, index) => target.memory.writeRamRecordWord(jobOffset + index * 4, word)));
 	}
 	function begin(job: TableRebuildReference, allowance: number, placement = false) {
-		const expected = advanceTableRebuildReference(oracle.gc, job, allowance);
+		const expected = advanceTableRebuildReference(nativeHeapReference(oracle).gc, job, allowance);
 		assert.notEqual(job.record, 0, 'the policy grant stops before native publication');
 		if (!placement) assert.equal(job.homes, 0, 'the prepare grants do not reach placement');
 		const oracleMemory = oracle.memory;
@@ -90,7 +91,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function beginPublication(job: TableRebuildReference, allowance: number) {
 		const record = job.record, management = cpu.heapAllocator.managementOffset();
-		const expected = advanceTableRebuildReference(oracle.gc, job, allowance);
+		const expected = advanceTableRebuildReference(nativeHeapReference(oracle).gc, job, allowance);
 		assert.equal(job.record, 0, 'the old operation reached its epilogue');
 		const oracleMemory = oracle.memory;
 		oracleMemory.writeRamRecordPair(jobOffset + 24, job.arrayCleared, job.cleared);
@@ -121,8 +122,8 @@ for (const opt of [0, 3] as const) {
 			const record = f.same(target => createReferenceTable(target, inPlace ? array : oldArray, oldHash));
 			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
 			const source = f.same(target => target.gc.tables.hashAddress(record));
-			const base = inPlace ? oldBase : f.same(target => target.heapAllocator.allocate(5 * array, true));
-			const storage = f.same(target => target.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+			const base = inPlace ? oldBase : f.same(target => nativeHeapReference(target).heapAllocator.allocate(5 * array, true));
+			const storage = f.same(target => nativeHeapReference(target).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			assert.ok(base && storage);
 			f.same(target => {
 				const { memory } = target;
@@ -135,7 +136,7 @@ for (const opt of [0, 3] as const) {
 					memory.writeRamRecordWord(oldBase + 4 * i, 0x3af70021 + 17 * i);
 					memory.writeRamRecordByte(oldBase + 4 * oldArray + i, [ValueTag.Integer, ValueTag.Float, ValueTag.True][i % 3]);
 				}
-				target.gc.tables.set(record, valueInteger(-5), valueInteger(71));
+				nativeHeapReference(target).gc.tables.set(record, valueInteger(-5), valueInteger(71));
 			});
 			const j = Object.assign(new TableRebuildReference(), { record, source, count: oldHash, storage, capacity: hash,
 				arrayStorage: base, arraySlots: array, key: valueInteger(kind === 'fresh' ? 4 : array + 1), value: valueInteger(913) });
@@ -191,15 +192,15 @@ for (const opt of [0, 3] as const) {
 			const record = f.same(target => createReferenceTable(target, oldArray, oldHash));
 			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
 			const source = f.same(target => target.gc.tables.hashAddress(record));
-			const base = shrinking ? oldBase : f.same(target => target.heapAllocator.allocate(5 * array, true));
-			const storage = f.same(target => target.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+			const base = shrinking ? oldBase : f.same(target => nativeHeapReference(target).heapAllocator.allocate(5 * array, true));
+			const storage = f.same(target => nativeHeapReference(target).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			assert.ok(base && storage);
 			const colliders: number[] = [];
 			for (let key = -1; colliders.length < 4; --key) {
 				if ((hashCanonicalTableKey(valueInteger(key)) & mask) === mask) colliders.push(key);
 			}
 			f.same(target => {
-				const { memory, gc } = target;
+				const { memory } = target, { gc } = nativeHeapReference(target);
 				for (const index of [2, array - 1, oldArray - 3, oldArray - 1]) {
 					if (index >= oldArray) continue;
 					memory.writeRamRecordWord(oldBase + 4 * index, 0x52a50213 + index);
@@ -291,16 +292,16 @@ for (const opt of [0, 3] as const) {
 			const record = f.same(cpu => createReferenceTable(cpu, oldArray, oldHash));
 			const oldBase = f.same(cpu => cpu.gc.tables.arrayAddress(record));
 			const oldStorage = f.same(cpu => cpu.gc.tables.hashAddress(record));
-			const base = array > oldArray ? f.same(cpu => cpu.heapAllocator.allocate(5 * array, true)) : oldBase;
-			const storage = keepHash ? 0 : f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+			const base = array > oldArray ? f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(5 * array, true)) : oldBase;
+			const storage = keepHash ? 0 : f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 			const key = valueInteger(array === 0 ? 1025 : 3), value = valueInteger(787);
 			const j = Object.assign(new TableRebuildReference(), { record, source: keepHash ? 0 : oldStorage, count: keepHash ? 0 : oldHash,
 				storage, capacity: hash, arrayStorage: base, arraySlots: array, free: hash - 1 >>> 0, key, value });
 			f.same(cpu => {
-				cpu.gc.tables.set(record, valueInteger(1), valueInteger(11));
-				cpu.gc.tables.set(record, valueInteger(2), valueInteger(12));
-				cpu.gc.tables.set(record, valueInteger(oldArray), valueInteger(17));
-				cpu.gc.tables.set(record, valueInteger(-5), valueInteger(15));
+				nativeHeapReference(cpu).gc.tables.set(record, valueInteger(1), valueInteger(11));
+				nativeHeapReference(cpu).gc.tables.set(record, valueInteger(2), valueInteger(12));
+				nativeHeapReference(cpu).gc.tables.set(record, valueInteger(oldArray), valueInteger(17));
+				nativeHeapReference(cpu).gc.tables.set(record, valueInteger(-5), valueInteger(15));
 			});
 			f.seed(j);
 			const prepare = (hash * 14 + 15 >>> 4) + (array > oldArray ? (5 * array + 15 >>> 4) : 0);
@@ -350,12 +351,12 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
 		const oldHash = 128, hash = 256, record = f.same(cpu => createReferenceTable(cpu, 0, oldHash));
 		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
-		const storage = f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
-		const key = valueString(f.cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));
+		const storage = f.same(cpu => nativeHeapReference(cpu).heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
+		const key = valueString(f.cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => nativeHeapReference(cpu).stringPool.intern('staged black owner value')));
 		f.same(cpu => {
-			cpu.gc.tables.set(record, valueInteger(-10), valueInteger(40));
-			cpu.stringPool.beginReachabilityEpoch();
-			cpu.stringPool.resumeMarkWork(3);
+			nativeHeapReference(cpu).gc.tables.set(record, valueInteger(-10), valueInteger(40));
+			nativeHeapReference(cpu).stringPool.beginReachabilityEpoch();
+			nativeHeapReference(cpu).stringPool.resumeMarkWork(3);
 			cpu.memory.writeRamRecordByte(control, GcPhase.MarkAgain);
 			cpu.memory.writeRamRecordByte(record + 1, 3);
 		});

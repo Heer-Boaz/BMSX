@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -31,7 +32,7 @@ const rows = native.stdout.trim().split('\n').map(line => line.trim().split(/\s+
 assert.equal(rows.length, vectors.length);
 const memory = new Memory({ systemRom: new Uint8Array(), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 const machine = new Machine(memory, { sampleInputControllerSnapshot() {}, supervisorRequestLineHigh() { return false; }, applyInputControllerVibrationEffect() {} }, PSX_MACHINE_SPEC);
-assert.ok(machine.cpu.heapAllocator.setFloor(GEO_VECTOR_RAM_END), 'GEO vectors own their mapped fixture RAM');
+assert.ok(nativeHeapReference(machine.cpu).heapAllocator.setFloor(GEO_VECTOR_RAM_END), 'GEO vectors own their mapped fixture RAM');
 // Exercise the actual timer edges. A partial paid interval cannot commit a
 // record or a completion; the phase edge itself may publish them.
 function advanceGeometryEdge(): void {

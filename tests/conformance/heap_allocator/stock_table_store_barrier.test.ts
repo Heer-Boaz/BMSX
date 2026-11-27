@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -69,7 +70,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 		['scalar displacement', 3, OpCode.SETT]] as const) await t.test(label, () => {
 		const runtime = new Runtime({ systemRomBytes: system, cartridgeSlots: cartridgeSlots(cart), machineModel: PSX_MACHINE_SPEC }, board);
 		runtime.boot();
-		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { gc, heapAllocator: arena } = cpu;
+		const { cpu, memory, gxGpu, scheduler } = runtime.machine, { gc, heapAllocator: arena } = nativeHeapReference(cpu);
 		for (let i = 0; i < 1024 && !(cpu.activeCartridgeSlot() === 0 && cpu.isHaltedUntilIrq()); ++i) {
 			if (gxGpu.backendCommandDrainPending()) gxGpu.retireExecutedCommands();
 			runtime.frameScheduler.runCyclesToNextLogicalTick(65536);

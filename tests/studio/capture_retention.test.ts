@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import { blua32RomStrings } from '../../toolchain/ts/rompack/blua32_rom_strings';
@@ -50,7 +51,7 @@ return 42`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const depth = cpu.getFrameDepth();
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(8)]);
 	const fresh = compile(before.replace('value + 7', 'value * 2 + 9'), initial, optLevel);
@@ -63,7 +64,7 @@ return 42`;
 	applyHotResumeRelocation(cpu, relocation);
 	assert.equal(cpu.lastPc, lastPc, 'ROM replacement is not an instruction fetch');
 	assert.equal(cpu.getFrameDepth(), depth);
-	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
+	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('evaluate')), cpu.gc), [valueInteger(1)]);
 	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(11)]);
 });
@@ -97,8 +98,8 @@ return { world = world }` },
 	for (let run = 0; run < 2; run += 1) {
 		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.layout.header.initFunctionAddress);
 		runGuestToHalt(cpu, 100000);
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('load_trace')), valueInteger(1234));
-		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('hook_trace')), valueInteger(1234));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('load_trace')), valueInteger(1234));
+		assert.equal(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern('hook_trace')), valueInteger(1234));
 		cpu.beginCompletionCall(asClosure(read, cpu.gc));
 		runGuestToHalt(cpu, 100000);
 		assert.equal(materializeCpuCompletionValues(cpu)[0], world);
@@ -115,7 +116,7 @@ return read, library`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [read, library] = materializeCpuCompletionValues(cpu);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_read'), read);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('__test_read'), read);
 	let previous = initial;
 	for (const body of ['alias', 'library', '7', 'alias']) {
 		const fresh = compile(before.replace('return 7 end', `return ${body} end`), previous, optLevel, modules);
@@ -283,8 +284,8 @@ return object:make()`;
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [read, write] = materializeCpuCompletionValues(cpu);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_read'), read);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_write'), write);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('__test_read'), read);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('__test_write'), write);
 	assert.deepEqual(names(initial, '/local:read'), ['self']);
 	assert.deepEqual(names(initial, '/local:write'), ['self']);
 	const receiver = initial.compiled.metadata.lexicalDeclarations.find(local => local.name === 'self')!;
@@ -330,7 +331,7 @@ test('unused retained capture initializers survive O3 for newly created closures
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(fresh.compiled));
 	runGuestToHalt(cpu, 100000);
 	const closure = materializeCpuCompletionValues(cpu)[0];
-	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_closure'), closure);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('__test_closure'), closure);
 	assert.equal(ClosureRecord.captureCount(cpu.memory, asClosure(closure, cpu.gc)), 2);
 	cpu.beginCompletionCall(asClosure(closure, cpu.gc));
 	runGuestToHalt(cpu, 100000);
@@ -383,7 +384,7 @@ test('anonymous identities use installed definitions through repeated shifts, no
 	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(previous.compiled));
 	runGuestToHalt(cpu, 100000);
 	const [held] = materializeCpuCompletionValues(cpu);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('__test_held'), held);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('__test_held'), held);
 	for (let index = 1; index <= 4; index += 1) {
 		const source = '\n'.repeat(index) + before.replace('return state', `return state + ${index}`);
 		const fresh = compile(source, previous);
@@ -526,7 +527,7 @@ test('Hot Resume keeps a live ROM String key even after removing its last litera
 	assert.equal([...blua32RomStrings(second.linked.layout)].find(record => record.value === 'prior-key')!.address, oldKey);
 	memory.installSystemRom(writeTestBlua32Rom(second.linked));
 	cpu.replaceExecutionImages([executionAddressSpace.resolveSystemDomain()]);
-	assert.equal(cpu.stringPool.intern('prior-key'), oldKey);
+	assert.equal(nativeHeapReference(cpu).stringPool.intern('prior-key'), oldKey);
 	assert.equal(cpu.stringPool.toString(oldKey), 'prior-key');
 	const retained = valuePayload(table);
 	assert.equal(cpu.gc.tables.getStringKey(retained, oldKey), valueInteger(42));

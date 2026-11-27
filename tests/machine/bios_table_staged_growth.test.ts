@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -50,7 +51,7 @@ for (const optLevel of [0, 3] as const) {
 				return result;
 			}
 			const management = cpu.heapAllocator.managementOffset(), job = management, jobSize = 64;
-			const reservation = both(target => target.heapAllocator.allocate(40, true)) - RAM_BASE;
+			const reservation = both(target => nativeHeapReference(target).heapAllocator.allocate(40, true)) - RAM_BASE;
 			const record = both(target => createReferenceTable(target, oldArray, oldHash));
 			assert.ok(reservation > 0);
 			const oldWords = cpu.gc.tables.arrayAddress(record), oldStorage = cpu.gc.tables.hashAddress(record);
@@ -67,17 +68,17 @@ for (const optLevel of [0, 3] as const) {
 			both(target => {
 				for (let offset = job; offset < job + jobSize; offset += 4) target.memory.writeRamRecordWord(offset, jobSentinel);
 				if (oldArray > 0) {
-					for (const index of [1, 5, oldArray - 1]) target.gc.tables.set(record, valueInteger(index + 1), valueInteger(11 * index));
-					target.gc.tables.set(record, valueInteger(-7), valueInteger(1773));
+					for (const index of [1, 5, oldArray - 1]) nativeHeapReference(target).gc.tables.set(record, valueInteger(index + 1), valueInteger(11 * index));
+					nativeHeapReference(target).gc.tables.set(record, valueInteger(-7), valueInteger(1773));
 				}
 				for (const [index, collider] of collisions.slice(1).entries()) {
-					target.gc.tables.set(record, collider, valueInteger(101 + index));
+					nativeHeapReference(target).gc.tables.set(record, collider, valueInteger(101 + index));
 				}
 				const request = [...oldResult, valueTag(key), valuePayload(key), valueTag(value), valuePayload(value),
 					0, 0, +keep, TableRecords.hashStorageBytes(hash)];
 				for (const [index, word] of request.entries()) target.memory.writeRamRecordWord(reservation + index * 4, word);
 			});
-			const arena = oracle.heapAllocator;
+			const arena = nativeHeapReference(oracle).heapAllocator;
 			const storage = keep ? 0 : arena.allocate(TableRecords.hashStorageBytes(hash), true);
 			assert.ok(keep || storage);
 			const base = array > oldArray ? arena.reserveBacking(oldWords, 5 * array) : oldWords;
@@ -90,7 +91,7 @@ for (const optLevel of [0, 3] as const) {
 					record, source: keep ? 0 : oldStorage, count: keep ? 0 : oldHash, storage, capacity,
 					arrayStorage: moved ? base : 0, arraySlots: moved ? array : 0, free: capacity - 1, key, value,
 				});
-				advanceTableRebuildReference(oracle.gc, reference, 1 << 24);
+				advanceTableRebuildReference(nativeHeapReference(oracle).gc, reference, 1 << 24);
 				assert.equal(reference.record, 0, 'reference completes the original staged rebuild');
 			}
 			const initial = captureRuntimeSaveState(guest);

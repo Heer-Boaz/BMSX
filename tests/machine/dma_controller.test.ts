@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as io from '../../machine/ts/spec/bmsx/io';
@@ -23,7 +24,7 @@ function fixture() {
  const irq = new IrqController(memory), execution = new ExecutionAddressSpace(memory);
  const cpu = new CPU(memory, irq, execution), scheduler = new DeviceScheduler(cpu);
  // Public static RAM contains the source (+0x1000) and destination (+0x4000) pages.
- assert.equal(cpu.heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x5000), true);
+ assert.equal(nativeHeapReference(cpu).heapAllocator.setFloor(map.DYNAMIC_RAM_BASE + 0x5000), true);
  const dma = new DmaController(memory, cpu, irq, scheduler), gpu = new GxGpu(memory, cpu, irq, scheduler, dma, spec.gxGpuVramBytes);
  memory.cartridgeController.connect(memory, irq, dma);
  dma.reset(); memory.cartridgeController.reset(); gpu.reset(); irq.reset();

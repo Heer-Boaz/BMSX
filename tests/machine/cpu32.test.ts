@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import { OPCODE_NAMES } from '../../toolchain/ts/lua/opcode_metadata';
@@ -164,9 +165,9 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	const cpu=new CPU(memory,new IrqController(memory),new ExecutionAddressSpace(memory),backend);cpu.reset();
 	const saved=cpu.stringPool.find('saved')!, system=cpu.stringPool.find('system')!, graphKey=cpu.stringPool.find('graph')!;
 	setReferenceGlobal(cpu, saved,v.valueFloatBits(0xffa54321));setReferenceSystemGlobal(cpu, system,v.valueInteger(-2147483648));
-	const table=createReferenceTable(cpu), child=createReferenceTable(cpu);const self=cpu.stringPool.intern('self'),childKey=cpu.stringPool.intern('child');
-	cpu.gc.tables.setStringKey(table, self,v.valueTable(table));cpu.gc.tables.setStringKey(table, childKey,v.valueTable(child));
-	cpu.gc.tables.setMetatableAddress(child, table);setReferenceGlobal(cpu, graphKey,v.valueTable(table));
+	const table=createReferenceTable(cpu), child=createReferenceTable(cpu);const self=nativeHeapReference(cpu).stringPool.intern('self'),childKey=nativeHeapReference(cpu).stringPool.intern('child');
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, self,v.valueTable(table));nativeHeapReference(cpu).gc.tables.setStringKey(table, childKey,v.valueTable(child));
+	nativeHeapReference(cpu).gc.tables.setMetatableAddress(child, table);setReferenceGlobal(cpu, graphKey,v.valueTable(table));
 	cpu.runUntilDepth(0,1);assert.equal(cpu.readFrameRegister(0,2),v.valueFloatBits(0xffa12345));
 	const ram=memory.captureSaveState(), state=cpu.captureRuntimeState();const hash=table, childHash=child;
 	cpu.activeThread.currentFrame!.registers.setInteger(2,8);setReferenceGlobal(cpu, saved,v.valueInteger(7));
@@ -180,7 +181,7 @@ test(`${backend}: CPU snapshot rebuilds compact globals, raw Float registers and
 	assert.equal(v.valuePayload(cpu.gc.tables.getStringKey(restored, self)),restored);assert.equal(cpu.gc.tables.metatableAddress(restoredChild),restored);
 	assert.deepEqual(cpu.captureRuntimeState(),state);
 	cpu.runUntilDepth(0,100);const result:v.Value[]=[];cpu.readCompletionValues(result);assert.equal(result[0],v.valueFloatBits(0xffa12345));
-	cpu.gc.collect();assert.equal(v.valuePayload(cpu.getGlobalByKey(graphKey)),restored);
+	nativeHeapReference(cpu).gc.collect();assert.equal(v.valuePayload(cpu.getGlobalByKey(graphKey)),restored);
 });
 
 }

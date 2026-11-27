@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -77,13 +78,13 @@ function fixture(optLevel: 0 | 3) {
 		return address;
 	}
 	function string(text: string) {
-		const id = add(target => target.stringPool.intern(text));
+		const id = add(target => nativeHeapReference(target).stringPool.intern(text));
 		byte(id + 1, 0x94);
 		return id;
 	}
 	function pendingString(id: number) {
-		cpu.stringPool.markReachable(id);
-		oracle.stringPool.markReachable(id);
+		nativeHeapReference(cpu).stringPool.markReachable(id);
+		nativeHeapReference(oracle).stringPool.markReachable(id);
 	}
 	function table(array: number, hash: number) {
 		const record = add(target => createReferenceTable(target, array, hash));
@@ -108,8 +109,8 @@ function fixture(optLevel: 0 | 3) {
 		return { record, arrayBase, hashBase, arraySlot, node, home };
 	}
 	function enqueue(address: number) {
-		cpu.gc['appendVisit'](GC_WEAK_VISITS, address);
-		oracle.gc['appendVisit'](GC_WEAK_VISITS, address);
+		nativeHeapReference(cpu).gc['appendVisit'](GC_WEAK_VISITS, address);
+		nativeHeapReference(oracle).gc['appendVisit'](GC_WEAK_VISITS, address);
 	}
 	function frontier() {
 		return [memory.readRamRecordWord(control + GC_TRACE_RECORD), memory.readRamRecordWord(control + GC_TRACE_CURSOR)];
@@ -128,20 +129,20 @@ function fixture(optLevel: 0 | 3) {
 		word(control + GC_WEAK_VISITS + GC_VISIT_COUNT, count);
 	}
 	function begin(limit: number, narrow = 0) {
-		const work = oracle.gc['clearWeakQuantum'](limit);
-		const pending = oracle.stringPool.takeMarkWork();
+		const work = nativeHeapReference(oracle).gc['clearWeakQuantum'](limit);
+		const pending = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		assert.ok(cpu.beginHeapService(linked.image.functions[index].address,
-			[control, arena, metadata, modeKey, newIndex, limit, cpu.stringPool.takeMarkWork(), narrow, output]));
+			[control, arena, metadata, modeKey, newIndex, limit, nativeHeapReference(cpu).stringPool.takeMarkWork(), narrow, output]));
 		return [work, pending];
 	}
 	function beginStep(prefix: number, limit: number, atomic: number, policy: number) {
 		word(quantum + GcTraceContextField.Work, prefix);
 		word(quantum + GcTraceContextField.Limit, limit);
 		word(quantum + GcTraceContextField.Atomic, atomic);
-		word(quantum + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		word(quantum + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		word(quantum + GcTraceContextField.MirrorPolicy, policy);
-		const work = prefix + oracle.gc['clearWeakQuantum'](limit - prefix);
-		const pending = oracle.stringPool.takeMarkWork();
+		const work = prefix + nativeHeapReference(oracle).gc['clearWeakQuantum'](limit - prefix);
+		const pending = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		oracle.memory.writeRamRecordWord(quantum + GcTraceContextField.PendingStringWork, pending);
 		assert.ok(cpu.beginHeapService(linked.image.functions[step].address, [control, arena, metadata, quantum, modeKey, newIndex, 0]));
 		return [work, pending];

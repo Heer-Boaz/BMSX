@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { cartridgeSlots } from '../helpers/cartridge';
@@ -542,9 +543,9 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	revisedDual.machine.memory.cartridgeController.installRom(1, slot1.cartRomBytes);
 	assert.equal(revisedDual.machine.cpu.isExecutionDomainResident(1), false);
 
-	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe');
-	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
-	assert.equal(revisedDual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
+	const singleStringId = nativeHeapReference(single.machine.cpu).stringPool.intern('post-boot-probe');
+	assert.equal(nativeHeapReference(dual.machine.cpu).stringPool.intern('post-boot-probe'), singleStringId);
+	assert.equal(nativeHeapReference(revisedDual.machine.cpu).stringPool.intern('post-boot-probe'), singleStringId);
 	const singleTableId = createReferenceTable(single.machine.cpu, 0, 0);
 	assert.equal(createReferenceTable(dual.machine.cpu, 0, 0), singleTableId);
 	assert.equal(createReferenceTable(revisedDual.machine.cpu, 0, 0), singleTableId);
@@ -584,18 +585,18 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const cpu = runtime.machine.cpu;
 
 	runGuestToHalt(cpu, 100_000);
-	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
-	const selectedClosureResultName = cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
+	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
+	const selectedClosureResultName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const slot0Closure = cpu.getGlobalByKey(selectedClosureName);
 	const slot0Object = asClosure(slot0Closure, cpu.gc);
 	const guest = new SuspendedGuestSession(runtime);
 	assert.deepEqual(guest.linkedFunctionLocation(slot0Closure), { domain: 0, address: cpu.captureClosureBinding(slot0Object).functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
-	const savedClosureName = cpu.stringPool.intern('saved_closure');
-	const closureTableName = cpu.stringPool.intern('closure_table');
+	const savedClosureName = nativeHeapReference(cpu).stringPool.intern('saved_closure');
+	const closureTableName = nativeHeapReference(cpu).stringPool.intern('closure_table');
 	const closureTable = createReferenceTable(cpu);
-	cpu.gc.tables.set(closureTable, slot0Closure, valueInteger(77));
+	nativeHeapReference(cpu).gc.tables.set(closureTable, slot0Closure, valueInteger(77));
 	setReferenceGlobal(cpu, savedClosureName, slot0Closure);
 	setReferenceGlobal(cpu, closureTableName, valueTable(closureTable));
 
@@ -674,7 +675,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const cpu = runtime.machine.cpu;
 
 	runGuestToHalt(cpu, 100_000);
-	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
+	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const firstClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 0);
 	cpu.requestNonMaskableInterrupt();
@@ -684,12 +685,12 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	assert.notEqual(firstClosure, secondClosure);
 	assert.deepEqual(cpu.captureClosureBinding(asClosure(firstClosure, cpu.gc)), cpu.captureClosureBinding(asClosure(secondClosure, cpu.gc)));
 
-	const firstName = cpu.stringPool.intern('first_closure');
-	const secondName = cpu.stringPool.intern('second_closure');
-	const tableName = cpu.stringPool.intern('closure_table');
+	const firstName = nativeHeapReference(cpu).stringPool.intern('first_closure');
+	const secondName = nativeHeapReference(cpu).stringPool.intern('second_closure');
+	const tableName = nativeHeapReference(cpu).stringPool.intern('closure_table');
 	const closureTable = createReferenceTable(cpu, 0, 2);
-	cpu.gc.tables.set(closureTable, firstClosure, valueInteger(11));
-	cpu.gc.tables.set(closureTable, secondClosure, valueInteger(22));
+	nativeHeapReference(cpu).gc.tables.set(closureTable, firstClosure, valueInteger(11));
+	nativeHeapReference(cpu).gc.tables.set(closureTable, secondClosure, valueInteger(22));
 	setReferenceGlobal(cpu, firstName, firstClosure);
 	setReferenceGlobal(cpu, secondName, secondClosure);
 	setReferenceGlobal(cpu, tableName, valueTable(closureTable));
@@ -732,7 +733,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const cpu = runtime.machine.cpu;
 
 	runGuestToHalt(cpu, 100_000);
-	const selectedClosureName = cpu.stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
+	const selectedClosureName = nativeHeapReference(cpu).stringPool.intern(CART_CLOSURE_GLOBAL_NAME);
 	const dynamicClosure = cpu.getGlobalByKey(selectedClosureName);
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
 	cpu.requestNonMaskableInterrupt();
@@ -742,12 +743,12 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	assert.notEqual(dynamicClosure, canonicalClosure);
 	assert.equal(cpu.captureClosureBinding(asClosure(dynamicClosure, cpu.gc)).functionAddress, cpu.captureClosureBinding(asClosure(canonicalClosure, cpu.gc)).functionAddress);
 
-	const dynamicName = cpu.stringPool.intern('dynamic_closure');
-	const canonicalName = cpu.stringPool.intern('canonical_closure');
-	const tableName = cpu.stringPool.intern('mixed_closure_table');
+	const dynamicName = nativeHeapReference(cpu).stringPool.intern('dynamic_closure');
+	const canonicalName = nativeHeapReference(cpu).stringPool.intern('canonical_closure');
+	const tableName = nativeHeapReference(cpu).stringPool.intern('mixed_closure_table');
 	const closureTable = createReferenceTable(cpu, 0, 2);
-	cpu.gc.tables.set(closureTable, dynamicClosure, valueInteger(11));
-	cpu.gc.tables.set(closureTable, canonicalClosure, valueInteger(22));
+	nativeHeapReference(cpu).gc.tables.set(closureTable, dynamicClosure, valueInteger(11));
+	nativeHeapReference(cpu).gc.tables.set(closureTable, canonicalClosure, valueInteger(22));
 	setReferenceGlobal(cpu, dynamicName, dynamicClosure);
 	setReferenceGlobal(cpu, canonicalName, canonicalClosure);
 	setReferenceGlobal(cpu, tableName, valueTable(closureTable));

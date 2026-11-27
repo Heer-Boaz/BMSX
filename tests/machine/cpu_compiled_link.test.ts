@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -110,8 +111,8 @@ for (const kind of ['Integer', 'String'] as const) test(`resident Values cross i
 	writeInstruction(text, 9, OpCode.JMP, 0, 63, 54, 255);
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 10, maxStack: 11 }], constants: [integerConstant(1)] }, RAM_CODE_FIXTURE_BYTES);
 	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
-	const lower = kind === 'Integer' ? valueInteger(0) : valueString(cpu.stringPool.intern('alpha'));
-	const higher = kind === 'Integer' ? valueInteger(1) : valueString(cpu.stringPool.intern('omega'));
+	const lower = kind === 'Integer' ? valueInteger(0) : valueString(nativeHeapReference(cpu).stringPool.intern('alpha'));
+	const higher = kind === 'Integer' ? valueInteger(1) : valueString(nativeHeapReference(cpu).stringPool.intern('omega'));
 	frame.registers.set(0, lower); frame.registers.set(1, higher); frame.registers.setInteger(4, 0);
 	frame.registers.setEncoded(8, ValueTag.False, 37); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -155,7 +156,7 @@ for (const [label, op, a, b, c, slots] of [
 	for (const cpu of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
 		const table = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('method'), ValueTag.Integer, 73);
+		nativeHeapReference(cpu).gc.tables.storeStringKey(table, nativeHeapReference(cpu).stringPool.intern('method'), ValueTag.Integer, 73);
 		r.setTable(3, table);
 		r.setInteger(1, DYNAMIC_RAM_BASE);
 		for (let index = 12; index < 16; ++index) r.setInteger(index, index);
@@ -499,7 +500,7 @@ test('more than six live-through raw Values remain local across every internal e
 	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const table = createReferenceTable(cpu), string = cpu.stringPool.intern('retained');
+	const table = createReferenceTable(cpu), string = nativeHeapReference(cpu).stringPool.intern('retained');
 	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Float, ValueTag.Float, ValueTag.String, ValueTag.Table, ValueTag.Integer];
 	const words = [13, 37, 42, 0x80000000, 0xffc12345, string, table, 19];
 	for (const start of [0, 1]) for (const grant of [1, 15, 16, 63, 128, 257]) {
@@ -543,7 +544,7 @@ test('generated-source capacity admits whole replacements without flushing unrel
 				skippedInstructionWidth: 0, fallthrough: false };
 		});
 		return compileJavaScriptRegion(plans, cpu.rootThread.currentFrame!.executionImage, memory,
-			cpu.stringPool, globals, globals, cop0, cpu.gc);
+			nativeHeapReference(cpu).stringPool, globals, globals, cop0, nativeHeapReference(cpu).gc);
 	};
 	const a = compile(31), b = compile(63), c = compile(95), b2 = compile(63);
 	const cache = new CompiledCodeCache(a.sourceUnits + b.sourceUnits);

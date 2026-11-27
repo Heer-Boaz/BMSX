@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
@@ -78,11 +79,11 @@ async function fixture(t: TestContext, optLevel: 0 | 3 = 0, scene = SCENE, gameS
 	};
 	const game = (): number => {
 		const cpu = target.runtime.machine.cpu;
-		return valuePayload(cpu.getGlobalByKey(cpu.stringPool.intern(buildModuleExportSlotName('game', []))));
+		return valuePayload(cpu.getGlobalByKey(nativeHeapReference(cpu).stringPool.intern(buildModuleExportSlotName('game', []))));
 	};
 	const field = (name: string) => {
 		const table = game();
-		return target.runtime.machine.cpu.gc.tables.getStringKey(table, target.runtime.machine.cpu.stringPool.intern(name));
+		return target.runtime.machine.cpu.gc.tables.getStringKey(table, nativeHeapReference(target.runtime.machine.cpu).stringPool.intern(name));
 	};
 	await settle(() => session.ready);
 	await frame(0); // Install the target's initial history checkpoint, without a gameplay grant.
@@ -250,7 +251,7 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 	assert.ok(runtime.history.latestCycles < end, 'explicit resume branches at the inspected point');
 	const restored = f.game();
 	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
-	assert.equal(runtime.machine.cpu.gc.tables.getStringKey(restored, runtime.machine.cpu.stringPool.intern('closed')), valueBool(true));
+	assert.equal(runtime.machine.cpu.gc.tables.getStringKey(restored, nativeHeapReference(runtime.machine.cpu).stringPool.intern('closed')), valueBool(true));
 	assert.equal(f.session.evidence.logs.length, 1);
 	assert.equal(f.session.evidence.logs.at(0).text, 'cleanup');
 });

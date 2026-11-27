@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -42,17 +43,17 @@ return factory
 	const factory = valuePayload(values[0]), start = cpu.captureClosureBinding(factory).codeAddress;
 	// Keep the already issued factory bound while repeatedly warming its
 	// ordinary CLOSURE exit and retiring the verified firmware.
-	setReferenceGlobal(cpu, cpu.stringPool.intern('factory'), values[0]);
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('factory'), values[0]);
 	for (let i = 0; i < COMPILED_BLOCK_THRESHOLD + 2; ++i) {
 		cpu.beginCompletionCall(factory, [valueInteger(i)]);
 		runGuestToHalt(cpu, 100_000);
 	}
-	cpu.gc.collect(); // the next collector work must come from this allocation
-	const payload = cpu.stringPool.intern('payload'), kept = cpu.stringPool.intern('retained');
+	nativeHeapReference(cpu).gc.collect(); // the next collector work must come from this allocation
+	const payload = nativeHeapReference(cpu).stringPool.intern('payload'), kept = nativeHeapReference(cpu).stringPool.intern('retained');
 	const table = createReferenceTable(cpu, 1024, 1);
-	cpu.gc.tables.setStringKey(table, payload, valueString(kept));
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, payload, valueString(kept));
 	cpu.beginCompletionCall(factory, [valueTable(table)]);
-	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
+	nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
 	const caller = cpu.rootThread.currentFrame!;
 	assert.equal(cpu.runUntilDepth(0, 4096, undefined, CpuRunKind.Scheduled), RunResult.Yielded);
 	assert.ok(cpu.fixedInterruptActive(), 'the compiled caller entered the architectural System vector');
@@ -64,7 +65,7 @@ return factory
 	assert.ok(cpu.gc.active() || cpu.gc.white() !== before, 'BIOS admitted collector work during the allocation');
 	cpu.readCompletionValues(values);
 	const capture = valuePayload(values[0]);
-	cpu.gc.collect(values[0]);
+	nativeHeapReference(cpu).gc.collect(values[0]);
 	assert.equal(cpu.readClosureUpvalue(capture, 0), valueTable(table));
 	assert.equal(cpu.gc.tables.getStringKey(table, payload), valueString(kept));
 });
@@ -151,6 +152,6 @@ for (const source of [0, 513]) test(`compiled CLOSURE reads its live register ad
 			setReferenceGlobal(cpu, cpu.stringPool.find('target')!, valueInteger(address));
 		}
 		assert.equal(js.runUntilDepth(0, 4), ref.runUntilDepth(0, 4)); assertParity(js, ref);
-		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, js.gc)).functionAddress, address);
+		assert.equal(js.captureClosureBinding(frame.registers.getClosure(source, nativeHeapReference(js).gc)).functionAddress, address);
 	}
 });

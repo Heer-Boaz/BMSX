@@ -1,19 +1,17 @@
 import type { Memory } from '../memory/memory';
-import type { HeapAllocator } from './heap_allocator';
 import { FRAME_COMPLETION, FRAME_CONTROL_BYTES, FRAME_EXCEPTION, FRAME_WINDOW_MASK, FrameField, frameExecutionBank, frameCaptureCount } from './call_state';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import { ValueSlots } from './value_slots';
 import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../spec/blua32/cop0';
 import type { BuiltinArgsView, BuiltinResults } from './builtin_values';
-import type { LuaHeap } from './lua_heap';
 import * as Closure from './closure';
 import * as Upvalue from './upvalue';
 import { LuaExecutionError } from './errors';
 import { ValueTag, valueBool, valueInteger } from './value';
 import { integerOperand } from './value_arithmetic';
 
-import { GC_OBJECT_PREFIX, GC_RECORD_LINK } from './gc_object';
+import { GC_RECORD_LINK } from './gc_object';
 
 // Main-RAM Thread header lanes also consumed by the raw capture datapath.
 export const enum ThreadField {
@@ -89,9 +87,7 @@ export function invokeThreadDiagnostic(memory: Memory, values: ValueSlots, id: B
 
 /** Physical Thread stack/control datapaths. Host execution views do not own these words. */
 export class ThreadRecords {
-	private readonly layout = new ThreadLayout();
-	private readonly values = new ValueSlots(0);
-	public constructor(private readonly memory: Memory, private readonly arena: HeapAllocator, private readonly budget: LuaHeap) {}
+	public constructor(protected readonly memory: Memory) {}
 	public readLayout(address: number, target: ThreadLayout): void {
 		const memory = this.memory;
 		target.block = memory.readRamRecordWord(address + ThreadField.StackBlock);
@@ -105,72 +101,5 @@ export class ThreadRecords {
 	}
 	public frameAddress(layout: ThreadLayout, index: number): number {
 		return layout.frameOffset + index * FRAME_CONTROL_BYTES;
-	}
-	public allocationBytes(address: number): number {
-		const layout = this.layout;
-		this.readLayout(address, layout);
-		return this.arena.allocationBytes(address - GC_OBJECT_PREFIX)
-			+ this.arena.allocationBytes(layout.block) + this.arena.allocationBytes(layout.frameBlock);
-	}
-	public clearStackRange(layout: ThreadLayout, first: number, end: number): void {
-		const count = end - first;
-		if (layout.capacity > (MAIN_RAM_SIZE - layout.offset) / THREAD_STACK_SLOT_BYTES) {
-			this.values.bindRam(this.memory, layout.offset, layout.capacity, false, true);
-			this.values.clear(count, first);
-			return;
-		}
-		const word = layout.offset + first * 4, tag = layout.offset + layout.capacity * 4 + first;
-		this.memory.ramWords.fill(0, word >>> 2, (word + count * 4) >>> 2);
-		this.memory.ramData().fill(0, tag, tag + count);
-		this.memory.invalidateRamWrite(word, count * 4);
-		this.memory.invalidateRamWrite(tag, count);
-	}
-	public resizeStackBacking(address: number, capacity: number): boolean {
-		const memory = this.memory;
-		const old = memory.readRamRecordWord(address + ThreadField.StackBlock);
-		const previous = memory.readRamRecordWord(address + ThreadField.StackCapacity);
-		const bytes = capacity * THREAD_STACK_SLOT_BYTES;
-		const block = capacity > previous ? this.arena.resizeBacking(old, bytes) : old;
-		if (block === 0) return false;
-		const ram = memory.ramData(), offset = block & RAM_RECORD_WORD_MASK;
-		const oldTags = offset + previous * 4, tags = offset + capacity * 4, kept = Math.min(previous, capacity);
-		ram.copyWithin(tags, oldTags, oldTags + kept);
-		if (capacity > previous) {
-			ram.fill(0, oldTags, tags);
-			ram.fill(0, tags + previous, offset + bytes);
-		}
-		memory.invalidateRamWrite(offset + kept * 4, bytes - kept * 4);
-		if (capacity < previous) this.arena.shrinkBacking(old, bytes);
-		memory.writeRamRecordPair(address + ThreadField.StackBlock, block, capacity);
-		this.budget.resizeRecordCharge(previous * THREAD_STACK_SLOT_BYTES, bytes);
-		return true;
-	}
-	public shrinkStack(address: number, layout: ThreadLayout): number {
-		let retained = 0;
-		if (layout.capacity > 16) {
-			let used = layout.top;
-			for (let index = 0; index < layout.depth && used * 3 < layout.capacity; ++index) {
-				const frame = this.frameAddress(layout, index);
-				used = Math.max(used, (this.memory.readRamRecordWord(frame + FrameField.StackBase) & FRAME_WINDOW_MASK)
-					+ (this.memory.readRamRecordWord(frame + FrameField.StackCapacity) & FRAME_WINDOW_MASK));
-			}
-			if (used * 3 < layout.capacity) {
-				const next = layout.capacity >>> 1, bytes = next * THREAD_STACK_SLOT_BYTES;
-				this.resizeStackBacking(address, next);
-				retained = bytes;
-			}
-		}
-		if (layout.frames > 4 && layout.depth * 3 < layout.frames) {
-			const next = layout.frames >>> 1, bytes = next * FRAME_CONTROL_BYTES;
-			const used = layout.depth * FRAME_CONTROL_BYTES;
-			const spare = layout.frameOffset + used;
-			this.memory.ramData().fill(0, spare, layout.frameOffset + bytes);
-			this.memory.invalidateRamWrite(spare, bytes - used);
-			this.arena.shrinkBacking(layout.frameBlock, bytes);
-			this.memory.writeRamRecordWord(address + ThreadField.FrameCapacity, next);
-			this.budget.resizeRecordCharge(layout.frames * FRAME_CONTROL_BYTES, bytes);
-			retained += bytes;
-		}
-		return retained;
 	}
 }

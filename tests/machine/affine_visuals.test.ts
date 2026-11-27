@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { valueBool, asClosure, valueNil, asStringId } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -568,7 +569,7 @@ return {
 	assert.equal(failure, valueNil(), failure === valueNil() ? undefined : cpu.stringPool.toString(asStringId(failure)));
 	const sources = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('sources')!));
 	let sourceBytes = 0;
-	for (let index = 1; index <= 1024; index += 1) sourceBytes += cpu.gc.tables.getTrackedHeapBytes(valuePayload(cpu.gc.tables.getInteger(sources, index)));
+	for (let index = 1; index <= 1024; index += 1) sourceBytes += nativeHeapReference(cpu).gc.tables.getTrackedHeapBytes(valuePayload(cpu.gc.tables.getInteger(sources, index)));
 	// The thousand-image stage exhausted RAM with 672-byte source descriptors.
 	// This is a retained-memory budget, independent of the sharing mechanism.
 	assert.ok(sourceBytes < 400 * 1024, `image source descriptors retained ${sourceBytes} bytes`);

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
@@ -26,10 +27,10 @@ probe[1], probe[2] = owner, owner.events
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
 	setReferenceGlobal(cpu, cpu.stringPool.find('owner')!, valueNil());
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
 	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
 });
@@ -232,7 +233,7 @@ return true`, { optLevel });
 		const snapshot = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
-		cpu.gc.collect();
+		nativeHeapReference(cpu).gc.collect();
 		const resume = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('resume_emission')!), cpu.gc);
 		cpu.beginCompletionCall(resume);
 		let result = RunResult.Yielded;
@@ -307,7 +308,7 @@ function finish_traversal()
 end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
-		cpu.gc.collect();
+		nativeHeapReference(cpu).gc.collect();
 		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
@@ -43,14 +44,14 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 
 test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	const key = cpu.stringPool.intern('state');
+	const key = nativeHeapReference(cpu).stringPool.intern('state');
 	setReferenceGlobal(cpu, key, valueNil());
 
 	const before = collectReferenceHeapBytes(cpu);
 
 	const table = createReferenceTable(cpu, 2, 2);
-	cpu.gc.tables.setInteger(table, 1, valueInteger(11));
-	cpu.gc.tables.setStringKey(table, key, valueInteger(7));
+	nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(11));
+	nativeHeapReference(cpu).gc.tables.setStringKey(table, key, valueInteger(7));
 	setReferenceGlobal(cpu, key, valueTable(table));
 
 	const afterTable = collectReferenceHeapBytes(cpu);
@@ -74,7 +75,7 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	setReferenceGlobal(cpu, cpu.stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
+	setReferenceGlobal(cpu, nativeHeapReference(cpu).stringPool.intern('foo'), valueBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
 	const bank = readNamespaceBank(cpu.memory, cpu.heapAllocator.managementOffset() + GLOBAL_BANK_OFFSET);
@@ -87,7 +88,7 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	restoredCpu.memory.restoreSaveState(cpu.memory.captureSaveState());
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
-		restoredCpu.getGlobalByKey(restoredCpu.stringPool.intern('foo')),
+		restoredCpu.getGlobalByKey(nativeHeapReference(restoredCpu).stringPool.intern('foo')),
 		valueBuiltinFunction(BuiltinFunctionId.Next),
 	);
 });
@@ -110,7 +111,7 @@ test('runtime interning reuses a matching ROM record without allocating RAM', ()
 	const before = cpu.luaHeap.usedBytes();
 	const literal = cpu.stringPool.find('rom literal');
 	assert.notEqual(literal, undefined);
-	assert.equal(cpu.stringPool.intern('rom literal'), literal);
+	assert.equal(nativeHeapReference(cpu).stringPool.intern('rom literal'), literal);
 	assert.equal(cpu.luaHeap.usedBytes(), before);
 });
 
@@ -120,11 +121,11 @@ test('unreachable runtime strings are reclaimed by the heap collector', () => {
 
 	// No VM value owns this text. Collection must free the intern entry as
 	// well as its RAM debit; stale text must not accumulate in save states.
-	cpu.stringPool.intern('transient garbage string');
+	nativeHeapReference(cpu).stringPool.intern('transient garbage string');
 
 	assert.equal(collectReferenceHeapBytes(cpu), before);
 	assert.equal(cpu.stringPool.find('transient garbage string'), undefined);
-	assert.notEqual(cpu.stringPool.intern('new runtime string'), 0);
+	assert.notEqual(nativeHeapReference(cpu).stringPool.intern('new runtime string'), 0);
 });
 
 test('non-capturing const functions materialize as static proto references', () => {

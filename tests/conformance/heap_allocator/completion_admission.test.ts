@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -49,7 +50,7 @@ test('completion calls use admitted backing and preserve borrowed Values across 
 	for (let i = 0; i < args.length; ++i) cpu.activeThread.currentFrame!.registers.set(i, args[i]);
 	assert.equal(scheduler.runCpuSlice(0, 128, 0, CpuRunKind.Scheduled), RunResult.Halted);
 	assert.deepEqual(runtime.readCompletionValues(), args);
-	const { gc } = cpu, root = cpu.rootThread;
+	const { gc } = nativeHeapReference(cpu), root = cpu.rootThread;
 	assert.ok(root.stackRegisters.capacity() < tooWide.maxStack);
 	for (let i = 0; gc.phase() !== GcPhase.Atomic && i < 64; ++i) gc.step(valueClosure(closure));
 	assert.equal(gc.phase(), GcPhase.Atomic, 'a native final-mark call would change this state');

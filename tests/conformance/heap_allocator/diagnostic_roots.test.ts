@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -71,7 +72,7 @@ for (const optLevel of [0, 3] as const) {
 		runtime.boot();
 		const { cpu, memory, scheduler } = runtime.machine;
 		runGuestToHalt(cpu, 1_000_000);
-		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+		nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
 		const global = (name: string) => cpu.getGlobalByKey(cpu.stringPool.find(name)!);
 		const receiver = global('receiver'), meta = valuePayload(global('meta'));
 		const probe = asClosure(global('probe'), cpu.gc);
@@ -90,7 +91,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.deepEqual(runtime.readCompletionValues(), old, 'the original metamethods remain installed alongside replacements');
 		const patches: Array<readonly [number, number]> = [];
 		const intern = (text: string) => {
-			const id = cpu.stringPool.intern(text);
+			const id = nativeHeapReference(cpu).stringPool.intern(text);
 			assert.ok(isRamStringId(id), 'the replacement is a RAM String, not a ROM String identity');
 			return id;
 		};
@@ -101,12 +102,12 @@ for (const optLevel of [0, 3] as const) {
 		] as const) {
 			const id = intern(`replacement diagnostic ${name}`);
 			assert.notEqual(memory.readRamRecordWord(head + offset), id);
-			cpu.gc.tables.setStringKey(meta, id, global(name));
+			nativeHeapReference(cpu).gc.tables.setStringKey(meta, id, global(name));
 			patches.push([head + offset, id]);
 		}
 		const error = intern('replacement protected handler failure'), fault = intern('replacement protected fault');
 		const faultBytes = 4 * (LUA_FAULT_REASON_INDEX_NAN + 1);
-		const alternateFaults = cpu.heapAllocator.allocate(faultBytes, false);
+		const alternateFaults = nativeHeapReference(cpu).heapAllocator.allocate(faultBytes, false);
 		assert.notEqual(alternateFaults, 0);
 		for (let i = 0; i < faultBytes; i += 4) {
 			memory.writeRamRecordWord(alternateFaults + i, memory.readRamRecordWord(faults + i));

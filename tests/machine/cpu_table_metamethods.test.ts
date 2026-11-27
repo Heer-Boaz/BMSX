@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
@@ -39,10 +40,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			reserveThreadFrameReference(cpu, cpu.rootThread, 32); // This raw WIDE fixture exercises placement after admission.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, opcodePc = base + 3 * INSTRUCTION_BYTES;
-			const tables = cpu.gc.tables, source = createReferenceTable(cpu, 2, 2), forwarded = createReferenceTable(cpu);
+			const tables = nativeHeapReference(cpu).gc.tables, source = createReferenceTable(cpu, 2, 2), forwarded = createReferenceTable(cpu);
 			const outerMeta = createReferenceTable(cpu, 0, 1), innerMeta = createReferenceTable(cpu, 0, 1);
-			const selector = cpu.stringPool.intern(length ? '__len' : '__newindex');
-			const initialKey = op === OpCode.SETFIELD ? valueString(cpu.stringPool.intern('field')) : valueInteger(1);
+			const selector = nativeHeapReference(cpu).stringPool.intern(length ? '__len' : '__newindex');
+			const initialKey = op === OpCode.SETFIELD ? valueString(nativeHeapReference(cpu).stringPool.intern('field')) : valueInteger(1);
 			tables.set(source, initialKey, valueBool(false));
 			frame.registers.setTable(0, source);
 			frame.registers.set(1, initialKey);
@@ -104,7 +105,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				{ firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
 			const { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, table = createReferenceTable(cpu);
-			cpu.gc.tables.setInteger(table, 1, valueInteger(87));
+			nativeHeapReference(cpu).gc.tables.setInteger(table, 1, valueInteger(87));
 			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.RawGet);
 			frame.registers.setTable(1, table);
 			frame.registers.set(2, key);
@@ -129,10 +130,10 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		reserveThreadFrameReference(cpu, cpu.rootThread, 16);
 		const record = createReferenceTable(cpu), meta = createReferenceTable(cpu);
 		const stringIndex = createReferenceTable(cpu), stringMeta = createReferenceTable(cpu);
-		const field = valueString(cpu.stringPool.intern('present')), forwarded = valueString(cpu.stringPool.intern('forward receiver'));
-		const indexKey = cpu.stringPool.intern('__index');
+		const field = valueString(nativeHeapReference(cpu).stringPool.intern('present')), forwarded = valueString(nativeHeapReference(cpu).stringPool.intern('forward receiver'));
+		const indexKey = nativeHeapReference(cpu).stringPool.intern('__index');
 		const pc = frame.pc, cycles = BASE_CYCLES[OpCode.GETT];
-		const tables = cpu.gc.tables;
+		const tables = nativeHeapReference(cpu).gc.tables;
 		frame.registers.setTable(0, record);
 		frame.registers.set(1, field);
 		const remark = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
@@ -193,8 +194,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 0, wordCount: 2, maxStack: 4 }, { firstWord: 2, wordCount: 1 },
 		], exceptionFunctionIndex: 1 });
 		const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-		const tables = cpu.gc.tables, source = createReferenceTable(cpu, 2), forwarded = createReferenceTable(cpu, 2), meta = createReferenceTable(cpu);
-		const newIndex = cpu.stringPool.intern('__newindex'), pc = frame.pc;
+		const tables = nativeHeapReference(cpu).gc.tables, source = createReferenceTable(cpu, 2), forwarded = createReferenceTable(cpu, 2), meta = createReferenceTable(cpu);
+		const newIndex = nativeHeapReference(cpu).stringPool.intern('__newindex'), pc = frame.pc;
 		frame.registers.setTable(0, source);
 		frame.registers.setInteger(1, 19);
 		cpu.runUntilDepth(0, (BASE_CYCLES[OpCode.SETI] + BASE_CYCLES[OpCode.JMP]) * 68);

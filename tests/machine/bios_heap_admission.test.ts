@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -34,7 +35,7 @@ function fixture(optLevel: 0 | 3) {
 	const linked = linkFirmwareProbe(optLevel, [], leaves);
 	const { cpu, memory } = createTestHeapServiceCpu(linked), oracle = createTestHeapServiceCpu(linked).cpu;
 	for (const target of [cpu, oracle]) runGuestToHalt(target, 10_000);
-	const arena = cpu.heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, state = arena.allocatorStateOffset();
+	const arena = nativeHeapReference(cpu).heapAllocator, control = arena.managementOffset() + HEAP_GC_CONTROL_OFFSET, state = arena.allocatorStateOffset();
 	const pace = control + GC_PACE_PAID - 12;
 	function same(action: (target: CPU) => void) {
 		action(cpu); action(oracle);
@@ -75,16 +76,16 @@ function nativeUnsignedAllowance(after: number, capacity: number, cycles: number
 for (const opt of [0, 3] as const) {
 	test(`firmware admission preserves logical debt, pressure, quota and target credit at O${opt}`, () => {
 		const f = fixture(opt), { arena, cpu, oracle, state, call, phase, same } = f;
-		const native = oracle.luaHeap, heap = cpu.luaHeap, occupied = heap.occupiedOffset;
+		const native = nativeHeapReference(oracle).luaHeap, heap = nativeHeapReference(cpu).luaHeap, occupied = heap.occupiedOffset;
 		assert.equal(call('heap_capacity', state), native.capacity());
 		const nextFloor = arena.floorAddress() + HEAP_PAGE_SIZE;
-		same(target => { assert.ok(target.heapAllocator.setFloor(nextFloor)); });
+		same(target => { assert.ok(nativeHeapReference(target).heapAllocator.setFloor(nextFloor)); });
 		const capacity = native.capacity(), edge = capacity - (capacity >>> 3);
 		assert.equal(call('heap_capacity', state), capacity);
 		const used = 930, threshold = 1024;
 		same(target => {
 			target.memory.writeRamRecordWord(occupied, used);
-			target.luaHeap.setCollectionTarget(threshold);
+			nativeHeapReference(target).luaHeap.setCollectionTarget(threshold);
 		});
 		for (const p of [GcPhase.Pause, GcPhase.Mark, GcPhase.MarkAgain, GcPhase.Atomic, GcPhase.Sweep, GcPhase.Strings, 6, 7]) {
 			phase(p);
@@ -106,7 +107,7 @@ for (const opt of [0, 3] as const) {
 			[GcPhase.MarkAgain, 0xffffffff, 0xffffffff, 0, 0xffffffff],
 		] as const) {
 			phase(p);
-			same(target => target.luaHeap.setCollectionTarget(threshold));
+			same(target => nativeHeapReference(target).luaHeap.setCollectionTarget(threshold));
 			native.creditLogicalAssist(amount, debt, pressure !== 0, work);
 			call('credit_logical_assist', state, amount, debt, pressure, work);
 			assert.equal(heap.collectionTarget(), native.collectionTarget());
@@ -140,8 +141,8 @@ for (const opt of [0, 3] as const) {
 			setPace(words);
 			const expected = nativeUnsignedAllowance(after, capacity, budget, words);
 			assert.equal(call('reservation_assist_allowance', state, requested, budget), expected, String(words));
-			if (i < 3) assert.equal(expected, oracle.gc.reservationAssistAllowance(requested) ?? -1);
-			if (i === 3) assert.equal(oracle.gc.reservationAssistAllowance(requested), -1, 'prior TS is signed here');
+			if (i < 3) assert.equal(expected, nativeHeapReference(oracle).gc.reservationAssistAllowance(requested) ?? -1);
+			if (i === 3) assert.equal(nativeHeapReference(oracle).gc.reservationAssistAllowance(requested), -1, 'prior TS is signed here');
 			if (i === 4 || i === 5) assert.equal(expected, 2);
 		}
 		setPace(cases[5]);
@@ -163,9 +164,9 @@ for (const opt of [0, 3] as const) {
 			for (const token of [LuaAllocationRecovery.CurrentOrFresh, LuaAllocationRecovery.Fresh, LuaAllocationRecovery.Exhausted]) {
 				const result = call('begin_allocation_recovery', state, token);
 				if (token === LuaAllocationRecovery.Exhausted) {
-					assert.throws(() => oracle.gc.beginAllocationRecovery(token), reason => reason === LUA_OUT_OF_MEMORY_SIGNAL);
+					assert.throws(() => nativeHeapReference(oracle).gc.beginAllocationRecovery(token), reason => reason === LUA_OUT_OF_MEMORY_SIGNAL);
 					assert.equal(result, -1);
-				} else assert.equal(result, oracle.gc.beginAllocationRecovery(token));
+				} else assert.equal(result, nativeHeapReference(oracle).gc.beginAllocationRecovery(token));
 			}
 		}
 	});

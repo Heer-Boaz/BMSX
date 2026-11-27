@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -71,8 +72,8 @@ function fixture(optLevel: 0 | 3) {
 		return [firmwareProbeResult(cpu), retired];
 	}
 	function markValue(tag: ValueTag, payload: number) {
-		const objectWork = +oracle.gc.markValue(valueFromTag(tag, payload));
-		const stringWork = oracle.stringPool.takeMarkWork();
+		const objectWork = +nativeHeapReference(oracle).gc.markValue(valueFromTag(tag, payload));
+		const stringWork = nativeHeapReference(oracle).stringPool.takeMarkWork();
 		memory.writeRamRecordWord(output, 0xa5a5a5a5);
 		begin('mark_value', arena, metadata, tag, payload, GC_TRACE_HEAD, 0, output);
 		const [object] = finish();
@@ -90,8 +91,8 @@ for (const optLevel of [0, 3] as const) {
 		const table = add(target => createReferenceTable(target, 3, 2));
 		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
-		const backing = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
-		const string = add(target => target.stringPool.intern('unvisited-ram-string'));
+		const backing = add(target => nativeHeapReference(target).heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
+		const string = add(target => nativeHeapReference(target).stringPool.intern('unvisited-ram-string'));
 		const oldMark = memory.readRamRecordByte(string + 1) & 1;
 		word(metadata + 0x0c, 0x9aceba00 | (oldMark ^ 1));
 		word(control, 0x0000e501); // Mark phase, current white is low bit of the raw byte.
@@ -117,7 +118,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.deepEqual(markValue(ValueTag.String, id), [0, 0]);
 		for (const tag of [ValueTag.Nil, ValueTag.Integer, ValueTag.Float, ValueTag.BuiltinFunction, ValueTag.DeadKey])
 			assert.deepEqual(markValue(tag, table), [0, 0]);
-		assert.equal(oracle.stringPool.takeMarkWork(), 0);
+		assert.equal(nativeHeapReference(oracle).stringPool.takeMarkWork(), 0);
 	});
 
 	test(`BLua markRecord resumes between recoloring and publishing the gray head at O${optLevel}`, () => {
@@ -128,7 +129,7 @@ for (const optLevel of [0, 3] as const) {
 		word(control + GC_CHANGED_HEAD, oldHead);
 		word(table, 0x80005c00 | ValueTag.Table);
 		word(table + GC_RECORD_LINK, oldLink);
-		assert.equal(oracle.gc['markRecord'](table, ValueTag.Table, GC_CHANGED_HEAD), true);
+		assert.equal(nativeHeapReference(oracle).gc['markRecord'](table, ValueTag.Table, GC_CHANGED_HEAD), true);
 		begin('mark_record', arena, table, ValueTag.Table, GC_CHANGED_HEAD, 0);
 		for (let i = 0; i < 512 && memory.readRamRecordByte(table + GC_COLOR_OFFSET) !== 0x5e; ++i) grant(1);
 		assert.ok(cpu.fixedInterruptActive());
@@ -153,7 +154,7 @@ for (const optLevel of [0, 3] as const) {
 			word(table, 0x8000ad00 | ValueTag.Table);
 			word(table + UPVALUE_NEXT, 0xffdeface);
 			word(control + GC_CHANGED_HEAD, head);
-			oracle.gc['enqueue'](table, UPVALUE_NEXT, GC_CHANGED_HEAD);
+			nativeHeapReference(oracle).gc['enqueue'](table, UPVALUE_NEXT, GC_CHANGED_HEAD);
 			// Pinned C++ gc_heap.h::color differs only in that it overwrites the lane.
 			if (replace) oracle.memory.writeRamRecordByte(table + GC_COLOR_OFFSET, 2);
 			begin('enqueue', table, UPVALUE_NEXT, GC_CHANGED_HEAD, replace);

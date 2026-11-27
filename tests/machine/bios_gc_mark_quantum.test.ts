@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -47,16 +48,16 @@ function fixture(optLevel: 0 | 3) {
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
 		const live = createReferenceTable(target, 16, 0), child = createReferenceTable(target, 8, 0);
-		setReferenceGlobal(target, target.stringPool.intern('mark-quantum live root'), valueTable(live));
-		target.gc.tables.set(live, valueInteger(1), valueTable(child));
-		target.gc.tables.set(child, valueInteger(8), valueString(target.stringPool.intern('mark-quantum nested String')));
+		setReferenceGlobal(target, nativeHeapReference(target).stringPool.intern('mark-quantum live root'), valueTable(live));
+		nativeHeapReference(target).gc.tables.set(live, valueInteger(1), valueTable(child));
+		nativeHeapReference(target).gc.tables.set(child, valueInteger(8), valueString(nativeHeapReference(target).stringPool.intern('mark-quantum nested String')));
 		target.publishHeapRemarkHead();
 		target.publishHeapRootBanks();
 	}
 
 	function begin(limit: number) {
 		memory.writeRamRecordWord(context + GcTraceContextField.Limit, limit);
-		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, cpu.stringPool.takeMarkWork());
+		memory.writeRamRecordWord(context + GcTraceContextField.PendingStringWork, nativeHeapReference(cpu).stringPool.takeMarkWork());
 		assert.ok(cpu.beginHeapService(linked.image.functions[fn].address,
 			[control, cpu.heapAllocator.allocatorStateOffset(), metadata, head, roots, context,
 				cpu.gc.diagnosticWord(GcDiagnosticField.Mode), cpu.heapAllocator.capacityBytes(), 0]));
@@ -80,7 +81,7 @@ function fixture(optLevel: 0 | 3) {
 		assert.equal(actual[diff], want[diff], `first GC heap mismatch: 0x${(first + diff).toString(16)}`);
 	}
 	function reference(limit: number) {
-		return oracle.gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
+		return nativeHeapReference(oracle).gc.step(valueNil(), valueNil(), valueNil(), 0, false, limit);
 	}
 
 	return { cpu, oracle, memory, control, epochWork, context, begin, grant, finish, compare, reference };
@@ -124,7 +125,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.notEqual(head & GC_GRAY_INDEX_MASK, 0);
 		// Source stepWork drains pending String work up front even with
 		// no bank cursor. This can fill the allowance without popping gray.
-		for (const cpu of [f.cpu, f.oracle]) cpu.stringPool.resumeMarkWork(2);
+		for (const cpu of [f.cpu, f.oracle]) nativeHeapReference(cpu).stringPool.resumeMarkWork(2);
 		const want = f.reference(1);
 		f.begin(1);
 		assert.equal(f.finish()[0], want);

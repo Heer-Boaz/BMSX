@@ -1,3 +1,4 @@
+import { nativeHeapReference } from './native_heap/reference';
 import { gcPacedPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
 import { valueNil } from '../../machine/ts/machine/cpu/value';
@@ -19,7 +20,7 @@ const NO_NEW_CELLS = new Uint32Array(0);
 export function allocateClosureRecordReference(cpu: CPU, captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
 	const bytes = Closure.closureRecordBytes(captures, latched);
 	const charged = bytes + newCount * Upvalue.UPVALUE_HEAP_BYTES;
-	const { luaHeap: budget, heapAllocator: arena, gc, memory } = cpu;
+	const { memory } = cpu, { luaHeap: budget, heapAllocator: arena, gc } = nativeHeapReference(cpu);
 	let recovery = budget.admit(charged, valueNil(), valueNil(), valueNil(), 0);
 	if (gcPacedPhase(gc.phase())) gc.assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1 + newCount));
 	for (;;) {
@@ -122,7 +123,7 @@ export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, funct
 		linkOpenUpvalue(cpu, frame, cell, (frame.stackBase + (upvalueWords[index] & BLUA32_UPVALUE_INDEX_MASK)) >>> 0);
 		Closure.setCaptureAddress(cpu.memory, closure, index, cell);
 	}
-	cpu.gc.publishObject(closure);
+	nativeHeapReference(cpu).gc.publishObject(closure);
 	cpu['charge'](count);
 	return closure;
 }

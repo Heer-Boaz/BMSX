@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -144,7 +145,7 @@ test('one ROM function translates through a physical page boundary with its WIDE
 	const js = compiled.cpu, ref = scalar.cpu;
 	for (const cpu of [js, ref]) {
 		const table = createReferenceTable(cpu, 0, 1);
-		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
+		nativeHeapReference(cpu).gc.tables.storeStringKey(table, nativeHeapReference(cpu).stringPool.intern('field'), ValueTag.Integer, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table);
 	}
 	const frame = js.rootThread.frameAtDepth(0);
@@ -162,7 +163,7 @@ test('one ROM function translates through a physical page boundary with its WIDE
 		+ BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETFIELD] + BASE_CYCLES[OpCode.JMP];
 	const probe = new ValueSlots(frame.stackCapacity);
 	probe.setTable(0, frame.registers.getPayload(0));
-	const table = probe.getPayload(0), key = js.stringPool.intern('field');
+	const table = probe.getPayload(0), key = nativeHeapReference(js).stringPool.intern('field');
 	const run = { remainingCycles: cycles, registerTop: frame.top, memoryAddress: 0 };
 	const exit = head.region.exits[head.region.execute(probe, frame.executionImage.constWords, first, frame, head.entry, run)];
 	assert.equal(exit.exit, CompiledBlockExit.Continue);
@@ -170,7 +171,7 @@ test('one ROM function translates through a physical page boundary with its WIDE
 	assert.equal(run.remainingCycles, 0);
 	// Direct generated calls leave frame publication to the caller. Restore the
 	// table mutation before comparing the two ordinary CPU paths.
-	js.gc.tables.storeStringKey(table, key, ValueTag.Integer, probe.getPayload(2) - 1);
+	nativeHeapReference(js).gc.tables.storeStringKey(table, key, ValueTag.Integer, probe.getPayload(2) - 1);
 	for (const grant of [1, 2, 3, 4, 7, 19, 57, 120]) {
 		runCpuParity(js, ref, grant);
 		assert.deepEqual(compiled.memory.captureSaveState(), scalar.memory.captureSaveState());
@@ -647,7 +648,7 @@ test('closure records bind their selected socket and survive cross-domain calls 
 			frame.registers.setInteger(1, record);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, pair.systemSymbols.functionAddresses[0], entry);
 			cpu.runUntilDepth(0, 2);
-			closures.push(frame.registers.getClosure(0, cpu.gc));
+			closures.push(frame.registers.getClosure(0, nativeHeapReference(cpu).gc));
 		}
 		assert.notEqual(closures[0], closures[1]);
 		assert.equal(cpu.captureClosureBinding(closures[0]).executionDomainId, 0);
@@ -660,7 +661,7 @@ test('closure records bind their selected socket and survive cross-domain calls 
 		cpu.restoreRuntimeState(state);
 		for (const slot of [0, 1]) {
 			memory.writeMappedWord(IO_CART_SELECT, 1 - slot);
-			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot, cpu.gc);
+			const closure = cpu.rootThread.frameAtDepth(0).registers.getClosure(slot, nativeHeapReference(cpu).gc);
 			cpu.beginCompletionCall(closure);
 			cpu.runUntilDepth(1, 100);
 			const result: Value[] = [];

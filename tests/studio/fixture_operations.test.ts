@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
@@ -20,8 +21,8 @@ test('fixture publication follows the current receipt key after string collectio
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name) });
 	const input = new TestInput(), target = new OffscreenMachine(image.romBytes, [null, null], PSX_MACHINE_SPEC, input);
 	afterTest(t, () => target.dispose());
-	const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
-	cpu.gc.collect();
+	const cpu = target.runtime.machine.cpu, pool = nativeHeapReference(cpu).stringPool;
+	nativeHeapReference(cpu).gc.collect();
 	const retiredKey = pool.intern('reached');
 	const output: FixtureOutput = {
 		log() { assert.fail('Boundary waiting does not publish a log.'); },
@@ -32,7 +33,7 @@ test('fixture publication follows the current receipt key after string collectio
 	};
 	let bindingChanges = 0;
 	const operations = new FixtureOperations(target, input, output, () => { bindingChanges++; });
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(pool.find('reached'), undefined, 'constructing the fixture transport does not root guest field names');
 	// Same byte length so this allocation reuses a slot in the same size class.
 	const unrelatedKey = pool.intern('unreach');
@@ -40,14 +41,14 @@ test('fixture publication follows the current receipt key after string collectio
 	const reachedKey = pool.intern('reached');
 	assert.notEqual(reachedKey, retiredKey);
 	const receipt = createReferenceTable(cpu, 0, 2);
-	cpu.gc.tables.setStringKey(receipt, unrelatedKey, valueBool(true));
-	cpu.gc.tables.setStringKey(receipt, reachedKey, valueBool(false));
+	nativeHeapReference(cpu).gc.tables.setStringKey(receipt, unrelatedKey, valueBool(true));
+	nativeHeapReference(cpu).gc.tables.setStringKey(receipt, reachedKey, valueBool(false));
 	setReferenceGlobal(cpu, pool.intern('receipt'), valueTable(receipt));
 
 	operations.accept([valueNil(), valueString(pool.intern('boundary')), valueTable(receipt), valueInteger(100)]);
 	assert.equal(operations.observesPublication, true);
 	assert.equal(operations.shouldStopAtPublication(), false, 'an unrelated true field cannot publish the boundary');
-	cpu.gc.tables.setStringKey(receipt, reachedKey, valueBool(true));
+	nativeHeapReference(cpu).gc.tables.setStringKey(receipt, reachedKey, valueBool(true));
 	assert.equal(operations.shouldStopAtPublication(), true);
 	const args: Value[] = [];
 	assert.equal(operations.advance(args, 0), true);
@@ -63,7 +64,7 @@ test('fixture wire values decode at input/wait boundaries and replies remain enc
 		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name)});
 	const input = new TestInput(), target = new OffscreenMachine(image.romBytes, [null, null], PSX_MACHINE_SPEC, input);
 	afterTest(t, () => target.dispose());
-	const cpu = target.runtime.machine.cpu, pool = cpu.stringPool, frame = target.runtime.frameScheduler;
+	const cpu = target.runtime.machine.cpu, pool = nativeHeapReference(cpu).stringPool, frame = target.runtime.frameScheduler;
 	const recorder = createReferenceTable(cpu, 0,0), logs: Value[] = [], captures: (number|string)[][] = [];
 	const output: FixtureOutput = {
 		log(_tick,value) {logs.push(value);},
@@ -94,7 +95,7 @@ test('fixture wire values decode at input/wait boundaries and replies remain enc
 	frame.lastTickSequence = 21; assert.equal(operations.advance(args,0),false);
 	frame.lastTickSequence = 22; assert.equal(operations.advance(args,0),true);
 
-	const receipt = createReferenceTable(cpu, 0,1); cpu.gc.tables.setStringKey(receipt, pool.intern('reached'),valueInteger(0));
+	const receipt = createReferenceTable(cpu, 0,1); nativeHeapReference(cpu).gc.tables.setStringKey(receipt, pool.intern('reached'),valueInteger(0));
 	operations.accept(operation('boundary',valueTable(receipt),valueFloat(10)));
 	assert.equal(operations.shouldStopAtPublication(),true,'the transport uses guest truth, not host booleans');
 	assert.equal(operations.advance(args,0),true); assert.equal(args[1],valueInteger(0));

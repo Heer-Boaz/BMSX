@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../helpers/native_heap/reference';
 import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
@@ -40,7 +41,7 @@ function machine(): CPU {
 	return cpu;
 }
 function checkReferences(cpu: CPU): void {
-	const { gc } = cpu;
+	const { gc } = nativeHeapReference(cpu);
 	const records = allocatedObjectRecords(cpu);
 	for (const address of records) {
 		switch (cpu.memory.readRamRecordByte(address)) {
@@ -54,7 +55,7 @@ function checkReferences(cpu: CPU): void {
 }
 
 test('marking selects issued white headers, not arbitrary byte patterns', () => {
-	const cpu = machine(), { gc, memory } = cpu, table = createReferenceTable(cpu);
+	const cpu = machine(), { memory } = cpu, { gc } = nativeHeapReference(cpu), table = createReferenceTable(cpu);
 	const raw = DYNAMIC_RAM_BASE + 0x600, header = ValueTag.Table | ((0xfc | gc.white()) << 8);
 	memory.writeRamRecordWord(raw, header);
 	assert.equal(gc.markValue(valueTable(raw)), false);
@@ -67,7 +68,7 @@ test('marking selects issued white headers, not arbitrary byte patterns', () => 
 
 test('32-bit object payloads survive heap growth and collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!;
-	const captured = frame.registers.getClosure(1, cpu.gc);
+	const captured = frame.registers.getClosure(1, nativeHeapReference(cpu).gc);
 	const cell = ClosureRecord.captureAddress(cpu.memory, captured, 0);
 	assert.equal(frame.registers.getPayload(1), captured);
 	assert.equal(cpu.gc.closureRecordAddress(cell), 0);
@@ -75,18 +76,18 @@ test('32-bit object payloads survive heap growth and collection', () => {
 	const roots = createReferenceTable(cpu, 512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, roots); frame.top = 2;
 	for (let i = 0; i < slots.capacity; ++i) {
-		const object = createReferenceTable(cpu); cpu.gc.tables.setInteger(roots, i + 1, valueTable(object));
+		const object = createReferenceTable(cpu); nativeHeapReference(cpu).gc.tables.setInteger(roots, i + 1, valueTable(object));
 		slots.words[i] = object; slots.tags[i] = ValueTag.Table;
 	}
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.tableRecordAddress(slots.words[i]), valuePayload(cpu.gc.tables.getInteger(roots, i + 1)));
 	checkReferences(cpu);
 });
 
 test('a freed header is cleared before its physical address is reused', () => {
-	const cpu = machine(); cpu.gc.collect();
+	const cpu = machine(); nativeHeapReference(cpu).gc.collect();
 	const dead = createReferenceTable(cpu), id = dead;
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(id), 0);
 	const next = createReferenceTable(cpu);
 	assert.equal(next, id);
@@ -96,8 +97,8 @@ test('a freed header is cleared before its physical address is reused', () => {
 test('equally initialized CPUs have independent address spaces', () => {
 	const first = machine(), second = machine(), a = createReferenceTable(first), b = createReferenceTable(second);
 	assert.equal(a, b);
-	first.gc.tables.setInteger(a, 1, valueInteger(73));
-	second.gc.tables.setInteger(b, 1, valueInteger(85));
+	nativeHeapReference(first).gc.tables.setInteger(a, 1, valueInteger(73));
+	nativeHeapReference(second).gc.tables.setInteger(b, 1, valueInteger(85));
 	assert.equal(first.gc.tables.getInteger(a, 1), valueInteger(73));
 	assert.equal(second.gc.tables.getInteger(b, 1), valueInteger(85));
 });
@@ -106,10 +107,10 @@ test('restore publishes physical roots and drops discarded future records', () =
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = createReferenceTable(cpu, 4);
 	frame.closureAddress = seedTestRomClosure(cpu, frame.functionAddress);
 	frame.registers.setTable(0, roots); frame.top = 2;
-	for (let i = 1; i <= 4; ++i) cpu.gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu)));
+	for (let i = 1; i <= 4; ++i) nativeHeapReference(cpu).gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu)));
 	createReferenceTable(cpu);
 	createReferenceTable(cpu);
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	const saved = cpu.captureRuntimeState(), thread = cpu.rootThread.address, canonical = frame.closure;
 	const root = frame.registers.get(0), fourth = cpu.gc.tables.getInteger(roots, 4);
 	const ram = cpu.memory.captureSaveState();
@@ -134,12 +135,12 @@ test('incremental GC and phase-preserving restore keep physical attachments sync
 	const cpu = machine(), roots = createReferenceTable(cpu, 1024), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, roots); frame.top = 2;
 	for (let i = 1; i <= 1000; ++i) {
-		cpu.gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu, 1, 1)));
-		const dead = createReferenceTable(cpu, 1); cpu.gc.tables.setInteger(dead, 1, valueTable(createReferenceTable(cpu)));
+		nativeHeapReference(cpu).gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu, 1, 1)));
+		const dead = createReferenceTable(cpu, 1); nativeHeapReference(cpu).gc.tables.setInteger(dead, 1, valueTable(createReferenceTable(cpu)));
 	}
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
-		cpu.gc.step(); checkReferences(cpu);
+		nativeHeapReference(cpu).gc.step(); checkReferences(cpu);
 		const saved = cpu.captureRuntimeState(); phases.add(cpu.gc.phase());
 		cpu.restoreRuntimeState(saved); checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
@@ -153,7 +154,7 @@ test('builtin functions retain their own ids outside the GC heap', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = createReferenceTable(cpu, BUILTIN_FUNCTIONS.length);
 	frame.registers.setTable(0, functions); frame.top = 2;
 	const before = allocatedObjectRecords(cpu);
-	for (const builtin of BUILTIN_FUNCTIONS) cpu.gc.tables.setInteger(functions, builtin.id + 1, valueBuiltinFunction(builtin.id));
+	for (const builtin of BUILTIN_FUNCTIONS) nativeHeapReference(cpu).gc.tables.setInteger(functions, builtin.id + 1, valueBuiltinFunction(builtin.id));
 	const after = allocatedObjectRecords(cpu);
 	assert.deepEqual(after, before);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
@@ -164,9 +165,9 @@ test('builtin functions retain their own ids outside the GC heap', () => {
 
 test('a closed capture is read from RAM, rewound with RAM and released by collection', () => {
 	const cpu = machine(), frame = cpu.rootThread.currentFrame!, memory = cpu.memory;
-	const key = cpu.stringPool.intern('saved_capture');
+	const key = nativeHeapReference(cpu).stringPool.intern('saved_capture');
 	setReferenceGlobal(cpu, key, frame.registers.get(1));
-	const closure = frame.registers.getClosure(1, cpu.gc);
+	const closure = frame.registers.getClosure(1, nativeHeapReference(cpu).gc);
 	const address = ClosureRecord.captureAddress(cpu.memory, closure, 0);
 	assert.equal(cpu.gc.cellRecordAddress(address), address);
 	assert.equal(cpu.gc.openCellAddress(address + MAIN_RAM_SIZE), address, 'a mirrored open link selects the same physical cell');
@@ -209,18 +210,18 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const restored = asClosure(cpu.getGlobalByKey(key), cpu.gc);
 	assert.equal(ClosureRecord.captureAddress(cpu.memory, restored, 0), address);
 	assert.equal(cpu.readClosureUpvalue(restored, 0), valueFloatBits(0xffa12345));
-	cpu.gc.collect();
-	const arena = cpu.heapAllocator, occupied = arena.occupiedBytes();
+	nativeHeapReference(cpu).gc.collect();
+	const arena = nativeHeapReference(cpu).heapAllocator, occupied = arena.occupiedBytes();
 	const retiredBytes = arena.allocationBytes(closure - GC_OBJECT_PREFIX) + arena.allocationBytes(address - GC_OBJECT_PREFIX);
 	setReferenceGlobal(cpu, key, valueNil());
-	cpu.gc.collect();
+	nativeHeapReference(cpu).gc.collect();
 	assert.equal(arena.occupiedBytes(), occupied - retiredBytes);
 	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
 	assert.equal(memory.readRamRecordByte(address), 0);
 });
 
 test('reclaimed closures are not visited by the next sweep', () => {
-	const cpu = machine(), { gc } = cpu, frame = cpu.rootThread.currentFrame!;
+	const cpu = machine(), { gc } = nativeHeapReference(cpu), frame = cpu.rootThread.currentFrame!;
 	const closure = frame.registers.getClosure(1, gc);
 	const cellAddress = ClosureRecord.captureAddress(cpu.memory, closure, 0);
 	const sweep = () => {
@@ -239,7 +240,7 @@ test('reclaimed closures are not visited by the next sweep', () => {
 });
 
 test('restoring a suspended sweep keeps its cursor when a new object is added', () => {
-	const cpu = machine(), { gc } = cpu;
+	const cpu = machine(), { gc } = nativeHeapReference(cpu);
 	const dead = createReferenceTable(cpu);
 	const keep = createReferenceTable(cpu);
 	cpu.rootThread.currentFrame!.registers.set(0, valueTable(keep));

@@ -1,3 +1,4 @@
+import { nativeHeapReference } from '../../helpers/native_heap/reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,7 +60,7 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 		for (const scenario of ['recovered', 'oom'] as const) {
 			const runtime = new Runtime({ systemRomBytes, cartridgeSlots: cartridgeSlots(cartRomBytes), machineModel: PSX_MACHINE_SPEC }, input);
 			runtime.boot();
-			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = cpu;
+			const { cpu, memory, scheduler } = runtime.machine, { heapAllocator: arena, gc } = nativeHeapReference(cpu);
 
 			const framePc = () => cpu.readFramePc(cpu.getFrameDepth() - 1);
 			const run = (cycles: number) => scheduler.runCpuSlice(0, cycles, undefined, CpuRunKind.Scheduled);
@@ -79,8 +80,8 @@ ${TEST_CART_TRANSFER_SOURCE}`;
 			assert.equal(framePc(), original);
 			cpu.setExecutionHook(null, 0, 0);
 
-			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-			if (scenario === 'recovered') cpu.stringPool.intern(deadText);
+			nativeHeapReference(cpu).luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
+			if (scenario === 'recovered') nativeHeapReference(cpu).stringPool.intern(deadText);
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) { /* fill page fits */ }
 			while (arena.allocate(16, true)) { /* fill small fits */ }
 			const seed = join(dir, `O${opt}-${scenario}.seed`), partial = join(dir, `O${opt}-${scenario}.partial`);
