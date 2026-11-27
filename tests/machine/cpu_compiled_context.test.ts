@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
@@ -89,7 +90,7 @@ for (const system of [false, true]) test(`generated ${system ? 'SETSYS' : 'SETGL
 	const pc = image.image.functions[0].codeAddress, offset = (pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[offset]!;
 	assert.equal(block.sourceWords, 5);
-	const target = cpu.createTable();
+	const target = createReferenceTable(cpu);
 	for (let step = 0; step < 256 && gc.phase() !== GcPhase.MarkAgain; ++step) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	assert.equal(gc.phase(), GcPhase.MarkAgain);
 	assert.equal(gc.isAlive(target), false);
@@ -437,7 +438,7 @@ end
 		for (let i = 0; i <= COMPILED_BLOCK_THRESHOLD; ++i)
 			runCompletionClosure(cpu, setter, [valueNil()], 1000);
 
-		const cell = ClosureRecord.captureAddress(memory, setter, 0), child = cpu.createTable();
+		const cell = ClosureRecord.captureAddress(memory, setter, 0), child = createReferenceTable(cpu);
 		for (let i = 0; i < 256 && gc.phase() !== GcPhase.MarkAgain; ++i)
 			gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(gc.phase(), GcPhase.MarkAgain);

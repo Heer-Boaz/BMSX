@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
@@ -72,7 +73,7 @@ test('compiled ITERN resumes its physical table cursor and preserves its scalar 
 		const { cpu } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), registers = frame.registers;
 		const pc = frame.pc;
-		const table = cpu.createTable(3, 2);
+		const table = createReferenceTable(cpu, 3, 2);
 		registers.setBuiltinFunction(0, BuiltinFunctionId.Next);
 		registers.setTable(1, table);
 		frame.top = 7;
@@ -123,7 +124,7 @@ test('compiled LOADK, LOADKR and RK stores preserve the owning image literal', (
 		const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const frames = [js.rootThread.frameAtDepth(0), scalar.rootThread.frameAtDepth(0)];
 		const tables = [js, scalar].map((cpu, i) => {
-			const table = cpu.createTable(1);
+			const table = createReferenceTable(cpu, 1);
 			cpu.gc.tables.setInteger(table, 1, valueInteger(0));
 			frames[i].registers.setInteger(2, 0);
 			frames[i].registers.setTable(3, table);
@@ -153,7 +154,7 @@ test('negative integer keys use hash storage without disturbing the array', () =
 	for (const backend of [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter]) {
 		const { cpu } = createTestHeapServiceCpu(image, backend);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const table = cpu.createTable(1, 1), child = cpu.createTable(), meta = cpu.createTable(0, 1);
+		const table = createReferenceTable(cpu, 1, 1), child = createReferenceTable(cpu), meta = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setInteger(table, 1, valueInteger(61));
 		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table));
 		cpu.gc.tables.setMetatableAddress(child, meta);
@@ -188,7 +189,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(4, 1)); r.setInteger(1, 1); r.setInteger(2, 3); cpu.runUntilDepth(0, 896);
+		r.setTable(0, createReferenceTable(cpu, 4, 1)); r.setInteger(1, 1); r.setInteger(2, 3); cpu.runUntilDepth(0, 896);
 	}
 	const frame = js.rootThread.frameAtDepth(0), page = frame.decodedPage!;
 	const entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
@@ -217,7 +218,7 @@ test('compiled generic arrays and string-cache probes retain all kinds across ke
 	}
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(1, cpu.createTable()); r.setTable(2, cpu.createTable());
+		r.setTable(1, createReferenceTable(cpu)); r.setTable(2, createReferenceTable(cpu));
 	}
 	for (const grant of [9, 1, 2, 1, 2, 1, 1, 1, 256]) {
 		runCpuParity(js, ref, grant);
@@ -234,7 +235,7 @@ for (const generic of [false, true]) test(`compiled array reads resolve inherite
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 3, maxStack: 5 }] });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const own = cpu.createTable(2, 0), parent = cpu.createTable(2, 0), meta = cpu.createTable(0, 1);
+		const own = createReferenceTable(cpu, 2, 0), parent = createReferenceTable(cpu, 2, 0), meta = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setInteger(parent, 1, valueInteger(73)); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent)); cpu.gc.tables.setMetatableAddress(own, meta);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, own); cpu.rootThread.frameAtDepth(0).registers.setInteger(1, 1);
 		cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
@@ -261,7 +262,7 @@ test('compiled array stores retain hints and length searches preserve live regis
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 5, maxStack: 9 }] });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const table = cpu.createTable(2, 4);
+		const table = createReferenceTable(cpu, 2, 4);
 		for (let i = 1; i <= 5; ++i) cpu.gc.tables.setInteger(table, i, valueInteger(i));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table); cpu.rootThread.frameAtDepth(0).registers.setInteger(2, 2); cpu.runUntilDepth(0, 605);
 	}
@@ -306,14 +307,14 @@ test('compiled SELF publishes its original receiver and top before a failing inh
 		{ firstWord: 32, wordCount: 1 }], constants: ['method'], exceptionFunctionIndex: 1 });
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const table = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueInteger(73));
+		const table = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueInteger(73));
 		cpu.rootThread.frameAtDepth(0).registers.setTable(9, table); cpu.runUntilDepth(0, 32 * (BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SELF] + BASE_CYCLES[OpCode.JMP]));
 	}
 	const frame = js.rootThread.frameAtDepth(0), entry = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	assert.equal(frame.decodedPage!.compiledBlocks!.entries[entry]!.sourceWords, 3);
 	assert.equal(frame.registers.get(7), frame.registers.get(9));
 	for (const cpu of [js, ref]) {
-		const root = cpu.rootThread.frameAtDepth(0), table = root.registers.getPayload(9), meta = cpu.createTable(0, 1);
+		const root = cpu.rootThread.frameAtDepth(0), table = root.registers.getPayload(9), meta = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('method'), valueNil()); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table));
 		cpu.gc.tables.setMetatableAddress(table, meta); root.top = 0;
 	}
@@ -340,7 +341,7 @@ for (const [op, key] of [
 	for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.JavaScript]) {
 		const cpu = createTestHeapServiceCpu(image, backend).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const table = cpu.createTable(2, 1);
+		const table = createReferenceTable(cpu, 2, 1);
 		const encodedKey = key === 'field' ? valueString(cpu.stringPool.intern(key)) : key;
 		cpu.gc.tables.set(table, encodedKey, valueInteger(73));
 		r.setTable(0, table); r.set(1, encodedKey); r.setInteger(9, 17);
@@ -350,7 +351,7 @@ for (const [op, key] of [
 			assert.ok(frame.decodedPage!.compiledBlocks!.entries[entry], 'exercise an adopted generated loop');
 		}
 		cpu.gc.tables.set(table, encodedKey, valueNil());
-		const meta = cpu.createTable(0, 1);
+		const meta = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(table)); cpu.gc.tables.setMetatableAddress(table, meta);
 		r.setInteger(3, 91); r.setInteger(4, 57); frame.top = 0;
 		cpu.runUntilDepth(0, 4);
@@ -375,7 +376,7 @@ test('compiled nil-key traps precede any invalid table mutation or destination w
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(2)); r.setInteger(1, 1); r.setInteger(2, 73); cpu.runUntilDepth(0, 504);
+		r.setTable(0, createReferenceTable(cpu, 2)); r.setInteger(1, 1); r.setInteger(2, 73); cpu.runUntilDepth(0, 504);
 		r.setNil(1); r.setInteger(3, 19); cpu.rootThread.frameAtDepth(0).top = 0;
 	}
 	runCpuParity(js, ref, 5);

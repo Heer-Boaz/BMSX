@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -17,11 +18,11 @@ test('suspended member reads consume lookup results without executing or chargin
 	cpu.reset();
 	const guest = new SuspendedGuestSession(runtime), key = cpu.stringPool.intern('member');
 	const index = cpu.stringPool.find('__index')!;
-	const parent = cpu.createTable(0, 1), child = cpu.createTable(0, 1), meta = cpu.createTable(0, 1);
+	const parent = createReferenceTable(cpu, 0, 1), child = createReferenceTable(cpu, 0, 1), meta = createReferenceTable(cpu, 0, 1);
 	const parentValue = v.valueTable(parent), childValue = v.valueTable(child);
 	cpu.gc.tables.setStringKey(parent, key, v.valueInteger(41));
 	cpu.gc.tables.setStringKey(meta, index, parentValue); cpu.gc.tables.setMetatableAddress(child, meta);
-	const loop = cpu.createTable(0, 1), loopMeta = cpu.createTable(0, 1);
+	const loop = createReferenceTable(cpu, 0, 1), loopMeta = createReferenceTable(cpu, 0, 1);
 	const loopValue = v.valueTable(loop);
 	cpu.gc.tables.setStringKey(loopMeta, index, loopValue); cpu.gc.tables.setMetatableAddress(loop, loopMeta);
 	setReferenceGlobal(cpu, cpu.stringPool.intern('child'), childValue);

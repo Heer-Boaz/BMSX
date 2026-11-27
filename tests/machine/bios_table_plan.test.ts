@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { spendTableCensusReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -105,7 +106,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt);
 		function table(array: number, hash: number, keys: readonly Value[]) {
 			return f.same(target => {
-				const address = target.createTable(array, hash);
+				const address = createReferenceTable(target, array, hash);
 				for (const key of keys) target.gc.tables.set(address, key, int(42));
 				return address;
 			});
@@ -122,7 +123,7 @@ for (const opt of [0, 3] as const) {
 		const small = table(8, 64, [...full(8), ...full(21, 9), string]);
 		// A removed identity key retains its dead payload, not a live census edge.
 		f.same(cpu => {
-			const owner = cpu.createTable(0, 0);
+			const owner = createReferenceTable(cpu, 0, 0);
 			cpu.gc.tables.set(small, valueTable(owner), int(1));
 			cpu.gc.tables.set(small, valueTable(owner), valueNil());
 		});
@@ -144,7 +145,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt);
 		const array = 2053, hash = 256;
 		const record = f.same(cpu => {
-			const address = cpu.createTable(array, hash);
+			const address = createReferenceTable(cpu, array, hash);
 			for (let key = 1; key <= array; ++key)
 				if (key % 7 !== 0) cpu.gc.tables.set(address, int(key), int(key));
 			for (const key of [4097, 5119, 8193]) cpu.gc.tables.set(address, int(key), int(key));

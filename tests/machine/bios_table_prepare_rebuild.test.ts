@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { advanceTableRebuildReference, TableRebuildReference } from '../helpers/table_rebuild_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -117,7 +118,7 @@ for (const opt of [0, 3] as const) {
 			['fresh', 0, 4, 128, 256],
 		] as const) {
 			const inPlace = kind === 'in-place';
-			const record = f.same(target => target.createTable(inPlace ? array : oldArray, oldHash));
+			const record = f.same(target => createReferenceTable(target, inPlace ? array : oldArray, oldHash));
 			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
 			const source = f.same(target => target.gc.tables.hashAddress(record));
 			const base = inPlace ? oldBase : f.same(target => target.heapAllocator.allocate(5 * array, true));
@@ -187,7 +188,7 @@ for (const opt of [0, 3] as const) {
 			{ oldArray: 256, array: 224, oldHash: 128, hash: 1024 },
 		]) {
 			const mask = hash - 1, shrinking = array < oldArray;
-			const record = f.same(target => target.createTable(oldArray, oldHash));
+			const record = f.same(target => createReferenceTable(target, oldArray, oldHash));
 			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
 			const source = f.same(target => target.gc.tables.hashAddress(record));
 			const base = shrinking ? oldBase : f.same(target => target.heapAllocator.allocate(5 * array, true));
@@ -287,7 +288,7 @@ for (const opt of [0, 3] as const) {
 			['zero-array', 1024, 0, false],
 		] as const) {
 			const oldHash = 128, hash = keepHash ? 0 : 256;
-			const record = f.same(cpu => cpu.createTable(oldArray, oldHash));
+			const record = f.same(cpu => createReferenceTable(cpu, oldArray, oldHash));
 			const oldBase = f.same(cpu => cpu.gc.tables.arrayAddress(record));
 			const oldStorage = f.same(cpu => cpu.gc.tables.hashAddress(record));
 			const base = array > oldArray ? f.same(cpu => cpu.heapAllocator.allocate(5 * array, true)) : oldBase;
@@ -347,7 +348,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`staged Hash publication invalidates its own method cache before marking inserted String edges at O${opt}`, () => {
 		const f = fixture(opt), control = f.cpu.heapAllocator.managementOffset() + HEAP_GC_CONTROL_OFFSET;
-		const oldHash = 128, hash = 256, record = f.same(cpu => cpu.createTable(0, oldHash));
+		const oldHash = 128, hash = 256, record = f.same(cpu => createReferenceTable(cpu, 0, oldHash));
 		const source = f.same(cpu => cpu.gc.tables.hashAddress(record));
 		const storage = f.same(cpu => cpu.heapAllocator.allocate(TableRecords.hashStorageBytes(hash), true));
 		const key = valueString(f.cpu.gc.diagnosticWord(GcDiagnosticField.NewIndex)), value = valueString(f.same(cpu => cpu.stringPool.intern('staged black owner value')));

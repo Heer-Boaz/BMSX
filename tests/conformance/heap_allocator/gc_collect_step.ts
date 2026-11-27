@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -77,7 +78,7 @@ try {
 			const next = call.pc + INSTRUCTION_BYTES;
 			budget.setCollectionTarget(budget.capacity());
 			const slots = entry === GcPhase.Atomic ? 2 * GC_STEP_WORDS : 16;
-			const weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1), dead = cpu.createTable();
+			const weak = createReferenceTable(cpu, slots, 0), meta = createReferenceTable(cpu, 0, 1), dead = createReferenceTable(cpu);
 			gc.tables.set(meta, valueString(gc['modeKey']), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
 			gc.tables.set(weak, valueInteger(slots), valueTable(dead));

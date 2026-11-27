@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -90,7 +91,7 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel);
 		const { memory } = f;
 		for (const hash of [0, 1, 128, 256, 1024]) {
-			const record = f.same(target => target.createTable(2, 4)), array = 9;
+			const record = f.same(target => createReferenceTable(target, 2, 4)), array = 9;
 			const oldHash = f.same(target => target.gc.tables.hashAddress(record));
 			const base = f.backing(array * 5), storage = hash === 0 ? 0 : f.backing(TableRecords.hashStorageBytes(hash));
 			const alias = hash === 1 ? MAIN_RAM_SIZE : 0, cppMirror = hash === 128;
@@ -116,7 +117,7 @@ for (const optLevel of [0, 3] as const) {
 			assert.equal(f.cpu.heapAllocator.occupiedBytes(), physical);
 		}
 
-		const record = f.same(target => target.createTable(1, 8)), array = 7;
+		const record = f.same(target => createReferenceTable(target, 1, 8)), array = 7;
 		const storage = f.same(target => target.gc.tables.hashAddress(record)), base = f.backing(array * 5);
 		f.same(target => {
 			target.memory.writeRamRecordWord(storage, 0x1627419b);
@@ -131,7 +132,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`immediate publication and hash initialization resume at original write boundaries at O${optLevel}`, () => {
 		const f = fixture(optLevel);
 		const { cpu, memory, control } = f;
-		const record = f.same(target => target.createTable(2, 4)), array = 11, hash = 256;
+		const record = f.same(target => createReferenceTable(target, 2, 4)), array = 11, hash = 256;
 		const oldHash = memory.readRamRecordWord(record + TableHeader.HashStorage);
 		const oldArray = memory.readRamRecordWord(record + TableHeader.ArrayStorage);
 		const storage = f.backing(TableRecords.hashStorageBytes(hash)), base = f.backing(array * 5);

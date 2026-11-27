@@ -66,7 +66,7 @@ end
 		cpu.gc.tables.forEachStoredEntry(childData, () => childFields++);
 		assert.equal(childFields, 1, 'tree reset must remove every undeclared child field');
 		assert.equal(cpu.stringPool.toString(asStringId(cpu.gc.tables.getStringKey(childData, cpu.stringPool.find('status')!))), 'idle');
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		for (let index = 1; index <= 32; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `stale data reference ${index} survived reset`);
 		assert.notEqual(cpu.gc.tables.getInteger(weak, 33), valueNil(), 'declared object defaults must retain their identity');
 	}

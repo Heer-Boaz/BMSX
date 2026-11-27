@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
@@ -41,7 +42,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
 	resizeThreadStackReference(cpu, other, 22);
 	const values = [valueFromTag(ValueTag.False, 37), valueInteger(-1), valueFloatBits(0x80000000), valueFloatBits(0xffc01234),
-		valueString(cpu.stringPool.intern('upvalue')), valueTable(cpu.createTable())];
+		valueString(cpu.stringPool.intern('upvalue')), valueTable(createReferenceTable(cpu))];
 	for (const source of ['own', 'other', 'closed']) for (const value of values) {
 		if (source === 'closed') {
 			if (Upvalue.isOpen(cpu.memory, upvalue)) Upvalue.close(cpu.gc, upvalue);
@@ -77,7 +78,7 @@ test('output locals become observable only after their definition, including hel
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
 	const block = page.compiledBlocks!.entries[first]!;
-	const old = cpu.createTable(), source = cpu.createTable();
+	const old = createReferenceTable(cpu), source = createReferenceTable(cpu);
 	for (const mapped of [false, true]) for (const grant of [1, 64]) {
 		const r = new ValueSlots(22);
 		r.setEncoded(0, ValueTag.False, 37);

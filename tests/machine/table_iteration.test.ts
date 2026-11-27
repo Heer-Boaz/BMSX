@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { asClosure, valueInteger, valueNil, valueTable, ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -23,8 +24,8 @@ test('steady-state table deletion and reinsertion do not reserve guest heap', t 
 test('a physical object address remains a deleted-key continuation', () => {
 	const { cpu } = createTestSystemCpu(compileTableIterationTest('return true', 0));
 	runGuestToHalt(cpu, 100000);
-	const key = cpu.createTable();
-	const table = cpu.createTable(0, 64);
+	const key = createReferenceTable(cpu);
+	const table = createReferenceTable(cpu, 0, 64);
 	const keyValue = valueTable(key);
 	cpu.gc.tables.set(table, keyValue, valueInteger(9));
 	for (let index = 1; index <= 8; index++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`other_${index}`), valueInteger(index));

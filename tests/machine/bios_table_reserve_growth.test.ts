@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -78,7 +79,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`table growth issues hash before array, then resumes and publishes only scratch at O${optLevel}`, () => {
 		const f = fixture(optLevel), array = 9, hash = 8;
-		const record = f.same(target => target.createTable(0, 0));
+		const record = f.same(target => createReferenceTable(target, 0, 0));
 		const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes(), physical = f.cpu.heapAllocator.occupiedBytes();
 		const arena = f.oracle.heapAllocator;
 		const storage = arena.allocate(hashBytes(hash), true);
@@ -103,7 +104,7 @@ for (const optLevel of [0, 3] as const) {
 		const f = fixture(optLevel);
 		for (const staged of [true, false]) {
 			const oldArray = staged ? 1024 : 8, array = staged ? 2048 : 256, hash = staged ? 16 : 8;
-			const record = f.same(target => target.createTable(oldArray, hash));
+			const record = f.same(target => createReferenceTable(target, oldArray, hash));
 			const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
 			const oldBase = f.same(target => target.gc.tables.arrayAddress(record));
 			const oldHash = f.same(target => target.gc.tables.hashAddress(record));
@@ -122,12 +123,12 @@ for (const optLevel of [0, 3] as const) {
 			f.verify(record, before, occupied, [oldHash, base]);
 			if (!staged) assert.equal(f.cpu.memory.readRamRecordWord(base), 0x378422bc);
 		}
-		const record = f.same(target => target.createTable(0, 0)), before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
+		const record = f.same(target => createReferenceTable(target, 0, 0)), before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
 		f.begin(record, 0, 0, false, false);
 		f.finish();
 		f.verify(record, before, occupied, [0, 0]);
 
-		const raw = f.same(target => target.createTable(1, 0));
+		const raw = f.same(target => createReferenceTable(target, 1, 0));
 		const base = f.same(target => target.gc.tables.arrayAddress(raw));
 		// The record port still decodes aliases and compares raw unsigned slots.
 		f.same(target => target.memory.writeRamRecordWord(raw + TableHeader.Array, 0x80000001));
@@ -141,7 +142,7 @@ for (const optLevel of [0, 3] as const) {
 
 test('table growth restores only its owned hash block on an array refusal', () => {
 	const f = fixture(3), hash = 8;
-	const record = f.same(target => target.createTable(0, hash));
+	const record = f.same(target => createReferenceTable(target, 0, hash));
 	const before = f.header(record), occupied = f.cpu.luaHeap.usedBytes();
 	const fit = f.same(target => target.heapAllocator.allocate(hashBytes(hash), true));
 	assert.ok(fit && f.same(target => target.heapAllocator.allocate(32, true)));

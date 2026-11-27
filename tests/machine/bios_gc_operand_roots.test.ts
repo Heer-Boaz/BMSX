@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -63,8 +64,8 @@ function fixture(optLevel: 0 | 3) {
 
 for (const optLevel of [0, 3] as const) {
 	test(`Scoped Table operand roots follow the source major-remark suffix even at its work limit at O${optLevel}`, () => {
-		const f = fixture(optLevel), receiver = f.add(cpu => cpu.createTable());
-		const key = f.add(cpu => cpu.createTable()), value = f.add(cpu => cpu.createTable());
+		const f = fixture(optLevel), receiver = f.add(cpu => createReferenceTable(cpu));
+		const key = f.add(cpu => createReferenceTable(cpu)), value = f.add(cpu => createReferenceTable(cpu));
 		const index = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIFT;
 		const cursor = GcRootBank.SystemConstants << (GC_GRAY_INDEX_BITS + 1);
 		const write = (offset: number, word: number) => {
@@ -95,7 +96,7 @@ for (const optLevel of [0, 3] as const) {
 	});
 
 	test(`Scoped Atomic operand suffix matches native explicit roots before its work cutoff at O${optLevel}`, () => {
-		const f = fixture(optLevel), receiver = f.add(cpu => cpu.createTable());
+		const f = fixture(optLevel), receiver = f.add(cpu => createReferenceTable(cpu));
 		const key = f.add(cpu => cpu.stringPool.intern('pending own Table assignment key'));
 		const value = f.add(cpu => cpu.stringPool.intern('pending own Table assignment value'));
 		const cursor = GcRootBank.SystemConstants << (GC_GRAY_INDEX_BITS + 1);

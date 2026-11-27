@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -28,7 +29,7 @@ return exercise(0)
 	cpu.beginCompletionCall(asClosure(cpu.getGlobalByKey(name), cpu.gc));
 	runGuestToHalt(cpu, 30_000_000, depth);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(10000)]);
-	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
+	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let iteration = 0; iteration < 2; iteration++) {
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
@@ -38,7 +39,7 @@ return exercise(0)
 		assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation before explicit collection');
 		const stackBytes = logicalThreadBytes(cpu, cpu.activeThread.address);
-		const collected = cpu.collectTrackedHeapBytes();
+		const collected = collectReferenceHeapBytes(cpu);
 		const releasedStackBytes = stackBytes - logicalThreadBytes(cpu, cpu.activeThread.address);
 		assert.equal(collected, heap - releasedStackBytes,
 			'collection only releases retired compiler stack capacity');

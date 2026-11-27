@@ -32,7 +32,7 @@ compile()
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	assert.notEqual(cpu.gc.tables.getInteger(probe, 1), valueNil());
 	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
 	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
 });
@@ -71,7 +71,7 @@ end
 	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
 	assert.notEqual(cpu.gc.tables.getInteger(refs, 1), valueNil());
 	assert.notEqual(cpu.gc.tables.getInteger(refs, 2), valueNil());
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tables.getInteger(refs, 1), valueNil(), 'the cache must not retain unused appliers');
 	assert.equal(cpu.gc.tables.getInteger(refs, 2), valueNil(), 'the cache must not retain unused writers');
 });
@@ -146,7 +146,7 @@ end
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 	const refs = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('refs')!));
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('seed')!), cpu.gc), []);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(refs, index), valueNil());
 	runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('recreate')!), cpu.gc), []);
 	assert.equal(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile_count')!), valueInteger(3),

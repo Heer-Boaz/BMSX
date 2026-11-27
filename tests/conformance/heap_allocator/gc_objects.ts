@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -65,7 +66,7 @@ try {
 		const management = cpu.heapAllocator.managementOffset(), floor = memory.ramBusEnd() - RAM_BASE;
 		const arena = cpu.heapAllocator.allocatorStateOffset();
 		const control = management + HEAP_GC_CONTROL_OFFSET, occupied = management + HEAP_LOGICAL_OCCUPIED_OFFSET;
-		const table = cpu.createTable(3, 8);
+		const table = createReferenceTable(cpu, 3, 8);
 		const colorShift = 8 * GC_COLOR_OFFSET;
 		const header = (memory.readRamRecordWord(table) & ~(GC_COLOR_MASK << colorShift)) | ((cpu.gc.white() ^ 1) << colorShift);
 		const phase = (memory.readRamRecordWord(control) & ~0xff) | GcPhase.Sweep;

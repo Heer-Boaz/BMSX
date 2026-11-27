@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -123,7 +124,7 @@ for (const opt of [0, 3] as const) {
 		for (const [oldArray, oldHash, array, hash, keepHash] of [
 			[31, 4, 32, 4, true], [32, 8, 31, 16, false], [16, 4, 0, 32, false], [1, 128, 2, 1024, false],
 		] as const) {
-			const record = f.same(target => target.createTable(oldArray, oldHash));
+			const record = f.same(target => createReferenceTable(target, oldArray, oldHash));
 			const key = keepHash ? valueInteger(array) : f.same(target => valueString(target.stringPool.intern('grow')));
 			const value = valueInteger(-2147483648);
 			const mappings = f.same(target => {
@@ -137,7 +138,7 @@ for (const opt of [0, 3] as const) {
 				next.push([tick, valueInteger(87)], [valueInteger(-100), tick]);
 				if (hash === 1024) next.push([valueInteger(59), valueBool(false)], [valueInteger(64), valueInteger(815)],
 					[valueBool(false), valueInteger(98)], [valueBool(true), tick], [valueFloatBits(0xbf400000), valueInteger(17)],
-					[valueBuiltinFunction(BuiltinFunctionId.RawGet), valueInteger(6)], [valueTable(target.createTable()), valueInteger(217)]);
+					[valueBuiltinFunction(BuiltinFunctionId.RawGet), valueInteger(6)], [valueTable(createReferenceTable(target)), valueInteger(217)]);
 				for (const [k, v] of next) store.set(record, k, v);
 				return next;
 			});
@@ -182,7 +183,7 @@ for (const opt of [0, 3] as const) {
 	test(`Table immediate resize preserves Brent relocation and both Free publication timings at O${opt}`, () => {
 		const f = fixture(opt);
 		for (const cppMirror of [false, true]) {
-			const record = f.same(target => target.createTable(0, 4));
+			const record = f.same(target => createReferenceTable(target, 0, 4));
 			const a = integerWithHome(2), candidate = valuePayload(a) | 0;
 			let b = valueInteger(candidate - 1);
 			while ((hashCanonicalTableKey(b) & 7) !== 2) b = valueInteger((valuePayload(b) | 0) - 1);
@@ -219,7 +220,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`the firmware resize clears method absence before its direct marking barrier at O${opt}`, () => {
 		const f = fixture(opt);
-		const owner = f.same(target => target.createTable(0, 1));
+		const owner = f.same(target => createReferenceTable(target, 0, 1));
 		const id = f.same(target => target.stringPool.intern('a new collectable edge'));
 		const key = f.same(target => valueString(target.gc.diagnosticWord(GcDiagnosticField.NewIndex)));
 		f.same(target => {
@@ -248,7 +249,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`combined immediate resize retires a refused hash without entering publication at O${opt}`, () => {
 		const f = fixture(opt), hash = 16;
-		const record = f.same(target => target.createTable(32, 8));
+		const record = f.same(target => createReferenceTable(target, 32, 8));
 		f.same(target => {
 			const arena = target.heapAllocator;
 			target.gc.tables.set(record, valueInteger(32), valueInteger(17));

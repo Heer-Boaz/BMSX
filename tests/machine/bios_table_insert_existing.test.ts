@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -76,14 +77,14 @@ for (const opt of [0, 3] as const) {
 	test(`old Hash retries really reuse weak-cleared and identity tombstones at home at O${opt}`, () => {
 		const f = fixture(opt);
 		const [owner, dead, trigger, tagBase] = f.same(cpu => {
-			const strings = cpu.stringPool, table = cpu.createTable(0, 8);
-			const meta = cpu.createTable(0, 4), victim = cpu.createTable(0, 0);
+			const strings = cpu.stringPool, table = createReferenceTable(cpu, 0, 8);
+			const meta = createReferenceTable(cpu, 0, 4), victim = createReferenceTable(cpu, 0, 0);
 			const weakKey = valueString(strings.intern('existing-hash-weak-home'));
 			const home = hashCanonicalTableKey(weakKey) & 7;
 			cpu.gc.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
 			cpu.gc.tables.setMetatableAddress(table, meta);
 			cpu.gc.tables.set(table, weakKey, valueTable(victim));
-			cpu.collectTrackedHeapBytes(valueTable(table));
+			cpu.gc.collect(valueTable(table));
 			assert.equal(cpu.gc.tables.get(table, weakKey), valueNil(), 'a real native weak epoch cleared the value');
 			return [table, home, keysAt(8, home)[0], cpu.gc.tables.hashAddress(table) + 8 * 8] as const;
 		});
@@ -95,7 +96,7 @@ for (const opt of [0, 3] as const) {
 		assert.equal(f.cpu.gc.tables.get(owner, trigger), val);
 
 		const [identityTable, identityHome] = f.same(cpu => {
-			const record = cpu.createTable(0, 8), key = valueTable(cpu.createTable(0, 0));
+			const record = createReferenceTable(cpu, 0, 8), key = valueTable(createReferenceTable(cpu, 0, 0));
 			cpu.gc.tables.set(record, key, val);
 			cpu.gc.tables.set(record, key, valueNil());
 			return [record, hashCanonicalTableKey(key) & 7] as const;
@@ -109,12 +110,12 @@ for (const opt of [0, 3] as const) {
 
 	test(`old Hash Full is non-mutating, preserves off-home tombstones and updates live/bands only on insertion at O${opt}`, () => {
 		const f = fixture(opt);
-		const empty = f.same(cpu => cpu.createTable(0, 0));
+		const empty = f.same(cpu => createReferenceTable(cpu, 0, 0));
 		f.begin(empty, keysAt(8, 0)[0], val, -1);
 		f.finish(-1);
 		for (const hash of [8, 128]) {
 			const record = f.same(cpu => {
-				const table = cpu.createTable(0, hash);
+				const table = createReferenceTable(cpu, 0, hash);
 				for (let home = 0; home < hash; ++home) cpu.gc.tables.set(table, keysAt(hash, home)[0], val);
 				// The small table has a logical hole which cannot be used
 				// as a free displaced node; the large one is truly full.
@@ -127,7 +128,7 @@ for (const opt of [0, 3] as const) {
 			assert.equal(f.memory.readRamRecordWord(record + TableHeader.Free), hash - 1);
 		}
 
-		const hash = 1024, record = f.same(cpu => cpu.createTable(0, hash)), incoming = valueInteger(257);
+		const hash = 1024, record = f.same(cpu => createReferenceTable(cpu, 0, hash)), incoming = valueInteger(257);
 		const home = hashCanonicalTableKey(incoming) & (hash - 1);
 		f.begin(record, incoming, val, home);
 		f.finish(home);
@@ -142,12 +143,12 @@ for (const opt of [0, 3] as const) {
 			const home = hash - 1, free = home - 1;
 			const [anchor, displaced, append] = keysAt(hash, 0, 3), trigger = keysAt(hash, home)[0];
 			const [record, traced] = f.same(cpu => {
-				const table = cpu.createTable(0, hash);
+				const table = createReferenceTable(cpu, 0, hash);
 				cpu.gc.tables.set(table, anchor, val);
 				cpu.gc.tables.set(table, displaced, val);
 				// Word links additionally exercise the ModeMeta-only alias:
 				// the original TraceRecord, not the moving Table, rescans.
-				return [table, hash === 8 ? table : cpu.createTable(0, 0)] as const;
+				return [table, hash === 8 ? table : createReferenceTable(cpu, 0, 0)] as const;
 			});
 			const words = f.cpu.gc.tables.hashAddress(record), tags = words + 8 * hash;
 			const trace = f.control + GC_TRACE_RECORD;

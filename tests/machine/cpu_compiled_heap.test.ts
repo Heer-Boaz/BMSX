@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -48,7 +49,7 @@ return factory
 	}
 	cpu.gc.collect(); // the next collector work must come from this allocation
 	const payload = cpu.stringPool.intern('payload'), kept = cpu.stringPool.intern('retained');
-	const table = cpu.createTable(1024, 1);
+	const table = createReferenceTable(cpu, 1024, 1);
 	cpu.gc.tables.setStringKey(table, payload, valueString(kept));
 	cpu.beginCompletionCall(factory, [valueTable(table)]);
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());

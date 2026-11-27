@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -45,7 +46,7 @@ function fixture(optLevel: 0 | 3) {
 	const first = memory.ramBusEnd() - RAM_BASE;
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
-		const live = target.createTable(16, 0), child = target.createTable(8, 0);
+		const live = createReferenceTable(target, 16, 0), child = createReferenceTable(target, 8, 0);
 		setReferenceGlobal(target, target.stringPool.intern('mark-quantum live root'), valueTable(live));
 		target.gc.tables.set(live, valueInteger(1), valueTable(child));
 		target.gc.tables.set(child, valueInteger(8), valueString(target.stringPool.intern('mark-quantum nested String')));

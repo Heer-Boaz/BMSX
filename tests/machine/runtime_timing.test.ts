@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -351,9 +352,9 @@ return 1
 	runGuestToHalt(cpu, 1_000_000);
 	assert.ok(cpu.isHaltedUntilIrq());
 	cpu.clearHaltUntilIrq();
-	const live = cpu.createTable(8, 0);
+	const live = createReferenceTable(cpu, 8, 0);
 	setReferenceGlobal(cpu, cpu.stringPool.intern('retained across both epochs'), valueTable(live));
-	const floating = cpu.createTable();
+	const floating = createReferenceTable(cpu);
 	gc.step(valueTable(floating), valueNil(), valueNil(), 0, false, 1);
 	runtime.frameLoop.beginFrameState(16_000_000, 0);
 	const step = () => runtime.frameScheduler.stepInstruction(0);

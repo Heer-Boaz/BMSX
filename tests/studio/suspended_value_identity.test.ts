@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
@@ -85,11 +86,11 @@ test('numeric watches retain subtype and raw NaN identity instead of host Number
 test('retained object identities do not alias a recycled compact heap reference', () => {
 	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
 	const guest = new SuspendedGuestSession(runtime), presentation = new SuspendedValuePresentation(guest, 'summary');
-	const table = cpu.createTable(), first = valueTable(table);
+	const table = createReferenceTable(cpu), first = valueTable(table);
 	const identity = guest.identity(first);
 	presentation.update(first);
 	collectOnGuest(runtime);
-	const replacement = cpu.createTable(), second = valueTable(replacement);
+	const replacement = createReferenceTable(cpu), second = valueTable(replacement);
 	assert.equal(valuePayload(first), valuePayload(second), 'exercise physical record reuse');
 	assert.equal(guest.matchesIdentity(second, identity), false);
 	presentation.update(second);
@@ -99,7 +100,7 @@ test('retained object identities do not alias a recycled compact heap reference'
 test('table previews use the returned key, not traversal work, to detect exhaustion', () => {
 	const runtime = bootWatchGuest(), cpu = runtime.machine.cpu;
 	const guest = new SuspendedGuestSession(runtime);
-	const table = cpu.createTable(8, 16);
+	const table = createReferenceTable(cpu, 8, 16);
 	const value = valueTable(table);
 	const presentation = new SuspendedValuePresentation(guest, 'preview');
 	assert.equal(guest.previewValue(value, 1, 8), '{}', 'vacant allocated storage has no preview entries');
@@ -116,7 +117,7 @@ test('suspended member reads and enumeration follow the runtime index field', ()
 	const runtime = bootWatchGuest();
 	const guest = new SuspendedGuestSession(runtime), { cpu } = runtime.machine;
 	const { tables } = cpu.gc, pool = cpu.stringPool;
-	const child = cpu.createTable(0, 1), parent = cpu.createTable(0, 2), meta = cpu.createTable(0, 1);
+	const child = createReferenceTable(cpu, 0, 1), parent = createReferenceTable(cpu, 0, 2), meta = createReferenceTable(cpu, 0, 1);
 	const shared = pool.intern('member-shadow'), inherited = pool.intern('member-inherited');
 	tables.setStringKey(child, shared, valueBool(false));
 	tables.setStringKey(parent, shared, valueInteger(13));
@@ -135,7 +136,7 @@ test('suspended member reads and enumeration follow the runtime index field', ()
 test('a replaced heap retires tool lifetime tokens without a collector notification', () => {
 	const runtime = bootWatchGuest(), { cpu } = runtime.machine;
 	const guest = new SuspendedGuestSession(runtime), observer = new SuspendedGuestSession(runtime);
-	const table = valueTable(cpu.createTable());
+	const table = valueTable(createReferenceTable(cpu));
 	const romFunction = valueFromTag(ValueTag.CodeFunction, firmware!.collectionEntry);
 	const checkpoint = captureRuntimeSaveState(runtime);
 	const previous = observer.identity(table);

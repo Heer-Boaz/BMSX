@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -104,7 +105,7 @@ function fixture(optLevel: 0 | 3) {
 		compare(`table extent [${next}, allowance ${limit})`);
 	}
 	function table(array: number, hash: number) {
-		const record = add(target => target.createTable(array, hash));
+		const record = add(target => createReferenceTable(target, array, hash));
 		const arrayBase = cpu.gc.tables.arrayAddress(record), hashBase = cpu.gc.tables.hashAddress(record);
 		assert.equal(cpu.gc.tables.arrayCapacity(record), array);
 		assert.equal(cpu.gc.tables.hashSize(record), hash);
@@ -141,7 +142,7 @@ for (const optLevel of [0, 3] as const) {
 		test(`BLua Table edge mode ${mode} visits only eligible ranged slots at O${optLevel}`, () => {
 			const { cpu, memory, control, compare, add, byte, word, table, string, beginEdges, grant, finish } = fixture(optLevel);
 			const { record, arraySlot, hashSlot } = table(4, 8);
-			const keyObject = add(target => target.createTable()), valueObject = add(target => target.rootThread.address);
+			const keyObject = add(target => createReferenceTable(target)), valueObject = add(target => target.rootThread.address);
 			byte(keyObject + GC_COLOR_OFFSET, 0xb1);
 			byte(valueObject + GC_COLOR_OFFSET, 0xd1);
 			word(keyObject + GC_RECORD_LINK, 0x83a01fff);

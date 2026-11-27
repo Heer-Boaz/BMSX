@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import { runGuestToHalt, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import assert from 'node:assert/strict';
@@ -42,8 +43,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, read = base + 3 * INSTRUCTION_BYTES;
 			const indexKey = cpu.stringPool.intern('__index');
 			const key = op === OpCode.GETT ? valueFloat(1) : op === OpCode.GETI ? valueInteger(1) : valueString(cpu.stringPool.intern('field'));
-			const table = cpu.createTable(), forwarded = cpu.createTable();
-			const meta = cpu.createTable(0, 1), forwardedMeta = cpu.createTable(0, 1);
+			const table = createReferenceTable(cpu), forwarded = createReferenceTable(cpu);
+			const meta = createReferenceTable(cpu, 0, 1), forwardedMeta = createReferenceTable(cpu, 0, 1);
 			cpu.gc.tables.set(table, key, valueBool(false));
 			frame.registers.setTable(0, table); frame.registers.set(1, key);
 			frame.registers.setInteger(12, 91); frame.top = 13;
@@ -147,7 +148,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const [op, kind] of forms) for (const inherited of [false, true]) {
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
-			const root = cpu.createTable(), meta = cpu.createTable(0, 128), parent = cpu.createTable(2, 1);
+			const root = createReferenceTable(cpu), meta = createReferenceTable(cpu, 0, 128), parent = createReferenceTable(cpu, 2, 1);
 			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
 			const method = valueString(cpu.stringPool.intern('__index'));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
@@ -185,7 +186,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 			const { image } = readProgram(op, false), { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!;
-			const start = frame.pc, root = cpu.createTable(0, 128), key = valueString(cpu.stringPool.intern('field'));
+			const start = frame.pc, root = createReferenceTable(cpu, 0, 128), key = valueString(cpu.stringPool.intern('field'));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			let n = 0, placed = 0;
 			for (const depth of [64, 65, 96]) {
@@ -231,7 +232,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const op of [OpCode.GETFIELD, OpCode.GETT, OpCode.SELF]) {
 		const { image } = readProgram(op, false, names), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, start = frame.pc;
-			const key = valueString(cpu.stringPool.intern('field')), root = cpu.createTable(0, 8);
+			const key = valueString(cpu.stringPool.intern('field')), root = createReferenceTable(cpu, 0, 8);
 			frame.registers.setTable(0, root); frame.registers.set(1, key); frame.top = 2;
 			const collisions = names.map(name => valueString(cpu.stringPool.intern(name)))
 				.filter(candidate => ((hashCanonicalTableKey(candidate) ^ hashCanonicalTableKey(key)) & 7) === 0);
@@ -250,7 +251,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 				assert.equal(frame.registers.get(6), valueNil());
 				assert.equal(frame.registers.get(8), marker ? valueNil() : valueInteger(91));
 			}
-			const meta = cpu.createTable(0, 1);
+			const meta = createReferenceTable(cpu, 0, 1);
 			cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root));
 			cpu.gc.tables.setMetatableAddress(root, meta);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], start);
@@ -264,7 +265,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 function chain(cpu: CPU, root: number, depth: number, key: Value, value: Value): number {
 	let current = root;
 	for (let i = 1; i < depth; ++i) {
-		const next = cpu.createTable(2, 2), meta = cpu.createTable(0, 1);
+		const next = createReferenceTable(cpu, 2, 2), meta = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(next)); cpu.gc.tables.setMetatableAddress(current, meta); current = next;
 	}
 	cpu.gc.tables.set(current, key, value);
@@ -278,14 +279,14 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + starts[0] * INSTRUCTION_BYTES;
 			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
-			const root = cpu.createTable(2, 2); cpu.gc.tables.set(root, key, valueBool(false));
+			const root = createReferenceTable(cpu, 2, 2); cpu.gc.tables.set(root, key, valueBool(false));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			const ownLoop = 2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2;
 			cpu.runUntilDepth(0, ownLoop * 64);
 			if (backend === CpuExecutionBackend.JavaScript) assert.ok(frame.decodedPage!.compiledBlocks!.entries[(loop & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]);
 			cpu.gc.tables.set(root, key, valueNil()); chain(cpu, root, depth, key, valueBool(false));
 			if (depth === 1) {
-				const meta = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
+				const meta = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
 			}
 			const lookup = (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 8 * (depth - 1);
 			const charges = [2, lookup, 2, 2], total = charges.reduce((a, b) => a + b, 0);
@@ -326,12 +327,12 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			const { image, starts } = readProgram(op, wide), { cpu } = createTestSystemCpu(image, backend);
 			const frame = cpu.rootThread.currentFrame!, base = frame.pc;
 			const key = kind === 'string' ? valueString(cpu.stringPool.intern('field')) : kind === 'number' ? valueInteger(1) : valueBool(false);
-			const root = cpu.createTable(2, 2); cpu.gc.tables.set(root, key, valueInteger(73));
+			const root = createReferenceTable(cpu, 2, 2); cpu.gc.tables.set(root, key, valueInteger(73));
 			frame.registers.setTable(0, root); frame.registers.set(1, key);
 			cpu.runUntilDepth(0, (2 + (op === OpCode.SELF ? 17 : op === OpCode.GETI ? 8 : 16) + 2 + 2) * 64);
 			cpu.gc.tables.set(root, key, valueNil());
 			if (cyclic) {
-				const meta = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
+				const meta = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(root)); cpu.gc.tables.setMetatableAddress(root, meta);
 			} else chain(cpu, root, 33, key, valueInteger(73));
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], base);
 			frame.registers.setInteger(8, 57);
@@ -348,7 +349,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 	test(`String receiver starts at installed index Table and follows live prototype replacement (${backend}, WIDE=${wide})`, () => {
 		const { image, starts } = readProgram(OpCode.GETFIELD, wide), { cpu } = createTestSystemCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!, base = frame.pc, key = valueString(cpu.stringPool.intern('field'));
-		const installed = cpu.createTable(0, 2); cpu.gc.tables.set(installed, key, valueInteger(19));
+		const installed = createReferenceTable(cpu, 0, 2); cpu.gc.tables.set(installed, key, valueInteger(19));
 		const remark = cpu.heapAllocator.managementOffset() + GC_DIAGNOSTIC_OFFSET;
 		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexTag, ValueTag.Table);
 		cpu.memory.writeRamRecordWord(remark + GcDiagnosticField.StringIndexWord, installed);
@@ -360,7 +361,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 		frame.registers.setInteger(8, 57); cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 32);
 		assert.equal(frame.registers.getInteger(6), 73); assert.equal(frame.registers.getInteger(8), 57);
-		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(installed), cpu.stringPool.intern('__index'), valueTable(cpu.createTable()));
+		cpu.gc.tables.setStringKey(cpu.gc.tables.metatableAddress(installed), cpu.stringPool.intern('__index'), valueTable(createReferenceTable(cpu)));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], loop);
 		cpu.runUntilDepth(0, 3);
 		assert.equal(cpu.instructionBudgetRemaining, 3 - 2 - 24);

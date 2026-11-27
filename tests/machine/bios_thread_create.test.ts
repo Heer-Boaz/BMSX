@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -192,7 +193,7 @@ for (const opt of [0, 3] as const) {
 		const { cpu, oracle, memory } = f, arena = cpu.heapAllocator;
 		const management = arena.managementOffset(), control = management + HEAP_GC_CONTROL_OFFSET;
 		const entry = detachEntry(f);
-		const victim = f.same(cpu => cpu.createTable(256, 0));
+		const victim = f.same(cpu => createReferenceTable(cpu, 256, 0));
 		f.same(cpu => {
 			const arena = cpu.heapAllocator;
 			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());

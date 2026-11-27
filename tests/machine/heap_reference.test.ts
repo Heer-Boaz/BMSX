@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
@@ -53,7 +54,7 @@ function checkReferences(cpu: CPU): void {
 }
 
 test('marking selects issued white headers, not arbitrary byte patterns', () => {
-	const cpu = machine(), { gc, memory } = cpu, table = cpu.createTable();
+	const cpu = machine(), { gc, memory } = cpu, table = createReferenceTable(cpu);
 	const raw = DYNAMIC_RAM_BASE + 0x600, header = ValueTag.Table | ((0xfc | gc.white()) << 8);
 	memory.writeRamRecordWord(raw, header);
 	assert.equal(gc.markValue(valueTable(raw)), false);
@@ -71,29 +72,29 @@ test('32-bit object payloads survive heap growth and collection', () => {
 	assert.equal(frame.registers.getPayload(1), captured);
 	assert.equal(cpu.gc.closureRecordAddress(cell), 0);
 	checkReferences(cpu);
-	const roots = cpu.createTable(512), slots = new ValueStorage(400);
+	const roots = createReferenceTable(cpu, 512), slots = new ValueStorage(400);
 	frame.registers.setTable(0, roots); frame.top = 2;
 	for (let i = 0; i < slots.capacity; ++i) {
-		const object = cpu.createTable(); cpu.gc.tables.setInteger(roots, i + 1, valueTable(object));
+		const object = createReferenceTable(cpu); cpu.gc.tables.setInteger(roots, i + 1, valueTable(object));
 		slots.words[i] = object; slots.tags[i] = ValueTag.Table;
 	}
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	for (let i = 0; i < slots.capacity; ++i) assert.equal(cpu.gc.tableRecordAddress(slots.words[i]), valuePayload(cpu.gc.tables.getInteger(roots, i + 1)));
 	checkReferences(cpu);
 });
 
 test('a freed header is cleared before its physical address is reused', () => {
-	const cpu = machine(); cpu.collectTrackedHeapBytes();
-	const dead = cpu.createTable(), id = dead;
-	cpu.collectTrackedHeapBytes();
+	const cpu = machine(); cpu.gc.collect();
+	const dead = createReferenceTable(cpu), id = dead;
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(id), 0);
-	const next = cpu.createTable();
+	const next = createReferenceTable(cpu);
 	assert.equal(next, id);
 	assert.equal(cpu.gc.tableRecordAddress(id), next);
 });
 
 test('equally initialized CPUs have independent address spaces', () => {
-	const first = machine(), second = machine(), a = first.createTable(), b = second.createTable();
+	const first = machine(), second = machine(), a = createReferenceTable(first), b = createReferenceTable(second);
 	assert.equal(a, b);
 	first.gc.tables.setInteger(a, 1, valueInteger(73));
 	second.gc.tables.setInteger(b, 1, valueInteger(85));
@@ -102,18 +103,18 @@ test('equally initialized CPUs have independent address spaces', () => {
 });
 
 test('restore publishes physical roots and drops discarded future records', () => {
-	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = cpu.createTable(4);
+	const cpu = machine(), frame = cpu.rootThread.currentFrame!, roots = createReferenceTable(cpu, 4);
 	frame.closureAddress = seedTestRomClosure(cpu, frame.functionAddress);
 	frame.registers.setTable(0, roots); frame.top = 2;
-	for (let i = 1; i <= 4; ++i) cpu.gc.tables.setInteger(roots, i, valueTable(cpu.createTable()));
-	cpu.createTable();
-	cpu.createTable();
-	cpu.collectTrackedHeapBytes();
+	for (let i = 1; i <= 4; ++i) cpu.gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu)));
+	createReferenceTable(cpu);
+	createReferenceTable(cpu);
+	cpu.gc.collect();
 	const saved = cpu.captureRuntimeState(), thread = cpu.rootThread.address, canonical = frame.closure;
 	const root = frame.registers.get(0), fourth = cpu.gc.tables.getInteger(roots, 4);
 	const ram = cpu.memory.captureSaveState();
 	for (let iteration = 0; iteration < 64; ++iteration) {
-		const future = Array.from({ length: 12 }, () => cpu.createTable());
+		const future = Array.from({ length: 12 }, () => createReferenceTable(cpu));
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
 		assert.equal(cpu.rootThread.address, thread);
@@ -123,18 +124,18 @@ test('restore publishes physical roots and drops discarded future records', () =
 		for (const object of future) assert.equal(cpu.gc.tableRecordAddress(object), 0);
 		checkReferences(cpu);
 		assert.deepEqual(cpu.captureRuntimeState(), saved);
-		assert.deepEqual([cpu.createTable(), cpu.createTable()], future.slice(0, 2).map(table => table));
+		assert.deepEqual([createReferenceTable(cpu), createReferenceTable(cpu)], future.slice(0, 2).map(table => table));
 		cpu.memory.restoreSaveState(ram);
 		cpu.restoreRuntimeState(saved);
 	}
 });
 
 test('incremental GC and phase-preserving restore keep physical attachments synchronized', () => {
-	const cpu = machine(), roots = cpu.createTable(1024), frame = cpu.rootThread.currentFrame!;
+	const cpu = machine(), roots = createReferenceTable(cpu, 1024), frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, roots); frame.top = 2;
 	for (let i = 1; i <= 1000; ++i) {
-		cpu.gc.tables.setInteger(roots, i, valueTable(cpu.createTable(1, 1)));
-		const dead = cpu.createTable(1); cpu.gc.tables.setInteger(dead, 1, valueTable(cpu.createTable()));
+		cpu.gc.tables.setInteger(roots, i, valueTable(createReferenceTable(cpu, 1, 1)));
+		const dead = createReferenceTable(cpu, 1); cpu.gc.tables.setInteger(dead, 1, valueTable(createReferenceTable(cpu)));
 	}
 	const phases = new Set<GcPhase>();
 	for (let step = 0; step < 1000; ++step) {
@@ -149,7 +150,7 @@ test('incremental GC and phase-preserving restore keep physical attachments sync
 
 
 test('builtin functions retain their own ids outside the GC heap', () => {
-	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = cpu.createTable(BUILTIN_FUNCTIONS.length);
+	const cpu = machine(), frame = cpu.rootThread.currentFrame!, functions = createReferenceTable(cpu, BUILTIN_FUNCTIONS.length);
 	frame.registers.setTable(0, functions); frame.top = 2;
 	const before = allocatedObjectRecords(cpu);
 	for (const builtin of BUILTIN_FUNCTIONS) cpu.gc.tables.setInteger(functions, builtin.id + 1, valueBuiltinFunction(builtin.id));
@@ -208,11 +209,11 @@ test('a closed capture is read from RAM, rewound with RAM and released by collec
 	const restored = asClosure(cpu.getGlobalByKey(key), cpu.gc);
 	assert.equal(ClosureRecord.captureAddress(cpu.memory, restored, 0), address);
 	assert.equal(cpu.readClosureUpvalue(restored, 0), valueFloatBits(0xffa12345));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	const arena = cpu.heapAllocator, occupied = arena.occupiedBytes();
 	const retiredBytes = arena.allocationBytes(closure - GC_OBJECT_PREFIX) + arena.allocationBytes(address - GC_OBJECT_PREFIX);
 	setReferenceGlobal(cpu, key, valueNil());
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(arena.occupiedBytes(), occupied - retiredBytes);
 	assert.equal(cpu.gc.cellRecordAddress(address), 0, 'a retired capture has no issued header');
 	assert.equal(memory.readRamRecordByte(address), 0);
@@ -239,15 +240,15 @@ test('reclaimed closures are not visited by the next sweep', () => {
 
 test('restoring a suspended sweep keeps its cursor when a new object is added', () => {
 	const cpu = machine(), { gc } = cpu;
-	const dead = cpu.createTable();
-	const keep = cpu.createTable();
+	const dead = createReferenceTable(cpu);
+	const keep = createReferenceTable(cpu);
 	cpu.rootThread.currentFrame!.registers.set(0, valueTable(keep));
 	while (gc.phase() !== GcPhase.Sweep) gc.step();
 	assert.equal(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1), 1);
 	assert.equal(gc.tableRecordAddress(dead), dead);
 	const suspended = captureCpuCheckpoint(cpu);
 	const finish = () => {
-		const fresh = cpu.createTable();
+		const fresh = createReferenceTable(cpu);
 		assert.equal(gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1), 1);
 		assert.equal(gc.tableRecordAddress(dead), 0, 'a new head does not disturb the suspended cursor');
 		while (gc.active()) gc.step();

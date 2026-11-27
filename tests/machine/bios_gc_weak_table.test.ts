@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GC_COLOR_OFFSET, GC_OBJECT_PREFIX, GC_RECORD_MASK } from '../../machine/ts/machine/cpu/gc_object';
@@ -70,7 +71,7 @@ function fixture(optLevel: 0 | 3) {
 		compare(`clear mode ${mode} [${first}, ${end})`);
 	}
 	function table(array: number, hash: number) {
-		const record = add(target => target.createTable(array, hash));
+		const record = add(target => createReferenceTable(target, array, hash));
 		const arrayBase = cpu.gc.tables.arrayAddress(record), hashBase = cpu.gc.tables.hashAddress(record);
 		assert.equal(cpu.gc.tables.arrayCapacity(record), array);
 		assert.equal(cpu.gc.tables.hashSize(record), hash);
@@ -100,7 +101,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`BLua weak liveness uses record kind, issued bit and current white at O${optLevel}`, () => {
 		const { cpu, oracle, add, byte, begin, finish, compare } = fixture(optLevel);
-		const table = add(target => target.createTable());
+		const table = add(target => createReferenceTable(target));
 		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
 		const unissued = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
@@ -122,7 +123,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua weak clear preserves ranges, tombstones, counters and String edge order at O${optLevel}`, () => {
 		const { cpu, memory, newIndex, add, byte, word, table, string, clear, beginClear, grant, finish, compare } = fixture(optLevel);
-		const dead = add(target => target.createTable()), alive = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
+		const dead = add(target => createReferenceTable(target)), alive = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		byte(dead + GC_COLOR_OFFSET, 0xe1);
 		byte(alive + GC_COLOR_OFFSET, 0xe2);
 		const arrString = string('surviving array'), keyString = string('surviving hash key'), valString = string('surviving hash value');
@@ -216,7 +217,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua weak clear restores between tombstone key payload and tag stores at O${optLevel}`, () => {
 		const { cpu, memory, add, byte, word, table, grant, finish, beginClear, compare } = fixture(optLevel);
-		const dead = add(target => target.createTable());
+		const dead = add(target => createReferenceTable(target));
 		byte(dead + GC_COLOR_OFFSET, 0xf1);
 		const { record, hashBase, hashSlot, readHash } = table(0, 128);
 		hashSlot(0, ValueTag.Table, dead);

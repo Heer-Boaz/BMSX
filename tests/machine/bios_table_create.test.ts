@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -64,7 +65,7 @@ for (const optLevel of [0, 3] as const) {
 				mem.writeRamRecordWord(control + SWEEP_LINK, sweep);
 				mem.writeRamRecordByte(control + 1, 0xa0 | (index & 1));
 			}
-			const address = oracle.createTable(array, requested);
+			const address = createReferenceTable(oracle, array, requested);
 			begin(array, hash);
 			finish();
 			assert.equal(firmwareProbeResult(cpu), address - RAM_BASE);
@@ -82,7 +83,7 @@ for (const optLevel of [0, 3] as const) {
 		const { cpu, oracle, control, memory, begin, grant, finish, compare } = fixture(optLevel);
 		const array = 33, hash = 256, hashBytes = TableRecords.hashStorageBytes(hash);
 		const previous = memory.readRamRecordWord(control + OBJECT_HEAD), count = memory.readRamRecordWord(control + OBJECT_COUNT);
-		const address = oracle.createTable(array, hash);
+		const address = createReferenceTable(oracle, array, hash);
 		const value = oracle.memory.readRamRecordWord(address + TableHeader.ArrayStorage) + 8;
 		const link = oracle.memory.readRamRecordWord(address + TableHeader.HashStorage) + hash * 10;
 		// The native oracle computed the chosen payload addresses. Seed just

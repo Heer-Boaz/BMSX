@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -182,7 +183,7 @@ test('a later unknown selector keeps its own sparse fault edge after the privile
 	writeInstruction(source.text, 4, OpCode.JMP, 0, 63, 61, 255); source.functions[0].wordCount = 5;
 	const image = linkRawTestSystemBlua32(source), js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, createReferenceTable(cpu));
 		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(8)); cpu.runUntilDepth(0, 900);
 		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0)); assert.equal(cpu.runUntilDepth(0, 20), RunResult.Halted);
 	}
@@ -197,7 +198,7 @@ for (const op of [OpCode.MFC0, OpCode.MTC0] as const) for (const wide of [false,
 		const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 		const registers = js.rootThread.frameAtDepth(0).registers;
 		for (const cpu of [js, ref]) {
-			const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+			const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, createReferenceTable(cpu));
 			setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET));
 		}
 		const original = registers.get(12);
@@ -229,7 +230,7 @@ test('a warmed WIDE RFE rejects an ordinary frame after returning to the active 
 	const image = linkRawTestSystemBlua32(faultLoopSource(OpCode.MFC0, false));
 	const js = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu, ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
-		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, cpu.createTable());
+		const r = cpu.rootThread.frameAtDepth(0).registers; r.setInteger(0, CPU_STATUS_USER_MODE_CURRENT); r.setTable(12, createReferenceTable(cpu));
 		setReferenceGlobal(cpu, cpu.stringPool.find('returnStatus')!, valueInteger(0xa5a5a408 | CPU_STATUS_INHIBIT_RESET)); cpu.runUntilDepth(0, 900);
 		for (let step = 0; step < 8 && cpu.rootThread.frameDepth > 1; ++step) cpu.runUntilDepth(0, 1);
 		assert.equal(cpu.rootThread.frameDepth, 1); cpu.runUntilDepth(0, 1);

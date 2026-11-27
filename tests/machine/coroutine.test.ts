@@ -32,7 +32,7 @@ test('a dead coroutine is collected after its last stack roots return', () => {
 	const { cpu } = createTestSystemCpu(compileCoroutineTest(coroutineVectors.collection, 3));
 	runGuestToHalt(cpu, 1_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueBool(true)]);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak_threads')!));
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), valueNil());
 });

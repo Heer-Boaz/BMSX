@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -121,7 +122,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua Closure fast trace matches native open, closed, duplicate and unissued capture lanes at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, add, cell, closure, enqueue, word, begin, finish, compare } = fixture(optLevel);
 		const open = cell(), closed = cell();
-		const owner = add(target => allocateThreadRecordReference(target, 0)), table = add(target => target.createTable());
+		const owner = add(target => allocateThreadRecordReference(target, 0)), table = add(target => createReferenceTable(target));
 		const fake = add(target => target.heapAllocator.allocate(32, true)) + GC_OBJECT_PREFIX;
 		const string = add(target => target.stringPool.intern('bios-trace-closed-value'));
 		const prior = add(target => target.stringPool.intern('bios-trace-prior-work'));

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { WorkbenchPreferences } from '../../ide/workbench/services/preferences/preferences';
 import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
@@ -87,9 +88,9 @@ test('headless heap diagnostics collect through the running guest', async t => {
 	const { ide, runtime, until } = await createLiveStudioFixture(t, { ready: ide => ide.luaEvaluation.canEvaluate });
 	await until(() => runtime.admitExternalCpuMutation());
 	const { cpu, memory, scheduler } = runtime.machine;
-	t.mock.method(cpu, 'collectTrackedHeapBytes', () => assert.fail('heap diagnostics must not run the host collector'));
+	t.mock.method(cpu.gc, 'collect', () => assert.fail('heap diagnostics must not run the host collector'));
 	const harness = createHeadlessIdeHarness(ide, runtime, new RecordingLogOutput({ log() {} }));
-	const unreachable = cpu.createTable(), started = scheduler.nowCycles;
+	const unreachable = createReferenceTable(cpu), started = scheduler.nowCycles;
 	assert.equal(memory.readRamRecordByte(unreachable), ValueTag.Table);
 	let settled = false;
 	const pending = harness.debugStats().finally(() => { settled = true; });

@@ -209,7 +209,7 @@ return retired`;
 	assert.equal(blua32SourceRangeAtPc(linked.symbols, linked.layout.header.textAddress, stop.pc)!.start.line, 3);
 	assert.equal(cpu.getFrameDepth(), stop.depth);
 	const count = thread.stackRegisters.capacity() + 1, guest = new SuspendedGuestSession(runtime);
-	t.mock.method(cpu, 'acquireLocalRoots', () => assert.fail('Debugger admission does not acquire native allocator roots'));
+	t.mock.method(cpu.gc, 'collect', () => assert.fail('Debugger admission does not run the host collector'));
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	let prepared = 0, constructed = 0, entered = 0, completed = false;

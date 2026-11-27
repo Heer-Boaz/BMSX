@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -94,10 +95,10 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua object sweep matches the TS cursor and backs Table/Upvalue reclamation at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, occupied, allocate, cell, color, setCursor, compare, begin, grant, finish, step } = fixture(optLevel);
 		step(7); // inactive native link: no GC writes
-		const keep = allocate(target => target.createTable(2, 0));
-		const retire = [[0, 0], [0, 8], [4, 0]].map(([array, hash]) => allocate(target => target.createTable(array, hash)));
+		const keep = allocate(target => createReferenceTable(target, 2, 0));
+		const retire = [[0, 0], [0, 8], [4, 0]].map(([array, hash]) => allocate(target => createReferenceTable(target, array, hash)));
 		retire.push(cell());
-		const table = allocate(target => target.createTable(3, 8));
+		const table = allocate(target => createReferenceTable(target, 3, 8));
 		retire.push(table);
 		const white = cpu.gc.white(), oldWhite = white ^ 1;
 		for (const address of retire) color(address, 0xa0 | oldWhite);
@@ -138,7 +139,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua preserves the C++ hash-first Table release quantum at O${optLevel}`, () => {
 		const { oracle, memory, control, occupied, allocate, color, setCursor, compare, begin, grant, finish } = fixture(optLevel);
-		const table = allocate(target => target.createTable(3, 8));
+		const table = allocate(target => createReferenceTable(target, 3, 8));
 		color(table, oracle.gc.white() ^ 1);
 		setCursor(control + OBJECT_HEAD);
 		const count = memory.readRamRecordWord(control + OBJECT_COUNT), charged = memory.readRamRecordWord(occupied);
@@ -193,7 +194,7 @@ for (const optLevel of [0, 3] as const) {
 			reserveThreadStorageReference(target, address, 32, 8, valueThread(address));
 			return address;
 		});
-		const table = allocate(target => target.createTable(4, 2));
+		const table = allocate(target => createReferenceTable(target, 4, 2));
 		const deadCell = cell();
 		const white = oracle.gc.white();
 		const dead = [deadThread, fewerCaptures, opaque, ordinary, table, deadCell];
@@ -275,7 +276,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`BLua finishes an oversized compaction's quantum without visiting its successor at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, allocate, color, setCursor, compare,
 			begin, finish } = fixture(optLevel);
-		const successor = allocate(target => target.createTable(0, 0));
+		const successor = allocate(target => createReferenceTable(target, 0, 0));
 		const thread = allocate(target => {
 			const address = allocateThreadRecordReference(target, 0);
 			reserveThreadStorageReference(target, address, 32, 8, valueThread(address));

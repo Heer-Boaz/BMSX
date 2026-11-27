@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../../tests/helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../tests/helpers/global_bank_reference';
 // Exercise the actual CPU's logical accounting for recursive stack slots and
 // image globals. This is not an ASIC size estimate or a large-name test.
@@ -18,10 +19,10 @@ const image = linkRawTestSystemBlua32({
 });
 const { cpu } = createTestSystemCpu(image);
 setReferenceGlobal(cpu, cpu.stringPool.intern('rec'), valueClosure(cpu.activeThread.frameAtDepth(0)!.closure));
-const before = cpu.collectTrackedHeapBytes();
+const before = collectReferenceHeapBytes(cpu);
 const initialCapacity = cpu.activeThread.stackRegisters.capacity();
 cpu.runUntilDepth(0, 20000);
-const after = cpu.collectTrackedHeapBytes();
+const after = collectReferenceHeapBytes(cpu);
 const capacity = cpu.activeThread.stackRegisters.capacity();
 const thread = cpu.activeThread;
 for (let frame = thread.currentFrame; frame !== null; frame = frame.previous) {

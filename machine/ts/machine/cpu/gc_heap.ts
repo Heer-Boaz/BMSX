@@ -637,11 +637,9 @@ export class GcHeap {
 			work += this.remarkVisits(limit);
 			if (this.remarkStage() !== RemarkStage.Roots) return work;
 		}
-		// Only a synchronous final pass can run inside a temporary host scope.
-		// Earlier marking cannot reclaim this epoch, so no scoped cursor or
-		// repeated visit is needed before the mutator stops.
+		// The reference's String interner and explicit request operands
+		// only need marking before final reclamation.
 		if (scopedRoots && this.remarkStage() < RemarkStage.ClearWeak) {
-			this.cpu.markScopedRoots(this);
 			this.cpu.stringPool.markLocalRoots();
 			this.markValue(t0); this.markValue(t1); this.markValue(t2);
 			work += this.cpu.stringPool.takeMarkWork();

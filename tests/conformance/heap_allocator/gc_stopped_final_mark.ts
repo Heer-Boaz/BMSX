@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -89,11 +90,11 @@ try {
 			// Construct one identical fixture; production guest code runs all
 			// collector work from this exact MarkAgain boundary onward.
 			luaHeap.setCollectionTarget(luaHeap.capacity());
-			const weak = cpu.createTable(slots, 0), meta = cpu.createTable(0, 1);
+			const weak = createReferenceTable(cpu, slots, 0), meta = createReferenceTable(cpu, 0, 1);
 			gc.tables.set(meta, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, meta);
-			gc.tables.set(weak, valueInteger(1), valueTable(cpu.createTable()));
-			gc.tables.set(weak, valueInteger(slots), valueTable(cpu.createTable()));
+			gc.tables.set(weak, valueInteger(1), valueTable(createReferenceTable(cpu)));
+			gc.tables.set(weak, valueInteger(slots), valueTable(createReferenceTable(cpu)));
 			setReferenceGlobal(cpu, cpu.stringPool.find('final_mark_weak_root')!, valueTable(weak));
 			if (irq) assert.notEqual(arena.allocate(arena.capacityBytes() >>> 1, true), 0);
 			if (gc.phase() === GcPhase.Pause) gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);

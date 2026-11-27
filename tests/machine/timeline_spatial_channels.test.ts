@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { asClosure, asStringId, numberToHost, valueBool, valueInteger, valueString, valuePayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -439,7 +440,7 @@ test('warmed grouped curve sampling makes no guest heap reservations', t => {
 	const run = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('run')!), cpu.gc);
 	runCompletionClosure(cpu, run, [valueInteger(64)]);
 	const heap = cpu.luaHeap;
-	const before = cpu.collectTrackedHeapBytes();
+	const before = collectReferenceHeapBytes(cpu);
 	const admit = heap.admit;
 	let reservations = 0;
 	heap.admit = function (...args) { reservations += 1; return admit.apply(heap, args); };

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
@@ -103,7 +104,7 @@ test('physical GC work counts canonical scans, reclamation and one global bank p
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes, 'read-only ROM Strings are not allocated');
 	const frame = cpu.rootThread.currentFrame!;
-	frame.registers.setTable(0, cpu.createTable(2, 3)); //32+10+4×10=82 logical bytes.
+	frame.registers.setTable(0, createReferenceTable(cpu, 2, 3)); //32+10+4×10=82 logical bytes.
 	frame.registers.setString(1, cpu.stringPool.intern(textToByteString('é😀'))); //6 canonical UTF8 bytes, not3 UTF16 units.
 	frame.top = 2;
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
@@ -112,7 +113,7 @@ test('physical GC work counts canonical scans, reclamation and one global bank p
 	assert.equal(cpu.instructionBudgetRemaining, 7);
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
 	assert.equal(cpu.luaHeap.collectionTarget(), 1048576);
-	cpu.instructionBudgetRemaining = 123; cpu.collectTrackedHeapBytes();
+	cpu.instructionBudgetRemaining = 123; cpu.gc.collect();
 	assert.equal(cpu.instructionBudgetRemaining, 123, 'raw host collection is unbilled');
 	const state = cpu.captureRuntimeState(); cpu.restoreRuntimeState(state);
 	assert.equal(cpu.instructionBudgetRemaining, 123); assert.equal(cpu.luaHeap.usedBytes(), bootBytes + 82 + 22);
@@ -125,7 +126,7 @@ test('inactive frame reserve does not consume automatic GC quanta', () => {
 	const image = linkRawTestSystemBlua32(source());
 	const collect = (reservedFrames: number) => {
 		const { cpu, memory } = createTestHeapServiceCpu(image), { gc, rootThread: thread } = cpu;
-		const retained = cpu.createTable(), doomed = allocateThreadRecordReference(cpu, 0);
+		const retained = createReferenceTable(cpu), doomed = allocateThreadRecordReference(cpu, 0);
 		if (reservedFrames !== THREAD_INITIAL_FRAMES) {
 			reserveThreadStorageReference(cpu, thread.address, 0, reservedFrames, valueNil());
 			thread.bindStack();
@@ -157,13 +158,13 @@ test('allocation admission and GC use logical bytes, not physical chunk extents'
 	const logicalCharge = (32 + 2 * 5 + 4 * 10) + (32 + 512 * 5);
 	cpu.luaHeap.setCollectionTarget(logical + logicalCharge);
 	cpu.instructionBudgetRemaining = 23;
-	const first = cpu.createTable(2, 3), second = cpu.createTable(512, 0);
+	const first = createReferenceTable(cpu, 2, 3), second = createReferenceTable(cpu, 512, 0);
 	assert.equal(cpu.instructionBudgetRemaining, 23, 'the allocations fit at the exact logical threshold');
 	assert.equal(cpu.luaHeap.usedBytes(), logical + logicalCharge);
 	const arena = cpu.heapAllocator, tables = cpu.gc.tables;
 	const extent = (table: number) => arena.allocationBytes(table - GC_OBJECT_PREFIX) + arena.allocationBytes(tables.arrayAddress(table)) + (tables.hashAddress(table) ? arena.allocationBytes(tables.hashAddress(table)) : 0);
 	assert.equal(arena.occupiedBytes(), physical + extent(first) + extent(second));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.luaHeap.usedBytes(), logical, 'reclaim the exact charges');
 	assert.equal(arena.occupiedBytes(), physical, 'release both the headers and the backing chunks');
 });
@@ -171,7 +172,7 @@ test('allocation admission and GC use logical bytes, not physical chunk extents'
 test('table replacement admits just its logical increase, even when both layouts need backing', () => {
 	for (const packArrayIntoHash of [false, true]) {
 		const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-		const table = packArrayIntoHash ? cpu.createTable(8, 0) : cpu.createTable(1, 0);
+		const table = packArrayIntoHash ? createReferenceTable(cpu, 8, 0) : createReferenceTable(cpu, 1, 0);
 		const frame = cpu.rootThread.currentFrame!, tables = cpu.gc.tables;
 		frame.registers.setTable(0, table); frame.top = 1;
 		const residentKey = packArrayIntoHash ? 8 : 1, trigger = packArrayIntoHash ? 9 : 2;
@@ -196,11 +197,11 @@ test('table growth retries its actual physical reserve before starting a fresh G
 	for (const pressure of ['reclaimable', 'floating', 'unavailable', 'explicit'] as const) {
 		const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 		const { gc, heapAllocator: arena } = cpu, { tables } = gc;
-		const table = cpu.createTable(512, 0);
+		const table = createReferenceTable(cpu, 512, 0);
 		const frame = cpu.rootThread.currentFrame!;
 		frame.registers.setTable(0, table); frame.top = 1;
 		for (let key = 1; key <= 512; ++key) tables.setInteger(table, key, valueInteger(key));
-		const garbage = pressure !== 'unavailable' ? cpu.createTable(1024, 0) : 0;
+		const garbage = pressure !== 'unavailable' ? createReferenceTable(cpu, 1024, 0) : 0;
 		while (arena.allocate(TableRecords.storageBytes(1024, 0), true) !== 0) {}
 		assert.ok(cpu.luaHeap.usedBytes() + 2560 < cpu.luaHeap.capacity(), 'the replacement fits the logical budget');
 
@@ -238,7 +239,7 @@ test('physical reservations pace marking while the logical budget is below its t
 	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena, luaHeap: heap } = cpu;
 	const frame = cpu.rootThread.currentFrame!;
-	const live = cpu.createTable(131072, 0);
+	const live = createReferenceTable(cpu, 131072, 0);
 	frame.registers.setTable(0, live); frame.top = 1;
 	gc.collect(); // calibrate a completed epoch with a long mark.
 	// Only the physical pace may advance marking.
@@ -246,7 +247,7 @@ test('physical reservations pace marking while the logical budget is below its t
 	do assert.notEqual(arena.allocate(ballastBytes, true), 0);
 	while (arena.unoccupiedBytes() > runwayRequests * (5 * slots + 64));
 	heap.setCollectionTarget(heap.capacity());
-	const roots = [cpu.createTable(), cpu.createTable(), cpu.createTable()];
+	const roots = [createReferenceTable(cpu), createReferenceTable(cpu), createReferenceTable(cpu)];
 	const white = gc.white();
 	const started = gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
 	assert.equal(gc.phase(), GcPhase.Mark);
@@ -261,7 +262,7 @@ test('physical reservations pace marking while the logical budget is below its t
 	for (let requests = 0; !gc.finalMarkPending(); ++requests) {
 		assert.ok(requests < runwayRequests && gc.white() === white,
 			'reservations reach the final mark before the physical runway is exhausted');
-		cpu.createTable(slots, 0);
+		createReferenceTable(cpu, slots, 0);
 	}
 	assert.ok(arena.unoccupiedBytes() >= runway / 4, 'marking keeps room for the final mark and reclamation');
 	assert.equal(heap.collectionTarget(), heap.capacity());
@@ -272,12 +273,12 @@ test('physical reservations pace marking while the logical budget is below its t
 test('physical occupancy advances a large live epoch before a table replacement needs recovery', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc, heapAllocator: arena } = cpu, { tables } = gc;
-	const owner = cpu.createTable(512, 0);
+	const owner = createReferenceTable(cpu, 512, 0);
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, owner); frame.top = 1;
 	for (let key = 1; key <= 512; ++key) tables.setInteger(owner, key, valueInteger(key));
-	frame.registers.setTable(1, cpu.createTable(225280, 0)); frame.top = 2;
-	const garbage = cpu.createTable(65536, 0);
+	frame.registers.setTable(1, createReferenceTable(cpu, 225280, 0)); frame.top = 2;
+	const garbage = createReferenceTable(cpu, 65536, 0);
 	frame.registers.setTable(2, garbage); frame.top = 3;
 	// One 4096-byte chunk, including its header, without stranding a hole.
 	const initialIntervals = 140, pressureBytes = 4088;
@@ -345,7 +346,7 @@ test('allocation assist target is only restored by the RAM checkpoint', () => {
 
 test('fixed admission distinguishes an impossible size from a recoverable shortage', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	const doomed = cpu.createTable(16384, 0), used = cpu.luaHeap.usedBytes();
+	const doomed = createReferenceTable(cpu, 16384, 0), used = cpu.luaHeap.usedBytes();
 	cpu.instructionBudgetRemaining = 1;
 	for (const active of [false, true]) {
 		if (active) cpu.gc.step(valueNil(), valueNil(), valueNil(), 0, false, 1);
@@ -374,7 +375,7 @@ test('ROM constants need no collector visits even with multiple resident images'
 	cpu.writeFrameExecution(0, 0, first.cartSymbols.functionAddresses[0], first.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, 1, second.cartSymbols.functionAddresses[0], second.cartImage.functions[0].codeAddress);
 	cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, first.systemSymbols.functionAddresses[0], first.systemImage.functions[0].codeAddress);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.luaHeap.usedBytes(), bootBytes + (4 + 12) + (4 + 12) + 2 * 9, 'each card charges its String bindings, name-slot map and new unique global');
 	cpu.instructionBudgetRemaining = 5;
 	const work = bootCollectionWork + 3 * 2;
@@ -554,7 +555,7 @@ test('reused ROM literal views recover the saved RAM String binding rather than 
 		assert.equal(restored.constWords, words, 'same mounted literals reuse their decoded backing');
 		assert.equal(count(), 1);
 		assert.equal(memory.readRamRecordWord(strings()) & ~IMAGE_STRING_RAM_ORDINAL, first);
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		assert.equal(cpu.stringPool.find(literal), first);
 		cpu.runUntilDepth(0, 4096);
 		assert.equal(cpu.readFrameRegister(0, 0), valueString(first));
@@ -629,8 +630,8 @@ test('replacing fitted ROM releases its old RAM binding span and binds decoded g
 test('growing a fully traced strong table publishes just the inserted edges during the second pass', () => {
 	const { cpu, memory } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
 	const { gc } = cpu, { tables } = gc;
-	const slots = 8192, table = cpu.createTable(slots), pending = cpu.createTable(slots);
-	const key = cpu.createTable(), value = cpu.createTable();
+	const slots = 8192, table = createReferenceTable(cpu, slots), pending = createReferenceTable(cpu, slots);
+	const key = createReferenceTable(cpu), value = createReferenceTable(cpu);
 	const frame = cpu.rootThread.currentFrame!;
 	frame.registers.setTable(0, table);
 	frame.registers.setTable(1, pending);
@@ -665,7 +666,7 @@ test('growing a fully traced strong table publishes just the inserted edges duri
 
 test('temporary roots survive unbilled admission; unreachable allocations only add physical reclamation work', () => {
 	const { cpu } = createTestHeapServiceCpu(linkRawTestSystemBlua32(source()));
-	const table = cpu.createTable(), id = cpu.stringPool.intern(textToByteString('é😀'));
+	const table = createReferenceTable(cpu), id = cpu.stringPool.intern(textToByteString('é😀'));
 	const heap = [cpu.luaHeap.usedBytes(), cpu.luaHeap.collectionTarget()]; assert.equal(heap[0], bootBytes + 32 + 22);
 	cpu.luaHeap.setCollectionTarget(0); cpu.instructionBudgetRemaining = 1;
 	cpu.luaHeap.admit(0, valueTable(table), valueString(id));

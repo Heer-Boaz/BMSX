@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { compileHeapServiceSystem } from '../helpers/heap_service_system';
 import { ValueTag, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { allocatedObjectRecords } from '../helpers/cpu_execution';
@@ -168,11 +169,11 @@ for (const optLevel of [3] as const) {
 		const bootCycles = 20_000_000 - cpu.instructionBudgetRemaining;
 		const bootAllocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-		const before = cpu.collectTrackedHeapBytes();
+		const before = collectReferenceHeapBytes(cpu);
 		const beforeObjects = heapObjects(cpu);
 		const admissionCycles = runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('admit')!), cpu.gc), []);
 		const admittedAllocated = cpu.luaHeap.usedBytes() - before;
-		const admittedRetained = cpu.collectTrackedHeapBytes() - before;
+		const admittedRetained = collectReferenceHeapBytes(cpu) - before;
 		const admittedObjects = heapObjects(cpu);
 		const graph = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('graph')!));
 		const baseCount = cpu.gc.tables.getStringKey(graph, cpu.stringPool.find('_count')!);
@@ -229,7 +230,7 @@ for (const optLevel of [3] as const) {
 		// event-port weak-key cache's rehash/collection cycle. A shorter warmup
 		// can leave that cache at a different capacity despite equal live keys.
 		profileWarmGuestKernel(cpu, churn, 16);
-		const retained = cpu.collectTrackedHeapBytes();
+		const retained = collectReferenceHeapBytes(cpu);
 		const objects = heapObjects(cpu);
 		const scratchSlots = cpu.gc.tables.getStringKey(graph, cpu.stringPool.find('_scratch_capacity')!);
 		const measurements = [];
@@ -237,7 +238,7 @@ for (const optLevel of [3] as const) {
 			const profile = profileWarmGuestKernel(cpu, churn, 16);
 			assert.ok(profile.reservations > 0, 'public gameplay identities have real allocation costs');
 			assert.ok(profile.reservedBytes > 0);
-			assert.equal(cpu.collectTrackedHeapBytes(), retained, 'retired instances must not accumulate in queues or scratch');
+			assert.equal(collectReferenceHeapBytes(cpu), retained, 'retired instances must not accumulate in queues or scratch');
 			assert.deepEqual(heapObjects(cpu), objects);
 			assert.equal(cpu.gc.tables.getStringKey(graph, cpu.stringPool.find('_scratch')!), scratch);
 			assert.equal(cpu.gc.tables.getStringKey(graph, cpu.stringPool.find('_scratch_capacity')!), scratchSlots);
@@ -332,7 +333,7 @@ for (const optLevel of [3] as const) for (const dimension of [2, 3] as const) {
 			runGuestToHalt(cpu, 10_000_000);
 			const admissionCycles = 10_000_000 - cpu.instructionBudgetRemaining;
 			const allocatedBytes = cpu.luaHeap.usedBytes() - initialHeap;
-			const retainedBytes = cpu.collectTrackedHeapBytes() - initialHeap;
+			const retainedBytes = collectReferenceHeapBytes(cpu) - initialHeap;
 			const objects = heapObjects(cpu);
 			const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 			const kernels = [];

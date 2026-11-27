@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { logicalThreadBytes } from '../helpers/guest_kernel';
 import { valueBool, valueInteger, asClosure } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -101,7 +102,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 `);
 	runGuestToHalt(cpu, 2_000_000);
 	const name = cpu.stringPool.find('advance')!, score = cpu.stringPool.find('score')!;
-	const heap = cpu.collectTrackedHeapBytes(), globals = cpu.globalSlotCount;
+	const heap = collectReferenceHeapBytes(cpu), globals = cpu.globalSlotCount;
 	const ram = cpu.memory.captureSaveState(), saved = cpu.captureRuntimeState();
 	for (let index = 0; index < 2; index++) {
 		runCompletionClosure(cpu, asClosure(cpu.getGlobalByKey(name), cpu.gc), []);
@@ -109,7 +110,7 @@ advance = assert(load('for i = 1, 10000 do score = score + 1 end; return score')
 		assert.equal(cpu.globalSlotCount, globals);
 		assert.equal(cpu.luaHeap.usedBytes(), heap, 'no transient guest allocation between explicit collections');
 		const stackBytes = logicalThreadBytes(cpu);
-		const collected = cpu.collectTrackedHeapBytes();
+		const collected = collectReferenceHeapBytes(cpu);
 		assert.equal(heap - collected, stackBytes - logicalThreadBytes(cpu));
 		cpu.memory.restoreSaveState(ram); cpu.restoreRuntimeState(saved);
 		assert.equal(cpu.getGlobalByKey(score), valueInteger(0));

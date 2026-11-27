@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -85,7 +86,7 @@ try {
 			// Occupy *physical* slots; the recovered case frees a real dead
 			// backing record, not a simulated failed status or logical quota.
 			cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-			if (scenario === 'weak_recovered') cpu.createTable(1536, 0);
+			if (scenario === 'weak_recovered') createReferenceTable(cpu, 1536, 0);
 			while (arena.allocate(HEAP_PAGE_SIZE - 8, true)) {}
 			while (arena.allocate(16, true)) {}
 			const seed = join(directory, `O${optLevel}-${scenario}.seed`);

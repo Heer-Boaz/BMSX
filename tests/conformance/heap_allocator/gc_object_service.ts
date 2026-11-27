@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -81,7 +82,7 @@ try {
 		const count = () => memory.readRamRecordWord(control + OBJECT_COUNT);
 		const cursor = () => memory.readRamRecordWord(control + SWEEP_LINK);
 		const occupied = () => cpu.luaHeap.usedBytes();
-		const tail = cpu.createTable(6, 16);
+		const tail = createReferenceTable(cpu, 6, 16);
 		cpu.clearHaltUntilIrq();
 		const driver = new FullGcConformance(runtime, native, path, rom);
 		driver.launch();
@@ -108,7 +109,7 @@ try {
 		const deadCaptured = memory.readRamRecordWord(deadThread + ThreadField.Entry);
 		assert.ok(captureCount(memory, deadCaptured) > 0);
 		assert.ok(memory.readRamRecordByte(deadCanonical + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL);
-		const first = cpu.createTable(3, 8);
+		const first = createReferenceTable(cpu, 3, 8);
 		driver.observe('Y 3 8', first);
 
 		driver.reach(() => gc.phase() === GcPhase.Atomic, 'Atomic admission', 113);

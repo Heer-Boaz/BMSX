@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -24,7 +25,7 @@ test('same-frame integer table read continuations survive cross-page target repl
 	writeInstruction(code, 2, OpCode.JMP, 0, 63, 61, 255);
 	for (const { cpu, memory } of machines) {
 		memory.writeBytes(sourcePc, code);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
+		cpu.rootThread.frameAtDepth(0).registers.setTable(0, createReferenceTable(cpu));
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], sourcePc);
 		cpu.runUntilDepth(0, 4096);
 	}

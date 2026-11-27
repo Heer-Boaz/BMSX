@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { cartridgeSlots } from '../helpers/cartridge';
 import { CART_EXEC, MANAGED_CART_LAUNCH, MANAGED_CART_PREPARE } from '../helpers/managed_cart_launch';
@@ -544,9 +545,9 @@ test('an unexecuted second cartridge does not alter guest identity allocation', 
 	const singleStringId = single.machine.cpu.stringPool.intern('post-boot-probe');
 	assert.equal(dual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
 	assert.equal(revisedDual.machine.cpu.stringPool.intern('post-boot-probe'), singleStringId);
-	const singleTableId = single.machine.cpu.createTable(0, 0);
-	assert.equal(dual.machine.cpu.createTable(0, 0), singleTableId);
-	assert.equal(revisedDual.machine.cpu.createTable(0, 0), singleTableId);
+	const singleTableId = createReferenceTable(single.machine.cpu, 0, 0);
+	assert.equal(createReferenceTable(dual.machine.cpu, 0, 0), singleTableId);
+	assert.equal(createReferenceTable(revisedDual.machine.cpu, 0, 0), singleTableId);
 
 	unusedSlotRom[decodeBlua32BootHeader(unusedSlotRom).imageOffset] ^= 0xff;
 	dual.rebootSystem();
@@ -593,7 +594,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), valueInteger(111));
 	const savedClosureName = cpu.stringPool.intern('saved_closure');
 	const closureTableName = cpu.stringPool.intern('closure_table');
-	const closureTable = cpu.createTable();
+	const closureTable = createReferenceTable(cpu);
 	cpu.gc.tables.set(closureTable, slot0Closure, valueInteger(77));
 	setReferenceGlobal(cpu, savedClosureName, slot0Closure);
 	setReferenceGlobal(cpu, closureTableName, valueTable(closureTable));
@@ -686,7 +687,7 @@ test('distinct non-static closures remain distinct table keys through the runtim
 	const firstName = cpu.stringPool.intern('first_closure');
 	const secondName = cpu.stringPool.intern('second_closure');
 	const tableName = cpu.stringPool.intern('closure_table');
-	const closureTable = cpu.createTable(0, 2);
+	const closureTable = createReferenceTable(cpu, 0, 2);
 	cpu.gc.tables.set(closureTable, firstClosure, valueInteger(11));
 	cpu.gc.tables.set(closureTable, secondClosure, valueInteger(22));
 	setReferenceGlobal(cpu, firstName, firstClosure);
@@ -744,7 +745,7 @@ test('mixed static and non-static cartridge closures keep their identities acros
 	const dynamicName = cpu.stringPool.intern('dynamic_closure');
 	const canonicalName = cpu.stringPool.intern('canonical_closure');
 	const tableName = cpu.stringPool.intern('mixed_closure_table');
-	const closureTable = cpu.createTable(0, 2);
+	const closureTable = createReferenceTable(cpu, 0, 2);
 	cpu.gc.tables.set(closureTable, dynamicClosure, valueInteger(11));
 	cpu.gc.tables.set(closureTable, canonicalClosure, valueInteger(22));
 	setReferenceGlobal(cpu, dynamicName, dynamicClosure);

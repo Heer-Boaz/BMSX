@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { valueInteger, asClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 import assert from 'node:assert/strict';
@@ -24,7 +25,7 @@ return first_failed_assertion`;
 	runGuestToHalt(cpu, 10_000_000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [valueInteger(0)], 'all guest spatial contract assertions must pass');
 	const allocated = cpu.luaHeap.usedBytes() - initialHeap;
-	const retained = cpu.collectTrackedHeapBytes() - initialHeap;
+	const retained = collectReferenceHeapBytes(cpu) - initialHeap;
 	return { cpu, codeBytes: images.cartImage.textBytes.byteLength, allocated, retained };
 }
 

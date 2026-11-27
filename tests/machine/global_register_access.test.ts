@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { valuePayload as tableAddressPayload } from '../../machine/ts/machine/cpu/value';
 import assert from 'node:assert/strict';
@@ -92,13 +93,13 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	}
 	assert.ok(grewBank, 'the names cross an actual capacity boundary');
 	const objectKey = cpu.stringPool.intern('object');
-	const object = cpu.createTable(1);
+	const object = createReferenceTable(cpu, 1);
 	cpu.gc.tables.setInteger(object, 1, valueInteger(42));
 	setReferenceGlobal(cpu, objectKey, valueTable(object));
 	const nilKey = cpu.stringPool.intern('nil-name');
 	setReferenceGlobal(cpu, nilKey, valueNil());
 	assert.equal(cpu.globalSlotCount, count + 259);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 
 	const memory = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
@@ -106,7 +107,7 @@ test('dynamic names and values survive growth, collection and exact checkpoint r
 	for (let index = 0; index < 257; index++) assert.equal(cpu.getGlobalByKey(cpu.stringPool.find(`dynamic${index}`)!), valueInteger(index));
 	setReferenceGlobal(cpu, objectKey, valueNil());
 	setReferenceGlobal(cpu, cpu.stringPool.intern('future'), valueInteger(100));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 
 	cpu.memory.restoreSaveState(memory);
 	cpu.restoreRuntimeState(anchor);

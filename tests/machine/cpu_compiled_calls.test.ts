@@ -70,7 +70,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		for (const { cpu, memory } of machines) {
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setNil(0); registers.setNil(4);
-			cpu.collectTrackedHeapBytes();
+			cpu.gc.collect();
 			const capacity = cpu.rootThread.stackRegisters.capacity();
 			// Reuse a reclaimed RAM record, like the BIOS loader arena does.
 			memory.writeMappedU32LE(record + BLUA32_FUNCTION_MAX_STACK_OFFSET, 1024);
@@ -94,7 +94,7 @@ for (const open of [false, true]) for (const recordOffset of [0x1800, 0x1ff0]) {
 		for (const { cpu, memory } of machines) {
 			const registers = cpu.rootThread.frameAtDepth(0).registers;
 			registers.setNil(0); registers.setNil(4);
-			cpu.collectTrackedHeapBytes();
+			cpu.gc.collect();
 			memory.writeBytes(record + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, word);
 			seedTestMappedStaticClosure(cpu, record);
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], entry - 2 * INSTRUCTION_BYTES);
@@ -239,7 +239,7 @@ for (const { numParams, maxStack, argCount } of [
 				for (let index = argCount; index < numParams; ++index) {
 					assert.equal(callee.registers.get(index), valueNil(), 'missing formals are nil');
 				}
-				cpu.collectTrackedHeapBytes();
+				cpu.gc.collect();
 				const state = cpu.captureRuntimeState();
 				assert.equal(thread.stackTop, base + capacity);
 				cpu.restoreRuntimeState(state);

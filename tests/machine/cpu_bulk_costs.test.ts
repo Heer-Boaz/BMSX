@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
@@ -42,7 +43,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
    assert.equal(frame.pc, entry + INSTRUCTION_BYTES);
    assert.equal(frame.registers.getInteger(7), 91, 'the instruction following the admitted primitive does not execute');
   };
-  const warm = cpu.createTable();
+  const warm = createReferenceTable(cpu);
   for (let repeat = 0; repeat < 72; ++repeat) runNext(warm, valueNil(), [valueNil()]);
   if (backend === CpuExecutionBackend.JavaScript) {
    assert.equal(frame.decodedPage!.compiledBlocks!.entries[(entry & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!.terminal.exit,
@@ -50,10 +51,10 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   }
 
   for (const [array, hash] of [[5, 0], [0, 3], [5, 3]]) {
-   const empty = cpu.createTable(array, hash);
+   const empty = createReferenceTable(cpu, array, hash);
    for (let repeat = 0; repeat < 3; ++repeat) runNext(empty, valueNil(), [valueNil()]);
   }
-  const sparse = cpu.createTable(8, 0);
+  const sparse = createReferenceTable(cpu, 8, 0);
   cpu.gc.tables.setInteger(sparse, 3, valueInteger(33));
   cpu.gc.tables.setInteger(sparse, 7, valueInteger(77));
   runNext(sparse, valueNil(), [valueInteger(3), valueInteger(33)]);
@@ -62,7 +63,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   runNext(sparse, valueInteger(8), [valueNil()]);
   runNext(sparse, valueInteger(2), [valueInteger(3), valueInteger(33)]);
 
-  const hash = cpu.createTable(0, 8);
+  const hash = createReferenceTable(cpu, 0, 8);
   for (let index = 0; index < 8; ++index) cpu.gc.tables.setStringKey(hash, cpu.stringPool.intern(`next-${index}`), valueInteger(index + 10));
   const stored = new ValueSlots(2);
   const keys: Value[] = [], values: Value[] = [];
@@ -77,7 +78,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) {
   runNext(hash, keys[2], [keys[4], values[4]]);
   runNext(hash, keys[4], [valueNil()]);
 
-  const falseKey = cpu.createTable(0, 1);
+  const falseKey = createReferenceTable(cpu, 0, 1);
   cpu.gc.tables.set(falseKey, valueBool(false), valueBool(false));
   runNext(falseKey, valueNil(), [valueBool(false), valueBool(false)]);
   runNext(falseKey, valueBool(false), [valueNil()]);
@@ -109,7 +110,7 @@ return true`, 3);
   const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 1, maxStack: 3 }] });
   const { cpu } = createTestHeapServiceCpu(image, backend), scheduler = new DeviceScheduler(cpu);
   scheduler.setNowCycles(73);
-  const r = cpu.rootThread.currentFrame!.registers, table = cpu.createTable();
+  const r = cpu.rootThread.currentFrame!.registers, table = createReferenceTable(cpu);
   const key = valueString(cpu.stringPool.intern('field'));
   r.setTable(0, table); r.set(1, key); r.setInteger(2, 91); cpu.rootThread.currentFrame!.top = 3;
   cpu.instructionBudgetRemaining = 29;

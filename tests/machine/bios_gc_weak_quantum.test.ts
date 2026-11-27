@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -85,7 +86,7 @@ function fixture(optLevel: 0 | 3) {
 		oracle.stringPool.markReachable(id);
 	}
 	function table(array: number, hash: number) {
-		const record = add(target => target.createTable(array, hash));
+		const record = add(target => createReferenceTable(target, array, hash));
 		const arrayBase = cpu.gc.tables.arrayAddress(record), hashBase = cpu.gc.tables.hashAddress(record);
 		assert.equal(cpu.gc.tables.arrayCapacity(record), array);
 		assert.equal(cpu.gc.tables.hashSize(record), hash);

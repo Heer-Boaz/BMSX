@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -31,10 +32,10 @@ function program(wide: boolean) {
 }
 
 function makeTable(cpu: CPU, kind: typeof cases[number][0]): number {
-	const table = cpu.createTable(kind === 'sparse' || kind === 'terminal' ? 0 : 4096, 128);
+	const table = createReferenceTable(cpu, kind === 'sparse' || kind === 'terminal' ? 0 : 4096, 128);
 	if (kind === 'ascending') for (let k = 1; k <= 64; k++) cpu.gc.tables.setInteger(table, k, valueBool(false));
 	if (kind === 'descending' || kind === 'stale') {
-		const value = kind === 'stale' ? valueTable(cpu.createTable()) : valueBool(false);
+		const value = kind === 'stale' ? valueTable(createReferenceTable(cpu)) : valueBool(false);
 		for (let k = 4096; k >= 1; k--) cpu.gc.tables.setInteger(table, k, value);
 	}
 	if (kind === 'stale') cpu.gc.tables.clearWeakEntries(table, false, true, () => false);
@@ -61,7 +62,7 @@ test('Table length reads a stable boundary without changing mappings', () => {
 	cpu.gc.tables.setInteger(table, 4097, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4097, 'adjacent append advances the cached boundary');
 	cpu.gc.tables.setInteger(table, 4097, valueNil()); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 4096);
 	cpu.gc.tables.clear(table); assert.equal(cpu.memory.readRamRecordWord(table + TableHeader.Length), 0); assert.equal(cpu.gc.tables.length(table), 0);
-	const hash = cpu.createTable(0, 16); cpu.gc.tables.setInteger(hash, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 1);
+	const hash = createReferenceTable(cpu, 0, 16); cpu.gc.tables.setInteger(hash, 1, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 1);
 	cpu.gc.tables.setInteger(hash, 2, valueBool(false)); assert.equal(cpu.memory.readRamRecordWord(hash + TableHeader.Length), 2, 'eligible keys in preallocated hash storage use the same seed update');
 });
 
@@ -70,7 +71,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		for (const [kind, boundary] of cases) {
 			const { image, starts } = program(wide), { cpu } = createTestSystemCpu(image, backend);
 			let frame = cpu.rootThread.currentFrame!; const base = frame.pc;
-			const table = makeTable(cpu, kind), marker = cpu.createTable(1);
+			const table = makeTable(cpu, kind), marker = createReferenceTable(cpu, 1);
 			frame.registers.setTable(0, table); frame.registers.setTable(10, marker);
 			const charges = [2, 2, 3, 8, 2, 2], total = charges.reduce((a, b) => a + b, 0);
 			cpu.runUntilDepth(0, total * 64);
@@ -108,7 +109,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 
 for (const kind of ['ascending', 'descending'] as const) test(`published JS region completes LEN and its suffix within one fixed budget (${kind})`, () => {
 	const { image } = program(false), { cpu } = createTestSystemCpu(image, CpuExecutionBackend.JavaScript);
-	const frame = cpu.rootThread.currentFrame!, base = frame.pc, table = makeTable(cpu, kind), marker = cpu.createTable(1);
+	const frame = cpu.rootThread.currentFrame!, base = frame.pc, table = makeTable(cpu, kind), marker = createReferenceTable(cpu, 1);
 	frame.registers.setTable(0, table); frame.registers.setTable(10, marker); cpu.runUntilDepth(0, 19 * 64);
 	const page = frame.decodedPage!, block = page.compiledBlocks!.entries[(base & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES]!;
 	assert.ok(block && 19 > block.admissionCycles, 'the real generated body is admitted, not an interpreter fallback');

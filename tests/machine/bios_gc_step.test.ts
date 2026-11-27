@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -55,7 +56,7 @@ function fixture(optLevel: 0 | 3) {
 		let result = target.runUntilDepth(0, 4096);
 		for (let n = 0; n < 8 && result === RunResult.Yielded; ++n) result = target.runUntilDepth(0, 4096);
 		assert.equal(result, RunResult.Halted);
-		const live = target.createTable(4, 0), garbage = target.createTable(0, 16);
+		const live = createReferenceTable(target, 4, 0), garbage = createReferenceTable(target, 0, 16);
 		setReferenceGlobal(target, target.stringPool.intern(root), valueTable(live));
 		target.gc.tables.set(live, valueInteger(4), valueString(target.stringPool.intern('retained by live table')));
 		target.stringPool.intern(dead);
@@ -163,7 +164,7 @@ const index = (address: number) => (address & GC_RECORD_MASK) >>> GC_RECORD_SHIF
 for (const opt of [0, 3] as const) {
 	test(`scoped Mark visits Table roots after actual bank work fills the source quota at O${opt}`, () => {
 		const f = fixture(opt), { cpu, oracle, memory, control } = f;
-		const receiver = f.garbage, key = f.same(target => target.createTable(0, 0));
+		const receiver = f.garbage, key = f.same(target => createReferenceTable(target, 0, 0));
 		const value = valueString(f.same(target => target.stringPool.find(f.dead)!));
 		const operandOffset = f.publishRoots(receiver, valueTable(key), value);
 		f.same(target => {
@@ -194,8 +195,8 @@ for (const opt of [0, 3] as const) {
 
 	test(`scoped major remark waits for Changed detachment and then marks before its bank quota gate at O${opt}`, () => {
 		const f = fixture(opt), { cpu, oracle, memory, control } = f;
-		const key = f.same(target => target.createTable(0, 0));
-		const value = f.same(target => target.createTable(0, 0));
+		const key = f.same(target => createReferenceTable(target, 0, 0));
+		const value = f.same(target => createReferenceTable(target, 0, 0));
 		const operandOffset = f.publishRoots(f.garbage, valueTable(key), valueTable(value));
 		f.same(target => {
 			target.memory.writeRamRecordByte(control, GcPhase.Mark);
@@ -227,7 +228,7 @@ for (const opt of [0, 3] as const) {
 		const f = fixture(opt), { cpu, oracle, memory, control } = f;
 		const [weak, array, removed] = f.same(target => {
 			const slots = 4096;
-			const weak = target.createTable(slots, 0), mode = target.createTable(0, 2), removed = target.createTable(0, 0);
+			const weak = createReferenceTable(target, slots, 0), mode = createReferenceTable(target, 0, 2), removed = createReferenceTable(target, 0, 0);
 			const value = target.stringPool.intern('v');
 			target.gc.tables.set(mode, valueString(target.gc.diagnosticWord(GcDiagnosticField.Mode)), valueString(value));
 			target.gc.tables.setMetatableAddress(weak, mode);
@@ -238,7 +239,7 @@ for (const opt of [0, 3] as const) {
 			assert.equal(target.gc.phase(), GcPhase.Atomic);
 			return [weak, target.gc.tables.arrayAddress(weak), removed];
 		});
-		const key = f.same(target => target.createTable(0, 0)), value = valueString(f.same(target => target.stringPool.intern('explicit value only')));
+		const key = f.same(target => createReferenceTable(target, 0, 0)), value = valueString(f.same(target => target.stringPool.intern('explicit value only')));
 		const operandOffset = f.publishRoots(f.garbage, valueTable(key), value);
 		const epochWork = oracle.gc.epochWork();
 		const want = oracle.gc.step(valueTable(f.garbage), valueTable(key), value, 0, false, 1);
@@ -266,8 +267,8 @@ for (const opt of [0, 3] as const) {
 
 	test(`scoped recovery keeps only its operation roots through one complete epoch at O${opt}`, () => {
 		const f = fixture(opt), { cpu, oracle } = f;
-		const key = f.same(target => target.createTable(0, 0));
-		const unrelated = f.same(target => target.createTable(0, 0));
+		const key = f.same(target => createReferenceTable(target, 0, 0));
+		const unrelated = f.same(target => createReferenceTable(target, 0, 0));
 		const valueId = f.same(target => target.stringPool.find(f.dead)!);
 		const value = valueString(valueId), operandOffset = f.publishRoots(f.garbage, valueTable(key), value);
 		let work = 0;

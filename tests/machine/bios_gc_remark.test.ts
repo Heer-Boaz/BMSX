@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -48,7 +49,7 @@ function fixture(optLevel: 0 | 3) {
 	const put = (field: number, word: number) => same(t => t.memory.writeRamRecordWord(control + field, word));
 	const get = (field: number) => memory.readRamRecordWord(control + field);
 	const thread = () => same(t => allocateThreadRecordReference(t, 0));
-	const table = () => same(t => t.createTable(0, 0));
+	const table = () => same(t => createReferenceTable(t, 0, 0));
 	const [t0, t1, t2] = [thread(), thread(), thread()];
 	const [w0, w1, w2, staleTrace, changed, stringIndex, receiver, value] = Array.from({ length: 8 }, table);
 	const string = (text: string) => same(t => t.stringPool.intern(text));

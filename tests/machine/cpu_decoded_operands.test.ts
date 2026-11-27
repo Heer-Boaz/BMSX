@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant, numberConstantFromHost, type NumberConstant } from '../../toolchain/ts/lua/number';
@@ -70,7 +71,7 @@ test('unsigned raw fields and signed RK values remain independent of mutable fie
 		const { cpu } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		// Keep growth work separate from the operand and inline-cache base charges.
-		const table = cpu.createTable(0, 2);
+		const table = createReferenceTable(cpu, 0, 2);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;
 		registers.setTable(1, table);
 		registers.setFloat(32767, 91.5);
@@ -95,7 +96,7 @@ test('rewriting the same cached PC changes its signed, branch and field-cache pa
 			functions: [{ firstWord: 0, wordCount: 1, maxStack: 4 }], constants: ['field', numberConstantFromHost(73.5)] }, RAM_CODE_FIXTURE_BYTES);
 		const { cpu, memory } = createTestSystemCpu(image);
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		cpu.rootThread.frameAtDepth(0).registers.setTable(1, cpu.createTable());
+		cpu.rootThread.frameAtDepth(0).registers.setTable(1, createReferenceTable(cpu));
 		cpu.rootThread.frameAtDepth(0).registers.setFloat(2, 81.5);
 		const code = new Uint8Array(2 * INSTRUCTION_BYTES);
 		for (const op of [OpCode.KSMI, OpCode.SETFIELD, OpCode.JMP, OpCode.GETFIELD, OpCode.LOADK, OpCode.KSMI]) {

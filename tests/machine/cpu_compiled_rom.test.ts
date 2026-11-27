@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { integerConstant } from '../../toolchain/ts/lua/number';
@@ -142,7 +143,7 @@ test('one ROM function translates through a physical page boundary with its WIDE
 	const scalar = machine(image.romBytes, [null, null], CpuExecutionBackend.Interpreter);
 	const js = compiled.cpu, ref = scalar.cpu;
 	for (const cpu of [js, ref]) {
-		const table = cpu.createTable(0, 1);
+		const table = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('field'), ValueTag.Integer, 0);
 		cpu.rootThread.frameAtDepth(0).registers.setTable(0, table);
 	}

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GC_CHANGED_HEAD, GC_TRACE_HEAD } from '../../machine/ts/machine/cpu/gc_heap';
@@ -86,7 +87,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`BLua markValue follows raw tags, object issuance and String work at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, metadata, add, word, markValue } = fixture(optLevel);
-		const table = add(target => target.createTable(3, 2));
+		const table = add(target => createReferenceTable(target, 3, 2));
 		const closure = add(target => seedTestRomClosure(target, target.readFrameFunctionAddress(0)));
 		const thread = add(target => target.rootThread.address);
 		const backing = add(target => target.heapAllocator.allocate(48, true)) + GC_OBJECT_PREFIX;
@@ -121,7 +122,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua markRecord resumes between recoloring and publishing the gray head at O${optLevel}`, () => {
 		const { cpu, memory, oracle, arena, control, add, word, begin, grant, finish, compare } = fixture(optLevel);
-		const table = add(target => target.createTable());
+		const table = add(target => createReferenceTable(target));
 		const oldHead = 0xfff92345, oldLink = 0x91abcdef;
 		word(control, 0x0000e001);
 		word(control + GC_CHANGED_HEAD, oldHead);
@@ -146,7 +147,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua enqueue preserves its selected mirror color store and non-gray link path at O${optLevel}`, () => {
 		const { memory, oracle, control, add, word, begin, finish, compare } = fixture(optLevel);
-		const table = add(target => target.createTable());
+		const table = add(target => createReferenceTable(target));
 		for (const replace of [0, 1]) {
 			const head = 0xd00e9def;
 			word(table, 0x8000ad00 | ValueTag.Table);

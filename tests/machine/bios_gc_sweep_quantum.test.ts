@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -40,8 +41,8 @@ function fixture(optLevel: 0 | 3) {
 	const [keep, live, dead, deadArray, deadHash] = same(target => {
 		const { gc, luaHeap, stringPool } = target;
 		luaHeap.setCollectionTarget(luaHeap.capacity());
-		const keep = target.createTable(2, 0), live = stringPool.intern(liveText);
-		const dead = stringPool.intern(deadText), deadArray = target.createTable(3, 0), deadHash = target.createTable(0, 8);
+		const keep = createReferenceTable(target, 2, 0), live = stringPool.intern(liveText);
+		const dead = stringPool.intern(deadText), deadArray = createReferenceTable(target, 3, 0), deadHash = createReferenceTable(target, 0, 8);
 		for (let n = 0; n < 4096 && gc.phase() !== GcPhase.Sweep; ++n)
 			gc.step(valueTable(keep), valueString(live), valueNil(), 0, false, 1);
 		assert.equal(gc.phase(), GcPhase.Sweep);

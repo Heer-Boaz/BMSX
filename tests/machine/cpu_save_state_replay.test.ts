@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
@@ -33,19 +34,19 @@ for (const name of ['constant', 'table']) test(`checkpoint and GC retain a ${nam
 	});
 	const { cpu } = createTestSystemCpu(image);
 	seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
-	if (name === 'table') cpu.rootThread.frameAtDepth(0).registers.setTable(0, cpu.createTable());
+	if (name === 'table') cpu.rootThread.frameAtDepth(0).registers.setTable(0, createReferenceTable(cpu));
 	const returnPc = cpu.readFramePc(0) + 4 * INSTRUCTION_BYTES;
 	cpu.setExecutionHook((_domain, pc) => pc === returnPc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.ExecutionStopped);
 	assert.equal(cpu.rootThread.frameAtDepth(0).top, 4, 'open CALL accepts zero results without reviving earlier arguments');
 	if (name === 'table') {
-		const weak = cpu.createTable(1, 0);
-		const mode = cpu.createTable(0, 1);
+		const weak = createReferenceTable(cpu, 1, 0);
+		const mode = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(mode, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 		cpu.gc.tables.setMetatableAddress(weak, mode);
 		cpu.gc.tables.setInteger(weak, 1, cpu.readFrameRegister(0, 0));
 		setReferenceGlobal(cpu, cpu.stringPool.intern('weak'), valueTable(weak));
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		assert.ok(cpu.gc.tables.getInteger(weak, 1) === cpu.readFrameRegister(0, 0), 'live caller locals remain heap roots across calls');
 	}
 	const saved = cpu.captureRuntimeState();
@@ -130,14 +131,14 @@ test('restore retains weak referents until the original allocation-triggered col
 		compileLuaSource('return 0', 'snapshot-weak.lua'),
 	));
 	const weakKey = cpu.stringPool.intern('weak');
-	const weak = cpu.createTable(1, 0);
-	const metatable = cpu.createTable(0, 1);
+	const weak = createReferenceTable(cpu, 1, 0);
+	const metatable = createReferenceTable(cpu, 0, 1);
 	cpu.gc.tables.setStringKey(metatable, cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	cpu.gc.tables.setMetatableAddress(weak, metatable);
-	cpu.gc.tables.setInteger(weak, 1, valueTable(cpu.createTable()));
+	cpu.gc.tables.setInteger(weak, 1, valueTable(createReferenceTable(cpu)));
 	setReferenceGlobal(cpu, weakKey, valueTable(weak));
 	// These allocations have left guest accounting debt but are unreachable.
-	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
+	for (let index = 0; index < 17; index += 1) createReferenceTable(cpu, 256, 0);
 	const ram = cpu.memory.captureSaveState();
 	const anchor = cpu.captureRuntimeState();
 
@@ -145,7 +146,7 @@ test('restore retains weak referents until the original allocation-triggered col
 		const current = valuePayload(cpu.getGlobalByKey(weakKey));
 		assert.ok(valueIsTable(cpu.gc.tables.getInteger(current, 1)));
 		for (let count = 1; count < 4096; count += 1) {
-			cpu.createTable(256, 0);
+			createReferenceTable(cpu, 256, 0);
 			if (cpu.gc.tables.getInteger(current, 1) === valueNil()) return count;
 		}
 		assert.fail('allocation did not reach the guest collection threshold');
@@ -256,11 +257,11 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	setReferenceGlobal(cpu, key, valueNil());
 	runGuestToHalt(cpu, 10_000);
 	const before = cpu.captureRuntimeState();
-	const root = cpu.createTable(1024, 0);
+	const root = createReferenceTable(cpu, 1024, 0);
 	const rootValue = valueTable(root);
 	setReferenceGlobal(cpu, key, rootValue);
 	for (let index = 1; index <= 1024; ++index) {
-		const child = cpu.createTable(1, 0);
+		const child = createReferenceTable(cpu, 1, 0);
 		cpu.gc.tables.setInteger(child, 1, rootValue);
 		cpu.gc.tables.setInteger(root, index, valueTable(child));
 	}
@@ -269,7 +270,7 @@ test('CPU capture walks no language records; fresh restore reattaches a graph fr
 	const saved = cpu.captureRuntimeState(storage);
 	assert.deepEqual(saved, before, 'language allocations are not additional CPU latch state');
 	assert.equal(saved.completionValues, storage);
-	const future = cpu.createTable();
+	const future = createReferenceTable(cpu);
 	const other = createTestSystemCpu(image).cpu;
 	other.memory.restoreSaveState(ram);
 	other.restoreRuntimeState(saved);
@@ -293,7 +294,7 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 		valueBool(false), valueBool(true), valueString(cpu.stringPool.intern('saved')),
 		valueBuiltinFunction(BuiltinFunctionId.Next), valueNil(),
 	];
-	const table = cpu.createTable(values.length, 0);
+	const table = createReferenceTable(cpu, values.length, 0);
 	setReferenceGlobal(cpu, key, valueTable(table));
 	for (let index = 0; index < values.length; index += 1) cpu.gc.tables.setInteger(table, index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
@@ -306,11 +307,11 @@ test('snapshot words preserve int32 and f32 bits, primitive tags and interned id
 test('deep cyclic guest graphs do not consume the host serialization stack', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-depth.lua')));
 	const key = cpu.stringPool.intern('deep');
-	const root = cpu.createTable(1, 0);
+	const root = createReferenceTable(cpu, 1, 0);
 	setReferenceGlobal(cpu, key, valueTable(root));
 	let tail = root;
 	for (let index = 1; index < 4096; index += 1) {
-		const child = cpu.createTable(1, 0);
+		const child = createReferenceTable(cpu, 1, 0);
 		cpu.gc.tables.setInteger(tail, 1, valueTable(child));
 		tail = child;
 	}
@@ -328,7 +329,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 test('table boundary hints and mixed numeric hash layout survive restore without normalization', () => {
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-boundaries.lua')));
 	const key = cpu.stringPool.intern('boundary');
-	const table = cpu.createTable(64, 128);
+	const table = createReferenceTable(cpu, 64, 128);
 	for (let n = 64; n > 0; n--) cpu.gc.tables.setInteger(table, n, valueBool(false));
 	for (let n = -1; n >= -64; n--) cpu.gc.tables.setInteger(table, n, valueInteger(n));
 	setReferenceGlobal(cpu, key, valueTable(table));

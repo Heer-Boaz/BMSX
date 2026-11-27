@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { reserveThreadFrameReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -38,8 +39,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			reserveThreadFrameReference(cpu, cpu.rootThread, 32); // This raw WIDE fixture exercises placement after admission.
 			let frame = cpu.rootThread.currentFrame!;
 			const base = frame.pc, loop = base + 2 * INSTRUCTION_BYTES, opcodePc = base + 3 * INSTRUCTION_BYTES;
-			const tables = cpu.gc.tables, source = cpu.createTable(2, 2), forwarded = cpu.createTable();
-			const outerMeta = cpu.createTable(0, 1), innerMeta = cpu.createTable(0, 1);
+			const tables = cpu.gc.tables, source = createReferenceTable(cpu, 2, 2), forwarded = createReferenceTable(cpu);
+			const outerMeta = createReferenceTable(cpu, 0, 1), innerMeta = createReferenceTable(cpu, 0, 1);
 			const selector = cpu.stringPool.intern(length ? '__len' : '__newindex');
 			const initialKey = op === OpCode.SETFIELD ? valueString(cpu.stringPool.intern('field')) : valueInteger(1);
 			tables.set(source, initialKey, valueBool(false));
@@ -102,7 +103,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 8 },
 				{ firstWord: 2, wordCount: 1 }], exceptionFunctionIndex: 1 });
 			const { cpu } = createTestSystemCpu(image, backend);
-			const frame = cpu.rootThread.currentFrame!, table = cpu.createTable();
+			const frame = cpu.rootThread.currentFrame!, table = createReferenceTable(cpu);
 			cpu.gc.tables.setInteger(table, 1, valueInteger(87));
 			frame.registers.setBuiltinFunction(0, BuiltinFunctionId.RawGet);
 			frame.registers.setTable(1, table);
@@ -126,8 +127,8 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 		], exceptionFunctionIndex: 1 });
 		const { cpu } = createTestHeapServiceCpu(image, backend), frame = cpu.rootThread.currentFrame!;
 		reserveThreadFrameReference(cpu, cpu.rootThread, 16);
-		const record = cpu.createTable(), meta = cpu.createTable();
-		const stringIndex = cpu.createTable(), stringMeta = cpu.createTable();
+		const record = createReferenceTable(cpu), meta = createReferenceTable(cpu);
+		const stringIndex = createReferenceTable(cpu), stringMeta = createReferenceTable(cpu);
 		const field = valueString(cpu.stringPool.intern('present')), forwarded = valueString(cpu.stringPool.intern('forward receiver'));
 		const indexKey = cpu.stringPool.intern('__index');
 		const pc = frame.pc, cycles = BASE_CYCLES[OpCode.GETT];
@@ -192,7 +193,7 @@ for (const backend of [CpuExecutionBackend.Interpreter, CpuExecutionBackend.Java
 			{ firstWord: 0, wordCount: 2, maxStack: 4 }, { firstWord: 2, wordCount: 1 },
 		], exceptionFunctionIndex: 1 });
 		const { cpu, memory } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!;
-		const tables = cpu.gc.tables, source = cpu.createTable(2), forwarded = cpu.createTable(2), meta = cpu.createTable();
+		const tables = cpu.gc.tables, source = createReferenceTable(cpu, 2), forwarded = createReferenceTable(cpu, 2), meta = createReferenceTable(cpu);
 		const newIndex = cpu.stringPool.intern('__newindex'), pc = frame.pc;
 		frame.registers.setTable(0, source);
 		frame.registers.setInteger(1, 19);

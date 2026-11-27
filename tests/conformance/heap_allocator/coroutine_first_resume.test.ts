@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -60,7 +61,7 @@ for (const opt of [0, 3] as const) for (const refuse of [false, true]) {
 		runGuestToHalt(cpu, 4_194_304);
 		const [start, outer, body] = runtime.readCompletionValues().map(valuePayload);
 		heap.setCollectionTarget(heap.capacity());
-		const parent = allocateThreadRecordReference(cpu, outer), child = allocateThreadRecordReference(cpu, body), box = cpu.createTable(0, 1);
+		const parent = allocateThreadRecordReference(cpu, outer), child = allocateThreadRecordReference(cpu, body), box = createReferenceTable(cpu, 0, 1);
 		gc.tables.setStringKey(box, cpu.stringPool.intern('marker'), valueInteger(67));
 		cpu.beginCompletionCall(start, [valueThread(parent), valueThread(child), valueTable(box)]);
 		const read = (field: ThreadField) => memory.readRamRecordWord(child + field);

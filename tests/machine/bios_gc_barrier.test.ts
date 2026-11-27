@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -104,7 +105,7 @@ const indexOfRecord = (address: number) => (address & GC_RECORD_MASK) >>> GC_REC
 for (const optLevel of [0, 3] as const) {
 	test(`BLua global barrier preserves remark detach and immediate String credit at O${optLevel}`, () => {
 		const { memory, oracle, arena, control, metadata, add, word, byte, begin, finish, invoke, pendingString, phase } = fixture(optLevel);
-		const table = add(target => target.createTable());
+		const table = add(target => createReferenceTable(target));
 		const thread = add(target => target.rootThread.address);
 		const carried = add(target => target.stringPool.intern('pending-global-mark'));
 		const value = add(target => target.stringPool.intern('global-barrier-value'));
@@ -147,9 +148,9 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua Table and closed Upvalue barriers choose new edges or requeue at O${optLevel}`, () => {
 		const { memory, oracle, arena, control, metadata, add, word, byte, invoke, pendingString, phase } = fixture(optLevel);
-		const table = add(target => target.createTable());
-		const key = add(target => target.createTable());
-		const value = add(target => target.createTable());
+		const table = add(target => createReferenceTable(target));
+		const key = add(target => createReferenceTable(target));
+		const value = add(target => createReferenceTable(target));
 		const cell = add(target => {
 			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 			initialize(target.memory, address, target.gc.white());
@@ -281,7 +282,7 @@ for (const optLevel of [0, 3] as const) {
 
 	test(`BLua moved entries clear the suspended cursor before requeue and resume at O${optLevel}`, () => {
 		const { cpu, memory, oracle, control, add, word, byte, begin, grant, finish, invoke, compare } = fixture(optLevel);
-		const trace = add(target => target.createTable()), mode = add(target => target.createTable());
+		const trace = add(target => createReferenceTable(target)), mode = add(target => createReferenceTable(target));
 		byte(trace + GC_COLOR_OFFSET, 0x9b);
 		word(control + GC_TRACE_RECORD, trace);
 		word(control + GC_TRACE_RECORD + 4, 0x742);

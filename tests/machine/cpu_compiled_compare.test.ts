@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
@@ -36,7 +37,7 @@ function values(cpu: CPU): Value[] {
 	return [valueNil(), valueBool(false), valueBool(true), valueInteger(0), valueFloat(-0), valueInteger(1), valueInteger(-1),
 		valueInteger(16777217), valueFloat(16777216), valueFloat(1), valueFloat(0.25), valueFloatBits(0xffc01234), valueFloat(Infinity), valueFloat(-Infinity),
 		...['', 'a', 'a\0b', '\ue000', '\u{10000}', 'é'].map(text => valueString(cpu.stringPool.intern(text))),
-		valueTable(cpu.createTable()), valueTable(cpu.createTable()), valueClosure(closure),
+		valueTable(createReferenceTable(cpu)), valueTable(createReferenceTable(cpu)), valueClosure(closure),
 		valueThread(cpu.rootThread.address), valueThread(allocateThreadRecordReference(cpu, closure)),
 		valueBuiltinFunction(BuiltinFunctionId.RawGet), valueBuiltinFunction(BuiltinFunctionId.Next)];
 }

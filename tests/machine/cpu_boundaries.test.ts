@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import assert from 'node:assert/strict';
@@ -284,7 +285,7 @@ test('return ranges preserve shifted source slots when growing the caller stack'
 			const { cpu } = createTestSystemCpu(image);
 			seedTestRomClosure(cpu, image.symbols.functionAddresses[1]);
 			if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-			const table = cpu.createTable(0, 0);
+			const table = createReferenceTable(cpu, 0, 0);
 			cpu.rootThread.frameAtDepth(0).registers.setInteger(0, 91);
 			cpu.rootThread.frameAtDepth(0).registers.setTable(1, table);
 			assert.equal(cpu.runUntilDepth(0, BASE_CYCLES[OpCode.CLOSURE] + BASE_CYCLES[OpCode.CALL]), RunResult.Yielded);
@@ -315,7 +316,7 @@ test('builtin-owned result ranges survive destination growth with exact open/fix
 			functions: [{ firstWord: 0, wordCount: 2, maxStack: 7 }],
 		}, RAM_CODE_FIXTURE_BYTES));
 		if (instrumented) cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
-		const table = cpu.createTable(1, 0);
+		const table = createReferenceTable(cpu, 1, 0);
 		const result = valueString(cpu.stringPool.intern('result'));
 		if (kind === 2) cpu.gc.tables.setInteger(table, 1, result);
 		const registers = cpu.rootThread.frameAtDepth(0).registers;

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import { reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
@@ -223,7 +224,7 @@ for (const level of [0, 3] as const) {
 			numParams: prototype.numParams, maxStack: prototype.maxStack, flags: prototype.flags, upvalueTableAddress: prototype.upvalueTableAddress,
 			recordUpvalueCount: 0 }, false, cpu.gc.white(), 0);
 		cpu.gc.publishObject(detached);
-		const victim = cpu.createTable(0, 2048);
+		const victim = createReferenceTable(cpu, 0, 2048);
 		const staged = arena.allocate(frames * FRAME_CONTROL_BYTES, true);
 		assert.notEqual(staged, 0);
 		assert.notEqual(arena.allocate(32, true), 0);

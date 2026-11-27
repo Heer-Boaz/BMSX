@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GcPhase, GC_DIAGNOSTIC_OFFSET } from '../../machine/ts/machine/cpu/gc_heap';
@@ -65,10 +66,10 @@ function pressure(f: ReturnType<typeof fixture>, bytes: number) {
 for (const opt of [0, 3] as const) {
 	test(`BIOS Scheduled growth accounts scoped logical work and commits the own mapping at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 1);
+		const receiver = createReferenceTable(f.cpu, 0, 1);
 		const keep = valueString(f.cpu.stringPool.intern('keep-before-bios-growth'));
 		const key = valueString(f.cpu.stringPool.intern('grow-through-bios'));
-		const value = valueTable(f.cpu.createTable(0, 0));
+		const value = valueTable(createReferenceTable(f.cpu, 0, 0));
 		f.tables.set(receiver, keep, valueInteger(5));
 		const charge = f.heap.usedBytes();
 		f.heap.setCollectionTarget(0);
@@ -84,7 +85,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`BIOS Scheduled preferred physical refusal retries zero extra without a parked recovery at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 1);
+		const receiver = createReferenceTable(f.cpu, 0, 1);
 		const keep = valueString(f.cpu.stringPool.intern('preferred-refusal-existing'));
 		const key = valueString(f.cpu.stringPool.intern('preferred-refusal-trigger'));
 		f.tables.set(receiver, keep, valueInteger(5));
@@ -109,7 +110,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`BIOS Scheduled census holds its paid cursor and completes a staged backing transfer at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(1024, 0);
+		const receiver = createReferenceTable(f.cpu, 1024, 0);
 		for (let key = 1; key <= 1024; ++key) f.tables.set(receiver, valueInteger(key), valueInteger(key + 3));
 		const trigger = valueInteger(1025), before = f.heap.usedBytes();
 		assert.ok(f.arena.allocate(64, true));
@@ -136,10 +137,10 @@ for (const opt of [0, 3] as const) {
 
 	test(`one BIOS Scheduled activation performs Current then Fresh before successful retry at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 128);
+		const receiver = createReferenceTable(f.cpu, 0, 128);
 		for (let key = -1; key >= -128; --key) f.tables.set(receiver, valueInteger(key), valueInteger(-key));
 		const oldHash = f.tables.hashAddress(receiver);
-		const float = f.cpu.createTable(0, 512);
+		const float = createReferenceTable(f.cpu, 0, 512);
 		f.heap.setCollectionTarget(f.heap.capacity());
 		f.gc.step(valueTable(float), valueNil(), valueNil(), 0, false, 1);
 		assert.equal(f.gc.phase(), GcPhase.Mark);
@@ -165,8 +166,8 @@ for (const opt of [0, 3] as const) {
 	test(`Scheduled recovery reuses a weak-cleared old home before making another reservation at O${opt}`, () => {
 		const f = fixture(opt);
 		const strings = f.cpu.stringPool;
-		const receiver = f.cpu.createTable(0, 1), meta = f.cpu.createTable(0, 1);
-		const victim = f.cpu.createTable(0, 0);
+		const receiver = createReferenceTable(f.cpu, 0, 1), meta = createReferenceTable(f.cpu, 0, 1);
+		const victim = createReferenceTable(f.cpu, 0, 0);
 		const oldKey = valueString(strings.intern('weak-value-before-table-retry'));
 		const trigger = valueString(strings.intern('weak-value-table-retry-trigger'));
 		f.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
@@ -191,9 +192,9 @@ for (const opt of [0, 3] as const) {
 
 	test(`General recovery traces detached Table operands and reuses a weak old home at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 1), meta = f.cpu.createTable(0, 1);
-		const unrootedVictim = f.cpu.createTable(0, 0);
-		const detachedKey = f.cpu.createTable(0, 0), detachedValue = f.cpu.createTable(0, 0);
+		const receiver = createReferenceTable(f.cpu, 0, 1), meta = createReferenceTable(f.cpu, 0, 1);
+		const unrootedVictim = createReferenceTable(f.cpu, 0, 0);
+		const detachedKey = createReferenceTable(f.cpu, 0, 0), detachedValue = createReferenceTable(f.cpu, 0, 0);
 		const strings = f.cpu.stringPool, key = valueTable(detachedKey), value = valueTable(detachedValue);
 		const oldKey = valueString(strings.intern('general-weak-value-before-retry'));
 		f.tables.set(meta, valueString(strings.intern('__mode')), valueString(strings.intern('v')));
@@ -232,11 +233,11 @@ for (const opt of [0, 3] as const) {
 
 	test(`General restores no preferred hash slots after collecting a refused request at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 1), strings = f.cpu.stringPool;
+		const receiver = createReferenceTable(f.cpu, 0, 1), strings = f.cpu.stringPool;
 		const keep = valueString(strings.intern('general-preferred-existing'));
 		const key = valueString(strings.intern('general-preferred-trigger'));
 		f.tables.set(receiver, keep, valueInteger(5));
-		const garbage = f.cpu.createTable(0, 512);
+		const garbage = createReferenceTable(f.cpu, 0, 512);
 		const old = f.tables.hashAddress(receiver);
 		f.heap.setCollectionTarget(f.heap.capacity());
 		pressure(f, TableRecords.hashStorageBytes(2));
@@ -259,7 +260,7 @@ for (const opt of [0, 3] as const) {
 
 	test(`terminal Scheduled BIOS refusal leaves the original Table unchanged at O${opt}`, () => {
 		const f = fixture(opt);
-		const receiver = f.cpu.createTable(0, 128);
+		const receiver = createReferenceTable(f.cpu, 0, 128);
 		for (let key = -1; key >= -128; --key) f.tables.set(receiver, valueInteger(key), valueInteger(-key));
 		f.heap.setCollectionTarget(f.heap.capacity());
 		pressure(f, TableRecords.hashStorageBytes(256));

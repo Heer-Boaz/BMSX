@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import { readFileSync } from 'node:fs';
@@ -183,7 +184,7 @@ test('string snapshots retain decoded bytes across RAM restore and scratch reuse
 test('snapshot work includes vacant storage and shares its scan budget across nested values', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
-	const child = cpu.createTable(VALUE_SNAPSHOT_SLOTS, 0), root = cpu.createTable(2, 0);
+	const child = createReferenceTable(cpu, VALUE_SNAPSHOT_SLOTS, 0), root = createReferenceTable(cpu, 2, 0);
 	cpu.gc.tables.setInteger(child, VALUE_SNAPSHOT_SLOTS, v.valueInteger(17));
 	cpu.gc.tables.setInteger(root, 1, v.valueTable(child)); cpu.gc.tables.setInteger(root, 2, v.valueInteger(42));
 	values.set(0, v.valueTable(root));
@@ -197,7 +198,7 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 	assert.equal(nested.entries.length, 0);
 	assert.equal(nested.omitted, true);
 	// This is one emission-wide budget, not a fresh allowance per argument.
-	values.setTable(0, cpu.createTable(1, 0));
+	values.setTable(0, createReferenceTable(cpu, 1, 0));
 	const exhausted = reader.read(values, 0);
 	assert.ok(exhausted.kind === 'table');
 	assert.equal(exhausted.omitted, true);
@@ -210,7 +211,7 @@ test('snapshot work includes vacant storage and shares its scan budget across ne
 test('snapshot entry boundary distinguishes an exhausted budget from fully visited empty storage', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), values = new ValueSlots(1);
-	const table = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
+	const table = createReferenceTable(cpu, VALUE_SNAPSHOT_ENTRIES + 1, 0);
 	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) cpu.gc.tables.setInteger(table, index, v.valueInteger(index));
 	values.set(0, v.valueTable(table));
 	reader.begin();

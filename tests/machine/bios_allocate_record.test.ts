@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -82,7 +83,7 @@ for (const optLevel of [0, 3] as const) {
 			valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(array, capacity),
 			LuaAllocationMode.Retry, TableRecords.hashStorageBytes(capacity), TableHeader.HashStorage), 0);
 		while (oracle.gc.active()) oracle.gc.step();
-		const address = oracle.createTable(array, hash);
+		const address = createReferenceTable(oracle, array, hash);
 		assert.ok(address);
 		for (const mode of [Mode.Direct, Mode.Scheduled]) {
 			restoreCpuCheckpoint(cpu, initial);

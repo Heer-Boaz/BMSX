@@ -140,7 +140,7 @@ end
 		const cpu = rom.run(retirement, 20_000_000);
 		const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
 		runCompletionClosure(cpu, asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('retire')!), cpu.gc), []);
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		const weak = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 65; index += 1) {
 			assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(), `retired object/geometry owner ${index} remained reachable`);

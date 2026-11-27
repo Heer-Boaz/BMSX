@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -65,7 +66,7 @@ try {
 			heap.setCollectionTarget(heap.capacity());
 			// This fixture owns its pre-existing references. Do not let recovery
 			// accidentally make room by reclaiming one of its test function values.
-			const anchor = cpu.createTable(entries.length, 0);
+			const anchor = createReferenceTable(cpu, entries.length, 0);
 			for (let i = 0; i < entries.length; ++i) gc.tables.set(anchor, valueInteger(i + 1), entries[i]);
 			setReferenceGlobal(cpu, cpu.stringPool.intern('coroutine-create-test-anchor'), valueTable(anchor));
 			if (failure) {

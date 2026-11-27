@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -257,9 +258,9 @@ test('scenario result service retains aggregate failure and cancellation item st
 test('scenario FSM observation consumes the fixed guest channel and fails on overflow', () => {
 	const cpu = createTestSystemCpu(EMPTY_IMAGE).cpu;
 	const stringPool = cpu.stringPool;
-	const records = cpu.createTable(2, 0);
+	const records = createReferenceTable(cpu, 2, 0);
 	for (let index = 1; index <= 2; index += 1) {
-		const record = cpu.createTable(6, 0);
+		const record = createReferenceTable(cpu, 6, 0);
 		cpu.gc.tables.setInteger(record, 1, valueInteger(index));
 		cpu.gc.tables.setInteger(record, 2, valueInteger(100 + index));
 		cpu.gc.tables.setInteger(record, 3, valueString(stringPool.intern('machine:/lane')));
@@ -268,7 +269,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		cpu.gc.tables.setInteger(record, 6, valueBool(index === 2));
 		cpu.gc.tables.setInteger(records, index, valueTable(record));
 	}
-	const channel = cpu.createTable(5, 0);
+	const channel = createReferenceTable(cpu, 5, 0);
 	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('object.machine')));
 	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('machine')));
 	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));
@@ -304,22 +305,22 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 test('scenario ActionEffect observation consumes ordered producer facts and fails on overflow', () => {
 	const cpu = createTestSystemCpu(EMPTY_IMAGE).cpu;
 	const stringPool = cpu.stringPool;
-	const records = cpu.createTable(2, 0);
-	const activation = cpu.createTable(5, 0);
+	const records = createReferenceTable(cpu, 2, 0);
+	const activation = createReferenceTable(cpu, 5, 0);
 	cpu.gc.tables.setInteger(activation, 1, valueInteger(1));
 	cpu.gc.tables.setInteger(activation, 2, valueInteger(301));
 	cpu.gc.tables.setInteger(activation, 3, valueString(stringPool.intern('activate')));
 	cpu.gc.tables.setInteger(activation, 4, valueString(stringPool.intern('fire')));
 	cpu.gc.tables.setInteger(activation, 5, valueInteger(1));
 	cpu.gc.tables.setInteger(records, 1, valueTable(activation));
-	const rejection = cpu.createTable(5, 0);
+	const rejection = createReferenceTable(cpu, 5, 0);
 	cpu.gc.tables.setInteger(rejection, 1, valueInteger(2));
 	cpu.gc.tables.setInteger(rejection, 2, valueInteger(302));
 	cpu.gc.tables.setInteger(rejection, 3, valueString(stringPool.intern('trigger')));
 	cpu.gc.tables.setInteger(rejection, 4, valueString(stringPool.intern('fire')));
 	cpu.gc.tables.setInteger(rejection, 5, valueString(stringPool.intern('custom_gate')));
 	cpu.gc.tables.setInteger(records, 2, valueTable(rejection));
-	const channel = cpu.createTable(5, 0);
+	const channel = createReferenceTable(cpu, 5, 0);
 	cpu.gc.tables.setInteger(channel, 1, valueString(stringPool.intern('player.1')));
 	cpu.gc.tables.setInteger(channel, 2, valueString(stringPool.intern('player')));
 	cpu.gc.tables.setInteger(channel, 3, valueInteger(2));

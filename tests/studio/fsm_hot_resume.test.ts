@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { WORLD_ACTOR_FIXTURE } from '../helpers/world_actor_fixture';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
@@ -679,10 +680,10 @@ test('FSM transition recorder publishes ordered fixed-capacity facts without ste
 
 	runCompletionClosure(cpu, run, [valueInteger(20)]);
 	// The returned handles are borrowed by the scenario driver, not GC roots.
-	const heapBefore = cpu.collectTrackedHeapBytes(runValue, detachValue, channelValue);
+	const heapBefore = collectReferenceHeapBytes(cpu, runValue, detachValue, channelValue);
 	const recordedCycles = runCompletionClosure(cpu, run, [valueInteger(10_000)], TRANSITION_CALL_GRANT);
 	// A full collection may shrink a retained stack; it must not retain extra storage.
-	assert.ok(cpu.collectTrackedHeapBytes(runValue, detachValue, channelValue) <= heapBefore);
+	assert.ok(collectReferenceHeapBytes(cpu, runValue, detachValue, channelValue) <= heapBefore);
 	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(10_023));
 	for (let sequence = 10_020; sequence <= 10_023; sequence += 1) {
 		const slot = ((sequence - 1) % 4) + 1;

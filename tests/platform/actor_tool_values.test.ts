@@ -29,7 +29,7 @@ end
 	const { ide, sources, runtime } = f;
 	const cpu = runtime.machine.cpu, guest = ide.guest;
 	t.mock.method(cpu.stringPool, 'intern', () => assert.fail('Actor invocation must not intern in the host'));
-	t.mock.method(cpu, 'createTable', () => assert.fail('Actor invocation must not allocate a Table in the host'));
+	t.mock.method(cpu.luaHeap, 'allocateRecord', () => assert.fail('Actor invocation must not allocate a Table in the host'));
 	const resource = sources.catalog.luaResources.find(resource => resource.path === 'cart.lua')!;
 	const cart = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);
 	const version = cart.version, text = cart.buffer.getText();

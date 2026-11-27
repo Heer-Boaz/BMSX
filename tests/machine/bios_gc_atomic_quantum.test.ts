@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -48,8 +49,8 @@ function fixture(optLevel: 0 | 3) {
 	for (const target of [cpu, oracle]) {
 		runGuestToHalt(target, 10_000);
 		const { gc, stringPool } = target, modeKey = gc.diagnosticWord(GcDiagnosticField.Mode);
-		const weak = target.createTable(arraySlots, 0), meta = target.createTable(0, 2);
-		const firstDead = target.createTable(0, 0), secondDead = target.createTable(0, 0), retained = target.createTable(0, 0);
+		const weak = createReferenceTable(target, arraySlots, 0), meta = createReferenceTable(target, 0, 2);
+		const firstDead = createReferenceTable(target, 0, 0), secondDead = createReferenceTable(target, 0, 0), retained = createReferenceTable(target, 0, 0);
 		gc.tables.set(meta, valueString(modeKey), valueString(stringPool.intern('v')));
 		gc.tables.setMetatableAddress(weak, meta);
 		gc.tables.set(weak, valueInteger(1), valueTable(firstDead));

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { registerReferenceGlobalName, writeReferenceGlobalSlot } from '../helpers/global_bank_reference';
 import { readFileSync } from 'node:fs';
@@ -114,7 +115,7 @@ function fixture(optLevel: 0 | 3, moved: GcRootBank.SystemGlobals | GcRootBank.G
 	assert.equal(cpu.rootBankSlots(GcRootBank.Cart1Constants), 1);
 
 	const name = string('system variable'), first = string('system root Value');
-	const table = equal(target => target.createTable(1, 0)), otherTable = equal(target => target.createTable(0, 1));
+	const table = equal(target => createReferenceTable(target, 1, 0)), otherTable = equal(target => createReferenceTable(target, 0, 1));
 	const active = equal(target => allocateThreadRecordReference(target, 0)), completionThread = equal(target => allocateThreadRecordReference(target, 0));
 	const halted = equal(target => allocateThreadRecordReference(target, 0));
 	for (const [kind, key, value] of [

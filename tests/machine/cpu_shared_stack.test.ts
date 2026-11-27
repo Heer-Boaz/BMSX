@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { bindOpen } from '../../machine/ts/machine/cpu/upvalue';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
@@ -201,7 +202,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		], globalNames: ['read'] });
 		const { cpu, memory } = createTestSystemCpu(image, backend);
 		const frame = cpu.rootThread.currentFrame!, cells = new Uint32Array(1);
-		frame.registers.setTable(2, cpu.createTable());
+		frame.registers.setTable(2, createReferenceTable(cpu));
 		frame.registers.set(0, valueClosure(seedTestCapturedClosure(cpu, image.symbols.functionAddresses[1], cells)));
 		frame.top = 3;
 		bindOpen(memory, cells[0], frame.thread.address, frame.stackBase + 2, 0);
@@ -209,7 +210,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const top of [0, 3
 		cpu.setExecutionHook((_domain, pc) => pc === image.image.functions[0].codeAddress + 2 * INSTRUCTION_BYTES, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
 		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
 		assert.equal(cpu.rootThread.currentFrame!.top, top);
-		cpu.collectTrackedHeapBytes(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
+		cpu.gc.collect(); cpu.restoreRuntimeState(cpu.captureRuntimeState());
 		const table = cpu.rootThread.currentFrame!.registers.get(2);
 		assert.equal(cpu.rootThread.currentFrame!.registers.getTag(2), ValueTag.Table, 'capture owns its cell independently of the open result range');
 		cpu.setExecutionHook(null, SYSTEM_EXECUTION_DOMAIN_MASK, 0); cpu.runUntilDepth(0, 100);

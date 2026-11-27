@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -63,7 +64,7 @@ function fixture(optLevel: 0 | 3) {
 		oracle.gc.tables.setMetatableAddress(table, address);
 	}
 	function table(hash: number) {
-		const address = add(target => target.createTable(0, hash));
+		const address = add(target => createReferenceTable(target, 0, hash));
 		const words = cpu.gc.tables.hashAddress(address), tags = words + 8 * hash, links = tags + 2 * hash;
 		const home = hashCanonicalTableKey(valueString(modeKey)) & (hash - 1);
 		function node(slot: number, keyTag: ValueTag, keyWord: number, tag: ValueTag, payload: number, next: number) {

@@ -101,7 +101,7 @@ test('full collection trims both Thread execution reservations with no replaceme
 	const history = new RamHistory();
 	history.start(memory);
 	const initial = history.capture(memory, null), state = cpu.captureRuntimeState();
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.deepEqual(blocks.map(read), before);
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [32, 4]);
 	assert.equal(frame.registers.get(0), valueInteger(73));
@@ -119,7 +119,7 @@ test('full collection trims both Thread execution reservations with no replaceme
 	cpu.restoreRuntimeState(state);
 	assert.deepEqual([ThreadField.StackCapacity, ThreadField.FrameCapacity].map(read), [64, 8]);
 	assert.equal(cpu.rootThread.currentFrame!.registers.get(0), valueInteger(73));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	regrow();
 	assert.equal(Buffer.compare(memory.captureSaveState().ram, expected), 0, 'rewind restores the tag plane and the allocator suffixes');
 });
@@ -156,7 +156,7 @@ test('second-lane physical failure does not publish either replacement or charge
 	const thread = cpu.rootThread, frame = thread.currentFrame!, arena = cpu.heapAllocator;
 	const read = (field: ThreadField) => memory.readRamRecordWord(thread.address + field);
 	frame.registers.setInteger(0, 73); frame.top = 1;
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	const fields = [ThreadField.StackBlock, ThreadField.FrameBlock, ThreadField.StackCapacity, ThreadField.FrameCapacity];
 	const before = fields.map(read), used = cpu.luaHeap.usedBytes();
 	const newValues = 128, valueBytes = newValues * THREAD_STACK_SLOT_BYTES;
@@ -382,7 +382,7 @@ return pcall(target)
 		assert.equal(cpu.runUntilDepth(1, 100), RunResult.Halted);
 		assert.equal(thread.currentFrame, caller); assert.equal(caller.next, prepared);
 		assert.equal(prepared.executionImage, null); assert.equal(prepared.registers.capacity(), 0);
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		assert.equal(cpu.stringPool.find('retired-frame-only'), undefined, 'unused retained frames and their old windows are not roots');
 		assert.equal(cpu.stringPool.find('caller-only-across-admission'), live);
 	});

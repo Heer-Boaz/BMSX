@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { RuntimeInstructionObservers } from '../../ide/runtime/instruction_observers';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -318,7 +319,7 @@ test('Event Details keeps actual snapshot-budget warnings inline rather than hid
 
 test('compact Event Details keeps an omitted stored key visible even when its captured value is complete', t => {
 	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
-	const payload = cpu.createTable(0, 1);
+	const payload = createReferenceTable(cpu, 0, 1);
 	cpu.gc.tables.setStringKey(payload, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueInteger(7));
 	slots.setTable(0, payload); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
@@ -337,7 +338,7 @@ test('compact Event Details keeps an omitted stored key visible even when its ca
 
 test('Event Details carries actual omitted-key identity into descendants without blaming retained sibling values', t => {
 	const { history, cpu } = fixture(t, 'tiny', 1), reader = new GuestValueSnapshot(cpu.stringPool, cpu.gc), slots = new ValueSlots(1);
-	const payload = cpu.createTable(0, 1), nested = cpu.createTable(1, 0); cpu.gc.tables.setInteger(nested, 1, valueInteger(7));
+	const payload = createReferenceTable(cpu, 0, 1), nested = createReferenceTable(cpu, 1, 0); cpu.gc.tables.setInteger(nested, 1, valueInteger(7));
 	cpu.gc.tables.setStringKey(payload, cpu.stringPool.intern('key'.repeat(VALUE_SNAPSHOT_CHARACTERS)), valueTable(nested));
 	slots.setTable(0, payload); reader.begin();
 	const snapshot = reader.read(slots, 0); assert.ok(snapshot.kind === 'table');
@@ -351,7 +352,7 @@ test('Event Details carries actual omitted-key identity into descendants without
 		assert.equal(row.warning, true); assert.equal(row.description, 'Snapshot budget reached; key path may be incomplete.');
 		assert.notEqual(row.descriptionDisplay, 'disclosure');
 	}
-	const completeChildren = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
+	const completeChildren = createReferenceTable(cpu, VALUE_SNAPSHOT_ENTRIES + 1, 0);
 	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES + 1; index++) cpu.gc.tables.setInteger(completeChildren, index, valueInteger(index));
 	slots.setTable(0, completeChildren); reader.begin();
 	const omittedTable = reader.read(slots, 0); assert.ok(omittedTable.kind === 'table'); assert.equal(omittedTable.omitted, true);

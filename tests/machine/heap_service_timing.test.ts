@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -41,12 +42,12 @@ test('a storage-window exception preserves the resolved operands across a recove
 	assert.equal(valueTag(setter), ValueTag.Closure);
 
 	budget.setCollectionTarget(budget.capacity());
-	const slots = 8192, owner = cpu.createTable(slots, 0);
+	const slots = 8192, owner = createReferenceTable(cpu, slots, 0);
 	for (let i = 1; i <= slots; ++i) tables.setInteger(owner, i, valueInteger(i));
 	const payload = valueString(cpu.stringPool.intern('live-only-through-sett'));
 	for (let i = 0; i < 24; ++i) cpu.stringPool.intern(`dead-sett-string-${i}`);
 	cpu.beginCompletionCall(valuePayload(setter), [valueTable(owner), valueInteger(slots + 1), payload]);
-	const garbage = cpu.createTable(Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
+	const garbage = createReferenceTable(cpu, Math.trunc((budget.capacity() - budget.usedBytes() - 32768) / 5), 0);
 	assert.ok(budget.usedBytes() + 5 * slots > budget.capacity());
 
 	const frame = cpu.activeThread.currentFrame!;
@@ -151,7 +152,7 @@ test('the storage-window deadline is the hardware allowance, not the caller gran
 	const { cpu, memory, scheduler } = runtime.machine;
 	runGuestToHalt(cpu, 4_194_304);
 	const closure = valuePayload(runtime.readCompletionValues()[0]);
-	const table = cpu.createTable(0, 1);
+	const table = createReferenceTable(cpu, 0, 1);
 	cpu.gc.tables.set(table, valueInteger(-1), valueInteger(1));
 	cpu.beginCompletionCall(closure, [valueTable(table), valueInteger(-2), valueInteger(2)]);
 	const depth = cpu.getFrameDepth() - 1;

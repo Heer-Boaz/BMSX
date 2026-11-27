@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { runCpuWithinBudget } from '../helpers/cpu_execution';
 import { asClosure, valueInteger, valueNil, valuePayload } from '../../machine/ts/machine/cpu/value';
@@ -25,10 +26,10 @@ probe[1], probe[2] = owner, owner.events
 `, { optLevel: 3 });
 	runGuestToHalt(cpu, 10_000_000);
 	const probe = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('probe')!));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.notEqual(cpu.gc.tables.getInteger(probe, 2), valueNil());
 	setReferenceGlobal(cpu, cpu.stringPool.find('owner')!, valueNil());
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tables.getInteger(probe, 1), valueNil());
 	assert.equal(cpu.gc.tables.getInteger(probe, 2), valueNil());
 });
@@ -231,7 +232,7 @@ return true`, { optLevel });
 		const snapshot = cpu.captureRuntimeState();
 		cpu.restoreRuntimeState(snapshot);
 		assert.deepEqual(cpu.captureRuntimeState(), snapshot);
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		const resume = asClosure(cpu.getGlobalByKey(cpu.stringPool.find('resume_emission')!), cpu.gc);
 		cpu.beginCompletionCall(resume);
 		let result = RunResult.Yielded;
@@ -270,7 +271,7 @@ return true`, { optLevel });
 				assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 			}
 			assert.equal(result, RunResult.Halted);
-			const retained = cpu.collectTrackedHeapBytes() - logicalThreadBytes(cpu);
+			const retained = collectReferenceHeapBytes(cpu) - logicalThreadBytes(cpu);
 			for (let index = 1; index <= 64; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil());
 			if (batch === 0) first = retained;
 			assert.equal(retained, first, 'handled failures grew retained listener storage after warmup');
@@ -306,7 +307,7 @@ function finish_traversal()
 end
 return true`, { optLevel });
 		assert.equal(runCpuWithinBudget(cpu, 10_000_000), RunResult.Halted);
-		cpu.collectTrackedHeapBytes();
+		cpu.gc.collect();
 		const weak = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('weak')!));
 		for (let index = 1; index <= 3; index++) assert.equal(cpu.gc.tables.getInteger(weak, index), valueNil(),
 			'retired traversal nodes do not own subscribers or handler captures');

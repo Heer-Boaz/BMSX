@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal, setReferenceSystemGlobal } from '../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
@@ -40,7 +41,7 @@ for (const backend of [CpuExecutionBackend.Interpreter]) for (const wide of [fal
 			functions: [{ firstWord: 0, wordCount: word + 1, maxStack: 24 }] });
 		const { cpu } = createTestSystemCpu(image, backend), frame = cpu.rootThread.currentFrame!, r = frame.registers;
 		const base = frame.pc, key = cpu.stringPool.intern('field'), global = cpu.stringPool.intern('value');
-		const table = cpu.createTable(1, 1); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
+		const table = createReferenceTable(cpu, 1, 1); cpu.gc.tables.setInteger(table, 1, valueInteger(11)); cpu.gc.tables.setStringKey(table, key, valueInteger(17));
 		r.setTable(0, table); r.setInteger(1, 1); r.setString(2, key); r.setInteger(3, 23);
 		r.setInteger(4, 2); r.setInteger(5, 3); r.setInteger(6, 7); r.setInteger(7, 3); r.setString(8, cpu.stringPool.intern('abc'));
 		const charges = [...instructions.map(row => row[4]), 2], total = charges.reduce((a, b) => a + b, 0);

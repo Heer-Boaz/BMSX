@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes, createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { textToByteString } from '../../machine/ts/common/byte_string';
 import { writeLE32 } from '../../machine/ts/common/endian';
@@ -105,7 +106,7 @@ test('collection removes unreachable records from all intern buckets and reuses 
 	let steadyBytes = 0;
 	for (let round = 0; round < 8; round += 1) {
 		for (let index = 0; index < 128; index += 1) pool.intern(`garbage-${round}-${index}-${suffix}`);
-		const bytes = cpu.collectTrackedHeapBytes();
+		const bytes = collectReferenceHeapBytes(cpu);
 		if (round === 0) steadyBytes = bytes;
 		assert.equal(bytes, steadyBytes);
 		for (let index = 0; index < 128; index += 1) assert.equal(pool.find(`garbage-${round}-${index}-${suffix}`), undefined);
@@ -146,7 +147,7 @@ test('major String sweep rewinds a real bucket chain behind a retained predecess
 test('String admission starts its sweep during an uncharged index resize', () => {
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 8192;
-	const roots = cpu.createTable(capacity, 0), key = pool.intern('String growth root');
+	const roots = createReferenceTable(cpu, capacity, 0), key = pool.intern('String growth root');
 	setReferenceGlobal(cpu, key, valueTable(roots));
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const bucketCapacity = () => memory.readRamRecordWord(metadata + 4) & 0x7fffffff;
@@ -180,7 +181,7 @@ test('String admission starts its sweep during an uncharged index resize', () =>
 test('String rehash splits a collision chain across both planes and replays sweep and retirement', () => {
 	const cpu = createCpu(), pool = cpu.stringPool, { gc, memory } = cpu;
 	const capacity = 4096;
-	const roots = cpu.createTable(4, 0);
+	const roots = createReferenceTable(cpu, 4, 0);
 	setReferenceGlobal(cpu, pool.intern('collision rehash root'), valueTable(roots));
 	const metadata = cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET;
 	const read = (field: number) => memory.readRamRecordWord(metadata + field);
@@ -335,7 +336,7 @@ test('empty strings are interned and then collected like non-empty records', () 
 	const empty = pool.intern('');
 	assert.equal(pool.intern(''), empty);
 	assert.equal(pool.byteLength(empty), 0);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.find(''), undefined);
 });
 
@@ -345,15 +346,15 @@ test('nested materialization scopes retain newly returned IDs only through their
 	const outer = pool.intern('outer string');
 	pool.beginLocalRoots();
 	const inner = pool.intern('inner string');
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.toString(outer), 'outer string');
 	assert.equal(pool.toString(inner), 'inner string');
 	pool.endLocalRoots();
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.find('inner string'), undefined);
 	assert.equal(pool.find('outer string'), outer);
 	pool.endLocalRoots();
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.find('outer string'), undefined);
 });
 
@@ -365,7 +366,7 @@ test('RAM restore replays string allocation after partial reuse', () => {
 	for (const text of ['hole one', 'hole two', 'hole three']) pool.intern(text);
 	pool.endLocalRoots();
 	pool.intern('right anchor');
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	pool.intern('partially reused');
 	pool.endLocalRoots();
 	const ram = cpu.memory.captureSaveState();
@@ -379,14 +380,14 @@ test('RAM restore replays string allocation after partial reuse', () => {
 
 test('reusing an unreachable deleted string-key ID cannot resurrect its old mapping', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
-	const root = pool.intern('table root'), table = cpu.createTable(0, 8);
+	const root = pool.intern('table root'), table = createReferenceTable(cpu, 0, 8);
 	setReferenceGlobal(cpu, root, valueTable(table));
 	const removed = pool.intern('removed key');
 	cpu.gc.tables.setStringKey(table, removed, valueInteger(19));
 	cpu.gc.tables.setStringKey(table, removed, valueNil());
 	const retained = pool.intern('retained key');
 	cpu.gc.tables.setStringKey(table, retained, valueInteger(23));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.find('removed key'), undefined);
 	const replacement = pool.intern('replacement key');
 	assert.equal(cpu.gc.tables.getStringKey(table, replacement), valueNil());
@@ -405,7 +406,7 @@ test('reusing an unreachable deleted string-key ID cannot resurrect its old mapp
 
 test('long byte strings are reclaimed before an ID is reused', () => {
 	const cpu = createCpu(), pool = cpu.stringPool;
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	const baseline = cpu.luaHeap.usedBytes(), physical = cpu.heapAllocator.occupiedBytes();
 	const text = textToByteString('β😀A🚀\0é'.repeat(23));
 	const old = pool.intern(text);
@@ -413,13 +414,13 @@ test('long byte strings are reclaimed before an ID is reused', () => {
 	assert.equal(cpu.luaHeap.usedBytes(), baseline + bytes);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), physical + cpu.heapAllocator.allocationBytes(old));
 	assert.equal(pool.byteAt(old, 128), text.charCodeAt(128));
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.luaHeap.usedBytes(), baseline);
 	assert.equal(cpu.heapAllocator.occupiedBytes(), physical);
 	assert.equal(pool.find(text), undefined);
 	const id = pool.intern(textToByteString('😀'.repeat(65)));
 	assert.equal(pool.byteAt(id, 64), 0xf0);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(pool.byteAt(pool.intern('ascii'), 4), 105);
 });
 

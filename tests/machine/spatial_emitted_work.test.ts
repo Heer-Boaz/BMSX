@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { CLOSURE_PROTOTYPE_ADDRESS } from '../../machine/ts/machine/cpu/closure';
 import { valuePayload } from '../../machine/ts/machine/cpu/value';
 import { ValueTag, asClosure, valueBool, valueInteger } from '../../machine/ts/machine/cpu/value';
@@ -153,12 +154,12 @@ for (const optLevel of [3] as const) test(`actual spatial AOT and firmware kerne
 		kernels.push(inspected);
 	}
 	const compile = asClosure(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('compile')!), cpu.gc);
-	const compileBefore = cpu.collectTrackedHeapBytes();
+	const compileBefore = collectReferenceHeapBytes(cpu);
 	cpu.beginCompletionCall(compile);
 	runGuestToHalt(cpu, 100_000_000);
 	const compileCycles = 100_000_000 - cpu.instructionBudgetRemaining;
 	const compileAllocatedBytes = cpu.luaHeap.usedBytes() - compileBefore;
-	const compileRetainedBytes = cpu.collectTrackedHeapBytes() - compileBefore;
+	const compileRetainedBytes = collectReferenceHeapBytes(cpu) - compileBefore;
 	const entries = valuePayload(cpu.gc.tables.getStringKey(probe, cpu.stringPool.find('entries')!));
 	const groups = [];
 	for (let index = 1; index <= 4; index += 1) {

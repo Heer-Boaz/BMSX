@@ -18,7 +18,7 @@ export function logicalThreadBytes(cpu: CPU, address = cpu.rootThread.address): 
 export function profileWarmGuestKernel(cpu: CPU, kernel: number, iterations: number, budget = 10_000_000) {
 	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);
 	const heap = cpu.luaHeap;
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	// Collection can shrink the stack below this kernel's peak. Warm its
 	// call depth again before attributing any reservation to steady-state work.
 	runCompletionClosure(cpu, kernel, [valueInteger(64)], budget);

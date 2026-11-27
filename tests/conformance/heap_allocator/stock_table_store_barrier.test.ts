@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -87,7 +88,7 @@ test('stock table stores leave marked reference writes and displaced-node collis
 			const negative = Array.from({ length: 64 }, (_, i) => valueInteger(-i - 1));
 			[anchor, displaced] = negative.filter(k => home(k) === 0);
 			key = negative.find(k => home(k) === 3)!;
-			receiver = cpu.createTable(0, count);
+			receiver = createReferenceTable(cpu, 0, count);
 			gc.tables.set(receiver, anchor, valueInteger(11));
 			gc.tables.set(receiver, displaced, valueInteger(22));
 			setReferenceGlobal(cpu, name('store_subject'), valueTable(receiver));

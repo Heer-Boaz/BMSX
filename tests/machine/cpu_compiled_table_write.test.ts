@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isDeepStrictEqual } from 'node:util';
@@ -24,7 +25,7 @@ test('next charges only the primitive and the receiving range even when traversa
 	const image = linkRawTestSystemBlua32({ text, functions: [{ firstWord: 0, wordCount: 2, maxStack: 4 }] });
 	for (const capacity of [1, 1024]) {
 		const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter);
-		const frame = cpu.rootThread.frameAtDepth(0), pc = frame.pc, table = cpu.createTable(capacity, capacity);
+		const frame = cpu.rootThread.frameAtDepth(0), pc = frame.pc, table = createReferenceTable(cpu, capacity, capacity);
 		cpu.gc.tables.setInteger(table, 1, valueBool(false));
 		for (const after of [valueNil(), valueInteger(1)]) {
 			cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
@@ -53,7 +54,7 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 	const machines = [CpuExecutionBackend.JavaScript, CpuExecutionBackend.Interpreter].map(mode => createTestHeapServiceCpu(image, mode));
 	const pc = DYNAMIC_RAM_BASE, functionAddress = image.symbols.functionAddresses[0], cycles = BASE_CYCLES[OpCode.SETFIELD];
 	for (const { cpu, memory } of machines) {
-		const key = cpu.stringPool.find('field')!, table = cpu.createTable(0, 1);
+		const key = cpu.stringPool.find('field')!, table = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(table, key, valueInteger(9));
 		const frame = cpu.rootThread.frameAtDepth(0);
 		frame.registers.setTable(0, table); frame.registers.setInteger(1, 73);
@@ -69,11 +70,11 @@ test('a WIDE SETFIELD faults with the current hint only for the original table',
 	const assign = (capacity: number, value: number | null, throughMetatable: boolean, hint: number | null, width: number) => {
 		const cases = machines.map(({ cpu }) => {
 			const tables = cpu.gc.tables, registers = cpu.rootThread.frameAtDepth(0).registers;
-			const table = cpu.createTable(0, capacity), oldKey = cpu.stringPool.intern('before'), key = cpu.stringPool.find('field')!;
+			const table = createReferenceTable(cpu, 0, capacity), oldKey = cpu.stringPool.intern('before'), key = cpu.stringPool.find('field')!;
 			tables.setStringKey(table, oldKey, valueInteger(9));
-			const source = throughMetatable ? cpu.createTable() : table;
+			const source = throughMetatable ? createReferenceTable(cpu) : table;
 			if (throughMetatable) {
-				const meta = cpu.createTable(0, 1);
+				const meta = createReferenceTable(cpu, 0, 1);
 				tables.setStringKey(meta, cpu.stringPool.intern('__newindex'), valueTable(table));
 				tables.setMetatableAddress(source, meta);
 			}
@@ -128,7 +129,7 @@ test('ordinary bus writes cannot rebind an array or alter its private elements',
 	const pc = image.image.functions[0].codeAddress;
 	for (const { cpu } of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		r.setTable(0, cpu.createTable(4, 0));
+		r.setTable(0, createReferenceTable(cpu, 4, 0));
 		r.setInteger(1, 71);
 	}
 	runCpuParity(js.cpu, scalar.cpu, 1024);
@@ -165,18 +166,18 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 			functions: [{ firstWord: 0, wordCount: 5, maxStack: 10 }] });
 		const cpu = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript).cpu;
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers, key = cpu.stringPool.intern('field');
-		const warm = cpu.createTable(0, 8);
+		const warm = createReferenceTable(cpu, 0, 8);
 		cpu.gc.tables.setStringKey(warm, key, valueInteger(5));
 		r.setTable(0, warm); r.setString(1, key); r.setInteger(4, 13);
 		cpu.runUntilDepth(0, 600);
 		const pc = image.image.functions[0].codeAddress, page = frame.decodedPage!, entry = (pc & MAPPED_PAGE_BYTE_MASK) / INSTRUCTION_BYTES;
 		const block = page.compiledBlocks!.entries[entry]!;
 		assert.ok(block);
-		const parent = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(parent, key, valueInteger(71));
-		const meta = cpu.createTable(0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent));
+		const parent = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(parent, key, valueInteger(71));
+		const meta = createReferenceTable(cpu, 0, 1); cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__index'), valueTable(parent));
 		const values = [valueBool(false), valueFloat(-0), valueFloatBits(0xffa12345), valueInteger(17)];
 		for (let n = 0; n < values.length; n++) {
-			const table = cpu.createTable(0, 8); cpu.gc.tables.setMetatableAddress(table, meta);
+			const table = createReferenceTable(cpu, 0, 8); cpu.gc.tables.setMetatableAddress(table, meta);
 			for (let prior = 0; prior < n; prior++) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern(`prior_${prior}`), valueInteger(prior));
 			cpu.gc.tables.setStringKey(table, key, valueInteger(5));
 			for (const value of [values[n], valueInteger(43), values[n]]) {
@@ -192,7 +193,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 				assert.equal(frame.pc, pc, 'the successor executes after a complete semantic or inline store');
 			}
 		}
-		const existing = cpu.createTable(0, 8);
+		const existing = createReferenceTable(cpu, 0, 8);
 		cpu.gc.tables.setStringKey(existing, key, valueInteger(5));
 		r.setTable(0, existing); r.setInteger(4, 17);
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], pc);
@@ -202,7 +203,7 @@ for (const generic of [false, true]) for (const constant of [false, true]) {
 		const updated = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, inline)];
 		assert.equal(updated.exit, CompiledBlockExit.Continue);
 		assert.equal(cpu.gc.tables.getStringKey(existing, key), constant ? valueBool(false) : valueInteger(29));
-		const empty = cpu.createTable(0, 8); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
+		const empty = createReferenceTable(cpu, 0, 8); r.setTable(0, empty); r.set(3, values[3]); r.set(4, values[3]); r.setNil(9);
 		const state = { remainingCycles: 24, registerTop: frame.top, memoryAddress: 0 };
 		const exit = block.region.exits[block.region.execute(r, frame.executionImage.constWords, page, frame, block.entry, state)];
 		assert.equal(exit.exit, generic ? CompiledBlockExit.WriteIndex : CompiledBlockExit.WriteField);
@@ -225,7 +226,7 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 	const ref = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, ref]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		const key = cpu.stringPool.intern('field'), receiver = cpu.createTable(0, 1);
+		const key = cpu.stringPool.intern('field'), receiver = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(receiver, key, valueInteger(11));
 		r.setTable(0, receiver); r.setString(1, key); r.setInteger(9, 1);
 		cpu.runUntilDepth(0, 504);
@@ -235,8 +236,8 @@ for (const generic of [false, true]) test(`a storage-window vector receives a mo
 	for (const cpu of [js, ref]) {
 		cpu.writeFrameExecution(0, SYSTEM_EXECUTION_DOMAIN_ID, image.symbols.functionAddresses[0], image.image.functions[0].codeAddress);
 		const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
-		const retained = cpu.createTable(1024, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
-		const key = cpu.stringPool.find('field')!, receiver = cpu.createTable(0, 1);
+		const retained = createReferenceTable(cpu, 1024, 1); cpu.gc.tables.setStringKey(retained, cpu.stringPool.intern('payload'), valueString(cpu.stringPool.intern('retained')));
+		const key = cpu.stringPool.find('field')!, receiver = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.setStringKey(receiver, key, valueInteger(71));
 		r.setTable(0, receiver); r.setTable(9, retained); frame.top = 0;
 

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +26,7 @@ function machine(rom: Uint8Array, backend: CpuExecutionBackend) {
 	const cells = new Uint32Array(1);
 	const closure = seedTestCapturedClosure(cpu, firstFrame.functionAddress, cells);
 	firstFrame.closureAddress = closure;
-	const table = cpu.createTable(1, 1), field = cpu.stringPool.find('field')!;
+	const table = createReferenceTable(cpu, 1, 1), field = cpu.stringPool.find('field')!;
 	const upvalue = cells[0];
 	const other = cpu.bindThread(allocateThreadRecordReference(cpu, 0));
 	resizeThreadStackReference(cpu, other, 24);

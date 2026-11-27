@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
@@ -35,7 +36,7 @@ test('helper continuations are predeclared entries and read their own current Va
 	const entries = [0, 2, 4].map(word => page.compiledBlocks!.entries[first + word]!);
 	assert.ok(entries.every(entry => entry.region === entries[0].region), 'all helper returns are known before a slow helper is taken');
 	assert.deepEqual(entries.map(entry => entry.sourceWords), [6, 4, 2]);
-	const table = cpu.createTable();
+	const table = createReferenceTable(cpu);
 	for (let iteration = 0; iteration < 32; ++iteration) for (let start = 0; start < entries.length; ++start) {
 		const registers = new ValueSlots(9), block = entries[start];
 		registers.setEncoded(0, ValueTag.False, 37); registers.setInteger(1, DYNAMIC_RAM_BASE); registers.set(8, start === 1 ? valueInteger(31) : valueTable(table));
@@ -114,7 +115,7 @@ for (const kind of ['Integer', 'String'] as const) test(`resident Values cross i
 	frame.registers.set(0, lower); frame.registers.set(1, higher); frame.registers.setInteger(4, 0);
 	frame.registers.setEncoded(8, ValueTag.False, 37); cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, first = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const block = page.compiledBlocks!.entries[first]!, table = cpu.createTable();
+	const block = page.compiledBlocks!.entries[first]!, table = createReferenceTable(cpu);
 	for (const less of [false, true]) for (const tag of [ValueTag.False, ValueTag.Table, ValueTag.Float]) for (const grant of [32, 63, 128, 257]) {
 		const r = new ValueSlots(11), writes = new Uint32Array(11);
 		r.set(0, less ? lower : higher); r.set(1, less ? higher : lower);
@@ -153,7 +154,7 @@ for (const [label, op, a, b, c, slots] of [
 	const scalar = createTestHeapServiceCpu(image, CpuExecutionBackend.Interpreter).cpu;
 	for (const cpu of [js, scalar]) {
 		const r = cpu.rootThread.frameAtDepth(0).registers;
-		const table = cpu.createTable(0, 1);
+		const table = createReferenceTable(cpu, 0, 1);
 		cpu.gc.tables.storeStringKey(table, cpu.stringPool.intern('method'), ValueTag.Integer, 73);
 		r.setTable(3, table);
 		r.setInteger(1, DYNAMIC_RAM_BASE);
@@ -498,7 +499,7 @@ test('more than six live-through raw Values remain local across every internal e
 	const { cpu } = createTestHeapServiceCpu(image, CpuExecutionBackend.JavaScript), frame = cpu.rootThread.frameAtDepth(0);
 	cpu.runUntilDepth(0, 1024);
 	const page = frame.decodedPage!, firstWord = (image.image.functions[0].codeAddress & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES;
-	const table = cpu.createTable(), string = cpu.stringPool.intern('retained');
+	const table = createReferenceTable(cpu), string = cpu.stringPool.intern('retained');
 	const tags = [ValueTag.Nil, ValueTag.False, ValueTag.True, ValueTag.Float, ValueTag.Float, ValueTag.String, ValueTag.Table, ValueTag.Integer];
 	const words = [13, 37, 42, 0x80000000, 0xffc12345, string, table, 19];
 	for (const start of [0, 1]) for (const grant of [1, 15, 16, 63, 128, 257]) {

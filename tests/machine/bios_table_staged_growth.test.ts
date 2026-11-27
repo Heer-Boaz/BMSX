@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { type CPU, CpuRunKind, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -50,7 +51,7 @@ for (const optLevel of [0, 3] as const) {
 			}
 			const management = cpu.heapAllocator.managementOffset(), job = management, jobSize = 64;
 			const reservation = both(target => target.heapAllocator.allocate(40, true)) - RAM_BASE;
-			const record = both(target => target.createTable(oldArray, oldHash));
+			const record = both(target => createReferenceTable(target, oldArray, oldHash));
 			assert.ok(reservation > 0);
 			const oldWords = cpu.gc.tables.arrayAddress(record), oldStorage = cpu.gc.tables.hashAddress(record);
 			const blocked = 5 * array > cpu.heapAllocator.capacityBytes();

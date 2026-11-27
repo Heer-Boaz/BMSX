@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -16,7 +17,7 @@ import { cartridgeSlots } from '../helpers/cartridge';
 test('aligned String identities distribute home slots and preserve displaced collision chains', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, table = cpu.createTable(0, 8);
+	const tables = cpu.gc.tables, table = createReferenceTable(cpu, 0, 8);
 	const keys: number[][] = Array.from({ length: 8 }, () => []);
 	const probe = { node: -1, remaining: 0, slot: -1, value: valueNil() };
 	for (let i = 10; i < 90; ++i) {
@@ -63,9 +64,9 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 		const key = cpu.stringPool.intern(`collision_${n}`);
 		if ((hashCanonicalTableKey(valueString(key)) & 31) === 0) keys.push(key);
 	}
-	const generic = cpu.createTable(0, 4);
-	const strings = cpu.createTable(0, 4);
-	const object = cpu.createTable();
+	const generic = createReferenceTable(cpu, 0, 4);
+	const strings = createReferenceTable(cpu, 0, 4);
+	const object = createReferenceTable(cpu);
 	const objectKey = valueTable(object);
 	const values: Value[] = [valueBool(false), valueFloatBits(0x80000000), valueFloat(5.25), valueFloatBits(0xffc01234), valueFloat(Infinity), objectKey, valueString(keys[0]), valueNil()];
 	const slots = new ValueSlots(2);
@@ -124,7 +125,7 @@ test('known string chains preserve mixed-key collisions, cached updates, tombsto
 	cpu.gc.tables.clear(strings);
 	compare();
 
-	const tables = cpu.gc.tables, chain = cpu.createTable(0, 2);
+	const tables = cpu.gc.tables, chain = createReferenceTable(cpu, 0, 2);
 	const head = tables.storeStringKey(chain, keys[0], ValueTag.Integer, 11);
 	const tail = tables.storeStringKey(chain, keys[1], ValueTag.Integer, 22);
 	tables.setStringKey(chain, keys[0], valueNil());
@@ -141,11 +142,11 @@ test('known string lookup follows changing inherited fields and preserves false 
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
 	const key = cpu.stringPool.intern('field');
 	const indexKey = cpu.stringPool.intern('__index');
-	const parent = cpu.createTable(0, 2);
+	const parent = createReferenceTable(cpu, 0, 2);
 	cpu.gc.tables.setStringKey(parent, key, valueBool(false));
-	const metatable = cpu.createTable(0, 1);
+	const metatable = createReferenceTable(cpu, 0, 1);
 	cpu.gc.tables.setStringKey(metatable, indexKey, valueTable(parent));
-	const child = cpu.createTable();
+	const child = createReferenceTable(cpu);
 	cpu.gc.tables.setMetatableAddress(child, metatable);
 	const slots = new ValueSlots(1);
 	const result: TableLookupResult = { value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0 };
@@ -172,7 +173,7 @@ test('known string lookup follows changing inherited fields and preserves false 
 	assert.equal(result.value, valueBool(false));
 	assert.equal(result.extraVisits, 0, 'an own field stops traversal even when its value is false');
 
-	const raw = cpu.createTable(0, 8);
+	const raw = createReferenceTable(cpu, 0, 8);
 	const highBitKey = valueString((key ^ 0x80000000) >>> 0);
 	cpu.gc.tables.set(raw, highBitKey, valueInteger(21));
 	assert.equal(cpu.gc.tables.getStringKey(raw, key), valueNil(), 'String keys use the entire payload');
@@ -191,7 +192,7 @@ test('known string lookup follows changing inherited fields and preserves false 
 test('deleting a string mapping allows its reserved hash placement to be reused', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const table = cpu.createTable(0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
+	const table = createReferenceTable(cpu, 0, 1), present = cpu.stringPool.intern('full'), missing = cpu.stringPool.intern('new');
 	cpu.gc.tables.setStringKey(table, present, valueInteger(73));
 	const storage = cpu.gc.tables.hashAddress(table), used = cpu.luaHeap.usedBytes();
 	cpu.gc.tables.setStringKey(table, present, valueNil());
@@ -204,8 +205,8 @@ test('deleting a string mapping allows its reserved hash placement to be reused'
 test('fixed string assignment probes the terminal table only if it can invoke a setter', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, source = cpu.createTable(), forwarded = cpu.createTable(0, 2);
-	const meta = cpu.createTable(0, 1), terminalMeta = cpu.createTable();
+	const tables = cpu.gc.tables, source = createReferenceTable(cpu), forwarded = createReferenceTable(cpu, 0, 2);
+	const meta = createReferenceTable(cpu, 0, 1), terminalMeta = createReferenceTable(cpu);
 	const newIndex = cpu.stringPool.intern('__newindex'), field = cpu.stringPool.intern('field'), absent = cpu.stringPool.intern('absent');
 	tables.setStringKey(meta, newIndex, valueTable(forwarded));
 	tables.setMetatableAddress(source, meta);
@@ -242,10 +243,10 @@ test('fixed string assignment probes the terminal table only if it can invoke a 
 test('a periodic __index path retains the cost of its prefix and last incomplete round', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-	const tables = cpu.gc.tables, next = [1, 2, 3, 4, 2], roots = next.map(() => cpu.createTable());
+	const tables = cpu.gc.tables, next = [1, 2, 3, 4, 2], roots = next.map(() => createReferenceTable(cpu));
 	const indexKey = cpu.stringPool.intern('__index'), method = valueString(indexKey), key = valueString(cpu.stringPool.intern('field'));
 	for (let i = 0; i < roots.length; ++i) {
-		const meta = cpu.createTable(0, 128);
+		const meta = createReferenceTable(cpu, 0, 128);
 		tables.setMetatableAddress(roots[i], meta);
 		for (let j = 0, n = 0; j < 65 + i; ++j) {
 			if (j === 1) tables.set(meta, method, valueTable(roots[next[i]]));

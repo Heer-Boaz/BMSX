@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -17,7 +18,7 @@ test('Table budget charges allocated Value and hash slots rather than physical h
 	const { cpu } = bootManagedTestSystem(tableRom);
 	const start = cpu.luaHeap.usedBytes();
 	const occupied = cpu.heapAllocator.occupiedBytes();
-	const table = cpu.createTable(8, 16);
+	const table = createReferenceTable(cpu, 8, 16);
 	assert.equal(cpu.luaHeap.usedBytes() - start, 32 + 5 * 8 + 10 * 16);
 	assert.equal(cpu.heapAllocator.occupiedBytes() - occupied, cpu.gc.tables.getTrackedHeapBytes(table));
 	const base = cpu.gc.tables.arrayAddress(table);
@@ -77,7 +78,7 @@ original, duplicate = source, table.copy(source)
 
 test('array growth keeps a full hash when none of its keys move into the array', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const tables = cpu.gc.tables, table = cpu.createTable(1, 1);
+	const tables = cpu.gc.tables, table = createReferenceTable(cpu, 1, 1);
 	tables.setInteger(table, 1, v.valueBool(false));
 	tables.setInteger(table, -1, v.valueInteger(41));
 	const hash = tables.hashAddress(table);
@@ -91,7 +92,7 @@ test('only index one selects an array on the first integer insertion', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables;
 	for (const key of [1, 2, 0x7fffffff]) {
-		const table = cpu.createTable();
+		const table = createReferenceTable(cpu);
 		tables.setInteger(table, key, v.valueBool(false));
 		assert.equal(tables.arrayCapacity(table), key === 1 ? 1 : 0);
 		assert.equal(tables.hashSize(table), key === 1 ? 0 : 1);
@@ -103,7 +104,7 @@ test('integer growth counts a partial array density band at the strict half boun
 	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables;
 	for (const added of [16, 17]) {
-		const table = cpu.createTable(13, 0);
+		const table = createReferenceTable(cpu, 13, 0);
 		for (const key of [1, 2, 3, 4, 5, 9, 10, 13]) tables.setInteger(table, key, v.valueBool(false));
 		tables.setInteger(table, added, v.valueInteger(41));
 		// At 17 exactly eight of the first sixteen are present; at 16 there are nine.
@@ -117,7 +118,7 @@ test('integer growth counts a partial array density band at the strict half boun
 test('growth for non-array keys preserves sparse reserved slots and their charge', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
 	const tables = cpu.gc.tables;
-	const mixed = cpu.createTable(8, 0), identity = cpu.createTable();
+	const mixed = createReferenceTable(cpu, 8, 0), identity = createReferenceTable(cpu);
 	const keys = [v.valueString(cpu.stringPool.intern('hash only')), v.valueInteger(-1), v.valueFloat(0.5), v.valueTable(identity)];
 	const bytes = cpu.luaHeap.usedBytes(), retained = v.valueFloatBits(0xffc01234);
 	tables.setInteger(mixed, 8, retained);
@@ -149,7 +150,7 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 		if (keys[home] === 0) { keys[home] = id; ++assigned; }
 		else if (home === 0) collision = id;
 	}
-	const spare = cpu.createTable(0, 16), tombstones = cpu.createTable(0, 16);
+	const spare = createReferenceTable(cpu, 0, 16), tombstones = createReferenceTable(cpu, 0, 16);
 	const start = cpu.luaHeap.usedBytes();
 	for (const id of keys) tables.setInteger(tombstones, id, v.valueInteger(17));
 	for (let i = 2; i < keys.length; ++i) tables.setInteger(tombstones, keys[i], v.valueNil());
@@ -165,7 +166,7 @@ test('tombstone-driven rebuild returns only retired capacity and preserves live 
 	assert.equal(cpu.luaHeap.usedBytes(), start - (16 - 4) * 10);
 	for (const id of [keys[0], keys[1], collision]) assert.equal(tables.getInteger(tombstones, id), tables.getInteger(spare, id));
 
-	const logical = cpu.luaHeap.usedBytes(), table = cpu.createTable(0, 3);
+	const logical = cpu.luaHeap.usedBytes(), table = createReferenceTable(cpu, 0, 3);
 	const backing = tables.hashAddress(table);
 	assert.equal(cpu.luaHeap.usedBytes(), logical + 32 + 40, 'an empty three-slot request immediately charges four slots');
 	for (let i = 0; i < 4; ++i) tables.setInteger(table, keys[i], v.valueInteger(29));
@@ -190,7 +191,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 		const home = v.hashCanonicalTableKey(v.valueInteger(id)) & (keys.length - 1);
 		if (keys[home] === 0) { keys[home] = id; ++assigned; }
 	}
-	const table = cpu.createTable();
+	const table = createReferenceTable(cpu);
 	for (const key of keys) tables.setInteger(table, key, v.valueInteger(13));
 	const backing = tables.hashAddress(table), home = v.hashCanonicalTableKey(v.valueInteger(1)) & (keys.length - 1);
 	tables.setInteger(table, keys[home], v.valueNil());
@@ -212,7 +213,7 @@ test('hash deletion and replay retain backing while a hash slot can be reused', 
 
 test('allocation stress reaches hash backing growth, not writes into existing slots', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const tables = cpu.gc.tables, table = cpu.createTable(0, 3);
+	const tables = cpu.gc.tables, table = createReferenceTable(cpu, 0, 3);
 	const backing = tables.hashAddress(table), stress = installAllocationStress(cpu);
 	for (let i = 1; i <= 4; ++i) tables.setInteger(table, -i, v.valueInteger(i));
 	assert.equal(stress.allocations, 0, 'the four reserved slots need no admission');
@@ -229,7 +230,7 @@ test('allocation stress reaches hash backing growth, not writes into existing sl
 
 test('Table keys normalize Integer/Float identity without changing stored value bits', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable();
+	const table = createReferenceTable(cpu);
 	cpu.gc.tables.set(table, v.valueFloat(2), v.valueFloatBits(0xffa12345));
 	assert.equal(cpu.gc.tables.get(table, v.valueInteger(2)), v.valueFloatBits(0xffa12345));
 	cpu.gc.tables.set(table, v.valueFloatBits(0x80000000), v.valueInteger(19));
@@ -249,7 +250,7 @@ test('Table keys normalize Integer/Float identity without changing stored value 
 
 test('raw nil and NaN keys miss and cannot mutate a Table even with a nil value', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable();
+	const table = createReferenceTable(cpu);
 	cpu.gc.tables.setInteger(table, 1, v.valueInteger(91));
 	for (const [key, reason] of [[v.valueNil(), LUA_FAULT_REASON_INDEX_NIL],
 		[v.valueFloatBits(0x7fa12345), LUA_FAULT_REASON_INDEX_NAN], [v.valueFloatBits(0xffc54321), LUA_FAULT_REASON_INDEX_NAN]] as const) {
@@ -264,7 +265,7 @@ test('raw nil and NaN keys miss and cannot mutate a Table even with a nil value'
 
 test('compact hash growth, cached string access and inherited reads use real heap references', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable(), parent = cpu.createTable(), meta = cpu.createTable();
+	const table = createReferenceTable(cpu), parent = createReferenceTable(cpu), meta = createReferenceTable(cpu);
 	const key = cpu.stringPool.intern('method'), index = cpu.stringPool.intern('__index');
 	const inherited = v.valueTable(parent);
 	cpu.gc.tables.setStringKey(meta, index, inherited); cpu.gc.tables.setMetatableAddress(table, meta);
@@ -281,14 +282,14 @@ test('compact hash growth, cached string access and inherited reads use real hea
 	assert.equal(cpu.gc.tables.storePredictedStringKey(table, cachedKey, predicted, v.ValueTag.Float, 0xffa12345), true);
 	cpu.gc.tables.getStringKeyCached(table, cachedKey, predicted, result);
 	assert.equal(result.value, v.valueFloatBits(0xffa12345));
-	const empty = cpu.createTable();
+	const empty = createReferenceTable(cpu);
 	cpu.gc.tables.storeStringKey(empty, key, v.ValueTag.Integer, 1);
 	assert.equal(cpu.gc.tables.getStringKey(empty, key), v.valueInteger(1));
 });
 
 test('tombstone continuation retains a stable object hash, not the recycled reference', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable(0, 64), keyObject = cpu.createTable();
+	const table = createReferenceTable(cpu, 0, 64), keyObject = createReferenceTable(cpu);
 	const key = v.valueTable(keyObject), target = new ValueSlots(2);
 	cpu.gc.tables.set(table, key, v.valueInteger(7));
 	for (let i = 1; i <= 20; ++i) cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('other' + i), v.valueInteger(i));
@@ -303,27 +304,27 @@ test('tombstone continuation retains a stable object hash, not the recycled refe
 
 test('compact Tables participate in incremental tracing, weak clearing and reference recycling', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable(), child = cpu.createTable();
+	const table = createReferenceTable(cpu), child = createReferenceTable(cpu);
 	const root = v.valueTable(table), childValue = v.valueTable(child);
 	cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('child'), childValue);
 	cpu.gc.collect(root);
 	assert.equal(cpu.gc.tables.getStringKey(table, cpu.stringPool.find('child')!), childValue);
 	assert.equal(cpu.gc.tableRecordAddress(v.valuePayload(childValue)), child);
-	const weak = cpu.createTable(), meta = cpu.createTable(), dead = cpu.createTable();
+	const weak = createReferenceTable(cpu), meta = createReferenceTable(cpu), dead = createReferenceTable(cpu);
 	const deadReference = dead;
 	cpu.gc.tables.setStringKey(meta, cpu.stringPool.intern('__mode'), v.valueString(cpu.stringPool.intern('v'))); cpu.gc.tables.setMetatableAddress(weak, meta);
 	cpu.gc.tables.setInteger(weak, 1, v.valueTable(deadReference));
 	cpu.gc.tables.setStringKey(table, cpu.stringPool.intern('weak'), v.valueTable(weak));
 	cpu.gc.collect(root);
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), v.valueNil());
-	const replacement = cpu.createTable();
+	const replacement = createReferenceTable(cpu);
 	assert.equal(replacement, deadReference);
 	assert.equal(cpu.gc.tables.getInteger(weak, 1), v.valueNil());
 });
 
 test('length candidates are bounded to signed-32 keys', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable();
+	const table = createReferenceTable(cpu);
 	assert.equal(cpu.gc.tables.length(table), 0);
 	for (let i = 4096; i >= 1; --i) cpu.gc.tables.setInteger(table, i, v.valueBool(true));
 	assert.equal(cpu.gc.tables.length(table), 4096);
@@ -336,9 +337,9 @@ test('length candidates are bounded to signed-32 keys', () => {
 
 test('Table mutation streams preserve raw words through collisions, growth and deletions', () => {
 	const { cpu } = bootManagedTestSystem(tableRom);
-	const table = cpu.createTable(), oracle = new Map<v.Value, v.Value>();
+	const table = createReferenceTable(cpu), oracle = new Map<v.Value, v.Value>();
 	const keys: v.Value[] = [v.valueBool(false), v.valueBool(true), v.valueFloat(Infinity), v.valueFloat(-Infinity), v.valueFloatBits(0x80000000), v.valueInteger(0), v.valueInteger(-2147483648), v.valueInteger(2147483647)];
-	for (let i = 1; i <= 48; ++i) keys.push(v.valueInteger(i), v.valueFloat(i), v.valueFloat(i + 0.5), v.valueString(cpu.stringPool.intern('field' + i)), v.valueTable(cpu.createTable()));
+	for (let i = 1; i <= 48; ++i) keys.push(v.valueInteger(i), v.valueFloat(i), v.valueFloat(i + 0.5), v.valueString(cpu.stringPool.intern('field' + i)), v.valueTable(createReferenceTable(cpu)));
 	let seed = 0x5130bbad;
 	const next = (): number => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; };
 	for (let i = 0; i < 20000; ++i) {
@@ -357,7 +358,7 @@ test('Table mutation streams preserve raw words through collisions, growth and d
 
 test('machine snapshots restore table records and their references to a different heap', () => {
 	const { cpu: source } = bootManagedTestSystem(tableRom);
-	const table = source.createTable(4, 16), child = source.createTable(), meta = source.createTable();
+	const table = createReferenceTable(source, 4, 16), child = createReferenceTable(source), meta = createReferenceTable(source);
 	source.gc.tables.setMetatableAddress(table, meta);
 	source.gc.tables.setInteger(table, 1, v.valueFloatBits(0xffa54321));
 	source.gc.tables.setInteger(table, 2, v.valueInteger(-2147483648));
@@ -366,7 +367,7 @@ test('machine snapshots restore table records and their references to a differen
 	const name = source.stringPool.intern('saved_table');
 	setReferenceGlobal(source, name, v.valueTable(table));
 	const { cpu: target } = bootManagedTestSystem(tableRom);
-	for (let i = 0; i < 5; ++i) target.createTable();
+	for (let i = 0; i < 5; ++i) createReferenceTable(target);
 	target.memory.restoreSaveState(source.memory.captureSaveState());
 	target.restoreRuntimeState(source.captureRuntimeState());
 	const restored = v.valuePayload(target.getGlobalByKey(name));
@@ -392,7 +393,7 @@ return function(t) return protect(set, t) end
 	const results: v.Value[] = [];
 	cpu.readCompletionValues(results);
 	const { tables } = cpu.gc, arena = cpu.heapAllocator;
-	const table = cpu.createTable(4, 4);
+	const table = createReferenceTable(cpu, 4, 4);
 	for (const key of [1, 3, 4, -1, -3, 5, 6]) tables.setInteger(table, key, v.valueInteger(key));
 	cpu.beginCompletionCall(v.valuePayload(results[0]), [v.valueTable(table)]);
 	cpu.gc.collect();

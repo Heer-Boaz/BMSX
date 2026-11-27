@@ -1,3 +1,4 @@
+import { collectReferenceHeapBytes } from '../helpers/cpu_heap_reference';
 import { TEST_CART_TRANSFER_SOURCE, bootManagedTestSystem, linkManagedTestSystem } from '../helpers/managed_system';
 import { loadTestBiosUtilityModules } from '../helpers/heap_service_system';
 import assert from 'node:assert/strict';
@@ -331,7 +332,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	runCompletionClosure(cpu, runPlain, [valueInteger(20)]);
 	// Collection can shrink the shared stack. Count recorder bytes, not stack capacity.
 	const stack = cpu.activeThread.stackRegisters;
-	const heapBefore = cpu.collectTrackedHeapBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES;
+	const heapBefore = collectReferenceHeapBytes(cpu) - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const recordedCycles = runCompletionClosure(cpu, runPlain, [valueInteger(10_000)]);
 	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, heapBefore);
 	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(10_035));
@@ -344,7 +345,7 @@ test('ActionEffect fact stream preserves trigger and activity commits in produce
 	}
 
 	runCompletionClosure(cpu, runActivity, [valueInteger(20)]);
-	const activityHeapBefore = cpu.collectTrackedHeapBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES;
+	const activityHeapBefore = collectReferenceHeapBytes(cpu) - stack.capacity() * THREAD_STACK_SLOT_BYTES;
 	const activityRecordedCycles = runCompletionClosure(cpu, runActivity, [valueInteger(10_000)]);
 	assert.equal(cpu.luaHeap.usedBytes() - stack.capacity() * THREAD_STACK_SLOT_BYTES, activityHeapBefore);
 	assert.equal(cpu.gc.tables.getInteger(channel, 4), valueInteger(30_075));

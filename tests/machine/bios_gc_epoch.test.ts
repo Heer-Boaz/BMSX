@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -85,7 +86,7 @@ for (const optLevel of [0, 3] as const) test(`BIOS epoch transitions preserve co
 	const after = oracle.gc['finishStepWork'](occupied, 207);
 	invoke('finish_step', [control, state, occupied, 207], after);
 
-	const table = same(target => target.createTable());
+	const table = same(target => createReferenceTable(target));
 	same(target => target.gc['setPhase'](GcPhase.Atomic));
 	const args = [control, state, metadata, capacity, 19];
 	same(target => target.memory.writeRamRecordWord(control + GC_TRACE_RECORD, table));

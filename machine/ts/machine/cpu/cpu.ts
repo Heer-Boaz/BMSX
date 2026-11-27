@@ -122,7 +122,7 @@ import {
 	type Value,
 } from './value';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError, LuaThrownValueError } from './errors';
-import { TableRecords, TableHeader, TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT, TABLE_STORE_FIRMWARE,
+import { TABLE_HASH_UNPROBED, TABLE_INDEX_CHAIN_LIMIT, TABLE_STORE_FIRMWARE,
 	TableLookupStatus, type TableLookupResult } from './table';
 import * as Closure from './closure';
 import { CLOSURE_BINDING_FLAGS, CLOSURE_PROTOTYPE_ADDRESS, type FunctionPrototype } from './closure';
@@ -162,7 +162,7 @@ import { FRAME_CONTROL_BYTES, FRAME_WINDOW_MASK, FRAME_COMPLETION, FRAME_EXTEND_
 import { CompiledCodeLookup } from './compiled_code_lookup';
 import { Thread, ThreadStatus, THREAD_RECORD_KIND } from './thread';
 import { invokeThreadDiagnostic, ThreadField, ThreadLayout, THREAD_CONTROL_COUNT_MASK, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES, MAX_THREAD_VALUE_SLOTS } from './thread_record';
-import { LuaAllocationMode, LuaHeap } from './lua_heap';
+import { LuaHeap } from './lua_heap';
 import { HeapAllocator } from './heap_allocator';
 import {
 	CpuExecutionBackend, CompiledBlockExit, COMPILED_BLOCK_THRESHOLD,
@@ -307,8 +307,6 @@ export class CPU implements MappedPageInvalidator {
 		1,
 	);
 	private builtinResultsScratchIndex = 0;
-	private readonly localRoots: Value[] = [];
-	private localRootScopeDepth = 0;
 	private readonly tableLookupResult: TableLookupResult = {
 		value: valueNil(), slot: -1, extraVisits: 0, status: TableLookupStatus.Resolved, receiver: 0,
 	};
@@ -413,31 +411,6 @@ export class CPU implements MappedPageInvalidator {
 		this.irqThread.reserveFrameViews(CPU_FIXED_FRAME_COUNT);
 	}
 
-	public createTable(arraySize: number = 0, hashSize: number = 0): number {
-		const hashCapacity = TableRecords.hashCapacity(hashSize);
-		const address = this.luaHeap.allocateRecord(TableRecords.HEADER_BYTES, true, 5 * arraySize,
-			TableHeader.ArrayStorage, valueNil(), valueNil(), valueNil(), TableRecords.HEADER_CHARGE + TableRecords.allocationCharge(arraySize, hashCapacity),
-			LuaAllocationMode.Direct, TableRecords.hashStorageBytes(hashCapacity), TableHeader.HashStorage);
-		this.gc.tables.initialize(address, arraySize, hashCapacity);
-		this.gc.publishObject(address);
-		if (this.localRootScopeDepth > 0) this.localRoots.push(valueTable(address));
-		return address;
-	}
-
-	/** Synchronous host materialization owns roots until VM call admission. */
-	public acquireLocalRoots(): number {
-		const base = this.localRoots.length;
-		this.stringPool.beginLocalRoots();
-		this.localRootScopeDepth += 1;
-		return base;
-	}
-
-	public releaseLocalRoots(base: number): void {
-		this.localRoots.length = base;
-		this.localRootScopeDepth -= 1;
-		this.stringPool.endLocalRoots();
-	}
-
 	private clearCompletionValues(): void {
 		this.completionValueSlots.clear(this.completionValueCount);
 		this.completionValueCount = 0;
@@ -521,15 +494,9 @@ export class CPU implements MappedPageInvalidator {
 	private invokeTableMetamethod(frame: CallFrame, method: Value, destination: number, result: number,
 		receiver: Value, operand: Value, assignment?: Value): void {
 		const args = this.acquireRegisterBuiltinArgs();
-		const rootBase = this.localRoots.length;
 		args.bindDetached(receiver, operand, assignment);
 		try {
-			const tag = valueTag(method);
-			if (tag !== ValueTag.Closure) {
-				this.localRoots.push(method, receiver, operand);
-				if (assignment !== undefined) this.localRoots.push(assignment);
-			}
-			switch (tag) {
+			switch (valueTag(method)) {
 				case ValueTag.Closure: {
 					const closure = Closure.recordAddress(this.memory, valuePayload(method));
 					if (closure === 0) throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
@@ -545,7 +512,6 @@ export class CPU implements MappedPageInvalidator {
 				default: throw new LuaExecutionError(LUA_FAULT_REASON_CALL_NON_FUNCTION);
 			}
 		} finally {
-			this.localRoots.length = rootBase;
 			this.releaseRegisterBuiltinArgs(args);
 		}
 	}
@@ -4083,7 +4049,6 @@ export class CPU implements MappedPageInvalidator {
 		objects.push(this.rootThread.address, this.activeThread.address);
 		if (this.completionThread !== 0) objects.push(this.completionThread);
 		if (this.haltedUntilIrqThread !== 0) objects.push(this.haltedUntilIrqThread);
-		for (const value of this.localRoots) add(value);
 		for (let index = 0; index < this.builtinResultsScratchIndex; index += 1) {
 			const slots = this.builtinResultsScratch.peek(index);
 			for (let valueIndex = 0; valueIndex < slots.length; valueIndex += 1) add(slots.get(valueIndex));
@@ -4161,11 +4126,6 @@ export class CPU implements MappedPageInvalidator {
 		return work;
 	}
 
-	public collectTrackedHeapBytes(root0: Value = valueNil(), root1: Value = valueNil(), root2: Value = valueNil()): number {
-		this.gc.collect(root0, root1, root2);
-		return this.luaHeap.usedBytes();
-	}
-
 	public markRootHead(heap: GcHeap): void {
 		heap.markString(heap.diagnosticWord(GcDiagnosticField.Mode));
 		heap.markString(heap.diagnosticWord(GcDiagnosticField.Index));
@@ -4178,14 +4138,6 @@ export class CPU implements MappedPageInvalidator {
 		heap.markValue(valueFromTag(heap.diagnosticWord(GcDiagnosticField.StringIndexTag), heap.diagnosticWord(GcDiagnosticField.StringIndexWord)));
 		if (this.stringComparison.remaining !== 0) { heap.markString(this.stringComparison.left); heap.markString(this.stringComparison.right); }
 
-	}
-
-	public markScopedRoots(heap: GcHeap): void {
-		for (let i = 0; i < this.builtinResultsScratchIndex; ++i) {
-			const slots = this.builtinResultsScratch.peek(i);
-			for (let j = 0; j < slots.length; ++j) heap.markValue(slots.get(j));
-		}
-		for (const value of this.localRoots) heap.markValue(value);
 	}
 
 	public rootBankSlots(bank: GcRootBank): number {

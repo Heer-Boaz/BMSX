@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -60,7 +61,7 @@ test('both global banks leave reference publication and its barrier to the BIOS'
 	assert.equal(cpu.getGlobalByKey(name('ordinary_result')), valueInteger(17));
 	assert.equal(cpu.getSystemGlobalByKey(name('irq')), valueInteger(29));
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-	const object = cpu.createTable();
+	const object = createReferenceTable(cpu);
 	const string = cpu.stringPool.intern('RAM string only in this conformance setup');
 	const references = [valueTable(object), valueString(string)];
 	setReferenceGlobal(cpu, name('source_object'), references[0]);

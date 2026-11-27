@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../../helpers/global_bank_reference';
 import { resizeThreadStackReference } from '../../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
@@ -77,7 +78,7 @@ try {
 			luaHeap.setCollectionTarget(luaHeap.capacity());
 			const owner = cpu.activeThread.address;
 			resizeThreadStackReference(cpu, cpu.activeThread, 512);
-			const weak = cpu.createTable(4, 0), metatable = cpu.createTable(0, 1), hidden = cpu.createTable(), floating = cpu.createTable();
+			const weak = createReferenceTable(cpu, 4, 0), metatable = createReferenceTable(cpu, 0, 1), hidden = createReferenceTable(cpu), floating = createReferenceTable(cpu);
 			gc.tables.set(metatable, valueString(cpu.stringPool.find('__mode')!), valueString(cpu.stringPool.intern('v')));
 			gc.tables.setMetatableAddress(weak, metatable);
 			gc.tables.set(weak, valueInteger(1), valueTable(hidden));

@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -125,7 +126,7 @@ function fixture(optLevel: 0 | 3) {
 for (const optLevel of [0, 3] as const) {
 	test(`Trace quantum drains and resumes the same mixed native gray queue at O${optLevel}`, () => {
 		const { cpu, oracle, memory, control, compare, word, byte, add, queue, string, cell, closure, pendingString, beginning, grant, finish, check, head, frontier } = fixture(optLevel);
-		const thread = add(target => allocateThreadRecordReference(target, 0)), table = add(target => target.createTable(2, 0));
+		const thread = add(target => allocateThreadRecordReference(target, 0)), table = add(target => createReferenceTable(target, 2, 0));
 		const frame = memory.readRamRecordWord(thread + ThreadField.FrameBlock);
 		word(thread + ThreadField.FrameDepth, 1);
 		word(frame + FrameField.StackCapacity, 8);
@@ -193,7 +194,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`Trace quantum decodes the native mirror's saved Table mode width at O${optLevel}`, () => {
 		for (const policy of [0, 1]) {
 			const { cpu, memory, control, word, byte, add, string, beginning, finish, frontier } = fixture(optLevel);
-			const table = add(target => target.createTable(1, 0)), item = string('raw mode edge');
+			const table = add(target => createReferenceTable(target, 1, 0)), item = string('raw mode edge');
 			const array = cpu.gc.tables.arrayAddress(table), epoch = memory.readRamRecordByte(cpu.heapAllocator.managementOffset() + HEAP_STRING_METADATA_OFFSET + 0xc) & 1;
 			word(array, item);
 			byte(array + 4, ValueTag.String);

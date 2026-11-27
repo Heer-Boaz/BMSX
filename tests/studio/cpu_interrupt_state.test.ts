@@ -1,3 +1,4 @@
+import { createReferenceTable } from '../helpers/cpu_heap_reference';
 import { setReferenceGlobal } from '../helpers/global_bank_reference';
 import { abortFixtureCompletionCall, runCpuWithinBudget } from '../helpers/cpu_execution';
 import { Input } from '../../hosts/common/input/manager';
@@ -900,7 +901,7 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	const closureKey = cpu.stringPool.intern('completion_call');
 	setReferenceGlobal(cpu, closureKey, valueClosure(closure));
 
-	cpu.beginCompletionCall(closure, [valueTable(cpu.createTable())]);
+	cpu.beginCompletionCall(closure, [valueTable(createReferenceTable(cpu))]);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 	const state = cpu.captureRuntimeState();
 	assert.equal(cpu.getFrameDepth(), 1);
@@ -909,16 +910,16 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const restoredTable = valuePayload(materializeCpuCompletionValues(cpu)[0]);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(restoredTable), restoredTable, 'completion is the sole root of the returned Table');
 	assert.equal(valuePayload(materializeCpuCompletionValues(cpu)[0]), restoredTable);
 
 	const restoredClosure = asClosure(cpu.getGlobalByKey(closureKey), cpu.gc);
 	const runtime = makeRuntime(cpu, irqController);
-	const results = runtime.callClosure(restoredClosure, [valueTable(cpu.createTable())]);
+	const results = runtime.callClosure(restoredClosure, [valueTable(createReferenceTable(cpu))]);
 	assert.equal(results, runtime.readCompletionValues());
 	const borrowedTable = valuePayload(results[0]);
-	cpu.collectTrackedHeapBytes();
+	cpu.gc.collect();
 	assert.equal(cpu.gc.tableRecordAddress(borrowedTable), borrowedTable);
 	assert.equal(valuePayload(results[0]), borrowedTable);
 });
@@ -1842,9 +1843,9 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 	const childKey = cpu.stringPool.intern('child');
 	const parentKey = cpu.stringPool.intern('parent');
 	const objectKeyName = cpu.stringPool.intern('object_key');
-	const root = cpu.createTable(0, 64);
-	const child = cpu.createTable(0, 1);
-	const objectKey = cpu.createTable(0, 0);
+	const root = createReferenceTable(cpu, 0, 64);
+	const child = createReferenceTable(cpu, 0, 1);
+	const objectKey = createReferenceTable(cpu, 0, 0);
 	cpu.gc.tables.setStringKey(child, parentKey, valueTable(root));
 	cpu.gc.tables.setStringKey(root, childKey, valueTable(child));
 	cpu.gc.tables.setStringKey(root, objectKeyName, valueTable(objectKey));
