@@ -12,7 +12,7 @@ profile:
 book:
   author: BMSX
   search: true
-  date: 2026-10-20
+  date: 2026-11-27
   date-format: "D MMMM YYYY"
 
 lang: en

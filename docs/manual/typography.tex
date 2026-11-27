@@ -2,6 +2,87 @@
 \fvset{breaklines=true}
 \raggedbottom
 
+% Keep tables and headings with what follows them.
+%
+% \BMSX@needspace{h} asks for h of space on the current page. When the rest of
+% the page, shrink included, is smaller and h fits on an empty page, a kern
+% just larger than the rest of the page makes the page overflow at the
+% breakpoint that follows it. That breakpoint is then not feasible, so the page
+% breaks at the last feasible breakpoint before it: before the headings that
+% lead into the material, or else directly before it. A second kern takes the
+% space back. Unlike a forced break, this keeps a chain of headings together.
+\makeatletter
+\newif\ifBMSX@moved
+\def\BMSX@needspace#1{%
+  \global\BMSX@movedfalse
+  \ifdim#1<\textheight
+    \dimen@\pagegoal
+    \advance\dimen@-\pagetotal
+    \ifdim#1>\dimen@
+      \global\BMSX@movedtrue
+      \advance\dimen@\pageshrink
+      \advance\dimen@ 1pt
+      \kern\dimen@\penalty\z@\kern-\dimen@
+    \fi
+  \fi}
+
+% A heading needs room for itself and the first lines after it, whatever
+% follows: text, a code block, a list, a figure or a table.
+\newcommand*\BMSXheadingspace[1]{\par\BMSX@needspace{6\baselineskip}}
+\AddtoDoHook{heading/preinit/section}{\BMSXheadingspace}
+\AddtoDoHook{heading/preinit/subsection}{\BMSXheadingspace}
+\AddtoDoHook{heading/preinit/subsubsection}{\BMSXheadingspace}
+
+% A table needs room for all its rows. Each table is set as one longtable
+% chunk, so its full height is known when it starts. A table that moves to
+% the next page sets its own first head there, so the head that longtable
+% repeats after a break is left out. A table longer than a page breaks between
+% rows as usual.
+\usepackage{etoolbox}
+\setcounter{LTchunksize}{1000}
+\def\LT@keeptogether{%
+  \dimen@ii\ht\z@
+  \advance\dimen@ii\dp\z@
+  \advance\dimen@ii\ht\ifvoid\LT@firsthead\LT@head\else\LT@firsthead\fi
+  \advance\dimen@ii\ht\LT@lastfoot
+  \advance\dimen@ii\dp\LT@lastfoot
+  \advance\dimen@ii\LTpre
+  \advance\dimen@ii 2pt
+  \BMSX@needspace{\dimen@ii}}
+\AtBeginDocument{%
+  \let\LT@start@orig\LT@start
+  \def\LT@start{\endgraf\LT@keeptogether\LT@start@orig}%
+  \patchcmd{\LT@output}
+    {\copy\LT@head\nobreak}
+    {\ifBMSX@moved\global\BMSX@movedfalse\else\copy\LT@head\nobreak\fi}
+    {}{\PackageWarningNoLine{typography}{Could not patch longtable output}}}
+
+% A code block needs room for all its lines. The framed package sets the whole
+% block in a box before it places it, so its height is known there. A block
+% longer than a page breaks as usual. Before each block framed adds two
+% breakpoints of penalty 9999 to update \pagetotal; directly after a heading
+% these become 10000, so the page cannot break between the heading and the
+% block. Any penalty updates \pagetotal.
+\def\BMSX@framekeep{%
+  \ifinner\else
+    \dimen@ii\ht\@tempboxa
+    \advance\dimen@ii\dp\@tempboxa
+    \advance\dimen@ii\baselineskip
+    \BMSX@needspace{\dimen@ii}%
+  \fi}
+\AtBeginDocument{%
+  \patchcmd{\endMakeFramed}
+    {\begingroup\fb@put@frame}
+    {\begingroup\BMSX@framekeep\fb@put@frame}
+    {}{\PackageWarningNoLine{typography}{Could not patch framed}}%
+  \patchcmd{\MakeFramed}
+    {\penalty9999 \vskip -2\baselineskip \vskip-\height \penalty9999}
+    {\penalty\BMSX@framepenalty\relax \vskip -2\baselineskip \vskip-\height
+     \penalty\BMSX@framepenalty\relax}
+    {}{\PackageWarningNoLine{typography}{Could not patch framed start}}}
+\def\BMSX@framepenalty{\if@nobreak 10000\else 9999\fi}
+\makeatother
+
 \titlehead{\sffamily BMSX\hfill DEVELOPER REFERENCE\par\medskip\hrule}
 \lowertitleback{
   \small
