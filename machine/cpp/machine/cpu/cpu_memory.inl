@@ -7,7 +7,7 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 		return;
 	}
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const bool cpuProtected = resetBankSelected() && !isUserMode();
+	const bool cpuProtected = supervisorSystemInstruction();
 	Value value;
 	switch (kind) {
 		case MemoryAccessKind::Word: value = valueInteger(static_cast<i32>(m_memory.readMappedWord(address, cpuProtected))); break;
@@ -43,7 +43,7 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 	if (static_cast<size_t>(source) >= frame.registers.size()) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	const Value value = frame.registers.get(source);
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const bool cpuProtected = resetBankSelected() && !isUserMode();
+	const bool cpuProtected = supervisorSystemInstruction();
 	switch (kind) {
 		case MemoryAccessKind::Word: m_memory.writeMappedWord(address, wordOperand(value), cpuProtected); break;
 		case MemoryAccessKind::U8: m_memory.writeMappedU8(address, static_cast<u8>(wordOperand(value)), cpuProtected); break;
@@ -81,7 +81,7 @@ inline bool CPU::continueWordStores(CallFrame& frame, u32 address, int source, i
 	}
 	instructionBudgetRemaining -= count;
 	const u32 faultSequence = m_memory.readBusFaultSequence();
-	const bool cpuProtected = resetBankSelected() && !isUserMode();
+	const bool cpuProtected = supervisorSystemInstruction();
 	const int available = std::clamp(static_cast<int>(frame.registers.size()) - source, 0, count);
 	for (int offset = 0; offset < available; ++offset) {
 		m_memory.writeMappedWord(address, wordOperand(frame.registers.get(source + offset)), cpuProtected);

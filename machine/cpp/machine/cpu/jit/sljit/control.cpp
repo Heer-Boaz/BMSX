@@ -1,5 +1,6 @@
 #include "machine/cpu/jit/sljit/lowering.h"
 
+#include "machine/cpu/thread.h"
 #include "spec/blua32/cop0.h"
 
 namespace bmsx {
@@ -31,7 +32,11 @@ void NativeLowering::lowerOperation(const NativeControlAccess& access, const Nat
 		const auto target = m_cache.write(access.slot, ValueTag::Integer);
 		if (readsZero)
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_IMM, 0);
-		else
+		else if (access.field == COP0_CURRENT) {
+			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(NativeBlockAbi::state), offsetof(NativeBlockRunState, frame));
+			sljit_emit_op1(m_compiler, SLJIT_MOV_P, SLJIT_R2, 0, SLJIT_MEM1(SLJIT_R2), offsetof(CallFrame, thread));
+			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_MEM1(SLJIT_R2), SLJIT_OFFSETOF(Thread, address));
+		} else
 			sljit_emit_op1(m_compiler, SLJIT_MOV32, target.reg, 0, SLJIT_MEM1(SLJIT_R2), offset);
 		return;
 	}

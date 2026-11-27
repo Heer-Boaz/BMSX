@@ -85,7 +85,7 @@ inline constexpr bool nativeBlockHasTerminalContinuation(u8 op, int field) {
 		case OpCode::STORE_MEM_WORDS: case OpCode::STORE_MEM_WORDS_D:
 		case OpCode::CLOSURE: case OpCode::CALL:
 			return true;
-		case OpCode::MTC0: return field == COP0_STATUS || field == COP0_RAM_END;
+		case OpCode::MTC0: return field == COP0_STATUS || field == COP0_RAM_END || field == COP0_CURRENT;
 		default: return false;
 	}
 }

@@ -40,6 +40,7 @@
 #include "machine/cpu/value.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
+#include "spec/bmsx/memory_map.h"
 #if defined(BMSX_DIAGNOSTIC_CPU_SLICES) || defined(BMSX_NATIVE_GATE_PROFILE) || defined(BMSX_DIAGNOSTIC_CPU_TIMING)
 #include "machine/cpu/diagnostic_gc_profile.h"
 #endif
@@ -577,8 +578,13 @@ private:
 	CallFrame* enterException(Blua32ExecutionImage& vectorImage, u32 functionAddress, u32 causeWord, u32 epcWord);
 	void latchExceptionEntry(u32 causeWord, u32 epcWord);
 	bool resetBankSelected() const { return m_activeThread->address == CPU_RESET_BANK_ADDRESS; }
+	bool supervisorSystemInstruction() const {
+		return !isUserMode() && m_activeExecutionDomainId == SYSTEM_EXECUTION_DOMAIN_ID
+			&& m_currentInstructionPc - SYSTEM_ROM_BASE < SYSTEM_ROM_SIZE;
+	}
 	void selectRamEnd(CallFrame& frame, u32 address);
 	void activateRootContext(u32 address);
+	void selectExecutionContext(CallFrame&, u32 address);
 	void installSystemVector(CallFrame& frame, u32 address, int field);
 	void transferExceptionVector(CallFrame& frame, u32 target);
 	void resumeInterruptedContext();
@@ -638,7 +644,7 @@ private:
 	u32 m_nmiReturnExceptionDomainWord = 0;
 	Thread* m_activeThread = nullptr;
 	u32 m_completionThreadAddress = 0u;
-	Thread& bindThread(u32 address);
+	Thread& bindThread(u32 address, bool authored = false);
 	void retireThreadView(u32 address);
 	void rebindRelocatedThread(u32 address);
 	template<class Visitor> void visitThreadViews(Visitor&& visitor) {

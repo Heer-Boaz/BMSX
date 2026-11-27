@@ -16,6 +16,7 @@ constexpr uint8_t COP0_SYSTEM_VECTOR = 18u;
 constexpr uint8_t COP0_PREVIOUS_ACTIVE = 19u;
 constexpr uint8_t COP0_EXCEPTION_TARGET = 20u;
 constexpr uint8_t COP0_IRQ_VECTOR = 21u;
+constexpr uint8_t COP0_CURRENT = 22u;
 // Only the target control word carries a physical socket; execution PCs stay mapped addresses.
 constexpr uint32_t CPU_EXCEPTION_TARGET_SOCKET_SHIFT = 31u;
 constexpr uint32_t CPU_EXCEPTION_TARGET_ADDRESS_MASK = 0x7fffffffu;
@@ -24,13 +25,14 @@ constexpr uint32_t CPU_INTERRUPT_STATE_HALT = 0x80000000u;
 constexpr bool cop0ReadAsZero(int field) { return field == COP0_EXEC || field == COP0_RAM_END || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR; }
 constexpr bool cop0WriteRetiresControl(int field) {
 	return field == COP0_STATUS || field == COP0_EXEC || field == COP0_CONTEXT
-		|| field == COP0_RAM_END || field == COP0_SYSTEM_VECTOR || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR;
+		|| field == COP0_RAM_END || field == COP0_SYSTEM_VECTOR || field == COP0_EXCEPTION_TARGET || field == COP0_IRQ_VECTOR
+		|| field == COP0_CURRENT;
 }
 
 constexpr bool cop0FieldImplemented(int field) {
 	constexpr uint32_t fields = (1u << COP0_BAD_ADDRESS) | (1u << COP0_LUA_FAULT_REASON)
-		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR);
-	return static_cast<uint32_t>(field) <= COP0_IRQ_VECTOR && ((fields >> field) & 1u) != 0u;
+		| (1u << COP0_STATUS) | (1u << COP0_CAUSE) | (1u << COP0_EPC) | (1u << COP0_EXEC) | (1u << COP0_CONTEXT) | (1u << COP0_RAM_END) | (1u << COP0_SYSTEM_VECTOR) | (1u << COP0_PREVIOUS_ACTIVE) | (1u << COP0_EXCEPTION_TARGET) | (1u << COP0_IRQ_VECTOR) | (1u << COP0_CURRENT);
+	return static_cast<uint32_t>(field) <= COP0_CURRENT && ((fields >> field) & 1u) != 0u;
 }
 
 constexpr uint32_t CPU_STATUS_INTERRUPT_ENABLE_CURRENT = 1u << 0u;

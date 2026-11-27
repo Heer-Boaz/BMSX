@@ -132,6 +132,7 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'cop0.status', params: [], signature: 'cop0.status', description: 'Raw CPU STATUS control register. Supervisor code may read and write it.' },
 	{ name: 'cop0.cause', params: [], signature: 'cop0.cause', description: 'Raw read-only CPU CAUSE control register.' },
 	{ name: 'cop0.context', params: [], signature: 'cop0.context', description: 'In the reset bank, reads the previous admitted root context address. Writing admits a prepared context.' },
+	{ name: 'cop0.current', params: [], signature: 'cop0.current', description: 'Physical address of the executing context. An ordinary System ROM supervisor instruction can select another prepared context.' },
 	{ name: 'cop0.previous_active', params: [], signature: 'cop0.previous_active', description: 'Read-only raw physical address of the executing context preserved at reset, until another context is admitted.' },
 	{ name: 'cop0.system_vector', params: [], signature: 'cop0.system_vector', description: 'System exception Function address, writable only while executing immutable System ROM in supervisor mode.' },
 	{ name: 'cop0.exception_target', params: [], signature: 'cop0.exception_target', description: 'Replace the active exception vector by another Function without a second exception entry.' },

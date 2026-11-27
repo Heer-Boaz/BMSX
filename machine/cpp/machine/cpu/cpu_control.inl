@@ -26,6 +26,9 @@ inline void CPU::executeControlWrite(CallFrame& frame, int source, int field) {
 	case COP0_CONTEXT:
 		activateRootContext(value);
 		return;
+	case COP0_CURRENT:
+		selectExecutionContext(frame, value);
+		return;
 	case COP0_RAM_END:
 		selectRamEnd(frame, value);
 		return;

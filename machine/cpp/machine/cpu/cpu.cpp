@@ -710,10 +710,21 @@ void CPU::bindPhysicalFrames(Thread& thread) {
 		frame->executionImage = m_executionImagesByDomain[static_cast<size_t>(frame->savedExecutionBank() + 1)].get();
 }
 
-Thread& CPU::bindThread(u32 address) {
-	if (address == m_rootView.address) return m_rootView;
-	if (address == CPU_RESET_BANK_ADDRESS) return m_irqView;
-	for (auto& view : m_transferViews) if (view.address == address) return view;
+Thread& CPU::bindThread(u32 address, bool authored) {
+	Thread* retained = address == m_rootView.address ? &m_rootView
+		: address == CPU_RESET_BANK_ADDRESS ? &m_irqView : nullptr;
+	if (!retained) {
+		for (auto& view : m_transferViews) {
+			if (view.address != address) continue;
+			retained = &view;
+			break;
+		}
+	}
+	if (retained) {
+		// Software can edit the saved frame and Value backing while dormant.
+		if (authored) bindPhysicalFrames(*retained);
+		return *retained;
+	}
 	// A transfer may still borrow the current bank for arguments/results.
 	auto& view = m_activeThread == &m_transferViews[0] ? m_transferViews[1] : m_transferViews[0];
 	view.select(address);
@@ -995,6 +1006,20 @@ void CPU::activateRootContext(u32 address) {
 	m_cop0Words[COP0_CONTEXT] = 0u;
 	m_cop0Words[COP0_PREVIOUS_ACTIVE] = 0u;
 	requestYield();
+}
+
+void CPU::selectExecutionContext(CallFrame& frame, u32 address) {
+	if (!supervisorSystemInstruction() || resetBankSelected()) {
+		enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+		return;
+	}
+	if ((address & 3u) != 0u || address < m_memory.ramBusEnd() || !m_memory.isRamRange(address, THREAD_HEAP_BYTES, true)) {
+		enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+		return;
+	}
+	m_activeThread = &bindThread(address, true);
+	resumeFrameBank();
+	m_runSignals |= RunThreadSwitch | RunYield;
 }
 
 void CPU::installSystemVector(CallFrame& frame, u32 address, int field) {

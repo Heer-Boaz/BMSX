@@ -27,7 +27,7 @@ import {
 	COP0_BAD_ADDRESS,
 	COP0_CAUSE,
 	COP0_EPC,
-	COP0_EXEC, COP0_CONTEXT, COP0_RAM_END, COP0_SYSTEM_VECTOR, COP0_PREVIOUS_ACTIVE, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR,
+	COP0_EXEC, COP0_CONTEXT, COP0_RAM_END, COP0_SYSTEM_VECTOR, COP0_PREVIOUS_ACTIVE, COP0_EXCEPTION_TARGET, COP0_IRQ_VECTOR, COP0_CURRENT,
 	CPU_EXCEPTION_TARGET_ADDRESS_MASK, CPU_EXCEPTION_TARGET_SOCKET_SHIFT, CPU_INTERRUPT_STATE_HALT,
 	COP0_LUA_FAULT_REASON,
 	COP0_STATUS,
@@ -1428,12 +1428,20 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	/** A borrowed bank, not retained across a Thread switch or fixed activation. */
-	public bindThread(address: number): Thread {
-		if (address === this.rootThread.address) return this.rootThread;
-		if (address === CPU_RESET_BANK_ADDRESS) return this.irqThread;
-		for (let i = 1; i < this.threadBanks.length; ++i) {
-			const bank = this.threadBanks[i];
-			if (bank.address === address) return bank;
+	public bindThread(address: number, authored = false): Thread {
+		let cached: Thread | undefined;
+		if (address === this.rootThread.address) cached = this.rootThread;
+		else if (address === CPU_RESET_BANK_ADDRESS) cached = this.irqThread;
+		else {
+			for (let i = 1; i < this.threadBanks.length; ++i) {
+				const bank = this.threadBanks[i];
+				if (bank.address === address) { cached = bank; break; }
+			}
+		}
+		if (cached !== undefined) {
+			// An inactive context's frame or Value backing can be edited in RAM.
+			if (authored) this.bindPhysicalFrames(cached);
+			return cached;
 		}
 		const bank = this.threadBanks[1] !== this.activeThread ? this.threadBanks[1] : this.threadBanks[2];
 		bank.bindAddress(address);
@@ -1863,6 +1871,11 @@ export class CPU implements MappedPageInvalidator {
 		return this.fixedInterruptActive() && !this.hardHalted;
 	}
 
+	private executingSystemRom(): boolean {
+		return this.activeExecutionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
+			&& ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE;
+	}
+
 	// The scalar and generated backends retire the same control write.
 	private executeControlWrite(frame: CallFrame, source: number, field: number): void {
 		if (this.isUserMode()) {
@@ -1873,8 +1886,7 @@ export class CPU implements MappedPageInvalidator {
 		const value = wordOperand(frame.registers.get(source));
 		switch (field) {
 			case COP0_STATUS: {
-				const writeMask = this.activeExecutionDomainId === SYSTEM_EXECUTION_DOMAIN_ID
-					&& ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE ? -1 : ~CPU_STATUS_INHIBIT_RESET;
+				const writeMask = this.executingSystemRom() ? -1 : ~CPU_STATUS_INHIBIT_RESET;
 				const previous = this.cop0Words[COP0_STATUS], status = (previous & ~writeMask) | (value & writeMask);
 				this.cop0Words[COP0_STATUS] = status;
 				if ((previous & ~status & CPU_STATUS_INHIBIT_RESET) !== 0) this.requestYield();
@@ -1883,6 +1895,7 @@ export class CPU implements MappedPageInvalidator {
 			case COP0_EPC: this.cop0Words[COP0_EPC] = value; return;
 			case COP0_EXEC: this.executeFunctionAddress(value); return;
 			case COP0_CONTEXT: this.activateRootContext(value); return;
+			case COP0_CURRENT: this.selectExecutionContext(frame, value); return;
 			case COP0_RAM_END: this.selectRamEnd(frame, value); return;
 			case COP0_SYSTEM_VECTOR:
 			case COP0_IRQ_VECTOR: this.installSystemVector(frame, value, field); return;
@@ -1896,8 +1909,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private selectRamEnd(frame: CallFrame, address: number): void {
-		if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
-			|| ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE) {
+		if (!this.executingSystemRom()) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 			return;
 		}
@@ -1908,6 +1920,21 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.memory.setRamBusEnd(end);
 		this.requestYield();
+	}
+
+	private selectExecutionContext(frame: CallFrame, address: number): void {
+		if (!this.executingSystemRom() || this.resetBankSelected()) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
+			return;
+		}
+		if ((address & 3) !== 0 || address < this.memory.ramBusEnd()
+			|| !this.memory.isRamRange(address, THREAD_HEAP_BYTES, true)) {
+			this.enterSynchronousAddressException(frame, CPU_CAUSE_CODE_ADDRESS_ERROR_STORE, address);
+			return;
+		}
+		this.activeThread = this.bindThread(address, true);
+		this.resumeFrameBank();
+		this.threadSwitchRequested = this.yieldRequested = true;
 	}
 
 	private activateRootContext(address: number): void {
@@ -1967,8 +1994,7 @@ export class CPU implements MappedPageInvalidator {
 	private installSystemVector(frame: CallFrame, address: number, field: number): void {
 		// Supervisor status alone is not authority: the cartridge vector also
 		// executes with the current user bit clear.
-		if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
-			|| ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE) {
+		if (!this.executingSystemRom()) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 			return;
 		}
@@ -1985,8 +2011,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private transferExceptionVector(frame: CallFrame, target: number): void {
-		if (this.activeExecutionDomainId !== SYSTEM_EXECUTION_DOMAIN_ID
-			|| ((this.currentInstructionPc - SYSTEM_ROM_BASE) >>> 0) >= SYSTEM_ROM_SIZE) {
+		if (!this.executingSystemRom()) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 			return;
 		}
@@ -3257,7 +3282,7 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		const faultSequence = this.memory.readBusFaultSequence();
-		const cpuProtected = this.resetBankSelected() && !this.isUserMode();
+		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
 		let value: Value;
 		switch (kind) {
 			case MemoryAccessKind.Word: value = valueInteger(this.memory.readMappedWord(address, cpuProtected) | 0); break;
@@ -3298,7 +3323,7 @@ export class CPU implements MappedPageInvalidator {
 		if (source >= frame.registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		const value = frame.registers.get(source);
 		const faultSequence = this.memory.readBusFaultSequence();
-		const cpuProtected = this.resetBankSelected() && !this.isUserMode();
+		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
 		switch (kind) {
 			case MemoryAccessKind.Word: this.memory.writeMappedWord(address, wordOperand(value), cpuProtected); break;
 			case MemoryAccessKind.U8: this.memory.writeMappedU8(address, wordOperand(value), cpuProtected); break;
@@ -3340,7 +3365,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		this.charge(valueCount);
 		const faultSequence = this.memory.readBusFaultSequence();
-		const cpuProtected = this.resetBankSelected() && !this.isUserMode();
+		const cpuProtected = !this.isUserMode() && this.executingSystemRom();
 		const available = Math.max(0, Math.min(valueCount, frame.registers.capacity() - valueBase));
 		let writeAddr = addr;
 		for (let offset = 0; offset < available; offset += 1) {
@@ -3922,7 +3947,7 @@ export class CPU implements MappedPageInvalidator {
 					const field = page.b[pageOffset];
 					if (!cop0FieldImplemented(field)) { this.hardHalt(); return; }
 					if (a >= registers.capacity()) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
-					const value = cop0ReadAsZero(field) ? 0 : this.cop0Words[field];
+					const value = field === COP0_CURRENT ? frame.thread.address : cop0ReadAsZero(field) ? 0 : this.cop0Words[field];
 					this.setRegisterIntegerFast(frame, registers, a, value);
 					return;
 				}
