@@ -485,7 +485,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		now_ns = monotonic_ns();
-		const BmsxFramePacerDecision pacing = bmsx_frame_pacer_begin(&frame_pacer, now_ns, !unpaced_timeline);
+		const BmsxFramePacerDecision pacing = bmsx_frame_pacer_begin(&frame_pacer, now_ns);
 		/* Drop the presentation of host calls catching up missed deadlines. */
 		const bool drop_video =
 				!unpaced_timeline && pacing.drop_presentation;
@@ -520,11 +520,8 @@ int main(int argc, char** argv) {
 		const uint64_t process_cpu_start_ns = frame_timing.record_frame
 			? cpu_clock_ns(CLOCK_PROCESS_CPUTIME_ID) : 0u;
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
-		if (session.run_cadence)
-			session.run_cadence->retain_frame_grant = pacing.retain_frame_grant;
 		core->retro_run();
-		const bool maintenance_only = session.run_cadence && session.run_cadence->maintenance_only;
-		if (!session.single_guest_tick && !maintenance_only) input_timeline_finish_run(0);
+		if (!session.single_guest_tick) input_timeline_finish_run(0);
 		const bool presented_frame = video_presenter_end_frame();
 		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
@@ -612,8 +609,7 @@ int main(int argc, char** argv) {
 				&frame_pacer,
 				now_ns,
 				!unpaced_timeline,
-				session.frame_period_ns,
-				maintenance_only);
+				session.frame_period_ns);
 	}
 	const uint64_t guest_ticks_completed = input_timeline_elapsed_frames();
 	const bool workload_complete = !session.single_guest_tick || guest_ticks_completed == guest_tick_limit;

@@ -15,7 +15,6 @@ class VideoPresenter;
 enum class LibretroFrameResult : u8 {
 	NotPresented,
 	Presented,
-	Maintenance,
 	RebootRequested,
 	ExitRequested,
 	SuspendRequested,
@@ -31,8 +30,6 @@ LibretroFrameResult runLibretroFrame(
 	f64& totalTime,
 	f64 deltaTime,
 	bool singleGuestTick = false,
-	GlesFrameWorker* worker = nullptr,
-	bool retainFrameGrant = false,
-	bool maintenanceCadence = false);
+	GlesFrameWorker* worker = nullptr);
 
 } // namespace bmsx

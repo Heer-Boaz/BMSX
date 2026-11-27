@@ -22,15 +22,12 @@ LibretroFrameResult runLibretroFrame(
 	f64& totalTime,
 	f64 deltaTime,
 	bool singleGuestTick,
-	[[maybe_unused]] GlesFrameWorker* worker,
-	bool retainFrameGrant,
-	bool maintenanceCadence
+	[[maybe_unused]] GlesFrameWorker* worker
 ) {
-	if (!retainFrameGrant) presentation.recordHostFrame();
+	presentation.recordHostFrame();
 
-	const f64 grantTime = retainFrameGrant ? 0.0 : deltaTime;
-	const f64 hostDeltaMs = grantTime * 1000.0;
-	totalTime += grantTime;
+	const f64 hostDeltaMs = deltaTime * 1000.0;
+	totalTime += deltaTime;
 	const f64 hostFps = 1.0 / deltaTime;
 
 	const HostMenuInput hostMenuInput =
@@ -48,7 +45,6 @@ LibretroFrameResult runLibretroFrame(
 	}
 	const HostMenuExecution menuExecution = overlayMenu.executionMode();
 	const bool menuPaused = menuExecution == HostMenuExecution::Paused;
-	const bool rewindWasActive = rewind.active;
 
 	presentation.beginHostFrame();
 	// Select execution before any service that can restore or advance the machine.
@@ -59,7 +55,6 @@ LibretroFrameResult runLibretroFrame(
 	}
 	bool presented = false;
 	bool workerConsumedFrame = false;
-	bool maintenanceOnly = false;
 	if ((runtime.isDrawPending() || runtime.machine.systemController.hasResetRequest()) && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 #if BMSX_ENABLE_GLES2
@@ -70,15 +65,11 @@ LibretroFrameResult runLibretroFrame(
 #endif
 		{
 			auto& scheduler = runtime.frameScheduler;
-			const u64 previousMaintenance = scheduler.maintenancePulseSequence();
 			bool tickCompleted = false;
 			if (singleGuestTick) tickCompleted = scheduler.runScheduledToNextLogicalTick(runtime, hostDeltaMs);
 			else scheduler.run(runtime, hostDeltaMs);
-			maintenanceOnly = maintenanceCadence && scheduler.maintenancePulseSequence() != previousMaintenance
-				&& hostMenuInput == HostMenuInput::Inactive && !rewindWasActive;
 			GxGpu& gxGpu = runtime.machine.gxGpu;
 			while (gxGpu.backendServicePending()) {
-				maintenanceOnly = false;
 				if (gxGpu.backendCommandDrainPending()) {
 					presenter.backend().executeGxGpuCommandDrain(gxGpu);
 				} else {
@@ -88,7 +79,7 @@ LibretroFrameResult runLibretroFrame(
 				if (!singleGuestTick) scheduler.run(runtime, 0.0);
 				else if (!tickCompleted) tickCompleted = scheduler.runScheduledToNextLogicalTick(runtime, 0.0);
 			}
-			presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence, !maintenanceOnly);
+			presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 		}
 	} else {
 		runtime.frameScheduler.clearQueuedTime();
@@ -112,8 +103,7 @@ LibretroFrameResult runLibretroFrame(
 		);
 	}
 	if (!menuPaused && runtime.history.checkpointPending) rewind.service(true);
-	if (presented) return LibretroFrameResult::Presented;
-	return maintenanceOnly ? LibretroFrameResult::Maintenance : LibretroFrameResult::NotPresented;
+	return presented ? LibretroFrameResult::Presented : LibretroFrameResult::NotPresented;
 }
 
 } // namespace bmsx

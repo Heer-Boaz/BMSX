@@ -166,8 +166,6 @@ static double g_frame_time_sec =
 static double g_total_time = 0.0;
 static int64_t g_runtime_ufps_scaled = 0;
 static bool g_single_guest_tick = false;
-static bool g_run_cadence_accepted = false;
-static BmsxRunCadenceV1 g_run_cadence{};
 
 static int32_t RETRO_CALLCONV read_active_execution_domain_id(void) {
 	return g_content->runtime.machine.cpu.activeCartridgeSlot();
@@ -1081,8 +1079,6 @@ void retro_set_environment(retro_environment_t cb) {
 		&executionDomainInterface);
 	BmsxGuestProgressInterfaceV1 guestProgressInterface{read_guest_progress};
 	cb(BMSX_ENVIRONMENT_SET_GUEST_PROGRESS_INTERFACE_V1, &guestProgressInterface);
-	g_run_cadence = {};
-	g_run_cadence_accepted = cb(BMSX_ENVIRONMENT_SET_RUN_CADENCE_V1, &g_run_cadence);
 	BmsxSupervisorRequestInterfaceV1 supervisorRequestInterface{
 		supervisor_request_line_low,
 	};
@@ -1657,8 +1653,6 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
-	const bool retainFrameGrant = g_run_cadence_accepted && g_run_cadence.retain_frame_grant;
-	g_run_cadence = {};
 #if defined(BMSX_NATIVE_GATE_PROFILE)
 	bmsx::NativeGateProfileFrame gateProfile(
 		g_content ? &g_content->runtime.machine.cpu : nullptr, logging.log);
@@ -1666,8 +1660,7 @@ void retro_run(void) {
 	// Libretro video notifications belong to retro_run. Publishing a change that
 	// was queued by reset/state work first lets a synchronous frontend context
 	// reset enter the lifecycle switch below in this same frame.
-	const auto initialAvInfoNotification = g_video_output.publishPendingAvInfo();
-	const bool restoringHardwareContext = g_hw_context_lifecycle == HardwareContextLifecycle::ResetPending;
+	g_video_output.publishPendingAvInfo();
 	switch (g_hw_context_lifecycle) {
 		case HardwareContextLifecycle::Software:
 		case HardwareContextLifecycle::Ready:
@@ -1804,7 +1797,6 @@ void retro_run(void) {
 #if defined(BMSX_DIAGNOSTIC_GEO)
 	const auto geoBefore = runtime.machine.geometryController.overlapProfile();
 	const auto tickBefore = runtime.frameScheduler.lastTickSequence;
-	const auto maintenanceBefore = runtime.frameScheduler.maintenancePulseSequence();
 #endif
 	bmsx::LibretroFrameResult frameResult = bmsx::LibretroFrameResult::NotPresented;
 	try {
@@ -1819,20 +1811,16 @@ void retro_run(void) {
 			deltaTime,
 			g_single_guest_tick,
 #if BMSX_ENABLE_GLES2
-			g_gles_frame_worker.get(),
+			g_gles_frame_worker.get()
 #else
-			nullptr,
+			nullptr
 #endif
-			retainFrameGrant,
-			g_run_cadence_accepted && !vars_updated && !restoringHardwareContext
-				&& initialAvInfoNotification == bmsx::LibretroAvInfoNotification::None
 		);
 #if defined(BMSX_DIAGNOSTIC_GEO)
 		const auto geo = runtime.machine.geometryController.overlapProfile();
 		logging.log(RETRO_LOG_INFO,
-			"[GEO] tick=%lld->%lld maintenance=%llu passes=%llu instances=%llu services=%llu pairs=%llu mask_pass=%llu exact=%llu service_cpu_ns=%llu\n",
+			"[GEO] tick=%lld->%lld passes=%llu instances=%llu services=%llu pairs=%llu mask_pass=%llu exact=%llu service_cpu_ns=%llu\n",
 			static_cast<long long>(tickBefore), static_cast<long long>(runtime.frameScheduler.lastTickSequence),
-			static_cast<unsigned long long>(runtime.frameScheduler.maintenancePulseSequence() - maintenanceBefore),
 			static_cast<unsigned long long>(geo.passes - geoBefore.passes),
 			static_cast<unsigned long long>(geo.instances - geoBefore.instances),
 			static_cast<unsigned long long>(geo.services - geoBefore.services),
@@ -1855,7 +1843,6 @@ void retro_run(void) {
 			}
 			case bmsx::LibretroFrameResult::NotPresented:
 			case bmsx::LibretroFrameResult::Presented:
-			case bmsx::LibretroFrameResult::Maintenance:
 				break;
 		}
 		if (publish_runtime_reset(runtime)) frameResult = bmsx::LibretroFrameResult::NotPresented;
@@ -1905,27 +1892,20 @@ void retro_run(void) {
 	// Output video
 	const bool publish_video_frame =
 		video_frame_presented && !suppress_hardware_frame;
-	g_run_cadence.maintenance_only = g_run_cadence_accepted
-		&& frameResult == bmsx::LibretroFrameResult::Maintenance
-		&& !vars_updated && !restoringHardwareContext && !timing_changed
-		&& initialAvInfoNotification == bmsx::LibretroAvInfoNotification::None
-		&& av_info_notification == bmsx::LibretroAvInfoNotification::None;
-	if (!g_run_cadence.maintenance_only) {
-		if (hardware_frame) {
-			const auto& geometry = g_video_output.avInfo().geometry;
-			video_cb(
-				publish_video_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr,
-				geometry.base_width,
-				geometry.base_height,
-				0);
-		} else {
-			const auto& framebuffer = *g_software_target;
-			video_cb(
-				publish_video_frame ? framebuffer.data() : nullptr,
-				static_cast<unsigned>(framebuffer.width()),
-				static_cast<unsigned>(framebuffer.height()),
-				static_cast<size_t>(framebuffer.pitch()));
-		}
+	if (hardware_frame) {
+		const auto& geometry = g_video_output.avInfo().geometry;
+		video_cb(
+			publish_video_frame ? RETRO_HW_FRAME_BUFFER_VALID : nullptr,
+			geometry.base_width,
+			geometry.base_height,
+			0);
+	} else {
+		const auto& framebuffer = *g_software_target;
+		video_cb(
+			publish_video_frame ? framebuffer.data() : nullptr,
+			static_cast<unsigned>(framebuffer.width()),
+			static_cast<unsigned>(framebuffer.height()),
+			static_cast<size_t>(framebuffer.pitch()));
 	}
 
 	// Output audio

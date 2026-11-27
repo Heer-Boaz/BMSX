@@ -35,8 +35,6 @@ extern "C" {
  * guest tick after completing the first; a partial tick remains pending. */
 #define BMSX_ENVIRONMENT_GET_SINGLE_GUEST_TICK_V1 \
 	(RETRO_ENVIRONMENT_PRIVATE | 0x42d2u)
-#define BMSX_ENVIRONMENT_SET_RUN_CADENCE_V1 \
-	(RETRO_ENVIRONMENT_PRIVATE | 0x42d3u)
 #define BMSX_SUBSYSTEM_DUAL_CARTRIDGE 1u
 
 /* Sent immediately before RETRO_ENVIRONMENT_SHUTDOWN. EXIT_GAME asks the
@@ -204,16 +202,6 @@ typedef void (RETRO_CALLCONV *bmsx_read_guest_progress_t)(BmsxGuestProgressV1* p
 typedef struct BmsxGuestProgressInterfaceV1 {
 	bmsx_read_guest_progress_t read_progress;
 } BmsxGuestProgressInterfaceV1;
-
-/* Optional synchronous slot shared for one core session. The frontend may set
- * retain_frame_grant before retro_run to reoffer the current slot without
- * granting another nominal frame of guest time. The core consumes that bit
- * and publishes maintenance_only for this call only. An accepting frontend
- * receives no duplicate-video placeholder for maintenance; audio is unchanged. */
-typedef struct BmsxRunCadenceV1 {
-	bool retain_frame_grant;
-	bool maintenance_only;
-} BmsxRunCadenceV1;
 
 typedef void (RETRO_CALLCONV *bmsx_set_audio_transport_suspended_t)(bool suspended);
 

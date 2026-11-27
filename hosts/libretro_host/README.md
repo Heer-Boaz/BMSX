@@ -253,15 +253,6 @@ ordering and is first dispatched alongside frame-1 input before the following
 run. Once started, dropped presentations, missing video callbacks and BIOS calls
 within the cartridge session do not pause timeline time.
 
-With a BMSX core that offers the standalone cadence interface, a call that
-only services guest maintenance leaves the input timeline and current video
-frame in place. The host can reoffer its remaining display slot without
-granting a second frame of console time. Maintenance consumes real wall time:
-an expired host deadline closes the slot normally. This also applies to
-`--guest-ticks`; normal pause, backend waits and partial guest execution are
-not classified as maintenance. External frontends that do not accept the
-private interface keep their existing `retro_run` cadence.
-
 Capture marker `N` requests the image presented during cartridge run `N`.
 Captures require an actual presentation. If presentation is delayed, the next
 available image consumes the latest overdue marker; it is not a reconstructed
