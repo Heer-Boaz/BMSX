@@ -156,6 +156,7 @@ static std::optional<bmsx::HostKeyboardInteraction> g_keyboard_interaction;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
 static std::optional<bmsx::HostRewind> g_rewind;
+static bool g_runtime_reset_completed = false;
 #if BMSX_ENABLE_GLES2
 static std::unique_ptr<bmsx::GlesFrameWorker> g_gles_frame_worker;
 #endif
@@ -1185,6 +1186,8 @@ static void sync_runtime_timing(bmsx::Runtime& runtime) {
 }
 
 static void activate_runtime(bmsx::Runtime& runtime) {
+	g_runtime_reset_completed = false;
+	runtime.onStateReset = [] { g_runtime_reset_completed = true; };
 #if BMSX_ENABLE_GLES2
 	g_gles_frame_worker.reset();
 	const char* threaded = std::getenv("BMSX_GLES2_THREADED");
@@ -1204,6 +1207,22 @@ static void activate_runtime(bmsx::Runtime& runtime) {
 	sync_runtime_timing(runtime);
 	runtime.frameScheduler.clearQueuedTime();
 	bmsx::flushLibretroSystemOutput(runtime, logging);
+}
+
+// The scheduler may run on the GLES frame worker. Replace presentation
+// and rewind attachments only after control returns to the frontend.
+static bool publish_runtime_reset(bmsx::Runtime& runtime) {
+	if (!g_runtime_reset_completed) return false;
+#if BMSX_ENABLE_GLES2
+	if (isHardwareBackendActive())
+		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
+#endif
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
+	runtime.machine.cpu.prepareSystemNativeCode();
+#endif
+	activate_runtime(runtime);
+	logging.log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
+	return true;
 }
 
 static void unload_content() {
@@ -1622,24 +1641,19 @@ void retro_unload_game(void) {
  */
 
 void retro_reset(void) {
-#if BMSX_ENABLE_GLES2
-	if (isHardwareBackendActive())
-		static_cast<bmsx::OpenGLES2Backend&>(g_video_presenter->backend()).invalidateContextState();
-#endif
 	logging.log(RETRO_LOG_INFO, "[BMSX] Reset\n");
 	if (g_content) {
-		g_content->runtime.rebootSystem();
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-		g_content->runtime.machine.cpu.prepareSystemNativeCode();
-#endif
-		activate_runtime(g_content->runtime);
+		g_overlay_menu->resetInputState(*g_input, *g_rewind);
+		auto& runtime = g_content->runtime;
+		runtime.machine.systemController.requestReset();
+		runtime.frameScheduler.runCyclesToNextLogicalTick(runtime, 0);
+		publish_runtime_reset(runtime);
 	} else if (!load_default_content()) {
 		logging.log(
 			RETRO_LOG_ERROR,
 			"[BMSX] Reset failed: cartridge-free firmware boot failed\n");
 		return;
 	}
-	logging.log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
 }
 
 void retro_run(void) {
@@ -1829,11 +1843,7 @@ void retro_run(void) {
 #endif
 		switch (frameResult) {
 			case bmsx::LibretroFrameResult::RebootRequested:
-				runtime.rebootSystem();
-#if defined(BMSX_ENABLE_NATIVE_BLOCKS)
-				runtime.machine.cpu.prepareSystemNativeCode();
-#endif
-				activate_runtime(runtime);
+				runtime.machine.systemController.requestReset();
 				break;
 			case bmsx::LibretroFrameResult::ExitRequested:
 			case bmsx::LibretroFrameResult::SuspendRequested: {
@@ -1848,6 +1858,7 @@ void retro_run(void) {
 			case bmsx::LibretroFrameResult::Maintenance:
 				break;
 		}
+		if (publish_runtime_reset(runtime)) frameResult = bmsx::LibretroFrameResult::NotPresented;
 	} catch (const std::exception& error) {
 		bmsx::reportLibretroRuntimeError(
 			runtime,

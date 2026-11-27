@@ -138,7 +138,7 @@ export class SystemController {
 
 	private static writeControl(context: SystemController, _address: number, value: number): void {
 		if ((value & SYS_CONTROL_RESET) !== 0) {
-			context.resetRequested = true;
+			context.requestReset();
 			context.cpu.requestYield();
 		}
 		if (!context.cpu.isUserMode()) {
@@ -295,6 +295,14 @@ export class SystemController {
 
 	public supervisorContextActive(): boolean {
 		return this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_USER;
+	}
+
+	public requestReset(): void {
+		this.resetRequested = true;
+	}
+
+	public hasResetRequest(): boolean {
+		return this.resetRequested;
 	}
 
 	public takeResetRequest(): boolean {

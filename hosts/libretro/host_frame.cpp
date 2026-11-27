@@ -60,7 +60,7 @@ LibretroFrameResult runLibretroFrame(
 	bool presented = false;
 	bool workerConsumedFrame = false;
 	bool maintenanceOnly = false;
-	if (runtime.isDrawPending() && menuExecution == HostMenuExecution::Live && !rewind.active) {
+	if ((runtime.isDrawPending() || runtime.machine.systemController.hasResetRequest()) && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 #if BMSX_ENABLE_GLES2
 		if (worker != nullptr) {

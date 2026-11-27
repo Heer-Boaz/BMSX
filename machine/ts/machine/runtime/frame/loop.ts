@@ -156,7 +156,7 @@ export class FrameLoopState {
 
 	private consumeSystemReset(): boolean {
 		const runtime = this.runtime;
-		if (runtime.machine.cpu.heapServiceActive()) return false;
+		if (runtime.machine.cpu.heapServiceActive() || runtime.machine.scheduler.acceptedCpuCycles !== 0) return false;
 		if (!runtime.machine.systemController.takeResetRequest()) {
 			return false;
 		}
@@ -183,6 +183,7 @@ export class FrameLoopState {
 			this.finalizeUpdateSlice();
 			if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles !== 0
 				|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+			if (this.consumeSystemReset()) return false;
 			const cpu = runtime.machine.cpu;
 			if (!cpu.heapServiceActive() && !cpu.allocationParked()
 				&& cpu.gc.stoppedFinalMarkPending()) return false;

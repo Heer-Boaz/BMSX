@@ -12,8 +12,8 @@ import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { LogicalTickResult } from '../../machine/ts/machine/scheduler/frame';
 import {
-	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
-	HeapServiceBiosCallField, HeapServiceGcField, HeapServiceGcStage,
+	HEAP_SERVICE_BIOS_CALL_OFFSET, HEAP_SERVICE_CLOSURE_OFFSET, HEAP_SERVICE_GC_OFFSET, HEAP_SERVICE_IMAGE_FLAG,
+	HeapServiceBiosCallField, HeapServiceClosureField, HeapServiceGcField, HeapServiceGcStage,
 } from '../../machine/ts/spec/bmsx/heap_service';
 import { IO_IRQ_FLAGS, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { MAIN_RAM_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
@@ -364,4 +364,78 @@ test('production object sweep frees records before debugger callbacks without pu
 	applyRuntimeSaveState(runtime, checkpoint);
 	assert.deepEqual([count(), cursor()], frontier);
 	assert.deepEqual(finish(), completed);
+});
+
+test('a requested system reset waits for the current BIOS operation and skips the old caller', (t) => {
+	const system = linkTestSystemBlua32(compileHeapServiceSystem('halt_until_irq', 0));
+	const runtime = new Runtime({ systemRomBytes: system.romBytes, cartridgeSlots: [null, null], machineModel: PSX_MACHINE_SPEC }, {
+		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
+	});
+	runtime.boot();
+	const { cpu, memory, scheduler, systemController } = runtime.machine;
+	const startup = cpu.readFramePc(0);
+	const frames = runtime.frameScheduler;
+	let resets = 0;
+	runtime.onStateReset = () => { ++resets; };
+	assert.equal(frames.runCyclesToNextLogicalTick(1), false);
+	assert.equal(cpu.heapServiceActive(), true);
+	const continuation = cpu.heapAllocator.managementOffset() + HEAP_SERVICE_CLOSURE_OFFSET;
+	const successor = memory.readRamRecordWord(continuation + HeapServiceClosureField.NextPc);
+	assert.notEqual(successor, startup);
+	let oldCallerInstructions = 0;
+	cpu.setInstructionObserver({
+		points: [new Set([successor]), new Set(), new Set()],
+		observe: () => { ++oldCallerInstructions; },
+	});
+	systemController.requestReset();
+	systemController.requestReset();
+	const checkpoint = captureRuntimeSaveState(runtime);
+	assert.equal(checkpoint.machineState.machine.systemControl.resetRequested, true);
+	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
+	assert.equal(resets, 0);
+	assert.equal(scheduler.nowCycles, checkpoint.machineState.schedulerNowCycles);
+	const finish = () => {
+		const priorResets = resets;
+		assert.equal(frames.runCyclesToNextLogicalTick(64), false);
+		assert.equal(cpu.heapServiceActive(), true);
+		assert.equal(systemController.hasResetRequest(), true);
+		assert.ok(scheduler.nowCycles > checkpoint.machineState.schedulerNowCycles, `now=${scheduler.nowCycles} checkpoint=${checkpoint.machineState.schedulerNowCycles}`);
+		assert.equal(resets, priorResets);
+		assert.equal(frames.runCyclesToNextLogicalTick(10_000), false);
+		assert.equal(resets, priorResets + 1);
+		assert.equal(systemController.hasResetRequest(), false);
+		assert.equal(cpu.heapServiceActive(), false);
+		assert.equal(cpu.readFramePc(0), startup);
+		assert.equal(scheduler.nowCycles, 0);
+		assert.equal(oldCallerInstructions, 0);
+	};
+	finish();
+	applyRuntimeSaveState(runtime, checkpoint);
+	finish();
+
+	// A debugger device-only grant may advance timers, not reboot the CPU.
+	systemController.requestReset();
+	assert.equal(frames.runDevicesToNextLogicalTick(runtime.timing.cycleBudgetPerFrame), true);
+	assert.equal(systemController.hasResetRequest(), true);
+	assert.equal(resets, 2);
+	assert.equal(cpu.readFramePc(0), startup);
+	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
+	assert.equal(systemController.hasResetRequest(), false);
+	assert.equal(resets, 3);
+	assert.equal(scheduler.nowCycles, 0);
+
+	// The accepted cycles belong to the old timeline. Once they settle,
+	// restart before the halted caller can admit its pending interrupt.
+	runGuestToHalt(cpu, 10_000);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	cpu.requestNonMaskableInterrupt();
+	const acceptInterrupt = t.mock.method(cpu, 'enterPendingInterrupt');
+	scheduler.acceptedCpuCycles = 32;
+	systemController.requestReset();
+	assert.equal(scheduler.acceptedCpuCycles, 32);
+	assert.equal(frames.runCyclesToNextLogicalTick(0), false);
+	assert.equal(acceptInterrupt.mock.callCount(), 0);
+	assert.equal(resets, 4);
+	assert.equal(scheduler.acceptedCpuCycles, 0);
+	assert.equal(scheduler.nowCycles, 0);
 });

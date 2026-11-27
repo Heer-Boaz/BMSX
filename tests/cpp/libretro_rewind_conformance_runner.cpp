@@ -311,6 +311,16 @@ int main(int argc, char** argv) {
 		for (int index = 0; index < 5; ++index) frame();
 		require(!audioSuspended && capture().machineState.schedulerNowCycles < savedCycles,
 			"menu reboot starts a running new timeline and releases audio suspension");
+		for (int index = 0; index < 8; ++index) frame();
+		press(quickMenu);
+		const auto beforeReset = capture().machineState.schedulerNowCycles;
+		retro_reset();
+		const auto afterReset = capture().machineState.schedulerNowCycles;
+		require(afterReset == 0 || afterReset == beforeReset,
+			"frontend reset either commits at the boundary or leaves the old clock untouched");
+		for (int index = 0; index < 5; ++index) frame();
+		require(!audioSuspended && capture().machineState.schedulerNowCycles < beforeReset,
+			"frontend reset from the paused menu boots a new timeline");
 		press(quickMenu);
 		press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
 		press(menuAccept); // Exit from the paused menu.

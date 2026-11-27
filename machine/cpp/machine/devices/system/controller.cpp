@@ -90,7 +90,7 @@ u32 SystemController::readCyclesPerFrame([[maybe_unused]] u32 address) const {
 
 void SystemController::writeControl([[maybe_unused]] u32 address, u32 value) {
 	if ((value & SYS_CONTROL_RESET) != 0u) {
-		m_resetRequested = true;
+		requestReset();
 		m_cpu.requestYield();
 	}
 	if (!m_cpu.isUserMode()) {
@@ -237,6 +237,10 @@ void SystemController::beginSupervisorLeave() {
 	writeStatusIo();
 	m_scheduler.scheduleDeviceService(DEVICE_SERVICE_SYSTEM, m_scheduler.currentNowCycles());
 	m_cpu.requestYield();
+}
+
+void SystemController::requestReset() {
+	m_resetRequested = true;
 }
 
 bool SystemController::takeResetRequest() {

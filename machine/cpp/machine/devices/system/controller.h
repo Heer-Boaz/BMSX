@@ -67,6 +67,8 @@ public:
 	bool supervisorContextActive() const {
 		return m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_USER;
 	}
+	void requestReset();
+	bool hasResetRequest() const { return m_resetRequested; }
 	bool takeResetRequest();
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);

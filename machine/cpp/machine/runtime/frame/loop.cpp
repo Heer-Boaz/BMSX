@@ -49,7 +49,7 @@ void FrameLoopState::abandonFrameState(Runtime& runtime) {
 }
 
 bool FrameLoopState::consumeSystemReset(Runtime& runtime) {
-	if (runtime.machine.cpu.heapServiceActive()) return false;
+	if (runtime.machine.cpu.heapServiceActive() || runtime.machine.scheduler.acceptedCpuCycles() != 0) return false;
 	if (!runtime.machine.systemController.takeResetRequest()) {
 		return false;
 	}
@@ -82,6 +82,7 @@ bool FrameLoopState::runActiveFrameState(Runtime& runtime) {
 		finalizeUpdateSlice(runtime);
 		if (tickCompleted || runtime.machine.scheduler.acceptedCpuCycles() != 0
 			|| runtime.machine.gxGpu.backendServiceBlocksMachine()) return false;
+		if (consumeSystemReset(runtime)) return false;
 		const auto& cpu = runtime.machine.cpu;
 		if (!cpu.heapServiceActive() && !cpu.allocationParked()
 			&& cpu.gcHeap().stoppedFinalMarkPending()) return false;

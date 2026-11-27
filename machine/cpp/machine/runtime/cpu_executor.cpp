@@ -88,6 +88,8 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 	while (running && !runtime.vblank.tickCompleted() && (cpu.heapServiceActive()
 		|| (cpu.allocationParked() ? cpu.allocationReady()
 			: !cpu.gcHeap().stoppedFinalMarkPending()))) {
+		if (runtime.machine.systemController.hasResetRequest() && !cpu.heapServiceActive()
+			&& runtime.machine.scheduler.acceptedCpuCycles() == 0) break;
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
 			case CpuSliceResult::Advanced:
 				continue;

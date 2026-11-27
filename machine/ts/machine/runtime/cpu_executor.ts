@@ -95,10 +95,11 @@ export class CpuExecutionState {
 
 	public runWithBudget(state: FrameState): CpuExecutionResult {
 		let result = CpuExecutionResult.Yielded;
-		const { machine: { cpu }, vblank } = this.runtime;
+		const { machine: { cpu, scheduler, systemController }, vblank } = this.runtime;
 		let running = true;
 		while (running && !vblank.tickCompleted && (cpu.heapServiceActive()
 			|| (cpu.allocationParked() ? cpu.allocationReady() : !cpu.gc.stoppedFinalMarkPending()))) {
+			if (systemController.hasResetRequest() && !cpu.heapServiceActive() && scheduler.acceptedCpuCycles === 0) break;
 			switch (this.runSlice(state, MAX_CPU_SLICE_CYCLES)) {
 				case CpuSliceResult.Advanced:
 					continue;

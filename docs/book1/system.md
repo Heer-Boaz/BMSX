@@ -392,6 +392,12 @@ either word neither consumes the request nor proves that reboot has occurred.
 Other admitted command bits in the same write are still processed in the
 defined order.
 
-A pending request is serviced at a CPU execution boundary. Servicing it performs a system reboot: it clears I/O and bus faults, resets hardware and CPU execution state, and starts firmware again. There is no fixed request-to-reboot cycle latency. This is not a local device reset or a bus-fault acknowledgement, and it is not a promise that all RAM or every device buffer is zeroed.
+A pending request is serviced at a CPU execution boundary. If a BIOS memory
+operation is in progress, it finishes before reset. The processor services
+the request before resuming the interrupted program. Servicing it clears
+I/O and bus faults, resets hardware and CPU execution state, and starts
+firmware again. There is no fixed request-to-reboot cycle latency. This is
+not a local device reset or a bus-fault acknowledgement, and it is not a
+promise that all RAM or every device buffer is zeroed.
 
 At SYSTEM reset, CONTROL, STATUS and all six fault words are zero; no supervisor transition, exit request or resumable context remains. These are the reset values of this unit, not a substitute for the reset and acknowledgement rules of other devices. Automatic zero readback after a CONTROL write is command-port behavior, not an acknowledgement of a bus fault or completion of a machine reboot.
