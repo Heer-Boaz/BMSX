@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import { allocatedObjectRecords, captureCpuCheckpoint, restoreCpuCheckpoint } from '../helpers/cpu_execution';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { FrameField, writeFrameEntryControl } from '../../machine/ts/machine/cpu/call_state';
@@ -87,7 +88,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 	tables.setMetatableAddress(weak, meta);
 	const prototype = cpu.captureClosureBinding(frame.closureAddress);
 	const cells = new Uint32Array(1);
-	const holder = cpu.luaHeap.allocateClosureRecord(1, false, cells, 1);
+	const holder = allocateClosureRecordReference(cpu, 1, false, cells, 1);
 	Closure.initializeRecord(memory, holder, prototype, false, gc.white(), 1);
 	Closure.setCaptureAddress(memory, holder, 0, cells[0]);
 	gc.publishObject(holder);
@@ -102,7 +103,7 @@ test('the second mark traces new strong edges without revisiting the table or re
 		assert.equal(memory.readRamRecordByte(owner + GC_COLOR_OFFSET) & 3, 3, 'the owner is already black');
 
 	cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-	const onlyClosure = cpu.luaHeap.allocateClosureRecord(0);
+	const onlyClosure = allocateClosureRecordReference(cpu, 0);
 	Closure.initializeRecord(memory, onlyClosure, prototype, false, gc.white(), 0);
 	gc.publishObject(onlyClosure);
 	const fieldValue = cpu.createTable(), key = cpu.createTable(), cellValue = cpu.createTable(), weakValue = cpu.createTable();

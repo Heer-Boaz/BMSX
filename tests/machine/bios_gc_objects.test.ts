@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
@@ -176,7 +177,7 @@ for (const optLevel of [0, 3] as const) {
 				});
 				assert.ok(existing !== 0, 'firmware entry owns a real Closure prototype');
 				const prototype = target.captureClosureBinding(existing);
-				const address = target.luaHeap.allocateClosureRecord(captures, latched);
+				const address = allocateClosureRecordReference(target, captures, latched);
 				initializeClosure(target.memory, address, prototype, false, target.gc.white(), captures, latched);
 				target.memory.writeRamRecordByte(address, kind);
 				target.gc.publishObject(address);

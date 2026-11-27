@@ -1,3 +1,6 @@
+import { gcPacedPhase } from '../../machine/ts/machine/cpu/gc_heap';
+import { GC_OBJECT_PREFIX } from '../../machine/ts/machine/cpu/gc_object';
+import { valueNil } from '../../machine/ts/machine/cpu/value';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -9,6 +12,41 @@ import { UPVALUE_CHAIN_LIMIT, UPVALUE_NEXT, UPVALUE_VALUE_WORD } from '../../mac
 import { LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BLUA32_UPVALUE_INDEX_MASK, BLUA32_UPVALUE_IN_STACK_MASK, BLUA32_UPVALUE_RECORD_SIZE } from '../../machine/ts/spec/blua32/image_format';
 import { MAIN_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+
+const NO_NEW_CELLS = new Uint32Array(0);
+
+/** Admit the closure and its new cells before publishing any frame link. */
+export function allocateClosureRecordReference(cpu: CPU, captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
+	const bytes = Closure.closureRecordBytes(captures, latched);
+	const charged = bytes + newCount * Upvalue.UPVALUE_HEAP_BYTES;
+	const { luaHeap: budget, heapAllocator: arena, gc, memory } = cpu;
+	let recovery = budget.admit(charged, valueNil(), valueNil(), valueNil(), 0);
+	if (gcPacedPhase(gc.phase())) gc.assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1 + newCount));
+	for (;;) {
+		const closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false);
+		if (closure !== 0) {
+			let count = 0;
+			for (; count < newCount; ++count) {
+				const cell = arena.allocate(Upvalue.UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
+				if (cell === 0) break;
+				cells[count] = cell + GC_OBJECT_PREFIX;
+			}
+			if (count === newCount) {
+				const white = gc.white();
+				for (let index = 0; index < newCount; ++index) {
+					const cell = cells[index];
+					Upvalue.initialize(memory, cell, white);
+					gc.publishObject(cell);
+				}
+				budget.resizeRecordCharge(0, charged);
+				return closure + GC_OBJECT_PREFIX;
+			}
+			while (count !== 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
+			arena.free(closure);
+		}
+		recovery = gc.recoverAllocation(recovery);
+	}
+}
 
 // Frozen TS capture sampler/search/link loop from 7c989e96d (cpu.ts).
 // Only scratch ownership changes: the oracle has local, test-side buffers.
@@ -71,7 +109,7 @@ export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, funct
 		upvalues[index] = frame.captureAddress(upvalueIndex);
 	}
 	const cells = new Uint32Array(newUpvalueCount);
-	const address = cpu.luaHeap.allocateClosureRecord(count, latched, cells, newUpvalueCount);
+	const address = allocateClosureRecordReference(cpu, count, latched, cells, newUpvalueCount);
 	const closure = address;
 	Closure.initializeRecord(cpu.memory, address, functionRecord, false, cpu.gc.white(), count, latched);
 	let nextCell = 0;

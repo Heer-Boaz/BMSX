@@ -24,7 +24,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { decodeBlua32InstructionAtPc } from '../../toolchain/ts/rompack/blua32_instruction_decode';
 import { writeTestBlua32Rom } from '../helpers/blua32';
-import { createReferenceCapturedClosure } from '../helpers/captured_closure_reference';
+import { createReferenceCapturedClosure, allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
 import { linkManagedTestSystem } from '../helpers/managed_system';
 
@@ -231,7 +231,7 @@ for (const level of [0, 3] as const) {
 		assert.equal(f.plan(), -(LUA_FAULT_REASON_OUT_OF_MEMORY + 1));
 		f.bind(true);
 		assert.equal(f.plan(), 2);
-		const address = oracle.luaHeap.allocateClosureRecord(6, true);
+		const address = allocateClosureRecordReference(oracle, 6, true);
 		// The tail writer belongs to the published Closure representation; the
 		// actual CLOSURE opcode test above separately exercises the capture list.
 		const proto: FunctionPrototype = {
@@ -264,7 +264,7 @@ for (const level of [0, 3] as const) {
 			upvalueTableAddress: 0xffffffff, recordUpvalueCount: 0,
 		};
 		// The allocation and layout operations of the old mapped zero-capture CPU branch.
-		const expected = oracle.luaHeap.allocateClosureRecord(0, true);
+		const expected = allocateClosureRecordReference(oracle, 0, true);
 		initializeRecord(oracle.memory, expected, proto, canonical, oracle.gc.white(), 0, true);
 		oracle.gc.publishObject(expected);
 		f.startWhole();

@@ -564,7 +564,7 @@ void nativeCallProfileKeepsCapturesAndDropsContradictedTarget(int supplied, u32 
 		auto& heap = cpu.gcHeap();
 		for (int slot : {1, 2}) {
 			std::array<u32, 1> cells{};
-			const auto closure = cpu.luaHeap().allocateClosureRecord(1u, false, cells);
+			const auto closure = test::allocateClosureRecordReference(cpu.gcHeap(), 1u, false, cells);
 			ClosureRecord::initialize(machine->memory, closure, target, heap.white(), 1u, false, false);
 			bmsx::test::storeUpvalueReference(cpu, cells[0], valueInteger(slot == 1 ? 11 : 27));
 			ClosureRecord::setCaptureAddress(machine->memory, closure, 0u, cells[0]);

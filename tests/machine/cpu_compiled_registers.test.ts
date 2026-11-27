@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { storeUpvalueReference } from '../helpers/upvalue_store_reference';
 import { test } from 'node:test';
@@ -28,7 +29,7 @@ test('both open and closed upvalue paths define output-only region bindings', ()
 	const frame = cpu.rootThread.frameAtDepth(0), r = frame.registers;
 	const bound = frame.closure;
 	const cells = new Uint32Array(1);
-	const replacement = cpu.luaHeap.allocateClosureRecord(1, false, cells, cells.length);
+	const replacement = allocateClosureRecordReference(cpu, 1, false, cells, cells.length);
 	const upvalue = cells[0];
 	Upvalue.bindOpen(cpu.memory, upvalue, frame.thread.address, frame.stackBase + 8, 0);
 	ClosureRecord.initializeRecord(cpu.memory, replacement, cpu.captureClosureBinding(bound), false, cpu.gc.white(), 1);

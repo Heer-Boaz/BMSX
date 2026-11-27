@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -95,7 +96,7 @@ function fixture(optLevel: 0 | 3) {
 		return cycles;
 	}
 	function native(proto: FunctionPrototype, canonical: boolean) {
-		const address = oracle.luaHeap.allocateClosureRecord(0, false);
+		const address = allocateClosureRecordReference(oracle, 0, false);
 		initializeRecord(oracle.memory, address, proto, canonical, oracle.gc.white(), 0);
 		oracle.gc.publishObject(address);
 		return address;

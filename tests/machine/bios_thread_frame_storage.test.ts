@@ -1,60 +1,81 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import { reserveThreadStorageReference } from '../helpers/thread_allocation_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES } from '../../machine/ts/machine/cpu/call_state';
 import { CLOSURE_PROTOTYPE_ADDRESS, initializeRecord } from '../../machine/ts/machine/cpu/closure';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { ThreadField, THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread_record';
-import { type Value, valueClosure, valueInteger, valuePayload } from '../../machine/ts/machine/cpu/value';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
-import { Memory } from '../../machine/ts/machine/memory/memory';
+import { valueClosure, valuePayload } from '../../machine/ts/machine/cpu/value';
 import { RamHistory } from '../../machine/ts/machine/runtime/history/ram_history';
-import { LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
-import { CPU_FIXED_FRAME_COUNT, CPU_FIXED_VALUE_COUNT, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CPU_STATUS_INTERRUPT_ENABLE_CURRENT, CPU_STATUS_USER_MODE_CURRENT, LUA_FAULT_REASON_OUT_OF_MEMORY } from '../../machine/ts/spec/blua32/cop0';
+import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_DMA0_DONE } from '../../machine/ts/spec/bmsx/io';
+import { CPU_RESET_BANK_ADDRESS, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { GC_WORKSPACE_END } from '../helpers/firmware_heap_layout';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
-import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
+import { writeTestBlua32Rom } from '../helpers/blua32';
 import { captureCpuCheckpoint, restoreCpuCheckpoint, runGuestToHalt } from '../helpers/cpu_execution';
-import { compileHeapServiceSystem } from '../helpers/heap_service_system';
+import { linkManagedTestSystem } from '../helpers/managed_system';
+import { createTestRuntime } from '../helpers/runtime_sources';
 
-const path = 'kernel/thread_frame_storage';
-const source = `local function hold(a, b) halt_until_irq; return a,b end; return hold`;
+const source = `
+local startup<const> = require('bmsx/startup')
+cop0.irq_vector = startup.user_irq
+mem[${IO_IRQ_MASK}] = ${IRQ_DMA0_DONE}
+function hold(a, b)
+	cop0.status = cop0.status | ${CPU_STATUS_INTERRUPT_ENABLE_CURRENT | CPU_STATUS_USER_MODE_CURRENT}
+	halt_until_irq
+	return a, b
+end
+return hold(0x481029b4, -302981)
+`;
+// Use an ordinary fixed IRQ entry to park the real caller independently of
+// its backing. The vector uses normal BLua calls and returns through RFE.
+const irqSource = `
+module<const>
+local storage<const> = require('kernel/thread_frame_storage')
+local layout<const> = require('kernel/gc_runtime_layout')
+bss fixture_storage: u32[6]
+local enter<const> = function()
+	local interrupted<const>: *addr = layout.interrupted_context_address
+	mem[${IO_IRQ_ACK}] = ${IRQ_DMA0_DONE}
+	if fixture_storage[4] == 0 then
+		fixture_storage[5] = storage.reserve_frame_storage(layout.management_offset, *interrupted,
+			fixture_storage[0], fixture_storage[1])
+	else
+		fixture_storage[5] = storage.grow_thread_frame_storage(layout.management_offset, *interrupted,
+			fixture_storage[0], fixture_storage[1], fixture_storage[2], fixture_storage[3])
+	end
+	blua32.rfe()
+end
+return { enter = enter }
+`;
+const storageIrq = { path: 'fixture/storage_irq', exportPathKey: 'enter' };
 
 for (const level of [0, 3] as const) {
+	let linked: ReturnType<typeof linkManagedTestSystem>;
 	function fixture() {
-		const compiled = compileHeapServiceSystem(source, level);
-		const linked = linkTestSystemBlua32(compiled), object = encodeCompiledProgramObject(compiled);
-		function entry(exportPathKey: string) {
-			const { slotName } = object.sections.rodata.moduleExports.find(e => e.path === path && e.exportPathKey === exportPathKey)!;
-			const index = linked.symbols.metadata.functionIds.indexOf(object.link.symbols.exportProtoIdBySlot[slotName]);
-			assert.ok(index >= 0);
-			const stack = deriveBlua32FixedStack(linked.image, [index]);
-			assert.ok(stack.frames <= CPU_FIXED_FRAME_COUNT && stack.valueSlots <= CPU_FIXED_VALUE_COUNT,
-				`${exportPathKey}: ${stack.frames} pinned frames / ${stack.valueSlots} slots`);
-			return linked.image.functions[index].address;
-		}
-		const attempt = entry('reserve_frame_storage'), full = entry('grow_thread_frame_storage');
+		linked ??= linkManagedTestSystem(source, level, [{ path: storageIrq.path, source: irqSource }], [], 'main', {
+			userIrqEntry: storageIrq,
+		});
+		const rom = writeTestBlua32Rom(linked);
 		function machine() {
-			const memory = new Memory({ systemRom: linked.romBytes, cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes);
-			const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
-			cpu.reset();
-			runGuestToHalt(cpu, 65_536);
-			return cpu;
+			const runtime = createTestRuntime(rom);
+			runtime.boot();
+			runGuestToHalt(runtime.machine.cpu, 1_000_000);
+			assert.notEqual(runtime.machine.cpu.activeThread.address, CPU_RESET_BANK_ADDRESS);
+			return runtime.machine;
 		}
-		const cpu = machine(), oracle = machine(), { memory, heapAllocator: arena } = cpu;
+		const { cpu, irqController } = machine(), { cpu: oracle } = machine(), { memory, heapAllocator: arena } = cpu;
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.capacity());
-		const results: Value[] = [];
-		cpu.readCompletionValues(results);
-		const closure = valuePayload(results[0]);
+		const closure = valuePayload(cpu.getGlobalByKey(cpu.stringPool.find('hold')!));
 		const prototypeAddress = memory.readRamRecordWord(closure + CLOSURE_PROTOTYPE_ADDRESS);
-		const prototype = linked.image.functions.find(f => f.address === prototypeAddress)!;
+		const prototype = linked.layout.functions.find(f => f.address === prototypeAddress)!;
 		assert.ok(prototype);
-		cpu.beginCompletionCall(closure, [valueInteger(0x481029b4), valueInteger(-302981)]);
 		const thread = cpu.activeThread, address = thread.address, frame = thread.currentFrame!;
+		const depth = thread.frameDepth;
+		const request = linked.symbols.metadata.staticScopes.declarations.find(symbol => symbol.name === 'fixture_storage')!.address!;
+		const result = () => memory.readRamRecordWord(request + 20);
 		const management = arena.managementOffset();
 		const read = (field: ThreadField) => memory.readRamRecordWord(address + field);
 		const control = read(ThreadField.FrameBlock), occupied = read(ThreadField.FrameDepth) * FRAME_CONTROL_BYTES;
@@ -62,21 +83,31 @@ for (const level of [0, 3] as const) {
 			memory.writeRamRecordWord(control + offset, 0xacce5701);
 		function seedOracle() { restoreCpuCheckpoint(oracle, captureCpuCheckpoint(cpu)); }
 		function grant(cycles: number) {
-			assert.equal(cpu.runUntilDepth(0, cycles), RunResult.Yielded);
+			const outcome = cpu.runUntilDepth(depth, cycles, address);
+			assert.equal(outcome, cpu.fixedInterruptActive() ? RunResult.Yielded : RunResult.Halted);
 			const consumed = cycles - cpu.instructionBudgetRemaining;
 			assert.ok(consumed > 0);
 			return consumed;
 		}
 		function finish() {
 			let cycles = 0;
-			for (let grants = 0; grants < 32768 && cpu.heapServiceActive(); ++grants) cycles += grant(256);
+			for (let grants = 0; grants < 32768 && cpu.fixedInterruptActive(); ++grants) cycles += grant(256);
+			assert.equal(cpu.fixedInterruptActive(), false);
+			assert.equal(cpu.activeThread, thread);
 			return cycles;
 		}
+		function post(values: number, frames: number, root: number, cycles: number, full: number) {
+			const words = [values, frames, root, cycles, full, 0xffffffff];
+			for (let i = 0; i < words.length; ++i) memory.writeRamRecordWord(request + 4 * i, words[i]);
+			irqController.raise(IRQ_DMA0_DONE);
+			assert.equal(cpu.enterPendingInterrupt(), true);
+			assert.equal(cpu.fixedInterruptActive(), true);
+		}
 		function start(values: number, frames: number, root = closure, cycles = 0) {
-			assert.ok(cpu.beginHeapService(full, [management, address, values, frames, root, cycles]));
+			post(values, frames, root, cycles, 1);
 		}
 		function tryOnce(values: number, frames: number) {
-			assert.ok(cpu.beginHeapService(attempt, [management, address, values, frames]));
+			post(values, frames, 0, 0, 0);
 		}
 		function compare() {
 			const first = memory.ramBusEnd() - RAM_BASE, last = management + GC_WORKSPACE_END;
@@ -85,7 +116,7 @@ for (const level of [0, 3] as const) {
 			const mismatch = actual.findIndex((byte, i) => byte !== native[i]);
 			assert.equal(actual[mismatch], native[mismatch], `native raw byte offset 0x${(first + mismatch).toString(16)}`);
 		}
-		return { cpu, oracle, memory, arena, thread, frame, management, address, closure, prototype, read, seedOracle, grant, finish, start, tryOnce, compare };
+		return { cpu, oracle, memory, arena, thread, frame, address, closure, prototype, read, seedOracle, grant, finish, start, tryOnce, compare, result };
 	}
 
 	test(`paired Values/Frames growth follows native publication order and rewinds at O${level}`, () => {
@@ -101,7 +132,7 @@ for (const level of [0, 3] as const) {
 		const baseline = history.capture(memory, null);
 		f.start(values, frames);
 		for (let n = 0; n < 30000 && read(ThreadField.StackCapacity) !== values; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(read(ThreadField.StackCapacity), values);
 		assert.equal(read(ThreadField.FrameBlock), oldControl, 'Values publish before Frames');
 		assert.equal(cpu.luaHeap.usedBytes(), occupied, 'Value charge follows the raw Value descriptor');
@@ -110,7 +141,7 @@ for (const level of [0, 3] as const) {
 		const cpuState = cpu.captureRuntimeState(), middle = history.capture(memory, baseline);
 		const spent = f.finish();
 		function compare() {
-			assert.equal(cpu.heapServiceResult(), 0);
+			assert.equal(f.result(), 0);
 			assert.equal(thread.stackRegisters.capacity(), values);
 			assert.equal(thread.frameCapacity, frames);
 			assert.equal(thread.frameDepth, depth);
@@ -137,13 +168,13 @@ for (const level of [0, 3] as const) {
 		reserveThreadStorageReference(oracle, address, values, 0, valueClosure(f.closure));
 		f.start(values, 0);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(f.result(), 0);
 		f.compare();
 		const frames = read(ThreadField.FrameCapacity) * 2;
 		reserveThreadStorageReference(oracle, address, 0, frames, valueClosure(f.closure));
 		f.start(0, frames);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(f.result(), 0);
 		f.compare();
 	});
 
@@ -171,7 +202,7 @@ for (const level of [0, 3] as const) {
 		const checkpoint = captureCpuCheckpoint(cpu);
 		const spent = f.finish();
 		function compare() {
-			assert.equal(cpu.heapServiceResult(), 0);
+			assert.equal(f.result(), 0);
 			assert.equal(arena.occupiedBytes(), occupied);
 			assert.equal(cpu.luaHeap.usedBytes(), logical);
 			assert.equal(read(ThreadField.StackBlock), valueBlock);
@@ -187,7 +218,7 @@ for (const level of [0, 3] as const) {
 	test(`full growth retains its explicit Closure through real physical recovery at O${level}`, () => {
 		const f = fixture(), { cpu, oracle, memory, arena, address, read, prototype } = f;
 		const values = 2048, frames = read(ThreadField.FrameCapacity) * 2;
-		const detached = cpu.luaHeap.allocateClosureRecord(0);
+		const detached = allocateClosureRecordReference(cpu, 0);
 		initializeRecord(memory, detached, { functionAddress: prototype.address, executionDomainId: -1, codeAddress: prototype.codeAddress,
 			numParams: prototype.numParams, maxStack: prototype.maxStack, flags: prototype.flags, upvalueTableAddress: prototype.upvalueTableAddress,
 			recordUpvalueCount: 0 }, false, cpu.gc.white(), 0);
@@ -205,12 +236,12 @@ for (const level of [0, 3] as const) {
 		f.start(values, frames, detached);
 		for (let n = 0; n < 32768 && cpu.gc.phase() !== GcPhase.Strings; ++n) f.grant(32);
 		assert.equal(cpu.gc.phase(), GcPhase.Strings);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		assert.equal(read(ThreadField.StackBlock), oldStack, 'retry had not touched the owner while collection runs');
 		const checkpoint = captureCpuCheckpoint(cpu);
 		const spent = f.finish();
 		function verify() {
-			assert.equal(cpu.heapServiceResult(), 0);
+			assert.equal(f.result(), 0);
 			assert.equal(cpu.gc.closureRecordAddress(detached), detached);
 			assert.equal(cpu.gc.tableRecordAddress(victim), 0);
 			for (const field of [ThreadField.StackBlock, ThreadField.StackCapacity, ThreadField.FrameBlock, ThreadField.FrameCapacity])
@@ -229,15 +260,18 @@ for (const level of [0, 3] as const) {
 		cpu.luaHeap.setCollectionTarget(cpu.luaHeap.usedBytes());
 		f.seedOracle();
 		reserveThreadStorageReference(oracle, address, values, 0, valueClosure(f.closure));
+		// Compare at return to the stopped mutator, after the pending atomic
+		// pass that the firmware settles following the reservation.
+		oracle.gc.finishFinalMark(valueClosure(f.closure));
 		const occupied = arena.occupiedBytes(), logical = cpu.luaHeap.usedBytes();
 		f.start(values, 0, f.closure, 1024);
 		for (let n = 0; n < 12000 && cpu.gc.epochWork() === 0; ++n) f.grant(1);
-		assert.ok(cpu.heapServiceActive());
+		assert.ok(cpu.fixedInterruptActive());
 		assert.ok(cpu.gc.epochWork() > 0);
 		assert.equal(arena.occupiedBytes(), occupied, 'logical assist precedes physical reservation');
 		assert.equal(cpu.luaHeap.usedBytes(), logical);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), 0);
+		assert.equal(f.result(), 0);
 		assert.equal(cpu.gc.phase(), oracle.gc.phase());
 		assert.equal(cpu.gc.epochWork(), oracle.gc.epochWork());
 		assert.equal(cpu.luaHeap.collectionTarget(), oracle.luaHeap.collectionTarget());
@@ -247,7 +281,7 @@ for (const level of [0, 3] as const) {
 		assert.throws(() => reserveThreadStorageReference(oracle, address, 0x100000, 0, valueClosure(f.closure)));
 		f.start(0x100000, 0);
 		f.finish();
-		assert.equal(cpu.heapServiceResult(), LUA_FAULT_REASON_OUT_OF_MEMORY + 1);
+		assert.equal(f.result(), LUA_FAULT_REASON_OUT_OF_MEMORY + 1);
 		f.compare();
 	});
 

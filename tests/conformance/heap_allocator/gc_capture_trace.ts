@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -75,7 +76,7 @@ try {
 		const cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
 		initializeCell(memory, cell, cpu.gc.white());
 		cpu.gc.publishObject(cell);
-		const closure = cpu.luaHeap.allocateClosureRecord(1);
+		const closure = allocateClosureRecordReference(cpu, 1);
 		initializeRecord(memory, closure, cpu.captureClosureBinding(cpu.rootThread.currentFrame!.closure), false, cpu.gc.white(), 1);
 		setCaptureAddress(memory, closure, 0, cell);
 		cpu.gc.publishObject(closure);

@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -59,7 +60,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function closure(captured: number) {
 		return add(target => {
-			const address = target.luaHeap.allocateClosureRecord(1);
+			const address = allocateClosureRecordReference(target, 1);
 			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 1);
 			setCaptureAddress(target.memory, address, 0, captured);
 			target.gc.publishObject(address);

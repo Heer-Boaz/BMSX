@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from './captured_closure_reference';
 import { BIOS_FUNCTION_EXPORTS } from '../../toolchain/ts/rompack/system';
 import { runCpuWithinBudget } from './cpu_execution';
 import { runGuestToHalt } from './cpu_execution';
@@ -554,7 +555,7 @@ export function seedTestCapturedClosure(cpu: CPU, address: number, newCells: Uin
 function issueTestClosureRecord(cpu: CPU, prototype: Readonly<ClosureRecord.FunctionPrototype>, latched: boolean,
 	newCells?: Uint32Array, captures?: ArrayLike<number>): number {
 	const count = prototype.recordUpvalueCount;
-	const record = cpu.luaHeap.allocateClosureRecord(count, latched, newCells, newCells?.length ?? 0);
+	const record = allocateClosureRecordReference(cpu, count, latched, newCells, newCells?.length ?? 0);
 	ClosureRecord.initializeRecord(cpu.memory, record, prototype, false, cpu.gc.white(), count, latched);
 	for (let i = 0; i < count; ++i) ClosureRecord.setCaptureAddress(cpu.memory, record, i, captures![i]);
 	cpu.gc.publishObject(record);

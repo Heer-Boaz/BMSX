@@ -615,7 +615,7 @@ void rawContextValues(CpuMachine& machine) {
 	frame.registers = captureRegisters;
 	auto& heap = cpu.gcHeap();
 	std::array<u32, 2> cells{};
-	const u32 boundClosure = heap.budget.allocateClosureRecord(2, false, cells);
+	const u32 boundClosure = test::allocateClosureRecordReference(heap, 2, false, cells);
 	const u32 open = cells[0], closed = cells[1];
 	Upvalue::bindOpen(machine.memory, open, owner->address, 0, 0);
 	ClosureRecord::initialize(heap.memory, boundClosure, {}, heap.white(), 2, false, false);
@@ -741,7 +741,7 @@ void remarkClosedCaptureForwardsTheCommittedValue(CpuMachine& machine) {
 	auto& memory = machine.memory;
 	auto& frame = *cpu.activeThread()->currentFrame;
 	std::array<u32, 1> cells{};
-	const u32 closure = heap.budget.allocateClosureRecord(1, false, cells);
+	const u32 closure = test::allocateClosureRecordReference(heap, 1, false, cells);
 	const u32 cell = cells[0];
 	ClosureRecord::initialize(memory, closure, {}, heap.white(), 1, false, false);
 	ClosureRecord::setCaptureAddress(memory, closure, 0, cell);

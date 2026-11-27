@@ -10,6 +10,7 @@
 #include "spec/blua32/numeric.h"
 #include "machine/cpu/value_arithmetic.h"
 #include "support/value_bank.h"
+#include "support/closure_fixture.h"
 #include "support/managed_fixture.h"
 #include "support/table_allocation_reference.h"
 
@@ -741,9 +742,9 @@ void comparisonDatapathsRespectEveryValueKind() {
 	NativeBlockRunState nativeRunState;
 	auto& strings = cpu.stringPool();
 	auto& heap = cpu.gcHeap();
-	const u32 firstClosure = heap.budget.allocateClosureRecord(0);
+	const u32 firstClosure = test::allocateClosureRecordReference(heap, 0);
 	ClosureRecord::initialize(heap.memory, firstClosure, {}, heap.white(), 0, false, false);
-	const u32 secondClosure = heap.budget.allocateClosureRecord(0);
+	const u32 secondClosure = test::allocateClosureRecordReference(heap, 0);
 	ClosureRecord::initialize(heap.memory, secondClosure, {}, heap.white(), 0, false, false);
 	const std::array values{valueNil(), valueFromTag(ValueTag::Nil, 37), valueBool(false),
 		valueFromTag(ValueTag::False, 37), valueBool(true), valueFromTag(ValueTag::True, 37),

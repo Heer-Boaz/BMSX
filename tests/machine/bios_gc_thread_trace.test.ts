@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_CONTROL_BYTES, FrameField } from '../../machine/ts/machine/cpu/call_state';
@@ -75,7 +76,7 @@ function fixture(optLevel: 0 | 3) {
 	}
 	function closure() {
 		return add(target => {
-			const address = target.luaHeap.allocateClosureRecord(0);
+			const address = allocateClosureRecordReference(target, 0);
 			initializeClosure(target.memory, address, target.captureClosureBinding(target.rootThread.currentFrame!.closure), false, target.gc.white(), 0);
 			target.gc.publishObject(address);
 			return address;

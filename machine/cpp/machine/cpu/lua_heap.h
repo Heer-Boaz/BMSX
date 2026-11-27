@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <optional>
-#include <span>
 
 #include "common/primitives.h"
 #include "machine/cpu/value.h"
@@ -50,8 +49,6 @@ public:
 	// Physical backing can reserve more bytes than the owner's logical increase.
 	// Admission does not commit occupancy; the owner publishes its replacement.
 	u32 reserveBacking(u32 bytes, u32 logicalBytes, Value root0 = valueNil(), Value root1 = valueNil(), Value root2 = valueNil(), u32 growingThread = 0u);
-	// Admit the closure and its new cells before publishing any frame link.
-	u32 allocateClosureRecord(u32 captures, bool latched = false, std::span<u32> cells = {});
 	void releaseRecord(u32 address, u32 bytes);
 	void releaseObject(u32 address, u32 bytes);
 	void resizeRecordCharge(u32 oldBytes, u32 newBytes);

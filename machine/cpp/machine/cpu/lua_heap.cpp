@@ -4,7 +4,6 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/errors.h"
-#include "machine/cpu/upvalue.h"
 
 namespace bmsx {
 
@@ -175,38 +174,6 @@ u32 LuaHeap::reserveBacking(u32 bytes, u32 logicalBytes, Value root0, Value root
 	for (;;) {
 		if (const u32 block = m_cpu.heapAllocator().allocate(bytes, true)) return block;
 		recovery = m_cpu.gcHeap().recoverAllocation(recovery, root0, root1, root2, growingThread);
-	}
-}
-
-u32 LuaHeap::allocateClosureRecord(u32 captures, bool latched, std::span<u32> cells) {
-	const u32 bytes = closureRecordBytes(captures, latched);
-	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
-	auto recovery = admit(charged, valueNil(), valueNil(), valueNil(), 0u);
-	assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1u + cells.size()));
-	auto& arena = m_cpu.heapAllocator();
-	for (;;) {
-		if (const u32 closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false)) {
-			size_t count = 0;
-			for (; count < cells.size(); ++count) {
-				const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
-				if (!cell) break;
-				cells[count] = cell + GC_OBJECT_PREFIX;
-			}
-			if (count == cells.size()) {
-				auto& memory = m_cpu.memory();
-				auto& gc = m_cpu.gcHeap();
-				const u8 white = gc.white();
-				for (u32 cell : cells) {
-					Upvalue::initialize(memory, cell, white);
-					gc.publishObject(cell);
-				}
-				accountAllocation(charged);
-				return closure + GC_OBJECT_PREFIX;
-			}
-			while (count != 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
-			arena.free(closure);
-		}
-		recovery = m_cpu.gcHeap().recoverAllocation(recovery);
 	}
 }
 

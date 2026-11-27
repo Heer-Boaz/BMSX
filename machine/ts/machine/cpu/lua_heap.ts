@@ -1,13 +1,10 @@
 import { LUA_OUT_OF_MEMORY_SIGNAL } from './errors';
-import { closureRecordBytes } from './closure';
-import { UPVALUE_HEAP_BYTES, initialize as initializeCell } from './upvalue';
 import { HEAP_COLLECTION_TARGET_OFFSET, HEAP_GC_CONTROL_OFFSET, HEAP_LOGICAL_OCCUPIED_OFFSET } from './heap_allocator';
 import { decodeGcPhase, gcPacedPhase, GcPhase } from './gc_heap';
 import { GC_OBJECT_PREFIX } from './gc_object';
 import type { CPU } from './cpu';
 import { valueNil, type Value } from './value';
 
-const NO_NEW_CELLS = new Uint32Array(0);
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 const COLLECTION_RESERVE_SHIFT = 3;
 const GC_ASSIST_MIN_WORDS = 512;
@@ -161,40 +158,6 @@ export class LuaHeap {
 			const block = this.cpu.heapAllocator.allocate(bytes, true);
 			if (block !== 0) return block;
 			recovery = this.cpu.gc.recoverAllocation(recovery, root0, root1, root2, growingThread);
-		}
-	}
-
-	/** Admit the closure and its new cells before publishing any frame link. */
-	public allocateClosureRecord(captures: number, latched = false, cells: Uint32Array = NO_NEW_CELLS, newCount = 0): number {
-		const bytes = closureRecordBytes(captures, latched);
-		const charged = bytes + newCount * UPVALUE_HEAP_BYTES;
-		let recovery = this.admit(charged, valueNil(), valueNil(), valueNil(), 0);
-		this.assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1 + newCount));
-		const arena = this.cpu.heapAllocator;
-		for (;;) {
-			const closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false);
-			if (closure !== 0) {
-				let count = 0;
-				for (; count < newCount; ++count) {
-					const cell = arena.allocate(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
-					if (cell === 0) break;
-					cells[count] = cell + GC_OBJECT_PREFIX;
-				}
-				if (count === newCount) {
-					const memory = this.cpu.memory;
-					const white = this.cpu.gc.white();
-					for (let index = 0; index < newCount; ++index) {
-						const cell = cells[index];
-						initializeCell(memory, cell, white);
-						this.cpu.gc.publishObject(cell);
-					}
-					this.accountAllocation(charged);
-					return closure + GC_OBJECT_PREFIX;
-				}
-				while (count !== 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
-				arena.free(closure);
-			}
-			recovery = this.cpu.gc.recoverAllocation(recovery);
 		}
 	}
 

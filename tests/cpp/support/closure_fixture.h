@@ -2,11 +2,44 @@
 
 #include "machine/cpu/cpu.h"
 #include "machine/cpu/closure.h"
+#include "machine/cpu/upvalue.h"
 #include "machine/memory/bus_signals.h"
 
+#include <span>
 #include <stdexcept>
 
 namespace bmsx::test {
+
+// Native reference: reserve the closure and its new cells before publishing frame links.
+inline u32 allocateClosureRecordReference(GcHeap& heap, u32 captures, bool latched = false, std::span<u32> cells = {}) {
+	const u32 bytes = closureRecordBytes(captures, latched);
+	const u32 charged = bytes + static_cast<u32>(cells.size()) * UPVALUE_HEAP_BYTES;
+	auto recovery = heap.budget.admit(charged, valueNil(), valueNil(), valueNil(), 0u);
+	if (GcHeap::pacedPhase(heap.phase())) heap.assistBeforeReservation(charged + GC_OBJECT_PREFIX * (1u + cells.size()));
+	auto& arena = heap.arena;
+	for (;;) {
+		if (const u32 closure = arena.allocate(bytes + GC_OBJECT_PREFIX, false)) {
+			size_t count = 0;
+			for (; count < cells.size(); ++count) {
+				const u32 cell = arena.allocate(UPVALUE_HEAP_BYTES + GC_OBJECT_PREFIX, false);
+				if (!cell) break;
+				cells[count] = cell + GC_OBJECT_PREFIX;
+			}
+			if (count == cells.size()) {
+				const u8 white = heap.white();
+				for (u32 cell : cells) {
+					Upvalue::initialize(heap.memory, cell, white);
+					heap.publishObject(cell);
+				}
+				heap.budget.resizeRecordCharge(0u, charged);
+				return closure + GC_OBJECT_PREFIX;
+			}
+			while (count != 0) arena.free(cells[--count] - GC_OBJECT_PREFIX);
+			arena.free(closure);
+		}
+		recovery = heap.recoverAllocation(recovery);
+	}
+}
 
 // Some hand-authored MAPPED ROMs deliberately have no allocation firmware.
 // Issue the immutable object in fixture RAM, then bind the completed
@@ -23,7 +56,7 @@ inline u32 seedTestRomClosure(CPU& cpu, u32 address, ExecutionDomainId domain = 
 	if ((entry.flags & BLUA32_FUNCTION_STATIC) == 0u || readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_COUNT_OFFSET) != 0u)
 		throw std::logic_error("fixture must name a captureless STATIC prototype");
 	const FunctionPrototype prototype{.functionAddress = address, .entry = entry, .executionDomainId = domain};
-	const u32 record = cpu.luaHeap().allocateClosureRecord(0u);
+	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), 0u);
 	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, true, false);
 	cpu.gcHeap().publishObject(record);
 	cpu.restoreRuntimeState(cpu.captureRuntimeState());
@@ -47,7 +80,7 @@ inline u32 seedTestCapturedClosure(CPU& cpu, u32 address, std::span<u32> newCell
 	const FunctionPrototype prototype{.functionAddress = address, .entry = FunctionEntry::fromRom(bytes.data()),
 		.upvalueTableAddress = readLE32(bytes.data() + BLUA32_FUNCTION_UPVALUE_TABLE_ADDRESS_OFFSET),
 		.recordUpvalueCount = count, .executionDomainId = domain};
-	const u32 record = cpu.luaHeap().allocateClosureRecord(count, latched, newCells);
+	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), count, latched, newCells);
 	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), count, false, latched);
 	for (u32 index = 0; index < count; ++index)
 		ClosureRecord::setCaptureAddress(memory, record, index, captures[index]);
@@ -74,7 +107,7 @@ inline u32 seedTestMappedClosure(CPU& cpu, u32 address, bool canonical = true, E
 	if (sequence != memory.readBusFaultSequence() || prototype.recordUpvalueCount != 0u
 		|| ((prototype.entry.flags & BLUA32_FUNCTION_STATIC) != 0u) != canonical)
 		throw std::logic_error("fixture storage must provide the selected mapped captureless binding");
-	const u32 record = cpu.luaHeap().allocateClosureRecord(0u, true);
+	const u32 record = allocateClosureRecordReference(cpu.gcHeap(), 0u, true);
 	ClosureRecord::initialize(memory, record, prototype, cpu.gcHeap().white(), 0u, canonical, true);
 	cpu.gcHeap().publishObject(record);
 	if (canonical) cpu.restoreRuntimeState(cpu.captureRuntimeState());

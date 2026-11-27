@@ -1,3 +1,4 @@
+import { allocateClosureRecordReference } from '../../helpers/captured_closure_reference';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -66,7 +67,7 @@ try {
 		initializeCell(memory, cell, cpu.gc.white());
 		cpu.gc.publishObject(cell);
 		bindOpen(memory, cell, thread, 0, 0);
-		const closure = cpu.luaHeap.allocateClosureRecord(0);
+		const closure = allocateClosureRecordReference(cpu, 0);
 		const prototype = cpu.getGlobalByKey(cpu.stringPool.find('collector_probe')!);
 		initializeClosure(memory, closure, cpu.captureClosureBinding(valuePayload(prototype)), false, cpu.gc.white(), 0);
 		cpu.gc.publishObject(closure);
