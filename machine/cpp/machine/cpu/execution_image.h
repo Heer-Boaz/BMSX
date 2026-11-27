@@ -67,7 +67,6 @@ struct Blua32RomFunctionDirectory {
 
 struct Blua32FunctionRecordLatch {
 	Blua32ExecutionImage* image = nullptr;
-	MappedBusSignals busSignals = MAPPED_BUS_MASTER_CPU;
 	bool romBacked = false; // True when the function data is backed by immutable ROM.
 	u32 address = 0;
 	u32 codeAddress = 0;

@@ -30,6 +30,14 @@ inline void CPU::executeMemoryLoad(CallFrame& frame, int destination, MemoryAcce
 		case MemoryAccessKind::U32LE: value = valueInteger(static_cast<i32>(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, cpuProtected))); break;
 		case MemoryAccessKind::F32LE: value = valueFloatBits(m_memory.readMappedU32LE(address, BUS_FAULT_ACCESS_READ | BUS_FAULT_ACCESS_U32, cpuProtected)); break;
 		case MemoryAccessKind::F64LE: value = valueFloat(static_cast<float>(m_memory.readMappedF64LE(address, cpuProtected))); break;
+		case MemoryAccessKind::ContextWord:
+			if (!cpuProtected || !fixedInterruptActive()) {
+				enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+				return;
+			}
+			value = valueInteger(static_cast<i32>(m_memory.readMappedBusU32LE(address,
+				executionBusSignalsForDomain(static_cast<ExecutionDomainId>(m_exceptionDomainWord)))));
+			break;
 		default: BMSX_UNREACHABLE();
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
@@ -80,7 +88,8 @@ inline bool CPU::continueMemoryStore(CallFrame& frame, int source, MemoryAccessK
 		case MemoryAccessKind::F64LE:
 			if (!valueIsNumber(value)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			m_memory.writeMappedF64LE(address, valueIsInteger(value) ? static_cast<double>(asInteger(value)) : static_cast<double>(asFloat(value)), cpuProtected); break;
-		case MemoryAccessKind::Value: BMSX_UNREACHABLE(); // Tagged stores never wait on a bus device.
+		case MemoryAccessKind::Value: // Tagged stores never wait on a bus device.
+		case MemoryAccessKind::ContextWord: BMSX_UNREACHABLE();
 	}
 	if (m_memory.readBusFaultSequence() != faultSequence) {
 		enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);

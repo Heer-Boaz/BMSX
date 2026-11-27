@@ -4,9 +4,8 @@ module<const>
 -- T/C: CPU capture preparation, search, and linking; L/R: LuaHeap reservation;
 -- S/N: Closure words; U/V: Cell words; F/H: frame controls; P/Q: GC predicates;
 -- D/I: descriptor format; M: RAM; E: faults; J: object words; K/B: C++ Closure ABI.
--- The CPU's mapped-bus descriptor sampling is not a private RAM read. The
--- preparation input is a sampled word plane; production must preserve the
--- bus fault vs descriptor-index fault order before admitting any reservation.
+-- Sample each descriptor once on the interrupted context's mapped bus.
+-- The bus fault precedes descriptor-index validation and any reservation.
 -- Both temporary address planes belong to the pinned caller, not the arena.
 -- They survive a failed attempt and any collector work between attempts.
 local allocator<const> = require('kernel/dlmalloc') -- L:248-255,269-270 R:255-261,275-276
@@ -73,7 +72,7 @@ struct open_cell
 end
 
 -- Explicit owner aliases: allocator offsets (state/control/occupied), actual
--- caller frame backing, one sampled binding, and the operand aperture.
+-- caller frame backing, one sampled binding, and descriptor bus addresses.
 -- Plan words retain an existing Cell address or the sampled source slot for
 -- a missing Cell. Its bit plane distinguishes them without narrowing either
 -- word or re-reading a descriptor on the mapped bus after allocation.
@@ -124,13 +123,12 @@ local prepare_closure<const> = function(state, frame, binding, descriptor_addres
 	end
 	local frame_view<const>: *closure_frame = frame -- T:4102,4108-4109 C:3041,3046-3047
 	local work<const>: *closure_work = workspace -- T:4080-4086 C:3022-3024
-	local descriptors<const>: *u32 = descriptor_address -- T:4084,4099 C:3024,3038; each load performs one mapped read
 	local resolved<const>: *u32 = &work.resolved[0] -- T:4082,4085-4086 C:3022-3023
 	local missing_bits<const>: *u32 = &work.missing[0] -- T:4104-4105,4117 C:3043-3044,3055
 	local staged<const> = count <= capture_limit -- T:4085,4111 C:3023,3050; retain only if the fixed plan fits
 	local missing, index, plan = 0, 0, 0 -- T:4088-4089 C:3026-3027
 	while index < count do -- T:4089 C:3027
-		local word<const> = descriptors[index] -- T:4099-4100 C:3038-3039
+		local word<const> = blua32.context_word(descriptor_address + 4 * index) -- T:4084,4099-4100 C:3024,3038-3039
 		local capture<const> = word & index_mask -- T:4100 C:3039
 		local reference -- T:4104,4109 C:3043,3047
 		if (word & in_stack) ~= 0 then -- T:4101 C:3040

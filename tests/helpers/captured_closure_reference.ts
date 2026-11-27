@@ -1,6 +1,7 @@
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import * as Closure from '../../machine/ts/machine/cpu/closure';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { MappedBusSignals } from '../../machine/ts/machine/memory/bus_signals';
 import { LUA_OUT_OF_MEMORY_SIGNAL, LuaExecutionError } from '../../machine/ts/machine/cpu/errors';
 import type { Blua32FunctionRecordLatch } from '../../machine/ts/machine/cpu/execution_image';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -39,7 +40,7 @@ function linkOpenUpvalue(cpu: CPU, frame: CallFrame, cell: number, slot: number)
 	else cpu.memory.writeRamRecordWord(previous + UPVALUE_NEXT, cell);
 }
 
-export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, functionRecord: Blua32FunctionRecordLatch): number {
+export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, functionRecord: Blua32FunctionRecordLatch, signals: MappedBusSignals): number {
 	const count = functionRecord.recordUpvalueCount;
 	const latched = !functionRecord.romBacked;
 	if (Closure.closureRecordBytes(count, latched) > MAIN_RAM_SIZE) throw LUA_OUT_OF_MEMORY_SIGNAL;
@@ -51,7 +52,7 @@ export function createReferenceCapturedClosure(cpu: CPU, frame: CallFrame, funct
 		const word = cpu.memory.readMappedBusU32LE(
 			(functionRecord.upvalueTableAddress
 				+ index * BLUA32_UPVALUE_RECORD_SIZE) >>> 0,
-			functionRecord.busSignals,
+			signals,
 		);
 		if (cpu.memory.readBusFaultSequence() !== faultSequence) {
 			cpu['hardHalt']();

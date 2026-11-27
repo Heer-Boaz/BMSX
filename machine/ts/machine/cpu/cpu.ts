@@ -39,6 +39,7 @@ import {
 	CPU_CAUSE_CODE_REGISTER_WINDOW,
 	CPU_CAUSE_CODE_REFERENCE_STORE,
 	CPU_CAUSE_CODE_STORAGE_WINDOW,
+	CPU_CAUSE_CODE_FUNCTION_BINDING,
 	CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE,
 	CPU_CAUSE_CODE_RESERVED_INSTRUCTION,
 	CPU_CAUSE_CODE_TRAP,
@@ -181,8 +182,8 @@ import { HeapService } from './heap_service';
 import {
 	HEAP_SERVICE_DESCRIPTOR_FRAMES_OFFSET, HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET, HEAP_SERVICE_DESCRIPTOR_SIZE,
 	HEAP_SERVICE_DESCRIPTOR_VALUE_SLOTS_OFFSET,
-	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_CAPTURE_BUS_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
-	HeapServiceCaptureBindingField, HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT,
+	HEAP_SERVICE_CAPTURE_BINDING_OFFSET, HEAP_SERVICE_FIXED_WORK_OFFSET, HEAP_SERVICE_FIRMWARE_DATA_OFFSET,
+	HeapServiceCaptureBindingField,
 	HEAP_SERVICE_ENTRY_COUNT, HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_IMAGE_ADDRESS_OFFSET, HEAP_SERVICE_IMAGE_FLAG, HEAP_SERVICE_IMAGE_HEADER_SIZE,
 	HEAP_SERVICE_VALUE_COUNT, HeapServiceClosureField, HeapServiceOperation,
 	HeapServiceProjection, HeapServiceResidentField,
@@ -367,7 +368,6 @@ export class CPU implements MappedPageInvalidator {
 	};
 	private readonly functionRecordLatch: Blua32FunctionRecordLatch = {
 		image: null!,
-		busSignals: MAPPED_BUS_MASTER_CPU,
 		romBacked: false,
 		functionAddress: 0,
 		codeAddress: 0,
@@ -640,35 +640,32 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	// The linked allocate_record body owns admission, assistance and retry.
-	private beginClosureReservation(frame: CallFrame, destination: number, kind: HeapServiceRecordKind, prototype: number, domain: number, nextPc: number): void {
+	private beginClosureReservation(frame: CallFrame, destination: number, prototype: number, domain: number, nextPc: number): void {
 		const base = this.heapService.closureContinuationAddress, memory = this.memory;
 		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
 		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, nextPc);
 		frame.pc = this.currentInstructionPc;
 		const args = this.closureArgs;
-		args[1] = kind;
 		args[2] = prototype;
 		args[3] = domain;
 		args[5] = this.remainingDeviceCycles();
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.AllocateRecord], args);
 	}
 
-	private beginCapturedClosure(frame: CallFrame, destination: number, canonical: boolean): void {
+	private beginMappedCanonicalClosure(frame: CallFrame, destination: number): void {
 		const record = this.functionRecordLatch, memory = this.memory, management = this.heapAllocator.managementOffset();
 		const base = this.heapService.closureContinuationAddress, binding = management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET;
 		memory.writeRamRecordPair(base + HeapServiceClosureField.Destination, destination + 1, this.currentInstructionPc);
 		memory.writeRamRecordPair(base + HeapServiceClosureField.LastPc, this.lastPc, frame.pc);
 		frame.pc = this.currentInstructionPc;
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Prototype, record.functionAddress, record.executionDomainId);
-		const flags = (canonical ? CLOSURE_CANONICAL : 0) | (record.romBacked ? 0 : CLOSURE_LATCHED_PROTOTYPE);
-		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.BindingFlags, flags, record.codeAddress);
+		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.BindingFlags, CLOSURE_CANONICAL | CLOSURE_LATCHED_PROTOTYPE, record.codeAddress);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Params, record.numParams, record.maxStack);
 		memory.writeRamRecordPair(binding + HeapServiceCaptureBindingField.Flags, record.flags, record.upvalueTableAddress);
 		memory.writeRamRecordWord(binding + HeapServiceCaptureBindingField.Count, record.recordUpvalueCount);
-		memory.writeRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET, record.busSignals);
 		const args = this.capturedClosureArgs;
 		args[0] = management; args[1] = RAM_BASE + frame.controlOffset; args[2] = frame.thread.address;
-		args[3] = RAM_BASE + binding; args[4] = HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT; args[5] = this.remainingDeviceCycles();
+		args[3] = RAM_BASE + binding; args[5] = this.remainingDeviceCycles();
 		this.beginHeapService(this.systemImage.heapServiceFunctions![HeapServiceOperation.CapturedClosure], args);
 	}
 
@@ -681,20 +678,13 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = this.activeExecutionDomainId;
 		memory.writeRamRecordWord(base + HeapServiceClosureField.Destination, 0);
 		const frame = this.activeThread.currentFrame!;
-		if (this.hardHalted) {
-			// Mapped descriptor access hard-halts after the original decode
-			// advanced its caller, without a Lua fault or result.
-			frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
-			return;
-		}
 		const offset = this.heapServiceResult();
-		if (offset === 0 || (offset | 0) < 0) {
-			this.retireNumericLuaFault(offset === 0 ? LUA_FAULT_REASON_OUT_OF_MEMORY : ~offset);
+		if (offset === 0) {
+			this.retireNumericLuaFault(LUA_FAULT_REASON_OUT_OF_MEMORY);
 			return;
 		}
 		const address = RAM_BASE + offset;
-		if ((memory.readRamRecordByte(address + CLOSURE_BINDING_FLAGS) & CLOSURE_CANONICAL) !== 0)
-			this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
+		this.staticClosures.insert(memory.readRamRecordWord(address + CLOSURE_PROTOTYPE_ADDRESS), address);
 		this.setRegisterClosureFast(frame, frame.registers, destination - 1, address);
 		frame.pc = memory.readRamRecordWord(base + HeapServiceClosureField.NextPc);
 	}
@@ -1547,7 +1537,8 @@ export class CPU implements MappedPageInvalidator {
 					page.tableCacheSlots[pageOffset] = -1;
 					page.operandByte[pageOffset] = op === OpCode.SETFIELD ? instructionFieldExtraHashSlots(sourceWord, width) : 0;
 				}
-				if (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)) {
+				if (rawC > MemoryAccessKind.Value && (op === OpCode.LOAD_MEM || op === OpCode.STORE_MEM)
+					&& (op !== OpCode.LOAD_MEM || page.privateFirmware || rawC !== MemoryAccessKind.ContextWord)) {
 					page.ops[pageOffset] = DecodedDispatchOp.ReservedMemory;
 				} else {
 					const constantCount = image.constWords.length;
@@ -1653,7 +1644,6 @@ export class CPU implements MappedPageInvalidator {
 	): boolean {
 		const latch = this.functionRecordLatch;
 		latch.image = image;
-		latch.busSignals = busSignals;
 		latch.functionAddress = address;
 		latch.executionDomainId = image.executionDomainId;
 		latch.romBacked = false;
@@ -2969,33 +2959,37 @@ export class CPU implements MappedPageInvalidator {
 			this.bumpRegisterTop(frame, a);
 			return;
 		}
-		const captureless = record.recordUpvalueCount === 0;
-		const canonical = captureless && (record.flags & BLUA32_FUNCTION_STATIC) !== 0;
-		if (canonical) {
+		if (record.recordUpvalueCount === 0 && (record.flags & BLUA32_FUNCTION_STATIC) !== 0) {
 			const closure = this.findStaticClosureFromLatch();
 			if (closure !== 0) {
 				this.setRegisterClosureFast(frame, registers, a, closure);
 				return;
 			}
-		}
-		if (captureless && record.romBacked) {
 			if (this.systemImage.heapServiceFunctions === null) {
 				this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
 				return;
 			}
-			const kind = canonical ? HeapServiceRecordKind.CanonicalClosure : HeapServiceRecordKind.DynamicClosure;
-			this.beginClosureReservation(frame, a, kind, record.functionAddress, record.executionDomainId, frame.pc);
+			if (record.romBacked)
+				this.beginClosureReservation(frame, a, record.functionAddress, record.executionDomainId, frame.pc);
+			else this.beginMappedCanonicalClosure(frame, a);
 			this.requestYield();
 			return;
 		}
-		if (Closure.closureRecordBytes(record.recordUpvalueCount, !record.romBacked) > MAIN_RAM_SIZE)
-			throw LUA_OUT_OF_MEMORY_SIGNAL;
-		if (this.systemImage.heapServiceFunctions === null) {
-			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return;
+		// Exception entry decodes the vector on the same record latch.
+		const { executionDomainId, codeAddress, numParams, maxStack, flags, upvalueTableAddress, recordUpvalueCount, romBacked } = record;
+		const cycles = this.remainingDeviceCycles();
+		const vector = this.enterException(this.systemImage, this.cop0Words[COP0_SYSTEM_VECTOR], CPU_CAUSE_CODE_FUNCTION_BINDING,
+			this.currentInstructionPc, valueInteger(a), valueInteger(functionAddress), valueInteger(executionDomainId), valueInteger(codeAddress), 11);
+		if (vector !== null) {
+			const operands = vector.registers;
+			operands.setInteger(4, numParams);
+			operands.setInteger(5, maxStack);
+			operands.setInteger(6, flags);
+			operands.setInteger(7, upvalueTableAddress);
+			operands.setInteger(8, recordUpvalueCount);
+			operands.setInteger(9, +romBacked);
+			operands.setInteger(10, cycles);
 		}
-		this.beginCapturedClosure(frame, a, canonical);
-		this.requestYield();
 	}
 
 	private executeCall(frame: CallFrame, a: number, b: number, c: number): boolean {
@@ -3144,6 +3138,14 @@ export class CPU implements MappedPageInvalidator {
 			case MemoryAccessKind.U32LE: value = valueInteger(this.memory.readMappedU32LE(address, undefined, cpuProtected) | 0); break;
 			case MemoryAccessKind.F32LE: value = valueFloatBits(this.memory.readMappedU32LE(address, undefined, cpuProtected)); break;
 			case MemoryAccessKind.F64LE: value = valueFloat(this.memory.readMappedF64LE(address, cpuProtected)); break;
+			case MemoryAccessKind.ContextWord:
+				if (!cpuProtected || !this.fixedInterruptActive()) {
+					this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+					return;
+				}
+				value = valueInteger(this.memory.readMappedBusU32LE(address,
+					CPU.executionBusSignalsForDomain((this.exceptionDomainWord | 0) as ExecutionDomainId)));
+				break;
 		}
 		if (this.memory.readBusFaultSequence() !== faultSequence) {
 			this.enterSynchronousException(frame, CPU_CAUSE_CODE_DATA_BUS_ERROR);
@@ -4038,18 +4040,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if (load) {
 			let word: number;
-			if (((address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT) >>> 0) < MAIN_RAM_SIZE && kind !== MemoryAccessKind.U8) {
-				const management = this.heapAllocator.managementOffset();
-				const descriptor = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET + HeapServiceCaptureBindingField.Descriptor);
-				const signals = memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET) as MappedBusSignals;
-				const faultSequence = memory.readBusFaultSequence();
-				word = memory.readMappedBusU32LE((descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT) >>> 0, signals);
-				if (memory.readBusFaultSequence() !== faultSequence) {
-					do this.heapService.thread.leaveFrame(); while (this.heapServiceActive());
-					this.hardHalt();
-					return;
-				}
-			} else if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
+			if (((address - RAM_BASE) >>> 0) < memory.ramByteCount()) {
 				// Raw records may project into the bus-visible part or beneath MMIO.
 				word = kind === MemoryAccessKind.U8 ? memory.readRamRecordByte(address) : memory.readRamRecordWord(address);
 			} else if (((address - HEAP_SERVICE_ROOT_PORT_BASE) >>> 0) < HEAP_SERVICE_ROOT_PORT_BYTES) {

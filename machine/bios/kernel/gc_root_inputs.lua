@@ -21,12 +21,6 @@ local release_string_work<const> = function(management) -- T:4159-4162 C:340-343
 	if work ~= 0 or *canonical ~= 0 then *canonical = work end -- S:458 R:448
 end
 
-local publish<const> = function(management) -- T:4146-4157 C:325-338
-	local roots<const>: *word = layout.ram_base + management + layout.effect_offset -- T:4138-4140 C:316-318
-	*roots = layout.publish_roots -- T:4147-4156 C:327-337
-	borrow_string_work(management) -- T:4152 C:332; after CPU root inputs, before collector entry
-end
-
 -- A fixed IRQ can only enter between operations. At entry the suspended
 -- Thread (including any injected call still on its stack) is latched by the
 -- CPU. The BIOS has already installed the root Thread. A completed tool
@@ -43,6 +37,17 @@ local publish_interrupt<const> = function(management)
 	head.comparison_remaining = 0
 	head.has_pending_assignment = 0
 	borrow_string_work(management)
+end
+
+local publish<const> = function(management) -- T:4146-4157 C:325-338
+	local interrupted<const>: *addr = layout.interrupted_context_address
+	if *interrupted ~= 0 then
+		publish_interrupt(management)
+	else
+		local roots<const>: *word = layout.ram_base + management + layout.effect_offset -- T:4138-4140 C:316-318
+		*roots = layout.publish_roots -- T:4147-4156 C:327-337
+		borrow_string_work(management) -- T:4152 C:332
+	end
 end
 
 return { publish = publish, publish_interrupt = publish_interrupt, borrow_string_work = borrow_string_work, release_string_work = release_string_work }

@@ -20,6 +20,7 @@ local closures<const> = require('kernel/closure_create') -- C:8,84-86 T:804,863-
 local table_kind<const> = 0 -- S:49 C:6 T:802
 local table_copy_kind<const> = 3 -- B:33-37 J:69-73; firmware-only operation using the same Direct admission
 local canonical_closure_kind<const> = 1 -- S:49 C:84-86 T:863-866
+local dynamic_closure_kind<const> = 2 -- S:49; an immutable Function record without canonical identity
 local direct<const> = 1 -- S:41 C:118 T:903
 local retry_current<const> = 3 -- S:41 C:5,138-140 T:801,912
 local retry_fresh<const> = 4 -- S:41 C:5,141-142 T:801,909
@@ -119,4 +120,4 @@ local allocate_record<const> = function(management, kind, operand0, operand1, mo
 	return offset -- C:102-142 T:889-920; 0 is the original terminal OOM signal before CPU fault delivery
 end
 
-return { allocate_record = allocate_record, table_copy_kind = table_copy_kind, direct_mode = direct }
+return { allocate_record = allocate_record, table_copy_kind = table_copy_kind, dynamic_closure_kind = dynamic_closure_kind, direct_mode = direct }

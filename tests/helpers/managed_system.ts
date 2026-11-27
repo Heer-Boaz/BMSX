@@ -22,7 +22,7 @@ const firmware = [
 	'kernel/heap_bootstrap', 'kernel/boot_diagnostics', 'kernel/system_image_bind', 'kernel/root_activation',
 	'kernel/gc_stopped_roots', 'kernel/global_bank', 'kernel/warm_bindings',
 	'kernel/boot_image_admission',
-	'kernel/string_slice', 'kernel/allocate_string_slice',
+	'kernel/string_slice', 'kernel/allocate_string_slice', 'kernel/function_binding',
 	BIOS_EXCEPTION_BRIDGE.path, 'kernel/exception_report', 'kernel/register_window', 'kernel/protected_return', 'kernel/coroutine_transfer',
 	...BIOS_MANAGED_ENTRIES.map(entry => entry.path),
 ];

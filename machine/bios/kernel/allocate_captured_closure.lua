@@ -1,8 +1,8 @@
 module<const>
 
 -- Source basis: b6e4bb3362386c5c2cf4b7f7e0ef2b6045f340f1. H/C: LuaHeap TS/C++; G/R: GcHeap TS/C++;
--- T/N: CPU TS/C++. Mapped descriptor sampling is the private bus/operand
--- producer; source order survives until preparation and recovery retire.
+-- T/N: CPU TS/C++. Descriptors are sampled on the interrupted mapped bus;
+-- the prepared capture plan is retained across allocation recovery.
 local layout<const> = require('kernel/gc_runtime_layout') -- H:247 C:254
 local root_inputs<const> = require('kernel/gc_root_inputs') -- H:95 C:106 G:1121-1124 R:1225-1229
 local closure<const> = require('kernel/closure_capture_create') -- T:4151-4197 N:3012-3068

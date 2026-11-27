@@ -411,7 +411,6 @@ private:
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {}, bool instructionCall = false, u32 codeFunction = 0u);
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical);
-	u32 createClosure(CallFrame& frame, int destination);
 	void executeClosure(CallFrame& frame, int destination, u32 operand, int flags);
 	void beginStringComparison(CallFrame& frame, StringId a, StringId b, bool inclusive, bool expected);
 	void advanceStringComparison(CallFrame& frame);
@@ -441,9 +440,9 @@ private:
 	bool loadTableIndex(CallFrame& frame, int destination, Value base, Value key);
 	bool loadTableIntegerIndex(CallFrame& frame, int destination, Value base, int index);
 	bool finishTableAssignment(CallFrame& frame, Value key, Value value, const TableLookupResult& result);
-	void beginClosureReservation(CallFrame&, int destination, HeapServiceRecordKind, u32 prototype, u32 domain, u32 nextPc);
+	void beginClosureReservation(CallFrame&, int destination, u32 prototype, u32 domain, u32 nextPc);
 	void finishClosureReservation();
-	void beginCapturedClosure(CallFrame&, int destination, bool canonical);
+	void beginCanonicalLatchedClosure(CallFrame&, int destination);
 	bool storeTableIndex(CallFrame&, Value base, Value key, Value value);
 	bool storeTableIntegerIndex(CallFrame&, Value base, int index, Value value);
 	bool storeTableFieldIndexCached(CallFrame&, int& predictedSlot, Value base, StringId key, Value value, u8 extraHashSlots);

@@ -309,6 +309,7 @@ export function emitJavaScriptBlock(
 			const address = displaced ? `(${base}+${page.operandByte[word] * 4})>>>0` : base;
 			const memoryExit = `{S.memoryAddress=a;${registers.exit(exitIndex)}}`;
 			if (words) source.push(emitWordStores(page, word, address, memoryExit, numericFault, registers));
+			else if (page.c[word] === MemoryAccessKind.ContextWord) source.push(`{const a=${address};${memoryExit}}`);
 			else if (page.c[word] === MemoryAccessKind.Value) {
 				if (image.executionDomainId === SYSTEM_EXECUTION_DOMAIN_ID && ((currentPc - SYSTEM_ROM_BASE) >>> 0) < SYSTEM_ROM_SIZE) {
 					valueMemory = true;

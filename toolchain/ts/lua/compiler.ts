@@ -5933,6 +5933,13 @@ class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 			return true;
 		}
+		if (operation === 'context_word') {
+			if (expression.arguments.length !== 1) throw new Error('blua32.context_word expects one mapped address.');
+			this.compileExpressionInto(expression.arguments[0], target, 1);
+			this.emitABC(OpCode.LOAD_MEM, target, target, MemoryAccessKind.ContextWord);
+			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
+			return true;
+		}
 		if (operation === 'float_bits' || operation === 'float_from_bits') {
 			if (expression.arguments.length !== 1) throw new Error(`blua32.${operation} expects one argument.`);
 			this.compileExpressionInto(expression.arguments[0], target, 1);

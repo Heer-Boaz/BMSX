@@ -19,10 +19,8 @@ static_assert(HEAP_SERVICE_RESIDENT_OFFSET + static_cast<u32>(HeapServiceResiden
 static_assert(static_cast<u32>(CpuRunKind::Direct) == 1 && static_cast<u32>(CpuRunKind::Scheduled) == 2);
 static_assert(HEAP_SERVICE_TRACE_QUANTUM_OFFSET + static_cast<u32>(HeapServiceTraceField::MirrorPolicy) + sizeof(u32) <= HEAP_SERVICE_GC_PROJECTION_OFFSET);
 static_assert(HEAP_SERVICE_GC_PROJECTION_OFFSET + sizeof(u32) <= HEAP_SERVICE_CAPTURE_BINDING_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_CAPTURE_BUS_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_BUS_OFFSET + sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
+static_assert(HEAP_SERVICE_CAPTURE_BINDING_OFFSET + 9 * sizeof(u32) <= HEAP_SERVICE_FIXED_WORK_OFFSET);
 static_assert(HEAP_SERVICE_FIXED_WORK_OFFSET + sizeof(u32) <= HEAP_SERVICE_THREAD_OFFSET);
-static_assert(HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT >= HEAP_SERVICE_CALL_FAULT_ADDRESS + sizeof(u32));
 
 void CPU::initializeHeapService() {
 	const u32 management = RAM_BASE + m_heapAllocator.managementOffset();
@@ -189,18 +187,7 @@ void CPU::executeHeapServiceLoad(CallFrame& frame, int destination, MemoryAccess
 	}
 	admitHeapServiceAccess(kind, address);
 	u32 word;
-	if (address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT < MAIN_RAM_SIZE && kind != MemoryAccessKind::U8) {
-		const u32 management = m_heapAllocator.managementOffset();
-		const u32 descriptor = m_memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BINDING_OFFSET + static_cast<u32>(HeapServiceCaptureBindingField::Descriptor));
-		const auto signals = static_cast<MappedBusSignals>(m_memory.readRamRecordWord(management + HEAP_SERVICE_CAPTURE_BUS_OFFSET));
-		const u32 faultSequence = m_memory.readBusFaultSequence();
-		word = m_memory.readMappedBusU32LE(descriptor + address - HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT, signals);
-		if (m_memory.readBusFaultSequence() != faultSequence) {
-			do m_heapServiceView.leaveFrame(); while (heapServiceActive());
-			hardHalt();
-			return;
-		}
-	} else if (address - RAM_BASE < m_memory.ramByteCount()) {
+	if (address - RAM_BASE < m_memory.ramByteCount()) {
 		// Raw records may project into the bus-visible part or beneath MMIO.
 		word = kind == MemoryAccessKind::U8 ? m_memory.readRamRecordByte(address) : m_memory.readRamRecordWord(address);
 	} else if (address - HEAP_SERVICE_ROOT_PORT_BASE < HEAP_SERVICE_ROOT_PORT_BYTES) {

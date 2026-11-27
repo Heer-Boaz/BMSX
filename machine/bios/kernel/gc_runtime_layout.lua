@@ -5,6 +5,7 @@ module<const>
 -- effect address is a private store strobe, not RAM.
 return {
 	firmware_data_offset = 0x1c00,
+	function_binding_offset = 0x3c80, -- beyond the 1024-entry capture work planes
 	ram_base = 0x08000000,
 	management_offset = 0x003fc000,
 	interrupted_context_address = 0x083fd8d0,

@@ -158,6 +158,7 @@ inline bool nativeSourceCanEmit(const DecodedInstruction& instruction, bool priv
 	}
 	switch (static_cast<OpCode>(instruction.op)) {
 		case OpCode::MFC0: return instruction.b != COP0_EVENT_CYCLES;
+		case OpCode::LOAD_MEM: return instruction.c != static_cast<int>(MemoryAccessKind::ContextWord);
 		case OpCode::JMP: return instruction.a == 0;
 		case OpCode::MOV: return instruction.c <= static_cast<int>(ValueMoveKind::FloatFromBits);
 		case OpCode::RET: return instruction.c == static_cast<int>(ReturnSource::Registers);

@@ -10,11 +10,13 @@ local protected<const> = require('kernel/protected_return')
 local coroutine_transfer<const> = require('kernel/coroutine_transfer')
 local barrier<const> = require('kernel/gc_barrier')
 local table_growth<const> = require('kernel/table_grow')
+local binding<const> = require('kernel/function_binding')
 local syscall<const> = 8 << 2
 local trap<const> = 13 << 2
 local register_window<const> = 14 << 2
 local reference_store<const> = 15 << 2
 local storage_window<const> = 16 << 2
+local function_binding<const> = 17 << 2
 local explicit_error<const> = 8
 local out_of_memory<const> = 9
 local string_tag<const> = 5
@@ -114,6 +116,14 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 	local denied_storage<const> = cause == storage_window
 	local interrupted<const>: *addr = layout.interrupted_context_address
 	local transfer_fault
+	if cause == function_binding then
+		local pc<const>, reason<const> = binding.bind(*interrupted, values, depth, instruction, source_cycles, r4, r5, r6, r7, r8, r9, r10)
+		if pc then
+			cop0.epc = pc
+			blua32.rfe()
+		end
+		transfer_fault = reason
+	end
 	if denied_storage and table_growth.store_without_backing(values, depth, instruction, source_cycles, r4) then
 		local context<const>: *stopped_thread = *interrupted
 		local depth<const> = context.frame_depth & control_count_mask
@@ -171,7 +181,7 @@ local enter<const> = function(values, depth, instruction, source_cycles, r4, r5,
 			local fault_ids<const>: *u32 = diagnostics.fault_ids
 			payload, tag = fault_ids[reason], string_tag
 		end
-		local deadline<const> = denied_window and source_cycles or (denied_storage and r4 or 0)
+		local deadline<const> = denied_window and source_cycles or (denied_storage and r4 or (cause == function_binding and r10 or 0))
 		local caught<const>, resume_pc<const>, resume_context<const> = protected.catch_fault(*interrupted, payload, tag, deadline)
 		if caught then
 			if resume_context then *interrupted = resume_context end

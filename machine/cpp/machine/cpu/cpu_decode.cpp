@@ -174,7 +174,7 @@ void CPU::decodeInstructionWords(
 				break;
 		}
 		if (rawC > static_cast<u32>(MemoryAccessKind::Value)
-			&& (static_cast<OpCode>(op) == OpCode::LOAD_MEM
+			&& ((static_cast<OpCode>(op) == OpCode::LOAD_MEM && (page.privateFirmware || rawC != static_cast<u32>(MemoryAccessKind::ContextWord)))
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM
 				|| static_cast<OpCode>(op) == OpCode::LOAD_MEM_D
 				|| static_cast<OpCode>(op) == OpCode::STORE_MEM_D)) {
@@ -212,7 +212,8 @@ void CPU::decodeInstructionWords(
 	}
 #if defined(BMSX_ENABLE_NATIVE_BLOCKS)
 	if (instructionCacheable && (page.privateFirmware ? nativeSourceCanEmit(decoded, true)
-		: nativeBlockSupports(decoded.op) && (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0))) {
+		: nativeBlockSupports(decoded.op) && (decoded.op != static_cast<u8>(OpCode::JMP) || decoded.a == 0)
+			&& (decoded.op != static_cast<u8>(OpCode::LOAD_MEM) || decoded.c != static_cast<int>(MemoryAccessKind::ContextWord)))) {
 		decoded.dispatchOp = nativeWarmDispatch(decoded, page.privateFirmware);
 		page.nativeVisits[pageOffset] = 0;
 	}

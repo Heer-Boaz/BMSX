@@ -48,10 +48,8 @@ enum class HeapServiceClosureField : uint32_t {
 
 constexpr uint32_t HEAP_SERVICE_CAPTURE_BINDING_OFFSET = 0x7b0;
 enum class HeapServiceCaptureBindingField : uint32_t { Prototype = 0, Domain = 4, BindingFlags = 8, Code = 12, Params = 16, Stack = 20, Flags = 24, Descriptor = 28, Count = 32 };
-constexpr uint32_t HEAP_SERVICE_CAPTURE_BUS_OFFSET = 0x7e8;
-constexpr uint32_t HEAP_SERVICE_CAPTURE_DESCRIPTOR_PORT = 0x03000000;
 
-enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure, DynamicClosure };
+enum class HeapServiceRecordKind : uint32_t { Table, CanonicalClosure };
 enum class HeapServiceRecordMode : uint32_t { Direct = 1, Scheduled, RetryCurrent, RetryFresh };
 
 // BIOS-owned data in the unused tail of the physical management reservation.

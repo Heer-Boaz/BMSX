@@ -17,7 +17,6 @@ import { cop0FieldImplemented } from '../../spec/blua32/cop0';
 import { INSTRUCTION_BYTES, instructionBranchTarget, instructionBx, instructionLowB, instructionOpcode, ReturnSource, ValueMoveKind } from '../../spec/blua32/instruction_format';
 import { MemoryAccessKind } from '../../spec/blua32/memory_access_kind';
 import type { Memory, MemoryByteView } from '../memory/memory';
-import type { MappedBusSignals } from '../memory/bus_signals';
 import { MAPPED_PAGE_BYTE_SHIFT, type MappedPageBinding } from '../memory/mapped_page';
 import type { CompiledBlockPage } from './compiled_code_cache';
 import type { CompiledCodeLookup } from './compiled_code_lookup';
@@ -396,7 +395,6 @@ export function admitsFunctionPc(directory: Blua32RomFunctionDirectory, record: 
 
 export type Blua32FunctionRecordLatch = FunctionPrototype & {
 	image: Blua32ExecutionImage;
-	busSignals: MappedBusSignals;
 	romBacked: boolean;
 };
 

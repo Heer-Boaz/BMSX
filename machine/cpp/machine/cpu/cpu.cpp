@@ -837,7 +837,6 @@ bool CPU::readFunctionRecord(
 	MappedBusSignals busSignals
 ) {
 	m_functionRecordLatch.image = &image;
-	m_functionRecordLatch.busSignals = busSignals;
 	m_functionRecordLatch.address = address;
 	m_functionRecordLatch.romBacked = false;
 	if (!image.romFunctions.mappedCode) {
@@ -2659,34 +2658,6 @@ void CPU::writeFrameExecution(
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
 	m_activeThread->frameAtDepth(static_cast<size_t>(childFrameIndex))->writeControl(FrameField::CallSite, pc);
-}
-
-u32 CPU::createClosure(CallFrame& frame, int destination) {
-	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	const bool captureless = functionRecord.upvalueCount == 0u;
-	const bool canonical = captureless && (functionRecord.flags & BLUA32_FUNCTION_STATIC) != 0u;
-	if (canonical) {
-		if (const u32 first = findStaticClosure(decodePrototype(functionRecord))) return first;
-	}
-	if (captureless && functionRecord.romBacked) {
-		if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::AllocateRecord)] == 0u) {
-			enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-			return 0u;
-		}
-		const auto kind = canonical ? HeapServiceRecordKind::CanonicalClosure : HeapServiceRecordKind::DynamicClosure;
-		beginClosureReservation(frame, destination, kind, functionRecord.address,
-			static_cast<u32>(functionRecord.image->executionDomainId), frame.readControl(FrameField::Pc));
-		requestYield();
-		return 0u;
-	}
-	if (functionRecord.upvalueCount > maxClosureCaptures(!functionRecord.romBacked)) throw LuaOutOfMemorySignal{};
-	if (m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::CapturedClosure)] == 0u) {
-		enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
-		return 0u;
-	}
-	beginCapturedClosure(frame, destination, canonical);
-	requestYield();
-	return 0u;
 }
 
 int CPU::closeUpvalues(CallFrame& frame, u32 firstSlot) {
