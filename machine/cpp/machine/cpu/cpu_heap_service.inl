@@ -110,6 +110,19 @@ void CPU::beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u
 	enterResidentFrame(firmware, receiverFlags);
 }
 
+void CPU::enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value value) {
+	const auto address = m_systemImage->heapServiceFunctions[static_cast<size_t>(HeapServiceOperation::StoreClosedUpvalue)];
+	if (address == 0u) {
+		enterSynchronousException(issuer, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+		return;
+	}
+	auto& frame = prepareHeapServiceFrame(address, 0, 2, CallResultPlacement::discard(), m_currentInstructionPc);
+	frame.registers.set(0, valueInteger(static_cast<i32>(cell)));
+	frame.registers.set(1, value);
+	instructionBudgetRemaining -= frame.readWindow(FrameField::Top);
+	enterResidentFrame(frame);
+}
+
 void CPU::enterResidentFrame(CallFrame& frame, u32 receiverFlags) {
 	frame.addControlFlags(FRAME_RESIDENT_ACTIVATION | receiverFlags);
 	const u32 context = m_heapAllocator.managementOffset() + HEAP_SERVICE_RESIDENT_OFFSET;

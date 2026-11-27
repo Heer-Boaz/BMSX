@@ -282,41 +282,25 @@ void captures() {
 						"open outer-frame writes retain every Float/Integer bit");
 			}
 }
-void closedBarrierAfterHeapGrowth() {
-	const auto image = capturedChunk(true);
-	Number32Machine native(image), scalar(image, false);
-	u32 children[2];
-	u32 cells[2];
-	for (int i = 0; i < 2; ++i) {
-		auto& m = i == 0 ? native : scalar;
-		// Churn allocator pages before admitting the closure and its new cell.
-		for (int n = 0; n < 600; ++n)
-			m.cpu.createTable();
-		auto closure = beginCaptured(m);
-		auto child = m.cpu.createTable(1);
-		child.setInteger(1, valueInteger(123));
-		children[i] = child.address();
-		const u32 cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
-		cells[i] = cell;
-		m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
-		require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3, "collector has scanned the closed cell before mutation");
-		m.cpu.activeThread()->currentFrame->registers.set(0, valueTable(child.address()));
-	}
-	test::runCpuParity(native.cpu, scalar.cpu, 1);
-	parity(native, scalar);
-	require(native.cpu.memory().readRamRecordByte(cells[0] + GC_COLOR_OFFSET) == 2
-		&& scalar.cpu.memory().readRamRecordByte(cells[1] + GC_COLOR_OFFSET) == 2,
+void nativeClosedBarrierOracleAfterHeapGrowth() {
+	// The bare image is the independent native collector oracle. The linked
+	// SETUP conformance fixture exercises interpreter and generated BIOS ingress.
+	Number32Machine m(capturedChunk(true));
+	for (int n = 0; n < 600; ++n) m.cpu.createTable();
+	const auto closure = beginCaptured(m);
+	const auto cell = ClosureRecord::captureAddress(m.cpu.memory(), closure, 0);
+	auto child = m.cpu.createTable(1);
+	child.setInteger(1, valueInteger(123));
+	m.cpu.gcHeap().step(valueNil(), valueNil(), valueNil());
+	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 3,
+		"collector has scanned the closed cell before mutation");
+	Upvalue::store(m.cpu.gcHeap(), cell, valueTable(child.address()));
+	require(m.cpu.memory().readRamRecordByte(cell + GC_COLOR_OFFSET) == 2,
 		"closed writes queue the scanned cell again");
-	test::runCpuParity(native.cpu, scalar.cpu, 100);
-	parity(native, scalar);
-	requireNative(native.cpu,2);
-	for (int i = 0; i < 2; ++i) {
-		auto& m = i == 0 ? native : scalar;
-		m.cpu.collectHeap();
-		const auto child = asTable(Upvalue::load(m.cpu.memory(), cells[i]), m.cpu.gcHeap());
-		require(child.address() == children[i] && child.getInteger(1) == valueInteger(123),
-			"a child introduced by a closed-cell write survives the incremental collector");
-	}
+	m.cpu.collectHeap();
+	const auto retained = asTable(Upvalue::load(m.cpu.memory(), cell), m.cpu.gcHeap());
+	require(retained.address() == child.address() && retained.getInteger(1) == valueInteger(123),
+		"a child introduced by a closed-cell write survives the incremental collector");
 }
 } // namespace
 int main() {
@@ -331,7 +315,7 @@ int main() {
 		std::cerr << "captures\n";
 		captures();
 		std::cerr << "closed barrier\n";
-		closedBarrierAfterHeapGrowth();
+		nativeClosedBarrierOracleAfterHeapGrowth();
 		std::cout << "Native compact constants, control, lengths, captures and barriers passed\n";
 		return 0;
 	} catch (const std::exception& error) {

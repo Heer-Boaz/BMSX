@@ -168,7 +168,6 @@ private:
 		State registers;
 		sljit_label* resume;
 		StoreBarrierRecord record;
-		NativeBlockExitSite* exit;
 		int source;
 	};
 	struct SingleStringRead {

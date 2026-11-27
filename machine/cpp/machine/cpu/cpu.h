@@ -477,6 +477,7 @@ private:
 	void enterPreparedFrame();
 	void enterResidentFrame(CallFrame&, u32 receiverFlags = 0);
 	void beginFrameSpaceAcquisition(u32 function, u32 valueEnd, u32 frameEnd, u32 root, u32 receiverFlags);
+	void enterClosedUpvalueStore(CallFrame& issuer, u32 cell, Value);
 	CallFrame* pushFrame(u32 closure, BuiltinArgsView args,
 		CallResultPlacement result, u32 flags = 0u, std::optional<u32> callSitePc = {});
 	u32 allocateClosure(const FunctionPrototype&, u32 count, bool canonical, std::span<u32> cells = {});

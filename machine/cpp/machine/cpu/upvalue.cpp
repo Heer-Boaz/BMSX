@@ -62,16 +62,25 @@ Value Upvalue::load(const Memory& memory, u32 address) {
 	return valueFromTag(static_cast<ValueTag>(memory.readRamRecordByte(ports.tag)), memory.readRamRecordWord(ports.word));
 }
 
-void Upvalue::store(GcHeap& heap, u32 address, Value value) {
-	auto& memory = heap.memory;
-	const u32 cell = address & UPVALUE_ADDRESS_MASK;
+bool Upvalue::tryStoreWithoutBarrier(Memory& memory, u32 cell, Value value) {
 	CapturePorts ports{cell + UPVALUE_VALUE_WORD, cell + UPVALUE_VALUE_TAG};
-	if (isOpen(memory, cell)) {
+	if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) != 0u) {
 		ports = openCapturePorts(memory, cell, memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD));
-	} else {
-		heap.writeClosedValue(cell, value);
+	} else if (valueTagHasGcEdge(valueTag(value))
+		&& (memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_COLOR_MASK) == 3u) {
+		return false;
 	}
 	memory.writeRamRecordWord(ports.word, valuePayload(value));
 	memory.writeRamRecordByte(ports.tag, static_cast<u8>(valueTag(value)));
+	return true;
+}
+
+void Upvalue::store(GcHeap& heap, u32 address, Value value) {
+	auto& memory = heap.memory;
+	const u32 cell = address & UPVALUE_ADDRESS_MASK;
+	if (tryStoreWithoutBarrier(memory, cell, value)) return;
+	heap.writeBlackClosedValue(cell, value);
+	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, valuePayload(value));
+	memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, static_cast<u8>(valueTag(value)));
 }
 } // namespace bmsx

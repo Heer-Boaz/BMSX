@@ -6,7 +6,6 @@
 #include "machine/cpu/gc_heap.h"
 #include "machine/cpu/gc_object.h"
 #include "machine/cpu/jit/sljit/table_access.h"
-#include "machine/cpu/upvalue.h"
 #include "machine/memory/mapped_page.h"
 #include "machine/memory/memory.h"
 #include "spec/blua32/memory_access_kind.h"
@@ -18,11 +17,8 @@ namespace {
 u32 SLJIT_FUNC writeLocalIoWord(Memory* memory, u32 address, u32 value) {
 	return memory->tryWriteLocalIoWord(address, value);
 }
-template <u32 Link>
-void SLJIT_FUNC writeNativeBarrier(GcHeap* heap, u32 address, u32 word, u32 tag) {
-	const auto value = valueFromTag(static_cast<ValueTag>(tag), word);
-	if constexpr (Link == UPVALUE_NEXT) heap->writeBlackClosedValue(address, value);
-	else heap->writeBlackTableValue(address, value);
+void SLJIT_FUNC writeNativeTableBarrier(GcHeap* heap, u32 address, u32 word, u32 tag) {
+	heap->writeBlackTableValue(address, valueFromTag(static_cast<ValueTag>(tag), word));
 }
 void SLJIT_FUNC markNativeGlobalWrite(GcHeap* heap, u32 word, u32 tag) {
 	heap->markGlobalWrite(valueFromTag(static_cast<ValueTag>(tag), word));
@@ -57,8 +53,8 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 	const bool global = record == StoreBarrierRecord::Global;
 	if (barrier == NativeGcBarrier::None || (global && !m_bindings.gcPhase)) return;
 	auto* c = m_compiler;
-	// A Table already has its raw receiver in the table scratch; a Cell
-	// keeps its private RAM offset in R3 until the cold arm.
+	// A Table already has its receiver in the scratch. A closed Cell
+	// uses the same slow exit as a watched or open SETUP.
 	const bool cell = record == StoreBarrierRecord::ClosedUpvalue;
 	const auto address = cell ? SLJIT_R2 : SLJIT_R0;
 	const auto flags = global ? SLJIT_R1 : cell ? SLJIT_R0 : SLJIT_R2;
@@ -91,7 +87,11 @@ void NativeLowering::emitStoreBarrier(int source, NativeGcBarrier barrier, Store
 		auto* ready = sljit_emit_label(c);
 		for (auto* skip : scalar) if (skip) sljit_set_label(skip, ready);
 	}
-	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), record, &exit, source});
+	if (cell) {
+		fault(mutation, exit, m_cache.state());
+		return;
+	}
+	m_workspace.storeBarriers.push_back({mutation, m_cache.state(), sljit_emit_label(c), record, source});
 }
 
 void NativeLowering::emitStoreBarriers() {
@@ -100,15 +100,7 @@ void NativeLowering::emitStoreBarriers() {
 		sljit_set_label(barrier.mutation, sljit_emit_label(c));
 		m_cache.setState(barrier.registers);
 		const bool global = barrier.record == StoreBarrierRecord::Global;
-		const bool cell = barrier.record == StoreBarrierRecord::ClosedUpvalue;
-		const auto savedAddress = cell ? NativeBlockAbi::helperResultOffset : NativeTableScratch::receiver;
-		if (cell) {
-			// The ordinary Cell store admitted its two value words. The
-			// changed-list link must be admitted too, before either write.
-			emitRamWordWriteWatch(*barrier.exit, SLJIT_R3, 0, SLJIT_R1, SLJIT_R2,
-				1u << (UPVALUE_NEXT / sizeof(u32)));
-			sljit_emit_op1(c, SLJIT_MOV32, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_R3, 0);
-		}
+		constexpr auto savedAddress = NativeTableScratch::receiver;
 		// The leaf marks or enqueues the exact input, without tracing,
 		// allocating or inspecting any unpublished activation.
 		emitRawLoad(barrier.source, global ? SLJIT_R1 : SLJIT_R2, global ? SLJIT_R2 : SLJIT_R3);
@@ -118,15 +110,12 @@ void NativeLowering::emitStoreBarriers() {
 			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3V(P, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&markNativeGlobalWrite));
 		} else {
 			sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_R1, 0, SLJIT_MEM1(SLJIT_SP), savedAddress);
-			const auto target = cell ? SLJIT_FUNC_ADDR(&writeNativeBarrier<UPVALUE_NEXT>)
-				: SLJIT_FUNC_ADDR(&writeNativeBarrier<GC_RECORD_LINK>);
-			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, target);
+			sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4V(P, 32, 32, 32), SLJIT_IMM, SLJIT_FUNC_ADDR(&writeNativeTableBarrier));
 		}
 		m_cache.spillCall(true, 0, NativeRegisterCache::FrameSlots::Unchanged);
 		if (!global) {
-			const auto address = cell ? SLJIT_R2 : SLJIT_R0;
-			sljit_emit_op2(c, SLJIT_AND32, address, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
-			NativeBlockAbi::emitRamAddress(c, address, address);
+			sljit_emit_op2(c, SLJIT_AND32, SLJIT_R0, 0, SLJIT_MEM1(SLJIT_SP), savedAddress, SLJIT_IMM, RAM_RECORD_WORD_MASK);
+			NativeBlockAbi::emitRamAddress(c, SLJIT_R0, SLJIT_R0);
 		}
 		sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), barrier.resume);
 	}

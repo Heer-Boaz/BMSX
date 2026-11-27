@@ -485,6 +485,37 @@ int main(int argc, char** argv) {
 						<< runtime.frameLoop.frameState.activeCpuUsedCycles << '\n';
 					break;
 				}
+				case '!': {
+#if defined(BMSX_ENABLE_NATIVE_BLOCKS) && defined(BMSX_NATIVE_GATE_PROFILE)
+					int grant, native, mode;
+					trace >> grant >> native >> mode;
+					if (native) {
+						auto& frame = *cpu.activeThread()->currentFrame;
+						const auto closure = frame.readControl(FrameField::Closure);
+						const auto original = frame.registers.get(0);
+						const std::array warm{valueInteger(73)};
+						const std::array wanted{original};
+						frame.registers.set(0, warm[0]);
+						for (int visit = 0; visit < 128; ++visit) {
+							if (visit != 0) cpu.beginCompletionCall(closure, {warm.data(), warm.size()});
+							if (cpu.runUntilDepth(0, 4096) != RunResult::Halted || cpu.heapServiceActive())
+								throw std::runtime_error("Warm scalar closed SETUP did not finish as an ordinary write");
+						}
+						cpu.prepareSystemNativeCode();
+						cpu.beginCompletionCall(closure, {wanted.data(), wanted.size()});
+					} else cpu.setExecutionHook({[](void*, ExecutionDomainId, u32) { return false; }, nullptr, ALL_EXECUTION_DOMAINS_MASK, 0u});
+					const auto gate = static_cast<size_t>(NativeBlockExit::WriteUpvalue);
+					const auto before = cpu.nativeGateProfile().exits[gate];
+					const auto result = scheduler.runCpuSlice(0, grant, 0u, mode == 0 ? CpuRunKind::Direct : CpuRunKind::Scheduled);
+					const auto after = cpu.nativeGateProfile().exits[gate];
+					std::cout << static_cast<int>(result) << ' ' << grant - cpu.instructionBudgetRemaining << ' '
+						<< cpu.heapServiceActive() << ' ' << after.entries - before.entries << ' ' << after.returns - before.returns
+						<< ' ' << after.resumes - before.resumes << ' ' << after.exceptions - before.exceptions << '\n';
+#else
+					throw std::runtime_error("SETUP gate proof requires BMSX_NATIVE_GATE_PROFILE and native blocks");
+#endif
+					break;
+				}
 				case 'W': {
 					u32 address, word;
 					trace >> address >> word;

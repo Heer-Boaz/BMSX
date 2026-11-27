@@ -25,6 +25,8 @@ bool isOpen(const Memory& memory, u32 address);
 void bindOpen(Memory& memory, u32 address, u32 owner, u32 slot, u32 next);
 void close(GcHeap& heap, u32 address);
 Value load(const Memory& memory, u32 address);
+bool tryStoreWithoutBarrier(Memory& memory, u32 cell, Value value);
+// Native reference for differential collector tests.
 void store(GcHeap& heap, u32 address, Value value);
 } // namespace Upvalue
 } // namespace bmsx

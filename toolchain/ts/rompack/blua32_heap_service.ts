@@ -67,6 +67,7 @@ const entries: Record<Exclude<HeapServiceOperation, HeapServiceOperation.Count>,
 	[HeapServiceOperation.StoppedFinalMark]: ['stopped_final_mark', 2, STOPPED_FINAL_MARK_MODULE],
 	[HeapServiceOperation.CreateCoroutine]: ['create_coroutine', 3, THREAD_CREATE_MODULE],
 	[HeapServiceOperation.ReserveFrameSpace]: ['reserve_frame_space', 4, THREAD_FRAME_STORAGE_MODULE],
+	[HeapServiceOperation.StoreClosedUpvalue]: ['store_closed_upvalue', 2, 'kernel/gc_barrier'],
 };
 
 /** Bind the CPU-only roster by exact module symbols after relocation. */

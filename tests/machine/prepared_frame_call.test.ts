@@ -1,3 +1,5 @@
+import { initialize, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
+import { GC_COLOR_OFFSET } from '../../machine/ts/machine/cpu/gc_object';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FRAME_RESIDENT_ACTIVATION, FRAME_RESIDENT_PREPARED_ENTRY, FrameField } from '../../machine/ts/machine/cpu/call_state';
@@ -140,7 +142,10 @@ for (const level of [0, 3] as const) {
 	});
 }
 
-for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and CALL cannot enter the private backing root at O${optLevel}`, () => {
+for (const optLevel of [0, 3] as const) for (const [name, operation, argc] of [
+	['frame backing', HeapServiceOperation.ReserveFrameSpace, 4],
+	['closed-cell store', HeapServiceOperation.StoreClosedUpvalue, 2],
+] as const) test(`an ordinary cartridge CLOSURE and CALL cannot enter the private ${name} root at O${optLevel}`, () => {
 	const boot = compileHeapServiceSystem(`cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`, optLevel);
 	const cartSource = 'local a,b,c,d=121,122,123,124; return a,b,c,d';
 	const cart = compileLuaChunkToProgram(parseLuaChunk(cartSource, 'cart.lua').chunk, [], { entrySource: cartSource, optLevel });
@@ -152,13 +157,13 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	writeInstruction(text, 0, OpCode.HALT, 0, 0, 0);
 	writeInstruction(text, 1, OpCode.WIDE, 0, 0, CLOSURE_ADDRESS_REGISTER_WIDE_C);
 	writeInstruction(text, 2, OpCode.CLOSURE, 0, 0, 0);
-	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(4), encodeFixedValueCount(0));
+	writeInstruction(text, 3, OpCode.CALL, 0, encodeFixedValueCount(argc), encodeFixedValueCount(0));
 	writeInstruction(text, 4, OpCode.RET, 0, encodeFixedValueCount(0), 0);
 	const { cpu, memory } = createTestBlua32PairCpu(linked);
 	runGuestToHalt(cpu, 65_536);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const descriptor = memory.readMappedU32LE(linked.systemImage.address + HEAP_SERVICE_IMAGE_ADDRESS_OFFSET);
-	const target = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * HeapServiceOperation.ReserveFrameSpace);
+	const target = memory.readMappedU32LE(descriptor + HEAP_SERVICE_DESCRIPTOR_FUNCTIONS_OFFSET + 4 * operation);
 	assert.notEqual(target, 0);
 	assert.equal(memory.readMappedU32LE(target + BLUA32_FUNCTION_FLAGS_OFFSET) & BLUA32_FUNCTION_RESIDENT, 0);
 	const thread = cpu.activeThread, depth = thread.frameDepth;
@@ -173,10 +178,22 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	const valueCapacity = memory.readRamRecordWord(thread.address + ThreadField.StackCapacity);
 	const frameCapacity = memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity);
 	caller.registers.setInteger(0, target);
-	caller.registers.setInteger(1, thread.address);
-	caller.registers.setInteger(2, valueCapacity + 1);
-	caller.registers.setInteger(3, (frameCapacity & THREAD_CONTROL_COUNT_MASK) + 1);
-	caller.registers.setInteger(4, 0);
+	let cell = 0;
+	if (operation === HeapServiceOperation.ReserveFrameSpace) {
+		caller.registers.setInteger(1, thread.address);
+		caller.registers.setInteger(2, valueCapacity + 1);
+		caller.registers.setInteger(3, (frameCapacity & THREAD_CONTROL_COUNT_MASK) + 1);
+		caller.registers.setInteger(4, 0);
+	} else {
+		cell = cpu.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+		initialize(memory, cell, cpu.gc.white());
+		cpu.gc.publishObject(cell);
+		memory.writeRamRecordByte(cell + GC_COLOR_OFFSET, 3);
+		memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, 73);
+		memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, ValueTag.Integer);
+		caller.registers.setInteger(1, cell & UPVALUE_ADDRESS_MASK);
+		caller.registers.setString(2, cpu.stringPool.intern('must not overwrite'));
+	}
 	cpu.clearHaltUntilIrq();
 	const callPc = entry.codeAddress + 3 * INSTRUCTION_BYTES;
 	for (let i = 0; i < 4096 && (caller.pc !== callPc || cpu.heapServiceActive()); ++i) {
@@ -205,6 +222,10 @@ for (const optLevel of [0, 3] as const) test(`an ordinary cartridge CLOSURE and 
 	assert.equal(cpu.heapServiceActive(), false);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.StackCapacity), valueCapacity);
 	assert.equal(memory.readRamRecordWord(thread.address + ThreadField.FrameCapacity), frameCapacity);
+	if (operation === HeapServiceOperation.StoreClosedUpvalue) {
+		assert.equal(memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD), 73);
+		assert.equal(memory.readRamRecordByte(cell + UPVALUE_VALUE_TAG), ValueTag.Integer);
+	}
 	assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_PREPARED_FRAME_OFFSET + FrameField.Function), prepared);
 	assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.IssuePc), residentPc);
 });

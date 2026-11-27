@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { observeRegisterStores, runCpuParity } from '../helpers/cpu_execution';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { COMPILED_BLOCK_THRESHOLD, CpuExecutionBackend, CompiledBlockExit } from '../../machine/ts/machine/cpu/compiled_block';
-import { FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { FRAME_RESIDENT_ACTIVATION, FrameField } from '../../machine/ts/machine/cpu/call_state';
+import { HEAP_SERVICE_FRAME_OFFSET, HEAP_SERVICE_RESIDENT_OFFSET, HeapServiceResidentField } from '../../machine/ts/spec/bmsx/heap_service';
 import { ThreadField } from '../../machine/ts/machine/cpu/thread_record';
 import * as ClosureRecord from '../../machine/ts/machine/cpu/closure';
 import * as Upvalue from '../../machine/ts/machine/cpu/upvalue';
@@ -16,7 +17,7 @@ import { DYNAMIC_RAM_BASE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { SYSTEM_EXECUTION_DOMAIN_ID, SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, instructionOpcode, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { CPU_CAUSE_CODE_TRAP, LUA_FAULT_REASON_INVALID_ARGUMENT } from '../../machine/ts/spec/blua32/cop0';
 import { BASE_CYCLES, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { createTestSystemCpu, linkRawTestSystemBlua32, linkTestSystemBlua32, seedTestRomClosure } from '../helpers/blua32';
@@ -420,7 +421,7 @@ test('compiled upvalues follow open aliases and closed values without stale nume
 	assert.equal(r.get(3), valueInteger(2));
 });
 
-test('compiled SETUP forwards a new edge from a black closed cell in the second mark pass', () => {
+test('compiled SETUP hands a new black closed-cell edge to timed System firmware', t => {
 	const image = linkTestSystemBlua32(compileHeapServiceSystem(`
 local captured
 function set_captured(value)
@@ -451,15 +452,38 @@ end
 			const page = frame.executionImage.compiledCodeLookup!.find(pc, 0)!;
 			const block = page.compiledBlocks!.entries[(pc & (MAPPED_PAGE_BYTE_SIZE - 1)) / INSTRUCTION_BYTES]!;
 			const { region } = block, execute = region.execute;
-			Object.defineProperty(region, 'execute', { value: (...args: Parameters<typeof execute>) => {
+			t.mock.method(region, 'execute', (...args: Parameters<typeof execute>) => {
 				const exit = execute(...args);
 				generatedExit = region.exits[exit].exit;
 				return exit;
-			} });
+			});
 		}
-		runGuestToHalt(cpu, 10_000);
+		const frame = cpu.rootThread.frameAtDepth(0), issue = frame.pc + INSTRUCTION_BYTES;
+		assert.equal(instructionOpcode(memory.readMappedWord(frame.pc)), OpCode.MOV);
+		assert.equal(instructionOpcode(memory.readMappedWord(issue)), OpCode.SETUP);
+		const management = cpu.heapAllocator.managementOffset();
+		assert.equal(cpu.runUntilDepth(0, 64), RunResult.Yielded);
+		assert.equal(64 - cpu.instructionBudgetRemaining, BASE_CYCLES[OpCode.MOV] + BASE_CYCLES[OpCode.SETUP] + 2, 'the prefix, SETUP and its two fixed inputs are charged once');
 		if (backend === CpuExecutionBackend.JavaScript)
-			assert.equal(generatedExit, CompiledBlockExit.Return, 'the generated store did not take a side exit');
+			assert.equal(generatedExit, CompiledBlockExit.WriteUpvalue, 'the generated path exits before either store');
+		assert.ok(cpu.heapServiceActive());
+		assert.equal(memory.readRamRecordWord(management + HEAP_SERVICE_RESIDENT_OFFSET + HeapServiceResidentField.IssuePc), issue);
+		assert.ok(memory.readRamRecordWord(management + HEAP_SERVICE_FRAME_OFFSET + FrameField.Flags) & FRAME_RESIDENT_ACTIVATION);
+		assert.equal(frame.pc, issue + INSTRUCTION_BYTES);
+		const top = frame.top;
+		assert.equal(top, 2, 'the issued prefix publishes its original top');
+		assert.equal(Upvalue.load(memory, cell), valueNil(), 'SETUP published neither lane at issue');
+		assert.equal(gc.isAlive(child), false);
+		let elapsed = 0;
+		while (cpu.heapServiceActive()) {
+			assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
+			elapsed += 1 - cpu.instructionBudgetRemaining;
+			assert.ok(elapsed < 4096);
+		}
+		assert.ok(elapsed > 0);
+		assert.equal(frame.pc, issue + INSTRUCTION_BYTES, 'no caller successor ran before BIOS RET');
+		assert.equal(frame.top, top, 'an implicit write receives no results and changes no caller slots');
+		runGuestToHalt(cpu, 10_000);
 		assert.equal(Upvalue.load(memory, cell), valueTable(child));
 		assert.equal(gc.isAlive(child), true, 'the new edge is traced before final remark');
 		assert.equal(memory.readRamRecordWord(gc.changedHeadOffset()), changed, 'the cell is not queued for a rescan');

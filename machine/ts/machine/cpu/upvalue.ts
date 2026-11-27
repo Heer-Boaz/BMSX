@@ -2,7 +2,7 @@ import { writeLE32 } from '../../common/endian';
 import { MAIN_RAM_SIZE, RAM_RECORD_WORD_MASK } from '../../spec/bmsx/memory_map';
 import type { Memory } from '../memory/memory';
 import type { GcHeap } from './gc_heap';
-import { GC_RECORD_MASK } from './gc_object';
+import { GC_COLOR_MASK, GC_COLOR_OFFSET, GC_RECORD_MASK } from './gc_object';
 import { ThreadField } from './thread_record';
 import { type Value, type ValueTag, valueFromTag, valuePayload, valueTag, valueTagHasGcEdge } from './value';
 
@@ -60,14 +60,14 @@ export function load(memory: Memory, address: number): Value {
 	return valueFromTag(memory.readRamRecordByte(block + capacity * 4 + word), memory.readRamRecordWord(block + word * 4));
 }
 
-export function store(heap: GcHeap, address: number, tag: ValueTag, word: number): void {
-	const memory = heap.memory;
-	const cell = address & UPVALUE_ADDRESS_MASK;
-	if (!isOpen(memory, cell)) {
-		heap.writeClosedValue(cell, tag, word);
+// A false result has performed no writes; SETUP transfers that one
+// closed/black edge to its fixed System activation.
+export function tryStoreWithoutBarrier(memory: Memory, cell: number, tag: ValueTag, word: number): boolean {
+	if ((memory.readRamRecordByte(cell + UPVALUE_FLAGS) & UPVALUE_OPEN) === 0) {
+		if (valueTagHasGcEdge(tag) && (memory.readRamRecordByte(cell + GC_COLOR_OFFSET) & GC_COLOR_MASK) === 3) return false;
 		memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
 		memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
-		return;
+		return true;
 	}
 	const owner = memory.readRamRecordWord(cell + UPVALUE_OWNER);
 	const slot = memory.readRamRecordWord(cell + UPVALUE_VALUE_WORD);
@@ -75,4 +75,15 @@ export function store(heap: GcHeap, address: number, tag: ValueTag, word: number
 	const capacity = memory.readRamRecordWord(owner + ThreadField.StackCapacity);
 	memory.writeRamRecordWord(block + slot * 4, word);
 	memory.writeRamRecordByte(block + capacity * 4 + slot, tag);
+	return true;
+}
+
+/** Direct debugger store, also used by the differential reference. */
+export function store(heap: GcHeap, address: number, tag: ValueTag, word: number): void {
+	const memory = heap.memory;
+	const cell = address & UPVALUE_ADDRESS_MASK;
+	if (tryStoreWithoutBarrier(memory, cell, tag, word)) return;
+	heap.writeBlackClosedValue(cell, tag, word);
+	memory.writeRamRecordWord(cell + UPVALUE_VALUE_WORD, word);
+	memory.writeRamRecordByte(cell + UPVALUE_VALUE_TAG, tag);
 }

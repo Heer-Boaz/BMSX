@@ -342,9 +342,16 @@ void* CPU::dispatchNativeExit(NativeCpuRunState* run, const NativeBlockExitSite*
 			transition = NativeBlockTransition::SameWindow;
 			break;
 		}
-		case NativeBlockExit::WriteUpvalue:
-			Upvalue::store(cpu.m_heap, frame->captureAddress(exit->operands.upvalue.capture), frame->registers.get(exit->operands.upvalue.slot));
+		case NativeBlockExit::WriteUpvalue: {
+			const auto access = exit->operands.upvalue;
+			const u32 cell = frame->captureAddress(access.capture) & UPVALUE_ADDRESS_MASK;
+			const Value value = frame->registers.get(access.slot);
+			if (!Upvalue::tryStoreWithoutBarrier(cpu.m_memory, cell, value)) {
+				cpu.enterClosedUpvalueStore(*frame, cell, value);
+				transition = NativeBlockTransition::Redispatch;
+			}
 			break;
+		}
 		case NativeBlockExit::InvalidOperand:
 		case NativeBlockExit::InvalidConstant:
 			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);

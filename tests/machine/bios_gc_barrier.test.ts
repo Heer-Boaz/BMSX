@@ -4,12 +4,12 @@ import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { GC_CHANGED_HEAD, GC_MODE_META, GC_REMARK_VISIT_STATE, GC_TRACE_HEAD, GC_TRACE_RECORD, GcPhase } from '../../machine/ts/machine/cpu/gc_heap';
 import { GC_COLOR_OFFSET, GC_GRAY_INDEX_BITS, GC_RECORD_LINK, GC_RECORD_MASK, GC_RECORD_SHIFT } from '../../machine/ts/machine/cpu/gc_object';
-import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
+import { HEAP_GC_CONTROL_OFFSET, HEAP_STRING_MARK_WORK_OFFSET, HEAP_STRING_METADATA_OFFSET } from '../../machine/ts/machine/cpu/heap_allocator';
 import { TableHeader } from '../../machine/ts/machine/cpu/table';
-import { initialize, UPVALUE_HEAP_BYTES, UPVALUE_NEXT } from '../../machine/ts/machine/cpu/upvalue';
+import { initialize, store, UPVALUE_ADDRESS_MASK, UPVALUE_HEAP_BYTES, UPVALUE_NEXT, UPVALUE_VALUE_TAG, UPVALUE_VALUE_WORD } from '../../machine/ts/machine/cpu/upvalue';
 import { ValueTag, valueFromTag } from '../../machine/ts/machine/cpu/value';
 import { HEAP_SERVICE_FRAME_COUNT, HEAP_SERVICE_THREAD_OFFSET, HEAP_SERVICE_VALUE_COUNT } from '../../machine/ts/spec/bmsx/heap_service';
-import { RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { MAIN_RAM_SIZE, RAM_BASE, RAM_RECORD_WORD_MASK } from '../../machine/ts/spec/bmsx/memory_map';
 import { encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { deriveBlua32FixedStack } from '../../toolchain/ts/rompack/blua32_fixed_stack';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -95,7 +95,7 @@ function fixture(optLevel: 0 | 3) {
 		word(control + GC_TRACE_HEAD, 0x98700456);
 	}
 	word(metadata + 0x0c, 0xa5a5a501);
-	return { cpu, memory, oracle, arena, control, metadata, add, word, byte, begin, grant, finish, invoke, pendingString, phase, compare };
+	return { cpu, memory, oracle, management, arena, control, metadata, add, word, byte, begin, grant, finish, invoke, pendingString, phase, compare };
 }
 
 const EPOCH_WORK = 0x5c, MODE_REMAINING = 0x54;
@@ -197,11 +197,11 @@ for (const optLevel of [0, 3] as const) {
 		byte(cell + GC_COLOR_OFFSET, 3);
 		word(cell + UPVALUE_NEXT, 0x819ab2ef);
 		oracle.gc.writeClosedValue(cell, ValueTag.Table, value);
-		invoke('write_closed_value', arena, metadata, cell, ValueTag.Table, value, 0, 0);
+		invoke('write_closed_value', arena, metadata, cell, ValueTag.Table, value, 0);
 		assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x819ab2ef);
 		phase(GcPhase.Mark);
 		oracle.gc.writeBlackClosedValue(cell, ValueTag.Table, value);
-		invoke('write_black_closed_value', arena, metadata, cell, ValueTag.Table, value, 0, 0);
+		invoke('write_black_closed_value', arena, metadata, cell, ValueTag.Table, value, 0);
 		assert.equal(memory.readRamRecordWord(cell + UPVALUE_NEXT), 0x311);
 		oracle.gc.writeBarrier(cell, UPVALUE_NEXT);
 		invoke('write_barrier', cell, UPVALUE_NEXT, 0);
@@ -209,6 +209,74 @@ for (const optLevel of [0, 3] as const) {
 		oracle.gc.writeBarrier(cell, UPVALUE_NEXT);
 		invoke('write_barrier', cell, UPVALUE_NEXT, 0);
 		assert.equal(memory.readRamRecordByte(cell + GC_COLOR_OFFSET), 0x8a);
+	});
+
+	test(`BLua closed store preserves native write order and interrupted String credit at O${optLevel}`, t => {
+		const { cpu, memory, oracle, management, arena, control, metadata, add, word, byte, begin, grant, finish, phase, compare } = fixture(optLevel);
+		const cell = add(target => {
+			const address = target.luaHeap.allocateRecord(UPVALUE_HEAP_BYTES, true, 0, 0);
+			initialize(target.memory, address, target.gc.white());
+			target.gc.publishObject(address);
+			return address;
+		}) & UPVALUE_ADDRESS_MASK;
+		const value = add(target => target.stringPool.intern('new closed-cell String'));
+		const mark = (value + 1) & (MAIN_RAM_SIZE - 1);
+		const latch = management + HEAP_STRING_MARK_WORK_OFFSET, work = control + EPOCH_WORK;
+		const next = cell + UPVALUE_NEXT, color = cell + GC_COLOR_OFFSET, changed = control + GC_CHANGED_HEAD;
+		const wordLane = cell + UPVALUE_VALUE_WORD, tagLane = cell + UPVALUE_VALUE_TAG;
+		const addresses = new Set([mark, latch, work, next, color, changed, wordLane, tagLane]);
+		type Write = [offset: number, width: number, value: number];
+		function watch(mem: typeof memory): Write[] {
+			const trace: Write[] = [];
+			const writeWord = mem.writeRamRecordWord.bind(mem), writeByte = mem.writeRamRecordByte.bind(mem);
+			t.mock.method(mem, 'writeRamRecordWord', (address: number, data: number) => {
+				writeWord(address, data);
+				const offset = address & RAM_RECORD_WORD_MASK;
+				if (addresses.has(offset)) trace.push([offset, 4, mem.readRamRecordWord(offset)]);
+			});
+			t.mock.method(mem, 'writeRamRecordByte', (address: number, data: number) => {
+				writeByte(address, data);
+				const offset = address & (MAIN_RAM_SIZE - 1);
+				if (addresses.has(offset)) trace.push([offset, 1, mem.readRamRecordByte(offset)]);
+			});
+			return trace;
+		}
+		const actual = watch(memory), expected = watch(oracle.memory);
+		const valueWrites: Write[] = [[wordLane, 4, value], [tagLane, 1, ValueTag.String]];
+		const cases: { phase: GcPhase; pending: number; barrier: Write[]; stop: number }[] = [
+			{ phase: GcPhase.Mark, pending: 2, barrier: [[next, 4, 0x311], [color, 1, 2], [changed, 4, indexOfRecord(cell)]], stop: 1 },
+			{ phase: GcPhase.MarkAgain, pending: 2, barrier: [[mark, 1, 1], [latch, 4, 3], [latch, 4, 0], [work, 4, 20]], stop: 2 },
+			{ phase: GcPhase.MarkAgain, pending: 0xffffffff, barrier: [[mark, 1, 1], [latch, 4, 0]], stop: 1 },
+		];
+		for (const { phase: current, pending, barrier, stop } of cases) {
+			phase(current);
+			byte(color, 3);
+			word(next, 0x819ab2ef);
+			word(latch, pending);
+			word(work, 17);
+			byte(mark, 0x74);
+			word(wordLane, 73);
+			byte(tagLane, ValueTag.Integer);
+			actual.length = expected.length = 0;
+			store(oracle.gc, cell, ValueTag.String, value);
+			assert.deepEqual(expected, [...barrier, ...valueWrites]);
+
+			begin('store_black_closed_value', arena, metadata, cell, ValueTag.String, value, 1);
+			for (let i = 0; i < 1024 && actual.length < stop; ++i) grant(1);
+			assert.ok(cpu.heapServiceActive(), 'the accepted activation can stop between its writes');
+			assert.deepEqual(actual, expected.slice(0, stop));
+			assert.equal(memory.readRamRecordWord(wordLane), 73);
+			assert.equal(memory.readRamRecordByte(tagLane), ValueTag.Integer);
+			const saved = captureCpuCheckpoint(cpu);
+			const finished = finish(1);
+			assert.deepEqual(actual, expected);
+			compare('closed store after firmware return');
+			restoreCpuCheckpoint(cpu, saved);
+			actual.length = 0;
+			assert.deepEqual(finish(1), finished);
+			assert.deepEqual(actual, expected.slice(stop));
+			compare('closed store after replay');
+		}
 	});
 
 	test(`BLua moved entries clear the suspended cursor before requeue and resume at O${optLevel}`, () => {

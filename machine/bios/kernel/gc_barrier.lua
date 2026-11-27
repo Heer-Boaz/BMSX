@@ -2,9 +2,12 @@ module<const>
 
 -- Source basis: 61e40427ed56ea18e7fad271ef3afa1735b9ba9e.
 -- T/C/H: GcHeap; O/P: GC object layout; V/W: tags; B/D: Table;
--- U/J: Upvalue; I/K: Thread; S: RAM. Moved-entry pairs are ordered
+-- U/J/N: Upvalue; I/K: Thread; S: RAM. L/R/A pin the later RAM-backed
+-- String work latch at 59fb80ee550356ff2fa39e57ba4944ae808b4742.
+-- Moved-entry pairs are ordered
 -- stores; the mutator may not re-enter until this operation returns.
 local control_layout<const> = require('kernel/gc_control') -- T:198,203,222,233 C:107,111,126,137,147
+local layout<const> = require('kernel/gc_runtime_layout') -- L:67-70 R:41-43 A:8,10
 local mark<const> = require('kernel/gc_mark') -- T:192,213-214,223-224,226,234,236,246 C:122,127-130,138-142,148-151,163 H:127
 
 local ram_base<const> = 0x08000000 -- S:6
@@ -15,6 +18,8 @@ local color_mask<const> = 3 -- O:4 P:7
 local black<const> = 3 -- T:192,221,229,246 C:135,163 H:127,130,135
 local record_link<const> = 4 -- O:8 P:15
 local upvalue_next<const> = 12 -- U:17 J:19
+local upvalue_value_tag<const> = 3 -- U:14 J:16
+local upvalue_value_word<const> = 4 -- U:15 J:17
 local gray_index_bits<const> = 19 -- O:12 P:17
 local trace_head<const> = 4 -- T:25 H:23
 local changed_head<const> = 8 -- T:26 H:24
@@ -98,20 +103,48 @@ local write_table_assignment<const> = function(control, arena, metadata, table, 
 	return remaining -- T:227 C:144; fixed scalar result
 end
 
-local write_black_closed_value<const> = function(control, arena, metadata, cell, tag, payload, cpp_mirror, pending) -- T:232 C:146 H:140
+local write_black_closed_value<const> = function(control, arena, metadata, cell, tag, payload, cpp_mirror) -- T:232 C:146 H:140
 	if control_layout.internal.phase(control) == phase_mark_again then -- T:233 C:147
-		local _<const>, work<const> = mark.mark_value(control, arena, metadata, tag, payload, trace_head, cpp_mirror) -- T:234 C:148
-		credit_barrier_marks(control, pending + work) -- T:235 C:149
-		return 0 -- T:235 C:149; return the drained work latch
+		local _<const>, marked<const> = mark.mark_value(control, arena, metadata, tag, payload, trace_head, cpp_mirror) -- T:234 C:148 L:447-449 R:438-439
+		local latch<const>: *u32 = ram_base + control - layout.control_offset + layout.string_mark_work_offset -- L:67-70 R:41-43 A:8,10
+		if marked ~= 0 then *latch = *latch + marked end -- L:449 R:439
+		local work<const> = *latch -- L:452-455 R:442-445
+		if work ~= 0 then -- T:195,197 C:104,107 L:454 R:444
+			*latch = 0 -- L:454 R:444
+			control_layout.account_epoch_work(control, work) -- T:197-198,235 C:107,149
+		end
+	else -- T:236 C:150
+		mark.enqueue(control, cell, upvalue_next, changed_head, cpp_mirror) -- T:236 C:151
 	end
-	mark.enqueue(control, cell, upvalue_next, changed_head, cpp_mirror) -- T:236 C:150-151
-	return pending -- T:237 C:153; no credit on rescan
 end
 
-local write_closed_value<const> = function(control, arena, metadata, cell, tag, payload, cpp_mirror, pending) -- T:228 H:134
-	if not has_edge(tag) or mark_color(cell) ~= black then return pending end -- T:229 H:135
-	local remaining<const> = write_black_closed_value(control, arena, metadata, cell, tag, payload, cpp_mirror, pending) -- T:230 H:136
-	return remaining -- T:231 H:137; fixed scalar result
+local write_closed_value<const> = function(control, arena, metadata, cell, tag, payload, cpp_mirror) -- T:228 H:134
+	if not has_edge(tag) or mark_color(cell) ~= black then return end -- T:229 H:135
+	write_black_closed_value(control, arena, metadata, cell, tag, payload, cpp_mirror) -- T:230-231 H:136-137
+end
+
+-- The SETUP caller already admitted a closed black cell and an edge.
+-- The cell is its canonical RAM offset, not a public raw address.
+local store_black_closed_value<const> = function(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:63-67 N:65-72
+	write_black_closed_value(control, arena, metadata, cell_offset, tag, payload, cpp_mirror) -- U:67 N:72
+	local value<const>: *u32 = ram_base + cell_offset + upvalue_value_word -- U:68 N:68,74
+	*value = payload -- U:68 N:74
+	local tag_lane<const>: *u8 = ram_base + cell_offset + upvalue_value_tag -- U:69 N:68,75
+	*tag_lane = tag -- U:69-70 N:75
+end
+
+-- The private SETUP transaction receives ordinary tagged fixed-frame
+-- inputs. Project the Value once, then preserve the native store sequence.
+local store_closed_upvalue<const> = function(cell_offset, value) -- U:63-69 N:65-75; trusted fixed entry
+	local management_port<const>: *u32 = layout.management_address -- A:8,10; private management port
+	local management<const> = *management_port -- A:8,10
+	local address<const> = ram_base + management + layout.value_cell_offset -- U:63,67-69 N:65,72-75; tagged transport
+	local tagged_value<const>: *value = address -- U:63 N:65; tagged transport
+	*tagged_value = value -- U:63 N:65; tagged transport
+	local tag<const>: *u8 = address + layout.value_cell_tag_offset -- U:67,69 N:72,75
+	local word<const>: *u32 = address -- U:67-68 N:72,74
+	store_black_closed_value(management + layout.control_offset, management + layout.arena_offset, -- T:232-236 N:72; canonical collector association
+		management + layout.metadata_offset, cell_offset, *tag, *word, 1) -- N:72-75 C:146-153; canonical C++ color store
 end
 
 local table_entries_moved<const> = function(control, address, cpp_mirror) -- T:238 C:155 H:141
@@ -135,5 +168,7 @@ return {
 	write_table_assignment = write_table_assignment,
 	write_black_closed_value = write_black_closed_value,
 	write_closed_value = write_closed_value,
+	store_black_closed_value = store_black_closed_value,
+	store_closed_upvalue = store_closed_upvalue,
 	table_entries_moved = table_entries_moved,
 }

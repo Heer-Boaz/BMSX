@@ -3479,7 +3479,8 @@ export class CPU implements MappedPageInvalidator {
 				case CompiledBlockExit.ReadUpvalue:
 					this.copyUpvalueToRegister(frame, registers, exit.exitA, frame.captureAddress(exit.exitB)); break;
 				case CompiledBlockExit.WriteUpvalue:
-					this.copyRegisterToUpvalue(frame.captureAddress(exit.exitB), registers, exit.exitA); break;
+					if (this.copyRegisterToUpvalue(frame, frame.captureAddress(exit.exitB), registers, exit.exitA)) return;
+					break;
 				case CompiledBlockExit.InvalidOperand:
 				case CompiledBlockExit.InvalidConstant: throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				case CompiledBlockExit.Length:
@@ -3889,7 +3890,7 @@ export class CPU implements MappedPageInvalidator {
 					const index = page.b[pageOffset];
 					if (index >= frame.captureCount) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 					const address = frame.captureAddress(index);
-					this.copyRegisterToUpvalue(address, registers, a);
+					this.copyRegisterToUpvalue(frame, address, registers, a);
 					return;
 				}
 				case OpCode.VARARG: {
@@ -4320,8 +4321,22 @@ export class CPU implements MappedPageInvalidator {
 		this.bumpRegisterTop(frame, registerIndex);
 	}
 
-	private copyRegisterToUpvalue(address: number, registers: ValueSlots, registerIndex: number): void {
-		Upvalue.store(this.gc, address, registers.getTag(registerIndex), registers.getPayload(registerIndex));
+	private copyRegisterToUpvalue(frame: CallFrame, address: number, registers: ValueSlots, registerIndex: number): boolean {
+		const cell = address & Upvalue.UPVALUE_ADDRESS_MASK;
+		const tag = registers.getTag(registerIndex), word = registers.getPayload(registerIndex);
+		if (Upvalue.tryStoreWithoutBarrier(this.memory, cell, tag, word)) return false;
+		const services = this.systemImage.heapServiceFunctions;
+		if (services === null) {
+			this.enterSynchronousException(frame, CPU_CAUSE_CODE_RESERVED_INSTRUCTION);
+			return true;
+		}
+		const firmware = this.prepareHeapServiceFrame(services[HeapServiceOperation.StoreClosedUpvalue],
+			0, 0, DISCARD_CALL_RESULT, this.currentInstructionPc);
+		firmware.registers.setInteger(0, cell);
+		firmware.registers.setEncoded(1, tag, word);
+		this.charge(firmware.top);
+		this.enterResidentFrame(firmware);
+		return true;
 	}
 
 	private writeReturnValuesFromRegisters(frame: CallFrame, base: number, count: number, source: ValueSlots, sourceBase: number, sourceCount: number, fixedStack = false): void {

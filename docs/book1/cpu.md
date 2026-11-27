@@ -1102,6 +1102,11 @@ overlapping register windows. Closing the cell retains the current language
 value independently of the frame. `GETUP` and `SETUP` use the same upvalue
 operand in either case.
 
+When a write to a closed upvalue requires collector bookkeeping, the BIOS
+preserves the reference before publishing the new value. It runs on ordinary
+CPU cycles and can span a CPU grant; the next instruction and interrupt entry
+wait for it to finish.
+
 Repeated CLOSURE operations for a STATIC function record with no upvalues may
 return the same function value when they use the same prototype in the same
 execution context. A non-STATIC prototype constructs a distinct closure on
